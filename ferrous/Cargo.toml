@@ -1,0 +1,46 @@
+[package]
+name = "ferrous"
+version = "0.1.0"
+edition = "2024"
+authors = ["Paweł Walus <pawel.walus@protonmail.com>"]
+description = "Ferrous – fast, local coding assistant powered by Rust + llama.cpp server."
+readme = "README.md"
+homepage = "https://github.com/lorehaven/ferrous"
+repository = "https://github.com/lorehaven/ferrous"
+license = "MIT"
+keywords = [
+    "coding-agent",
+    "llm-agent",
+    "local-ai",
+    "llama-cpp",
+    "developer-tool"
+]
+categories = [
+    "command-line-utilities",
+    "development-tools",
+    "ai",
+    "text-processing"
+]
+
+exclude = [
+    "**/*.rs.bk",
+    ".gitignore",
+    "target",
+    "Cargo.lock",
+]
+
+[[bin]]
+name = "ferrous"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+colored.workspace = true
+once_cell.workspace = true
+reqwest.workspace = true
+rustyline.workspace = true
+serde_json.workspace = true
+syntect.workspace = true
+tokio.workspace = true
+walkdir.workspace = true
