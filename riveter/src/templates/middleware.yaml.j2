@@ -1,0 +1,12 @@
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ res.name }}
+  namespace: {{ data.namespace_name }}
+  labels:
+    app.kubernetes.io/managed-by: custom-tool
+    env: {{ env }}
+spec:
+  redirectScheme:
+    scheme: {{ res.redirect_scheme.scheme }}
+    permanent: {{ res.redirect_scheme.permanent | default(true) }}

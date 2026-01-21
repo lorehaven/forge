@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ res.name }}
+  namespace: {{ data.namespace_name }}
+  labels:
+    app.kubernetes.io/name: {{ res.app_name | default(res.name) }}
+    app.kubernetes.io/instance: {{ res.instance | default(res.name) }}
+    env: {{ env }}
+spec:
+  selector:
+    app.kubernetes.io/name: {{ res.selector_app | default(name) }}
+    app.kubernetes.io/instance: {{ res.selector_instance | default(instance | default(name)) }}
+  ports:
+    - port: {{ res.port }}
+      targetPort: {{ res.target_port | default(res.port) }}
+      name: {{ res.port_name | default("http") }}
+      protocol: TCP
+  type: {{ res.type | default("ClusterIP") }}

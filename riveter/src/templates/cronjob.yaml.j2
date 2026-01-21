@@ -1,0 +1,46 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ res.name }}
+  namespace: {{ data.namespace_name }}
+  labels:
+    app.kubernetes.io/name: {{ res.app_name }}
+    app.kubernetes.io/instance: {{ res.instance }}
+    env: {{ env }}
+spec:
+  schedule: "{{ res.schedule }}"
+  successfulJobsHistoryLimit: {{ res.successful_jobs_history | default(3) }}
+  failedJobsHistoryLimit: {{ res.failed_jobs_history | default(1) }}
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: {{ res.container_name | default(name) }}
+              image: {{ res.image }}
+              imagePullPolicy: Always
+{% if res.env_vars is defined %}
+              env:
+{% for k, v in res.env_vars | dictsort %}
+                - name: {{ k }}
+                  value: "{{ v }}"
+{% endfor %}
+{% endif %}
+{% if res.volume_mounts %}
+              volumeMounts:
+{% for vm in res.volume_mounts %}
+                - name: {{ vm.name }}
+                  mountPath: {{ vm.mountPath }}
+                  readOnly: {{ vm.readOnly | default(false) }}
+{% endfor %}
+{% endif %}
+{% if res.volumes %}
+          volumes:
+{% for vol in res.volumes %}
+            - name: {{ vol.name }}
+              hostPath:
+                path: {{ vol.path }}
+                type: {{ vol.type | default("") }}
+{% endfor %}
+{% endif %}

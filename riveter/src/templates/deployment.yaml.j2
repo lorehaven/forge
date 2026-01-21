@@ -1,0 +1,133 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ res.name }}
+  namespace: {{ data.namespace_name }}
+  labels:
+    app.kubernetes.io/name: {{ res.app_name | default(res.name) }}
+    app.kubernetes.io/instance: {{ res.instance | default(res.name) }}
+    env: {{ env }}
+spec:
+  replicas: {{ res.replicas | default(1) }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ res.app_name | default(res.name) }}
+      app.kubernetes.io/instance: {{ res.instance | default(res.name) }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ res.app_name | default(res.name) }}
+        app.kubernetes.io/instance: {{ res.instance | default(res.name) }}
+        env: {{ env }}
+    spec:
+      serviceAccountName: {{ res.service_account | default("ossiriand-" ~ env ~ "-sa") }}
+
+{% if res.pod_security_context %}
+      podSecurityContext:
+{% if res.pod_security_context.fsGroup is defined %}
+        fsGroup: {{ res.pod_security_context.fsGroup }}
+{% endif %}
+{% endif %}
+
+      containers:
+        - name: {{ res.container_name | default("ossiriand") }}
+          image: {{ res.image }}
+          imagePullPolicy: Always
+{% if res.port is defined %}
+          ports:
+            - containerPort: {{ res.port }}
+              name: {{ res.name }}
+              protocol: TCP
+{% endif %}
+{% if res.ports is defined %}
+          ports:
+{% for p in res.ports %}
+            - containerPort: {{ p.port }}
+              name: {{ p.name }}
+              protocol: TCP
+{% endfor %}
+{% endif %}
+
+{% if res.probes %}
+          livenessProbe:
+            httpGet:
+              path: {{ res.probes.path }}
+              port: {{ res.probes.port }}
+              scheme: HTTP
+            failureThreshold: 3
+            periodSeconds: 10
+            timeoutSeconds: 1
+          readinessProbe:
+            httpGet:
+              path: {{ res.probes.path }}
+              port: {{ res.probes.port }}
+              scheme: HTTP
+            failureThreshold: 3
+            periodSeconds: 10
+            timeoutSeconds: 1
+{% endif %}
+
+          securityContext:
+{% if res.security_context %}
+{% if res.security_context.run_as_user is defined %}
+            runAsUser: {{ res.security_context.run_as_user }}
+{% endif %}
+{% if res.security_context.run_as_group is defined %}
+            runAsGroup: {{ res.security_context.run_as_group }}
+{% endif %}
+{% if res.security_context.privileged is defined %}
+            privileged: {{ res.security_context.privileged }}
+{% endif %}
+{% if res.security_context.capabilities %}
+            capabilities:
+              add:
+{% for cap in res.security_context.capabilities.add %}
+                - {{ cap }}
+{% endfor %}
+{% endif %}
+{% endif %}
+
+{% if res.resources %}
+          resources:
+{% if res.resources.requests %}
+            requests:
+              cpu: {{ res.resources.requests.cpu }}
+              memory: {{ res.resources.requests.memory }}
+{% endif %}
+{% if res.resources.limits %}
+            limits:
+              cpu: {{ res.resources.limits.cpu }}
+              memory: {{ res.resources.limits.memory }}
+{% endif %}
+{% endif %}
+{% if res.env_vars is defined and res.env_vars | length > 0 %}
+          env:
+{% for k, v in res.env_vars | dictsort %}
+            - name: {{ k }}
+              value: "{{ v }}"
+{% endfor %}
+{% endif %}
+{% if res.volume_mounts %}
+          volumeMounts:
+{% for vm in res.volume_mounts %}
+            - name: {{ vm.name }}
+              mountPath: {{ vm.mountPath }}
+{% if vm.readOnly is defined %}
+              readOnly: {{ vm.readOnly }}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% if res.volumes %}
+      volumes:
+{% for vol in res.volumes %}
+        - name: {{ vol.name }}
+{% if vol.pvc_name %}
+          persistentVolumeClaim:
+            claimName: {{ vol.pvc_name }}
+{% elif vol.host_path %}
+          hostPath:
+            path: {{ vol.host_path }}
+            type: {{ vol.type | default("DirectoryOrCreate") }}
+{% endif %}
+{% endfor %}
+{% endif %}

@@ -2,6 +2,7 @@
 members = [
     "anvil",
     "ferrous",
+    "riveter",
 ]
 resolver = "2"
 
@@ -23,8 +24,18 @@ features = ["derive"]
 [workspace.dependencies.colored]
 version = "3"
 
+[workspace.dependencies.dotenvy]
+version = "0.15"
+
+[workspace.dependencies.minijinja]
+version = "2.14"
+features = ["loader", "serde"]
+
 [workspace.dependencies.once_cell]
 version = "1.21"
+
+[workspace.dependencies.regex]
+version = "1.12"
 
 [workspace.dependencies.reqwest]
 version = "0.12"
@@ -36,6 +47,9 @@ version = "17.0"
 
 [workspace.dependencies.serde_json]
 version = "1.0"
+
+[workspace.dependencies.serde_yaml]
+version = "0.9.33"
 
 [workspace.dependencies.syntect]
 version = "5.3"

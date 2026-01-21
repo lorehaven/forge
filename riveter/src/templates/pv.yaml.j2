@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ res.name }}
+  labels:
+    app.kubernetes.io/managed-by: custom-tool
+    env: {{ env }}
+spec:
+  capacity:
+    storage: {{ res.storage }}
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  volumeMode: Filesystem
+  hostPath:
+    path: {{ res.host_path }}
+    type: Directory
+{% if res.claim_ref %}
+  claimRef:
+    namespace: {{ data.namespace_name }}
+    name: {{ res.claim_ref }}
+{% endif %}
