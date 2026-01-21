@@ -3,10 +3,28 @@ name = "riveter"
 version = "0.1.0"
 edition.workspace = true
 authors.workspace = true
+description = "Riveter – k8s support tool, powered by Rust and minijinja."
+keywords = ["development", "tools"]
+categories = ["development-tools"]
 homepage.workspace = true
 repository.workspace = true
 license.workspace = true
 readme.workspace = true
+
+exclude = [
+    "**/*.rs.bk",
+    ".gitignore",
+    "target",
+    "Cargo.lock",
+]
+
+[[bin]]
+name = "riveter"
+path = "src/main.rs"
+
+[lib]
+name = "riveter"
+path = "src/lib.rs"
 
 [dependencies]
 anyhow.workspace = true

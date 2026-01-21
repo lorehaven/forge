@@ -1,26 +1,15 @@
 [package]
 name = "ferrous"
 version = "0.1.0"
-edition = "2024"
-authors = ["Paweł Walus <pawel.walus@protonmail.com>"]
+edition.workspace = true
+authors.workspace = true
 description = "Ferrous – fast, local coding assistant powered by Rust + llama.cpp server."
-readme = "README.md"
-homepage = "https://github.com/lorehaven/ferrous"
-repository = "https://github.com/lorehaven/ferrous"
-license = "MIT"
-keywords = [
-    "coding-agent",
-    "llm-agent",
-    "local-ai",
-    "llama-cpp",
-    "developer-tool"
-]
-categories = [
-    "command-line-utilities",
-    "development-tools",
-    "ai",
-    "text-processing"
-]
+keywords = ["development", "tools"]
+categories = ["development-tools"]
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+readme.workspace = true
 
 exclude = [
     "**/*.rs.bk",
@@ -32,6 +21,10 @@ exclude = [
 [[bin]]
 name = "ferrous"
 path = "src/main.rs"
+
+[lib]
+name = "ferrous"
+path = "src/lib.rs"
 
 [dependencies]
 anyhow.workspace = true
