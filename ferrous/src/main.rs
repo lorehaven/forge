@@ -25,7 +25,7 @@ struct Args {
     #[arg(long, default_value_t = 50)]
     top_k: i32,
 
-    #[arg(long, default_value_t = 2048)]
+    #[arg(long, default_value_t = 8192)]
     max_tokens: u32,
 
     #[arg(long, default_value = "false")]
