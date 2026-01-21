@@ -1,4 +1,4 @@
-use workspace_tools::commands::lint;
+use anvil::commands::lint;
 
 #[test]
 #[ignore]

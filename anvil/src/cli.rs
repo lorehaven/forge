@@ -1,8 +1,8 @@
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "wst")]
-#[command(about = "Workspace tools for building, linting, and publishing", long_about = None)]
+#[command(name = "anvil")]
+#[command(about = "Anvil - Workspace tools for building, linting, and publishing", long_about = None)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,

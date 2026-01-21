@@ -1,12 +1,12 @@
+use crate::llm::is_port_open;
 use crate::tools::execute_tool;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use colored::Colorize;
 use reqwest::Client;
 use serde_json::{Value, json};
 use std::io::Write;
 use std::process::Child;
 use std::sync::{Arc, Mutex};
-use crate::llm::is_port_open;
 
 pub struct Agent {
     client: Client,

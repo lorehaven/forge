@@ -1,7 +1,7 @@
+use anvil::cli::{Cli, Commands, DockerCommands};
+use anvil::commands;
 use anyhow::Result;
 use clap::Parser;
-use workspace_tools::cli::{Cli, Commands, DockerCommands};
-use workspace_tools::commands;
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
