@@ -81,11 +81,11 @@ The agent provides an interactive CLI interface for coding assistance with file 
 ## ⏳ Phase 4: Future Enhancements (TODO)
 
 ### 🔲 Enhanced Tool System
-- [ ] JSON-based tool definitions (partial, hardcoded)
-- [ ] Structured tool calling (using OpenAI-style function calls)
+- [x] JSON-based tool definitions (partial, hardcoded)
+- [x] Structured tool calling (using OpenAI-style function calls)
 - [ ] Code execution in sandboxed environment
-- [ ] Git integration (status, diff, commit)
-- [ ] Search/grep functionality
+- [x] Git integration (status, diff, commit)
+- [x] Search/grep functionality
 
 ### 🔲 Improved LLM Integration
 - [ ] Better sampling strategies (nucleus, mirostat)
