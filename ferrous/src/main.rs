@@ -16,14 +16,20 @@ struct Args {
     #[arg(long, default_value = "8080")]
     port: u16,
 
-    #[arg(long, default_value_t = 0.4)]
+    #[arg(long, default_value_t = 0.2)]
     temperature: f32,
 
-    #[arg(long, default_value_t = 0.9)]
+    #[arg(long, default_value_t = 0.85)]
     top_p: f32,
+
+    #[arg(long, default_value_t = 0.05)]
+    min_p: f32,
 
     #[arg(long, default_value_t = 50)]
     top_k: i32,
+
+    #[arg(long, default_value_t = 1.15)]
+    repeat_penalty: f32,
 
     #[arg(long, default_value_t = 8192)]
     max_tokens: u32,
@@ -48,7 +54,13 @@ enum Commands {
         top_p: Option<f32>,
 
         #[arg(long)]
+        min_p: Option<f32>,
+
+        #[arg(long)]
         top_k: Option<i32>,
+
+        #[arg(long)]
+        repeat_penalty: Option<f32>,
 
         #[arg(long)]
         max_tokens: Option<u32>,
@@ -71,7 +83,9 @@ async fn main() -> Result<()> {
         text,
         temperature: q_temp,
         top_p: q_top_p,
+        min_p: q_min_p,
         top_k: q_top_k,
+        repeat_penalty: q_repeat_penalty,
         max_tokens: q_max,
     }) = args.command
     {
@@ -79,10 +93,12 @@ async fn main() -> Result<()> {
 
         let temp = q_temp.unwrap_or(args.temperature);
         let top_p = q_top_p.unwrap_or(args.top_p);
+        let min_p = q_min_p.unwrap_or(args.min_p);
         let top_k = q_top_k.unwrap_or(args.top_k);
+        let repeat_penalty = q_repeat_penalty.unwrap_or(args.repeat_penalty);
         let max_t = q_max.unwrap_or(args.max_tokens);
 
-        match agent.stream(&text, temp, top_p, top_k, max_t).await {
+        match agent.stream(&text, temp, top_p, min_p, top_k, repeat_penalty, max_t).await {
             Ok(resp) => {
                 println!("\n{}", "Final response:".bright_green());
                 pretty_print_response(&resp);
@@ -97,10 +113,9 @@ async fn main() -> Result<()> {
     }
 
     println!(
-        "\n{}",
-        "Coding agent ready. Type 'exit' to quit, 'clear' to reset, 'help' for commands."
-            .bright_cyan()
-            .bold()
+        "{} {}",
+        "Ferrous coding agent ready.".bright_cyan().bold(),
+        "Type 'help' for commands, 'exit' to quit.".dimmed()
     );
 
     let mut rl = DefaultEditor::new()?;
@@ -129,10 +144,11 @@ async fn main() -> Result<()> {
                                 input,
                                 args.temperature,
                                 args.top_p,
+                                args.min_p,
                                 args.top_k,
+                                args.repeat_penalty,
                                 args.max_tokens,
-                            )
-                            .await;
+                            ).await;
 
                         match result {
                             Ok(_) => println!(), // already printed

@@ -1,7 +1,8 @@
 # Coding Agent Implementation Plan
 
 ## Overview
-Build a coding agent in Rust using llama.cpp server for local LLM inference via HTTP API. The agent provides an interactive CLI interface for coding assistance with file operations and conversation memory.
+Build a coding agent in Rust using the llama.cpp server for local LLM inference via HTTP API.  
+The agent provides an interactive CLI interface for coding assistance with file operations and conversation memory.
 
 ---
 ## Implementation Steps

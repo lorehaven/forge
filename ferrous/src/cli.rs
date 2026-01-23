@@ -71,16 +71,80 @@ pub fn pretty_print_response(response: &str) {
 }
 
 pub fn print_help() {
-    println!("{}", "Available commands:".bold().bright_cyan());
-    println!("  exit/quit - Exit the program");
-    println!("  clear     - Clear conversation history");
-    println!("  help      - Show this help message");
-    println!("\n{}", "CLI Options:".bold().bright_cyan());
-    println!("  --model <PATH>        Path to GGUF model");
-    println!("  --port <PORT>         Server port (default: 8080)");
-    println!("  --temperature <0-2>   Sampling temperature (default: 0.4)");
-    println!("  --top-p <0-1>         Nucleus sampling (default: 0.9)");
-    println!("  --top-k <int>         Top-K sampling (default: 50)");
-    println!("  --max-tokens <int>    Max output tokens (default: 2048)");
-    println!("  query --text <QUERY>  Run a single query");
+    println!(
+        "{}",
+        "Ferrous – fast, local coding assistant"
+            .bright_cyan()
+            .bold()
+    );
+    println!();
+
+    println!(
+        "{}",
+        "REPL commands (type these at the >> prompt):"
+            .bright_yellow()
+            .bold()
+    );
+    println!("  exit / quit       Exit the program");
+    println!("  clear             Reset conversation history (keeps system prompt)");
+    println!("  help              Show this help message");
+    println!();
+
+    println!(
+        "{}",
+        "Important CLI flags (set when launching ferrous):"
+            .bright_yellow()
+            .bold()
+    );
+    println!("  --model <PATH>              Path to GGUF model file");
+    println!("  --port <PORT>               llama.cpp server port (default: 8080)");
+    println!("  --temperature <0.0–2.0>     Sampling temperature (default: 0.4)");
+    println!("  --top-p <0.0–1.0>           Nucleus sampling probability (default: 0.9)");
+    println!("  --top-k <int>               Top-K sampling (default: 50)");
+    println!("  --max-tokens <int>          Max output tokens (default: 8192)");
+    println!("  --debug                     Show llama-server logs and more verbose output");
+    println!();
+
+    println!("{}", "One-shot mode example:".bright_yellow().bold());
+    println!("  ferrous query --text \"explain this function in main.rs\" --temperature 0.2");
+    println!();
+
+    println!(
+        "{}",
+        "Tools the agent can use (model decides when to call them):"
+            .bright_yellow()
+            .bold()
+    );
+    println!("  read_file(path)");
+    println!("      → Reads and returns the full content of a file");
+    println!();
+    println!("  write_file(path, content)");
+    println!("      → Creates parent directories if needed and writes/overwrites the file");
+    println!();
+    println!("  list_directory([path])");
+    println!("      → Lists files and immediate subdirectories (default: current dir \".\")");
+    println!();
+    println!("  get_directory_tree([path])");
+    println!("      → Shows recursive directory structure (like tree command, default: \".\")");
+    println!();
+    println!("  create_directory(path)");
+    println!("      → Creates a directory and all necessary parent directories");
+    println!();
+    println!("  file_exists(path)");
+    println!("      → Returns \"true\" if file or directory exists, \"false\" otherwise");
+    println!();
+    println!("  replace_in_file(path, search, replace)");
+    println!("      → Replaces all exact occurrences of <search> with <replace> in the file");
+    println!();
+    println!("  git_status                  Show current git status (short format)");
+    println!("  git_diff([path])            Show changes (whole repo or specific path)");
+    println!("  git_add(path)               Stage file/directory (or \".\" for all)");
+    println!("  git_commit(message)         Create commit with given message");
+
+    println!("{}", "Quick tips:".bright_yellow().bold());
+    println!("  • Use 'clear' when the model starts repeating itself or forgetting recent changes");
+    println!("  • --debug helps a lot when debugging tool calls or prompt issues");
+    println!("  • Lower temperature (0.1–0.4) usually gives more precise code edits");
+    println!("  • Models with long context (≥16k) work noticeably better for projects");
+    println!();
 }

@@ -2,11 +2,30 @@ use crate::llm::is_port_open;
 use crate::tools::execute_tool;
 use anyhow::{Result, anyhow};
 use colored::Colorize;
+use once_cell::sync::Lazy;
 use reqwest::Client;
 use serde_json::{Value, json};
 use std::io::Write;
 use std::process::Child;
 use std::sync::{Arc, Mutex};
+
+static TOOLS_JSON: Lazy<Vec<Value>> = Lazy::new(|| {
+    let s = include_str!("../config/tools.json");
+    serde_json::from_str(s).expect("Invalid tools.json")
+});
+
+static PROMPT: &str = r#"You are a helpful coding assistant.
+You can use these tools when necessary: read_file, write_file, list_directory, get_directory_tree, create_directory, file_exists, replace_in_file, execute_shell_command.
+
+For execute_shell_command you may ONLY run cargo commands that start with one of these prefixes:
+  cargo check, cargo fmt, cargo clippy, cargo build, cargo run, cargo test, cargo bench, cargo doc, cargo metadata, cargo tree, cargo audit, cargo +nightly ...
+
+NEVER run rm, mv, cp, git push, curl, wget, sudo, or any destructive/unsafe commands — they will be rejected.
+
+Never use git push, git pull, git rebase, git merge or any command that talks to remote repositories.
+Only use git_status, git_diff, git_add, git_commit.
+
+Always stay inside the current working directory."#;
 
 pub struct Agent {
     client: Client,
@@ -16,7 +35,7 @@ pub struct Agent {
 }
 
 impl Agent {
-    /// Create new Agent + spawn llama-server
+    /// Create a new Agent and spawn llama-server
     pub async fn new(model: &str, port: u16, debug: bool) -> Result<Self> {
         use crate::llm::spawn_server;
 
@@ -24,16 +43,13 @@ impl Agent {
 
         Ok(Self {
             client: Client::new(),
-            messages: vec![json!({
-                "role": "system",
-                "content": "You are a helpful coding assistant. You can ONLY use these tools when necessary: read_file, write_file, list_directory, get_directory_tree. Do NOT invent new tool names. If no tool is needed, just respond normally. Always stay in the current working directory."
-            })],
+            messages: vec![json!({"role": "system", "content": PROMPT})],
             server: Some(server_handle),
             port,
         })
     }
 
-    /// Connect to existing server (no spawn)
+    /// Connect to an existing server (no spawn)
     pub async fn connect_only(port: u16) -> Result<Self> {
         use crate::llm::connect_only;
 
@@ -41,10 +57,7 @@ impl Agent {
 
         Ok(Self {
             client: Client::new(),
-            messages: vec![json!({
-                "role": "system",
-                "content": "You are a helpful coding assistant. You can ONLY use these tools when necessary: read_file, write_file, list_directory, get_directory_tree. Do NOT invent new tool names. If no tool is needed, just respond normally. Always stay in the current working directory."
-            })],
+            messages: vec![json!({"role": "system", "content": PROMPT})],
             server: None,
             port,
         })
@@ -55,32 +68,16 @@ impl Agent {
         user_input: &str,
         temperature: f32,
         top_p: f32,
+        min_p: f32,
         top_k: i32,
+        repeat_penalty: f32,
         max_tokens: u32,
     ) -> Result<String> {
         self.ensure_alive().await?;
 
         self.messages
             .push(json!({"role": "user", "content": user_input}));
-
-        let tools = vec![
-            json!({ "type": "function", "function": {
-                "name": "read_file", "description": "Read file content",
-                "parameters": { "type": "object", "properties": { "path": { "type": "string" } }, "required": ["path"] }
-            }}),
-            json!({ "type": "function", "function": {
-                "name": "write_file", "description": "Create directories if needed and write/overwrite file",
-                "parameters": { "type": "object", "properties": { "path": { "type": "string" }, "content": { "type": "string" } }, "required": ["path", "content"] }
-            }}),
-            json!({ "type": "function", "function": {
-                "name": "list_directory", "description": "List immediate files/directories in path",
-                "parameters": { "type": "object", "properties": { "path": { "type": "string" } } }
-            }}),
-            json!({ "type": "function", "function": {
-                "name": "get_directory_tree", "description": "Recursively list directory tree",
-                "parameters": { "type": "object", "properties": { "path": { "type": "string" } } }
-            }}),
-        ];
+        let tools = &*TOOLS_JSON;
 
         loop {
             let body = json!({
@@ -89,7 +86,9 @@ impl Agent {
                 "tool_choice": "auto",
                 "temperature": temperature,
                 "top_p": top_p,
+                "min_p": min_p,
                 "top_k": top_k,
+                "repeat_penalty": repeat_penalty,
                 "max_tokens": max_tokens,
                 "stream": false,
             });
@@ -119,7 +118,7 @@ impl Agent {
                     let args_str = func["arguments"].as_str().unwrap_or("{}");
 
                     if let Ok(args) = serde_json::from_str::<Value>(args_str) {
-                        match execute_tool(name, args) {
+                        match execute_tool(name, args).await {
                             Ok(result) => {
                                 self.messages.push(json!({
                                     "role": "tool",
