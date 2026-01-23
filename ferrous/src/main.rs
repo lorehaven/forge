@@ -31,7 +31,7 @@ struct Args {
     #[arg(long, default_value_t = 1.15)]
     repeat_penalty: f32,
 
-    #[arg(long, default_value_t = 31768)]
+    #[arg(long, default_value_t = 32768)]
     max_tokens: u32,
 
     #[arg(long, default_value = "false")]
