@@ -102,7 +102,7 @@ pub fn print_help() {
     println!("  --top-p <0.0–1.0>           Nucleus sampling probability (default: 0.9)");
     println!("  --top-k <int>               Top-K sampling (default: 50)");
     println!("  --max-tokens <int>          Max output tokens (default: 8192)");
-    println!("  --debug                     Show llama-server logs and more verbose output");
+    println!("  --debug                     Show llama-server logs and verbose output");
     println!();
 
     println!("{}", "One-shot mode example:".bright_yellow().bold());
@@ -115,36 +115,75 @@ pub fn print_help() {
             .bright_yellow()
             .bold()
     );
-    println!("  read_file(path)");
-    println!("      → Reads and returns the full content of a file");
+
+    println!("  get_file_info(path)");
+    println!("      → Metadata for file or directory (size, mtime, type, line count if text)");
     println!();
-    println!("  write_file(path, content)");
-    println!("      → Creates parent directories if needed and writes/overwrites the file");
-    println!();
-    println!("  list_directory([path])");
-    println!("      → Lists files and immediate subdirectories (default: current dir \".\")");
-    println!();
-    println!("  get_directory_tree([path])");
-    println!("      → Shows recursive directory structure (like tree command, default: \".\")");
-    println!();
-    println!("  create_directory(path)");
-    println!("      → Creates a directory and all necessary parent directories");
-    println!();
+
     println!("  file_exists(path)");
-    println!("      → Returns \"true\" if file or directory exists, \"false\" otherwise");
+    println!("      → Returns \"true\" if file or directory exists");
     println!();
+
+    println!("  read_file(path)");
+    println!("      → Reads and returns full file contents");
+    println!();
+
+    println!("  write_file(path, content)");
+    println!("      → Writes or overwrites file, creates parent directories");
+    println!();
+
+    println!("  append_to_file(path, content)");
+    println!("      → Appends content to file, creates file if missing");
+    println!();
+
     println!("  replace_in_file(path, search, replace)");
-    println!("      → Replaces all exact occurrences of <search> with <replace> in the file");
+    println!("      → Replaces all exact matches of <search> with <replace>");
     println!();
-    println!("  git_status                  Show current git status (short format)");
-    println!("  git_diff([path])            Show changes (whole repo or specific path)");
-    println!("  git_add(path)               Stage file/directory (or \".\" for all)");
-    println!("  git_commit(message)         Create commit with given message");
+
+    println!("  create_directory(path)");
+    println!("      → Creates directory and parents (idempotent)");
+    println!();
+
+    println!("  list_directory([path])");
+    println!("      → Lists files and directories (non-recursive, default: \".\")");
+    println!();
+
+    println!("  get_directory_tree([path])");
+    println!("      → Recursive directory tree (default: \".\")");
+    println!();
+
+    println!("  list_files_recursive([path], [extension])");
+    println!("      → Flat list of all regular files, optional extension filter");
+    println!();
+
+    println!("  search_text(pattern, [path], [case_sensitive])");
+    println!("      → Grep-like search for lines containing pattern");
+    println!();
+
+    println!("  execute_shell_command(command)");
+    println!("      → Execute allowed shell command (cargo only)");
+    println!();
+
+    println!("  git_status");
+    println!("      → Show git status (short)");
+    println!();
+
+    println!("  git_diff([path])");
+    println!("      → Show git diff (repo or specific path)");
+    println!();
+
+    println!("  git_add(path)");
+    println!("      → Stage file or directory for commit");
+    println!();
+
+    println!("  git_commit(message)");
+    println!("      → Create git commit with message");
+    println!();
 
     println!("{}", "Quick tips:".bright_yellow().bold());
-    println!("  • Use 'clear' when the model starts repeating itself or forgetting recent changes");
-    println!("  • --debug helps a lot when debugging tool calls or prompt issues");
-    println!("  • Lower temperature (0.1–0.4) usually gives more precise code edits");
-    println!("  • Models with long context (≥16k) work noticeably better for projects");
+    println!("  • Use 'clear' when the model starts repeating or losing context");
+    println!("  • --debug is useful for diagnosing tool calls and prompts");
+    println!("  • Lower temperature (0.1–0.4) yields more precise code edits");
+    println!("  • Long-context models (≥16k) perform better on multi-file projects");
     println!();
 }

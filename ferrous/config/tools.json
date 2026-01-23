@@ -2,59 +2,14 @@
   {
     "type": "function",
     "function": {
-      "name": "read_file",
-      "description": "Read the entire content of a file at the given path.",
+      "name": "get_file_info",
+      "description": "Get metadata about a file or directory (size, modified time, type, line count if text file)",
       "parameters": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "description": "Relative path from current working directory"
-          }
+          "path": { "type": "string" }
         },
-        "required": [
-          "path"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "write_file",
-      "description": "Write or overwrite a file, creating parent directories if necessary.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "path": {
-            "type": "string"
-          },
-          "content": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "path",
-          "content"
-        ]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "create_directory",
-      "description": "Create a directory (and parents if needed). Idempotent.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "path": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "path"
-        ]
+        "required": ["path"]
       }
     }
   },
@@ -62,17 +17,57 @@
     "type": "function",
     "function": {
       "name": "file_exists",
-      "description": "Check whether a file or directory exists.",
+      "description": "Check whether a file or directory exists",
       "parameters": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string"
-          }
+          "path": { "type": "string" }
         },
-        "required": [
-          "path"
-        ]
+        "required": ["path"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "read_file",
+      "description": "Read the entire content of a file",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" }
+        },
+        "required": ["path"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "write_file",
+      "description": "Write or overwrite a file, creating parent directories if necessary",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" },
+          "content": { "type": "string" }
+        },
+        "required": ["path", "content"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "append_to_file",
+      "description": "Append text to the end of a file (creates file if missing)",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" },
+          "content": { "type": "string" }
+        },
+        "required": ["path", "content"]
       }
     }
   },
@@ -80,79 +75,110 @@
     "type": "function",
     "function": {
       "name": "replace_in_file",
-      "description": "Replace all exact matches of search string with replacement in the file.",
+      "description": "Replace all exact matches of a string in a file",
       "parameters": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string"
-          },
-          "search": {
-            "type": "string"
-          },
-          "replace": {
-            "type": "string"
-          }
+          "path": { "type": "string" },
+          "search": { "type": "string" },
+          "replace": { "type": "string" }
         },
-        "required": [
-          "path",
-          "search",
-          "replace"
-        ]
+        "required": ["path", "search", "replace"]
       }
     }
   },
+  {
+    "type": "function",
+    "function": {
+      "name": "create_directory",
+      "description": "Create a directory (idempotent, creates parents)",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" }
+        },
+        "required": ["path"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "list_directory",
+      "description": "List files and directories in a directory (non-recursive)",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "get_directory_tree",
+      "description": "Get a recursive directory tree",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" }
+        }
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "list_files_recursive",
+      "description": "Return a flat list of all regular files in a directory tree",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string" },
+          "extension": { "type": "string" }
+        }
+      }
+    }
+  },
+
   {
     "type": "function",
     "function": {
       "name": "search_text",
-      "description": "Search for lines containing the pattern in files (grep-like).",
+      "description": "Search for lines containing a pattern (grep-like)",
       "parameters": {
         "type": "object",
         "properties": {
-          "pattern": {
-            "type": "string",
-            "description": "Text or simple regex to search for"
-          },
-          "path": {
-            "type": "string",
-            "description": "Directory or file to search in (default: .)"
-          },
-          "case_sensitive": {
-            "type": "boolean",
-            "default": false
-          }
+          "pattern": { "type": "string" },
+          "path": { "type": "string" },
+          "case_sensitive": { "type": "boolean" }
         },
-        "required": [
-          "pattern"
-        ]
+        "required": ["pattern"]
       }
     }
   },
+
   {
     "type": "function",
     "function": {
       "name": "execute_shell_command",
-      "description": "Execute one of the ALLOWED shell commands only (mostly cargo commands). Used for running tests, formatting, building, linting etc. Returns combined stdout + stderr.",
+      "description": "Execute an allowed shell command (cargo only)",
       "parameters": {
         "type": "object",
         "properties": {
-          "command": {
-            "type": "string",
-            "description": "The exact command to run (must start with one of the allowed prefixes)"
-          }
+          "command": { "type": "string" }
         },
-        "required": [
-          "command"
-        ]
+        "required": ["command"]
       }
     }
   },
+
   {
     "type": "function",
     "function": {
       "name": "git_status",
-      "description": "Get the current git status (modified, staged, untracked, etc.)",
+      "description": "Get git status (short)",
       "parameters": {
         "type": "object",
         "properties": {}
@@ -163,14 +189,11 @@
     "type": "function",
     "function": {
       "name": "git_diff",
-      "description": "Show git diff for working directory or specific path",
+      "description": "Show git diff",
       "parameters": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "description": "Optional: file or directory to diff"
-          }
+          "path": { "type": "string" }
         }
       }
     }
@@ -179,14 +202,11 @@
     "type": "function",
     "function": {
       "name": "git_add",
-      "description": "Stage file(s) or directory for commit (git add)",
+      "description": "Stage files for commit",
       "parameters": {
         "type": "object",
         "properties": {
-          "path": {
-            "type": "string",
-            "description": "Path to add (or \".\" for all changes)"
-          }
+          "path": { "type": "string" }
         },
         "required": ["path"]
       }
@@ -196,7 +216,7 @@
     "type": "function",
     "function": {
       "name": "git_commit",
-      "description": "Create a git commit with the provided message",
+      "description": "Create a git commit",
       "parameters": {
         "type": "object",
         "properties": {

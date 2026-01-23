@@ -1,9 +1,9 @@
 use anyhow::{Context, Result, anyhow};
 use serde_json::Value;
-use std::fs::{self, create_dir_all};
+use std::fs::{self, Metadata, create_dir_all};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::time::Duration;
+use std::time::{Duration, UNIX_EPOCH};
 use walkdir::WalkDir;
 
 pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
@@ -38,6 +38,41 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
 
     match name {
         // ──────────────────────────────────────────────
+        "get_file_info" => {
+            let raw_path: String = serde_json::from_value(args["path"].clone())?;
+            let path = clean_path(&raw_path);
+            let full = resolve_dir(&cwd, &path)?;
+
+            let meta: Metadata = full
+                .metadata()
+                .with_context(|| format!("Cannot get metadata for {}", path))?;
+
+            let mut lines = vec![
+                format!("Path: {}", path),
+                format!("Exists: {}", full.exists()),
+                format!("Is directory: {}", meta.is_dir()),
+                format!("Is file: {}", meta.is_file()),
+                format!("Size: {} bytes", meta.len()),
+            ];
+
+            if let Ok(modified) = meta.modified()
+                && let Ok(duration) = modified.duration_since(UNIX_EPOCH) {
+                let secs = duration.as_secs();
+                lines.push(format!("Last modified: {} (unix timestamp)", secs));
+            }
+
+            if meta.is_file()
+                && full.extension().is_some_and(|e| {
+                    e == "rs" || e == "toml" || e == "md" || e == "txt"
+                })
+                && let Ok(content) = fs::read_to_string(&full) {
+                let line_count = content.lines().count();
+                lines.push(format!("Line count: {}", line_count));
+            }
+
+            Ok(lines.join("\n"))
+        }
+        // ──────────────────────────────────────────────
         "file_exists" => {
             let raw_path: String = serde_json::from_value(args["path"].clone())?;
             let path = clean_path(&raw_path);
@@ -47,6 +82,51 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
             } else {
                 "false".to_string()
             })
+        }
+        // ──────────────────────────────────────────────
+        "list_files_recursive" => {
+            let base = args["path"].as_str().unwrap_or(".");
+            let ext_filter = args["extension"].as_str();
+
+            let full = resolve_dir(&cwd, &clean_path(base))?;
+
+            let mut files = Vec::new();
+
+            for entry in WalkDir::new(&full)
+                .into_iter()
+                .filter_entry(|e| {
+                    let name = e.file_name().to_string_lossy();
+                    !name.starts_with('.') && ![".git", "target", "node_modules"].contains(&&*name)
+                })
+                .filter_map(|e| e.ok())
+            {
+                if entry.file_type().is_file() {
+                    if let Some(ext) = ext_filter {
+                        if let Some(file_ext) = entry.path().extension().and_then(|s| s.to_str()) {
+                            if file_ext != ext {
+                                continue;
+                            }
+                        } else {
+                            continue;
+                        }
+                    }
+
+                    let rel = entry.path().strip_prefix(&cwd).unwrap_or(entry.path());
+                    files.push(rel.to_string_lossy().into_owned());
+                }
+            }
+
+            files.sort();
+
+            if files.is_empty() {
+                Ok("No matching files found.".to_string())
+            } else {
+                Ok(format!(
+                    "Found {} files:\n{}",
+                    files.len(),
+                    files.join("\n")
+                ))
+            }
         }
         // ──────────────────────────────────────────────
         "replace_in_file" => {
@@ -182,32 +262,71 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
 
             Ok(format!("Created directory: {}", path))
         }
+        // ──────────────────────────────────────────────
+        "append_to_file" => {
+            let raw_path: String = serde_json::from_value(args["path"].clone())?;
+            let content: String = serde_json::from_value(args["content"].clone())?;
+
+            let path = clean_path(&raw_path);
+            let full_path = resolve_parent_for_write(&cwd, &path)?;
+
+            // Create parent directories if needed
+            if let Some(parent) = full_path.parent() {
+                create_dir_all(parent)?;
+            }
+
+            use std::fs::OpenOptions;
+            use std::io::Write;
+
+            let mut file = OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open(&full_path)
+                .with_context(|| format!("Cannot open/append to {}", path))?;
+
+            writeln!(file, "{}", content)
+                .with_context(|| format!("Failed to append to {}", path))?;
+
+            Ok(format!("Appended {} bytes to {}", content.len(), path))
+        }
+        // ──────────────────────────────────────────────
         "search_text" => {
             let pattern: String = serde_json::from_value(args["pattern"].clone())?;
-            let path = args["path"].as_str().unwrap_or(".");
+            let path = args["path"].as_str().unwrap_or(".").to_string();
             let case_sensitive = args["case_sensitive"].as_bool().unwrap_or(false);
 
+            let path_clean = clean_path(&path);
+            let full_path = resolve_dir(&cwd, &path_clean)?;
+
+            // Use `grep` via subprocess — most reliable and fast
             let mut cmd = Command::new("grep");
-            cmd.arg("-r")
-                .arg("--color=never")
-                .arg(if case_sensitive { "-i" } else { "" })
+            cmd.arg("-r") // recursive
+                .arg("--color=never") // plain text output
+                .arg("-n") // show line numbers
+                .arg("-I") // skip binary files
+                .arg("-F") // fixed string (not regex) — safer for model
                 .arg(&pattern)
-                .arg(path);
+                .arg(&full_path);
+
+            if !case_sensitive {
+                cmd.arg("-i");
+            }
 
             let output = cmd
                 .output()
-                .context("grep command failed – is grep installed?")?;
+                .context("grep command failed. Is grep installed?")?;
 
             let result = if output.status.success() {
                 String::from_utf8_lossy(&output.stdout).to_string()
             } else {
-                format!(
-                    "No matches or error:\n{}",
-                    String::from_utf8_lossy(&output.stderr)
-                )
+                String::from_utf8_lossy(&output.stderr).to_string()
             };
 
-            Ok(result)
+            if result.trim().is_empty() {
+                Ok("No matches found.".to_string())
+            } else {
+                Ok(format!("Search results:\n{}", result))
+            }
         }
         // ──────────────────────────────────────────────
         "execute_shell_command" => {
@@ -300,7 +419,10 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
                     Ok(format!("Git status:\n{}", stdout))
                 }
             } else {
-                Err(anyhow!("git status failed:\n{}", String::from_utf8_lossy(&output.stderr)))
+                Err(anyhow!(
+                    "git status failed:\n{}",
+                    String::from_utf8_lossy(&output.stderr)
+                ))
             }
         }
         // ──────────────────────────────────────────────
@@ -328,7 +450,10 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
                     Ok(format!("Git diff:\n{}", stdout))
                 }
             } else {
-                Err(anyhow!("git diff failed:\n{}", String::from_utf8_lossy(&output.stderr)))
+                Err(anyhow!(
+                    "git diff failed:\n{}",
+                    String::from_utf8_lossy(&output.stderr)
+                ))
             }
         }
         // ──────────────────────────────────────────────
@@ -347,7 +472,10 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
             if output.status.success() {
                 Ok(format!("Staged: {}", path))
             } else {
-                Err(anyhow!("git add failed:\n{}", String::from_utf8_lossy(&output.stderr)))
+                Err(anyhow!(
+                    "git add failed:\n{}",
+                    String::from_utf8_lossy(&output.stderr)
+                ))
             }
         }
         // ──────────────────────────────────────────────
@@ -370,7 +498,10 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
                 let stdout = String::from_utf8_lossy(&output.stdout).to_string();
                 Ok(format!("Commit created.\n{}", stdout))
             } else {
-                Err(anyhow!("git commit failed:\n{}", String::from_utf8_lossy(&output.stderr)))
+                Err(anyhow!(
+                    "git commit failed:\n{}",
+                    String::from_utf8_lossy(&output.stderr)
+                ))
             }
         }
         // ──────────────────────────────────────────────

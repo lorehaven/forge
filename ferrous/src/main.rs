@@ -98,7 +98,10 @@ async fn main() -> Result<()> {
         let repeat_penalty = q_repeat_penalty.unwrap_or(args.repeat_penalty);
         let max_t = q_max.unwrap_or(args.max_tokens);
 
-        match agent.stream(&text, temp, top_p, min_p, top_k, repeat_penalty, max_t).await {
+        match agent
+            .stream(&text, temp, top_p, min_p, top_k, repeat_penalty, max_t)
+            .await
+        {
             Ok(resp) => {
                 println!("\n{}", "Final response:".bright_green());
                 pretty_print_response(&resp);
@@ -148,7 +151,8 @@ async fn main() -> Result<()> {
                                 args.top_k,
                                 args.repeat_penalty,
                                 args.max_tokens,
-                            ).await;
+                            )
+                            .await;
 
                         match result {
                             Ok(_) => println!(), // already printed

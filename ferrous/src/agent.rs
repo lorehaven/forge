@@ -16,6 +16,7 @@ static TOOLS_JSON: Lazy<Vec<Value>> = Lazy::new(|| {
 
 static PROMPT: &str = r#"You are a helpful coding assistant.
 You can use these tools when necessary: read_file, write_file, list_directory, get_directory_tree, create_directory, file_exists, replace_in_file, execute_shell_command.
+You can use search_text to find code snippets, function names, or error messages across files.
 
 For execute_shell_command you may ONLY run cargo commands that start with one of these prefixes:
   cargo check, cargo fmt, cargo clippy, cargo build, cargo run, cargo test, cargo bench, cargo doc, cargo metadata, cargo tree, cargo audit, cargo +nightly ...
@@ -63,6 +64,7 @@ impl Agent {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn stream(
         &mut self,
         user_input: &str,
