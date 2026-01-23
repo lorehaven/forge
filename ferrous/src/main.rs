@@ -16,7 +16,7 @@ struct Args {
     #[arg(long, default_value = "8080")]
     port: u16,
 
-    #[arg(long, default_value_t = 0.2)]
+    #[arg(long, default_value_t = 0.01)]
     temperature: f32,
 
     #[arg(long, default_value_t = 0.85)]
@@ -31,7 +31,7 @@ struct Args {
     #[arg(long, default_value_t = 1.15)]
     repeat_penalty: f32,
 
-    #[arg(long, default_value_t = 8192)]
+    #[arg(long, default_value_t = 31768)]
     max_tokens: u32,
 
     #[arg(long, default_value = "false")]
