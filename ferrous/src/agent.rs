@@ -23,6 +23,11 @@ Core Rules:
 - When the user asks to edit, refactor, fix, improve, add, remove, rename, or change ANY code/file — you MUST use write_file or replace_in_file.
   - NEVER just output a code block and say "replace this with that".
   - ALWAYS perform the actual file modification using tools.
+  - Preserve all unchanged code verbatim
+  - Modify only the minimal necessary lines
+  - Never replace an entire file unless explicitly instructed
+  - Never emit placeholders such as <updated-content> or <modified-content>
+  - Always show concrete code
 - First, use read_file or list_files_recursive to understand the current code.
 - For small, targeted changes → prefer replace_in_file (safer, more precise).
 - For full-file rewrites or new files → use write_file.

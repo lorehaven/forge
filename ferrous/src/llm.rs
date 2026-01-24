@@ -21,7 +21,7 @@ pub async fn spawn_server(
     let max_tokens_str = max_tokens.to_string();
     let temperature_str = temperature.to_string();
     let repeat_penalty_str = repeat_penalty.to_string();
-    let mut args_vec = vec![
+    let args_vec = vec![
         "-m",
         model,
         "--device",
@@ -46,10 +46,6 @@ pub async fn spawn_server(
         "--mlock",
         "--no-mmap",
     ];
-
-    if debug {
-        args_vec.push("--verbose");
-    }
 
     let mut child = Command::new("llama-server")
         .env("GGML_VULKAN_DEVICE", "0")
@@ -93,7 +89,6 @@ pub async fn spawn_server(
 /// Connect to an already running server (no spawn)
 pub async fn connect_only(port: u16) -> Result<()> {
     println!("Reusing existing llama-server on port {}", port);
-    // We don't need to return anything special here – just confirm port is open
     if !is_port_open("127.0.0.1", port).await {
         return Err(anyhow!("No server listening on port {}", port));
     }
