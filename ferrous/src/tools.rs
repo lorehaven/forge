@@ -56,16 +56,18 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
             ];
 
             if let Ok(modified) = meta.modified()
-                && let Ok(duration) = modified.duration_since(UNIX_EPOCH) {
+                && let Ok(duration) = modified.duration_since(UNIX_EPOCH)
+            {
                 let secs = duration.as_secs();
                 lines.push(format!("Last modified: {} (unix timestamp)", secs));
             }
 
             if meta.is_file()
-                && full.extension().is_some_and(|e| {
-                    e == "rs" || e == "toml" || e == "md" || e == "txt"
-                })
-                && let Ok(content) = fs::read_to_string(&full) {
+                && full
+                    .extension()
+                    .is_some_and(|e| e == "rs" || e == "toml" || e == "md" || e == "txt")
+                && let Ok(content) = fs::read_to_string(&full)
+            {
                 let line_count = content.lines().count();
                 lines.push(format!("Line count: {}", line_count));
             }

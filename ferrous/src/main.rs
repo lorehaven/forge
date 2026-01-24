@@ -3,38 +3,64 @@ use clap::{Parser, Subcommand};
 use colored::Colorize;
 use ferrous::agent::Agent;
 use ferrous::cli::{pretty_print_response, print_help};
+use ferrous::config;
 use ferrous::llm::is_port_open;
 use rustyline::DefaultEditor;
+
+#[derive(Clone, Copy, PartialEq)]
+struct Params {
+    model: &'static str,
+    port: u16,
+    temperature: f32,
+    top_p: f32,
+    min_p: f32,
+    top_k: i32,
+    repeat_penalty: f32,
+    max_tokens: u32,
+    debug: bool,
+}
+
+const DEFAULT_PARAMS: Params = Params {
+    model: "models/model.gguf",
+    port: 8080,
+    temperature: 0.01,
+    top_p: 0.85,
+    min_p: 0.05,
+    top_k: 50,
+    repeat_penalty: 1.15,
+    max_tokens: 32768,
+    debug: false,
+};
 
 #[derive(Parser)]
 #[command(name = "ferrous")]
 #[command(about = "Local coding assistant powered by llama.cpp server")]
 struct Args {
-    #[arg(long, default_value = "models/model.gguf")]
+    #[arg(long, default_value = DEFAULT_PARAMS.model)]
     model: String,
 
-    #[arg(long, default_value = "8080")]
+    #[arg(long, default_value_t = DEFAULT_PARAMS.port)]
     port: u16,
 
-    #[arg(long, default_value_t = 0.01)]
+    #[arg(long, default_value_t = DEFAULT_PARAMS.temperature)]
     temperature: f32,
 
-    #[arg(long, default_value_t = 0.85)]
+    #[arg(long, default_value_t = DEFAULT_PARAMS.top_p)]
     top_p: f32,
 
-    #[arg(long, default_value_t = 0.05)]
+    #[arg(long, default_value_t = DEFAULT_PARAMS.min_p)]
     min_p: f32,
 
-    #[arg(long, default_value_t = 50)]
+    #[arg(long, default_value_t = DEFAULT_PARAMS.top_k)]
     top_k: i32,
 
-    #[arg(long, default_value_t = 1.15)]
+    #[arg(long, default_value_t = DEFAULT_PARAMS.repeat_penalty)]
     repeat_penalty: f32,
 
-    #[arg(long, default_value_t = 32768)]
+    #[arg(long, default_value_t = DEFAULT_PARAMS.max_tokens)]
     max_tokens: u32,
 
-    #[arg(long, default_value = "false")]
+    #[arg(long, default_value_t = DEFAULT_PARAMS.debug)]
     debug: bool,
 
     #[command(subcommand)]
@@ -67,9 +93,36 @@ enum Commands {
     },
 }
 
+// Helper macro — applies config value only if CLI argument is still at default
+macro_rules! apply_if_default {
+    ($args:expr, $field:ident, $defaults:expr, $conf:expr) => {
+        if $args.$field == $defaults.$field {
+            if let Some(v) = $conf.$field {
+                $args.$field = v;
+            }
+        }
+    };
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
-    let args = Args::parse();
+    let mut args = Args::parse();
+    let conf = config::load();
+    config::print_loaded(&conf, args.debug);
+
+    apply_if_default!(args, model, DEFAULT_PARAMS, conf);
+    apply_if_default!(args, port, DEFAULT_PARAMS, conf);
+    apply_if_default!(args, temperature, DEFAULT_PARAMS, conf);
+    apply_if_default!(args, top_p, DEFAULT_PARAMS, conf);
+    apply_if_default!(args, min_p, DEFAULT_PARAMS, conf);
+    apply_if_default!(args, top_k, DEFAULT_PARAMS, conf);
+    apply_if_default!(args, repeat_penalty, DEFAULT_PARAMS, conf);
+    apply_if_default!(args, max_tokens, DEFAULT_PARAMS, conf);
+    if !args.debug
+        && let Some(debug) = conf.debug
+    {
+        args.debug = debug;
+    }
 
     let server_running = is_port_open("127.0.0.1", args.port).await;
 
@@ -79,6 +132,7 @@ async fn main() -> Result<()> {
         Agent::new(&args.model, args.port, args.debug).await?
     };
 
+    // ── One-shot query mode ───────────────────────────────────────────────
     if let Some(Commands::Query {
         text,
         temperature: q_temp,
@@ -109,12 +163,13 @@ async fn main() -> Result<()> {
             Err(e) => eprintln!("{} {}", "Error:".red().bold(), e),
         }
 
-        if let Some(server) = agent.server {
+        if let Some(server) = agent.server.take() {
             let _ = server.lock().unwrap().kill();
         }
         return Ok(());
     }
 
+    // ── REPL mode ────────────────────────────────────────────────────────
     println!(
         "{} {}",
         "Ferrous coding agent ready.".bright_cyan().bold(),
@@ -131,7 +186,7 @@ async fn main() -> Result<()> {
                 if input.is_empty() {
                     continue;
                 }
-                rl.add_history_entry(line.clone())?;
+                let _ = rl.add_history_entry(&line);
 
                 match input.to_lowercase().as_str() {
                     "exit" | "quit" => break,
@@ -142,7 +197,7 @@ async fn main() -> Result<()> {
                     "help" => print_help(),
                     _ => {
                         println!("{}", "Thinking...".dimmed());
-                        let result = agent
+                        match agent
                             .stream(
                                 input,
                                 args.temperature,
@@ -152,20 +207,24 @@ async fn main() -> Result<()> {
                                 args.repeat_penalty,
                                 args.max_tokens,
                             )
-                            .await;
-
-                        match result {
-                            Ok(_) => println!(), // already printed
+                            .await
+                        {
+                            Ok(_) => println!(),
                             Err(e) => eprintln!("{} {}", "Error:".red().bold(), e),
                         }
                     }
                 }
             }
-            Err(_) => break,
+            Err(rustyline::error::ReadlineError::Interrupted)
+            | Err(rustyline::error::ReadlineError::Eof) => break,
+            Err(err) => {
+                eprintln!("Readline error: {}", err);
+                break;
+            }
         }
     }
 
-    if let Some(server) = agent.server {
+    if let Some(server) = agent.server.take() {
         let _ = server.lock().unwrap().kill();
     }
 

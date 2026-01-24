@@ -180,6 +180,14 @@ pub fn print_help() {
     println!("      → Create git commit with message");
     println!();
 
+    println!("{}", "Config File:".bright_yellow().bold());
+    println!("  • .ferrous.toml in current directory for project-specific defaults");
+    println!("  • Example:");
+    println!("      model = \"path/to/my-model.gguf\"");
+    println!("      temperature = 0.2");
+    println!("      debug = true");
+    println!();
+
     println!("{}", "Quick tips:".bright_yellow().bold());
     println!("  • Use 'clear' when the model starts repeating or losing context");
     println!("  • --debug is useful for diagnosing tool calls and prompts");

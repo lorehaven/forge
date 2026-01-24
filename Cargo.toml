@@ -45,6 +45,10 @@ features = ["json", "stream", "rustls-tls"]
 [workspace.dependencies.rustyline]
 version = "17.0"
 
+[workspace.dependencies.serde]
+version = "1.0"
+features = ["derive"]
+
 [workspace.dependencies.serde_json]
 version = "1.0"
 
