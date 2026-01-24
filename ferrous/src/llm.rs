@@ -9,8 +9,18 @@ pub async fn is_port_open(host: &str, port: u16) -> bool {
 }
 
 /// Spawns llama-server and waits until it's ready (HTTP endpoint responds)
-pub async fn spawn_server(model: &str, port: u16, debug: bool) -> Result<Arc<Mutex<Child>>> {
+pub async fn spawn_server(
+    model: &str,
+    max_tokens: u32,
+    temperature: f32,
+    repeat_penalty: f32,
+    port: u16,
+    debug: bool,
+) -> Result<Arc<Mutex<Child>>> {
     let port_str = port.to_string();
+    let max_tokens_str = max_tokens.to_string();
+    let temperature_str = temperature.to_string();
+    let repeat_penalty_str = repeat_penalty.to_string();
     let mut args_vec = vec![
         "-m",
         model,
@@ -21,11 +31,11 @@ pub async fn spawn_server(model: &str, port: u16, debug: bool) -> Result<Arc<Mut
         "--host",
         "127.0.0.1",
         "-c",
-        "8192",
+        &max_tokens_str,
         "--temp",
-        "0",
+        &temperature_str,
         "--repeat-penalty",
-        "1.1",
+        &repeat_penalty_str,
         "--jinja",
         "--flash-attn",
         "auto",

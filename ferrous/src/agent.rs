@@ -49,10 +49,18 @@ pub struct Agent {
 
 impl Agent {
     /// Create a new Agent and spawn llama-server
-    pub async fn new(model: &str, port: u16, debug: bool) -> Result<Self> {
+    pub async fn new(
+        model: &str,
+        max_tokens: u32,
+        temperature: f32,
+        repeat_penalty: f32,
+        port: u16,
+        debug: bool,
+    ) -> Result<Self> {
         use crate::llm::spawn_server;
 
-        let server_handle = spawn_server(model, port, debug).await?;
+        let server_handle =
+            spawn_server(model, max_tokens, temperature, repeat_penalty, port, debug).await?;
 
         Ok(Self {
             client: Client::new(),

@@ -157,7 +157,15 @@ async fn main() -> Result<()> {
     let mut agent = if server_running {
         Agent::connect_only(args.port).await?
     } else {
-        Agent::new(&args.model, args.port, args.debug).await?
+        Agent::new(
+            &args.model,
+            args.max_tokens,
+            args.temperature,
+            args.repeat_penalty,
+            args.port,
+            args.debug,
+        )
+        .await?
     };
 
     // ── One-shot query mode ───────────────────────────────────────────────
