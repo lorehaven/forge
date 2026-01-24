@@ -12,6 +12,9 @@ pub struct Config {
     pub top_k: Option<i32>,
     pub repeat_penalty: Option<f32>,
     pub max_tokens: Option<u32>,
+    pub mirostat: Option<i32>,
+    pub mirostat_tau: Option<f32>,
+    pub mirostat_eta: Option<f32>,
     pub debug: Option<bool>,
 }
 
@@ -62,6 +65,9 @@ pub fn print_loaded(config: &Config, is_debug: bool) {
         && config.top_k.is_none()
         && config.repeat_penalty.is_none()
         && config.max_tokens.is_none()
+        && config.mirostat.is_none()
+        && config.mirostat_tau.is_none()
+        && config.mirostat_eta.is_none()
         && config.debug.is_none()
     {
         println!("{}", "No custom settings found in .ferrous.toml".dimmed());
@@ -120,6 +126,27 @@ pub fn print_loaded(config: &Config, is_debug: bool) {
             "  {:<14} = {}",
             "max_tokens".bright_blue(),
             v.to_string().bright_green()
+        );
+    }
+    if let Some(v) = config.mirostat {
+        println!(
+            "  {:<14} = {}",
+            "mirostat".bright_blue(),
+            v.to_string().bright_green()
+        );
+    }
+    if let Some(v) = config.mirostat_tau {
+        println!(
+            "  {:<14} = {}",
+            "mirostat_tau".bright_blue(),
+            format!("{:.3}", v).bright_yellow()
+        );
+    }
+    if let Some(v) = config.mirostat_eta {
+        println!(
+            "  {:<14} = {}",
+            "mirostat_eta".bright_blue(),
+            format!("{:.3}", v).bright_yellow()
         );
     }
     if let Some(v) = config.debug {

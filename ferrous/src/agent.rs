@@ -74,6 +74,9 @@ impl Agent {
         top_k: i32,
         repeat_penalty: f32,
         max_tokens: u32,
+        mirostat: i32,
+        mirostat_tau: f32,
+        mirostat_eta: f32,
     ) -> Result<String> {
         self.ensure_alive().await?;
 
@@ -87,12 +90,15 @@ impl Agent {
                 "tools": &tools,
                 "tool_choice": "auto",
                 "temperature": temperature,
-                "top_p": top_p,
+                "top_p": if mirostat > 0 { 1. } else { top_p },
                 "min_p": min_p,
-                "top_k": top_k,
+                "top_k": if mirostat > 0 { 0 } else { top_k },
                 "repeat_penalty": repeat_penalty,
                 "max_tokens": max_tokens,
                 "stream": false,
+                "mirostat": mirostat,
+                "mirostat_tau": mirostat_tau,
+                "mirostat_eta": mirostat_eta,
             });
 
             let resp: Value = self

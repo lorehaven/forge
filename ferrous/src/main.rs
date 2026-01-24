@@ -17,6 +17,9 @@ struct Params {
     top_k: i32,
     repeat_penalty: f32,
     max_tokens: u32,
+    mirostat: i32,
+    mirostat_tau: f32,
+    mirostat_eta: f32,
     debug: bool,
 }
 
@@ -29,6 +32,9 @@ const DEFAULT_PARAMS: Params = Params {
     top_k: 50,
     repeat_penalty: 1.15,
     max_tokens: 32768,
+    mirostat: 0,
+    mirostat_tau: 5.0,
+    mirostat_eta: 0.1,
     debug: false,
 };
 
@@ -60,6 +66,15 @@ struct Args {
     #[arg(long, default_value_t = DEFAULT_PARAMS.max_tokens)]
     max_tokens: u32,
 
+    #[arg(long, default_value_t = DEFAULT_PARAMS.mirostat)]
+    mirostat: i32,
+
+    #[arg(long, default_value_t = DEFAULT_PARAMS.mirostat_tau)]
+    mirostat_tau: f32,
+
+    #[arg(long, default_value_t = DEFAULT_PARAMS.mirostat_eta)]
+    mirostat_eta: f32,
+
     #[arg(long, default_value_t = DEFAULT_PARAMS.debug)]
     debug: bool,
 
@@ -90,6 +105,15 @@ enum Commands {
 
         #[arg(long)]
         max_tokens: Option<u32>,
+
+        #[arg(long)]
+        mirostat: Option<i32>,
+
+        #[arg(long)]
+        mirostat_tau: Option<f32>,
+
+        #[arg(long)]
+        mirostat_eta: Option<f32>,
     },
 }
 
@@ -118,6 +142,10 @@ async fn main() -> Result<()> {
     apply_if_default!(args, top_k, DEFAULT_PARAMS, conf);
     apply_if_default!(args, repeat_penalty, DEFAULT_PARAMS, conf);
     apply_if_default!(args, max_tokens, DEFAULT_PARAMS, conf);
+    apply_if_default!(args, mirostat, DEFAULT_PARAMS, conf);
+    apply_if_default!(args, mirostat_tau, DEFAULT_PARAMS, conf);
+    apply_if_default!(args, mirostat_eta, DEFAULT_PARAMS, conf);
+
     if !args.debug
         && let Some(debug) = conf.debug
     {
@@ -141,6 +169,9 @@ async fn main() -> Result<()> {
         top_k: q_top_k,
         repeat_penalty: q_repeat_penalty,
         max_tokens: q_max,
+        mirostat: q_mirostat,
+        mirostat_tau: q_mirostat_tau,
+        mirostat_eta: q_mirostat_eta,
     }) = args.command
     {
         println!("{}", "Processing query...".dimmed());
@@ -151,9 +182,23 @@ async fn main() -> Result<()> {
         let top_k = q_top_k.unwrap_or(args.top_k);
         let repeat_penalty = q_repeat_penalty.unwrap_or(args.repeat_penalty);
         let max_t = q_max.unwrap_or(args.max_tokens);
+        let mirostat = q_mirostat.unwrap_or(args.mirostat);
+        let mirostat_tau = q_mirostat_tau.unwrap_or(args.mirostat_tau);
+        let mirostat_eta = q_mirostat_eta.unwrap_or(args.mirostat_eta);
 
         match agent
-            .stream(&text, temp, top_p, min_p, top_k, repeat_penalty, max_t)
+            .stream(
+                &text,
+                temp,
+                top_p,
+                min_p,
+                top_k,
+                repeat_penalty,
+                max_t,
+                mirostat,
+                mirostat_tau,
+                mirostat_eta,
+            )
             .await
         {
             Ok(resp) => {
@@ -206,6 +251,9 @@ async fn main() -> Result<()> {
                                 args.top_k,
                                 args.repeat_penalty,
                                 args.max_tokens,
+                                args.mirostat,
+                                args.mirostat_tau,
+                                args.mirostat_eta,
                             )
                             .await
                         {

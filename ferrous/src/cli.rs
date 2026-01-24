@@ -103,6 +103,9 @@ pub fn print_help() {
     println!("  --top-k <int>               Top-K sampling (default: 50)");
     println!("  --max-tokens <int>          Max output tokens (default: 8192)");
     println!("  --debug                     Show llama-server logs and verbose output");
+    println!("  --mirostat <0-2>            Mirostat mode (0=off, 1=v1, 2=v2) (default: 0)");
+    println!("  --mirostat-tau <float>      Target surprise for Mirostat (default: 5.0)");
+    println!("  --mirostat-eta <float>      Adaptation rate for Mirostat (default: 0.1)");
     println!();
 
     println!("{}", "One-shot mode example:".bright_yellow().bold());
@@ -186,12 +189,16 @@ pub fn print_help() {
     println!("      model = \"path/to/my-model.gguf\"");
     println!("      temperature = 0.2");
     println!("      debug = true");
+    println!("      mirostat = 2");
+    println!("      mirostat_tau = 5.0");
+    println!("      mirostat_eta = 0.1");
     println!();
 
     println!("{}", "Quick tips:".bright_yellow().bold());
     println!("  • Use 'clear' when the model starts repeating or losing context");
     println!("  • --debug is useful for diagnosing tool calls and prompts");
     println!("  • Lower temperature (0.1–0.4) yields more precise code edits");
+    println!("  • Enable Mirostat (e.g., 2) for more natural, adaptive sampling on long responses");
     println!("  • Long-context models (≥16k) perform better on multi-file projects");
     println!();
 }

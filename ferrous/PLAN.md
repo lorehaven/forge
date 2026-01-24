@@ -88,7 +88,7 @@ The agent provides an interactive CLI interface for coding assistance with file 
 - [x] Search/grep functionality
 
 ### 🔲 Improved LLM Integration
-- [ ] Better sampling strategies (nucleus, mirostat)
+- [x] Better sampling strategies (mirostat)
 - [ ] Streaming token generation
 - [ ] Multi-turn conversation improvements
 - [ ] Custom system prompts from file
