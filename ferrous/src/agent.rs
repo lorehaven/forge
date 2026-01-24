@@ -113,8 +113,6 @@ impl Agent {
                 "mirostat_eta": mirostat_eta,
             });
 
-            println!("Effective server settings: {body:?}");
-
             let resp: Value = self
                 .client
                 .post(format!(
