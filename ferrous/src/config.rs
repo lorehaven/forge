@@ -18,6 +18,19 @@ pub struct Config {
     pub debug: Option<bool>,
 }
 
+#[derive(Clone)]
+struct ConfigField {
+    name: &'static str,
+    value: Option<String>,
+    color: colored::Color,
+}
+
+impl ConfigField {
+    fn new(name: &'static str, value: Option<String>, color: colored::Color) -> Self {
+        ConfigField { name, value, color }
+    }
+}
+
 /// Loads .ferrous.toml from current directory (if exists)
 pub fn load() -> Config {
     let config_path = match std::env::current_dir() {
@@ -76,89 +89,25 @@ pub fn print_loaded(config: &Config, is_debug: bool) {
 
     println!("{}", "Loaded from .ferrous.toml:".bright_black().bold());
 
-    if let Some(v) = &config.model {
-        println!("  {:<14} = {}", "model".bright_blue(), v.bright_cyan());
-    }
-    if let Some(v) = config.port {
-        println!(
-            "  {:<14} = {}",
-            "port".bright_blue(),
-            v.to_string().bright_green()
-        );
-    }
-    if let Some(v) = config.temperature {
-        println!(
-            "  {:<14} = {}",
-            "temperature".bright_blue(),
-            format!("{:.3}", v).bright_yellow()
-        );
-    }
-    if let Some(v) = config.top_p {
-        println!(
-            "  {:<14} = {}",
-            "top_p".bright_blue(),
-            format!("{:.3}", v).bright_yellow()
-        );
-    }
-    if let Some(v) = config.min_p {
-        println!(
-            "  {:<14} = {}",
-            "min_p".bright_blue(),
-            format!("{:.3}", v).bright_yellow()
-        );
-    }
-    if let Some(v) = config.top_k {
-        println!(
-            "  {:<14} = {}",
-            "top_k".bright_blue(),
-            v.to_string().bright_green()
-        );
-    }
-    if let Some(v) = config.repeat_penalty {
-        println!(
-            "  {:<14} = {}",
-            "repeat_penalty".bright_blue(),
-            format!("{:.3}", v).bright_yellow()
-        );
-    }
-    if let Some(v) = config.max_tokens {
-        println!(
-            "  {:<14} = {}",
-            "max_tokens".bright_blue(),
-            v.to_string().bright_green()
-        );
-    }
-    if let Some(v) = config.mirostat {
-        println!(
-            "  {:<14} = {}",
-            "mirostat".bright_blue(),
-            v.to_string().bright_green()
-        );
-    }
-    if let Some(v) = config.mirostat_tau {
-        println!(
-            "  {:<14} = {}",
-            "mirostat_tau".bright_blue(),
-            format!("{:.3}", v).bright_yellow()
-        );
-    }
-    if let Some(v) = config.mirostat_eta {
-        println!(
-            "  {:<14} = {}",
-            "mirostat_eta".bright_blue(),
-            format!("{:.3}", v).bright_yellow()
-        );
-    }
-    if let Some(v) = config.debug {
-        println!(
-            "  {:<14} = {}",
-            "debug".bright_blue(),
-            if v {
-                "true".bright_green()
-            } else {
-                "false".bright_red()
-            }
-        );
+    let fields = vec![
+        ConfigField::new("model", config.model.clone(), colored::Color::BrightCyan),
+        ConfigField::new("port", config.port.map(|v| v.to_string()), colored::Color::BrightGreen),
+        ConfigField::new("temperature", config.temperature.map(|v| format!("{:.3}", v)), colored::Color::BrightYellow),
+        ConfigField::new("top_p", config.top_p.map(|v| format!("{:.3}", v)), colored::Color::BrightYellow),
+        ConfigField::new("min_p", config.min_p.map(|v| format!("{:.3}", v)), colored::Color::BrightYellow),
+        ConfigField::new("top_k", config.top_k.map(|v| v.to_string()), colored::Color::BrightGreen),
+        ConfigField::new("repeat_penalty", config.repeat_penalty.map(|v| format!("{:.3}", v)), colored::Color::BrightYellow),
+        ConfigField::new("max_tokens", config.max_tokens.map(|v| v.to_string()), colored::Color::BrightGreen),
+        ConfigField::new("mirostat", config.mirostat.map(|v| v.to_string()), colored::Color::BrightGreen),
+        ConfigField::new("mirostat_tau", config.mirostat_tau.map(|v| format!("{:.3}", v)), colored::Color::BrightYellow),
+        ConfigField::new("mirostat_eta", config.mirostat_eta.map(|v| format!("{:.3}", v)), colored::Color::BrightYellow),
+        ConfigField::new("debug", config.debug.map(|v| if v { "true".to_string() } else { "false".to_string() }), colored::Color::BrightGreen),
+    ];
+
+    for field in fields {
+        if let Some(value) = field.value {
+            println!("  {:<14} = {}", field.name.bright_blue(), value.color(field.color));
+        }
     }
 
     println!();

@@ -113,7 +113,7 @@ The agent provides an interactive CLI interface for coding assistance with file 
 - [x] Configuration file support (~/.ferrous.toml)
 - [ ] Model auto-discovery
 - [x] Rich terminal UI (colors, formatting)
-- [ ] Progress indicators for model loading
+- [x] Progress indicators for model loading
 - [ ] Save/load conversation sessions
 
 ---

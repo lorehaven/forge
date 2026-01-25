@@ -1,3 +1,4 @@
+use crate::cli::render_model_progress;
 use crate::llm::is_port_open;
 use crate::plan::ExecutionPlan;
 use crate::tools::execute_tool;
@@ -87,8 +88,15 @@ impl Agent {
     ) -> Result<Self> {
         use crate::llm::spawn_server;
 
-        let server_handle =
-            spawn_server(model, max_tokens, temperature, repeat_penalty, port, debug).await?;
+        let server_handle = spawn_server(
+            model,
+            max_tokens,
+            temperature,
+            repeat_penalty,
+            port,
+            debug,
+            Some(Box::new(render_model_progress)),
+        ).await?;
 
         Ok(Self {
             client: Client::new(),

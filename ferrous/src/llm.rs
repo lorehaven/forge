@@ -4,6 +4,15 @@ use std::sync::{Arc, Mutex};
 use tokio::net::TcpStream;
 use tokio::time::{Duration, interval};
 
+#[derive(Debug, Clone, Copy)]
+pub enum ModelLoadPhase {
+    StartingServer,
+    WaitingForPort,
+    Ready,
+}
+
+pub type ProgressCallback = Box<dyn Fn(ModelLoadPhase) + Send>;
+
 pub async fn is_port_open(host: &str, port: u16) -> bool {
     TcpStream::connect((host.to_string(), port)).await.is_ok()
 }
@@ -16,6 +25,7 @@ pub async fn spawn_server(
     repeat_penalty: f32,
     port: u16,
     debug: bool,
+    progress: Option<ProgressCallback>,
 ) -> Result<Arc<Mutex<Child>>> {
     let port_str = port.to_string();
     let max_tokens_str = max_tokens.to_string();
@@ -47,6 +57,10 @@ pub async fn spawn_server(
         "--no-mmap",
     ];
 
+    if let Some(cb) = &progress {
+        cb(ModelLoadPhase::StartingServer);
+    }
+
     let mut child = Command::new("llama-server")
         .env("GGML_VULKAN_DEVICE", "0")
         .args(&args_vec)
@@ -64,6 +78,11 @@ pub async fn spawn_server(
 
     let mut interv = interval(Duration::from_secs(2));
     let mut attempts = 0;
+
+    if let Some(cb) = &progress {
+        cb(ModelLoadPhase::WaitingForPort);
+    }
+
     loop {
         println!(
             "Waiting for llama-server to start... (attempt {}/120)",
@@ -73,6 +92,10 @@ pub async fn spawn_server(
         attempts += 1;
 
         if is_port_open("127.0.0.1", port).await {
+            if let Some(cb) = &progress {
+                cb(ModelLoadPhase::Ready);
+            }
+
             println!("Server ready on port {}", port);
             break;
         }

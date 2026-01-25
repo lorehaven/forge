@@ -5,6 +5,7 @@ use syntect::easy::HighlightLines;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::{SyntaxReference, SyntaxSet};
 use syntect::util::LinesWithEndings;
+use crate::llm::ModelLoadPhase;
 
 static SYNTAX_SET: Lazy<SyntaxSet> = Lazy::new(SyntaxSet::load_defaults_newlines);
 static THEME_SET: Lazy<ThemeSet> = Lazy::new(ThemeSet::load_defaults);
@@ -74,6 +75,20 @@ pub fn pretty_print_response(response: &str) {
 pub fn render_plan(plan: &ExecutionPlan) {
     print!("\x1B[2J\x1B[1;1H");
     println!("{}", plan);
+}
+
+pub fn render_model_progress(phase: ModelLoadPhase) {
+    match phase {
+        ModelLoadPhase::StartingServer => {
+            println!("{}", "Starting model server…".bright_blue());
+        }
+        ModelLoadPhase::WaitingForPort => {
+            println!("{}", "Loading model (waiting for server)…".bright_yellow());
+        }
+        ModelLoadPhase::Ready => {
+            println!("{}", "Model ready.".bright_green().bold());
+        }
+    }
 }
 
 pub fn print_indented(text: &str) {
