@@ -2,9 +2,10 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use colored::Colorize;
 use ferrous::agent::Agent;
-use ferrous::cli::{pretty_print_response, print_help};
+use ferrous::cli::{print_help, render_plan};
 use ferrous::config;
 use ferrous::llm::is_port_open;
+use ferrous::plan::execute_plan;
 use rustyline::DefaultEditor;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -128,6 +129,8 @@ macro_rules! apply_if_default {
     };
 }
 
+// Helper - plan
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let mut args = Args::parse();
@@ -194,27 +197,24 @@ async fn main() -> Result<()> {
         let mirostat_tau = q_mirostat_tau.unwrap_or(args.mirostat_tau);
         let mirostat_eta = q_mirostat_eta.unwrap_or(args.mirostat_eta);
 
-        match agent
-            .stream(
-                &text,
-                temp,
-                top_p,
-                min_p,
-                top_k,
-                repeat_penalty,
-                max_t,
-                mirostat,
-                mirostat_tau,
-                mirostat_eta,
-            )
-            .await
-        {
-            Ok(resp) => {
-                println!("\n{}", "Final response:".bright_green());
-                pretty_print_response(&resp);
-            }
-            Err(e) => eprintln!("{} {}", "Error:".red().bold(), e),
-        }
+        let plan = agent.generate_plan(&text).await?;
+        render_plan(&plan);
+
+        execute_plan(
+            &mut agent,
+            plan,
+            temp,
+            top_p,
+            min_p,
+            top_k,
+            repeat_penalty,
+            max_t,
+            mirostat,
+            mirostat_tau,
+            mirostat_eta,
+            args.debug,
+        )
+        .await?;
 
         if let Some(server) = agent.server.take() {
             let _ = server.lock().unwrap().kill();
@@ -249,24 +249,35 @@ async fn main() -> Result<()> {
                     }
                     "help" => print_help(),
                     _ => {
-                        println!("{}", "Thinking...".dimmed());
-                        match agent
-                            .stream(
-                                input,
-                                args.temperature,
-                                args.top_p,
-                                args.min_p,
-                                args.top_k,
-                                args.repeat_penalty,
-                                args.max_tokens,
-                                args.mirostat,
-                                args.mirostat_tau,
-                                args.mirostat_eta,
-                            )
-                            .await
+                        // ── PLAN PHASE ───────────────────────────────
+                        let plan = match agent.generate_plan(input).await {
+                            Ok(p) => p,
+                            Err(e) => {
+                                eprintln!("{} {}", "Planning error:".red().bold(), e);
+                                continue;
+                            }
+                        };
+
+                        render_plan(&plan);
+
+                        // ── EXECUTION PHASE ──────────────────────────
+                        if let Err(e) = execute_plan(
+                            &mut agent,
+                            plan,
+                            args.temperature,
+                            args.top_p,
+                            args.min_p,
+                            args.top_k,
+                            args.repeat_penalty,
+                            args.max_tokens,
+                            args.mirostat,
+                            args.mirostat_tau,
+                            args.mirostat_eta,
+                            args.debug,
+                        )
+                        .await
                         {
-                            Ok(_) => println!(),
-                            Err(e) => eprintln!("{} {}", "Error:".red().bold(), e),
+                            eprintln!("{} {}", "Execution error:".red().bold(), e);
                         }
                     }
                 }

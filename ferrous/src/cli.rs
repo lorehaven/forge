@@ -1,3 +1,4 @@
+use crate::plan::ExecutionPlan;
 use colored::Colorize;
 use once_cell::sync::Lazy;
 use syntect::easy::HighlightLines;
@@ -67,6 +68,17 @@ pub fn pretty_print_response(response: &str) {
     if in_code {
         let highlighted = highlight_code_block(&code_buffer, current_lang);
         println!("{}", highlighted);
+    }
+}
+
+pub fn render_plan(plan: &ExecutionPlan) {
+    print!("\x1B[2J\x1B[1;1H");
+    println!("{}", plan);
+}
+
+pub fn print_indented(text: &str) {
+    for line in text.lines() {
+        println!("│ {}", line);
     }
 }
 

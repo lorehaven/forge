@@ -110,9 +110,9 @@ The agent provides an interactive CLI interface for coding assistance with file 
 - [ ] Error recovery and retry logic
 
 ### 🔲 User Experience
-- [ ] Configuration file support (~/.coding-agent.toml)
+- [x] Configuration file support (~/.ferrous.toml)
 - [ ] Model auto-discovery
-- [ ] Rich terminal UI (colors, formatting) (partial)
+- [x] Rich terminal UI (colors, formatting)
 - [ ] Progress indicators for model loading
 - [ ] Save/load conversation sessions
 

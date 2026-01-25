@@ -1,4 +1,5 @@
 use crate::llm::is_port_open;
+use crate::plan::ExecutionPlan;
 use crate::tools::execute_tool;
 use anyhow::{Result, anyhow};
 use colored::Colorize;
@@ -14,6 +15,28 @@ static TOOLS_JSON: Lazy<Vec<Value>> = Lazy::new(|| {
     serde_json::from_str(s).expect("Invalid tools.json")
 });
 
+static PLAN_PROMPT: &str = r#"
+You are in PLANNING MODE.
+
+Rules:
+- Do NOT call tools
+- Do NOT describe human actions (editors, terminals, thinking)
+- Each step MUST be directly executable using available tools
+- Each step MUST start with a verb
+- Prefer concrete file/tool actions
+
+Allowed verbs (examples):
+- Read file <path>
+- Modify function <name> in <path>
+- Replace code in <path>
+- Run command <command>
+
+Output format ONLY:
+PLAN:
+1. <single executable action>
+2. <single executable action>
+"#;
+
 static PROMPT: &str = r#"
 You are Ferrous, an expert Rust developer and autonomous coding agent running in a Rust project.
 
@@ -28,12 +51,12 @@ Core Rules:
   - Never replace an entire file unless explicitly instructed
   - Never emit placeholders such as <updated-content> or <modified-content>
   - Always show concrete code
+  - Always verify the changes by trying to build the project
 - First, use read_file or list_files_recursive to understand the current code.
 - For small, targeted changes → prefer replace_in_file (safer, more precise).
 - For full-file rewrites or new files → use write_file.
 - After any change, ALWAYS use git_diff(path) to show what was modified.
 - Never use absolute paths. All paths are relative to the current working directory.
-- You can ONLY run cargo commands that start with: cargo check, cargo fmt, cargo clippy, cargo build, cargo run, cargo test, cargo bench, cargo doc, cargo metadata, cargo tree, cargo audit, cargo +nightly ...
 - NEVER run rm, mv, cp, git commit/push/pull/merge/rebase, curl, wget, sudo, or any destructive/network commands — they will be rejected.
 - Stay inside the current project directory — no path traversal.
 - Be precise, minimal, and safe. Only change exactly what is needed.
@@ -87,6 +110,56 @@ impl Agent {
             server: None,
             port,
         })
+    }
+
+    pub async fn generate_plan(&self, user_input: &str) -> Result<ExecutionPlan> {
+        self.ensure_alive().await?;
+
+        let body = json!({
+            "messages": [
+                { "role": "system", "content": PLAN_PROMPT },
+                { "role": "user", "content": user_input }
+            ],
+            "stream": false,
+            "max_tokens": 512
+        });
+
+        let resp: Value = self
+            .client
+            .post(format!(
+                "http://127.0.0.1:{}/v1/chat/completions",
+                self.port
+            ))
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+
+        let content = resp["choices"][0]["message"]["content"]
+            .as_str()
+            .unwrap_or("");
+
+        let mut steps = Vec::new();
+
+        for line in content.lines() {
+            let line = line.trim();
+            if let Some(idx) = line.find('.')
+                && line[..idx].chars().all(|c| c.is_ascii_digit())
+            {
+                let step = line[idx + 1..].trim();
+                if !step.is_empty() {
+                    steps.push(step.to_string());
+                }
+            }
+        }
+
+        if steps.is_empty() {
+            anyhow::bail!("Planner produced no steps");
+        }
+
+        Ok(ExecutionPlan::new(steps))
     }
 
     #[allow(clippy::too_many_arguments)]
