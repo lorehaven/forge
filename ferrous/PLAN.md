@@ -114,7 +114,7 @@ The agent provides an interactive CLI interface for coding assistance with file 
 - [ ] Model auto-discovery
 - [x] Rich terminal UI (colors, formatting)
 - [x] Progress indicators for model loading
-- [ ] Save/load conversation sessions
+- [x] Save/load conversation sessions
 
 ---
 
