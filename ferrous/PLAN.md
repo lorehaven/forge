@@ -89,13 +89,13 @@ The agent provides an interactive CLI interface for coding assistance with file 
 
 ### 🔲 Improved LLM Integration
 - [x] Better sampling strategies (mirostat)
-- [ ] Streaming token generation
+- [x] Streaming token generation
 - [ ] Multi-turn conversation improvements
-- [ ] Custom system prompts from file
+- [ ] Custom system prompts from a file
 - [ ] Temperature/parameter CLI overrides
 
 ### 🔲 Advanced Features
-- [ ] Code syntax highlighting in terminal (implemented)
+- [ ] Code syntax highlighting in the terminal (implemented)
 - [ ] Multi-file context management
 - [ ] Project-wide code analysis
 - [ ] Automatic test generation

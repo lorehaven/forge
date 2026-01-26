@@ -5,10 +5,11 @@ use crate::sessions::{load_conversation_by_prefix, save_conversation};
 use crate::tools::execute_tool;
 use anyhow::{Result, anyhow};
 use colored::Colorize;
+use futures_util::StreamExt;
 use once_cell::sync::Lazy;
 use reqwest::Client;
 use serde_json::{Value, json};
-use std::io::Write;
+use std::io::{self, Write};
 use std::process::Child;
 use std::sync::{Arc, Mutex};
 
@@ -135,24 +136,20 @@ impl Agent {
         })
     }
 
-    pub async fn generate_plan(&self, user_input: &str) -> Result<ExecutionPlan> {
-        self.ensure_alive().await?;
+    pub async fn generate_plan(&self, query: &str) -> Result<ExecutionPlan> {
+        let mut temp_messages = self.messages.clone();
+        temp_messages.push(json!({"role": "user", "content": format!("{}{}", PLAN_PROMPT, query)}));
 
         let body = json!({
-            "messages": [
-                { "role": "system", "content": PLAN_PROMPT },
-                { "role": "user", "content": user_input }
-            ],
-            "stream": false,
-            "max_tokens": 512
-        });
+        "messages": &temp_messages,
+        "temperature": 0.1,
+        "max_tokens": 1024,
+        "stream": false,
+    });
 
         let resp: Value = self
             .client
-            .post(format!(
-                "http://127.0.0.1:{}/v1/chat/completions",
-                self.port
-            ))
+            .post(format!("http://127.0.0.1:{}/v1/chat/completions", self.port))
             .json(&body)
             .send()
             .await?
@@ -207,84 +204,143 @@ impl Agent {
 
         loop {
             let body = json!({
-                "messages": &self.messages,
-                "tools": &tools,
-                "tool_choice": "auto",
-                "temperature": temperature,
-                "top_p": if mirostat > 0 { 1. } else { top_p },
-                "min_p": min_p,
-                "top_k": if mirostat > 0 { 0 } else { top_k },
-                "repeat_penalty": repeat_penalty,
-                "max_tokens": max_tokens,
-                "stream": false,
-                "mirostat": mirostat,
-                "mirostat_tau": mirostat_tau,
-                "mirostat_eta": mirostat_eta,
-            });
+            "messages": &self.messages,
+            "tools": &tools,
+            "tool_choice": "auto",
+            "temperature": temperature,
+            "top_p": if mirostat > 0 { 1. } else { top_p },
+            "min_p": min_p,
+            "top_k": if mirostat > 0 { 0 } else { top_k },
+            "repeat_penalty": repeat_penalty,
+            "max_tokens": max_tokens,
+            "stream": true,
+            "mirostat": mirostat,
+            "mirostat_tau": mirostat_tau,
+            "mirostat_eta": mirostat_eta,
+        });
 
-            let resp: Value = self
+            let response = self
                 .client
-                .post(format!(
-                    "http://127.0.0.1:{}/v1/chat/completions",
-                    self.port
-                ))
+                .post(format!("http://127.0.0.1:{}/v1/chat/completions", self.port))
                 .json(&body)
                 .send()
                 .await?
-                .error_for_status()?
-                .json()
-                .await?;
+                .error_for_status()?;
 
-            let choice = &resp["choices"][0];
-            let message = choice["message"].clone();
+            let mut stream = response.bytes_stream();
 
-            if let Some(tool_calls) = message["tool_calls"].as_array() {
-                self.messages.push(message.clone());
+            let mut full_content = String::new();
+            let mut tool_calls: Vec<Value> = vec![];
+            let mut has_started_printing = false;
 
-                for call in tool_calls {
-                    let func = &call["function"];
-                    let name = func["name"].as_str().unwrap_or("");
-                    let args_str = func["arguments"].as_str().unwrap_or("{}");
+            while let Some(item) = stream.next().await {
+                let bytes = item?;
 
-                    if let Ok(args) = serde_json::from_str::<Value>(args_str) {
-                        match execute_tool(name, args).await {
-                            Ok(result) => {
-                                self.messages.push(json!({
-                                    "role": "tool",
-                                    "tool_call_id": call["id"].as_str().unwrap_or(""),
-                                    "name": name,
-                                    "content": result
-                                }));
+                // Convert bytes to string and split into lines (SSE events are line-delimited)
+                let data = String::from_utf8_lossy(&bytes).to_string();
+                for line in data.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    if !trimmed.starts_with("data: ") {
+                        continue;
+                    }
+                    let payload = &trimmed[6..];
+                    if payload == "[DONE]" {
+                        break;
+                    }
+                    let chunk: Value = match serde_json::from_str(payload) {
+                        Ok(v) => v,
+                        Err(_) => continue,
+                    };
+                    let delta = &chunk["choices"][0]["delta"];
+
+                    // Handle content delta (print immediately for streaming effect)
+                    if let Some(content) = delta["content"].as_str() {
+                        if !has_started_printing {
+                            print!("{}", "│ ".dimmed());
+                            has_started_printing = true;
+                        }
+                        print!("{}", content);
+                        io::stdout().flush()?;
+                        full_content.push_str(content);
+                    }
+
+                    // Handle tool_calls deltas
+                    if let Some(tc_deltas) = delta["tool_calls"].as_array() {
+                        for tc_delta in tc_deltas {
+                            let index = tc_delta["index"].as_u64().unwrap_or(0) as usize;
+                            while tool_calls.len() <= index {
+                                tool_calls.push(json!({
+                                "type": "function",
+                                "id": "",
+                                "function": { "name": "", "arguments": "" }
+                            }));
                             }
-                            Err(e) => {
-                                self.messages.push(json!({
-                                    "role": "tool",
-                                    "tool_call_id": call["id"].as_str().unwrap_or(""),
-                                    "name": name,
-                                    "content": format!("Tool error: {}", e)
-                                }));
+                            if let Some(id) = tc_delta["id"].as_str() {
+                                tool_calls[index]["id"] = json!(id);
+                            }
+                            if let Some(name_delta) = tc_delta["function"]["name"].as_str() {
+                                let current_name = tool_calls[index]["function"]["name"].as_str().unwrap_or("");
+                                tool_calls[index]["function"]["name"] = json!(format!("{}{}", current_name, name_delta));
+                            }
+                            if let Some(args_delta) = tc_delta["function"]["arguments"].as_str() {
+                                let current_args = tool_calls[index]["function"]["arguments"].as_str().unwrap_or("");
+                                tool_calls[index]["function"]["arguments"] = json!(format!("{}{}", current_args, args_delta));
                             }
                         }
                     }
                 }
-                continue;
-            } else {
-                let content = message["content"].as_str().unwrap_or("").to_string();
-                self.messages.push(message);
+            }
 
-                // Simulated typewriter
-                print!("{}", "│ ".dimmed());
-                std::io::stdout().flush()?;
-
-                const DELAY_MS: u64 = 6;
-                for c in content.chars() {
-                    print!("{}", c);
-                    std::io::stdout().flush()?;
-                    tokio::time::sleep(tokio::time::Duration::from_millis(DELAY_MS)).await;
-                }
+            if has_started_printing {
                 println!();
+            }
 
-                return Ok(content);
+            // Construct the full message
+            let content_json = if full_content.is_empty() { json!(null) } else { json!(full_content) };
+            let tool_calls_json = if tool_calls.is_empty() { json!(null) } else { json!(tool_calls) };
+            let message = json!({
+            "role": "assistant",
+            "content": content_json,
+            "tool_calls": tool_calls_json
+        });
+            self.messages.push(message);
+
+            // If tool calls exist, execute them
+            if !tool_calls.is_empty() {
+                for call in tool_calls {
+                    let name = call["function"]["name"].as_str().unwrap_or("");
+                    let args_str = call["function"]["arguments"].as_str().unwrap_or("{}");
+                    let args: Value = match serde_json::from_str(args_str) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            self.messages.push(json!({
+                            "role": "tool",
+                            "tool_call_id": call["id"].as_str().unwrap_or(""),
+                            "name": name,
+                            "content": format!("Tool call failed: invalid arguments JSON: {}", e)
+                        }));
+                            continue;
+                        }
+                    };
+
+                    let result = match execute_tool(name, args).await {
+                        Ok(r) => r,
+                        Err(e) => format!("Tool error: {}", e),
+                    };
+
+                    self.messages.push(json!({
+                    "role": "tool",
+                    "tool_call_id": call["id"].as_str().unwrap_or(""),
+                    "name": name,
+                    "content": result
+                }));
+                }
+                continue; // Continue the agent loop for next response
+            } else {
+                return Ok(full_content);
             }
         }
     }

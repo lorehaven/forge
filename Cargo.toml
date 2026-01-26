@@ -31,6 +31,9 @@ version = "3"
 [workspace.dependencies.dotenvy]
 version = "0.15"
 
+[workspace.dependencies.futures-util]
+version = "0.3"
+
 [workspace.dependencies.minijinja]
 version = "2.14"
 features = ["loader", "serde"]

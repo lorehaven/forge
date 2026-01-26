@@ -73,8 +73,9 @@ pub fn pretty_print_response(response: &str) {
 }
 
 pub fn render_plan(plan: &ExecutionPlan) {
-    print!("\x1B[2J\x1B[1;1H");
+    println!("\n{}", "────── Plan ──────".bright_black());
     println!("{}", plan);
+    println!("{}", "─────────────────".dimmed());
 }
 
 pub fn render_model_progress(phase: ModelLoadPhase) {
