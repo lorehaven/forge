@@ -1,3 +1,4 @@
+use crate::llm::ModelLoadPhase;
 use crate::plan::ExecutionPlan;
 use colored::Colorize;
 use once_cell::sync::Lazy;
@@ -5,7 +6,6 @@ use syntect::easy::HighlightLines;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::{SyntaxReference, SyntaxSet};
 use syntect::util::LinesWithEndings;
-use crate::llm::ModelLoadPhase;
 
 static SYNTAX_SET: Lazy<SyntaxSet> = Lazy::new(SyntaxSet::load_defaults_newlines);
 static THEME_SET: Lazy<ThemeSet> = Lazy::new(ThemeSet::load_defaults);
@@ -114,6 +114,12 @@ pub fn print_help() {
     );
     println!("  exit / quit       Exit the program");
     println!("  clear             Reset conversation history (keeps system prompt)");
+    println!("  save [name]       Save current conversation (auto id + timestamp)");
+    println!("                    Example: save \"feature x planning\"");
+    println!("  load <prefix>     Load by name prefix or short uuid (first 8 chars)");
+    println!("  list              List all saved conversations");
+    println!("  delete <prefix>   Delete conversation by name prefix or short uuid");
+    println!("  config / cfg      Show current configuration (merged values)");
     println!("  help              Show this help message");
     println!();
 
@@ -211,7 +217,7 @@ pub fn print_help() {
     println!();
 
     println!("{}", "Config File:".bright_yellow().bold());
-    println!("  • .ferrous.toml in current directory for project-specific defaults");
+    println!("  • config.toml in current directory for project-specific defaults");
     println!("  • Example:");
     println!("      model = \"path/to/my-model.gguf\"");
     println!("      temperature = 0.2");

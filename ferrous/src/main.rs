@@ -6,6 +6,7 @@ use ferrous::cli::{print_help, render_plan};
 use ferrous::config;
 use ferrous::llm::is_port_open;
 use ferrous::plan::execute_plan;
+use ferrous::sessions;
 use rustyline::DefaultEditor;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -129,25 +130,24 @@ macro_rules! apply_if_default {
     };
 }
 
-// Helper - plan
-
 #[tokio::main]
 async fn main() -> Result<()> {
     let mut args = Args::parse();
     let conf = config::load();
     config::print_loaded(&conf, args.debug);
 
-    apply_if_default!(args, model, DEFAULT_PARAMS, conf);
-    apply_if_default!(args, port, DEFAULT_PARAMS, conf);
-    apply_if_default!(args, temperature, DEFAULT_PARAMS, conf);
-    apply_if_default!(args, top_p, DEFAULT_PARAMS, conf);
-    apply_if_default!(args, min_p, DEFAULT_PARAMS, conf);
-    apply_if_default!(args, top_k, DEFAULT_PARAMS, conf);
-    apply_if_default!(args, repeat_penalty, DEFAULT_PARAMS, conf);
-    apply_if_default!(args, max_tokens, DEFAULT_PARAMS, conf);
-    apply_if_default!(args, mirostat, DEFAULT_PARAMS, conf);
-    apply_if_default!(args, mirostat_tau, DEFAULT_PARAMS, conf);
-    apply_if_default!(args, mirostat_eta, DEFAULT_PARAMS, conf);
+    let effective_conf = conf.clone();
+    apply_if_default!(args, model, DEFAULT_PARAMS, effective_conf);
+    apply_if_default!(args, port, DEFAULT_PARAMS, effective_conf);
+    apply_if_default!(args, temperature, DEFAULT_PARAMS, effective_conf);
+    apply_if_default!(args, top_p, DEFAULT_PARAMS, effective_conf);
+    apply_if_default!(args, min_p, DEFAULT_PARAMS, effective_conf);
+    apply_if_default!(args, top_k, DEFAULT_PARAMS, effective_conf);
+    apply_if_default!(args, repeat_penalty, DEFAULT_PARAMS, effective_conf);
+    apply_if_default!(args, max_tokens, DEFAULT_PARAMS, effective_conf);
+    apply_if_default!(args, mirostat, DEFAULT_PARAMS, effective_conf);
+    apply_if_default!(args, mirostat_tau, DEFAULT_PARAMS, effective_conf);
+    apply_if_default!(args, mirostat_eta, DEFAULT_PARAMS, effective_conf);
 
     if !args.debug
         && let Some(debug) = conf.debug
@@ -248,6 +248,87 @@ async fn main() -> Result<()> {
                         println!("{}", "Conversation cleared.".bright_yellow());
                     }
                     "help" => print_help(),
+                    "config" | "show-config" | "cfg" => {
+                        conf.display();
+                    }
+                    "list" => match sessions::list_conversations() {
+                        Ok(items) if items.is_empty() => {
+                            println!("{}", "No saved conversations yet.".bright_yellow());
+                        }
+                        Ok(items) => {
+                            println!("{}", "Saved conversations:".bright_cyan().bold());
+                            for (name, short_id, date) in items {
+                                println!(
+                                    "  • {} {} {}",
+                                    name.bright_white(),
+                                    format!("({})", short_id).dimmed(),
+                                    format!(" [{}]", date).bright_black()
+                                );
+                            }
+                        }
+                        Err(e) => eprintln!("{} {}", "Error listing:".red().bold(), e),
+                    },
+                    cmd if cmd.starts_with("save") => {
+                        let rest = input[4..].trim();
+                        let name = if rest.is_empty() {
+                            "".to_string()
+                        } else {
+                            rest.to_string()
+                        };
+
+                        match agent.save_conversation_named(&name) {
+                            Ok(filename) => {
+                                let extra = if name.trim().is_empty() {
+                                    " (auto-named)"
+                                } else {
+                                    ""
+                                };
+                                println!(
+                                    "{} {}{}",
+                                    "Conversation saved as".bright_green(),
+                                    filename.bright_yellow(),
+                                    extra
+                                );
+                            }
+                            Err(e) => eprintln!("{} {}", "Save failed:".red().bold(), e),
+                        }
+                    }
+
+                    cmd if cmd.starts_with("load") => {
+                        let rest = input[4..].trim();
+                        if rest.is_empty() {
+                            println!("{}", "Usage: load <name prefix or short id>".yellow());
+                            continue;
+                        }
+
+                        match agent.load_conversation(rest) {
+                            Ok(name) => println!(
+                                "{} {} {}",
+                                "Loaded conversation:".bright_green(),
+                                name.bright_white(),
+                                "(current history replaced)".dimmed()
+                            ),
+                            Err(e) => eprintln!("{} {}", "Load failed:".red().bold(), e),
+                        }
+                    }
+
+                    cmd if cmd.starts_with("delete") => {
+                        let rest = input[6..].trim();
+                        if rest.is_empty() {
+                            println!("{}", "Usage: delete <name prefix or short id>".yellow());
+                            continue;
+                        }
+
+                        match sessions::delete_conversation_by_prefix(rest) {
+                            Ok(name) => println!(
+                                "{} {} {}",
+                                "Deleted:".bright_green(),
+                                name.bright_white(),
+                                "(removed from disk)".dimmed()
+                            ),
+                            Err(e) => eprintln!("{} {}", "Delete failed:".red().bold(), e),
+                        }
+                    }
                     _ => {
                         // ── PLAN PHASE ───────────────────────────────
                         let plan = match agent.generate_plan(input).await {

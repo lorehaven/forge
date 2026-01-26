@@ -1,6 +1,8 @@
+use anyhow::Context;
 use colored::Colorize;
 use serde::Deserialize;
 use std::fs;
+use std::path::PathBuf;
 
 #[derive(Deserialize, Default, Clone)]
 pub struct Config {
@@ -18,6 +20,52 @@ pub struct Config {
     pub debug: Option<bool>,
 }
 
+impl Config {
+    pub fn display(&self) {
+        println!("{}", "Current configuration (merged):".bright_cyan().bold());
+        println!();
+
+        let fields = vec![
+            ("model", self.model.as_ref().map(|s| s.to_string())),
+            ("port", self.port.map(|p| p.to_string())),
+            ("temperature", self.temperature.map(|v| format!("{:.2}", v))),
+            ("top_p", self.top_p.map(|v| format!("{:.2}", v))),
+            ("min_p", self.min_p.map(|v| format!("{:.2}", v))),
+            ("top_k", self.top_k.map(|v| v.to_string())),
+            (
+                "repeat_penalty",
+                self.repeat_penalty.map(|v| format!("{:.2}", v)),
+            ),
+            ("max_tokens", self.max_tokens.map(|v| v.to_string())),
+            ("mirostat", self.mirostat.map(|v| v.to_string())),
+            (
+                "mirostat_tau",
+                self.mirostat_tau.map(|v| format!("{:.3}", v)),
+            ),
+            (
+                "mirostat_eta",
+                self.mirostat_eta.map(|v| format!("{:.3}", v)),
+            ),
+            ("debug", self.debug.map(|v| v.to_string())),
+        ];
+
+        let mut any_shown = false;
+
+        for (name, value) in fields {
+            if let Some(val) = value {
+                println!("  {:<14} = {}", name.bright_blue(), val.bright_white());
+                any_shown = true;
+            }
+        }
+
+        if !any_shown {
+            println!("{}", "  (all values at default)".dimmed());
+        }
+
+        println!();
+    }
+}
+
 #[derive(Clone)]
 struct ConfigField {
     name: &'static str,
@@ -31,10 +79,17 @@ impl ConfigField {
     }
 }
 
-/// Loads .ferrous.toml from current directory (if exists)
+/// Returns path to .ferrous/config.toml in current working directory
+pub fn config_file_path() -> Result<PathBuf, anyhow::Error> {
+    let cwd = std::env::current_dir().context("Cannot determine current working directory")?;
+
+    Ok(cwd.join(".ferrous").join("config.toml"))
+}
+
+/// Loads config.toml from current directory (if exists)
 pub fn load() -> Config {
-    let config_path = match std::env::current_dir() {
-        Ok(dir) => dir.join(".ferrous.toml"),
+    let config_path = match config_file_path() {
+        Ok(p) => p,
         Err(_) => return Config::default(),
     };
 
@@ -45,7 +100,7 @@ pub fn load() -> Config {
     match fs::read_to_string(&config_path) {
         Ok(content) => toml::from_str(&content).unwrap_or_else(|e| {
             eprintln!(
-                "{} Invalid .ferrous.toml: {}. Using defaults.",
+                "{} Invalid .ferrous/config.toml: {}. Using defaults.",
                 "Warning:".yellow().bold(),
                 e
             );
@@ -53,7 +108,7 @@ pub fn load() -> Config {
         }),
         Err(e) => {
             eprintln!(
-                "{} Failed to read .ferrous.toml: {}. Using defaults.",
+                "{} Failed to read .ferrous/config.toml: {}. Using defaults.",
                 "Warning:".yellow().bold(),
                 e
             );
@@ -62,7 +117,7 @@ pub fn load() -> Config {
     }
 }
 
-/// Prints which settings were actually loaded from .ferrous.toml  
+/// Prints which settings were actually loaded from config.toml
 /// (only non-None fields are shown, with colors for better readability)
 pub fn print_loaded(config: &Config, is_debug: bool) {
     if !is_debug {
@@ -83,30 +138,84 @@ pub fn print_loaded(config: &Config, is_debug: bool) {
         && config.mirostat_eta.is_none()
         && config.debug.is_none()
     {
-        println!("{}", "No custom settings found in .ferrous.toml".dimmed());
+        println!("{}", "No custom settings found in config.toml".dimmed());
         return;
     }
 
-    println!("{}", "Loaded from .ferrous.toml:".bright_black().bold());
+    println!("{}", "Loaded from config.toml:".bright_black().bold());
 
     let fields = vec![
         ConfigField::new("model", config.model.clone(), colored::Color::BrightCyan),
-        ConfigField::new("port", config.port.map(|v| v.to_string()), colored::Color::BrightGreen),
-        ConfigField::new("temperature", config.temperature.map(|v| format!("{:.3}", v)), colored::Color::BrightYellow),
-        ConfigField::new("top_p", config.top_p.map(|v| format!("{:.3}", v)), colored::Color::BrightYellow),
-        ConfigField::new("min_p", config.min_p.map(|v| format!("{:.3}", v)), colored::Color::BrightYellow),
-        ConfigField::new("top_k", config.top_k.map(|v| v.to_string()), colored::Color::BrightGreen),
-        ConfigField::new("repeat_penalty", config.repeat_penalty.map(|v| format!("{:.3}", v)), colored::Color::BrightYellow),
-        ConfigField::new("max_tokens", config.max_tokens.map(|v| v.to_string()), colored::Color::BrightGreen),
-        ConfigField::new("mirostat", config.mirostat.map(|v| v.to_string()), colored::Color::BrightGreen),
-        ConfigField::new("mirostat_tau", config.mirostat_tau.map(|v| format!("{:.3}", v)), colored::Color::BrightYellow),
-        ConfigField::new("mirostat_eta", config.mirostat_eta.map(|v| format!("{:.3}", v)), colored::Color::BrightYellow),
-        ConfigField::new("debug", config.debug.map(|v| if v { "true".to_string() } else { "false".to_string() }), colored::Color::BrightGreen),
+        ConfigField::new(
+            "port",
+            config.port.map(|v| v.to_string()),
+            colored::Color::BrightGreen,
+        ),
+        ConfigField::new(
+            "temperature",
+            config.temperature.map(|v| format!("{:.3}", v)),
+            colored::Color::BrightYellow,
+        ),
+        ConfigField::new(
+            "top_p",
+            config.top_p.map(|v| format!("{:.3}", v)),
+            colored::Color::BrightYellow,
+        ),
+        ConfigField::new(
+            "min_p",
+            config.min_p.map(|v| format!("{:.3}", v)),
+            colored::Color::BrightYellow,
+        ),
+        ConfigField::new(
+            "top_k",
+            config.top_k.map(|v| v.to_string()),
+            colored::Color::BrightGreen,
+        ),
+        ConfigField::new(
+            "repeat_penalty",
+            config.repeat_penalty.map(|v| format!("{:.3}", v)),
+            colored::Color::BrightYellow,
+        ),
+        ConfigField::new(
+            "max_tokens",
+            config.max_tokens.map(|v| v.to_string()),
+            colored::Color::BrightGreen,
+        ),
+        ConfigField::new(
+            "mirostat",
+            config.mirostat.map(|v| v.to_string()),
+            colored::Color::BrightGreen,
+        ),
+        ConfigField::new(
+            "mirostat_tau",
+            config.mirostat_tau.map(|v| format!("{:.3}", v)),
+            colored::Color::BrightYellow,
+        ),
+        ConfigField::new(
+            "mirostat_eta",
+            config.mirostat_eta.map(|v| format!("{:.3}", v)),
+            colored::Color::BrightYellow,
+        ),
+        ConfigField::new(
+            "debug",
+            config.debug.map(|v| {
+                if v {
+                    "true".to_string()
+                } else {
+                    "false".to_string()
+                }
+            }),
+            colored::Color::BrightGreen,
+        ),
     ];
 
     for field in fields {
         if let Some(value) = field.value {
-            println!("  {:<14} = {}", field.name.bright_blue(), value.color(field.color));
+            println!(
+                "  {:<14} = {}",
+                field.name.bright_blue(),
+                value.color(field.color)
+            );
         }
     }
 

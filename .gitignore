@@ -1,6 +1,6 @@
 *.iml
 .idea
-**/.ferrous.toml
+**/.ferrous/
 **/dist/
 **/target/
 rclone.conf

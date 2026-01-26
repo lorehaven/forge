@@ -1,6 +1,7 @@
 use crate::cli::render_model_progress;
 use crate::llm::is_port_open;
 use crate::plan::ExecutionPlan;
+use crate::sessions::{load_conversation_by_prefix, save_conversation};
 use crate::tools::execute_tool;
 use anyhow::{Result, anyhow};
 use colored::Colorize;
@@ -77,6 +78,19 @@ pub struct Agent {
 }
 
 impl Agent {
+    pub fn save_conversation_named(&self, name: &str) -> Result<String> {
+        let (filename, _) = save_conversation(&self.messages, name)?;
+        Ok(filename)
+    }
+
+    pub fn load_conversation(&mut self, prefix: &str) -> Result<String> {
+        let (conv, _) = load_conversation_by_prefix(prefix)?;
+        self.messages = conv.messages;
+        Ok(conv.name)
+    }
+}
+
+impl Agent {
     /// Create a new Agent and spawn llama-server
     pub async fn new(
         model: &str,
@@ -96,7 +110,8 @@ impl Agent {
             port,
             debug,
             Some(Box::new(render_model_progress)),
-        ).await?;
+        )
+        .await?;
 
         Ok(Self {
             client: Client::new(),

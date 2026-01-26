@@ -28,6 +28,7 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow.workspace = true
+chrono.workspace = true
 clap.workspace = true
 colored.workspace = true
 once_cell.workspace = true
@@ -39,3 +40,4 @@ syntect.workspace = true
 tokio.workspace = true
 toml.workspace = true
 walkdir.workspace = true
+uuid.workspace = true
