@@ -1163,7 +1163,9 @@ dependencies = [
  "minijinja",
  "regex",
  "rustyline",
+ "serde",
  "serde_yaml",
+ "toml",
 ]
 
 [[package]]

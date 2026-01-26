@@ -1,10 +1,10 @@
 use anyhow::Context;
 use std::fs;
 use std::path::Path;
+use crate::config;
 
 pub const OVERLAY_DIR: &str = "overlays";
 pub const OUTPUT_DIR: &str = "manifests";
-const ENV_FILE: &str = ".riveter-env";
 
 pub fn env_list() -> anyhow::Result<()> {
     let mut envs = Vec::new();
@@ -28,7 +28,11 @@ pub fn env_set(env: &str) -> anyhow::Result<()> {
     if !Path::new(&path).exists() {
         anyhow::bail!("overlay not found: {}", path);
     }
-    fs::write(ENV_FILE, env)?;
+
+    let mut config = config::load_config()?;
+    config.env.current = Some(env.to_string());
+    config::save_config(&config)?;
+
     Ok(())
 }
 
@@ -39,10 +43,12 @@ pub fn env_show() -> anyhow::Result<()> {
 }
 
 pub fn current_env() -> anyhow::Result<String> {
-    Ok(fs::read_to_string(ENV_FILE)
-        .context("No environment set. Run `riveter env set <env>`")?
-        .trim()
-        .to_string())
+    let config = config::load_config()?;
+
+    config
+        .env
+        .current
+        .context("No environment set. Run `riveter env set <env>`")
 }
 
 pub fn manifest_path(env: &str) -> String {
