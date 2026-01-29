@@ -1,126 +1,93 @@
 # Ferrous 🤖
 
-A minimal, local coding assistant that runs on your machine using llama.cpp server.  
-Safe filesystem tools, syntax-highlighted output, GPU acceleration (AMD Vulkan tested).  
-Written in Rust. Designed for developers who want fast, private coding help without cloud dependencies.
+Ferrous is an expert multi-purpose assistant and autonomous agent designed to help analyze, modify, improve, and maintain projects efficiently and safely. It runs locally using a `llama.cpp` server, providing a private and fast alternative to cloud-based coding assistants.
 
-## Current Features
+Originally focused on Rust, Ferrous has evolved into a versatile tool capable of discovering and working with various technologies and project structures.
 
-- Interactive REPL with command history (via rustyline)
-- Syntax-highlighted code blocks in terminal (syntect + Markdown detection)
-- Structured tool use via function calling:
-  - read_file(path)
-  - write_file(path, content)
-  - list_directory(path)
-  - get_directory_tree(path)
-- Path safety: canonicalization + traversal prevention
-- Single-shot query mode (ferrous query --text "...")
-- help, clear, exit / quit commands
-- GPU acceleration support (tested on AMD RX 7900 XTX via Vulkan)
-- Colored output & clean UX
-- Configurable sampling parameters (--temperature, --top-p, --top-k, --max-tokens)
-- Stable non-streaming mode (reliable tool calling)
+## Core Capabilities
+
+- **Autonomous Agent**: Ferrous can plan and execute multi-step tasks using a suite of built-in tools.
+- **Technology Discovery**: Automatically identifies project languages and frameworks (Rust, Node.js, Python, Go, Java, etc.).
+- **Smart Planning**: Generates a structured execution plan before starting work, ensuring transparency and safety.
+- **Advanced File Operations**: Beyond simple read/write, it can perform exact string replacements, search text (grep-style), and find files by pattern.
+- **Git Integration**: Built-in support for checking status, viewing diffs, staging changes, and committing.
+- **Project Analysis**: Integrates with build tools and linters (like `cargo clippy` for Rust) to provide project-wide insights.
+- **Interactive REPL & One-Shot Query**: Use it as a persistent assistant or for quick tasks.
+- **Session Management**: Save and load conversation histories to pick up where you left off.
+- **Syntax Highlighting**: Beautifully rendered code blocks and terminal output.
+- **GPU Acceleration**: Built-in support for GPU-accelerated inference via `llama.cpp`.
+
+## Available Tools
+
+Ferrous uses a sophisticated tool-calling mechanism to interact with your project:
+
+- `discover_technologies()`: Identifies the project's tech stack.
+- `analyze_project()`: Runs appropriate static analysis tools for the project type.
+- `read_file(path)` / `read_multiple_files(paths)`: Reads file content into context.
+- `write_file(path, content)`: Creates or overwrites files.
+- `replace_in_file(path, search, replace)`: Performs precise, minimal edits.
+- `search_text(pattern)` / `find_file(pattern)`: Quickly locates code or files.
+- `list_directory()` / `get_directory_tree()`: Explores the project structure.
+- `execute_shell_command(command)`: Runs safe, project-specific commands (build, test, etc.).
+- `git_status()` / `git_diff()` / `git_add()` / `git_commit()`: Manage version control.
 
 ## Prerequisites
 
-- Rust 1.75+
-- llama-server binary from https://github.com/ggerganov/llama.cpp
-  - Recommended build: -DGGML_VULKAN=ON (for AMD GPUs)
-  - Recommended for Arch Linux: install llama.cpp-vulkan package from aur
-- A GGUF model (strongly recommended: Qwen 2.5 Coder, DeepSeek-Coder, CodeLlama)
-- Vulkan drivers (mesa / RADV on Linux)
+- **Rust 1.83+** (edition 2024)
+- **llama-server**: Download or build from [llama.cpp](https://github.com/ggerganov/llama.cpp).
+- **GGUF Model**: A high-quality coding model is recommended (e.g., Qwen 2.5 Coder, DeepSeek-Coder-V2).
 
 ## Installation
 
-git clone https://github.com/yourusername/ferrous.git
-cd ferrous
+```bash
+git clone https://github.com/lorehaven/build-tools.git
+cd build-tools/ferrous
 cargo build --release
-
-Binary: target/release/ferrous
-
-## Quick Start
-
-### Interactive mode
-
-# Most common usage
-```
-ferrous --model /mnt/dev/quantized/qwen2.5-coder-14b-instruct-q5_k_m.gguf
 ```
 
-# With custom sampling & debug logs
-```
-ferrous --model ... --temperature 0.25 --top-p 0.85 --max-tokens 4096 --debug
-```
+The binary will be located at `target/release/ferrous`.
 
-### One-shot query
+## Usage
 
-```
-ferrous query --text "Write a Rust function that safely reads a TOML config file"
-```
+### Launching Ferrous
 
-# With overrides
-```
-ferrous query --text "..." --temperature 0.1 --max-tokens 1024
+Start the interactive assistant:
+```bash
+./target/release/ferrous --model /path/to/your/model.gguf
 ```
 
-## In-REPL Commands
+### REPL Commands
 
+- `help`: Show help and available tools.
+- `clear`: Clear conversation history.
+- `save [name]`: Save current session.
+- `load [prefix]`: Load a previous session.
+- `list`: List saved conversations.
+- `delete [prefix]`: Delete a saved conversation.
+- `config`: Show current configuration.
+- `exit` / `quit`: End the session.
+
+### One-Shot Query
+
+```bash
+ferrous query --text "Explain the architecture of the riveter module"
 ```
->> help                  # show this help
->> clear                 # reset conversation history
->> exit  /  quit
->> List files here
->> Read Cargo.toml
->> Write hello world to main.py
->> Explain this error: expected &str, found String
+
+## Configuration
+
+Ferrous can be configured via a `config.toml` file in the current directory:
+
+```toml
+model = "models/qwen2.5-coder-7b-instruct.gguf"
+temperature = 0.1
+context = 32768
+max_tokens = 16384
+debug = false
 ```
 
-## Recommended Models (2025–2026)
+## Hardware & Performance
 
-| Model                              | Quant     | VRAM est. | Notes                                 |
-|------------------------------------|-----------|-----------|---------------------------------------|
-| Qwen2.5-Coder-14B-Instruct         | Q5_K_M    | ~10–12 GB | excellent Rust & general coding       |
-| DeepSeek-Coder-V2-Lite-Instruct    | Q5_K_M    | ~9–11 GB  | very fast, strong reasoning           |
-| CodeLlama-34B-Instruct             | Q4_K_M    | ~18–20 GB | classic, still good                   |
-| Qwen2.5-Coder-7B-Instruct          | Q6_K      | ~6–8 GB   | faster, lighter alternative           |
-
-## Performance & Hardware Notes
-
-- First model load can take 30–180 seconds (Vulkan shader compilation + weights transfer)
-- Use full offload: -ngl 999 (already in code)
-- Monitor GPU: radeontop, rocm-smi
-- Release build required (cargo build --release)
-- Recommended context: -c 4096 (adjustable in code) to avoid VRAM pressure
-
-## Troubleshooting
-
-Agent hangs at startup  
-→ Wait 1–3 minutes the first time (model loading and shader cache)  
-→ Check console for Vulkan device detection  
-→ Run llama-server manually with same args to debug
-
-No GPU usage / slow inference  
-→ Verify device: llama-cli --list-devices  
-→ Ensure --device Vulkan0 and GGML_VULKAN_DEVICE=0  
-→ Check VRAM usage during the load
-
-Port already in use  
-→ lsof -i :8080 or change --port 8081
-
-Server crashes during generation  
-→ Reduce context size (-c 4096 or lower)  
-→ Try --flash-attn off if using large context  
-→ Monitor rocm-smi for VRAM exhaustion
-
-## Project Status (Jan 2026)
-
-- Single-file MVP – fully functional and stable (non-streaming for reliability)
-- Next priorities:
-  - split into modules (agent.rs, tools.rs, llm.rs)
-  - simulated typewriter effect for full-response output
-  - conversation save/load
-  - more tools (git status/diff, grep, run tests)
-  - optional hybrid streaming (non-stream tools → stream final answer)
+Ferrous is optimized for local execution. It automatically attempts to offload work to your GPU if supported by your `llama-server` build (Vulkan, CUDA, or Metal). For large projects, models with ≥32k context are recommended.
 
 ### License
 MIT
