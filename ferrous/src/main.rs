@@ -18,6 +18,7 @@ struct Params {
     min_p: f32,
     top_k: i32,
     repeat_penalty: f32,
+    context: u32,
     max_tokens: u32,
     mirostat: i32,
     mirostat_tau: f32,
@@ -33,9 +34,10 @@ const DEFAULT_PARAMS: Params = Params {
     min_p: 0.05,
     top_k: 50,
     repeat_penalty: 1.15,
-    max_tokens: 32768,
+    context: 49152,
+    max_tokens: 24576,
     mirostat: 0,
-    mirostat_tau: 5.0,
+    mirostat_tau: 4.0,
     mirostat_eta: 0.1,
     debug: false,
 };
@@ -64,6 +66,9 @@ struct Args {
 
     #[arg(long, default_value_t = DEFAULT_PARAMS.repeat_penalty)]
     repeat_penalty: f32,
+
+    #[arg(long, default_value_t = DEFAULT_PARAMS.context)]
+    context: u32,
 
     #[arg(long, default_value_t = DEFAULT_PARAMS.max_tokens)]
     max_tokens: u32,
@@ -106,6 +111,9 @@ enum Commands {
         repeat_penalty: Option<f32>,
 
         #[arg(long)]
+        context: Option<u32>,
+
+        #[arg(long)]
         max_tokens: Option<u32>,
 
         #[arg(long)]
@@ -144,6 +152,7 @@ async fn main() -> Result<()> {
     apply_if_default!(args, min_p, DEFAULT_PARAMS, effective_conf);
     apply_if_default!(args, top_k, DEFAULT_PARAMS, effective_conf);
     apply_if_default!(args, repeat_penalty, DEFAULT_PARAMS, effective_conf);
+    apply_if_default!(args, context, DEFAULT_PARAMS, effective_conf);
     apply_if_default!(args, max_tokens, DEFAULT_PARAMS, effective_conf);
     apply_if_default!(args, mirostat, DEFAULT_PARAMS, effective_conf);
     apply_if_default!(args, mirostat_tau, DEFAULT_PARAMS, effective_conf);
@@ -162,7 +171,7 @@ async fn main() -> Result<()> {
     } else {
         Agent::new(
             &args.model,
-            args.max_tokens,
+            args.context,
             args.temperature,
             args.repeat_penalty,
             args.port,
@@ -179,7 +188,8 @@ async fn main() -> Result<()> {
         min_p: q_min_p,
         top_k: q_top_k,
         repeat_penalty: q_repeat_penalty,
-        max_tokens: q_max,
+        context: q_context,
+        max_tokens: q_max_tokens,
         mirostat: q_mirostat,
         mirostat_tau: q_mirostat_tau,
         mirostat_eta: q_mirostat_eta,
@@ -192,7 +202,8 @@ async fn main() -> Result<()> {
         let min_p = q_min_p.unwrap_or(args.min_p);
         let top_k = q_top_k.unwrap_or(args.top_k);
         let repeat_penalty = q_repeat_penalty.unwrap_or(args.repeat_penalty);
-        let max_t = q_max.unwrap_or(args.max_tokens);
+        let context = q_context.unwrap_or(args.context);
+        let max_t = q_max_tokens.unwrap_or(args.max_tokens);
         let mirostat = q_mirostat.unwrap_or(args.mirostat);
         let mirostat_tau = q_mirostat_tau.unwrap_or(args.mirostat_tau);
         let mirostat_eta = q_mirostat_eta.unwrap_or(args.mirostat_eta);
@@ -208,6 +219,7 @@ async fn main() -> Result<()> {
             min_p,
             top_k,
             repeat_penalty,
+            context,
             max_t,
             mirostat,
             mirostat_tau,
@@ -350,6 +362,7 @@ async fn main() -> Result<()> {
                             args.min_p,
                             args.top_k,
                             args.repeat_penalty,
+                            args.context,
                             args.max_tokens,
                             args.mirostat,
                             args.mirostat_tau,

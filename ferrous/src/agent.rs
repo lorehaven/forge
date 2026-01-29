@@ -94,7 +94,7 @@ impl Agent {
     /// Create a new Agent and spawn llama-server
     pub async fn new(
         model: &str,
-        max_tokens: u32,
+        context: u32,
         temperature: f32,
         repeat_penalty: f32,
         port: u16,
@@ -104,7 +104,7 @@ impl Agent {
 
         let server_handle = spawn_server(
             model,
-            max_tokens,
+            context,
             temperature,
             repeat_penalty,
             port,
@@ -193,7 +193,8 @@ impl Agent {
         min_p: f32,
         top_k: i32,
         repeat_penalty: f32,
-        max_tokens: u32,
+        context: u32,
+        mut max_tokens: u32,
         mirostat: i32,
         mirostat_tau: f32,
         mirostat_eta: f32,
@@ -206,6 +207,38 @@ impl Agent {
         let tools = &*TOOLS_JSON;
 
         loop {
+            // Rough token estimation:
+            //   - ~3–4 chars per token is a common heuristic for English/code
+            //   - +500 per message adds safety margin for JSON overhead, roles, etc.
+            let estimated_prompt_tokens: u64 = self.messages.iter()
+                .map(|m| m.to_string().len() as u64 / 4 + 500)
+                .sum();
+
+            // Total expected usage = prompt + max new tokens + extra buffer
+            let total_estimated = estimated_prompt_tokens + max_tokens as u64 + 2048;
+
+            let context_u64 = context as u64;
+
+            if total_estimated > context_u64 * 95 / 100 {
+                let used_percent = (total_estimated * 100 / context_u64) as u32;
+                eprintln!(
+                    "{} Warning: estimated context usage ~{total_estimated} / {context_u64} tokens ({used_percent}% used). Risk of truncation.",
+                    "CAUTION:".yellow().bold(),
+                );
+
+                // Calculate safe max_tokens: leave at least 4k tokens for KV cache overhead + safety
+                let safe_max_tokens = ((context_u64 - estimated_prompt_tokens) as i64 - 4096)
+                    .max(1024) as u32;  // never go below 1k to avoid a useless generation
+
+                if max_tokens > safe_max_tokens {
+                    eprintln!(
+                        "{} Clamping max_tokens from {max_tokens} → {safe_max_tokens} to stay within context limit.",
+                        "ADJUSTED:".bright_yellow().bold(),
+                    );
+                    max_tokens = safe_max_tokens;
+                }
+            }
+
             let body = json!({
                 "messages": &self.messages,
                 "tools": &tools,

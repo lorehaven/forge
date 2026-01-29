@@ -135,7 +135,11 @@ pub fn print_help() {
     println!("  --temperature <0.0–2.0>     Sampling temperature (default: 0.4)");
     println!("  --top-p <0.0–1.0>           Nucleus sampling probability (default: 0.9)");
     println!("  --top-k <int>               Top-K sampling (default: 50)");
-    println!("  --max-tokens <int>          Max output tokens (default: 8192)");
+    println!("  --context         Max context size for llama-server (default: 49152)");
+    println!("                     Recommended: 32768–65536. Larger = slower + more VRAM");
+    println!("  --max-tokens      Max tokens the model can generate in one reply (default: 24576)");
+    println!("                     Should be ~50–70% of --context to avoid truncation");
+    println!("                     Typical good values: 8192–32768");
     println!("  --debug                     Show llama-server logs and verbose output");
     println!("  --mirostat <0-2>            Mirostat mode (0=off, 1=v1, 2=v2) (default: 0)");
     println!("  --mirostat-tau <float>      Target surprise for Mirostat (default: 5.0)");

@@ -13,6 +13,7 @@ pub struct Config {
     pub min_p: Option<f32>,
     pub top_k: Option<i32>,
     pub repeat_penalty: Option<f32>,
+    pub context: Option<u32>,
     pub max_tokens: Option<u32>,
     pub mirostat: Option<i32>,
     pub mirostat_tau: Option<f32>,
@@ -36,6 +37,7 @@ impl Config {
                 "repeat_penalty",
                 self.repeat_penalty.map(|v| format!("{:.2}", v)),
             ),
+            ("context", self.context.map(|v| v.to_string())),
             ("max_tokens", self.max_tokens.map(|v| v.to_string())),
             ("mirostat", self.mirostat.map(|v| v.to_string())),
             (
@@ -132,6 +134,7 @@ pub fn print_loaded(config: &Config, is_debug: bool) {
         && config.min_p.is_none()
         && config.top_k.is_none()
         && config.repeat_penalty.is_none()
+        && config.context.is_none()
         && config.max_tokens.is_none()
         && config.mirostat.is_none()
         && config.mirostat_tau.is_none()
@@ -177,6 +180,11 @@ pub fn print_loaded(config: &Config, is_debug: bool) {
             colored::Color::BrightYellow,
         ),
         ConfigField::new(
+            "context",
+            config.context.map(|v| v.to_string()),
+            colored::Color::BrightGreen,
+        ),
+        ConfigField::new(
             "max_tokens",
             config.max_tokens.map(|v| v.to_string()),
             colored::Color::BrightGreen,
@@ -198,13 +206,7 @@ pub fn print_loaded(config: &Config, is_debug: bool) {
         ),
         ConfigField::new(
             "debug",
-            config.debug.map(|v| {
-                if v {
-                    "true".to_string()
-                } else {
-                    "false".to_string()
-                }
-            }),
+            config.debug.map(|v| v.to_string()),
             colored::Color::BrightGreen,
         ),
     ];
