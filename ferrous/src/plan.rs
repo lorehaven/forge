@@ -103,6 +103,7 @@ pub async fn execute_plan(
                 mirostat,
                 mirostat_tau,
                 mirostat_eta,
+                is_debug,
             )
             .await;
 

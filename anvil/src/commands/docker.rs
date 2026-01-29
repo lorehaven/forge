@@ -13,7 +13,7 @@ fn find_module_for_package<'a>(config: &'a config::Config, package: &str) -> Res
 
     if let Some(skipped) = &config.skipped {
         for module in &skipped.modules {
-            let path = format!("{}/{}", module, package);
+            let path = format!("{module}/{package}");
             if std::path::Path::new(&path).exists() {
                 anyhow::bail!(
                     "Package '{}' is in module '{}' which is skipped for Docker operations",
@@ -30,7 +30,7 @@ fn find_module_for_package<'a>(config: &'a config::Config, package: &str) -> Res
 fn get_package_version(module: &str, package: &str) -> Result<String> {
     let path = format!("{}/{}/Cargo.toml", module, package);
     let content = fs::read_to_string(&path)
-        .with_context(|| format!("Failed to read Cargo.toml at {}", path))?;
+        .with_context(|| format!("Failed to read Cargo.toml at {path}"))?;
 
     let value: toml::Value = toml::from_str(&content)
         .with_context(|| format!("Failed to parse Cargo.toml at {}", path))?;

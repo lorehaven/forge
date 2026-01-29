@@ -197,6 +197,7 @@ impl Agent {
         mirostat: i32,
         mirostat_tau: f32,
         mirostat_eta: f32,
+        is_debug: bool,
     ) -> Result<String> {
         self.ensure_alive().await?;
 
@@ -221,25 +222,78 @@ impl Agent {
                 "mirostat_eta": mirostat_eta,
             });
 
+            let url = format!("http://127.0.0.1:{}/v1/chat/completions", self.port);
+
             let response = self
                 .client
-                .post(format!(
-                    "http://127.0.0.1:{}/v1/chat/completions",
-                    self.port
-                ))
+                .post(&url)
                 .json(&body)
                 .send()
-                .await?
-                .error_for_status()?;
+                .await;
 
-            let mut stream = response.bytes_stream();
+            let resp = match response {
+                Ok(r) => r,
+                Err(e) => {
+                    eprintln!("{} Network error contacting llama-server: {e}", "ERROR:".red().bold());
+                    return Err(anyhow!("Failed to reach llama-server: {e}"));
+                }
+            };
+
+            // ── Handle non-successful HTTP responses ──
+            if !resp.status().is_success() {
+                let status = resp.status();
+                let error_body = resp.text().await.unwrap_or_else(|_| "(no response body)".to_string());
+
+                eprintln!("\n{}", "═".repeat(80).red().bold());
+                eprintln!(
+                    "{} LLM server returned non-success status",
+                    "CRITICAL ERROR:".red().bold()
+                );
+                eprintln!("URL: {}", url.bright_white());
+                eprintln!(
+                    "Status: {} {}",
+                    status.as_u16().to_string().red().bold(),
+                    status.canonical_reason().unwrap_or("").bright_red()
+                );
+
+                if is_debug {
+                    // Pretty-print the request payload we sent
+                    if let Ok(pretty) = serde_json::to_string_pretty(&body) {
+                        eprintln!("\n{}", "Request payload that failed:".yellow().bold());
+                        eprintln!("{}", pretty);
+                    } else {
+                        eprintln!("\n{}", "Could not format request body".yellow().bold());
+                        eprintln!("Raw body: {:?}", body);
+                    }
+                }
+
+                eprintln!("\n{}", "Server response body:".yellow().bold());
+                eprintln!("{}", error_body);
+
+                eprintln!("{}", "═".repeat(80).red().bold());
+                eprintln!();
+
+                return Err(anyhow!(
+                "llama-server returned {}: {}",
+                status,
+                error_body.chars().take(500).collect::<String>()
+            ));
+            }
+
+            let mut stream = resp.bytes_stream();
 
             let mut full_content = String::new();
             let mut tool_calls: Vec<Value> = vec![];
             let mut has_started_printing = false;
 
             while let Some(item) = stream.next().await {
-                let bytes = item?;
+                let bytes = match item {
+                    Ok(b) => b,
+                    Err(e) => {
+                        eprintln!("{} Stream read error: {}", "ERROR:".red().bold(), e);
+                        return Err(anyhow!("Stream failure: {}", e));
+                    }
+                };
 
                 // Convert bytes to string and split into lines (SSE events are line-delimited)
                 let data = String::from_utf8_lossy(&bytes).to_string();
@@ -257,7 +311,11 @@ impl Agent {
                     }
                     let chunk: Value = match serde_json::from_str(payload) {
                         Ok(v) => v,
-                        Err(_) => continue,
+                        Err(e) => {
+                            eprintln!("{} JSON parse error in stream chunk: {}", "WARN:".yellow().bold(), e);
+                            eprintln!("Bad chunk: {}", payload);
+                            continue;
+                        }
                     };
                     let delta = &chunk["choices"][0]["delta"];
 
