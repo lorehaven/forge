@@ -17,8 +17,8 @@
 pub mod agent;
 pub mod config;
 pub mod llm;
-pub mod ui;
 pub mod plan;
+pub mod prompt;
 pub mod sessions;
 pub mod tools;
-pub mod prompt;
+pub mod ui;

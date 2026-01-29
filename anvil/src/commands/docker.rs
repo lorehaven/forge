@@ -106,7 +106,11 @@ pub fn release(config: &config::Config, package: &str, registry: &str) -> Result
 
 pub fn release_all(config: &config::Config, registry: &str) -> Result<()> {
     println!("Starting release-all...");
-    process_all_packages(config, |package| release(config, package, registry), "release")
+    process_all_packages(
+        config,
+        |package| release(config, package, registry),
+        "release",
+    )
 }
 
 pub fn build_all(config: &config::Config) -> Result<()> {

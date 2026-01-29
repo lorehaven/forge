@@ -23,7 +23,7 @@ pub struct PromptContext {
 impl PromptManager {
     pub fn new() -> Result<Self> {
         let mut env = Environment::new();
-        
+
         let rules_dir = std::env::current_dir()
             .context("Failed to get current directory")?
             .join(".ferrous")
@@ -47,17 +47,21 @@ impl PromptManager {
     }
 
     fn render(&self, template_name: &str, ctx: &PromptContext) -> Result<String> {
-        let tmpl = self.env.get_template(template_name)
-            .context(format!("Template {} not found", template_name))?;
-        
+        let tmpl = self
+            .env
+            .get_template(template_name)
+            .context(format!("Template {template_name} not found"))?;
+
         tmpl.render(context!(
             date => ctx.date,
             os => ctx.os,
             project_name => ctx.project_name,
-        )).context(format!("Failed to render template {}", template_name))
+        ))
+        .context(format!("Failed to render template {template_name}"))
     }
 }
 
+#[must_use]
 pub fn get_default_context() -> PromptContext {
     PromptContext {
         date: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
@@ -75,7 +79,9 @@ mod tests {
 
     #[test]
     fn test_render_system_fallback() {
-        let pm = PromptManager { env: Environment::new() };
+        let pm = PromptManager {
+            env: Environment::new(),
+        };
         let ctx = PromptContext {
             date: "2024-01-01".to_string(),
             os: "linux".to_string(),
@@ -88,7 +94,8 @@ mod tests {
     #[test]
     fn test_render_system_custom() {
         let mut env = Environment::new();
-        env.add_template("system.md", "Hello {{ project_name }} on {{ os }}").unwrap();
+        env.add_template("system.md", "Hello {{ project_name }} on {{ os }}")
+            .unwrap();
         let pm = PromptManager { env };
         let ctx = PromptContext {
             date: "2024-01-01".to_string(),

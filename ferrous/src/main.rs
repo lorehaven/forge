@@ -3,12 +3,12 @@ use clap::{Parser, Subcommand};
 use colored::Colorize;
 use ferrous::agent::Agent;
 use ferrous::config::{self, SamplingConfig};
-use ferrous::ui::interface::InteractionHandler;
 use ferrous::llm::is_port_open;
-use ferrous::ui::query::QueryMode;
-use ferrous::ui::repl::ReplMode;
 use ferrous::plan::execute_plan;
 use ferrous::sessions;
+use ferrous::ui::interface::InteractionHandler;
+use ferrous::ui::query::QueryMode;
+use ferrous::ui::repl::ReplMode;
 use rustyline::DefaultEditor;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -256,7 +256,8 @@ async fn main() -> Result<()> {
                     "exit" | "quit" => break,
                     "clear" => {
                         agent.messages.truncate(1);
-                        handler.print_message(&format!("{}", "Conversation cleared.".bright_yellow()));
+                        handler
+                            .print_message(&format!("{}", "Conversation cleared.".bright_yellow()));
                     }
                     "help" => ferrous::ui::render::print_help(),
                     "config" | "show-config" | "cfg" => {
@@ -264,12 +265,21 @@ async fn main() -> Result<()> {
                     }
                     "list" => match sessions::list_conversations() {
                         Ok(items) if items.is_empty() => {
-                            handler.print_message(&format!("{}", "No saved conversations yet.".bright_yellow()));
+                            handler.print_message(&format!(
+                                "{}",
+                                "No saved conversations yet.".bright_yellow()
+                            ));
                         }
                         Ok(items) => {
-                            handler.print_message(&format!("{}", "Saved conversations:".bright_cyan().bold()));
+                            handler.print_message(&format!(
+                                "{}",
+                                "Saved conversations:".bright_cyan().bold()
+                            ));
                             for (name, short_id, date) in items {
-                                handler.print_message(&format!("  • {} ({short_id}) [{date}]", name.bright_white(),));
+                                handler.print_message(&format!(
+                                    "  • {} ({short_id}) [{date}]",
+                                    name.bright_white(),
+                                ));
                             }
                         }
                         Err(e) => handler.print_error(&format!("{e}")),
@@ -301,7 +311,10 @@ async fn main() -> Result<()> {
                     cmd if cmd.starts_with("load") => {
                         let rest = input[4..].trim();
                         if rest.is_empty() {
-                            handler.print_message(&format!("{}", "Usage: load <name prefix or short id>".yellow()));
+                            handler.print_message(&format!(
+                                "{}",
+                                "Usage: load <name prefix or short id>".yellow()
+                            ));
                             continue;
                         }
 
@@ -318,7 +331,10 @@ async fn main() -> Result<()> {
                     cmd if cmd.starts_with("delete") => {
                         let rest = input[6..].trim();
                         if rest.is_empty() {
-                            handler.print_message(&format!("{}", "Usage: delete <name prefix or short id>".yellow()));
+                            handler.print_message(&format!(
+                                "{}",
+                                "Usage: delete <name prefix or short id>".yellow()
+                            ));
                             continue;
                         }
 
@@ -357,7 +373,9 @@ async fn main() -> Result<()> {
                         };
 
                         // ── EXECUTION PHASE ──────────────────────────
-                        if let Err(e) = execute_plan(&mut agent, plan, sampling, args.debug, &handler).await {
+                        if let Err(e) =
+                            execute_plan(&mut agent, plan, sampling, args.debug, &handler).await
+                        {
                             handler.print_error(&format!("Execution error: {e}"));
                         }
                     }

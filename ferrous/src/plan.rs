@@ -3,7 +3,7 @@ use crate::config::SamplingConfig;
 use colored::Colorize;
 use std::fmt;
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum StepStatus {
@@ -102,7 +102,7 @@ pub async fn execute_plan(
         match result {
             Ok(resp) => {
                 if is_debug && is_explanatory_step(&step.description) {
-                    interaction.print_debug(&format!("\nResponse:"));
+                    interaction.print_debug("\nResponse:");
                     interaction.print_response(&resp);
                 }
                 plan.mark_done(step.id);

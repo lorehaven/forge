@@ -1,6 +1,8 @@
-use crate::ui::interface::InteractionHandler;
 use crate::plan::ExecutionPlan;
-use crate::ui::render::{render_plan, render_model_progress, pretty_print_response, ModelLoadPhase};
+use crate::ui::interface::InteractionHandler;
+use crate::ui::render::{
+    ModelLoadPhase, pretty_print_response, render_model_progress, render_plan,
+};
 use colored::Colorize;
 use std::io::Write;
 
@@ -52,7 +54,13 @@ impl InteractionHandler for ReplMode {
 
     fn print_stream_code_start(&self, lang: &str) {
         let mut stdout = std::io::stdout();
-        let _ = write!(stdout, "\n{} {}\n{} ", "┌──".dimmed(), lang.bright_yellow().bold(), "│".dimmed());
+        let _ = write!(
+            stdout,
+            "\n{} {}\n{} ",
+            "┌──".dimmed(),
+            lang.bright_yellow().bold(),
+            "│".dimmed()
+        );
         let _ = stdout.flush();
     }
 

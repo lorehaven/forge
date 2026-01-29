@@ -161,7 +161,8 @@ impl Agent {
         let mut temp_messages = self.messages.clone();
         let ctx = get_default_context();
         let planner_prompt = self.prompt_manager.render_planner(&ctx)?;
-        temp_messages.push(json!({"role": "user", "content": format!("{}{}", planner_prompt, query)}));
+        temp_messages
+            .push(json!({"role": "user", "content": format!("{}{}", planner_prompt, query)}));
 
         // Plan phase also needs context management
         // (Planning usually doesn't need much, but let's be safe)
@@ -220,14 +221,17 @@ impl Agent {
         }
 
         if steps.is_empty() {
-            if content.to_lowercase().contains("answer the user's question directly") {
+            if content
+                .to_lowercase()
+                .contains("answer the user's question directly")
+            {
                 steps.push(format!("Answer the user's question directly: {query}"));
             } else if !content.trim().is_empty() {
-                // If it's not the specific instruction but also not empty and not numbered, 
+                // If it's not the specific instruction but also not empty and not numbered,
                 // just take the whole thing as a single step if it looks like a step
                 let fallback = content.trim().lines().next().unwrap_or("").trim();
                 if !fallback.is_empty() && fallback.len() < 100 {
-                     steps.push(fallback.to_string());
+                    steps.push(fallback.to_string());
                 }
             }
         }
@@ -251,7 +255,9 @@ impl Agent {
             .push(json!({"role": "user", "content": user_input}));
 
         loop {
-            let max_tokens = self.manage_context(&sampling, is_debug, interaction).await?;
+            let max_tokens = self
+                .manage_context(&sampling, is_debug, interaction)
+                .await?;
             let body = self.build_request_body(&sampling, max_tokens);
             let url = format!("http://127.0.0.1:{}/v1/chat/completions", self.port);
 
@@ -405,29 +411,24 @@ impl Agent {
                     continue;
                 }
 
-                let payload = if line.starts_with("data: ") {
-                    &line["data: ".len()..]
-                } else if line.trim_start().starts_with("data: ") {
-                    let trimmed = line.trim_start();
-                    &trimmed["data: ".len()..]
-                } else {
-                    &line
-                };
+                let payload = line
+                    .strip_prefix("data: ")
+                    .or_else(|| line.trim_start().strip_prefix("data: "))
+                    .unwrap_or(&line);
 
-                let chunk: Value = match serde_json::from_str(payload) {
-                    Ok(v) => v,
-                    Err(_) => {
-                        let payload_trimmed = payload.trim();
-                        if payload_trimmed.is_empty() {
-                            continue;
-                        }
-                        if payload_trimmed == "[DONE]" {
-                            break;
-                        }
-                        match serde_json::from_str(payload_trimmed) {
-                            Ok(v) => v,
-                            Err(_) => continue,
-                        }
+                let chunk: Value = if let Ok(v) = serde_json::from_str(payload) {
+                    v
+                } else {
+                    let payload_trimmed = payload.trim();
+                    if payload_trimmed.is_empty() {
+                        continue;
+                    }
+                    if payload_trimmed == "[DONE]" {
+                        break;
+                    }
+                    match serde_json::from_str(payload_trimmed) {
+                        Ok(v) => v,
+                        Err(_) => continue,
                     }
                 };
                 let delta = &chunk["choices"][0]["delta"];
@@ -437,72 +438,15 @@ impl Agent {
                         interaction.print_stream_start();
                         has_started_printing = true;
                     }
-
-                    for c in content.chars() {
-                        if waiting_for_lang {
-                            if c == '\n' {
-                                interaction.print_stream_code_start(&potential_lang);
-                                potential_lang.clear();
-                                waiting_for_lang = false;
-                            } else {
-                                potential_lang.push(c);
-                            }
-                            continue;
-                        }
-
-                        if c == '`' {
-                            code_fence_buffer.push(c);
-                        } else {
-                            if !code_fence_buffer.is_empty() {
-                                let fence_len = code_fence_buffer.len();
-                                if fence_len >= 3 {
-                                    if in_code_block {
-                                        if fence_len == current_fence_size {
-                                            interaction.print_stream_code_end();
-                                            in_code_block = false;
-                                            current_fence_size = 0;
-                                        } else {
-                                            // Nested fence of different size, just print it
-                                            interaction.print_stream_code_chunk(&code_fence_buffer);
-                                        }
-                                    } else {
-                                        in_code_block = true;
-                                        current_fence_size = fence_len;
-                                        waiting_for_lang = true;
-                                    }
-                                } else {
-                                    // Not enough backticks for a fence
-                                    if in_code_block {
-                                        interaction.print_stream_code_chunk(&code_fence_buffer);
-                                    } else {
-                                        interaction.print_stream_chunk(&code_fence_buffer);
-                                    }
-                                }
-                                code_fence_buffer.clear();
-                            }
-
-                            if waiting_for_lang {
-                                // This block is reached if c is not '`' after some backticks were pushed
-                                // But c itself might be part of the language name if waiting_for_lang was just set
-                                // Actually, the 'else' block for c == '`' handles the case where we just finished a fence.
-                                // If waiting_for_lang is true here, it means we just started a code block.
-                                // The character 'c' is the first character after the fence.
-                                if c == '\n' {
-                                    interaction.print_stream_code_start("");
-                                    waiting_for_lang = false;
-                                } else {
-                                    potential_lang.push(c);
-                                }
-                            } else if c == '\n' && in_code_block {
-                                interaction.print_stream_code_chunk("\n");
-                            } else if in_code_block {
-                                interaction.print_stream_code_chunk(&c.to_string());
-                            } else {
-                                interaction.print_stream_chunk(&c.to_string());
-                            }
-                        }
-                    }
-
+                    Self::process_content_delta(
+                        content,
+                        interaction,
+                        &mut in_code_block,
+                        &mut code_fence_buffer,
+                        &mut current_fence_size,
+                        &mut potential_lang,
+                        &mut waiting_for_lang,
+                    );
                     full_content.push_str(content);
                 }
 
@@ -511,35 +455,7 @@ impl Agent {
                         interaction.print_stream_tool_start();
                         has_started_tool_printing = true;
                     }
-                    for tc_delta in tc_deltas {
-                        let index =
-                            usize::try_from(tc_delta["index"].as_u64().unwrap_or(0)).unwrap();
-                        while tool_calls.len() <= index {
-                            tool_calls.push(json!({
-                                "type": "function",
-                                "id": "",
-                                "function": { "name": "", "arguments": "" }
-                            }));
-                        }
-                        if let Some(id) = tc_delta["id"].as_str() {
-                            tool_calls[index]["id"] = json!(id);
-                        }
-                        if let Some(name_delta) = tc_delta["function"]["name"].as_str() {
-                            interaction.print_stream_tool_chunk(name_delta);
-                            let current_name =
-                                tool_calls[index]["function"]["name"].as_str().unwrap_or("");
-                            tool_calls[index]["function"]["name"] =
-                                json!(format!("{current_name}{name_delta}"));
-                        }
-                        if let Some(args_delta) = tc_delta["function"]["arguments"].as_str() {
-                            interaction.print_stream_tool_chunk(args_delta);
-                            let current_args = tool_calls[index]["function"]["arguments"]
-                                .as_str()
-                                .unwrap_or("");
-                            tool_calls[index]["function"]["arguments"] =
-                                json!(format!("{current_args}{args_delta}"));
-                        }
-                    }
+                    Self::process_tool_calls_delta(tc_deltas, &mut tool_calls, interaction);
                 }
             }
         }
@@ -550,6 +466,111 @@ impl Agent {
             interaction.print_stream_tool_end();
         }
         Ok((full_content, tool_calls))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn process_content_delta(
+        content: &str,
+        interaction: &dyn crate::ui::interface::InteractionHandler,
+        in_code_block: &mut bool,
+        code_fence_buffer: &mut String,
+        current_fence_size: &mut usize,
+        potential_lang: &mut String,
+        waiting_for_lang: &mut bool,
+    ) {
+        for c in content.chars() {
+            if *waiting_for_lang {
+                if c == '\n' {
+                    interaction.print_stream_code_start(potential_lang);
+                    potential_lang.clear();
+                    *waiting_for_lang = false;
+                } else {
+                    potential_lang.push(c);
+                }
+                continue;
+            }
+
+            if c == '`' {
+                code_fence_buffer.push(c);
+            } else {
+                if !code_fence_buffer.is_empty() {
+                    let fence_len = code_fence_buffer.len();
+                    if fence_len >= 3 {
+                        if *in_code_block {
+                            if fence_len == *current_fence_size {
+                                interaction.print_stream_code_end();
+                                *in_code_block = false;
+                                *current_fence_size = 0;
+                            } else {
+                                // Nested fence of different size, just print it
+                                interaction.print_stream_code_chunk(code_fence_buffer);
+                            }
+                        } else {
+                            *in_code_block = true;
+                            *current_fence_size = fence_len;
+                            *waiting_for_lang = true;
+                        }
+                    } else {
+                        // Not enough backticks for a fence
+                        if *in_code_block {
+                            interaction.print_stream_code_chunk(code_fence_buffer);
+                        } else {
+                            interaction.print_stream_chunk(code_fence_buffer);
+                        }
+                    }
+                    code_fence_buffer.clear();
+                }
+
+                if *waiting_for_lang {
+                    if c == '\n' {
+                        interaction.print_stream_code_start("");
+                        *waiting_for_lang = false;
+                    } else {
+                        potential_lang.push(c);
+                    }
+                } else if c == '\n' && *in_code_block {
+                    interaction.print_stream_code_chunk("\n");
+                } else if *in_code_block {
+                    interaction.print_stream_code_chunk(&c.to_string());
+                } else {
+                    interaction.print_stream_chunk(&c.to_string());
+                }
+            }
+        }
+    }
+
+    fn process_tool_calls_delta(
+        tc_deltas: &[Value],
+        tool_calls: &mut Vec<Value>,
+        interaction: &dyn crate::ui::interface::InteractionHandler,
+    ) {
+        for tc_delta in tc_deltas {
+            let index = usize::try_from(tc_delta["index"].as_u64().unwrap_or(0)).unwrap();
+            while tool_calls.len() <= index {
+                tool_calls.push(json!({
+                    "type": "function",
+                    "id": "",
+                    "function": { "name": "", "arguments": "" }
+                }));
+            }
+            if let Some(id) = tc_delta["id"].as_str() {
+                tool_calls[index]["id"] = json!(id);
+            }
+            if let Some(name_delta) = tc_delta["function"]["name"].as_str() {
+                interaction.print_stream_tool_chunk(name_delta);
+                let current_name = tool_calls[index]["function"]["name"].as_str().unwrap_or("");
+                tool_calls[index]["function"]["name"] =
+                    json!(format!("{current_name}{name_delta}"));
+            }
+            if let Some(args_delta) = tc_delta["function"]["arguments"].as_str() {
+                interaction.print_stream_tool_chunk(args_delta);
+                let current_args = tool_calls[index]["function"]["arguments"]
+                    .as_str()
+                    .unwrap_or("");
+                tool_calls[index]["function"]["arguments"] =
+                    json!(format!("{current_args}{args_delta}"));
+            }
+        }
     }
 
     async fn handle_tool_calls(

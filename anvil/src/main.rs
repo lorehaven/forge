@@ -40,7 +40,7 @@ fn main() -> Result<()> {
             DockerCommands::ReleaseAll { registry } => {
                 commands::docker::release_all(&config, &registry)?;
             }
-            DockerCommands::BuildAll => commands::docker::build_all(&config)?
+            DockerCommands::BuildAll => commands::docker::build_all(&config)?,
         },
     }
 

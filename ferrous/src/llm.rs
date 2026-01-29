@@ -1,9 +1,9 @@
+use crate::ui::render::ModelLoadPhase;
 use anyhow::{Result, anyhow};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use tokio::net::TcpStream;
 use tokio::time::{Duration, interval};
-use crate::ui::render::ModelLoadPhase;
 
 pub type ProgressCallback = Box<dyn Fn(ModelLoadPhase) + Send>;
 
