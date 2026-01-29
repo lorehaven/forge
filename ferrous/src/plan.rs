@@ -1,5 +1,4 @@
 use crate::agent::Agent;
-use crate::cli::{print_indented, render_plan};
 use crate::config::SamplingConfig;
 use colored::Colorize;
 use std::fmt;
@@ -80,33 +79,34 @@ pub async fn execute_plan(
     mut plan: ExecutionPlan,
     sampling: SamplingConfig,
     is_debug: bool,
+    interaction: &dyn crate::ui::interface::InteractionHandler,
 ) -> anyhow::Result<()> {
     for step in plan.steps.clone() {
         plan.mark_running(step.id);
-        render_plan(&plan);
+        interaction.render_plan(&plan);
 
         let result = agent
-            .stream(&step.description, sampling.clone(), is_debug)
+            .stream(&step.description, sampling.clone(), is_debug, interaction)
             .await;
 
         match result {
             Ok(resp) => {
                 if is_debug && is_explanatory_step(&step.description) {
-                    println!("\n{}", "Response:".bright_black());
-                    print_indented(&resp);
+                    interaction.print_debug(&format!("\nResponse:"));
+                    interaction.print_response(&resp);
                 }
                 plan.mark_done(step.id);
-                render_plan(&plan);
+                interaction.render_plan(&plan);
             }
             Err(e) => {
                 plan.mark_failed(step.id, e.to_string());
-                render_plan(&plan);
-                print_indented(&e.to_string());
+                interaction.render_plan(&plan);
+                interaction.print_error(&e.to_string());
                 return Err(e);
             }
         }
 
-        render_plan(&plan);
+        interaction.render_plan(&plan);
     }
 
     Ok(())

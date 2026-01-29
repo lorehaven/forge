@@ -1,4 +1,3 @@
-use crate::cli::render_model_progress;
 use crate::config::SamplingConfig;
 use crate::llm::is_port_open;
 use crate::plan::ExecutionPlan;
@@ -116,7 +115,7 @@ impl Agent {
             repeat_penalty,
             port,
             debug,
-            Some(Box::new(render_model_progress)),
+            None,
         )
         .await?;
 
@@ -205,6 +204,24 @@ impl Agent {
             {
                 let step = line[idx + 1..].trim();
                 if !step.is_empty() {
+                    // Avoid duplicate discovery step if already added or if the model included it
+                    let is_discovery = {
+                        let s = step.to_lowercase();
+                        s.contains("discover project technologies") || 
+                        (s.contains("discover") && s.contains("technologies"))
+                    };
+
+                    if is_discovery
+                        && steps
+                            .iter()
+                            .any(|s| {
+                                let existing = s.to_lowercase();
+                                existing.contains("discover project technologies") ||
+                                (existing.contains("discover") && existing.contains("technologies"))
+                            })
+                    {
+                        continue;
+                    }
                     steps.push(step.to_string());
                 }
             }
@@ -222,24 +239,25 @@ impl Agent {
         user_input: &str,
         sampling: SamplingConfig,
         is_debug: bool,
+        interaction: &dyn crate::ui::interface::InteractionHandler,
     ) -> Result<String> {
         self.ensure_alive().await?;
         self.messages
             .push(json!({"role": "user", "content": user_input}));
 
         loop {
-            let max_tokens = self.manage_context(&sampling, is_debug).await?;
+            let max_tokens = self.manage_context(&sampling, is_debug, interaction).await?;
             let body = self.build_request_body(&sampling, max_tokens);
             let url = format!("http://127.0.0.1:{}/v1/chat/completions", self.port);
 
             let resp = self.client.post(&url).json(&body).send().await?;
             if !resp.status().is_success() {
                 return self
-                    .handle_error_response(resp, &url, &body, is_debug)
+                    .handle_error_response(resp, &url, &body, is_debug, interaction)
                     .await;
             }
 
-            let (full_content, tool_calls) = self.process_stream(resp).await?;
+            let (full_content, tool_calls) = self.process_stream(resp, interaction).await?;
 
             if tool_calls.is_empty() {
                 self.messages
@@ -248,12 +266,17 @@ impl Agent {
                 return Ok(full_content);
             }
 
-            self.handle_tool_calls(full_content, tool_calls, is_debug)
+            self.handle_tool_calls(full_content, tool_calls, is_debug, interaction)
                 .await?;
         }
     }
 
-    async fn manage_context(&mut self, sampling: &SamplingConfig, is_debug: bool) -> Result<u32> {
+    async fn manage_context(
+        &mut self,
+        sampling: &SamplingConfig,
+        is_debug: bool,
+        interaction: &dyn crate::ui::interface::InteractionHandler,
+    ) -> Result<u32> {
         const SAFETY_BUFFER: u64 = 1024;
         let context = sampling.context.unwrap_or(8192);
         let mut max_tokens = sampling.max_tokens.unwrap_or(4096);
@@ -280,10 +303,9 @@ impl Agent {
                 .max(1024);
             if u64::from(max_tokens) > safe_max_tokens {
                 if is_debug {
-                    eprintln!(
-                        "{} Context tight ({prompt_tokens} prompt tokens). Clamping max_tokens {max_tokens} → {safe_max_tokens}",
-                        "ADJUSTED:".bright_yellow().bold(),
-                    );
+                    interaction.print_debug(&format!(
+                        "Context tight ({prompt_tokens} prompt tokens). Clamping max_tokens {max_tokens} → {safe_max_tokens}",
+                    ));
                 }
                 max_tokens = u32::try_from(safe_max_tokens).unwrap_or(1024);
             }
@@ -291,11 +313,10 @@ impl Agent {
 
         if is_debug {
             let used_percent = (total_estimated * 100 / context_u64).min(100);
-            eprintln!(
-                "{} Context usage: ~{total_estimated}/{context_u64} tokens ({used_percent}%). Messages: {}",
-                "INFO:".cyan().bold(),
+            interaction.print_debug(&format!(
+                "Context usage: ~{total_estimated}/{context_u64} tokens ({used_percent}%). Messages: {}",
                 self.messages.len()
-            );
+            ));
         }
 
         Ok(max_tokens)
@@ -325,6 +346,7 @@ impl Agent {
         url: &str,
         body: &Value,
         is_debug: bool,
+        interaction: &dyn crate::ui::interface::InteractionHandler,
     ) -> Result<String> {
         let status = resp.status();
         let error_body = resp
@@ -332,27 +354,16 @@ impl Agent {
             .await
             .unwrap_or_else(|_| "(no response body)".to_string());
 
-        eprintln!("\n{}", "═".repeat(80).red().bold());
-        eprintln!(
-            "{} LLM server returned non-success status",
-            "CRITICAL ERROR:".red().bold()
-        );
-        eprintln!("URL: {}", url.bright_white());
-        eprintln!(
-            "Status: {} {}",
-            status.as_u16().to_string().red().bold(),
-            status.canonical_reason().unwrap_or("").bright_red()
-        );
+        interaction.print_error(&format!("LLM server returned non-success status: {status}"));
+        interaction.print_info(&format!("URL: {url}"));
 
         if is_debug && let Ok(pretty) = serde_json::to_string_pretty(&body) {
-            eprintln!("\n{}", "Request payload that failed:".yellow().bold());
-            eprintln!("{pretty}");
+            interaction.print_debug("Request payload that failed:");
+            interaction.print_debug(&pretty);
         }
 
-        eprintln!("\n{}", "Server response body:".yellow().bold());
-        eprintln!("{error_body}");
-        eprintln!("{}", "═".repeat(80).red().bold());
-        eprintln!();
+        interaction.print_error("Server response body:");
+        interaction.print_error(&error_body);
 
         Err(anyhow!(
             "llama-server returned {status}: {}",
@@ -360,7 +371,11 @@ impl Agent {
         ))
     }
 
-    async fn process_stream(&self, resp: reqwest::Response) -> Result<(String, Vec<Value>)> {
+    async fn process_stream(
+        &self,
+        resp: reqwest::Response,
+        interaction: &dyn crate::ui::interface::InteractionHandler,
+    ) -> Result<(String, Vec<Value>)> {
         let mut stream = resp.bytes_stream();
         let mut full_content = String::new();
         let mut tool_calls: Vec<Value> = vec![];
@@ -386,7 +401,7 @@ impl Agent {
 
                 if let Some(content) = delta["content"].as_str() {
                     if !has_started_printing {
-                        print!("{}", "│ ".dimmed());
+                        interaction.print_message(&format!("{}", "│ ".dimmed()));
                         has_started_printing = true;
                     }
                     print!("{content}");
@@ -433,6 +448,7 @@ impl Agent {
         full_content: String,
         tool_calls: Vec<Value>,
         is_debug: bool,
+        interaction: &dyn crate::ui::interface::InteractionHandler,
     ) -> Result<()> {
         self.messages.push(json!({
             "role": "assistant",
@@ -451,12 +467,9 @@ impl Agent {
 
             let args_parsed: Value = serde_json::from_str(args_raw).unwrap_or_else(|_| json!({}));
 
-            println!(
-                "{} {}{}",
-                "  󱓞 Tool Call:".bright_yellow().bold(),
-                name.bright_white().bold(),
-                format!("({args_raw})").dimmed()
-            );
+            interaction.print_info(&format!(
+                "  󱓞 Tool Call: {name}({args_raw})"
+            ));
 
             let tool_result = execute_tool(name, args_parsed).await;
 
@@ -464,19 +477,13 @@ impl Agent {
                 Ok(r) => r,
                 Err(e) => {
                     let err_msg = format!("Tool error: {e}");
-                    if is_debug {
-                        eprintln!("{} {err_msg}", "DEBUG:".red().bold());
-                    }
+                    interaction.print_debug(&err_msg);
                     err_msg
                 }
             };
 
             if is_debug {
-                println!(
-                    "{} {}",
-                    "  󱓞 Result:".bright_green().bold(),
-                    result_str.dimmed()
-                );
+                interaction.print_debug(&format!("Tool Result: {result_str}"));
             }
 
             self.messages.push(json!({

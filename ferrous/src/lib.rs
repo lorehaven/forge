@@ -15,9 +15,9 @@
 #![cfg_attr(test, deny(rust_2018_idioms))]
 
 pub mod agent;
-pub mod cli;
 pub mod config;
 pub mod llm;
+pub mod ui;
 pub mod plan;
 pub mod sessions;
 pub mod tools;

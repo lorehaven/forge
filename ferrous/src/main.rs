@@ -2,9 +2,11 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use colored::Colorize;
 use ferrous::agent::Agent;
-use ferrous::cli::{print_help, render_plan};
 use ferrous::config::{self, SamplingConfig};
+use ferrous::ui::interface::InteractionHandler;
 use ferrous::llm::is_port_open;
+use ferrous::ui::query::QueryMode;
+use ferrous::ui::repl::ReplMode;
 use ferrous::plan::execute_plan;
 use ferrous::sessions;
 use rustyline::DefaultEditor;
@@ -203,7 +205,8 @@ async fn main() -> Result<()> {
         mirostat_eta: q_mirostat_eta,
     }) = args.command
     {
-        println!("{}", "Processing query...".dimmed());
+        let handler = QueryMode;
+        handler.print_info("Processing query...");
 
         let sampling = SamplingConfig {
             temperature: Some(q_temp.unwrap_or(args.temperature)),
@@ -219,9 +222,9 @@ async fn main() -> Result<()> {
         };
 
         let plan = agent.generate_plan(&text).await?;
-        render_plan(&plan);
+        handler.render_plan(&plan);
 
-        execute_plan(&mut agent, plan, sampling, args.debug).await?;
+        execute_plan(&mut agent, plan, sampling, args.debug, &handler).await?;
 
         if let Some(server) = agent.server.take() {
             let _ = server.lock().unwrap().kill();
@@ -230,11 +233,12 @@ async fn main() -> Result<()> {
     }
 
     // ── REPL mode ────────────────────────────────────────────────────────
-    println!(
+    let handler = ReplMode;
+    handler.print_message(&format!(
         "{} {}",
         "Ferrous coding agent ready.".bright_cyan().bold(),
         "Type 'help' for commands, 'exit' to quit.".dimmed()
-    );
+    ));
 
     let mut rl = DefaultEditor::new()?;
 
@@ -252,23 +256,23 @@ async fn main() -> Result<()> {
                     "exit" | "quit" => break,
                     "clear" => {
                         agent.messages.truncate(1);
-                        println!("{}", "Conversation cleared.".bright_yellow());
+                        handler.print_message(&format!("{}", "Conversation cleared.".bright_yellow()));
                     }
-                    "help" => print_help(),
+                    "help" => ferrous::ui::render::print_help(),
                     "config" | "show-config" | "cfg" => {
                         conf.display();
                     }
                     "list" => match sessions::list_conversations() {
                         Ok(items) if items.is_empty() => {
-                            println!("{}", "No saved conversations yet.".bright_yellow());
+                            handler.print_message(&format!("{}", "No saved conversations yet.".bright_yellow()));
                         }
                         Ok(items) => {
-                            println!("{}", "Saved conversations:".bright_cyan().bold());
+                            handler.print_message(&format!("{}", "Saved conversations:".bright_cyan().bold()));
                             for (name, short_id, date) in items {
-                                println!("  • {} ({short_id}) [{date}]", name.bright_white(),);
+                                handler.print_message(&format!("  • {} ({short_id}) [{date}]", name.bright_white(),));
                             }
                         }
-                        Err(e) => eprintln!("{} {e}", "Error listing:".red().bold()),
+                        Err(e) => handler.print_error(&format!("{e}")),
                     },
                     cmd if cmd.starts_with("save") => {
                         let rest = input[4..].trim();
@@ -285,46 +289,46 @@ async fn main() -> Result<()> {
                                 } else {
                                     ""
                                 };
-                                println!(
+                                handler.print_message(&format!(
                                     "{} {filename}{extra}",
                                     "Conversation saved as".bright_green(),
-                                );
+                                ));
                             }
-                            Err(e) => eprintln!("{} {e}", "Save failed:".red().bold()),
+                            Err(e) => handler.print_error(&format!("Save failed: {e}")),
                         }
                     }
 
                     cmd if cmd.starts_with("load") => {
                         let rest = input[4..].trim();
                         if rest.is_empty() {
-                            println!("{}", "Usage: load <name prefix or short id>".yellow());
+                            handler.print_message(&format!("{}", "Usage: load <name prefix or short id>".yellow()));
                             continue;
                         }
 
                         match agent.load_conversation(rest) {
-                            Ok(name) => println!(
+                            Ok(name) => handler.print_message(&format!(
                                 "{} {name} {}",
                                 "Loaded conversation:".bright_green(),
                                 "(current history replaced)".dimmed()
-                            ),
-                            Err(e) => eprintln!("{} {e}", "Load failed:".red().bold()),
+                            )),
+                            Err(e) => handler.print_error(&format!("Load failed: {e}")),
                         }
                     }
 
                     cmd if cmd.starts_with("delete") => {
                         let rest = input[6..].trim();
                         if rest.is_empty() {
-                            println!("{}", "Usage: delete <name prefix or short id>".yellow());
+                            handler.print_message(&format!("{}", "Usage: delete <name prefix or short id>".yellow()));
                             continue;
                         }
 
                         match sessions::delete_conversation_by_prefix(rest) {
-                            Ok(name) => println!(
+                            Ok(name) => handler.print_message(&format!(
                                 "{} {name} {}",
                                 "Deleted:".bright_green(),
                                 "(removed from disk)".dimmed()
-                            ),
-                            Err(e) => eprintln!("{} {e}", "Delete failed:".red().bold()),
+                            )),
+                            Err(e) => handler.print_error(&format!("Delete failed: {e}")),
                         }
                     }
                     _ => {
@@ -332,12 +336,12 @@ async fn main() -> Result<()> {
                         let plan = match agent.generate_plan(input).await {
                             Ok(p) => p,
                             Err(e) => {
-                                eprintln!("{} {}", "Planning error:".red().bold(), e);
+                                handler.print_error(&format!("Planning error: {e}"));
                                 continue;
                             }
                         };
 
-                        render_plan(&plan);
+                        handler.render_plan(&plan);
 
                         let sampling = SamplingConfig {
                             temperature: Some(args.temperature),
@@ -353,8 +357,8 @@ async fn main() -> Result<()> {
                         };
 
                         // ── EXECUTION PHASE ──────────────────────────
-                        if let Err(e) = execute_plan(&mut agent, plan, sampling, args.debug).await {
-                            eprintln!("{} {e}", "Execution error:".red().bold());
+                        if let Err(e) = execute_plan(&mut agent, plan, sampling, args.debug, &handler).await {
+                            handler.print_error(&format!("Execution error: {e}"));
                         }
                     }
                 }

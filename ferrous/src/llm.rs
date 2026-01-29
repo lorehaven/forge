@@ -3,13 +3,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use tokio::net::TcpStream;
 use tokio::time::{Duration, interval};
-
-#[derive(Debug, Clone, Copy)]
-pub enum ModelLoadPhase {
-    StartingServer,
-    WaitingForPort,
-    Ready,
-}
+use crate::ui::render::ModelLoadPhase;
 
 pub type ProgressCallback = Box<dyn Fn(ModelLoadPhase) + Send>;
 

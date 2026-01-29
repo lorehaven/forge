@@ -1,4 +1,3 @@
-use crate::llm::ModelLoadPhase;
 use crate::plan::ExecutionPlan;
 use colored::Colorize;
 use std::sync::LazyLock;
@@ -6,6 +5,13 @@ use syntect::easy::HighlightLines;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::{SyntaxReference, SyntaxSet};
 use syntect::util::LinesWithEndings;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelLoadPhase {
+    StartingServer,
+    WaitingForPort,
+    Ready,
+}
 
 static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
 static THEME_SET: LazyLock<ThemeSet> = LazyLock::new(ThemeSet::load_defaults);
