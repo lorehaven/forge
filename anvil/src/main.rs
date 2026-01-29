@@ -29,16 +29,16 @@ fn main() -> Result<()> {
         Commands::Docker { command } => match command {
             DockerCommands::Build { package } => commands::docker::build(&config, &package)?,
             DockerCommands::Tag { package, registry } => {
-                commands::docker::tag(&config, &package, &registry)?
+                commands::docker::tag(&config, &package, &registry)?;
             }
             DockerCommands::Push { package, registry } => {
-                commands::docker::push(&config, &package, &registry)?
+                commands::docker::push(&config, &package, &registry)?;
             }
             DockerCommands::Release { package, registry } => {
-                commands::docker::release(&config, &package, &registry)?
+                commands::docker::release(&config, &package, &registry)?;
             }
             DockerCommands::ReleaseAll { registry } => {
-                commands::docker::release_all(&config, &registry)?
+                commands::docker::release_all(&config, &registry)?;
             }
             DockerCommands::BuildAll => commands::docker::build_all(&config)?
         },

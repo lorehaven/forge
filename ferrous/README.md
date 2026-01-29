@@ -7,7 +7,6 @@ Originally focused on Rust, Ferrous has evolved into a versatile tool capable of
 ## Core Capabilities
 
 - **Autonomous Agent**: Ferrous can plan and execute multi-step tasks using a suite of built-in tools.
-- **Technology Discovery**: Automatically identifies project languages and frameworks (Rust, Node.js, Python, Go, Java, etc.).
 - **Smart Planning**: Generates a structured execution plan before starting work, ensuring transparency and safety.
 - **Advanced File Operations**: Beyond simple read/write, it can perform exact string replacements, search text (grep-style), and find files by pattern.
 - **Git Integration**: Built-in support for checking status, viewing diffs, staging changes, and committing.
@@ -21,7 +20,6 @@ Originally focused on Rust, Ferrous has evolved into a versatile tool capable of
 
 Ferrous uses a sophisticated tool-calling mechanism to interact with your project:
 
-- `discover_technologies()`: Identifies the project's tech stack.
 - `analyze_project()`: Runs appropriate static analysis tools for the project type.
 - `read_file(path)` / `read_multiple_files(paths)`: Reads file content into context.
 - `write_file(path, content)`: Creates or overwrites files.

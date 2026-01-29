@@ -6,7 +6,9 @@ use syntect::highlighting::ThemeSet;
 use syntect::parsing::{SyntaxReference, SyntaxSet};
 use syntect::util::LinesWithEndings;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+use serde::{Serialize, Deserialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ModelLoadPhase {
     StartingServer,
     WaitingForPort,
@@ -39,20 +41,30 @@ fn highlight_code_block(code: &str, lang: &str) -> String {
 
 pub fn pretty_print_response(response: &str) {
     let mut in_code = false;
+    let mut current_fence_size = 0;
     let mut current_lang = "text";
     let mut code_buffer = String::new();
 
     for line in response.lines() {
-        if line.starts_with("```") {
+        let trimmed_line = line.trim_start();
+        if trimmed_line.starts_with("```") {
+            let fence_len = trimmed_line.chars().take_while(|&c| c == '`').count();
             if in_code {
-                let highlighted = highlight_code_block(&code_buffer, current_lang);
-                println!("{highlighted}");
-                code_buffer.clear();
-                in_code = false;
+                if fence_len == current_fence_size {
+                    let highlighted = highlight_code_block(&code_buffer, current_lang);
+                    println!("{highlighted}");
+                    code_buffer.clear();
+                    in_code = false;
+                    current_fence_size = 0;
+                } else {
+                    code_buffer.push_str(line);
+                    code_buffer.push('\n');
+                }
             } else {
-                let lang = line.strip_prefix("```").unwrap_or("").trim();
+                let lang = trimmed_line[fence_len..].trim();
                 current_lang = if lang.is_empty() { "text" } else { lang };
                 in_code = true;
+                current_fence_size = fence_len;
             }
             continue;
         }
@@ -182,10 +194,6 @@ fn print_tools() {
     );
 
     let tools = [
-        (
-            "discover_technologies()",
-            "Identify the technologies, languages, and frameworks used in the project",
-        ),
         (
             "analyze_project()",
             "Perform project-wide analysis (e.g., linting, static analysis) appropriate for the project type",

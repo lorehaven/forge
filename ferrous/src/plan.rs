@@ -3,7 +3,9 @@ use crate::config::SamplingConfig;
 use colored::Colorize;
 use std::fmt;
 
-#[derive(Clone, Debug)]
+use serde::{Serialize, Deserialize};
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum StepStatus {
     Pending,
     Running,
@@ -11,14 +13,14 @@ pub enum StepStatus {
     Failed(String),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PlanStep {
     pub id: usize,
     pub description: String,
     pub status: StepStatus,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionPlan {
     pub steps: Vec<PlanStep>,
 }
@@ -63,12 +65,19 @@ impl fmt::Display for ExecutionPlan {
         for step in &self.steps {
             let symbol = match &step.status {
                 StepStatus::Pending => "[ ]".dimmed(),
-                StepStatus::Running => "[→]".bright_yellow(),
-                StepStatus::Done => "[✓]".bright_green(),
-                StepStatus::Failed(_) => "[✗]".bright_red(),
+                StepStatus::Running => "->".bright_cyan().bold(),
+                StepStatus::Done => "[v]".bright_green().bold(),
+                StepStatus::Failed(_) => "[x]".bright_red().bold(),
             };
 
-            writeln!(f, "{} {}. {}", symbol, step.id, step.description)?;
+            let desc = match &step.status {
+                StepStatus::Running => step.description.bright_white().bold(),
+                StepStatus::Done => step.description.dimmed(),
+                StepStatus::Failed(_) => step.description.bright_red(),
+                StepStatus::Pending => step.description.normal(),
+            };
+
+            writeln!(f, "{} {}. {}", symbol, step.id, desc)?;
         }
         Ok(())
     }
@@ -82,6 +91,7 @@ pub async fn execute_plan(
     interaction: &dyn crate::ui::interface::InteractionHandler,
 ) -> anyhow::Result<()> {
     for step in plan.steps.clone() {
+        interaction.set_current_step(Some(step.id));
         plan.mark_running(step.id);
         interaction.render_plan(&plan);
 
@@ -109,6 +119,7 @@ pub async fn execute_plan(
         interaction.render_plan(&plan);
     }
 
+    interaction.set_current_step(None);
     Ok(())
 }
 

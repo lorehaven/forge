@@ -49,8 +49,7 @@ The agent provides an interactive CLI interface for coding assistance with file 
 - [x] Agent struct with HTTP client and conversation history
 - [x] System prompt configuration
 - [x] Planning phase (generating a structured execution plan)
-- [x] Tool execution
-  - [x] Technology discovery
+- [ ] Tool execution
   - [x] Project analysis (linter integration)
   - [x] File operations
   - [x] Git integration
@@ -88,7 +87,6 @@ The agent provides an interactive CLI interface for coding assistance with file 
 - [x] Structured tool calling (using OpenAI-style function calls)
 - [ ] Code execution in sandboxed environment
 - [x] Search/grep functionality
-- [x] Technology discovery tool
 
 ### 🔲 Improved LLM Integration
 - [x] Better sampling strategies (mirostat)
@@ -151,7 +149,7 @@ The agent provides an interactive CLI interface for coding assistance with file 
 - ✅ Advanced file and search tools (`src/tools/file.rs`)
 - ✅ Agent core with planning and tool execution (`src/agent.rs`, `src/plan.rs`)
 - ✅ Modular CLI with interactive REPL and syntax highlighting (`src/cli.rs`, `src/main.rs`)
-- ✅ Git integration and technology discovery tools
+- ✅ Git integration tools
 - ✅ Comprehensive documentation (README.md and updated PLAN.md)
 
 **Current State**: Mature assistant capable of autonomous multi-step tasks across various tech stacks.

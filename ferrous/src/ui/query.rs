@@ -2,6 +2,7 @@ use crate::ui::interface::InteractionHandler;
 use crate::plan::ExecutionPlan;
 use crate::ui::render::{render_plan, render_model_progress, pretty_print_response, ModelLoadPhase};
 use colored::Colorize;
+use std::io::Write;
 
 #[derive(Debug)]
 pub struct QueryMode;
@@ -24,11 +25,65 @@ impl InteractionHandler for QueryMode {
     }
 
     fn print_info(&self, info: &str) {
-        println!("{}", info.dimmed());
+        let mut stdout = std::io::stdout();
+        let _ = write!(stdout, "{}", info.dimmed());
+        let _ = stdout.flush();
     }
 
     fn print_response(&self, response: &str) {
         pretty_print_response(response);
+    }
+
+    fn print_stream_start(&self) {
+        let mut stdout = std::io::stdout();
+        let _ = write!(stdout, "{}", "│ ".dimmed());
+        let _ = stdout.flush();
+    }
+
+    fn print_stream_chunk(&self, chunk: &str) {
+        let mut stdout = std::io::stdout();
+        let _ = write!(stdout, "{chunk}");
+        let _ = stdout.flush();
+    }
+
+    fn print_stream_end(&self) {
+        println!();
+    }
+
+    fn print_stream_code_start(&self, lang: &str) {
+        let mut stdout = std::io::stdout();
+        let _ = write!(stdout, "\n{} {}\n", "┌──".dimmed(), lang.bright_yellow().bold());
+        let _ = stdout.flush();
+    }
+
+    fn print_stream_code_chunk(&self, chunk: &str) {
+        let mut stdout = std::io::stdout();
+        for line in chunk.lines() {
+            let _ = writeln!(stdout, "{} {}", "│".dimmed(), line.bright_white());
+        }
+        let _ = stdout.flush();
+    }
+
+    fn print_stream_code_end(&self) {
+        let mut stdout = std::io::stdout();
+        let _ = writeln!(stdout, "{}", "└──".dimmed());
+        let _ = stdout.flush();
+    }
+
+    fn print_stream_tool_start(&self) {
+        let mut stdout = std::io::stdout();
+        let _ = write!(stdout, "\n  {} ", "🛠 Tool Call:".bright_yellow().bold());
+        let _ = stdout.flush();
+    }
+
+    fn print_stream_tool_chunk(&self, chunk: &str) {
+        let mut stdout = std::io::stdout();
+        let _ = write!(stdout, "{}", chunk.bright_cyan());
+        let _ = stdout.flush();
+    }
+
+    fn print_stream_tool_end(&self) {
+        println!();
     }
 
     fn print_debug(&self, message: &str) {

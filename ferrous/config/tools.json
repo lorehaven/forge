@@ -2,18 +2,6 @@
   {
     "type": "function",
     "function": {
-      "name": "discover_technologies",
-      "description": "Identify the technologies, languages, and frameworks used in the project by inspecting root files.",
-      "parameters": {
-        "type": "object",
-        "properties": {},
-        "required": []
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
       "name": "analyze_project",
       "description": "Perform project-wide analysis (e.g., linting, static analysis) appropriate for the project type. Returns warnings, suggestions, and errors.",
       "parameters": {
