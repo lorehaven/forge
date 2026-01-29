@@ -334,7 +334,7 @@ dependencies = [
  "clap",
  "colored",
  "futures-util",
- "once_cell",
+ "minijinja",
  "reqwest",
  "rustyline",
  "serde",

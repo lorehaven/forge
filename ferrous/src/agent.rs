@@ -1,6 +1,7 @@
 use crate::config::SamplingConfig;
 use crate::llm::is_port_open;
 use crate::plan::ExecutionPlan;
+use crate::prompt::{PromptManager, get_default_context};
 use crate::sessions::{load_conversation_by_prefix, save_conversation};
 use crate::tools::execute_tool;
 use anyhow::{Context, Result, anyhow};
@@ -15,7 +16,7 @@ static TOOLS_JSON: LazyLock<Vec<Value>> = LazyLock::new(|| {
     serde_json::from_str(s).expect("Invalid tools.json")
 });
 
-static PLAN_PROMPT: &str = r"
+pub const DEFAULT_PLAN_PROMPT: &str = r"
 You are in PLANNING MODE.
 
 Rules:
@@ -39,7 +40,7 @@ PLAN:
 2. <action>
 ";
 
-static PROMPT: &str = r"
+pub const DEFAULT_PROMPT: &str = r"
 You are Ferrous, an expert multi-purpose assistant and autonomous agent running in a project.
 
 Your primary goal: help the user analyze, modify, improve, and maintain the project efficiently and safely.
@@ -82,6 +83,7 @@ pub struct Agent {
     pub messages: Vec<Value>,
     pub server: Option<Arc<Mutex<Child>>>,
     port: u16,
+    pub prompt_manager: PromptManager,
 }
 
 impl Agent {
@@ -120,11 +122,16 @@ impl Agent {
         )
         .await?;
 
+        let prompt_manager = PromptManager::new()?;
+        let ctx = get_default_context();
+        let system_prompt = prompt_manager.render_system(&ctx)?;
+
         Ok(Self {
             client: Client::new(),
-            messages: vec![json!({"role": "system", "content": PROMPT})],
+            messages: vec![json!({"role": "system", "content": system_prompt})],
             server: Some(server_handle),
             port,
+            prompt_manager,
         })
     }
 
@@ -134,11 +141,16 @@ impl Agent {
 
         connect_only(port).await?;
 
+        let prompt_manager = PromptManager::new()?;
+        let ctx = get_default_context();
+        let system_prompt = prompt_manager.render_system(&ctx)?;
+
         Ok(Self {
             client: Client::new(),
-            messages: vec![json!({"role": "system", "content": PROMPT})],
+            messages: vec![json!({"role": "system", "content": system_prompt})],
             server: None,
             port,
+            prompt_manager,
         })
     }
 
@@ -147,7 +159,9 @@ impl Agent {
         const SAFETY_BUFFER: u64 = 1024;
 
         let mut temp_messages = self.messages.clone();
-        temp_messages.push(json!({"role": "user", "content": format!("{}{}", PLAN_PROMPT, query)}));
+        let ctx = get_default_context();
+        let planner_prompt = self.prompt_manager.render_planner(&ctx)?;
+        temp_messages.push(json!({"role": "user", "content": format!("{}{}", planner_prompt, query)}));
 
         // Plan phase also needs context management
         // (Planning usually doesn't need much, but let's be safe)

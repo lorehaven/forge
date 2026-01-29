@@ -21,3 +21,4 @@ pub mod ui;
 pub mod plan;
 pub mod sessions;
 pub mod tools;
+pub mod prompt;
