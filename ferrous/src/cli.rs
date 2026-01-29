@@ -98,8 +98,17 @@ pub fn print_indented(text: &str) {
     }
 }
 
-#[allow(clippy::too_many_lines)]
 pub fn print_help() {
+    print_intro();
+    print_repl_commands();
+    print_cli_flags();
+    print_examples();
+    print_tools();
+    print_config_info();
+    print_tips();
+}
+
+fn print_intro() {
     println!(
         "{}",
         "Ferrous – fast, local coding assistant"
@@ -107,7 +116,9 @@ pub fn print_help() {
             .bold()
     );
     println!();
+}
 
+fn print_repl_commands() {
     println!(
         "{}",
         "REPL commands (type these at the >> prompt):"
@@ -124,7 +135,9 @@ pub fn print_help() {
     println!("  config / cfg      Show current configuration (merged values)");
     println!("  help              Show this help message");
     println!();
+}
 
+fn print_cli_flags() {
     println!(
         "{}",
         "Important CLI flags (set when launching ferrous):"
@@ -146,11 +159,15 @@ pub fn print_help() {
     println!("  --mirostat-tau <float>      Target surprise for Mirostat (default: 5.0)");
     println!("  --mirostat-eta <float>      Adaptation rate for Mirostat (default: 0.1)");
     println!();
+}
 
+fn print_examples() {
     println!("{}", "One-shot mode example:".bright_yellow().bold());
     println!("  ferrous query --text \"explain this function in main.rs\" --temperature 0.2");
     println!();
+}
 
+fn print_tools() {
     println!(
         "{}",
         "Tools the agent can use (model decides when to call them):"
@@ -158,78 +175,74 @@ pub fn print_help() {
             .bold()
     );
 
-    println!("  analyze_project()");
-    println!("      → Run cargo clippy for project-wide linting and analysis");
-    println!();
+    let tools = [
+        (
+            "analyze_project()",
+            "Run cargo clippy for project-wide linting and analysis",
+        ),
+        (
+            "get_file_info(path)",
+            "Metadata for file or directory (size, mtime, type, line count if text)",
+        ),
+        (
+            "file_exists(path)",
+            "Returns \"true\" if file or directory exists",
+        ),
+        ("read_file(path)", "Reads and returns full file contents"),
+        (
+            "read_multiple_files(paths)",
+            "Read contents of multiple files at once (array of paths)",
+        ),
+        (
+            "write_file(path, content)",
+            "Writes or overwrites file, creates parent directories",
+        ),
+        (
+            "append_to_file(path, content)",
+            "Appends content to file, creates file if missing",
+        ),
+        (
+            "replace_in_file(path, search, replace)",
+            "Replaces all exact matches of <search> with <replace>",
+        ),
+        (
+            "create_directory(path)",
+            "Creates directory and parents (idempotent)",
+        ),
+        (
+            "list_directory([path])",
+            "Lists files and directories (non-recursive, default: \".\")",
+        ),
+        (
+            "get_directory_tree([path])",
+            "Recursive directory tree (default: \".\")",
+        ),
+        (
+            "list_files_recursive([path], [extension])",
+            "Flat list of all regular files, optional extension filter",
+        ),
+        (
+            "search_text(pattern, [path], [case_sensitive])",
+            "Grep-like search for lines containing pattern",
+        ),
+        (
+            "execute_shell_command(command)",
+            "Execute allowed shell command (cargo only)",
+        ),
+        ("git_status", "Show git status (short)"),
+        ("git_diff([path])", "Show git diff (repo or specific path)"),
+        ("git_add(path)", "Stage file or directory for commit"),
+        ("git_commit(message)", "Create git commit with message"),
+    ];
 
-    println!("  get_file_info(path)");
-    println!("      → Metadata for file or directory (size, mtime, type, line count if text)");
-    println!();
+    for (name, desc) in tools {
+        println!("  {name}");
+        println!("      → {desc}");
+        println!();
+    }
+}
 
-    println!("  file_exists(path)");
-    println!("      → Returns \"true\" if file or directory exists");
-    println!();
-
-    println!("  read_file(path)");
-    println!("      → Reads and returns full file contents");
-    println!();
-
-    println!("  read_multiple_files(paths)");
-    println!("      → Read contents of multiple files at once (array of paths)");
-    println!();
-
-    println!("  write_file(path, content)");
-    println!("      → Writes or overwrites file, creates parent directories");
-    println!();
-
-    println!("  append_to_file(path, content)");
-    println!("      → Appends content to file, creates file if missing");
-    println!();
-
-    println!("  replace_in_file(path, search, replace)");
-    println!("      → Replaces all exact matches of <search> with <replace>");
-    println!();
-
-    println!("  create_directory(path)");
-    println!("      → Creates directory and parents (idempotent)");
-    println!();
-
-    println!("  list_directory([path])");
-    println!("      → Lists files and directories (non-recursive, default: \".\")");
-    println!();
-
-    println!("  get_directory_tree([path])");
-    println!("      → Recursive directory tree (default: \".\")");
-    println!();
-
-    println!("  list_files_recursive([path], [extension])");
-    println!("      → Flat list of all regular files, optional extension filter");
-    println!();
-
-    println!("  search_text(pattern, [path], [case_sensitive])");
-    println!("      → Grep-like search for lines containing pattern");
-    println!();
-
-    println!("  execute_shell_command(command)");
-    println!("      → Execute allowed shell command (cargo only)");
-    println!();
-
-    println!("  git_status");
-    println!("      → Show git status (short)");
-    println!();
-
-    println!("  git_diff([path])");
-    println!("      → Show git diff (repo or specific path)");
-    println!();
-
-    println!("  git_add(path)");
-    println!("      → Stage file or directory for commit");
-    println!();
-
-    println!("  git_commit(message)");
-    println!("      → Create git commit with message");
-    println!();
-
+fn print_config_info() {
     println!("{}", "Config File:".bright_yellow().bold());
     println!("  • config.toml in current directory for project-specific defaults");
     println!("  • Example:");
@@ -240,7 +253,9 @@ pub fn print_help() {
     println!("      mirostat_tau = 5.0");
     println!("      mirostat_eta = 0.1");
     println!();
+}
 
+fn print_tips() {
     println!("{}", "Quick tips:".bright_yellow().bold());
     println!("  • Use 'clear' when the model starts repeating or losing context");
     println!("  • --debug is useful for diagnosing tool calls and prompts");

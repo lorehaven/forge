@@ -1,9 +1,10 @@
 use crate::cli::render_model_progress;
+use crate::config::SamplingConfig;
 use crate::llm::is_port_open;
 use crate::plan::ExecutionPlan;
 use crate::sessions::{load_conversation_by_prefix, save_conversation};
 use crate::tools::execute_tool;
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use colored::Colorize;
 use futures_util::StreamExt;
 use reqwest::Client;
@@ -210,298 +211,275 @@ impl Agent {
         Ok(ExecutionPlan::new(steps))
     }
 
-    #[allow(clippy::too_many_lines)]
-    #[allow(clippy::too_many_arguments)]
     pub async fn stream(
         &mut self,
         user_input: &str,
-        temperature: f32,
-        top_p: f32,
-        min_p: f32,
-        top_k: i32,
-        repeat_penalty: f32,
-        context: u32,
-        mut max_tokens: u32,
-        mirostat: i32,
-        mirostat_tau: f32,
-        mirostat_eta: f32,
+        sampling: SamplingConfig,
         is_debug: bool,
     ) -> Result<String> {
-        const SAFETY_BUFFER: u64 = 1024;
         self.ensure_alive().await?;
-
         self.messages
             .push(json!({"role": "user", "content": user_input}));
 
-        let tools = &*TOOLS_JSON;
-
         loop {
-            // ── Context Management ──────────────────────────────────────────
-            // We need to fit: messages + tools + max_tokens + safety buffer
-            let context_u64 = u64::from(context);
-
-            // 1. Estimate tokens accurately
-            let mut prompt_tokens = self.count_message_tokens(&self.messages).await? as u64;
-
-            // 2. Sliding window if we exceed context
-            // We want to keep at least 25% of the context for generation (max_tokens)
-            // and some buffer for tools.
-            let reserved_for_generation = u64::from(max_tokens).max(context_u64 / 4);
-            let max_allowed_prompt = context_u64
-                .saturating_sub(reserved_for_generation)
-                .saturating_sub(SAFETY_BUFFER);
-
-            while prompt_tokens > max_allowed_prompt && self.messages.len() > 2 {
-                // Remove the oldest non-system message
-                self.messages.remove(1);
-                prompt_tokens = self.count_message_tokens(&self.messages).await? as u64;
-            }
-
-            // 3. Final clamping of max_tokens if still tight
-            let total_estimated = prompt_tokens + u64::from(max_tokens) + SAFETY_BUFFER;
-
-            if total_estimated > context_u64 {
-                let safe_max_tokens = context_u64
-                    .saturating_sub(prompt_tokens)
-                    .saturating_sub(SAFETY_BUFFER)
-                    .max(1024);
-                if u64::from(max_tokens) > safe_max_tokens {
-                    if is_debug {
-                        eprintln!(
-                            "{} Context tight ({prompt_tokens} prompt tokens). Clamping max_tokens {max_tokens} → {safe_max_tokens}",
-                            "ADJUSTED:".bright_yellow().bold(),
-                        );
-                    }
-                    max_tokens = u32::try_from(safe_max_tokens).unwrap_or(1024);
-                }
-            }
-
-            if is_debug {
-                let used_percent = (total_estimated * 100 / context_u64).min(100);
-                eprintln!(
-                    "{} Context usage: ~{total_estimated}/{context_u64} tokens ({used_percent}%). Messages: {}",
-                    "INFO:".cyan().bold(),
-                    self.messages.len()
-                );
-            }
-
-            let body = json!({
-                "messages": &self.messages,
-                "tools": &tools,
-                "tool_choice": "auto",
-                "temperature": temperature,
-                "top_p": if mirostat > 0 { 1. } else { top_p },
-                "min_p": min_p,
-                "top_k": if mirostat > 0 { 0 } else { top_k },
-                "repeat_penalty": repeat_penalty,
-                "max_tokens": max_tokens,
-                "stream": true,
-                "mirostat": mirostat,
-                "mirostat_tau": mirostat_tau,
-                "mirostat_eta": mirostat_eta,
-            });
-
+            let max_tokens = self.manage_context(&sampling, is_debug).await?;
+            let body = self.build_request_body(&sampling, max_tokens);
             let url = format!("http://127.0.0.1:{}/v1/chat/completions", self.port);
 
-            let response = self.client.post(&url).json(&body).send().await;
-
-            let resp = match response {
-                Ok(r) => r,
-                Err(e) => {
-                    eprintln!(
-                        "{} Network error contacting llama-server: {e}",
-                        "ERROR:".red().bold()
-                    );
-                    return Err(anyhow!("Failed to reach llama-server: {e}"));
-                }
-            };
-
-            // ── Handle non-successful HTTP responses ──
+            let resp = self.client.post(&url).json(&body).send().await?;
             if !resp.status().is_success() {
-                let status = resp.status();
-                let error_body = resp
-                    .text()
-                    .await
-                    .unwrap_or_else(|_| "(no response body)".to_string());
-
-                eprintln!("\n{}", "═".repeat(80).red().bold());
-                eprintln!(
-                    "{} LLM server returned non-success status",
-                    "CRITICAL ERROR:".red().bold()
-                );
-                eprintln!("URL: {}", url.bright_white());
-                eprintln!(
-                    "Status: {} {}",
-                    status.as_u16().to_string().red().bold(),
-                    status.canonical_reason().unwrap_or("").bright_red()
-                );
-
-                if is_debug {
-                    // Pretty-print the request payload we sent
-                    if let Ok(pretty) = serde_json::to_string_pretty(&body) {
-                        eprintln!("\n{}", "Request payload that failed:".yellow().bold());
-                        eprintln!("{pretty}");
-                    } else {
-                        eprintln!("\n{}", "Could not format request body".yellow().bold());
-                        eprintln!("Raw body: {body:?}");
-                    }
-                }
-
-                eprintln!("\n{}", "Server response body:".yellow().bold());
-                eprintln!("{error_body}");
-
-                eprintln!("{}", "═".repeat(80).red().bold());
-                eprintln!();
-
-                return Err(anyhow!(
-                    "llama-server returned {}: {}",
-                    status,
-                    error_body.chars().take(500).collect::<String>()
-                ));
+                return self
+                    .handle_error_response(resp, &url, &body, is_debug)
+                    .await;
             }
 
-            let mut stream = resp.bytes_stream();
+            let (full_content, tool_calls) = self.process_stream(resp).await?;
 
-            let mut full_content = String::new();
-            let mut tool_calls: Vec<Value> = vec![];
-            let mut has_started_printing = false;
-
-            while let Some(item) = stream.next().await {
-                let bytes = match item {
-                    Ok(b) => b,
-                    Err(e) => {
-                        eprintln!("{} Stream read error: {}", "ERROR:".red().bold(), e);
-                        return Err(anyhow!("Stream failure: {e}"));
-                    }
-                };
-
-                // Convert bytes to string and split into lines (SSE events are line-delimited)
-                let data = String::from_utf8_lossy(&bytes).to_string();
-                for line in data.lines() {
-                    let trimmed = line.trim();
-                    if trimmed.is_empty() {
-                        continue;
-                    }
-                    if !trimmed.starts_with("data: ") {
-                        continue;
-                    }
-                    let payload = &trimmed[6..];
-                    if payload == "[DONE]" {
-                        break;
-                    }
-                    let chunk: Value = match serde_json::from_str(payload) {
-                        Ok(v) => v,
-                        Err(e) => {
-                            eprintln!(
-                                "{} JSON parse error in stream chunk: {}",
-                                "WARN:".yellow().bold(),
-                                e
-                            );
-                            eprintln!("Bad chunk: {payload}");
-                            continue;
-                        }
-                    };
-                    let delta = &chunk["choices"][0]["delta"];
-
-                    // Handle content delta (print immediately for streaming effect)
-                    if let Some(content) = delta["content"].as_str() {
-                        if !has_started_printing {
-                            print!("{}", "│ ".dimmed());
-                            has_started_printing = true;
-                        }
-                        print!("{content}");
-                        io::stdout().flush()?;
-                        full_content.push_str(content);
-                    }
-
-                    // Handle tool_calls deltas
-                    if let Some(tc_deltas) = delta["tool_calls"].as_array() {
-                        for tc_delta in tc_deltas {
-                            let index =
-                                usize::try_from(tc_delta["index"].as_u64().unwrap_or(0)).unwrap();
-                            while tool_calls.len() <= index {
-                                tool_calls.push(json!({
-                                    "type": "function",
-                                    "id": "",
-                                    "function": { "name": "", "arguments": "" }
-                                }));
-                            }
-                            if let Some(id) = tc_delta["id"].as_str() {
-                                tool_calls[index]["id"] = json!(id);
-                            }
-                            if let Some(name_delta) = tc_delta["function"]["name"].as_str() {
-                                let current_name =
-                                    tool_calls[index]["function"]["name"].as_str().unwrap_or("");
-                                tool_calls[index]["function"]["name"] =
-                                    json!(format!("{}{}", current_name, name_delta));
-                            }
-                            if let Some(args_delta) = tc_delta["function"]["arguments"].as_str() {
-                                let current_args = tool_calls[index]["function"]["arguments"]
-                                    .as_str()
-                                    .unwrap_or("");
-                                tool_calls[index]["function"]["arguments"] =
-                                    json!(format!("{}{}", current_args, args_delta));
-                            }
-                        }
-                    }
-                }
-            }
-
-            if has_started_printing {
-                println!();
-            }
-
-            // Construct the full message
-            let content_json = if full_content.is_empty() {
-                json!(null)
-            } else {
-                json!(full_content)
-            };
-            let tool_calls_json = if tool_calls.is_empty() {
-                json!(null)
-            } else {
-                json!(tool_calls)
-            };
-            let message = json!({
-                "role": "assistant",
-                "content": content_json,
-                "tool_calls": tool_calls_json
-            });
-            self.messages.push(message);
-
-            // If tool calls exist, execute them
             if tool_calls.is_empty() {
+                self.messages
+                    .push(json!({"role": "assistant", "content": full_content}));
+                println!();
                 return Ok(full_content);
             }
 
-            for call in tool_calls {
-                let name = call["function"]["name"].as_str().unwrap_or("");
-                let args_str = call["function"]["arguments"].as_str().unwrap_or("{}");
-                let args: Value = match serde_json::from_str(args_str) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        self.messages.push(json!({
-                            "role": "tool",
-                            "tool_call_id": call["id"].as_str().unwrap_or(""),
-                            "name": name,
-                            "content": format!("Tool call failed: invalid arguments JSON: {e}")
-                        }));
-                        continue;
-                    }
-                };
+            self.handle_tool_calls(full_content, tool_calls, is_debug)
+                .await?;
+        }
+    }
 
-                let result = execute_tool(name, args)
-                    .await
-                    .unwrap_or_else(|e| format!("Tool error: {e}"));
+    async fn manage_context(&mut self, sampling: &SamplingConfig, is_debug: bool) -> Result<u32> {
+        const SAFETY_BUFFER: u64 = 1024;
+        let context = sampling.context.unwrap_or(8192);
+        let mut max_tokens = sampling.max_tokens.unwrap_or(4096);
 
-                self.messages.push(json!({
-                    "role": "tool",
-                    "tool_call_id": call["id"].as_str().unwrap_or(""),
-                    "name": name,
-                    "content": result
-                }));
+        let context_u64 = u64::from(context);
+        let mut prompt_tokens = self.count_message_tokens(&self.messages).await? as u64;
+
+        let reserved_for_generation = u64::from(max_tokens).max(context_u64 / 4);
+        let max_allowed_prompt = context_u64
+            .saturating_sub(reserved_for_generation)
+            .saturating_sub(SAFETY_BUFFER);
+
+        while prompt_tokens > max_allowed_prompt && self.messages.len() > 2 {
+            self.messages.remove(1);
+            prompt_tokens = self.count_message_tokens(&self.messages).await? as u64;
+        }
+
+        let total_estimated = prompt_tokens + u64::from(max_tokens) + SAFETY_BUFFER;
+
+        if total_estimated > context_u64 {
+            let safe_max_tokens = context_u64
+                .saturating_sub(prompt_tokens)
+                .saturating_sub(SAFETY_BUFFER)
+                .max(1024);
+            if u64::from(max_tokens) > safe_max_tokens {
+                if is_debug {
+                    eprintln!(
+                        "{} Context tight ({prompt_tokens} prompt tokens). Clamping max_tokens {max_tokens} → {safe_max_tokens}",
+                        "ADJUSTED:".bright_yellow().bold(),
+                    );
+                }
+                max_tokens = u32::try_from(safe_max_tokens).unwrap_or(1024);
             }
         }
+
+        if is_debug {
+            let used_percent = (total_estimated * 100 / context_u64).min(100);
+            eprintln!(
+                "{} Context usage: ~{total_estimated}/{context_u64} tokens ({used_percent}%). Messages: {}",
+                "INFO:".cyan().bold(),
+                self.messages.len()
+            );
+        }
+
+        Ok(max_tokens)
+    }
+
+    fn build_request_body(&self, sampling: &SamplingConfig, max_tokens: u32) -> Value {
+        json!({
+            "messages": &self.messages,
+            "tools": &*TOOLS_JSON,
+            "tool_choice": "auto",
+            "temperature": sampling.temperature.unwrap_or(0.2),
+            "top_p": if sampling.mirostat.unwrap_or(0) > 0 { 1. } else { sampling.top_p.unwrap_or(0.95) },
+            "min_p": sampling.min_p.unwrap_or(0.05),
+            "top_k": if sampling.mirostat.unwrap_or(0) > 0 { 0 } else { sampling.top_k.unwrap_or(40) },
+            "repeat_penalty": sampling.repeat_penalty.unwrap_or(1.1),
+            "max_tokens": max_tokens,
+            "stream": true,
+            "mirostat": sampling.mirostat.unwrap_or(0),
+            "mirostat_tau": sampling.mirostat_tau.unwrap_or(5.0),
+            "mirostat_eta": sampling.mirostat_eta.unwrap_or(0.1),
+        })
+    }
+
+    async fn handle_error_response(
+        &self,
+        resp: reqwest::Response,
+        url: &str,
+        body: &Value,
+        is_debug: bool,
+    ) -> Result<String> {
+        let status = resp.status();
+        let error_body = resp
+            .text()
+            .await
+            .unwrap_or_else(|_| "(no response body)".to_string());
+
+        eprintln!("\n{}", "═".repeat(80).red().bold());
+        eprintln!(
+            "{} LLM server returned non-success status",
+            "CRITICAL ERROR:".red().bold()
+        );
+        eprintln!("URL: {}", url.bright_white());
+        eprintln!(
+            "Status: {} {}",
+            status.as_u16().to_string().red().bold(),
+            status.canonical_reason().unwrap_or("").bright_red()
+        );
+
+        if is_debug && let Ok(pretty) = serde_json::to_string_pretty(&body) {
+            eprintln!("\n{}", "Request payload that failed:".yellow().bold());
+            eprintln!("{pretty}");
+        }
+
+        eprintln!("\n{}", "Server response body:".yellow().bold());
+        eprintln!("{error_body}");
+        eprintln!("{}", "═".repeat(80).red().bold());
+        eprintln!();
+
+        Err(anyhow!(
+            "llama-server returned {status}: {}",
+            error_body.chars().take(500).collect::<String>()
+        ))
+    }
+
+    async fn process_stream(&self, resp: reqwest::Response) -> Result<(String, Vec<Value>)> {
+        let mut stream = resp.bytes_stream();
+        let mut full_content = String::new();
+        let mut tool_calls: Vec<Value> = vec![];
+        let mut has_started_printing = false;
+
+        while let Some(item) = stream.next().await {
+            let bytes = item.context("Stream failure")?;
+            let data = String::from_utf8_lossy(&bytes).to_string();
+
+            for line in data.lines() {
+                let trimmed = line.trim();
+                if trimmed.is_empty() || !trimmed.starts_with("data: ") {
+                    continue;
+                }
+
+                let payload = &trimmed[6..];
+                if payload == "[DONE]" {
+                    break;
+                }
+
+                let chunk: Value = serde_json::from_str(payload).context("JSON parse error")?;
+                let delta = &chunk["choices"][0]["delta"];
+
+                if let Some(content) = delta["content"].as_str() {
+                    if !has_started_printing {
+                        print!("{}", "│ ".dimmed());
+                        has_started_printing = true;
+                    }
+                    print!("{content}");
+                    io::stdout().flush()?;
+                    full_content.push_str(content);
+                }
+
+                if let Some(tc_deltas) = delta["tool_calls"].as_array() {
+                    for tc_delta in tc_deltas {
+                        let index =
+                            usize::try_from(tc_delta["index"].as_u64().unwrap_or(0)).unwrap();
+                        while tool_calls.len() <= index {
+                            tool_calls.push(json!({
+                                "type": "function",
+                                "id": "",
+                                "function": { "name": "", "arguments": "" }
+                            }));
+                        }
+                        if let Some(id) = tc_delta["id"].as_str() {
+                            tool_calls[index]["id"] = json!(id);
+                        }
+                        if let Some(name_delta) = tc_delta["function"]["name"].as_str() {
+                            let current_name =
+                                tool_calls[index]["function"]["name"].as_str().unwrap_or("");
+                            tool_calls[index]["function"]["name"] =
+                                json!(format!("{current_name}{name_delta}"));
+                        }
+                        if let Some(args_delta) = tc_delta["function"]["arguments"].as_str() {
+                            let current_args = tool_calls[index]["function"]["arguments"]
+                                .as_str()
+                                .unwrap_or("");
+                            tool_calls[index]["function"]["arguments"] =
+                                json!(format!("{current_args}{args_delta}"));
+                        }
+                    }
+                }
+            }
+        }
+        Ok((full_content, tool_calls))
+    }
+
+    async fn handle_tool_calls(
+        &mut self,
+        full_content: String,
+        tool_calls: Vec<Value>,
+        is_debug: bool,
+    ) -> Result<()> {
+        self.messages.push(json!({
+            "role": "assistant",
+            "content": if full_content.is_empty() { json!(null) } else { json!(full_content) },
+            "tool_calls": tool_calls
+        }));
+
+        if !full_content.is_empty() {
+            println!();
+        }
+
+        for tool_call in tool_calls {
+            let id = tool_call["id"].as_str().unwrap_or("");
+            let name = tool_call["function"]["name"].as_str().unwrap_or("");
+            let args_raw = tool_call["function"]["arguments"].as_str().unwrap_or("{}");
+
+            let args_parsed: Value = serde_json::from_str(args_raw).unwrap_or_else(|_| json!({}));
+
+            println!(
+                "{} {}{}",
+                "  󱓞 Tool Call:".bright_yellow().bold(),
+                name.bright_white().bold(),
+                format!("({args_raw})").dimmed()
+            );
+
+            let tool_result = execute_tool(name, args_parsed).await;
+
+            let result_str = match tool_result {
+                Ok(r) => r,
+                Err(e) => {
+                    let err_msg = format!("Tool error: {e}");
+                    if is_debug {
+                        eprintln!("{} {err_msg}", "DEBUG:".red().bold());
+                    }
+                    err_msg
+                }
+            };
+
+            if is_debug {
+                println!(
+                    "{} {}",
+                    "  󱓞 Result:".bright_green().bold(),
+                    result_str.dimmed()
+                );
+            }
+
+            self.messages.push(json!({
+                "role": "tool",
+                "tool_call_id": id,
+                "content": result_str
+            }));
+        }
+        Ok(())
     }
 
     async fn ensure_alive(&self) -> Result<()> {

@@ -1,5 +1,6 @@
 use crate::agent::Agent;
 use crate::cli::{print_indented, render_plan};
+use crate::config::SamplingConfig;
 use colored::Colorize;
 use std::fmt;
 
@@ -74,20 +75,10 @@ impl fmt::Display for ExecutionPlan {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn execute_plan(
     agent: &mut Agent,
     mut plan: ExecutionPlan,
-    temp: f32,
-    top_p: f32,
-    min_p: f32,
-    top_k: i32,
-    repeat_penalty: f32,
-    context: u32,
-    max_t: u32,
-    mirostat: i32,
-    mirostat_tau: f32,
-    mirostat_eta: f32,
+    sampling: SamplingConfig,
     is_debug: bool,
 ) -> anyhow::Result<()> {
     for step in plan.steps.clone() {
@@ -95,20 +86,7 @@ pub async fn execute_plan(
         render_plan(&plan);
 
         let result = agent
-            .stream(
-                &step.description,
-                temp,
-                top_p,
-                min_p,
-                top_k,
-                repeat_penalty,
-                context,
-                max_t,
-                mirostat,
-                mirostat_tau,
-                mirostat_eta,
-                is_debug,
-            )
+            .stream(&step.description, sampling.clone(), is_debug)
             .await;
 
         match result {

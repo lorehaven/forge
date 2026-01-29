@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 use colored::Colorize;
 use ferrous::agent::Agent;
 use ferrous::cli::{print_help, render_plan};
-use ferrous::config;
+use ferrous::config::{self, SamplingConfig};
 use ferrous::llm::is_port_open;
 use ferrous::plan::execute_plan;
 use ferrous::sessions;
@@ -127,11 +127,10 @@ enum Commands {
     },
 }
 
-// Helper macro — applies config value only if CLI argument is still at default
-macro_rules! apply_if_default {
+macro_rules! apply_sampling_if_default {
     ($args:expr, $field:ident, $defaults:expr, $conf:expr) => {
         if $args.$field == $defaults.$field {
-            if let Some(v) = $conf.$field {
+            if let Some(v) = $conf.sampling.$field {
                 $args.$field = v;
             }
         }
@@ -145,18 +144,27 @@ async fn main() -> Result<()> {
     config::print_loaded(&conf, args.debug);
 
     let effective_conf = conf.clone();
-    apply_if_default!(args, model, DEFAULT_PARAMS, effective_conf);
-    apply_if_default!(args, port, DEFAULT_PARAMS, effective_conf);
-    apply_if_default!(args, temperature, DEFAULT_PARAMS, effective_conf);
-    apply_if_default!(args, top_p, DEFAULT_PARAMS, effective_conf);
-    apply_if_default!(args, min_p, DEFAULT_PARAMS, effective_conf);
-    apply_if_default!(args, top_k, DEFAULT_PARAMS, effective_conf);
-    apply_if_default!(args, repeat_penalty, DEFAULT_PARAMS, effective_conf);
-    apply_if_default!(args, context, DEFAULT_PARAMS, effective_conf);
-    apply_if_default!(args, max_tokens, DEFAULT_PARAMS, effective_conf);
-    apply_if_default!(args, mirostat, DEFAULT_PARAMS, effective_conf);
-    apply_if_default!(args, mirostat_tau, DEFAULT_PARAMS, effective_conf);
-    apply_if_default!(args, mirostat_eta, DEFAULT_PARAMS, effective_conf);
+    if args.model == DEFAULT_PARAMS.model
+        && let Some(v) = effective_conf.model
+    {
+        args.model = v;
+    }
+    if args.port == DEFAULT_PARAMS.port
+        && let Some(v) = effective_conf.port
+    {
+        args.port = v;
+    }
+
+    apply_sampling_if_default!(args, temperature, DEFAULT_PARAMS, effective_conf);
+    apply_sampling_if_default!(args, top_p, DEFAULT_PARAMS, effective_conf);
+    apply_sampling_if_default!(args, min_p, DEFAULT_PARAMS, effective_conf);
+    apply_sampling_if_default!(args, top_k, DEFAULT_PARAMS, effective_conf);
+    apply_sampling_if_default!(args, repeat_penalty, DEFAULT_PARAMS, effective_conf);
+    apply_sampling_if_default!(args, context, DEFAULT_PARAMS, effective_conf);
+    apply_sampling_if_default!(args, max_tokens, DEFAULT_PARAMS, effective_conf);
+    apply_sampling_if_default!(args, mirostat, DEFAULT_PARAMS, effective_conf);
+    apply_sampling_if_default!(args, mirostat_tau, DEFAULT_PARAMS, effective_conf);
+    apply_sampling_if_default!(args, mirostat_eta, DEFAULT_PARAMS, effective_conf);
 
     if !args.debug
         && let Some(debug) = conf.debug
@@ -197,36 +205,23 @@ async fn main() -> Result<()> {
     {
         println!("{}", "Processing query...".dimmed());
 
-        let temp = q_temp.unwrap_or(args.temperature);
-        let top_p = q_top_p.unwrap_or(args.top_p);
-        let min_p = q_min_p.unwrap_or(args.min_p);
-        let top_k = q_top_k.unwrap_or(args.top_k);
-        let repeat_penalty = q_repeat_penalty.unwrap_or(args.repeat_penalty);
-        let context = q_context.unwrap_or(args.context);
-        let max_t = q_max_tokens.unwrap_or(args.max_tokens);
-        let mirostat = q_mirostat.unwrap_or(args.mirostat);
-        let mirostat_tau = q_mirostat_tau.unwrap_or(args.mirostat_tau);
-        let mirostat_eta = q_mirostat_eta.unwrap_or(args.mirostat_eta);
+        let sampling = SamplingConfig {
+            temperature: Some(q_temp.unwrap_or(args.temperature)),
+            top_p: Some(q_top_p.unwrap_or(args.top_p)),
+            min_p: Some(q_min_p.unwrap_or(args.min_p)),
+            top_k: Some(q_top_k.unwrap_or(args.top_k)),
+            repeat_penalty: Some(q_repeat_penalty.unwrap_or(args.repeat_penalty)),
+            context: Some(q_context.unwrap_or(args.context)),
+            max_tokens: Some(q_max_tokens.unwrap_or(args.max_tokens)),
+            mirostat: Some(q_mirostat.unwrap_or(args.mirostat)),
+            mirostat_tau: Some(q_mirostat_tau.unwrap_or(args.mirostat_tau)),
+            mirostat_eta: Some(q_mirostat_eta.unwrap_or(args.mirostat_eta)),
+        };
 
         let plan = agent.generate_plan(&text).await?;
         render_plan(&plan);
 
-        execute_plan(
-            &mut agent,
-            plan,
-            temp,
-            top_p,
-            min_p,
-            top_k,
-            repeat_penalty,
-            context,
-            max_t,
-            mirostat,
-            mirostat_tau,
-            mirostat_eta,
-            args.debug,
-        )
-        .await?;
+        execute_plan(&mut agent, plan, sampling, args.debug).await?;
 
         if let Some(server) = agent.server.take() {
             let _ = server.lock().unwrap().kill();
@@ -344,24 +339,21 @@ async fn main() -> Result<()> {
 
                         render_plan(&plan);
 
+                        let sampling = SamplingConfig {
+                            temperature: Some(args.temperature),
+                            top_p: Some(args.top_p),
+                            min_p: Some(args.min_p),
+                            top_k: Some(args.top_k),
+                            repeat_penalty: Some(args.repeat_penalty),
+                            context: Some(args.context),
+                            max_tokens: Some(args.max_tokens),
+                            mirostat: Some(args.mirostat),
+                            mirostat_tau: Some(args.mirostat_tau),
+                            mirostat_eta: Some(args.mirostat_eta),
+                        };
+
                         // ── EXECUTION PHASE ──────────────────────────
-                        if let Err(e) = execute_plan(
-                            &mut agent,
-                            plan,
-                            args.temperature,
-                            args.top_p,
-                            args.min_p,
-                            args.top_k,
-                            args.repeat_penalty,
-                            args.context,
-                            args.max_tokens,
-                            args.mirostat,
-                            args.mirostat_tau,
-                            args.mirostat_eta,
-                            args.debug,
-                        )
-                        .await
-                        {
+                        if let Err(e) = execute_plan(&mut agent, plan, sampling, args.debug).await {
                             eprintln!("{} {e}", "Execution error:".red().bold());
                         }
                     }
