@@ -202,7 +202,8 @@ impl Agent {
     ) -> Result<String> {
         self.ensure_alive().await?;
 
-        self.messages.push(json!({"role": "user", "content": user_input}));
+        self.messages
+            .push(json!({"role": "user", "content": user_input}));
         const MAX_TURNS: usize = 20;
         while self.messages.len() > MAX_TURNS + 1 {
             self.messages.remove(1);
@@ -300,7 +301,7 @@ impl Agent {
                     // Pretty-print the request payload we sent
                     if let Ok(pretty) = serde_json::to_string_pretty(&body) {
                         eprintln!("\n{}", "Request payload that failed:".yellow().bold());
-                        eprintln!("{}", pretty);
+                        eprintln!("{pretty}");
                     } else {
                         eprintln!("\n{}", "Could not format request body".yellow().bold());
                         eprintln!("Raw body: {:?}", body);

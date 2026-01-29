@@ -27,7 +27,7 @@ impl Config {
         println!();
 
         let fields = vec![
-            ("model", self.model.as_ref().map(|s| s.to_string())),
+            ("model", self.model.as_ref().map(String::from)),
             ("port", self.port.map(|p| p.to_string())),
             ("temperature", self.temperature.map(|v| format!("{:.2}", v))),
             ("top_p", self.top_p.map(|v| format!("{:.2}", v))),
@@ -77,7 +77,7 @@ struct ConfigField {
 
 impl ConfigField {
     fn new(name: &'static str, value: Option<String>, color: colored::Color) -> Self {
-        ConfigField { name, value, color }
+        Self { name, value, color }
     }
 }
 
