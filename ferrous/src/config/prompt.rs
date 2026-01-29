@@ -38,12 +38,12 @@ impl PromptManager {
 
     pub fn render_system(&self, context: &PromptContext) -> Result<String> {
         self.render("system.md", context)
-            .or_else(|_| Ok(crate::agent::DEFAULT_PROMPT.to_string()))
+            .or_else(|_| Ok(crate::core::agent::DEFAULT_PROMPT.to_string()))
     }
 
     pub fn render_planner(&self, context: &PromptContext) -> Result<String> {
         self.render("planner.md", context)
-            .or_else(|_| Ok(crate::agent::DEFAULT_PLAN_PROMPT.to_string()))
+            .or_else(|_| Ok(crate::core::agent::DEFAULT_PLAN_PROMPT.to_string()))
     }
 
     fn render(&self, template_name: &str, ctx: &PromptContext) -> Result<String> {

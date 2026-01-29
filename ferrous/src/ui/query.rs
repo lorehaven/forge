@@ -1,4 +1,4 @@
-use crate::plan::ExecutionPlan;
+use crate::core::ExecutionPlan;
 use crate::ui::interface::InteractionHandler;
 use crate::ui::render::{
     ModelLoadPhase, pretty_print_response, render_model_progress, render_plan,

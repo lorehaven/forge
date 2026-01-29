@@ -1,11 +1,9 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use colored::Colorize;
-use ferrous::agent::Agent;
 use ferrous::config::{self, SamplingConfig};
+use ferrous::core::{Agent, execute_plan, sessions};
 use ferrous::llm::is_port_open;
-use ferrous::plan::execute_plan;
-use ferrous::sessions;
 use ferrous::ui::interface::InteractionHandler;
 use ferrous::ui::query::QueryMode;
 use ferrous::ui::repl::ReplMode;

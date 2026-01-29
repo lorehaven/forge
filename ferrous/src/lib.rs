@@ -14,11 +14,8 @@
 #![allow(clippy::multiple_crate_versions)]
 #![cfg_attr(test, deny(rust_2018_idioms))]
 
-pub mod agent;
 pub mod config;
+pub mod core;
 pub mod llm;
-pub mod plan;
-pub mod prompt;
-pub mod sessions;
 pub mod tools;
 pub mod ui;

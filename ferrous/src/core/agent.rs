@@ -1,8 +1,7 @@
-use crate::config::SamplingConfig;
-use crate::llm::is_port_open;
-use crate::plan::ExecutionPlan;
-use crate::prompt::{PromptManager, get_default_context};
-use crate::sessions::{load_conversation_by_prefix, save_conversation};
+use crate::config::{SamplingConfig, PromptManager, get_default_context};
+use crate::core::ExecutionPlan;
+use crate::core::sessions::{load_conversation_by_prefix, save_conversation};
+use crate::llm::{StopCondition, get_stop_words_for_language, is_port_open};
 use crate::tools::execute_tool;
 use anyhow::{Context, Result, anyhow};
 use futures_util::StreamExt;
@@ -12,7 +11,7 @@ use std::process::Child;
 use std::sync::{Arc, LazyLock, Mutex};
 
 static TOOLS_JSON: LazyLock<Vec<Value>> = LazyLock::new(|| {
-    let s = include_str!("../config/tools.json");
+    let s = include_str!("../../config/tools.json");
     serde_json::from_str(s).expect("Invalid tools.json")
 });
 
@@ -109,7 +108,7 @@ impl Agent {
         port: u16,
         debug: bool,
     ) -> Result<Self> {
-        use crate::llm::spawn_server;
+        use crate::llm::{spawn_server};
 
         let server_handle = spawn_server(
             model,
@@ -137,7 +136,7 @@ impl Agent {
 
     /// Connect to an existing server (no spawn)
     pub async fn connect_only(port: u16) -> Result<Self> {
-        use crate::llm::connect_only;
+        use crate::llm::{connect_only};
 
         connect_only(port).await?;
 
@@ -399,6 +398,12 @@ impl Agent {
         let mut potential_lang = String::new();
         let mut waiting_for_lang = false;
 
+        // Initialize stop condition
+        // For now, we use a generic set of stop words. 
+        // In the future, we could detect language from context.
+        let stop_words = get_stop_words_for_language("unknown");
+        let mut stop_condition = StopCondition::new(stop_words);
+
         while let Some(item) = stream.next().await {
             let bytes = item.context("Stream failure")?;
             buffer.push_str(&String::from_utf8_lossy(&bytes));
@@ -438,6 +443,16 @@ impl Agent {
                         interaction.print_stream_start();
                         has_started_printing = true;
                     }
+
+                    let (should_stop, _match_len) = stop_condition.should_stop(content);
+                    if should_stop {
+                        // Abort stream processing
+                        if has_started_printing {
+                            interaction.print_stream_end();
+                        }
+                        return Ok((full_content, tool_calls));
+                    }
+
                     Self::process_content_delta(
                         content,
                         interaction,

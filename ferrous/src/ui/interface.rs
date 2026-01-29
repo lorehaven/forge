@@ -1,4 +1,4 @@
-use crate::plan::ExecutionPlan;
+use crate::core::ExecutionPlan;
 pub use crate::ui::render::ModelLoadPhase;
 
 pub trait InteractionHandler: Send + Sync {

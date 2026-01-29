@@ -1,4 +1,4 @@
-use crate::plan::ExecutionPlan;
+use crate::core::ExecutionPlan;
 use colored::Colorize;
 use std::sync::LazyLock;
 use syntect::easy::HighlightLines;

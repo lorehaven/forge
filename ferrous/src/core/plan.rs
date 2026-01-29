@@ -1,4 +1,4 @@
-use crate::agent::Agent;
+use crate::core::Agent;
 use crate::config::SamplingConfig;
 use colored::Colorize;
 use std::fmt;

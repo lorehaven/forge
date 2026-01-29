@@ -72,6 +72,9 @@ features = ["full"]
 [workspace.dependencies.toml]
 version = "0.9"
 
+[workspace.dependencies.trie-rs]
+version = "0.4"
+
 [workspace.dependencies.uuid]
 version = "1.20"
 features = ["v4", "fast-rng", "serde"]
