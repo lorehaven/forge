@@ -24,17 +24,19 @@ Rules:
 - Each step MUST be directly executable using available tools
 - Each step MUST start with a verb
 - Prefer concrete file/tool actions
+- If the request is a general question NOT related to the project, do NOT generate a plan with tool calls. Instead, provide a single step: '1. Answer the user's question directly: <original_question>'
 
 Allowed verbs (examples):
 - Read file <path>
 - Modify function <name> in <path>
 - Replace text in <path>
 - Run command <command>
+- Answer the user's question directly: <original_question>
 
-Output format ONLY:
+Output format MUST start with 'PLAN:' followed by numbered steps:
 PLAN:
-1. <single executable action>
-2. <single executable action>
+1. <action>
+2. <action>
 ";
 
 static PROMPT: &str = r"
@@ -55,7 +57,8 @@ Core Rules:
   - Never emit placeholders such as <updated-content> or <modified-content>.
   - ALWAYS verify the changes using appropriate verification tools or commands (e.g., build tools, linters, or 'execute_shell_command' for the project's specific language).
 - If you need to output a code block that ITSELF contains code blocks (e.g., when showing a README.md or a Markdown file), you MUST use 4 backticks (````) for the outer block to avoid breaking the UI.
-- First, use read_file or list_files_recursive to understand the current state.
+- For project-related tasks, first use read_file or list_files_recursive to understand the current state.
+- For general knowledge questions unrelated to the project, do NOT use project exploration tools. Simply answer the question.
 - For small, targeted changes → prefer replace_in_file.
   - IMPORTANT: replace_in_file performs EXACT string matching. You MUST read the file first and copy the text EXACTLY as it appears, including ALL whitespace, indentation, and newlines.
   - If a replacement fails (returns 'No changes made...'), it means your 'search' string did not match the file content exactly. You MUST read the file again to get the exact content.
@@ -198,6 +201,19 @@ impl Agent {
                 let step = line[idx + 1..].trim();
                 if !step.is_empty() {
                     steps.push(step.to_string());
+                }
+            }
+        }
+
+        if steps.is_empty() {
+            if content.to_lowercase().contains("answer the user's question directly") {
+                steps.push(format!("Answer the user's question directly: {query}"));
+            } else if !content.trim().is_empty() {
+                // If it's not the specific instruction but also not empty and not numbered, 
+                // just take the whole thing as a single step if it looks like a step
+                let fallback = content.trim().lines().next().unwrap_or("").trim();
+                if !fallback.is_empty() && fallback.len() < 100 {
+                     steps.push(fallback.to_string());
                 }
             }
         }
@@ -360,6 +376,8 @@ impl Agent {
         let mut in_code_block = false;
         let mut code_fence_buffer = String::new();
         let mut current_fence_size = 0;
+        let mut potential_lang = String::new();
+        let mut waiting_for_lang = false;
 
         while let Some(item) = stream.next().await {
             let bytes = item.context("Stream failure")?;
@@ -407,6 +425,17 @@ impl Agent {
                     }
 
                     for c in content.chars() {
+                        if waiting_for_lang {
+                            if c == '\n' {
+                                interaction.print_stream_code_start(&potential_lang);
+                                potential_lang.clear();
+                                waiting_for_lang = false;
+                            } else {
+                                potential_lang.push(c);
+                            }
+                            continue;
+                        }
+
                         if c == '`' {
                             code_fence_buffer.push(c);
                         } else {
@@ -425,10 +454,7 @@ impl Agent {
                                     } else {
                                         in_code_block = true;
                                         current_fence_size = fence_len;
-                                        // The characters immediately after ``` might be the language
-                                        // But we are processing character by character.
-                                        // For now, start the block.
-                                        interaction.print_stream_code_start("");
+                                        waiting_for_lang = true;
                                     }
                                 } else {
                                     // Not enough backticks for a fence
@@ -441,7 +467,19 @@ impl Agent {
                                 code_fence_buffer.clear();
                             }
 
-                            if c == '\n' && in_code_block {
+                            if waiting_for_lang {
+                                // This block is reached if c is not '`' after some backticks were pushed
+                                // But c itself might be part of the language name if waiting_for_lang was just set
+                                // Actually, the 'else' block for c == '`' handles the case where we just finished a fence.
+                                // If waiting_for_lang is true here, it means we just started a code block.
+                                // The character 'c' is the first character after the fence.
+                                if c == '\n' {
+                                    interaction.print_stream_code_start("");
+                                    waiting_for_lang = false;
+                                } else {
+                                    potential_lang.push(c);
+                                }
+                            } else if c == '\n' && in_code_block {
                                 interaction.print_stream_code_chunk("\n");
                             } else if in_code_block {
                                 interaction.print_stream_code_chunk(&c.to_string());

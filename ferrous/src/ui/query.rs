@@ -52,21 +52,24 @@ impl InteractionHandler for QueryMode {
 
     fn print_stream_code_start(&self, lang: &str) {
         let mut stdout = std::io::stdout();
-        let _ = write!(stdout, "\n{} {}\n", "┌──".dimmed(), lang.bright_yellow().bold());
+        let _ = write!(stdout, "\n{} {}\n{} ", "┌──".dimmed(), lang.bright_yellow().bold(), "│".dimmed());
         let _ = stdout.flush();
     }
 
     fn print_stream_code_chunk(&self, chunk: &str) {
         let mut stdout = std::io::stdout();
-        for line in chunk.lines() {
-            let _ = writeln!(stdout, "{} {}", "│".dimmed(), line.bright_white());
+        for (i, segment) in chunk.split('\n').enumerate() {
+            if i > 0 {
+                let _ = write!(stdout, "\n{} ", "│".dimmed());
+            }
+            let _ = write!(stdout, "{}", segment.bright_white());
         }
         let _ = stdout.flush();
     }
 
     fn print_stream_code_end(&self) {
         let mut stdout = std::io::stdout();
-        let _ = writeln!(stdout, "{}", "└──".dimmed());
+        let _ = write!(stdout, "\r{}\n", "└──".dimmed());
         let _ = stdout.flush();
     }
 
