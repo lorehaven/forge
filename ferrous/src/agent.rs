@@ -267,7 +267,7 @@ impl Agent {
                             print!("{}", "│ ".dimmed());
                             has_started_printing = true;
                         }
-                        print!("{}", content);
+                        print!("{content}");
                         io::stdout().flush()?;
                         full_content.push_str(content);
                     }
@@ -275,7 +275,7 @@ impl Agent {
                     // Handle tool_calls deltas
                     if let Some(tc_deltas) = delta["tool_calls"].as_array() {
                         for tc_delta in tc_deltas {
-                            let index = tc_delta["index"].as_u64().unwrap_or(0) as usize;
+                            let index = usize::try_from(tc_delta["index"].as_u64().unwrap_or(0)).unwrap();
                             while tool_calls.len() <= index {
                                 tool_calls.push(json!({
                                     "type": "function",
@@ -355,7 +355,6 @@ impl Agent {
                         "content": result
                     }));
                 }
-                continue; // Continue the agent loop for next response
             } else {
                 return Ok(full_content);
             }
