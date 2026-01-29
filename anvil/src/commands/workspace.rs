@@ -23,12 +23,17 @@ pub fn list(format: &str) -> Result<()> {
             println!("{}", serde_json::to_string_pretty(&metadata)?);
         }
         "names" => {
-            if let Some(packages) = metadata["packages"].as_array() {
-                for package in packages {
-                    if let Some(name) = package["name"].as_str() {
-                        println!("{name}");
-                    }
-                }
+            let names = metadata["packages"]
+                .as_array()
+                .map(|pkgs| {
+                    pkgs.iter()
+                        .filter_map(|p| p["name"].as_str())
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+
+            for name in names {
+                println!("{name}");
             }
         }
         _ => anyhow::bail!("Unknown format: {format}"),

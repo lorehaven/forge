@@ -36,9 +36,9 @@ fn get_package_version(module: &str, package: &str) -> Result<String> {
     value
         .get("package")
         .and_then(|p| p.get("version"))
-        .and_then(|v| v.as_str())
+        .and_then(toml::Value::as_str)
         .map(std::string::ToString::to_string)
-        .context(format!("Version not found in {path}"))
+        .with_context(|| format!("Version not found in {path}"))
 }
 
 fn get_dockerfile_for_package(config: &config::Config, package: &str) -> Result<String> {
@@ -94,7 +94,7 @@ pub fn push(config: &config::Config, package: &str, registry: &str) -> Result<()
     let mut cmd = Command::new("docker");
     cmd.arg("push").arg(&full_tag);
 
-    run_command(cmd, &format!("docker push {package}"))
+    run_command(cmd, &format!("docker push {full_tag}"))
 }
 
 pub fn release(config: &config::Config, package: &str, registry: &str) -> Result<()> {
@@ -106,67 +106,45 @@ pub fn release(config: &config::Config, package: &str, registry: &str) -> Result
 
 pub fn release_all(config: &config::Config, registry: &str) -> Result<()> {
     println!("Starting release-all...");
+    process_all_packages(config, |package| release(config, package, registry), "release")
+}
 
-    // Track failures
+pub fn build_all(config: &config::Config) -> Result<()> {
+    println!("Starting build-all...");
+    process_all_packages(config, |package| build(config, package), "build")
+}
+
+fn process_all_packages<F>(config: &config::Config, mut op: F, op_name: &str) -> Result<()>
+where
+    F: FnMut(&str) -> Result<()>,
+{
     let mut failures = Vec::new();
 
     for (module, module_cfg) in &config.modules {
         for package in &module_cfg.packages {
             println!("\n=== Processing {module}/{package} ===");
 
-            if let Err(e) = release(config, package, registry) {
+            if let Err(e) = op(package) {
                 let error_msg = format!("{module}/{package}: {e}");
-                eprintln!("❌ Failed to release {error_msg}");
+                eprintln!("❌ Failed to {op_name} {error_msg}");
                 failures.push(error_msg);
             } else {
-                println!("✅ Successfully released {module}/{package}");
+                println!("✅ Successfully {op_name}ed {module}/{package}");
             }
         }
     }
 
-    if !failures.is_empty() {
+    if failures.is_empty() {
+        println!("\n✅ Successfully {op_name}ed all packages");
+        Ok(())
+    } else {
         eprintln!(
-            "\n❌ Release-all completed with {} failures:",
+            "\n❌ {op_name}-all completed with {} failures:",
             failures.len()
         );
         for failure in &failures {
             eprintln!("  - {failure}");
         }
-        anyhow::bail!("Release-all failed for {} packages", failures.len());
+        anyhow::bail!("{op_name}-all failed for {} packages", failures.len());
     }
-
-    println!("\n✅ Successfully released all packages");
-    Ok(())
-}
-
-pub fn build_all(config: &config::Config) -> Result<()> {
-    println!("Starting build-all...");
-
-    // Track failures
-    let mut failures = Vec::new();
-
-    for (module, module_cfg) in &config.modules {
-        for package in &module_cfg.packages {
-            println!("\n=== Building {module}/{package} ===");
-
-            if let Err(e) = build(config, package) {
-                let error_msg = format!("{module}/{package}: {e}");
-                eprintln!("❌ Failed to build {error_msg}");
-                failures.push(error_msg);
-            } else {
-                println!("✅ Successfully built {module}/{package}");
-            }
-        }
-    }
-
-    if !failures.is_empty() {
-        eprintln!("\n❌ Build-all completed with {} failures:", failures.len());
-        for failure in &failures {
-            eprintln!("  - {failure}");
-        }
-        anyhow::bail!("Build-all failed for {} packages", failures.len());
-    }
-
-    println!("\n✅ Successfully built all packages");
-    Ok(())
 }

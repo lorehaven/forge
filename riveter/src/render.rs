@@ -11,6 +11,20 @@ use std::path::Path;
 pub fn generate_manifests(env_name: &str) -> anyhow::Result<String> {
     load_env(env_name);
 
+    let data = render_overlay(env_name)?;
+    let rendered_resources = render_resources(env_name, &data)?;
+
+    fs::create_dir_all(OUTPUT_DIR)?;
+    let path = manifest_path(env_name);
+    fs::write(
+        &path,
+        strip_empty_lines(&(rendered_resources.join("\n---\n") + "\n")),
+    )?;
+
+    Ok(path)
+}
+
+fn render_overlay(env_name: &str) -> anyhow::Result<YamlValue> {
     let overlay_src = fs::read_to_string(format!("{OVERLAY_DIR}/{env_name}/overlay.yaml"))?;
 
     let mut overlay_jinja = Environment::new();
@@ -23,6 +37,10 @@ pub fn generate_manifests(env_name: &str) -> anyhow::Result<String> {
     let re = Regex::new(r"\$\{([^}]+)}")?;
     substitute(&mut data, &std::env::vars().collect(), &re);
 
+    Ok(data)
+}
+
+fn render_resources(env_name: &str, data: &YamlValue) -> anyhow::Result<Vec<String>> {
     let resources = data["resources"]
         .as_sequence()
         .context("resources must be a list")?;
@@ -36,18 +54,13 @@ pub fn generate_manifests(env_name: &str) -> anyhow::Result<String> {
         let kind = res["kind"].as_str().context("kind missing")?;
         let tpl = format!("{}.yaml.j2", kind.to_lowercase());
         let y = tpl_env.get_template(&tpl)?.render(context! {
-            data => &data,
+            data => data,
             res => res,
             env => env_name,
         })?;
         out.push(y.trim().to_string());
     }
-
-    fs::create_dir_all(OUTPUT_DIR)?;
-    let path = manifest_path(env_name);
-    fs::write(&path, strip_empty_lines(&(out.join("\n---\n") + "\n")))?;
-
-    Ok(path)
+    Ok(out)
 }
 
 fn load_env(env: &str) {
@@ -60,22 +73,38 @@ fn load_env(env: &str) {
 }
 
 fn load_embedded_templates(env: &mut Environment<'_>) {
-    macro_rules! tpl {
-        ($n:expr) => {
-            env.add_template($n, include_str!(concat!("templates/", $n)))
-                .unwrap()
-        };
+    let templates = [
+        "cronjob.yaml.j2",
+        "deployment.yaml.j2",
+        "ingressroute.yaml.j2",
+        "job.yaml.j2",
+        "middleware.yaml.j2",
+        "namespace.yaml.j2",
+        "pv.yaml.j2",
+        "pvc.yaml.j2",
+        "service.yaml.j2",
+        "serviceaccount.yaml.j2",
+    ];
+
+    for tpl in templates {
+        env.add_template(tpl, get_template_source(tpl)).unwrap();
     }
-    tpl!("cronjob.yaml.j2");
-    tpl!("deployment.yaml.j2");
-    tpl!("ingressroute.yaml.j2");
-    tpl!("job.yaml.j2");
-    tpl!("middleware.yaml.j2");
-    tpl!("namespace.yaml.j2");
-    tpl!("pv.yaml.j2");
-    tpl!("pvc.yaml.j2");
-    tpl!("service.yaml.j2");
-    tpl!("serviceaccount.yaml.j2");
+}
+
+fn get_template_source(name: &str) -> &'static str {
+    match name {
+        "cronjob.yaml.j2" => include_str!("templates/cronjob.yaml.j2"),
+        "deployment.yaml.j2" => include_str!("templates/deployment.yaml.j2"),
+        "ingressroute.yaml.j2" => include_str!("templates/ingressroute.yaml.j2"),
+        "job.yaml.j2" => include_str!("templates/job.yaml.j2"),
+        "middleware.yaml.j2" => include_str!("templates/middleware.yaml.j2"),
+        "namespace.yaml.j2" => include_str!("templates/namespace.yaml.j2"),
+        "pv.yaml.j2" => include_str!("templates/pv.yaml.j2"),
+        "pvc.yaml.j2" => include_str!("templates/pvc.yaml.j2"),
+        "service.yaml.j2" => include_str!("templates/service.yaml.j2"),
+        "serviceaccount.yaml.j2" => include_str!("templates/serviceaccount.yaml.j2"),
+        _ => panic!("Unknown template: {name}"),
+    }
 }
 
 fn substitute(value: &mut YamlValue, env: &HashMap<String, String>, re: &Regex) {
