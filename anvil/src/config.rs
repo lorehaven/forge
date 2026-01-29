@@ -24,21 +24,18 @@ pub struct SkippedConfig {
 }
 
 pub fn load_config() -> Result<Config> {
-    let content = match fs::read_to_string(".anvil.toml") {
-        Ok(content) => Some(content),
-        Err(_) => {
+    let config = fs::read_to_string(".anvil.toml").map_or_else(
+        |_| {
             eprintln!("⚠️  Failed to read .anvil.toml, defaulting to empty config");
-            None
-        }
-    };
-
-    let config = match content {
-        Some(content) => toml::from_str(&content).unwrap_or_else(|err| {
-            eprintln!("⚠️  Failed to parse .anvil.toml ({err}), defaulting to empty config");
             Config::default()
-        }),
-        None => Config::default(),
-    };
+        },
+        |content| {
+            toml::from_str(&content).unwrap_or_else(|err| {
+                eprintln!("⚠️  Failed to parse .anvil.toml ({err}), defaulting to empty config");
+                Config::default()
+            })
+        },
+    );
 
     Ok(config)
 }

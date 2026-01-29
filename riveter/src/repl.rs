@@ -75,9 +75,7 @@ fn handle_repl_command(input: &str) -> anyhow::Result<bool> {
 
         "apply" | "a" => {
             let env = current_env()?;
-            if !manifest_exists(&env) {
-                warn("manifest not found — run `render` first");
-            } else {
+            if manifest_exists(&env) {
                 let dry = args.contains(&"--dry-run");
                 kubectl_apply(&env, dry)?;
                 if dry {
@@ -85,17 +83,19 @@ fn handle_repl_command(input: &str) -> anyhow::Result<bool> {
                 } else {
                     ok("kubectl apply succeeded");
                 }
+            } else {
+                warn("manifest not found — run `render` first");
             }
         }
 
         "delete" | "del" | "d" => {
             let env = current_env()?;
-            if !manifest_exists(&env) {
-                warn("manifest not found — nothing to delete");
-            } else {
+            if manifest_exists(&env) {
                 warn(&format!("deleting resources for env: {env}"));
                 kubectl_delete(&env)?;
                 ok("kubectl delete completed");
+            } else {
+                warn("manifest not found — nothing to delete");
             }
         }
 

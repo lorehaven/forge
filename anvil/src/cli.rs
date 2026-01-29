@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 
-#[derive(Parser)]
+#[derive(Parser, Debug)]
 #[command(name = "anvil")]
 #[command(about = "Anvil - Workspace tools for building, linting, and publishing", long_about = None)]
 pub struct Cli {
@@ -8,7 +8,7 @@ pub struct Cli {
     pub command: Commands,
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 pub enum Commands {
     /// Build the workspace or specific packages
     Build {
@@ -75,7 +75,7 @@ pub enum Commands {
     },
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 pub enum DockerCommands {
     /// Build Docker image for a package
     Build {

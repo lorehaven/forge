@@ -17,9 +17,8 @@ use std::fs;
 const CONFIG_FILE: &str = ".riveter.toml";
 
 pub fn load_config() -> Result<RiveterConfig> {
-    let content = match fs::read_to_string(CONFIG_FILE) {
-        Ok(c) => c,
-        Err(_) => return Ok(RiveterConfig::default()),
+    let Ok(content) = fs::read_to_string(CONFIG_FILE) else {
+        return Ok(RiveterConfig::default());
     };
 
     toml::from_str(&content).context("Failed to parse .riveter.toml")

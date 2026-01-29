@@ -24,9 +24,9 @@ pub fn env_list() -> anyhow::Result<()> {
 }
 
 pub fn env_set(env: &str) -> anyhow::Result<()> {
-    let path = format!("{}/{}/overlay.yaml", OVERLAY_DIR, env);
+    let path = format!("{OVERLAY_DIR}/{env}/overlay.yaml");
     if !Path::new(&path).exists() {
-        anyhow::bail!("overlay not found: {}", path);
+        anyhow::bail!("overlay not found: {path}");
     }
 
     let mut config = config::load_config()?;
@@ -51,6 +51,7 @@ pub fn current_env() -> anyhow::Result<String> {
         .context("No environment set. Run `riveter env set <env>`")
 }
 
+#[must_use]
 pub fn manifest_path(env: &str) -> String {
     format!("{OUTPUT_DIR}/{env}-manifests.yaml")
 }

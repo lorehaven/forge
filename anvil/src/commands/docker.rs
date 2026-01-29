@@ -16,57 +16,51 @@ fn find_module_for_package<'a>(config: &'a config::Config, package: &str) -> Res
             let path = format!("{module}/{package}");
             if std::path::Path::new(&path).exists() {
                 anyhow::bail!(
-                    "Package '{}' is in module '{}' which is skipped for Docker operations",
-                    package,
-                    module
+                    "Package '{package}' is in module '{module}' which is skipped for Docker operations"
                 );
             }
         }
     }
 
-    anyhow::bail!("Module not found for package: {}", package)
+    anyhow::bail!("Module not found for package: {package}")
 }
 
 fn get_package_version(module: &str, package: &str) -> Result<String> {
-    let path = format!("{}/{}/Cargo.toml", module, package);
+    let path = format!("{module}/{package}/Cargo.toml");
     let content = fs::read_to_string(&path)
         .with_context(|| format!("Failed to read Cargo.toml at {path}"))?;
 
     let value: toml::Value = toml::from_str(&content)
-        .with_context(|| format!("Failed to parse Cargo.toml at {}", path))?;
+        .with_context(|| format!("Failed to parse Cargo.toml at {path}"))?;
 
     value
         .get("package")
         .and_then(|p| p.get("version"))
         .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .context(format!("Version not found in {}", path))
+        .map(std::string::ToString::to_string)
+        .context(format!("Version not found in {path}"))
 }
 
 fn get_dockerfile_for_package(config: &config::Config, package: &str) -> Result<String> {
     let module = find_module_for_package(config, package)?;
     let module_cfg = &config.modules[module];
 
-    if let Some(df) = module_cfg.package_dockerfiles.get(package) {
-        Ok(df.clone())
-    } else {
-        Ok(module_cfg.dockerfile.clone())
-    }
+    module_cfg
+        .package_dockerfiles
+        .get(package)
+        .map_or_else(|| Ok(module_cfg.dockerfile.clone()), |df| Ok(df.clone()))
 }
 
 pub fn build(config: &config::Config, package: &str) -> Result<()> {
     let dockerfile = get_dockerfile_for_package(config, package)?;
-    println!(
-        "Building Docker image for package: {} using {}",
-        package, dockerfile
-    );
+    println!("Building Docker image for package: {package} using {dockerfile}");
 
     let mut cmd = Command::new("docker");
     cmd.arg("build")
         .arg("-f")
         .arg(&dockerfile)
         .arg("--build-arg")
-        .arg(format!("PROJECT_NAME={}", package))
+        .arg(format!("PROJECT_NAME={package}"))
         .arg("-t")
         .arg(package)
         .arg(".");
@@ -74,33 +68,33 @@ pub fn build(config: &config::Config, package: &str) -> Result<()> {
     // Enable BuildKit
     cmd.env("DOCKER_BUILDKIT", "1");
 
-    run_command(cmd, &format!("docker build {}", package))
+    run_command(cmd, &format!("docker build {package}"))
 }
 
 pub fn tag(config: &config::Config, package: &str, registry: &str) -> Result<()> {
     let module = find_module_for_package(config, package)?;
     let version = get_package_version(module, package)?;
 
-    let full_tag = format!("{}/{}/{}:{}", registry, module, package, version);
-    println!("Tagging image {} as {}", package, full_tag);
+    let full_tag = format!("{registry}/{module}/{package}:{version}");
+    println!("Tagging image {package} as {full_tag}");
 
     let mut cmd = Command::new("docker");
     cmd.arg("tag").arg(package).arg(&full_tag);
 
-    run_command(cmd, &format!("docker tag {}", package))
+    run_command(cmd, &format!("docker tag {package}"))
 }
 
 pub fn push(config: &config::Config, package: &str, registry: &str) -> Result<()> {
     let module = find_module_for_package(config, package)?;
     let version = get_package_version(module, package)?;
 
-    let full_tag = format!("{}/{}/{}:{}", registry, module, package, version);
-    println!("Pushing image: {}", full_tag);
+    let full_tag = format!("{registry}/{module}/{package}:{version}");
+    println!("Pushing image: {full_tag}");
 
     let mut cmd = Command::new("docker");
     cmd.arg("push").arg(&full_tag);
 
-    run_command(cmd, &format!("docker push {}", package))
+    run_command(cmd, &format!("docker push {package}"))
 }
 
 pub fn release(config: &config::Config, package: &str, registry: &str) -> Result<()> {
@@ -110,7 +104,7 @@ pub fn release(config: &config::Config, package: &str, registry: &str) -> Result
     Ok(())
 }
 
-pub fn release_all(config: config::Config, registry: &str) -> Result<()> {
+pub fn release_all(config: &config::Config, registry: &str) -> Result<()> {
     println!("Starting release-all...");
 
     // Track failures
@@ -118,14 +112,14 @@ pub fn release_all(config: config::Config, registry: &str) -> Result<()> {
 
     for (module, module_cfg) in &config.modules {
         for package in &module_cfg.packages {
-            println!("\n=== Processing {}/{} ===", module, package);
+            println!("\n=== Processing {module}/{package} ===");
 
-            if let Err(e) = release(&config, package, registry) {
-                let error_msg = format!("{}/{}: {}", module, package, e);
-                eprintln!("❌ Failed to release {}", error_msg);
+            if let Err(e) = release(config, package, registry) {
+                let error_msg = format!("{module}/{package}: {e}");
+                eprintln!("❌ Failed to release {error_msg}");
                 failures.push(error_msg);
             } else {
-                println!("✅ Successfully released {}/{}", module, package);
+                println!("✅ Successfully released {module}/{package}");
             }
         }
     }
@@ -136,7 +130,7 @@ pub fn release_all(config: config::Config, registry: &str) -> Result<()> {
             failures.len()
         );
         for failure in &failures {
-            eprintln!("  - {}", failure);
+            eprintln!("  - {failure}");
         }
         anyhow::bail!("Release-all failed for {} packages", failures.len());
     }
@@ -145,7 +139,7 @@ pub fn release_all(config: config::Config, registry: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn build_all(config: config::Config) -> Result<()> {
+pub fn build_all(config: &config::Config) -> Result<()> {
     println!("Starting build-all...");
 
     // Track failures
@@ -153,14 +147,14 @@ pub fn build_all(config: config::Config) -> Result<()> {
 
     for (module, module_cfg) in &config.modules {
         for package in &module_cfg.packages {
-            println!("\n=== Building {}/{} ===", module, package);
+            println!("\n=== Building {module}/{package} ===");
 
-            if let Err(e) = build(&config, package) {
-                let error_msg = format!("{}/{}: {}", module, package, e);
-                eprintln!("❌ Failed to build {}", error_msg);
+            if let Err(e) = build(config, package) {
+                let error_msg = format!("{module}/{package}: {e}");
+                eprintln!("❌ Failed to build {error_msg}");
                 failures.push(error_msg);
             } else {
-                println!("✅ Successfully built {}/{}", module, package);
+                println!("✅ Successfully built {module}/{package}");
             }
         }
     }
@@ -168,7 +162,7 @@ pub fn build_all(config: config::Config) -> Result<()> {
     if !failures.is_empty() {
         eprintln!("\n❌ Build-all completed with {} failures:", failures.len());
         for failure in &failures {
-            eprintln!("  - {}", failure);
+            eprintln!("  - {failure}");
         }
         anyhow::bail!("Build-all failed for {} packages", failures.len());
     }

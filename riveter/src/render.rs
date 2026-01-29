@@ -51,7 +51,7 @@ pub fn generate_manifests(env_name: &str) -> anyhow::Result<String> {
 }
 
 fn load_env(env: &str) {
-    let env_path = format!("{}/{}/.env", OVERLAY_DIR, env);
+    let env_path = format!("{OVERLAY_DIR}/{env}/.env");
     if Path::new(&env_path).exists() {
         from_path(&env_path).ok();
     } else if Path::new(".env").exists() {
@@ -59,7 +59,7 @@ fn load_env(env: &str) {
     }
 }
 
-fn load_embedded_templates(env: &mut Environment) {
+fn load_embedded_templates(env: &mut Environment<'_>) {
     macro_rules! tpl {
         ($n:expr) => {
             env.add_template($n, include_str!(concat!("templates/", $n)))
@@ -82,8 +82,8 @@ fn substitute(value: &mut YamlValue, env: &HashMap<String, String>, re: &Regex) 
     match value {
         YamlValue::String(s) => {
             *s = re
-                .replace_all(s, |c: &regex::Captures| {
-                    env.get(&c[1]).cloned().unwrap_or(c[0].to_string())
+                .replace_all(s, |c: &regex::Captures<'_>| {
+                    env.get(&c[1]).cloned().unwrap_or_else(|| c[0].to_string())
                 })
                 .into_owned();
         }

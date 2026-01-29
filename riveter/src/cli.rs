@@ -1,13 +1,13 @@
 use clap::{Parser, Subcommand};
 
-#[derive(Parser)]
+#[derive(Parser, Debug)]
 #[command(name = "riveter")]
 pub struct Cli {
     #[command(subcommand)]
     pub cmd: Option<Cmd>,
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 pub enum Cmd {
     Env {
         #[command(subcommand)]
@@ -22,7 +22,7 @@ pub enum Cmd {
     Repl,
 }
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Debug)]
 pub enum EnvCmd {
     List,
     Set { env: String },

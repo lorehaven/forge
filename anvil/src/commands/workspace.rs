@@ -26,12 +26,12 @@ pub fn list(format: &str) -> Result<()> {
             if let Some(packages) = metadata["packages"].as_array() {
                 for package in packages {
                     if let Some(name) = package["name"].as_str() {
-                        println!("{}", name);
+                        println!("{name}");
                     }
                 }
             }
         }
-        _ => anyhow::bail!("Unknown format: {}", format),
+        _ => anyhow::bail!("Unknown format: {format}"),
     }
 
     Ok(())

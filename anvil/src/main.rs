@@ -38,9 +38,9 @@ fn main() -> Result<()> {
                 commands::docker::release(&config, &package, &registry)?
             }
             DockerCommands::ReleaseAll { registry } => {
-                commands::docker::release_all(config, &registry)?
+                commands::docker::release_all(&config, &registry)?
             }
-            DockerCommands::BuildAll => commands::docker::build_all(config)?,
+            DockerCommands::BuildAll => commands::docker::build_all(&config)?,
         },
     }
 

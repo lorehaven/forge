@@ -2,19 +2,19 @@ use anyhow::{Context, Result};
 use std::process::{Command, Stdio};
 
 pub fn run_command(mut cmd: Command, operation: &str) -> Result<()> {
-    println!("Running {} operation...", operation);
+    println!("Running {operation} operation...");
 
     let status = cmd
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .status()
-        .context(format!("Failed to execute {} command", operation))?;
+        .context(format!("Failed to execute {operation} command"))?;
 
     if !status.success() {
-        anyhow::bail!("{} operation failed with status: {}", operation, status);
+        anyhow::bail!("{operation} operation failed with status: {status}");
     }
 
-    println!("{} operation completed successfully", operation);
+    println!("{operation} operation completed successfully");
     Ok(())
 }
