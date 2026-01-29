@@ -21,7 +21,7 @@ The agent provides an interactive CLI interface for coding assistance with file 
 
 ### ✅ Phase 2: Core Components
 
-#### ✅ LLM Interface (embedded in main.rs)
+#### ✅ LLM Interface (`src/llm.rs`)
 - [x] Model loading from GGUF files via llama-server
 - [x] Server process management and initialization
 - [x] Context creation and management via API
@@ -31,41 +31,44 @@ The agent provides an interactive CLI interface for coding assistance with file 
   - [x] Top-P sampling
   - [x] Max tokens
 - [x] Token encoding/decoding (handled by server)
-- [x] Greedy sampling implementation (partial via temperature)
+- [x] Mirostat sampling (v1 and v2)
 
-#### ✅ File Operations (embedded in main.rs)
-- [x] Read file functionality
-- [x] Write file functionality
+#### ✅ File Operations (`src/tools/file.rs`)
+- [x] Read file functionality (single and multiple)
+- [x] Write/Append file functionality
+- [x] Replace in file (exact string matching)
 - [x] List files in directory (with extension filtering)
 - [x] Directory tree traversal
 - [x] File existence checking
-- [x] File extension extraction
+- [x] Recursive file listing
 - [x] Skip common ignore patterns (.git, target, node_modules)
+- [x] Find file by pattern
+- [x] Grep-like search functionality
 
-#### ✅ Agent Core (embedded in main.rs)
+#### ✅ Agent Core (`src/agent.rs` and `src/plan.rs`)
 - [x] Agent struct with HTTP client and conversation history
 - [x] System prompt configuration
-- [x] Query processing pipeline
+- [x] Planning phase (generating a structured execution plan)
 - [x] Tool execution
-  - [x] Automatic file reading
-  - [x] Directory listing
-  - [x] File writing
-  - [x] Directory tree
-- [x] Conversation history management
-- [x] Context building for prompts
-- [x] File path extraction heuristics
+  - [x] Technology discovery
+  - [x] Project analysis (linter integration)
+  - [x] File operations
+  - [x] Git integration
+  - [x] Shell command execution
+- [x] Conversation history management with context window adjustment
 - [x] Clear history functionality
 
-#### ✅ CLI Interface (main.rs)
+#### ✅ CLI Interface (`src/cli.rs` and `src/main.rs`)
 - [x] Command-line argument parsing
-- [x] Model path configuration (CLI arg)
+- [x] Model path configuration (CLI arg and config file)
 - [x] Interactive REPL mode
   - [x] Readline with history
   - [x] Command processing loop
-  - [x] Special commands (exit, clear)
+  - [x] Special commands (exit, clear, save, load, delete, config)
   - [x] Error handling
 - [x] Single-shot query mode
-- [x] Help text and user guidance (partial in startup message)
+- [x] Help text and user guidance
+- [x] Syntax highlighting and colorized output
 
 ### ✅ Phase 3: Documentation
 - [x] README.md with comprehensive usage guide
@@ -81,21 +84,21 @@ The agent provides an interactive CLI interface for coding assistance with file 
 ## ⏳ Phase 4: Future Enhancements (TODO)
 
 ### 🔲 Enhanced Tool System
-- [x] JSON-based tool definitions (partial, hardcoded)
+- [x] JSON-based tool definitions
 - [x] Structured tool calling (using OpenAI-style function calls)
 - [ ] Code execution in sandboxed environment
-- [x] Git integration (status, diff, commit)
 - [x] Search/grep functionality
+- [x] Technology discovery tool
 
 ### 🔲 Improved LLM Integration
 - [x] Better sampling strategies (mirostat)
 - [x] Streaming token generation
-- [ ] Multi-turn conversation improvements
+- [x] Multi-turn conversation improvements
 - [ ] Custom system prompts from a file
-- [ ] Temperature/parameter CLI overrides
+- [x] Temperature/parameter CLI overrides
 
 ### 🔲 Advanced Features
-- [ ] Code syntax highlighting in the terminal
+- [x] Code syntax highlighting in the terminal
 - [x] Multi-file context management
 - [x] Project-wide code analysis
 - [ ] Automatic test generation
@@ -105,16 +108,17 @@ The agent provides an interactive CLI interface for coding assistance with file 
 ### 🔲 Performance & Quality
 - [ ] Add comprehensive tests
 - [ ] Benchmark LLM performance
-- [ ] Optimize context window usage
+- [x] Optimize context window usage
 - [ ] Memory-efficient token handling
-- [ ] Error recovery and retry logic
+- [x] Error recovery and retry logic (partial)
 
 ### 🔲 User Experience
-- [x] Configuration file support (~/.ferrous.toml)
+- [x] Configuration file support (`config.toml`)
 - [ ] Model auto-discovery
 - [x] Rich terminal UI (colors, formatting)
 - [x] Progress indicators for model loading
 - [x] Save/load conversation sessions
+- [x] Interactive planning and execution
 
 ---
 
@@ -141,21 +145,20 @@ The agent provides an interactive CLI interface for coding assistance with file 
 
 ## Status Summary
 
-**Completed**: ✅ All core implementation finished and compiling successfully
-- ✅ Project setup with Cargo and dependencies
-- ✅ LLM interface via HTTP API to llama-server
-- ✅ File operations embedded in tool executor
-- ✅ Agent core with tool execution
-- ✅ Interactive CLI with REPL
-- ✅ Comprehensive documentation (README.md and PLAN.md)
+**Completed**: ✅ All core implementation finished and refactored into modular architecture
+- ✅ Project setup with Cargo and workspace-ready dependencies
+- ✅ LLM interface via HTTP API with context management (`src/llm.rs`)
+- ✅ Advanced file and search tools (`src/tools/file.rs`)
+- ✅ Agent core with planning and tool execution (`src/agent.rs`, `src/plan.rs`)
+- ✅ Modular CLI with interactive REPL and syntax highlighting (`src/cli.rs`, `src/main.rs`)
+- ✅ Git integration and technology discovery tools
+- ✅ Comprehensive documentation (README.md and updated PLAN.md)
 
-**Current State**: Fully functional MVP ready for testing with GGUF models
+**Current State**: Mature assistant capable of autonomous multi-step tasks across various tech stacks.
 
 **Next Steps**:
-1. Test with actual GGUF models (CodeLlama, Mistral, etc.)
-2. Gather user feedback on agent behavior
-3. Implement Phase 4 enhancements based on real-world usage
-4. Add more sophisticated sampling strategies
-5. Implement code generation/editing capabilities
-6. Add single-shot query mode and help command
-7. Refactor into separate modules for better organization
+1. Add code execution in a sandboxed environment
+2. Implement automatic test generation and refactoring suggestions
+3. Enhance error recovery and retry logic for tool calls
+4. Expand project analysis for non-Rust projects
+5. Improve multi-turn conversation coherence on very large projects
