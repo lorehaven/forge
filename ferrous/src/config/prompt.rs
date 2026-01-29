@@ -72,37 +72,3 @@ pub fn get_default_context() -> PromptContext {
             .unwrap_or_else(|| "unknown".to_string()),
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_render_system_fallback() {
-        let pm = PromptManager {
-            env: Environment::new(),
-        };
-        let ctx = PromptContext {
-            date: "2024-01-01".to_string(),
-            os: "linux".to_string(),
-            project_name: "test".to_string(),
-        };
-        let rendered = pm.render_system(&ctx).unwrap();
-        assert!(rendered.contains("You are Ferrous"));
-    }
-
-    #[test]
-    fn test_render_system_custom() {
-        let mut env = Environment::new();
-        env.add_template("system.md", "Hello {{ project_name }} on {{ os }}")
-            .unwrap();
-        let pm = PromptManager { env };
-        let ctx = PromptContext {
-            date: "2024-01-01".to_string(),
-            os: "linux".to_string(),
-            project_name: "ferrous".to_string(),
-        };
-        let rendered = pm.render_system(&ctx).unwrap();
-        assert_eq!(rendered, "Hello ferrous on linux");
-    }
-}

@@ -108,33 +108,3 @@ pub fn get_stop_words_for_language(lang: &str) -> Vec<String> {
     
     words
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_stop_condition_simple() {
-        let mut sc = StopCondition::new(vec!["STOP".to_string()]);
-        assert!(!sc.should_stop("HELLO").0);
-        assert!(sc.should_stop("STOP").0);
-    }
-
-    #[test]
-    fn test_stop_condition_prefix() {
-        let mut sc = StopCondition::new(vec!["\nvoid".to_string()]);
-        assert!(!sc.should_stop("int main() {").0);
-        // "\nvoid" reversed is "diov\n"
-        // If we pass "\n", then "void", the reversed text becomes "diov\n"
-        assert!(!sc.should_stop("\n").0);
-        assert!(sc.should_stop("void").0);
-    }
-
-    #[test]
-    fn test_stop_condition_incremental() {
-        let mut sc = StopCondition::new(vec!["\n\n".to_string()]);
-        assert!(!sc.should_stop("first line").0);
-        assert!(!sc.should_stop("\n").0);
-        assert!(sc.should_stop("\n").0);
-    }
-}

@@ -36,12 +36,26 @@ pub fn sanitize_name(name: &str) -> String {
         })
         .collect();
 
-    cleaned
+    let joined = cleaned
         .split_whitespace()
         .collect::<Vec<&str>>()
-        .join("-")
-        .trim_matches('-')
-        .to_string()
+        .join("-");
+
+    let mut final_joined = String::new();
+    let mut last_was_dash = false;
+    for c in joined.chars() {
+        if c == '-' {
+            if !last_was_dash {
+                final_joined.push(c);
+                last_was_dash = true;
+            }
+        } else {
+            final_joined.push(c);
+            last_was_dash = false;
+        }
+    }
+
+    final_joined.trim_matches('-').to_string()
 }
 
 #[must_use]
