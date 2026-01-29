@@ -21,6 +21,7 @@ pub fn sessions_dir() -> Result<PathBuf> {
     Ok(dir)
 }
 
+#[must_use]
 pub fn sanitize_name(name: &str) -> String {
     let cleaned: String = name
         .trim()
@@ -43,15 +44,16 @@ pub fn sanitize_name(name: &str) -> String {
         .to_string()
 }
 
+#[must_use]
 pub fn generate_filename(name: &str, id: Uuid) -> String {
     let timestamp = Local::now().format("%Y%m%dT%H%M");
     let short_id = id.to_string()[..8].to_string();
     let safe_name = if name.trim().is_empty() {
-        format!("unnamed-{}", timestamp)
+        format!("unnamed-{timestamp}")
     } else {
         sanitize_name(name)
     };
-    format!("{}_{}_{}.json", timestamp, safe_name, short_id)
+    format!("{timestamp}_{safe_name}_{short_id}.json")
 }
 
 pub fn save_conversation(messages: &[Value], name: &str) -> Result<(String, PathBuf)> {
@@ -99,10 +101,7 @@ pub fn load_conversation_by_prefix(prefix: &str) -> Result<(Conversation, PathBu
     }
 
     match candidates.len() {
-        0 => Err(anyhow::anyhow!(
-            "No conversation found matching '{}'",
-            prefix
-        )),
+        0 => Err(anyhow::anyhow!("No conversation found matching '{prefix}'")),
         1 => Ok(candidates.into_iter().next().unwrap()),
         n => Err(anyhow::anyhow!(
             "Ambiguous prefix '{}'. {} matches found:\n  {}",

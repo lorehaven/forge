@@ -1,14 +1,14 @@
 use crate::llm::ModelLoadPhase;
 use crate::plan::ExecutionPlan;
 use colored::Colorize;
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::{SyntaxReference, SyntaxSet};
 use syntect::util::LinesWithEndings;
 
-static SYNTAX_SET: Lazy<SyntaxSet> = Lazy::new(SyntaxSet::load_defaults_newlines);
-static THEME_SET: Lazy<ThemeSet> = Lazy::new(ThemeSet::load_defaults);
+static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
+static THEME_SET: LazyLock<ThemeSet> = LazyLock::new(ThemeSet::load_defaults);
 
 pub fn syntax_for_lang(lang: &str) -> &SyntaxReference {
     SYNTAX_SET
@@ -40,7 +40,7 @@ pub fn pretty_print_response(response: &str) {
         if line.starts_with("```") {
             if in_code {
                 let highlighted = highlight_code_block(&code_buffer, current_lang);
-                println!("{}", highlighted);
+                println!("{highlighted}");
                 code_buffer.clear();
                 in_code = false;
             } else {
@@ -62,19 +62,19 @@ pub fn pretty_print_response(response: &str) {
             } else {
                 line.normal().to_string()
             };
-            println!("{}", styled);
+            println!("{styled}");
         }
     }
 
     if in_code {
         let highlighted = highlight_code_block(&code_buffer, current_lang);
-        println!("{}", highlighted);
+        println!("{highlighted}");
     }
 }
 
 pub fn render_plan(plan: &ExecutionPlan) {
     println!("\n{}", "────── Plan ──────".bright_black());
-    println!("{}", plan);
+    println!("{plan}");
     println!("{}", "─────────────────".dimmed());
 }
 
@@ -94,10 +94,11 @@ pub fn render_model_progress(phase: ModelLoadPhase) {
 
 pub fn print_indented(text: &str) {
     for line in text.lines() {
-        println!("│ {}", line);
+        println!("│ {line}");
     }
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn print_help() {
     println!(
         "{}",

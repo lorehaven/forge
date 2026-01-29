@@ -4,7 +4,7 @@ use serde::Deserialize;
 use std::fs;
 use std::path::PathBuf;
 
-#[derive(Deserialize, Default, Clone)]
+#[derive(Deserialize, Default, Clone, Debug)]
 pub struct Config {
     pub model: Option<String>,
     pub port: Option<u16>,
@@ -29,25 +29,19 @@ impl Config {
         let fields = vec![
             ("model", self.model.as_ref().map(String::from)),
             ("port", self.port.map(|p| p.to_string())),
-            ("temperature", self.temperature.map(|v| format!("{:.2}", v))),
-            ("top_p", self.top_p.map(|v| format!("{:.2}", v))),
-            ("min_p", self.min_p.map(|v| format!("{:.2}", v))),
+            ("temperature", self.temperature.map(|v| format!("{v:.2}"))),
+            ("top_p", self.top_p.map(|v| format!("{v:.2}"))),
+            ("min_p", self.min_p.map(|v| format!("{v:.2}"))),
             ("top_k", self.top_k.map(|v| v.to_string())),
             (
                 "repeat_penalty",
-                self.repeat_penalty.map(|v| format!("{:.2}", v)),
+                self.repeat_penalty.map(|v| format!("{v:.2}")),
             ),
             ("context", self.context.map(|v| v.to_string())),
             ("max_tokens", self.max_tokens.map(|v| v.to_string())),
             ("mirostat", self.mirostat.map(|v| v.to_string())),
-            (
-                "mirostat_tau",
-                self.mirostat_tau.map(|v| format!("{:.3}", v)),
-            ),
-            (
-                "mirostat_eta",
-                self.mirostat_eta.map(|v| format!("{:.3}", v)),
-            ),
+            ("mirostat_tau", self.mirostat_tau.map(|v| format!("{v:.3}"))),
+            ("mirostat_eta", self.mirostat_eta.map(|v| format!("{v:.3}"))),
             ("debug", self.debug.map(|v| v.to_string())),
         ];
 
@@ -68,7 +62,7 @@ impl Config {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct ConfigField {
     name: &'static str,
     value: Option<String>,
@@ -76,7 +70,7 @@ struct ConfigField {
 }
 
 impl ConfigField {
-    fn new(name: &'static str, value: Option<String>, color: colored::Color) -> Self {
+    const fn new(name: &'static str, value: Option<String>, color: colored::Color) -> Self {
         Self { name, value, color }
     }
 }
@@ -88,11 +82,11 @@ pub fn config_file_path() -> Result<PathBuf, anyhow::Error> {
     Ok(cwd.join(".ferrous").join("config.toml"))
 }
 
+#[must_use]
 /// Loads config.toml from current directory (if exists)
 pub fn load() -> Config {
-    let config_path = match config_file_path() {
-        Ok(p) => p,
-        Err(_) => return Config::default(),
+    let Ok(config_path) = config_file_path() else {
+        return Config::default();
     };
 
     if !config_path.exists() {
@@ -102,17 +96,15 @@ pub fn load() -> Config {
     match fs::read_to_string(&config_path) {
         Ok(content) => toml::from_str(&content).unwrap_or_else(|e| {
             eprintln!(
-                "{} Invalid .ferrous/config.toml: {}. Using defaults.",
-                "Warning:".yellow().bold(),
-                e
+                "{} Invalid .ferrous/config.toml: {e}. Using defaults.",
+                "Warning:".yellow().bold()
             );
             Config::default()
         }),
         Err(e) => {
             eprintln!(
-                "{} Failed to read .ferrous/config.toml: {}. Using defaults.",
-                "Warning:".yellow().bold(),
-                e
+                "{} Failed to read .ferrous/config.toml: {e}. Using defaults.",
+                "Warning:".yellow().bold()
             );
             Config::default()
         }
@@ -156,17 +148,17 @@ pub fn print_loaded(config: &Config, is_debug: bool) {
         ),
         ConfigField::new(
             "temperature",
-            config.temperature.map(|v| format!("{:.3}", v)),
+            config.temperature.map(|v| format!("{v:.3}")),
             colored::Color::BrightYellow,
         ),
         ConfigField::new(
             "top_p",
-            config.top_p.map(|v| format!("{:.3}", v)),
+            config.top_p.map(|v| format!("{v:.3}")),
             colored::Color::BrightYellow,
         ),
         ConfigField::new(
             "min_p",
-            config.min_p.map(|v| format!("{:.3}", v)),
+            config.min_p.map(|v| format!("{v:.3}")),
             colored::Color::BrightYellow,
         ),
         ConfigField::new(
@@ -176,7 +168,7 @@ pub fn print_loaded(config: &Config, is_debug: bool) {
         ),
         ConfigField::new(
             "repeat_penalty",
-            config.repeat_penalty.map(|v| format!("{:.3}", v)),
+            config.repeat_penalty.map(|v| format!("{v:.3}")),
             colored::Color::BrightYellow,
         ),
         ConfigField::new(
@@ -196,12 +188,12 @@ pub fn print_loaded(config: &Config, is_debug: bool) {
         ),
         ConfigField::new(
             "mirostat_tau",
-            config.mirostat_tau.map(|v| format!("{:.3}", v)),
+            config.mirostat_tau.map(|v| format!("{v:.3}")),
             colored::Color::BrightYellow,
         ),
         ConfigField::new(
             "mirostat_eta",
-            config.mirostat_eta.map(|v| format!("{:.3}", v)),
+            config.mirostat_eta.map(|v| format!("{v:.3}")),
             colored::Color::BrightYellow,
         ),
         ConfigField::new(

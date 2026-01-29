@@ -6,14 +6,13 @@ use crate::tools::execute_tool;
 use anyhow::{Result, anyhow};
 use colored::Colorize;
 use futures_util::StreamExt;
-use once_cell::sync::Lazy;
 use reqwest::Client;
 use serde_json::{Value, json};
 use std::io::{self, Write};
 use std::process::Child;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 
-static TOOLS_JSON: Lazy<Vec<Value>> = Lazy::new(|| {
+static TOOLS_JSON: LazyLock<Vec<Value>> = LazyLock::new(|| {
     let s = include_str!("../config/tools.json");
     serde_json::from_str(s).expect("Invalid tools.json")
 });
@@ -75,6 +74,7 @@ You have access to these tools: analyze_project, read_file, read_multiple_files,
 Respond helpfully and concisely. Think step-by-step before calling tools.
 ";
 
+#[derive(Debug)]
 pub struct Agent {
     client: Client,
     pub messages: Vec<Value>,
@@ -141,13 +141,14 @@ impl Agent {
     }
 
     pub async fn generate_plan(&self, query: &str) -> Result<ExecutionPlan> {
+        const PLAN_MAX_TOKENS: u32 = 1024;
+        const SAFETY_BUFFER: u64 = 1024;
+
         let mut temp_messages = self.messages.clone();
         temp_messages.push(json!({"role": "user", "content": format!("{}{}", PLAN_PROMPT, query)}));
 
         // Plan phase also needs context management
         // (Planning usually doesn't need much, but let's be safe)
-        const PLAN_MAX_TOKENS: u32 = 1024;
-        const SAFETY_BUFFER: u64 = 1024;
 
         let url_props = format!("http://127.0.0.1:{}/props", self.port);
         let props: Value = self.client.get(url_props).send().await?.json().await?;
@@ -156,7 +157,7 @@ impl Agent {
         let mut prompt_tokens = self.count_message_tokens(&temp_messages).await? as u64;
         while prompt_tokens
             > n_ctx
-                .saturating_sub(PLAN_MAX_TOKENS as u64)
+                .saturating_sub(u64::from(PLAN_MAX_TOKENS))
                 .saturating_sub(SAFETY_BUFFER)
             && temp_messages.len() > 2
         {
@@ -209,6 +210,7 @@ impl Agent {
         Ok(ExecutionPlan::new(steps))
     }
 
+    #[allow(clippy::too_many_lines)]
     #[allow(clippy::too_many_arguments)]
     pub async fn stream(
         &mut self,
@@ -225,6 +227,7 @@ impl Agent {
         mirostat_eta: f32,
         is_debug: bool,
     ) -> Result<String> {
+        const SAFETY_BUFFER: u64 = 1024;
         self.ensure_alive().await?;
 
         self.messages
@@ -235,7 +238,7 @@ impl Agent {
         loop {
             // ── Context Management ──────────────────────────────────────────
             // We need to fit: messages + tools + max_tokens + safety buffer
-            let context_u64 = context as u64;
+            let context_u64 = u64::from(context);
 
             // 1. Estimate tokens accurately
             let mut prompt_tokens = self.count_message_tokens(&self.messages).await? as u64;
@@ -243,11 +246,10 @@ impl Agent {
             // 2. Sliding window if we exceed context
             // We want to keep at least 25% of the context for generation (max_tokens)
             // and some buffer for tools.
-            let reserved_for_generation = (max_tokens as u64).max(context_u64 / 4);
-            let safety_buffer = 1024;
+            let reserved_for_generation = u64::from(max_tokens).max(context_u64 / 4);
             let max_allowed_prompt = context_u64
                 .saturating_sub(reserved_for_generation)
-                .saturating_sub(safety_buffer);
+                .saturating_sub(SAFETY_BUFFER);
 
             while prompt_tokens > max_allowed_prompt && self.messages.len() > 2 {
                 // Remove the oldest non-system message
@@ -256,21 +258,21 @@ impl Agent {
             }
 
             // 3. Final clamping of max_tokens if still tight
-            let total_estimated = prompt_tokens + max_tokens as u64 + safety_buffer;
+            let total_estimated = prompt_tokens + u64::from(max_tokens) + SAFETY_BUFFER;
 
             if total_estimated > context_u64 {
                 let safe_max_tokens = context_u64
                     .saturating_sub(prompt_tokens)
-                    .saturating_sub(safety_buffer)
+                    .saturating_sub(SAFETY_BUFFER)
                     .max(1024);
-                if (max_tokens as u64) > safe_max_tokens {
+                if u64::from(max_tokens) > safe_max_tokens {
                     if is_debug {
                         eprintln!(
                             "{} Context tight ({prompt_tokens} prompt tokens). Clamping max_tokens {max_tokens} → {safe_max_tokens}",
                             "ADJUSTED:".bright_yellow().bold(),
                         );
                     }
-                    max_tokens = safe_max_tokens as u32;
+                    max_tokens = u32::try_from(safe_max_tokens).unwrap_or(1024);
                 }
             }
 
@@ -346,7 +348,7 @@ impl Agent {
                 }
 
                 eprintln!("\n{}", "Server response body:".yellow().bold());
-                eprintln!("{}", error_body);
+                eprintln!("{error_body}");
 
                 eprintln!("{}", "═".repeat(80).red().bold());
                 eprintln!();
@@ -395,7 +397,7 @@ impl Agent {
                                 "WARN:".yellow().bold(),
                                 e
                             );
-                            eprintln!("Bad chunk: {}", payload);
+                            eprintln!("Bad chunk: {payload}");
                             continue;
                         }
                     };
@@ -468,36 +470,36 @@ impl Agent {
             self.messages.push(message);
 
             // If tool calls exist, execute them
-            if !tool_calls.is_empty() {
-                for call in tool_calls {
-                    let name = call["function"]["name"].as_str().unwrap_or("");
-                    let args_str = call["function"]["arguments"].as_str().unwrap_or("{}");
-                    let args: Value = match serde_json::from_str(args_str) {
-                        Ok(v) => v,
-                        Err(e) => {
-                            self.messages.push(json!({
-                                "role": "tool",
-                                "tool_call_id": call["id"].as_str().unwrap_or(""),
-                                "name": name,
-                                "content": format!("Tool call failed: invalid arguments JSON: {}", e)
-                            }));
-                            continue;
-                        }
-                    };
-
-                    let result = execute_tool(name, args)
-                        .await
-                        .unwrap_or_else(|e| format!("Tool error: {}", e));
-
-                    self.messages.push(json!({
-                        "role": "tool",
-                        "tool_call_id": call["id"].as_str().unwrap_or(""),
-                        "name": name,
-                        "content": result
-                    }));
-                }
-            } else {
+            if tool_calls.is_empty() {
                 return Ok(full_content);
+            }
+
+            for call in tool_calls {
+                let name = call["function"]["name"].as_str().unwrap_or("");
+                let args_str = call["function"]["arguments"].as_str().unwrap_or("{}");
+                let args: Value = match serde_json::from_str(args_str) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        self.messages.push(json!({
+                            "role": "tool",
+                            "tool_call_id": call["id"].as_str().unwrap_or(""),
+                            "name": name,
+                            "content": format!("Tool call failed: invalid arguments JSON: {e}")
+                        }));
+                        continue;
+                    }
+                };
+
+                let result = execute_tool(name, args)
+                    .await
+                    .unwrap_or_else(|e| format!("Tool error: {e}"));
+
+                self.messages.push(json!({
+                    "role": "tool",
+                    "tool_call_id": call["id"].as_str().unwrap_or(""),
+                    "name": name,
+                    "content": result
+                }));
             }
         }
     }
@@ -523,7 +525,7 @@ impl Agent {
 
         resp["tokens"]
             .as_array()
-            .map(|a| a.len())
+            .map(std::vec::Vec::len)
             .ok_or_else(|| anyhow!("Invalid response from /tokenize"))
     }
 

@@ -1,13 +1,14 @@
 use anyhow::{Context, Result, anyhow};
 use serde_json::Value;
-use std::fs::{self, Metadata, create_dir_all};
+use std::fs::{Metadata, create_dir_all};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, UNIX_EPOCH};
 use walkdir::WalkDir;
 
+#[allow(clippy::too_many_lines)]
 pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
-    let cwd = std::env::current_dir()?;
+    use std::io::Write;
 
     fn clean_path(s: &str) -> String {
         s.trim().trim_matches('"').trim().to_string()
@@ -29,14 +30,16 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
         let cwd_canonical = cwd.canonicalize().context("Failed to canonicalize CWD")?;
         let path = cwd_canonical.join(input);
         let full_parent = path.parent().map_or_else(
-            || Ok(cwd_canonical.clone()),
-            |p| p.canonicalize().map_err(anyhow::Error::from),
-        )?;
+            || cwd_canonical.clone(),
+            |p| p.canonicalize().unwrap_or_else(|_| cwd_canonical.clone()),
+        );
         if !full_parent.starts_with(&cwd_canonical) {
             return Err(anyhow!("Path traversal attempt"));
         }
         Ok(path)
     }
+
+    let cwd = std::env::current_dir()?;
 
     match name {
         // ──────────────────────────────────────────────
@@ -70,14 +73,14 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
             let combined = if stdout.trim().is_empty() && stderr.trim().is_empty() {
                 "No issues found.".to_string()
             } else if stdout.trim().is_empty() {
-                format!("stderr:\n{}", stderr)
+                format!("stderr:\n{stderr}")
             } else if stderr.trim().is_empty() {
-                format!("stdout:\n{}", stdout)
+                format!("stdout:\n{stdout}")
             } else {
-                format!("stdout:\n{}\n\nstderr:\n{}", stdout, stderr)
+                format!("stdout:\n{stdout}\n\nstderr:\n{stderr}")
             };
 
-            Ok(format!("{}\n\n{}", status_msg, combined))
+            Ok(format!("{status_msg}\n\n{combined}"))
         }
         // ──────────────────────────────────────────────
         "get_file_info" => {
@@ -87,10 +90,10 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
 
             let meta: Metadata = full
                 .metadata()
-                .with_context(|| format!("Cannot get metadata for {}", path))?;
+                .with_context(|| format!("Cannot get metadata for {path}"))?;
 
             let mut lines = vec![
-                format!("Path: {}", path),
+                format!("Path: {path}"),
                 format!("Exists: {}", full.exists()),
                 format!("Is directory: {}", meta.is_dir()),
                 format!("Is file: {}", meta.is_file()),
@@ -101,17 +104,17 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
                 && let Ok(duration) = modified.duration_since(UNIX_EPOCH)
             {
                 let secs = duration.as_secs();
-                lines.push(format!("Last modified: {} (unix timestamp)", secs));
+                lines.push(format!("Last modified: {secs} (unix timestamp)"));
             }
 
             if meta.is_file()
                 && full
                     .extension()
                     .is_some_and(|e| e == "rs" || e == "toml" || e == "md" || e == "txt")
-                && let Ok(content) = fs::read_to_string(&full)
+                && let Ok(content) = std::fs::read_to_string(&full)
             {
                 let line_count = content.lines().count();
-                lines.push(format!("Line count: {}", line_count));
+                lines.push(format!("Line count: {line_count}"));
             }
 
             Ok(lines.join("\n"))
@@ -142,7 +145,7 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
                     let name = e.file_name().to_string_lossy();
                     !name.starts_with('.') && ![".git", "target", "node_modules"].contains(&&*name)
                 })
-                .filter_map(|e| e.ok())
+                .filter_map(std::result::Result::ok)
             {
                 if entry.file_type().is_file() {
                     if let Some(ext) = ext_filter {
@@ -157,8 +160,8 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
 
                     let rel = entry
                         .path()
-                        .strip_prefix(cwd.canonicalize().unwrap_or(cwd.clone()))
-                        .unwrap_or(entry.path());
+                        .strip_prefix(cwd.canonicalize().unwrap_or_else(|_| cwd.clone()))
+                        .unwrap_or_else(|_| entry.path());
                     files.push(rel.to_string_lossy().into_owned());
                 }
             }
@@ -185,17 +188,16 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
             let full = resolve_dir(&cwd, &path)?;
 
             let old_content =
-                fs::read_to_string(&full).context("Cannot read file for replacement")?;
+                std::fs::read_to_string(&full).context("Cannot read file for replacement")?;
 
             let new_content = old_content.replace(&search, &replace);
             if old_content == new_content {
                 return Ok(format!(
-                    "No changes made in {}. This usually means the 'search' string was not found exactly as provided. Check indentation and whitespace!",
-                    path
+                    "No changes made in {path}. This usually means the 'search' string was not found exactly as provided. Check indentation and whitespace!"
                 ));
             }
 
-            fs::write(&full, &new_content)?;
+            std::fs::write(&full, &new_content)?;
             Ok(format!(
                 "Replaced '{}' → '{}' in {}\n({} → {} bytes)",
                 search.escape_default(),
@@ -210,7 +212,7 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
             let raw_path: String = serde_json::from_value(args["path"].clone())?;
             let path = clean_path(&raw_path);
             let full = resolve_dir(&cwd, &path)?;
-            fs::read_to_string(full).map_err(Into::into)
+            std::fs::read_to_string(full).map_err(Into::into)
         }
         // ──────────────────────────────────────────────
         "read_multiple_files" => {
@@ -220,15 +222,15 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
                 let path = clean_path(&raw_path);
                 match resolve_dir(&cwd, &path) {
                     Ok(full) => {
-                        if let Ok(content) = fs::read_to_string(&full) {
-                            results.push(format!("File: {}\nContent:\n{}\n---\n", path, content));
+                        if let Ok(content) = std::fs::read_to_string(&full) {
+                            results.push(format!("File: {path}\nContent:\n{content}\n---\n"));
                         } else {
                             results
-                                .push(format!("Failed to read {}: file not readable\n---\n", path));
+                                .push(format!("Failed to read {path}: file not readable\n---\n"));
                         }
                     }
                     Err(e) => {
-                        results.push(format!("Failed to resolve {}: {}\n---\n", path, e));
+                        results.push(format!("Failed to resolve {path}: {e}\n---\n"));
                     }
                 }
             }
@@ -247,8 +249,8 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
             if let Some(parent) = full_path.parent() {
                 create_dir_all(parent)?;
             }
-            fs::write(&full_path, content)?;
-            Ok(format!("Successfully wrote {}", path))
+            std::fs::write(&full_path, content)?;
+            Ok(format!("Successfully wrote {path}"))
         }
         // ──────────────────────────────────────────────
         "list_directory" => {
@@ -256,7 +258,7 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
             let path = clean_path(raw_path);
             let full = resolve_dir(&cwd, &path)?;
             let mut entries = vec![];
-            for e in fs::read_dir(full)? {
+            for e in std::fs::read_dir(full)? {
                 let e = e?;
                 let name = e.file_name().to_string_lossy().into_owned();
                 if name.starts_with('.') {
@@ -268,7 +270,7 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
                     continue;
                 }
                 let suffix = if e.file_type()?.is_dir() { "/" } else { "" };
-                entries.push(format!("{}{}", name, suffix));
+                entries.push(format!("{name}{suffix}"));
             }
             entries.sort();
             Ok(entries.join("\n"))
@@ -295,7 +297,7 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
                     }
                     true
                 })
-                .filter_map(|e| e.ok())
+                .filter_map(std::result::Result::ok)
                 .collect();
 
             entries.sort_by_key(|e| e.path().to_path_buf());
@@ -305,7 +307,7 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
                 let indent = "  ".repeat(depth);
                 let name = entry.file_name().to_string_lossy();
                 let suffix = if entry.file_type().is_dir() { "/" } else { "" };
-                lines.push(format!("{}{}{}", indent, name, suffix));
+                lines.push(format!("{indent}{name}{suffix}"));
             }
             Ok(lines.join("\n"))
         }
@@ -319,21 +321,20 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
 
             // If the path already exists as a directory, we consider it success (idempotent)
             if full_path.is_dir() {
-                return Ok(format!("Directory already exists: {}", path));
+                return Ok(format!("Directory already exists: {path}"));
             }
 
             // If it exists but is a file → error (protect against accidental overwrite)
             if full_path.exists() {
                 return Err(anyhow!(
-                    "Cannot create directory '{}': path already exists and is a file",
-                    path
+                    "Cannot create directory '{path}': path already exists and is a file"
                 ));
             }
 
             create_dir_all(&full_path)
-                .with_context(|| format!("Failed to create directory '{}'", path))?;
+                .with_context(|| format!("Failed to create directory '{path}'"))?;
 
-            Ok(format!("Created directory: {}", path))
+            Ok(format!("Created directory: {path}"))
         }
         // ──────────────────────────────────────────────
         "append_to_file" => {
@@ -348,19 +349,15 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
                 create_dir_all(parent)?;
             }
 
-            use std::fs::OpenOptions;
-            use std::io::Write;
-
-            let mut file = OpenOptions::new()
+            let mut file = std::fs::OpenOptions::new()
                 .append(true)
                 .create(true)
                 .open(&full_path)
-                .with_context(|| format!("Cannot open/append to {}", path))?;
+                .with_context(|| format!("Cannot open/append to {path}"))?;
 
-            writeln!(file, "{}", content)
-                .with_context(|| format!("Failed to append to {}", path))?;
+            writeln!(file, "{content}").with_context(|| format!("Failed to append to {path}"))?;
 
-            Ok(format!("Appended {} bytes to {}", content.len(), path))
+            Ok(format!("Appended {} bytes to {path}", content.len()))
         }
         // ──────────────────────────────────────────────
         "search_text" => {
@@ -397,12 +394,11 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
 
             if result.trim().is_empty() {
                 Ok(format!(
-                    "No matches found for '{}'. Note that this is a fixed-string search (not regex) and is case-{}sensitive.",
-                    pattern,
+                    "No matches found for '{pattern}'. Note that this is a fixed-string search (not regex) and is case-{}sensitive.",
                     if case_sensitive { "" } else { "in" }
                 ))
             } else {
-                Ok(format!("Search results:\n{}", result))
+                Ok(format!("Search results:\n{result}"))
             }
         }
         // ──────────────────────────────────────────────
@@ -430,8 +426,7 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
             ];
 
             let is_allowed = allowed_prefixes.iter().any(|prefix| {
-                command_trim.starts_with(prefix)
-                    || command_trim.starts_with(&format!("{} ", prefix))
+                command_trim.starts_with(prefix) || command_trim.starts_with(&format!("{prefix} "))
             });
 
             if !is_allowed {
@@ -462,9 +457,9 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
             let combined = if stderr.is_empty() {
                 stdout
             } else if stdout.is_empty() {
-                format!("(stderr only)\n{}", stderr)
+                format!("(stderr only)\n{stderr}")
             } else {
-                format!("stdout:\n{}\n\nstderr:\n{}", stdout, stderr)
+                format!("stdout:\n{stdout}\n\nstderr:\n{stderr}")
             };
 
             let status_msg = if output.status.success() {
@@ -476,7 +471,7 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
                 )
             };
 
-            Ok(format!("{}\n\nOutput:\n{}", status_msg, combined))
+            Ok(format!("{status_msg}\n\nOutput:\n{combined}"))
         }
         // ──────────────────────────────────────────────
         "git_status" => {
@@ -493,7 +488,7 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
                 if stdout.trim().is_empty() {
                     Ok("Working tree clean. Nothing to commit.".to_string())
                 } else {
-                    Ok(format!("Git status:\n{}", stdout))
+                    Ok(format!("Git status:\n{stdout}"))
                 }
             } else {
                 Err(anyhow!(
@@ -524,7 +519,7 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
                 if stdout.trim().is_empty() {
                     Ok("No changes.".to_string())
                 } else {
-                    Ok(format!("Git diff:\n{}", stdout))
+                    Ok(format!("Git diff:\n{stdout}"))
                 }
             } else {
                 Err(anyhow!(
@@ -547,7 +542,7 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
                 .context("Failed to run git add")?;
 
             if output.status.success() {
-                Ok(format!("Staged: {}", path))
+                Ok(format!("Staged: {path}"))
             } else {
                 Err(anyhow!(
                     "git add failed:\n{}",
@@ -573,7 +568,7 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
 
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                Ok(format!("Commit created.\n{}", stdout))
+                Ok(format!("Commit created.\n{stdout}"))
             } else {
                 Err(anyhow!(
                     "git commit failed:\n{}",
@@ -582,6 +577,6 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
             }
         }
         // ──────────────────────────────────────────────
-        _ => Err(anyhow!("Unknown tool: {}", name)),
+        _ => Err(anyhow!("Unknown tool: {name}")),
     }
 }

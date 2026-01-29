@@ -3,7 +3,7 @@ use crate::cli::{print_indented, render_plan};
 use colored::Colorize;
 use std::fmt;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum StepStatus {
     Pending,
     Running,
@@ -11,18 +11,20 @@ pub enum StepStatus {
     Failed(String),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PlanStep {
     pub id: usize,
     pub description: String,
     pub status: StepStatus,
 }
 
+#[derive(Debug)]
 pub struct ExecutionPlan {
     pub steps: Vec<PlanStep>,
 }
 
 impl ExecutionPlan {
+    #[must_use]
     pub fn new(descriptions: Vec<String>) -> Self {
         let steps = descriptions
             .into_iter()

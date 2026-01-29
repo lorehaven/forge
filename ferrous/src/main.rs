@@ -270,15 +270,10 @@ async fn main() -> Result<()> {
                         Ok(items) => {
                             println!("{}", "Saved conversations:".bright_cyan().bold());
                             for (name, short_id, date) in items {
-                                println!(
-                                    "  • {} {} {}",
-                                    name.bright_white(),
-                                    format!("({})", short_id).dimmed(),
-                                    format!(" [{}]", date).bright_black()
-                                );
+                                println!("  • {} ({short_id}) [{date}]", name.bright_white(),);
                             }
                         }
-                        Err(e) => eprintln!("{} {}", "Error listing:".red().bold(), e),
+                        Err(e) => eprintln!("{} {e}", "Error listing:".red().bold()),
                     },
                     cmd if cmd.starts_with("save") => {
                         let rest = input[4..].trim();
@@ -296,13 +291,11 @@ async fn main() -> Result<()> {
                                     ""
                                 };
                                 println!(
-                                    "{} {}{}",
+                                    "{} {filename}{extra}",
                                     "Conversation saved as".bright_green(),
-                                    filename.bright_yellow(),
-                                    extra
                                 );
                             }
-                            Err(e) => eprintln!("{} {}", "Save failed:".red().bold(), e),
+                            Err(e) => eprintln!("{} {e}", "Save failed:".red().bold()),
                         }
                     }
 
@@ -315,12 +308,11 @@ async fn main() -> Result<()> {
 
                         match agent.load_conversation(rest) {
                             Ok(name) => println!(
-                                "{} {} {}",
+                                "{} {name} {}",
                                 "Loaded conversation:".bright_green(),
-                                name.bright_white(),
                                 "(current history replaced)".dimmed()
                             ),
-                            Err(e) => eprintln!("{} {}", "Load failed:".red().bold(), e),
+                            Err(e) => eprintln!("{} {e}", "Load failed:".red().bold()),
                         }
                     }
 
@@ -333,12 +325,11 @@ async fn main() -> Result<()> {
 
                         match sessions::delete_conversation_by_prefix(rest) {
                             Ok(name) => println!(
-                                "{} {} {}",
+                                "{} {name} {}",
                                 "Deleted:".bright_green(),
-                                name.bright_white(),
                                 "(removed from disk)".dimmed()
                             ),
-                            Err(e) => eprintln!("{} {}", "Delete failed:".red().bold(), e),
+                            Err(e) => eprintln!("{} {e}", "Delete failed:".red().bold()),
                         }
                     }
                     _ => {
@@ -371,7 +362,7 @@ async fn main() -> Result<()> {
                         )
                         .await
                         {
-                            eprintln!("{} {}", "Execution error:".red().bold(), e);
+                            eprintln!("{} {e}", "Execution error:".red().bold());
                         }
                     }
                 }
@@ -379,7 +370,7 @@ async fn main() -> Result<()> {
             Err(rustyline::error::ReadlineError::Interrupted)
             | Err(rustyline::error::ReadlineError::Eof) => break,
             Err(err) => {
-                eprintln!("Readline error: {}", err);
+                eprintln!("Readline error: {err}");
                 break;
             }
         }

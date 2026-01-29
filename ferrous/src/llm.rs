@@ -96,7 +96,7 @@ pub async fn spawn_server(
                 cb(ModelLoadPhase::Ready);
             }
 
-            println!("Server ready on port {}", port);
+            println!("Server ready on port {port}");
             break;
         }
 
@@ -111,9 +111,9 @@ pub async fn spawn_server(
 
 /// Connect to an already running server (no spawn)
 pub async fn connect_only(port: u16) -> Result<()> {
-    println!("Reusing existing llama-server on port {}", port);
+    println!("Reusing existing llama-server on port {port}");
     if !is_port_open("127.0.0.1", port).await {
-        return Err(anyhow!("No server listening on port {}", port));
+        return Err(anyhow!("No server listening on port {port}"));
     }
     Ok(())
 }
