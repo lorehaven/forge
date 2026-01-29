@@ -38,6 +38,46 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
 
     match name {
         // ──────────────────────────────────────────────
+        "analyze_project" => {
+            let output = Command::new("cargo")
+                .arg("clippy")
+                .arg("--all-targets")
+                .arg("--")
+                .arg("-W")
+                .arg("clippy::all")
+                .arg("-W")
+                .arg("clippy::pedantic")
+                .arg("-W")
+                .arg("clippy::nursery")
+                .current_dir(&cwd)
+                .output()
+                .context("Failed to run cargo clippy. Is clippy installed?")?;
+
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+            let status_msg = if output.status.success() {
+                "Analysis completed successfully.".to_string()
+            } else {
+                format!(
+                    "Analysis completed with warnings (exit code {})",
+                    output.status.code().unwrap_or(-1)
+                )
+            };
+
+            let combined = if stdout.trim().is_empty() && stderr.trim().is_empty() {
+                "No issues found.".to_string()
+            } else if stdout.trim().is_empty() {
+                format!("stderr:\n{}", stderr)
+            } else if stderr.trim().is_empty() {
+                format!("stdout:\n{}", stdout)
+            } else {
+                format!("stdout:\n{}\n\nstderr:\n{}", stdout, stderr)
+            };
+
+            Ok(format!("{}\n\n{}", status_msg, combined))
+        }
+        // ──────────────────────────────────────────────
         "get_file_info" => {
             let raw_path: String = serde_json::from_value(args["path"].clone())?;
             let path = clean_path(&raw_path);
@@ -166,6 +206,32 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
             let path = clean_path(&raw_path);
             let full = resolve_dir(&cwd, &path)?;
             fs::read_to_string(full).map_err(Into::into)
+        }
+        // ──────────────────────────────────────────────
+        "read_multiple_files" => {
+            let paths: Vec<String> = serde_json::from_value(args["paths"].clone())?;
+            let mut results = Vec::new();
+            for raw_path in paths {
+                let path = clean_path(&raw_path);
+                match resolve_dir(&cwd, &path) {
+                    Ok(full) => {
+                        if let Ok(content) = fs::read_to_string(&full) {
+                            results.push(format!("File: {}\nContent:\n{}\n---\n", path, content));
+                        } else {
+                            results
+                                .push(format!("Failed to read {}: file not readable\n---\n", path));
+                        }
+                    }
+                    Err(e) => {
+                        results.push(format!("Failed to resolve {}: {}\n---\n", path, e));
+                    }
+                }
+            }
+            if results.is_empty() {
+                Ok("No files read.".to_string())
+            } else {
+                Ok(results.join(""))
+            }
         }
         // ──────────────────────────────────────────────
         "write_file" => {

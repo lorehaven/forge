@@ -153,6 +153,10 @@ pub fn print_help() {
             .bold()
     );
 
+    println!("  analyze_project()");
+    println!("      → Run cargo clippy for project-wide linting and analysis");
+    println!();
+
     println!("  get_file_info(path)");
     println!("      → Metadata for file or directory (size, mtime, type, line count if text)");
     println!();
@@ -163,6 +167,10 @@ pub fn print_help() {
 
     println!("  read_file(path)");
     println!("      → Reads and returns full file contents");
+    println!();
+
+    println!("  read_multiple_files(paths)");
+    println!("      → Read contents of multiple files at once (array of paths)");
     println!();
 
     println!("  write_file(path, content)");

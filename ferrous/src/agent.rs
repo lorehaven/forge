@@ -66,8 +66,7 @@ Core Rules:
 - If unsure about a file's content, read it first.
 - Use search_text to quickly find code snippets, functions, or error messages across files.
 
-You have access to these tools: read_file, write_file, replace_in_file, list_directory, get_directory_tree, create_directory, file_exists, list_files_recursive, search_text, execute_shell_command, git_status, git_diff, git_add.
-
+You have access to these tools: analyze_project, read_file, read_multiple_files, write_file, replace_in_file, list_directory, get_directory_tree, create_directory, file_exists, list_files_recursive, search_text, execute_shell_command, git_status, git_diff.
 Respond helpfully and concisely. Think step-by-step before calling tools.
 "#;
 
@@ -141,15 +140,18 @@ impl Agent {
         temp_messages.push(json!({"role": "user", "content": format!("{}{}", PLAN_PROMPT, query)}));
 
         let body = json!({
-        "messages": &temp_messages,
-        "temperature": 0.1,
-        "max_tokens": 1024,
-        "stream": false,
-    });
+            "messages": &temp_messages,
+            "temperature": 0.1,
+            "max_tokens": 1024,
+            "stream": false,
+        });
 
         let resp: Value = self
             .client
-            .post(format!("http://127.0.0.1:{}/v1/chat/completions", self.port))
+            .post(format!(
+                "http://127.0.0.1:{}/v1/chat/completions",
+                self.port
+            ))
             .json(&body)
             .send()
             .await?
@@ -204,24 +206,27 @@ impl Agent {
 
         loop {
             let body = json!({
-            "messages": &self.messages,
-            "tools": &tools,
-            "tool_choice": "auto",
-            "temperature": temperature,
-            "top_p": if mirostat > 0 { 1. } else { top_p },
-            "min_p": min_p,
-            "top_k": if mirostat > 0 { 0 } else { top_k },
-            "repeat_penalty": repeat_penalty,
-            "max_tokens": max_tokens,
-            "stream": true,
-            "mirostat": mirostat,
-            "mirostat_tau": mirostat_tau,
-            "mirostat_eta": mirostat_eta,
-        });
+                "messages": &self.messages,
+                "tools": &tools,
+                "tool_choice": "auto",
+                "temperature": temperature,
+                "top_p": if mirostat > 0 { 1. } else { top_p },
+                "min_p": min_p,
+                "top_k": if mirostat > 0 { 0 } else { top_k },
+                "repeat_penalty": repeat_penalty,
+                "max_tokens": max_tokens,
+                "stream": true,
+                "mirostat": mirostat,
+                "mirostat_tau": mirostat_tau,
+                "mirostat_eta": mirostat_eta,
+            });
 
             let response = self
                 .client
-                .post(format!("http://127.0.0.1:{}/v1/chat/completions", self.port))
+                .post(format!(
+                    "http://127.0.0.1:{}/v1/chat/completions",
+                    self.port
+                ))
                 .json(&body)
                 .send()
                 .await?
@@ -273,21 +278,26 @@ impl Agent {
                             let index = tc_delta["index"].as_u64().unwrap_or(0) as usize;
                             while tool_calls.len() <= index {
                                 tool_calls.push(json!({
-                                "type": "function",
-                                "id": "",
-                                "function": { "name": "", "arguments": "" }
-                            }));
+                                    "type": "function",
+                                    "id": "",
+                                    "function": { "name": "", "arguments": "" }
+                                }));
                             }
                             if let Some(id) = tc_delta["id"].as_str() {
                                 tool_calls[index]["id"] = json!(id);
                             }
                             if let Some(name_delta) = tc_delta["function"]["name"].as_str() {
-                                let current_name = tool_calls[index]["function"]["name"].as_str().unwrap_or("");
-                                tool_calls[index]["function"]["name"] = json!(format!("{}{}", current_name, name_delta));
+                                let current_name =
+                                    tool_calls[index]["function"]["name"].as_str().unwrap_or("");
+                                tool_calls[index]["function"]["name"] =
+                                    json!(format!("{}{}", current_name, name_delta));
                             }
                             if let Some(args_delta) = tc_delta["function"]["arguments"].as_str() {
-                                let current_args = tool_calls[index]["function"]["arguments"].as_str().unwrap_or("");
-                                tool_calls[index]["function"]["arguments"] = json!(format!("{}{}", current_args, args_delta));
+                                let current_args = tool_calls[index]["function"]["arguments"]
+                                    .as_str()
+                                    .unwrap_or("");
+                                tool_calls[index]["function"]["arguments"] =
+                                    json!(format!("{}{}", current_args, args_delta));
                             }
                         }
                     }
@@ -299,13 +309,21 @@ impl Agent {
             }
 
             // Construct the full message
-            let content_json = if full_content.is_empty() { json!(null) } else { json!(full_content) };
-            let tool_calls_json = if tool_calls.is_empty() { json!(null) } else { json!(tool_calls) };
+            let content_json = if full_content.is_empty() {
+                json!(null)
+            } else {
+                json!(full_content)
+            };
+            let tool_calls_json = if tool_calls.is_empty() {
+                json!(null)
+            } else {
+                json!(tool_calls)
+            };
             let message = json!({
-            "role": "assistant",
-            "content": content_json,
-            "tool_calls": tool_calls_json
-        });
+                "role": "assistant",
+                "content": content_json,
+                "tool_calls": tool_calls_json
+            });
             self.messages.push(message);
 
             // If tool calls exist, execute them
@@ -326,17 +344,16 @@ impl Agent {
                         }
                     };
 
-                    let result = match execute_tool(name, args).await {
-                        Ok(r) => r,
-                        Err(e) => format!("Tool error: {}", e),
-                    };
+                    let result = execute_tool(name, args)
+                        .await
+                        .unwrap_or_else(|e| format!("Tool error: {}", e));
 
                     self.messages.push(json!({
-                    "role": "tool",
-                    "tool_call_id": call["id"].as_str().unwrap_or(""),
-                    "name": name,
-                    "content": result
-                }));
+                        "role": "tool",
+                        "tool_call_id": call["id"].as_str().unwrap_or(""),
+                        "name": name,
+                        "content": result
+                    }));
                 }
                 continue; // Continue the agent loop for next response
             } else {

@@ -2,6 +2,18 @@
   {
     "type": "function",
     "function": {
+      "name": "analyze_project",
+      "description": "Perform project-wide static code analysis using cargo clippy, returning lint warnings, suggestions, and errors.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
       "name": "get_file_info",
       "description": "Get metadata about a file or directory (size, modified time, type, line count if text file)",
       "parameters": {
@@ -38,6 +50,24 @@
           "path": { "type": "string" }
         },
         "required": ["path"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "read_multiple_files",
+      "description": "Read contents of multiple files at once and return them concatenated with separators. Useful for building multi-file context efficiently.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "paths": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Array of relative file paths to read."
+          }
+        },
+        "required": ["paths"]
       }
     }
   },

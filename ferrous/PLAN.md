@@ -95,9 +95,9 @@ The agent provides an interactive CLI interface for coding assistance with file 
 - [ ] Temperature/parameter CLI overrides
 
 ### 🔲 Advanced Features
-- [ ] Code syntax highlighting in the terminal (implemented)
-- [ ] Multi-file context management
-- [ ] Project-wide code analysis
+- [ ] Code syntax highlighting in the terminal
+- [x] Multi-file context management
+- [x] Project-wide code analysis
 - [ ] Automatic test generation
 - [ ] Refactoring suggestions
 - [ ] Code review mode
