@@ -210,7 +210,9 @@ impl Agent {
             // Rough token estimation:
             //   - ~3–4 chars per token is a common heuristic for English/code
             //   - +500 per message adds safety margin for JSON overhead, roles, etc.
-            let estimated_prompt_tokens: u64 = self.messages.iter()
+            let estimated_prompt_tokens: u64 = self
+                .messages
+                .iter()
                 .map(|m| m.to_string().len() as u64 / 4 + 500)
                 .sum();
 
@@ -227,8 +229,8 @@ impl Agent {
                 );
 
                 // Calculate safe max_tokens: leave at least 4k tokens for KV cache overhead + safety
-                let safe_max_tokens = ((context_u64 - estimated_prompt_tokens) as i64 - 4096)
-                    .max(1024) as u32;  // never go below 1k to avoid a useless generation
+                let safe_max_tokens =
+                    ((context_u64 - estimated_prompt_tokens) as i64 - 4096).max(1024) as u32; // never go below 1k to avoid a useless generation
 
                 if max_tokens > safe_max_tokens {
                     eprintln!(
