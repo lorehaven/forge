@@ -2,6 +2,7 @@ use anyhow::{Result, anyhow};
 use serde_json::Value;
 
 pub mod cargo;
+pub mod discovery;
 pub mod file;
 pub mod git;
 pub mod shell;
@@ -11,6 +12,7 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
     let cwd = std::env::current_dir()?;
 
     match name {
+        "discover_technologies" => discovery::discover_technologies(&cwd),
         "analyze_project" => cargo::analyze_project(&cwd),
         "get_file_info" => file::get_file_info(&cwd, &args),
         "file_exists" => file::file_exists(&cwd, &args),
@@ -24,6 +26,7 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
         "create_directory" => file::create_directory(&cwd, &args),
         "append_to_file" => file::append_to_file(&cwd, &args),
         "search_text" => file::search_text(&cwd, &args),
+        "find_file" => file::find_file(&cwd, &args),
         "execute_shell_command" => shell::execute_shell_command(&cwd, &args).await,
         "git_status" => git::git_status(&cwd),
         "git_diff" => git::git_diff(&cwd, &args),

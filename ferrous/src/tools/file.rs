@@ -303,3 +303,41 @@ pub fn search_text(cwd: &Path, args: &Value) -> Result<String> {
         Ok(format!("Search results:\n{result}"))
     }
 }
+
+pub fn find_file(cwd: &Path, args: &Value) -> Result<String> {
+    let pattern: String = serde_json::from_value(args["pattern"].clone())?;
+    let base = args["path"].as_str().unwrap_or(".");
+    let full_base = resolve_dir(cwd, &clean_path(base))?;
+
+    let mut matches = Vec::new();
+
+    for entry in WalkDir::new(&full_base)
+        .into_iter()
+        .filter_entry(|e| {
+            let name = e.file_name().to_string_lossy();
+            !name.starts_with('.') && ![".git", "target", "node_modules"].contains(&&*name)
+        })
+        .filter_map(std::result::Result::ok)
+    {
+        let name = entry.file_name().to_string_lossy();
+        if name.contains(&pattern) {
+            let rel = entry
+                .path()
+                .strip_prefix(cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf()))
+                .unwrap_or_else(|_| entry.path());
+            matches.push(rel.to_string_lossy().into_owned());
+        }
+    }
+
+    matches.sort();
+
+    if matches.is_empty() {
+        Ok(format!("No files found matching '{pattern}'."))
+    } else {
+        Ok(format!(
+            "Found {} matches:\n{}",
+            matches.len(),
+            matches.join("\n")
+        ))
+    }
+}

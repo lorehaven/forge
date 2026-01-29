@@ -119,4 +119,9 @@ fn is_explanatory_step(step: &str) -> bool {
         || s.starts_with("fix")
         || s.starts_with("add")
         || s.starts_with("remove")
+        || s.starts_with("write")
+        || s.starts_with("create")
+        || s.starts_with("delete")
+        || s.starts_with("move")
+        || s.starts_with("rename")
 }

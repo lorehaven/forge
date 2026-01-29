@@ -3,6 +3,14 @@ use std::path::Path;
 use std::process::Command;
 
 pub fn analyze_project(cwd: &Path) -> Result<String> {
+    if cwd.join("Cargo.toml").exists() {
+        return analyze_rust_project(cwd);
+    }
+
+    Ok("Generic project analysis not yet implemented for this project type. Please use 'list_files_recursive' or 'get_directory_tree' to explore.".to_string())
+}
+
+fn analyze_rust_project(cwd: &Path) -> Result<String> {
     let output = Command::new("cargo")
         .arg("clippy")
         .arg("--all-targets")

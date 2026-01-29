@@ -177,8 +177,12 @@ fn print_tools() {
 
     let tools = [
         (
+            "discover_technologies()",
+            "Identify the technologies, languages, and frameworks used in the project",
+        ),
+        (
             "analyze_project()",
-            "Run cargo clippy for project-wide linting and analysis",
+            "Perform project-wide analysis (e.g., linting, static analysis) appropriate for the project type",
         ),
         (
             "get_file_info(path)",
@@ -226,8 +230,12 @@ fn print_tools() {
             "Grep-like search for lines containing pattern",
         ),
         (
+            "find_file(pattern, [path])",
+            "Find files by name pattern recursively",
+        ),
+        (
             "execute_shell_command(command)",
-            "Execute allowed shell command (cargo only)",
+            "Execute allowed shell command (build tools, linters, or other project-specific commands)",
         ),
         ("git_status", "Show git status (short)"),
         ("git_diff([path])", "Show git diff (repo or specific path)"),
