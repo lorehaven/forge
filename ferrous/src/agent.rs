@@ -144,10 +144,30 @@ impl Agent {
         let mut temp_messages = self.messages.clone();
         temp_messages.push(json!({"role": "user", "content": format!("{}{}", PLAN_PROMPT, query)}));
 
+        // Plan phase also needs context management
+        // (Planning usually doesn't need much, but let's be safe)
+        const PLAN_MAX_TOKENS: u32 = 1024;
+        const SAFETY_BUFFER: u64 = 1024;
+
+        let url_props = format!("http://127.0.0.1:{}/props", self.port);
+        let props: Value = self.client.get(url_props).send().await?.json().await?;
+        let n_ctx = props["n_ctx"].as_u64().unwrap_or(8192);
+
+        let mut prompt_tokens = self.count_message_tokens(&temp_messages).await? as u64;
+        while prompt_tokens
+            > n_ctx
+                .saturating_sub(PLAN_MAX_TOKENS as u64)
+                .saturating_sub(SAFETY_BUFFER)
+            && temp_messages.len() > 2
+        {
+            temp_messages.remove(1);
+            prompt_tokens = self.count_message_tokens(&temp_messages).await? as u64;
+        }
+
         let body = json!({
             "messages": &temp_messages,
             "temperature": 0.1,
-            "max_tokens": 1024,
+            "max_tokens": PLAN_MAX_TOKENS,
             "stream": false,
         });
 
@@ -209,49 +229,58 @@ impl Agent {
 
         self.messages
             .push(json!({"role": "user", "content": user_input}));
-        const MAX_TURNS: usize = 100;
-        while self.messages.len() > MAX_TURNS + 1 {
-            self.messages.remove(1);
-        }
 
         let tools = &*TOOLS_JSON;
 
         loop {
-            // Rough token estimation:
-            //   - ~3–4 chars per token is a common heuristic for English/code
-            //   - +500 per message adds safety margin for JSON overhead, roles, etc.
-            let estimated_prompt_tokens: u64 = self
-                .messages
-                .iter()
-                .map(|m| m.to_string().len() as u64 / 4 + 500)
-                .sum();
-
-            // Total expected usage = prompt + max new tokens + extra buffer
-            let total_estimated = estimated_prompt_tokens + max_tokens as u64 + 2048;
-
+            // ── Context Management ──────────────────────────────────────────
+            // We need to fit: messages + tools + max_tokens + safety buffer
             let context_u64 = context as u64;
 
-            if total_estimated > context_u64 * 95 / 100 {
-                let used_percent = (total_estimated * 100 / context_u64) as u32;
-                eprintln!(
-                    "{} Warning: estimated context usage ~{total_estimated} / {context_u64} tokens ({used_percent}% used). Risk of truncation.",
-                    "CAUTION:".yellow().bold(),
-                );
+            // 1. Estimate tokens accurately
+            let mut prompt_tokens = self.count_message_tokens(&self.messages).await? as u64;
 
-                // Calculate safe max_tokens: leave at least 4k tokens for KV cache overhead + safety
-                let safe_max_tokens = if context_u64 > estimated_prompt_tokens {
-                    ((context_u64 - estimated_prompt_tokens) as i64 - 4096).max(1024) as u32
-                } else {
-                    1024 // Minimal window to at least try to report an error or small response
-                };
+            // 2. Sliding window if we exceed context
+            // We want to keep at least 25% of the context for generation (max_tokens)
+            // and some buffer for tools.
+            let reserved_for_generation = (max_tokens as u64).max(context_u64 / 4);
+            let safety_buffer = 1024;
+            let max_allowed_prompt = context_u64
+                .saturating_sub(reserved_for_generation)
+                .saturating_sub(safety_buffer);
 
-                if max_tokens > safe_max_tokens {
-                    eprintln!(
-                        "{} Clamping max_tokens from {max_tokens} → {safe_max_tokens} to stay within context limit.",
-                        "ADJUSTED:".bright_yellow().bold(),
-                    );
-                    max_tokens = safe_max_tokens;
+            while prompt_tokens > max_allowed_prompt && self.messages.len() > 2 {
+                // Remove the oldest non-system message
+                self.messages.remove(1);
+                prompt_tokens = self.count_message_tokens(&self.messages).await? as u64;
+            }
+
+            // 3. Final clamping of max_tokens if still tight
+            let total_estimated = prompt_tokens + max_tokens as u64 + safety_buffer;
+
+            if total_estimated > context_u64 {
+                let safe_max_tokens = context_u64
+                    .saturating_sub(prompt_tokens)
+                    .saturating_sub(safety_buffer)
+                    .max(1024);
+                if (max_tokens as u64) > safe_max_tokens {
+                    if is_debug {
+                        eprintln!(
+                            "{} Context tight ({prompt_tokens} prompt tokens). Clamping max_tokens {max_tokens} → {safe_max_tokens}",
+                            "ADJUSTED:".bright_yellow().bold(),
+                        );
+                    }
+                    max_tokens = safe_max_tokens as u32;
                 }
+            }
+
+            if is_debug {
+                let used_percent = (total_estimated * 100 / context_u64).min(100);
+                eprintln!(
+                    "{} Context usage: ~{total_estimated}/{context_u64} tokens ({used_percent}%). Messages: {}",
+                    "INFO:".cyan().bold(),
+                    self.messages.len()
+                );
             }
 
             let body = json!({
@@ -478,5 +507,51 @@ impl Agent {
             return Err(anyhow!("llama-server not responding on port {}", self.port));
         }
         Ok(())
+    }
+
+    async fn count_tokens(&self, content: &str) -> Result<usize> {
+        let url = format!("http://127.0.0.1:{}/tokenize", self.port);
+        let resp: Value = self
+            .client
+            .post(url)
+            .json(&json!({ "content": content }))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+
+        resp["tokens"]
+            .as_array()
+            .map(|a| a.len())
+            .ok_or_else(|| anyhow!("Invalid response from /tokenize"))
+    }
+
+    async fn count_message_tokens(&self, messages: &[Value]) -> Result<usize> {
+        // Approximate overhead for chat format (im_start, role, im_end, etc.)
+        // For Qwen-style: <|im_start|>role\ncontent<|im_end|>\n
+        let mut total = 0;
+        for msg in messages {
+            let role = msg["role"].as_str().unwrap_or("");
+            let content = msg["content"].as_str().unwrap_or("");
+
+            // Handle content being a string or potentially null (for assistant tool calls without content)
+            if !content.is_empty() {
+                total += self.count_tokens(content).await?;
+            }
+
+            total += self.count_tokens(role).await?;
+
+            // If it's a tool call, we should also account for the tool calls and results
+            if let Some(tool_calls) = msg["tool_calls"].as_array() {
+                for call in tool_calls {
+                    let call_str = call.to_string();
+                    total += self.count_tokens(&call_str).await?;
+                }
+            }
+
+            total += 8; // Constant overhead per message
+        }
+        Ok(total)
     }
 }

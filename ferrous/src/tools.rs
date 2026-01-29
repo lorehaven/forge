@@ -155,7 +155,10 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
                         }
                     }
 
-                    let rel = entry.path().strip_prefix(cwd.canonicalize().unwrap_or(cwd.clone())).unwrap_or(entry.path());
+                    let rel = entry
+                        .path()
+                        .strip_prefix(cwd.canonicalize().unwrap_or(cwd.clone()))
+                        .unwrap_or(entry.path());
                     files.push(rel.to_string_lossy().into_owned());
                 }
             }
@@ -393,8 +396,11 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
             };
 
             if result.trim().is_empty() {
-                Ok(format!("No matches found for '{}'. Note that this is a fixed-string search (not regex) and is case-{}sensitive.", 
-                    pattern, if case_sensitive { "" } else { "in" }))
+                Ok(format!(
+                    "No matches found for '{}'. Note that this is a fixed-string search (not regex) and is case-{}sensitive.",
+                    pattern,
+                    if case_sensitive { "" } else { "in" }
+                ))
             } else {
                 Ok(format!("Search results:\n{}", result))
             }
