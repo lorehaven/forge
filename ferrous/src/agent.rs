@@ -202,8 +202,12 @@ impl Agent {
     ) -> Result<String> {
         self.ensure_alive().await?;
 
-        self.messages
-            .push(json!({"role": "user", "content": user_input}));
+        self.messages.push(json!({"role": "user", "content": user_input}));
+        const MAX_TURNS: usize = 20;
+        while self.messages.len() > MAX_TURNS + 1 {
+            self.messages.remove(1);
+        }
+
         let tools = &*TOOLS_JSON;
 
         loop {
@@ -434,11 +438,11 @@ impl Agent {
                         Ok(v) => v,
                         Err(e) => {
                             self.messages.push(json!({
-                            "role": "tool",
-                            "tool_call_id": call["id"].as_str().unwrap_or(""),
-                            "name": name,
-                            "content": format!("Tool call failed: invalid arguments JSON: {}", e)
-                        }));
+                                "role": "tool",
+                                "tool_call_id": call["id"].as_str().unwrap_or(""),
+                                "name": name,
+                                "content": format!("Tool call failed: invalid arguments JSON: {}", e)
+                            }));
                             continue;
                         }
                     };
