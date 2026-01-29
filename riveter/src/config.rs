@@ -22,12 +22,10 @@ pub fn load_config() -> Result<RiveterConfig> {
         Err(_) => return Ok(RiveterConfig::default()),
     };
 
-    toml::from_str(&content)
-        .context("Failed to parse .riveter.toml")
+    toml::from_str(&content).context("Failed to parse .riveter.toml")
 }
 
 pub fn save_config(config: &RiveterConfig) -> Result<()> {
     let content = toml::to_string_pretty(config)?;
-    fs::write(CONFIG_FILE, content)
-        .context("Failed to write .riveter.toml")
+    fs::write(CONFIG_FILE, content).context("Failed to write .riveter.toml")
 }

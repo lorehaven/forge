@@ -224,17 +224,15 @@ impl Agent {
 
             let url = format!("http://127.0.0.1:{}/v1/chat/completions", self.port);
 
-            let response = self
-                .client
-                .post(&url)
-                .json(&body)
-                .send()
-                .await;
+            let response = self.client.post(&url).json(&body).send().await;
 
             let resp = match response {
                 Ok(r) => r,
                 Err(e) => {
-                    eprintln!("{} Network error contacting llama-server: {e}", "ERROR:".red().bold());
+                    eprintln!(
+                        "{} Network error contacting llama-server: {e}",
+                        "ERROR:".red().bold()
+                    );
                     return Err(anyhow!("Failed to reach llama-server: {e}"));
                 }
             };
@@ -242,7 +240,10 @@ impl Agent {
             // ── Handle non-successful HTTP responses ──
             if !resp.status().is_success() {
                 let status = resp.status();
-                let error_body = resp.text().await.unwrap_or_else(|_| "(no response body)".to_string());
+                let error_body = resp
+                    .text()
+                    .await
+                    .unwrap_or_else(|_| "(no response body)".to_string());
 
                 eprintln!("\n{}", "═".repeat(80).red().bold());
                 eprintln!(
@@ -274,10 +275,10 @@ impl Agent {
                 eprintln!();
 
                 return Err(anyhow!(
-                "llama-server returned {}: {}",
-                status,
-                error_body.chars().take(500).collect::<String>()
-            ));
+                    "llama-server returned {}: {}",
+                    status,
+                    error_body.chars().take(500).collect::<String>()
+                ));
             }
 
             let mut stream = resp.bytes_stream();
@@ -312,7 +313,11 @@ impl Agent {
                     let chunk: Value = match serde_json::from_str(payload) {
                         Ok(v) => v,
                         Err(e) => {
-                            eprintln!("{} JSON parse error in stream chunk: {}", "WARN:".yellow().bold(), e);
+                            eprintln!(
+                                "{} JSON parse error in stream chunk: {}",
+                                "WARN:".yellow().bold(),
+                                e
+                            );
                             eprintln!("Bad chunk: {}", payload);
                             continue;
                         }
@@ -333,7 +338,8 @@ impl Agent {
                     // Handle tool_calls deltas
                     if let Some(tc_deltas) = delta["tool_calls"].as_array() {
                         for tc_delta in tc_deltas {
-                            let index = usize::try_from(tc_delta["index"].as_u64().unwrap_or(0)).unwrap();
+                            let index =
+                                usize::try_from(tc_delta["index"].as_u64().unwrap_or(0)).unwrap();
                             while tool_calls.len() <= index {
                                 tool_calls.push(json!({
                                     "type": "function",

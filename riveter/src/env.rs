@@ -1,7 +1,7 @@
+use crate::config;
 use anyhow::Context;
 use std::fs;
 use std::path::Path;
-use crate::config;
 
 pub const OVERLAY_DIR: &str = "overlays";
 pub const OUTPUT_DIR: &str = "manifests";
