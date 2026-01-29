@@ -18,7 +18,7 @@ static TOOLS_JSON: Lazy<Vec<Value>> = Lazy::new(|| {
     serde_json::from_str(s).expect("Invalid tools.json")
 });
 
-static PLAN_PROMPT: &str = r#"
+static PLAN_PROMPT: &str = r"
 You are in PLANNING MODE.
 
 Rules:
@@ -38,25 +38,30 @@ Output format ONLY:
 PLAN:
 1. <single executable action>
 2. <single executable action>
-"#;
+";
 
-static PROMPT: &str = r#"
+static PROMPT: &str = r"
 You are Ferrous, an expert developer and autonomous coding agent running in a project.
 
 Your primary goal: help the user write, refactor, fix, improve, and maintain code efficiently and safely.
 
 Core Rules:
-- When the user asks to edit, refactor, fix, improve, add, remove, rename, or change ANY code/file — you MUST use write_file or replace_in_file.
-  - NEVER just output a code block and say "replace this with that".
-  - ALWAYS perform the actual file modification using tools.
-  - Preserve all unchanged code verbatim
-  - Modify only the minimal necessary lines
-  - Never replace an entire file unless explicitly instructed
-  - Never emit placeholders such as <updated-content> or <modified-content>
-  - Always show concrete code
-  - Always verify the changes by trying to build the project
+- When the user asks to edit, refactor, fix, improve, add, remove, rename, or change ANY code/file — you MUST use write_file or replace_in_file tool calls.
+  - NEVER just output a code block and say 'replace this with that'.
+  - NEVER just output a code block and say 'I'll use tool X to do Y'. You MUST actually call the tool.
+  - NEVER write code, shell scripts, or pseudocode that 'uses' tools (e.g., `write_file(path, content).unwrap()`). Instead, use the tool-calling mechanism of your LLM interface.
+  - ALWAYS perform the actual file modification using tool calls.
+  - If you need to make multiple changes to the same file or different files, call the necessary tools sequentially.
+  - Preserve all unchanged code verbatim.
+  - Modify only the minimal necessary lines.
+  - Never replace an entire file unless explicitly instructed.
+  - Never emit placeholders such as <updated-content> or <modified-content>.
+  - Always show concrete code.
+  - ALWAYS verify the changes by trying to build the project using execute_shell_command('cargo check').
 - First, use read_file or list_files_recursive to understand the current code.
-- For small, targeted changes → prefer replace_in_file (safer, more precise).
+- For small, targeted changes → prefer replace_in_file.
+  - IMPORTANT: replace_in_file performs EXACT string matching. You MUST read the file first and copy the text EXACTLY as it appears, including ALL whitespace, indentation, and newlines.
+  - If a replacement fails (returns 'No changes made...'), it means your 'search' string did not match the file content exactly. You MUST read the file again to get the exact content.
 - For full-file rewrites or new files → use write_file.
 - After any change, ALWAYS use git_diff(path) to show what was modified.
 - Never use absolute paths. All paths are relative to the current working directory.
@@ -68,7 +73,7 @@ Core Rules:
 
 You have access to these tools: analyze_project, read_file, read_multiple_files, write_file, replace_in_file, list_directory, get_directory_tree, create_directory, file_exists, list_files_recursive, search_text, execute_shell_command, git_status, git_diff.
 Respond helpfully and concisely. Think step-by-step before calling tools.
-"#;
+";
 
 pub struct Agent {
     client: Client,
@@ -204,7 +209,7 @@ impl Agent {
 
         self.messages
             .push(json!({"role": "user", "content": user_input}));
-        const MAX_TURNS: usize = 20;
+        const MAX_TURNS: usize = 100;
         while self.messages.len() > MAX_TURNS + 1 {
             self.messages.remove(1);
         }
@@ -234,8 +239,11 @@ impl Agent {
                 );
 
                 // Calculate safe max_tokens: leave at least 4k tokens for KV cache overhead + safety
-                let safe_max_tokens =
-                    ((context_u64 - estimated_prompt_tokens) as i64 - 4096).max(1024) as u32; // never go below 1k to avoid a useless generation
+                let safe_max_tokens = if context_u64 > estimated_prompt_tokens {
+                    ((context_u64 - estimated_prompt_tokens) as i64 - 4096).max(1024) as u32
+                } else {
+                    1024 // Minimal window to at least try to report an error or small response
+                };
 
                 if max_tokens > safe_max_tokens {
                     eprintln!(
@@ -304,7 +312,7 @@ impl Agent {
                         eprintln!("{pretty}");
                     } else {
                         eprintln!("\n{}", "Could not format request body".yellow().bold());
-                        eprintln!("Raw body: {:?}", body);
+                        eprintln!("Raw body: {body:?}");
                     }
                 }
 
@@ -332,7 +340,7 @@ impl Agent {
                     Ok(b) => b,
                     Err(e) => {
                         eprintln!("{} Stream read error: {}", "ERROR:".red().bold(), e);
-                        return Err(anyhow!("Stream failure: {}", e));
+                        return Err(anyhow!("Stream failure: {e}"));
                     }
                 };
 

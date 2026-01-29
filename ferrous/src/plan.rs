@@ -133,5 +133,6 @@ pub async fn execute_plan(
 }
 
 fn is_explanatory_step(step: &str) -> bool {
-    step.starts_with("Modify") || step.starts_with("Replace")
+    let s = step.to_lowercase();
+    s.starts_with("modify") || s.starts_with("replace") || s.starts_with("fix") || s.starts_with("add") || s.starts_with("remove")
 }

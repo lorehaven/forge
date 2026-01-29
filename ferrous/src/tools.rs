@@ -1,7 +1,7 @@
 use anyhow::{Context, Result, anyhow};
 use serde_json::Value;
 use std::fs::{self, Metadata, create_dir_all};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, UNIX_EPOCH};
 use walkdir::WalkDir;
@@ -13,24 +13,26 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
         s.trim().trim_matches('"').trim().to_string()
     }
 
-    fn resolve_dir(cwd: &PathBuf, input: &str) -> Result<PathBuf> {
-        let full = cwd
+    fn resolve_dir(cwd: &Path, input: &str) -> Result<PathBuf> {
+        let cwd_canonical = cwd.canonicalize().context("Failed to canonicalize CWD")?;
+        let full = cwd_canonical
             .join(input)
             .canonicalize()
-            .context("Invalid directory path")?;
-        if !full.starts_with(cwd) {
+            .context("Invalid path")?;
+        if !full.starts_with(&cwd_canonical) {
             return Err(anyhow!("Path traversal attempt"));
         }
         Ok(full)
     }
 
-    fn resolve_parent_for_write(cwd: &PathBuf, input: &str) -> Result<PathBuf> {
-        let path = cwd.join(input);
+    fn resolve_parent_for_write(cwd: &Path, input: &str) -> Result<PathBuf> {
+        let cwd_canonical = cwd.canonicalize().context("Failed to canonicalize CWD")?;
+        let path = cwd_canonical.join(input);
         let full_parent = path.parent().map_or_else(
-            || cwd.canonicalize().map_err(anyhow::Error::from),
+            || Ok(cwd_canonical.clone()),
             |p| p.canonicalize().map_err(anyhow::Error::from),
         )?;
-        if !full_parent.starts_with(cwd) {
+        if !full_parent.starts_with(&cwd_canonical) {
             return Err(anyhow!("Path traversal attempt"));
         }
         Ok(path)
@@ -153,7 +155,7 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
                         }
                     }
 
-                    let rel = entry.path().strip_prefix(&cwd).unwrap_or(entry.path());
+                    let rel = entry.path().strip_prefix(cwd.canonicalize().unwrap_or(cwd.clone())).unwrap_or(entry.path());
                     files.push(rel.to_string_lossy().into_owned());
                 }
             }
@@ -179,25 +181,25 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
             let path = clean_path(&raw_path);
             let full = resolve_dir(&cwd, &path)?;
 
-            let mut content =
+            let old_content =
                 fs::read_to_string(&full).context("Cannot read file for replacement")?;
 
-            let old_len = content.len();
-            content = content.replace(&search, &replace);
-            let changed = old_len != content.len() || content.contains(&search);
-
-            if !changed {
-                return Ok(format!("No changes needed in {}", path));
+            let new_content = old_content.replace(&search, &replace);
+            if old_content == new_content {
+                return Ok(format!(
+                    "No changes made in {}. This usually means the 'search' string was not found exactly as provided. Check indentation and whitespace!",
+                    path
+                ));
             }
 
-            fs::write(&full, &content)?;
+            fs::write(&full, &new_content)?;
             Ok(format!(
                 "Replaced '{}' → '{}' in {}\n({} → {} bytes)",
                 search.escape_default(),
                 replace.escape_default(),
                 path,
-                old_len,
-                content.len()
+                old_content.len(),
+                new_content.len()
             ))
         }
         // ──────────────────────────────────────────────
@@ -391,7 +393,8 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
             };
 
             if result.trim().is_empty() {
-                Ok("No matches found.".to_string())
+                Ok(format!("No matches found for '{}'. Note that this is a fixed-string search (not regex) and is case-{}sensitive.", 
+                    pattern, if case_sensitive { "" } else { "in" }))
             } else {
                 Ok(format!("Search results:\n{}", result))
             }
