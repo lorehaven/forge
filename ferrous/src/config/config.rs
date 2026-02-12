@@ -91,7 +91,10 @@ impl Config {
                     ModelBackend::LocalLlama {
                         model_path, port, ..
                     } => {
-                        let full_path = if !model_path.starts_with('/') && !model_path.starts_with('.') && let Some(ref base) = self.base_model_path {
+                        let full_path = if !model_path.starts_with('/')
+                            && !model_path.starts_with('.')
+                            && let Some(ref base) = self.base_model_path
+                        {
                             format!("{}/{}", base.trim_end_matches('/'), model_path)
                         } else {
                             model_path.clone()
@@ -234,9 +237,13 @@ pub fn print_loaded(config: &Config, is_debug: bool) {
     }
 
     println!("{}", "Loaded from config.toml:".bright_black().bold());
-    
+
     if let Some(ref base) = config.base_model_path {
-        println!("  {:<14} = {}", "base_path".bright_blue(), base.bright_white());
+        println!(
+            "  {:<14} = {}",
+            "base_path".bright_blue(),
+            base.bright_white()
+        );
     }
 
     if !config.models.is_empty() {

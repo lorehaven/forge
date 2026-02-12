@@ -278,5 +278,43 @@
         "required": ["message"]
       }
     }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "lint_file",
+      "description": "Run a linter on a file to check for syntax errors and code quality issues. Automatically detects file type and runs appropriate linter (cargo check for Rust, eslint for JS/TS, etc.)",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to the file to lint"
+          }
+        },
+        "required": ["path"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "search_code_semantic",
+      "description": "Perform semantic search on the indexed codebase using natural language queries. Returns relevant code snippets based on meaning, not just text matching.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Natural language query describing what you're looking for in the codebase"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of results to return (default: 5)"
+          }
+        },
+        "required": ["query"]
+      }
+    }
   }
 ]

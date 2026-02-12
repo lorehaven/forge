@@ -17,30 +17,19 @@ static TOOLS_JSON: LazyLock<Vec<Value>> = LazyLock::new(|| {
 });
 
 pub const DEFAULT_PLAN_PROMPT: &str = r"
-You are in PLANNING MODE.
+Generate a simple plan with numbered steps. Each step describes a high-level action.
 
-Rules:
-- Do NOT call tools or include tool syntax in the plan
-- Do NOT describe human actions (thinking, searching, typing)
-- Each step MUST be a simple, high-level action description
-- Each step MUST start with a verb
-- Keep steps simple and minimal - avoid unnecessary steps
-- DO NOT include tool call syntax like 'write_file()' or 'create_directory()' in the plan
-- If the request is a general question NOT related to the project, do NOT generate a plan with tool calls. Instead, provide a single step: '1. Answer the user's question directly: <original_question>'
+CRITICAL: Do NOT write function calls, tool names, backticks, parentheses, or code. Write in plain English only.
 
-Good step examples:
-- Create file hello.py with a greeting function
-- Read file config.toml
-- Fix the syntax error in main.rs
-- Run the test suite
-- Answer the user's question directly: <original_question>
+Examples:
+GOOD: Check ferrous/src/main.rs for linting issues
+BAD: Check using lint_file('src/main.rs')
+BAD: Check using lint_file
 
-Bad step examples (DO NOT DO THIS):
-- Create file using write_file('hello.py', 'content')
-- Call list_directory('.')
-- Use tool analyze_project
+GOOD: Create file hello.py with a greeting function
+BAD: write_file('hello.py', content)
 
-Output format MUST start with 'PLAN:' followed by numbered steps:
+Output format:
 PLAN:
 1. <action>
 2. <action>
@@ -50,6 +39,8 @@ pub const DEFAULT_PROMPT: &str = r"
 You are Ferrous, an expert multi-purpose assistant and autonomous agent running in a project.
 
 Your primary goal: help the user analyze, modify, improve, and maintain the project efficiently and safely.
+
+IMPORTANT: All file paths are relative to the current working directory where ferrous was invoked. When the user mentions a file like 'ferrous/src/main.rs', use that EXACT path - do not try to simplify it to 'src/main.rs'. The current directory is the workspace root, and paths like 'ferrous/src/main.rs' are correct.
 
 Core Rules:
 - When the user asks to edit, refactor, fix, improve, add, remove, rename, or change ANY file — you MUST use write_file or replace_in_file tool calls.
@@ -75,10 +66,10 @@ Core Rules:
   - If a step in the plan says 'create file X', you MUST call 'write_file'.
   - If a step says 'run command Y', you MUST call 'execute_shell_command'.
 - For small, targeted changes → prefer replace_in_file.
-  - IMPORTANT: replace_in_file performs EXACT string matching. You MUST read the file first and copy the text EXACTLY as it appears, including ALL whitespace, indentation, and newlines.
-  - If a replacement fails (returns 'No changes made...'), it means your 'search' string did not match the file content exactly. You MUST read the file again to get the exact content.
+  - IMPORTANT: replace_in_file performs EXACT string matching and includes pre-flight validation. You MUST read the file first and copy the text EXACTLY as it appears, including ALL whitespace, indentation, and newlines.
+  - If validation fails with 'Search string not found', it means your 'search' string did not match the file content exactly. You MUST read the file again to get the exact content.
 - For full-file rewrites or new files → use write_file.
-- After any change, ALWAYS use git_diff(path) to show what was modified.
+- After any change, consider using lint_file(path) to verify code integrity, then use git_diff(path) to show what was modified.
 - Never use absolute paths. All paths are relative to the current working directory.
 - NEVER run rm, mv, cp, git commit/push/pull/merge/rebase, curl, wget, sudo, or any destructive/network commands — they will be rejected.
 - Stay inside the current project directory — no path traversal.
@@ -87,7 +78,7 @@ Core Rules:
 - Use search_text to quickly find snippets, functions, or error messages across files.
 - Use find_file to find the exact path of a file if you only know its name.
 
-You have access to these tools: analyze_project, read_file, read_multiple_files, write_file, replace_in_file, list_directory, get_directory_tree, create_directory, file_exists, list_files_recursive, search_text, find_file, execute_shell_command, git_status, git_diff.
+You have access to these tools: analyze_project, read_file, read_multiple_files, write_file, replace_in_file, list_directory, get_directory_tree, create_directory, file_exists, list_files_recursive, search_text, find_file, search_code_semantic, lint_file, execute_shell_command, git_status, git_diff.
 Respond helpfully and concisely. Think step-by-step before calling tools.
 ";
 
@@ -208,14 +199,12 @@ impl Agent {
         if let ModelBackend::LocalLlama {
             ref mut model_path, ..
         } = backend
+            && !model_path.starts_with('/')
+            && !model_path.starts_with('.')
+            && let Some(ref base) = self.config.base_model_path
         {
-            if !model_path.starts_with('/')
-                && !model_path.starts_with('.')
-                && let Some(ref base) = self.config.base_model_path
-            {
-                let base_path = std::path::Path::new(base);
-                *model_path = base_path.join(&model_path).to_string_lossy().to_string();
-            }
+            let base_path = std::path::Path::new(base);
+            *model_path = base_path.join(&model_path).to_string_lossy().to_string();
         }
 
         let handle = self
@@ -380,7 +369,8 @@ impl Agent {
                     .await;
             }
 
-            let (full_content, tool_calls) = self.process_stream(resp, interaction, is_debug).await?;
+            let (full_content, tool_calls) =
+                self.process_stream(resp, interaction, is_debug).await?;
 
             if tool_calls.is_empty() {
                 self.messages
@@ -559,7 +549,10 @@ impl Agent {
                 let delta = &chunk["choices"][0]["delta"];
 
                 if is_debug && (!delta["content"].is_null() || !delta["tool_calls"].is_null()) {
-                    interaction.print_debug(&format!("Stream Delta: {}", serde_json::to_string(delta).unwrap_or_default()));
+                    interaction.print_debug(&format!(
+                        "Stream Delta: {}",
+                        serde_json::to_string(delta).unwrap_or_default()
+                    ));
                 }
 
                 if let Some(content) = delta["content"].as_str() {
@@ -743,12 +736,24 @@ impl Agent {
                 }
             };
 
-            // Display tool result to user
-            interaction.print_response(&result_str);
+            // Display tool result to user (but not for read_file or read_multiple_files to avoid console spam)
+            let should_print = !matches!(name, "read_file" | "read_multiple_files");
+            if should_print {
+                interaction.print_response(&result_str);
+            }
             interaction.print_stream_start(); // Resume the line prefix for the assistant's potential summary
 
             if is_debug {
-                interaction.print_debug(&format!("Tool Result: {result_str}"));
+                let preview = if result_str.len() > 200 {
+                    format!(
+                        "{}... ({} bytes total)",
+                        &result_str[..200],
+                        result_str.len()
+                    )
+                } else {
+                    result_str.clone()
+                };
+                interaction.print_debug(&format!("Tool Result: {preview}"));
             }
 
             self.messages.push(json!({

@@ -249,6 +249,9 @@ pub fn replace_in_file(cwd: &Path, args: &Value) -> Result<String> {
     let path = clean_path(&raw_path);
     let full = resolve_dir(cwd, &path)?;
 
+    // PRE-FLIGHT VALIDATION: Check if search string exists before attempting replacement
+    super::validators::validate_search_exists(&full, &search)?;
+
     let old_content = fs::read_to_string(&full).context("Cannot read file for replacement")?;
 
     let new_content = old_content.replace(&search, &replace);

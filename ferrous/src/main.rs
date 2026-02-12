@@ -162,34 +162,60 @@ async fn main() -> Result<()> {
         conf.models.insert(ModelRole::Planner, chat_backend);
     }
 
-    if conf.sampling.temperature.is_none() || (args.temperature != DEFAULT_PARAMS.temperature && conf.sampling.temperature != Some(args.temperature)) {
+    if conf.sampling.temperature.is_none()
+        || (args.temperature != DEFAULT_PARAMS.temperature
+            && conf.sampling.temperature != Some(args.temperature))
+    {
         conf.sampling.temperature = Some(args.temperature);
     }
-    if conf.sampling.top_p.is_none() || (args.top_p != DEFAULT_PARAMS.top_p && conf.sampling.top_p != Some(args.top_p)) {
+    if conf.sampling.top_p.is_none()
+        || (args.top_p != DEFAULT_PARAMS.top_p && conf.sampling.top_p != Some(args.top_p))
+    {
         conf.sampling.top_p = Some(args.top_p);
     }
-    if conf.sampling.min_p.is_none() || (args.min_p != DEFAULT_PARAMS.min_p && conf.sampling.min_p != Some(args.min_p)) {
+    if conf.sampling.min_p.is_none()
+        || (args.min_p != DEFAULT_PARAMS.min_p && conf.sampling.min_p != Some(args.min_p))
+    {
         conf.sampling.min_p = Some(args.min_p);
     }
-    if conf.sampling.top_k.is_none() || (args.top_k != DEFAULT_PARAMS.top_k && conf.sampling.top_k != Some(args.top_k)) {
+    if conf.sampling.top_k.is_none()
+        || (args.top_k != DEFAULT_PARAMS.top_k && conf.sampling.top_k != Some(args.top_k))
+    {
         conf.sampling.top_k = Some(args.top_k);
     }
-    if conf.sampling.repeat_penalty.is_none() || (args.repeat_penalty != DEFAULT_PARAMS.repeat_penalty && conf.sampling.repeat_penalty != Some(args.repeat_penalty)) {
+    if conf.sampling.repeat_penalty.is_none()
+        || (args.repeat_penalty != DEFAULT_PARAMS.repeat_penalty
+            && conf.sampling.repeat_penalty != Some(args.repeat_penalty))
+    {
         conf.sampling.repeat_penalty = Some(args.repeat_penalty);
     }
-    if conf.sampling.context.is_none() || (args.context != DEFAULT_PARAMS.context && conf.sampling.context != Some(args.context)) {
+    if conf.sampling.context.is_none()
+        || (args.context != DEFAULT_PARAMS.context && conf.sampling.context != Some(args.context))
+    {
         conf.sampling.context = Some(args.context);
     }
-    if conf.sampling.max_tokens.is_none() || (args.max_tokens != DEFAULT_PARAMS.max_tokens && conf.sampling.max_tokens != Some(args.max_tokens)) {
+    if conf.sampling.max_tokens.is_none()
+        || (args.max_tokens != DEFAULT_PARAMS.max_tokens
+            && conf.sampling.max_tokens != Some(args.max_tokens))
+    {
         conf.sampling.max_tokens = Some(args.max_tokens);
     }
-    if conf.sampling.mirostat.is_none() || (args.mirostat != DEFAULT_PARAMS.mirostat && conf.sampling.mirostat != Some(args.mirostat)) {
+    if conf.sampling.mirostat.is_none()
+        || (args.mirostat != DEFAULT_PARAMS.mirostat
+            && conf.sampling.mirostat != Some(args.mirostat))
+    {
         conf.sampling.mirostat = Some(args.mirostat);
     }
-    if conf.sampling.mirostat_tau.is_none() || (args.mirostat_tau != DEFAULT_PARAMS.mirostat_tau && conf.sampling.mirostat_tau != Some(args.mirostat_tau)) {
+    if conf.sampling.mirostat_tau.is_none()
+        || (args.mirostat_tau != DEFAULT_PARAMS.mirostat_tau
+            && conf.sampling.mirostat_tau != Some(args.mirostat_tau))
+    {
         conf.sampling.mirostat_tau = Some(args.mirostat_tau);
     }
-    if conf.sampling.mirostat_eta.is_none() || (args.mirostat_eta != DEFAULT_PARAMS.mirostat_eta && conf.sampling.mirostat_eta != Some(args.mirostat_eta)) {
+    if conf.sampling.mirostat_eta.is_none()
+        || (args.mirostat_eta != DEFAULT_PARAMS.mirostat_eta
+            && conf.sampling.mirostat_eta != Some(args.mirostat_eta))
+    {
         conf.sampling.mirostat_eta = Some(args.mirostat_eta);
     }
 

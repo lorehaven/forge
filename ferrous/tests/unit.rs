@@ -10,3 +10,5 @@ mod prompt_tests;
 mod session_tests;
 #[path = "unit/tool_utils_tests.rs"]
 mod tool_utils_tests;
+#[path = "unit/validators_test.rs"]
+mod validators_test;

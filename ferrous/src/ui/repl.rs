@@ -35,7 +35,12 @@ impl InteractionHandler for ReplMode {
     fn print_response(&self, response: &str) {
         if response.lines().count() > 20 {
             // If the response is long (like a file content), show it in a block
-            println!("{} {} {}", "──".dimmed(), "Tool Output".bright_yellow(), "──".dimmed());
+            println!(
+                "{} {} {}",
+                "──".dimmed(),
+                "Tool Output".bright_yellow(),
+                "──".dimmed()
+            );
             pretty_print_response(response);
             println!("{}", "─────────────────".dimmed());
         } else {
