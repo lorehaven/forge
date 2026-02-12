@@ -95,9 +95,12 @@ pub async fn execute_plan(
         plan.mark_running(step.id);
         interaction.render_plan(&plan);
 
+        // Count messages before execution to detect if tool was called
+        let messages_before = agent.messages.len();
+
         // Prepend execution instruction to ensure model uses tools
         let execution_prompt = format!(
-            "EXECUTE THIS STEP NOW using the appropriate tool calls. DO NOT just describe what you will do - actually call the tools: {}",
+            "EXECUTE THIS STEP NOW by calling the required tools. You MUST make tool calls to complete this step. DO NOT just say what you will do or mark it as done without action. Step: {}",
             step.description
         );
 
@@ -107,6 +110,28 @@ pub async fn execute_plan(
 
         match result {
             Ok(resp) => {
+                // Check if any tool was actually called
+                let messages_after = agent.messages.len();
+                let tool_called = messages_after > messages_before + 1; // assistant msg + at least one tool result
+
+                if is_debug {
+                    interaction.print_debug(&format!(
+                        "Messages before: {}, after: {}, tool_called: {}",
+                        messages_before, messages_after, tool_called
+                    ));
+                }
+
+                if !tool_called && requires_tool_call(&step.description) {
+                    interaction.print_error(&format!(
+                        "Step '{}' requires a tool call but none was made. Response was: '{}'",
+                        step.description,
+                        resp.chars().take(100).collect::<String>()
+                    ));
+                    plan.mark_failed(step.id, "No tool call made when required".to_string());
+                    interaction.render_plan(&plan);
+                    return Err(anyhow::anyhow!("Execution failed: step required tool call but agent only responded with text"));
+                }
+
                 if is_debug && is_explanatory_step(&step.description) {
                     interaction.print_debug("\nResponse:");
                     interaction.print_response(&resp);
@@ -127,6 +152,37 @@ pub async fn execute_plan(
 
     interaction.set_current_step(None);
     Ok(())
+}
+
+/// Check if a step description indicates a tool call is required
+fn requires_tool_call(step: &str) -> bool {
+    let step_lower = step.to_lowercase();
+
+    // Skip steps that are purely informational
+    if step_lower.starts_with("answer") {
+        return false;
+    }
+
+    // Most action verbs require tool calls
+    step_lower.contains("check") ||
+    step_lower.contains("review") ||
+    step_lower.contains("lint") ||
+    step_lower.contains("analyze") ||
+    step_lower.contains("search") ||
+    step_lower.contains("find") ||
+    step_lower.contains("list") ||
+    step_lower.contains("read") ||
+    step_lower.contains("write") ||
+    step_lower.contains("create") ||
+    step_lower.contains("modify") ||
+    step_lower.contains("replace") ||
+    step_lower.contains("delete") ||
+    step_lower.contains("run") ||
+    step_lower.contains("execute") ||
+    step_lower.contains("suggest") ||
+    step_lower.contains("show") ||
+    step_lower.contains("display") ||
+    step_lower.contains("get")
 }
 
 fn is_explanatory_step(step: &str) -> bool {

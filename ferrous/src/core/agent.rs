@@ -20,14 +20,7 @@ pub const DEFAULT_PLAN_PROMPT: &str = r"
 Generate a simple plan with numbered steps. Each step describes a high-level action.
 
 CRITICAL: Do NOT write function calls, tool names, backticks, parentheses, or code. Write in plain English only.
-
-Examples:
-GOOD: Check ferrous/src/main.rs for linting issues
-BAD: Check using lint_file('src/main.rs')
-BAD: Check using lint_file
-
-GOOD: Create file hello.py with a greeting function
-BAD: write_file('hello.py', content)
+IMPORTANT: Avoid vague phrases like 'as needed' or 'if necessary'. Be specific about what should be done.
 
 Output format:
 PLAN:
@@ -40,7 +33,7 @@ You are Ferrous, an expert multi-purpose assistant and autonomous agent running 
 
 Your primary goal: help the user analyze, modify, improve, and maintain the project efficiently and safely.
 
-IMPORTANT: All file paths are relative to the current working directory where ferrous was invoked. When the user mentions a file like 'ferrous/src/main.rs', use that EXACT path - do not try to simplify it to 'src/main.rs'. The current directory is the workspace root, and paths like 'ferrous/src/main.rs' are correct.
+IMPORTANT: All file paths are relative to the current working directory where ferrous was invoked. When the user mentions a file, use that EXACT path. The current directory is the workspace root.
 
 Core Rules:
 - When the user asks to edit, refactor, fix, improve, add, remove, rename, or change ANY file — you MUST use write_file or replace_in_file tool calls.
@@ -78,7 +71,7 @@ Core Rules:
 - Use search_text to quickly find snippets, functions, or error messages across files.
 - Use find_file to find the exact path of a file if you only know its name.
 
-You have access to these tools: analyze_project, read_file, read_multiple_files, write_file, replace_in_file, list_directory, get_directory_tree, create_directory, file_exists, list_files_recursive, search_text, find_file, search_code_semantic, lint_file, execute_shell_command, git_status, git_diff.
+You have access to these tools: analyze_project, read_file, read_multiple_files, write_file, replace_in_file, list_directory, get_directory_tree, create_directory, file_exists, list_files_recursive, search_text, find_file, search_code_semantic, lint_file, review_code, suggest_refactorings, execute_shell_command, git_status, git_diff.
 Respond helpfully and concisely. Think step-by-step before calling tools.
 ";
 
@@ -320,6 +313,66 @@ impl Agent {
         }
 
         Ok(ExecutionPlan::new(steps))
+    }
+
+    /// Validates a plan against the original query to ensure it addresses the request
+    pub async fn validate_plan(&mut self, query: &str, plan: &ExecutionPlan) -> Result<bool> {
+        const VALIDATION_MAX_TOKENS: u32 = 512;
+
+        let plan_summary = plan.steps
+            .iter()
+            .enumerate()
+            .map(|(i, step)| format!("{}. {}", i + 1, step.description))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let validation_prompt = format!(
+            "Review this plan for the given query. Answer ONLY 'YES' or 'NO' followed by a brief reason.\n\n\
+            Query: {query}\n\n\
+            Plan:\n{plan_summary}\n\n\
+            Does this plan directly address the query without doing unnecessary work?\n\
+            - If the query asks to 'use review_code tool', the plan should just call review_code, not implement changes.\n\
+            - If the query asks to 'review X', the plan should analyze X, not modify it.\n\
+            - If the query asks to review a 'module' or 'package', the plan should review ALL files in that module, not just main.rs.\n\
+            - If the query asks for analysis/review only, the plan should not include implementation steps.\n\n\
+            Answer (YES/NO and why):"
+        );
+
+        let temp_messages = vec![
+            json!({"role": "system", "content": "You are a plan validator. Answer YES or NO followed by a brief reason."}),
+            json!({"role": "user", "content": validation_prompt})
+        ];
+
+        let base_url = self.get_model_url(ModelRole::Chat).await?;
+
+        let body = json!({
+            "messages": &temp_messages,
+            "temperature": 0.1,
+            "max_tokens": VALIDATION_MAX_TOKENS,
+        });
+
+        let resp: Value = self
+            .client
+            .post(format!("{base_url}/v1/chat/completions"))
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+
+        let content = resp["choices"][0]["message"]["content"]
+            .as_str()
+            .unwrap_or("")
+            .trim();
+
+        let is_valid = content.to_uppercase().starts_with("YES");
+
+        if !is_valid {
+            eprintln!("⚠️  Plan validation failed: {}", content);
+        }
+
+        Ok(is_valid)
     }
 
     pub async fn stream(
@@ -744,10 +797,11 @@ impl Agent {
             interaction.print_stream_start(); // Resume the line prefix for the assistant's potential summary
 
             if is_debug {
-                let preview = if result_str.len() > 200 {
+                let preview = if result_str.chars().count() > 200 {
+                    let truncated: String = result_str.chars().take(200).collect();
                     format!(
                         "{}... ({} bytes total)",
-                        &result_str[..200],
+                        truncated,
                         result_str.len()
                     )
                 } else {

@@ -316,5 +316,39 @@
         "required": ["query"]
       }
     }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "review_code",
+      "description": "Perform a comprehensive code review on a file, analyzing code quality, potential issues, and best practices. Checks for long lines, long functions, TODOs, commented code, magic numbers, and more.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to the file to review"
+          }
+        },
+        "required": ["path"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "suggest_refactorings",
+      "description": "Analyze a file and suggest potential refactorings based on common patterns like code duplication, long parameter lists, deep nesting, etc.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path to the file to analyze for refactoring opportunities"
+          }
+        },
+        "required": ["path"]
+      }
+    }
   }
 ]

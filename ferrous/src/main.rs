@@ -256,8 +256,25 @@ async fn main() -> Result<()> {
             mirostat_eta: Some(q_mirostat_eta.unwrap_or(args.mirostat_eta)),
         };
 
-        let plan = agent.generate_plan(&text).await?;
+        let mut plan = agent.generate_plan(&text).await?;
         handler.render_plan(&plan);
+
+        // Validate plan
+        match agent.validate_plan(&text, &plan).await {
+            Ok(true) => {
+                // Plan is valid
+            }
+            Ok(false) => {
+                handler.print_error("Plan does not properly address the query. Regenerating...");
+                plan = agent.generate_plan(&text).await?;
+                handler.render_plan(&plan);
+            }
+            Err(e) => {
+                if args.debug {
+                    handler.print_debug(&format!("Plan validation error (continuing anyway): {e}"));
+                }
+            }
+        }
 
         execute_plan(&mut agent, plan, sampling, args.debug, &handler).await?;
 
@@ -381,7 +398,7 @@ async fn main() -> Result<()> {
                     }
                     _ => {
                         // ── PLAN PHASE ───────────────────────────────
-                        let plan = match agent.generate_plan(input).await {
+                        let mut plan = match agent.generate_plan(input).await {
                             Ok(p) => p,
                             Err(e) => {
                                 handler.print_error(&format!("Planning error: {e}"));
@@ -390,6 +407,31 @@ async fn main() -> Result<()> {
                         };
 
                         handler.render_plan(&plan);
+
+                        // ── PLAN VALIDATION ──────────────────────────
+                        match agent.validate_plan(input, &plan).await {
+                            Ok(true) => {
+                                // Plan is valid, continue to execution
+                            }
+                            Ok(false) => {
+                                handler.print_error("Plan does not properly address the query. Regenerating...");
+                                // Regenerate plan once
+                                plan = match agent.generate_plan(input).await {
+                                    Ok(p) => p,
+                                    Err(e) => {
+                                        handler.print_error(&format!("Planning error: {e}"));
+                                        continue;
+                                    }
+                                };
+                                handler.render_plan(&plan);
+                            }
+                            Err(e) => {
+                                if args.debug {
+                                    handler.print_debug(&format!("Plan validation error (continuing anyway): {e}"));
+                                }
+                                // Continue with original plan if validation fails
+                            }
+                        }
 
                         let sampling = SamplingConfig {
                             temperature: Some(args.temperature),

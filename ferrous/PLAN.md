@@ -88,11 +88,11 @@ The agent provides an interactive CLI interface for coding assistance with file 
 - [ ] Code execution in sandboxed environment
 - [x] Search/grep functionality
 
-### 🔲 Improved LLM Integration
+### ✅ Improved LLM Integration
 - [x] Better sampling strategies (mirostat)
 - [x] Streaming token generation
 - [x] Multi-turn conversation improvements
-- [ ] Custom system prompts from a file
+- [x] Custom system prompts from a file
 - [x] Temperature/parameter CLI overrides
 
 ### 🔲 Advanced Features
@@ -100,8 +100,8 @@ The agent provides an interactive CLI interface for coding assistance with file 
 - [x] Multi-file context management
 - [x] Project-wide code analysis
 - [ ] Automatic test generation
-- [ ] Refactoring suggestions
-- [ ] Code review mode
+- [x] Refactoring suggestions
+- [x] Code review mode
 
 ### 🔲 Performance & Quality
 - [ ] Add comprehensive tests
@@ -151,12 +151,16 @@ The agent provides an interactive CLI interface for coding assistance with file 
 - ✅ Modular CLI with interactive REPL and syntax highlighting (`src/cli.rs`, `src/main.rs`)
 - ✅ Git integration tools
 - ✅ Comprehensive documentation (README.md and updated PLAN.md)
+- ✅ Validation guards and pre-flight checks (`src/tools/validators.rs`)
+- ✅ Code review and refactoring analysis (`src/tools/review.rs`)
+- ✅ Custom prompt system (.ferrous/rules/)
+- ✅ Semantic code search with RAG
 
-**Current State**: Mature assistant capable of autonomous multi-step tasks across various tech stacks.
+**Current State**: Production-ready coding assistant with comprehensive tooling for code analysis, modification, and quality assurance. Supports autonomous multi-step tasks, validation guards, and code review workflows.
 
 **Next Steps**:
 1. Add code execution in a sandboxed environment
-2. Implement automatic test generation and refactoring suggestions
+2. Implement automatic test generation
 3. Enhance error recovery and retry logic for tool calls
 4. Expand project analysis for non-Rust projects
-5. Improve multi-turn conversation coherence on very large projects
+5. Add model auto-discovery feature
