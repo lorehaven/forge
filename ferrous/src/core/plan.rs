@@ -1,5 +1,5 @@
-use crate::core::Agent;
 use crate::config::SamplingConfig;
+use crate::core::Agent;
 use colored::Colorize;
 use std::fmt;
 

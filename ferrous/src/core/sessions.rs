@@ -36,10 +36,7 @@ pub fn sanitize_name(name: &str) -> String {
         })
         .collect();
 
-    let joined = cleaned
-        .split_whitespace()
-        .collect::<Vec<&str>>()
-        .join("-");
+    let joined = cleaned.split_whitespace().collect::<Vec<&str>>().join("-");
 
     let mut final_joined = String::new();
     let mut last_was_dash = false;

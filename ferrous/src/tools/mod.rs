@@ -1,3 +1,4 @@
+use crate::core::Indexer;
 use anyhow::{Result, anyhow};
 use serde_json::Value;
 
@@ -7,7 +8,7 @@ pub mod git;
 pub mod shell;
 pub mod utils;
 
-pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
+pub async fn execute_tool(name: &str, args: Value, indexer: Option<&Indexer>) -> Result<String> {
     let cwd = std::env::current_dir()?;
 
     match name {
@@ -25,6 +26,7 @@ pub async fn execute_tool(name: &str, args: Value) -> Result<String> {
         "append_to_file" => file::append_to_file(&cwd, &args),
         "search_text" => file::search_text(&cwd, &args),
         "find_file" => file::find_file(&cwd, &args),
+        "search_code_semantic" => file::search_code_semantic(indexer, &args),
         "execute_shell_command" => shell::execute_shell_command(&cwd, &args).await,
         "git_status" => git::git_status(&cwd),
         "git_diff" => git::git_diff(&cwd, &args),

@@ -122,6 +122,7 @@ fn substitute(value: &mut YamlValue, env: &HashMap<String, String>, re: &Regex) 
     }
 }
 
+#[must_use]
 pub fn strip_empty_lines(s: &str) -> String {
     s.lines()
         .filter(|l| !l.trim().is_empty())

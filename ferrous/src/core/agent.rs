@@ -1,6 +1,6 @@
-use crate::config::{SamplingConfig, PromptManager, get_default_context};
-use crate::core::ExecutionPlan;
+use crate::config::{PromptManager, SamplingConfig, get_default_context};
 use crate::core::sessions::{load_conversation_by_prefix, save_conversation};
+use crate::core::{ExecutionPlan, Indexer};
 use crate::llm::{StopCondition, get_stop_words_for_language, is_port_open};
 use crate::tools::execute_tool;
 use anyhow::{Context, Result, anyhow};
@@ -83,6 +83,7 @@ pub struct Agent {
     pub server: Option<Arc<Mutex<Child>>>,
     port: u16,
     pub prompt_manager: PromptManager,
+    pub indexer: Option<Indexer>,
 }
 
 impl Agent {
@@ -108,7 +109,7 @@ impl Agent {
         port: u16,
         debug: bool,
     ) -> Result<Self> {
-        use crate::llm::{spawn_server};
+        use crate::llm::spawn_server;
 
         let server_handle = spawn_server(
             model,
@@ -125,18 +126,25 @@ impl Agent {
         let ctx = get_default_context();
         let system_prompt = prompt_manager.render_system(&ctx)?;
 
+        let index_path = std::env::current_dir()?.join(".ferrous").join("index");
+        let indexer = Indexer::new(&index_path).ok();
+        if let Some(ref idx) = indexer {
+            let _ = idx.index_project(&std::env::current_dir()?);
+        }
+
         Ok(Self {
             client: Client::new(),
             messages: vec![json!({"role": "system", "content": system_prompt})],
             server: Some(server_handle),
             port,
             prompt_manager,
+            indexer,
         })
     }
 
     /// Connect to an existing server (no spawn)
     pub async fn connect_only(port: u16) -> Result<Self> {
-        use crate::llm::{connect_only};
+        use crate::llm::connect_only;
 
         connect_only(port).await?;
 
@@ -144,12 +152,19 @@ impl Agent {
         let ctx = get_default_context();
         let system_prompt = prompt_manager.render_system(&ctx)?;
 
+        let index_path = std::env::current_dir()?.join(".ferrous").join("index");
+        let indexer = Indexer::new(&index_path).ok();
+        if let Some(ref idx) = indexer {
+            let _ = idx.index_project(&std::env::current_dir()?);
+        }
+
         Ok(Self {
             client: Client::new(),
             messages: vec![json!({"role": "system", "content": system_prompt})],
             server: None,
             port,
             prompt_manager,
+            indexer,
         })
     }
 
@@ -250,6 +265,27 @@ impl Agent {
         interaction: &dyn crate::ui::interface::InteractionHandler,
     ) -> Result<String> {
         self.ensure_alive().await?;
+
+        // Context-Aware Retrieval
+        if let Some(ref indexer) = self.indexer
+            && let Ok(results) = indexer.search(user_input, 3)
+            && !results.is_empty()
+        {
+            use std::fmt::Write as _;
+            let mut context_msg = String::from("Relevant code snippets from the project:\n\n");
+            for (path, content) in results {
+                let _ = writeln!(context_msg, "--- {path} ---");
+                let snippet: String = content.lines().take(30).collect::<Vec<_>>().join("\n");
+                let _ = writeln!(context_msg, "{snippet}");
+                if content.lines().count() > 30 {
+                    let _ = writeln!(context_msg, "\n...(truncated)");
+                }
+                let _ = writeln!(context_msg, "\n\n");
+            }
+            self.messages
+                .push(json!({"role": "system", "content": context_msg}));
+        }
+
         self.messages
             .push(json!({"role": "user", "content": user_input}));
 
@@ -399,7 +435,7 @@ impl Agent {
         let mut waiting_for_lang = false;
 
         // Initialize stop condition
-        // For now, we use a generic set of stop words. 
+        // For now, we use a generic set of stop words.
         // In the future, we could detect language from context.
         let stop_words = get_stop_words_for_language("unknown");
         let mut stop_condition = StopCondition::new(stop_words);
@@ -608,7 +644,7 @@ impl Agent {
 
             let args_parsed: Value = serde_json::from_str(args_raw).unwrap_or_else(|_| json!({}));
 
-            let tool_result = execute_tool(name, args_parsed).await;
+            let tool_result = execute_tool(name, args_parsed, self.indexer.as_ref()).await;
 
             let result_str = match tool_result {
                 Ok(r) => r,
@@ -641,19 +677,36 @@ impl Agent {
 
     async fn count_tokens(&self, content: &str) -> Result<usize> {
         let url = format!("http://127.0.0.1:{}/tokenize", self.port);
-        let resp: Value = self
-            .client
-            .post(url)
-            .json(&json!({ "content": content }))
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await?;
+
+        let mut attempts = 0;
+        let resp: Value = loop {
+            let res = self
+                .client
+                .post(&url)
+                .json(&json!({ "content": content }))
+                .send()
+                .await;
+
+            match res {
+                Ok(resp) => {
+                    if resp.status().as_u16() == 503 && attempts < 5 {
+                        attempts += 1;
+                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                        continue;
+                    }
+                    break resp.error_for_status()?.json().await?;
+                }
+                Err(_) if attempts < 5 => {
+                    attempts += 1;
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                }
+                Err(e) => return Err(e.into()),
+            }
+        };
 
         resp["tokens"]
             .as_array()
-            .map(std::vec::Vec::len)
+            .map(Vec::len)
             .ok_or_else(|| anyhow!("Invalid response from /tokenize"))
     }
 

@@ -1,4 +1,4 @@
-use ferrous::config::prompt::{PromptManager, PromptContext};
+use ferrous::config::prompt::{PromptContext, PromptManager};
 
 #[test]
 fn test_render_system_fallback() {

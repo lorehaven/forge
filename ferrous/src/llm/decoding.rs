@@ -1,5 +1,5 @@
-use trie_rs::{Trie, TrieBuilder};
 use std::sync::LazyLock;
+use trie_rs::{Trie, TrieBuilder};
 
 fn reverse(s: &str) -> String {
     s.chars().rev().collect()
@@ -74,7 +74,7 @@ pub static DEFAULT_STOP_WORDS: LazyLock<Vec<String>> = LazyLock::new(|| {
 
 pub fn get_stop_words_for_language(lang: &str) -> Vec<String> {
     let mut words = DEFAULT_STOP_WORDS.clone();
-    
+
     // Add some basic language-specific stop words
     match lang.to_lowercase().as_str() {
         "rust" => {
@@ -105,6 +105,6 @@ pub fn get_stop_words_for_language(lang: &str) -> Vec<String> {
         }
         _ => {}
     }
-    
+
     words
 }

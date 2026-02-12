@@ -3,12 +3,26 @@ use anyhow::{Result, anyhow};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use tokio::net::TcpStream;
-use tokio::time::{Duration, interval};
+use tokio::time::{Duration, interval, sleep};
 
 pub type ProgressCallback = Box<dyn Fn(ModelLoadPhase) + Send>;
 
 pub async fn is_port_open(host: &str, port: u16) -> bool {
     TcpStream::connect((host.to_string(), port)).await.is_ok()
+}
+
+pub async fn is_server_ready(port: u16) -> bool {
+    let url = format!("http://127.0.0.1:{port}/health");
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(1))
+        .build()
+        .unwrap_or_default();
+
+    client
+        .get(url)
+        .send()
+        .await
+        .is_ok_and(|resp| resp.status().is_success())
 }
 
 /// Spawns llama-server and waits until it's ready (HTTP endpoint responds)
@@ -85,7 +99,7 @@ pub async fn spawn_server(
         interv.tick().await;
         attempts += 1;
 
-        if is_port_open("127.0.0.1", port).await {
+        if is_server_ready(port).await {
             if let Some(cb) = &progress {
                 cb(ModelLoadPhase::Ready);
             }
@@ -106,8 +120,17 @@ pub async fn spawn_server(
 /// Connect to an already running server (no spawn)
 pub async fn connect_only(port: u16) -> Result<()> {
     println!("Reusing existing llama-server on port {port}");
-    if !is_port_open("127.0.0.1", port).await {
-        return Err(anyhow!("No server listening on port {port}"));
+
+    let mut attempts = 0;
+    while attempts < 30 {
+        if is_server_ready(port).await {
+            return Ok(());
+        }
+        attempts += 1;
+        sleep(Duration::from_secs(1)).await;
     }
-    Ok(())
+
+    Err(anyhow!(
+        "Server on port {port} is not responding to HTTP requests after 30s"
+    ))
 }

@@ -1,4 +1,5 @@
 use super::utils::{clean_path, resolve_dir, resolve_parent_for_write};
+use crate::core::Indexer;
 use anyhow::{Context, Result, anyhow};
 use serde_json::Value;
 use std::fs::{self, Metadata, create_dir_all};
@@ -339,5 +340,33 @@ pub fn find_file(cwd: &Path, args: &Value) -> Result<String> {
             matches.len(),
             matches.join("\n")
         ))
+    }
+}
+
+pub fn search_code_semantic(indexer: Option<&Indexer>, args: &Value) -> Result<String> {
+    let query: String = serde_json::from_value(args["query"].clone())?;
+    let limit = usize::try_from(args["limit"].as_u64().unwrap_or(5))?;
+
+    let Some(indexer) = indexer else {
+        return Ok("Indexing is disabled or failed to initialize.".to_string());
+    };
+
+    let results = indexer.search(&query, limit)?;
+
+    if results.is_empty() {
+        Ok(format!("No semantic matches found for '{query}'."))
+    } else {
+        use std::fmt::Write as _;
+        let mut out = format!("Semantic search results for '{query}':\n\n");
+        for (path, content) in results {
+            let _ = writeln!(out, "--- {path} ---");
+            let snippet: String = content.lines().take(30).collect::<Vec<_>>().join("\n");
+            let _ = writeln!(out, "{snippet}");
+            if content.lines().count() > 30 {
+                let _ = writeln!(out, "\n...(truncated)");
+            }
+            let _ = writeln!(out, "\n");
+        }
+        Ok(out)
     }
 }
