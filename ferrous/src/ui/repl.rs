@@ -33,7 +33,17 @@ impl InteractionHandler for ReplMode {
     }
 
     fn print_response(&self, response: &str) {
-        pretty_print_response(response);
+        if response.lines().count() > 20 {
+            // If the response is long (like a file content), show it in a block
+            println!("{} {} {}", "──".dimmed(), "Tool Output".bright_yellow(), "──".dimmed());
+            pretty_print_response(response);
+            println!("{}", "─────────────────".dimmed());
+        } else {
+            // For short responses (status, small lists), just print it indented
+            for line in response.lines() {
+                println!("  {}", line.dimmed());
+            }
+        }
     }
 
     fn print_stream_start(&self) {

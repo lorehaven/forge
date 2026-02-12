@@ -1,20 +1,66 @@
 use anyhow::Context;
 use colored::Colorize;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
-#[derive(Deserialize, Default, Clone, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelBackend {
+    LocalLlama {
+        model_path: String,
+        #[serde(default = "default_port")]
+        port: u16,
+        #[serde(default = "default_context_size")]
+        context_size: u32,
+        #[serde(default = "default_num_gpu_layers")]
+        num_gpu_layers: u16,
+    },
+    OpenAi {
+        model_name: String,
+        api_key: Option<String>,
+        api_base: Option<String>,
+    },
+    Anthropic {
+        model_name: String,
+        api_key: Option<String>,
+    },
+    External {
+        api_base: String,
+        api_key: Option<String>,
+        model_name: Option<String>,
+    },
+}
+
+const fn default_port() -> u16 {
+    8080
+}
+const fn default_context_size() -> u32 {
+    8192
+}
+const fn default_num_gpu_layers() -> u16 {
+    999
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelRole {
+    Chat,
+    Planner,
+    Embedding,
+}
+
+#[derive(Deserialize, Serialize, Default, Clone, Debug)]
 #[serde(default)]
 pub struct Config {
-    pub model: Option<String>,
-    pub port: Option<u16>,
-    #[serde(flatten)]
+    pub base_model_path: Option<String>,
+    pub models: HashMap<ModelRole, ModelBackend>,
     pub sampling: SamplingConfig,
     pub debug: Option<bool>,
 }
 
-#[derive(Deserialize, Default, Clone, Debug)]
+#[derive(Deserialize, Serialize, Default, Clone, Debug)]
 pub struct SamplingConfig {
     pub temperature: Option<f32>,
     pub top_p: Option<f32>,
@@ -33,9 +79,41 @@ impl Config {
         println!("{}", "Current configuration (merged):".bright_cyan().bold());
         println!();
 
+        if !self.models.is_empty() {
+            println!("{}", "Models by role:".bright_yellow());
+            for (role, backend) in &self.models {
+                let role_str = match role {
+                    ModelRole::Chat => "chat",
+                    ModelRole::Planner => "planner",
+                    ModelRole::Embedding => "embedding",
+                };
+                let backend_info = match backend {
+                    ModelBackend::LocalLlama {
+                        model_path, port, ..
+                    } => {
+                        let full_path = if !model_path.starts_with('/') && !model_path.starts_with('.') && let Some(ref base) = self.base_model_path {
+                            format!("{}/{}", base.trim_end_matches('/'), model_path)
+                        } else {
+                            model_path.clone()
+                        };
+                        format!("Local Llama (port {port}): {full_path}")
+                    }
+                    ModelBackend::OpenAi { model_name, .. } => format!("OpenAI: {model_name}"),
+                    ModelBackend::Anthropic { model_name, .. } => {
+                        format!("Anthropic: {model_name}")
+                    }
+                    ModelBackend::External { api_base, .. } => format!("External: {api_base}"),
+                };
+                println!(
+                    "  {:<14} = {}",
+                    role_str.bright_blue(),
+                    backend_info.bright_white()
+                );
+            }
+            println!();
+        }
+
         let fields = vec![
-            ("model", self.model.as_ref().map(String::from)),
-            ("port", self.port.map(|p| p.to_string())),
             (
                 "temperature",
                 self.sampling.temperature.map(|v| format!("{v:.2}")),
@@ -138,8 +216,7 @@ pub fn print_loaded(config: &Config, is_debug: bool) {
     }
 
     // Early exit if nothing is set
-    if config.model.is_none()
-        && config.port.is_none()
+    if config.models.is_empty()
         && config.sampling.temperature.is_none()
         && config.sampling.top_p.is_none()
         && config.sampling.min_p.is_none()
@@ -157,14 +234,23 @@ pub fn print_loaded(config: &Config, is_debug: bool) {
     }
 
     println!("{}", "Loaded from config.toml:".bright_black().bold());
+    
+    if let Some(ref base) = config.base_model_path {
+        println!("  {:<14} = {}", "base_path".bright_blue(), base.bright_white());
+    }
+
+    if !config.models.is_empty() {
+        for (role, backend) in &config.models {
+            let role_str = match role {
+                ModelRole::Chat => "chat",
+                ModelRole::Planner => "planner",
+                ModelRole::Embedding => "embedding",
+            };
+            println!("  {:<14} = {:?}", role_str.bright_blue(), backend);
+        }
+    }
 
     let fields = vec![
-        ConfigField::new("model", config.model.clone(), colored::Color::BrightCyan),
-        ConfigField::new(
-            "port",
-            config.port.map(|v| v.to_string()),
-            colored::Color::BrightGreen,
-        ),
         ConfigField::new(
             "temperature",
             config.sampling.temperature.map(|v| format!("{v:.3}")),

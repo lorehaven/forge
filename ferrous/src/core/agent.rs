@@ -1,14 +1,15 @@
-use crate::config::{PromptManager, SamplingConfig, get_default_context};
+use crate::config::{
+    Config, ModelBackend, ModelRole, PromptManager, SamplingConfig, get_default_context,
+};
 use crate::core::sessions::{load_conversation_by_prefix, save_conversation};
 use crate::core::{ExecutionPlan, Indexer};
-use crate::llm::{StopCondition, get_stop_words_for_language, is_port_open};
+use crate::llm::{ModelManager, StopCondition, get_stop_words_for_language, is_port_open};
 use crate::tools::execute_tool;
 use anyhow::{Context, Result, anyhow};
 use futures_util::StreamExt;
 use reqwest::Client;
 use serde_json::{Value, json};
-use std::process::Child;
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::LazyLock;
 
 static TOOLS_JSON: LazyLock<Vec<Value>> = LazyLock::new(|| {
     let s = include_str!("../../config/tools.json");
@@ -19,19 +20,25 @@ pub const DEFAULT_PLAN_PROMPT: &str = r"
 You are in PLANNING MODE.
 
 Rules:
-- Do NOT call tools
+- Do NOT call tools or include tool syntax in the plan
 - Do NOT describe human actions (thinking, searching, typing)
-- Each step MUST be directly executable using available tools
+- Each step MUST be a simple, high-level action description
 - Each step MUST start with a verb
-- Prefer concrete file/tool actions
+- Keep steps simple and minimal - avoid unnecessary steps
+- DO NOT include tool call syntax like 'write_file()' or 'create_directory()' in the plan
 - If the request is a general question NOT related to the project, do NOT generate a plan with tool calls. Instead, provide a single step: '1. Answer the user's question directly: <original_question>'
 
-Allowed verbs (examples):
-- Read file <path>
-- Modify function <name> in <path>
-- Replace text in <path>
-- Run command <command>
+Good step examples:
+- Create file hello.py with a greeting function
+- Read file config.toml
+- Fix the syntax error in main.rs
+- Run the test suite
 - Answer the user's question directly: <original_question>
+
+Bad step examples (DO NOT DO THIS):
+- Create file using write_file('hello.py', 'content')
+- Call list_directory('.')
+- Use tool analyze_project
 
 Output format MUST start with 'PLAN:' followed by numbered steps:
 PLAN:
@@ -51,7 +58,9 @@ Core Rules:
   - NEVER write scripts or pseudocode that 'uses' tools. Instead, use the tool-calling mechanism of your LLM interface.
   - ALWAYS perform the actual file modification using tool calls.
   - If you need to make multiple changes to the same file or different files, call the necessary tools sequentially.
-  - Preserve all unchanged content verbatim.
+- IMPORTANT: Qwen2.5-Coder model, when using tools, YOU MUST use the specific function call format in your delta response.
+- If you decide to call a tool, you MUST NOT output anything in the 'content' field. Instead, use 'tool_calls'.
+- Preserve all unchanged content verbatim.
   - Modify only the minimal necessary lines.
   - Never replace an entire file unless explicitly instructed.
   - Never emit placeholders such as <updated-content> or <modified-content>.
@@ -59,6 +68,12 @@ Core Rules:
 - If you need to output a code block that ITSELF contains code blocks (e.g., when showing a README.md or a Markdown file), you MUST use 4 backticks (````) for the outer block to avoid breaking the UI.
 - For project-related tasks, first use read_file or list_files_recursive to understand the current state.
 - For general knowledge questions unrelated to the project, do NOT use project exploration tools. Simply answer the question.
+- IMPORTANT: When you are in the EXECUTION phase (following a plan), you MUST use tool calls to perform any project manipulation (like creating files, writing content, or running commands).
+  - DO NOT just describe the tool you would use.
+  - DO NOT just say 'I will use tool X'.
+  - You MUST actually invoke the tool using the tool-calling mechanism.
+  - If a step in the plan says 'create file X', you MUST call 'write_file'.
+  - If a step says 'run command Y', you MUST call 'execute_shell_command'.
 - For small, targeted changes → prefer replace_in_file.
   - IMPORTANT: replace_in_file performs EXACT string matching. You MUST read the file first and copy the text EXACTLY as it appears, including ALL whitespace, indentation, and newlines.
   - If a replacement fails (returns 'No changes made...'), it means your 'search' string did not match the file content exactly. You MUST read the file again to get the exact content.
@@ -80,10 +95,10 @@ Respond helpfully and concisely. Think step-by-step before calling tools.
 pub struct Agent {
     client: Client,
     pub messages: Vec<Value>,
-    pub server: Option<Arc<Mutex<Child>>>,
-    port: u16,
+    pub model_manager: ModelManager,
     pub prompt_manager: PromptManager,
     pub indexer: Option<Indexer>,
+    pub config: Config,
 }
 
 impl Agent {
@@ -100,8 +115,39 @@ impl Agent {
 }
 
 impl Agent {
-    /// Create a new Agent and spawn llama-server
-    pub async fn new(
+    /// Create a new Agent with the given config
+    pub fn with_config(config: Config) -> Result<Self> {
+        let model_manager = ModelManager::new();
+
+        // Check if we have models defined, otherwise we might need some defaults or error out
+        if config.models.is_empty() {
+            return Err(anyhow!(
+                "No models configured. Please check your .ferrous/config.toml"
+            ));
+        }
+
+        let prompt_manager = PromptManager::new()?;
+        let ctx = get_default_context();
+        let system_prompt = prompt_manager.render_system(&ctx)?;
+
+        let index_path = std::env::current_dir()?.join(".ferrous").join("index");
+        let indexer = Indexer::new(&index_path).ok();
+        if let Some(ref idx) = indexer {
+            let _ = idx.index_project(&std::env::current_dir()?);
+        }
+
+        Ok(Self {
+            client: Client::new(),
+            messages: vec![json!({"role": "system", "content": system_prompt})],
+            model_manager,
+            prompt_manager,
+            indexer,
+            config,
+        })
+    }
+
+    /// Legacy constructor (for backward compatibility or simpler use cases)
+    pub fn new(
         model: &str,
         context: u32,
         temperature: f32,
@@ -109,66 +155,90 @@ impl Agent {
         port: u16,
         debug: bool,
     ) -> Result<Self> {
-        use crate::llm::spawn_server;
+        use crate::config::ModelBackend;
 
-        let server_handle = spawn_server(
-            model,
-            context,
-            temperature,
-            repeat_penalty,
-            port,
-            debug,
-            None,
-        )
-        .await?;
+        let mut config = Config::default();
+        config.models.insert(
+            ModelRole::Chat,
+            ModelBackend::LocalLlama {
+                model_path: model.to_string(),
+                port,
+                context_size: context,
+                num_gpu_layers: 999,
+            },
+        );
+        config.sampling.temperature = Some(temperature);
+        config.sampling.repeat_penalty = Some(repeat_penalty);
+        config.sampling.context = Some(context);
+        config.debug = Some(debug);
 
-        let prompt_manager = PromptManager::new()?;
-        let ctx = get_default_context();
-        let system_prompt = prompt_manager.render_system(&ctx)?;
-
-        let index_path = std::env::current_dir()?.join(".ferrous").join("index");
-        let indexer = Indexer::new(&index_path).ok();
-        if let Some(ref idx) = indexer {
-            let _ = idx.index_project(&std::env::current_dir()?);
-        }
-
-        Ok(Self {
-            client: Client::new(),
-            messages: vec![json!({"role": "system", "content": system_prompt})],
-            server: Some(server_handle),
-            port,
-            prompt_manager,
-            indexer,
-        })
+        Self::with_config(config)
     }
 
     /// Connect to an existing server (no spawn)
     pub async fn connect_only(port: u16) -> Result<Self> {
+        use crate::config::ModelBackend;
         use crate::llm::connect_only;
 
         connect_only(port).await?;
 
-        let prompt_manager = PromptManager::new()?;
-        let ctx = get_default_context();
-        let system_prompt = prompt_manager.render_system(&ctx)?;
+        let mut config = Config::default();
+        config.models.insert(
+            ModelRole::Chat,
+            ModelBackend::LocalLlama {
+                model_path: "existing-server".to_string(),
+                port,
+                context_size: 8192,
+                num_gpu_layers: 999,
+            },
+        );
 
-        let index_path = std::env::current_dir()?.join(".ferrous").join("index");
-        let indexer = Indexer::new(&index_path).ok();
-        if let Some(ref idx) = indexer {
-            let _ = idx.index_project(&std::env::current_dir()?);
-        }
-
-        Ok(Self {
-            client: Client::new(),
-            messages: vec![json!({"role": "system", "content": system_prompt})],
-            server: None,
-            port,
-            prompt_manager,
-            indexer,
-        })
+        Self::with_config(config)
     }
 
-    pub async fn generate_plan(&self, query: &str) -> Result<ExecutionPlan> {
+    pub async fn get_model_url(&mut self, role: ModelRole) -> Result<String> {
+        let mut backend = self
+            .config
+            .models
+            .get(&role)
+            .ok_or_else(|| anyhow!("Model for role {role:?} not configured"))?
+            .clone();
+
+        // Resolve path with base_model_path if applicable
+        if let ModelBackend::LocalLlama {
+            ref mut model_path, ..
+        } = backend
+        {
+            if !model_path.starts_with('/')
+                && !model_path.starts_with('.')
+                && let Some(ref base) = self.config.base_model_path
+            {
+                let base_path = std::path::Path::new(base);
+                *model_path = base_path.join(&model_path).to_string_lossy().to_string();
+            }
+        }
+
+        let handle = self
+            .model_manager
+            .get_or_start_model(
+                role,
+                &backend,
+                &self.config.sampling,
+                self.config.debug.unwrap_or(false),
+            )
+            .await?;
+
+        match handle.backend {
+            ModelBackend::LocalLlama { port, .. } => Ok(format!("http://127.0.0.1:{port}")),
+            ModelBackend::OpenAi { api_base, .. } => {
+                Ok(api_base.unwrap_or_else(|| "https://api.openai.com/v1".to_string()))
+            }
+            ModelBackend::Anthropic { .. } => Ok("https://api.anthropic.com/v1".to_string()),
+            ModelBackend::External { api_base, .. } => Ok(api_base),
+        }
+    }
+
+    pub async fn generate_plan(&mut self, query: &str) -> Result<ExecutionPlan> {
         const PLAN_MAX_TOKENS: u32 = 1024;
         const SAFETY_BUFFER: u64 = 1024;
 
@@ -181,11 +251,19 @@ impl Agent {
         // Plan phase also needs context management
         // (Planning usually doesn't need much, but let's be safe)
 
-        let url_props = format!("http://127.0.0.1:{}/props", self.port);
-        let props: Value = self.client.get(url_props).send().await?.json().await?;
-        let n_ctx = props["n_ctx"].as_u64().unwrap_or(8192);
+        let base_url = self.get_model_url(ModelRole::Planner).await?;
+        let url_props = format!("{base_url}/props");
 
-        let mut prompt_tokens = self.count_message_tokens(&temp_messages).await? as u64;
+        let n_ctx = if let Ok(resp) = self.client.get(url_props).send().await {
+            let props: Value = resp.json().await.unwrap_or_default();
+            props["n_ctx"].as_u64().unwrap_or(8192)
+        } else {
+            8192
+        };
+
+        let mut prompt_tokens = self
+            .count_message_tokens(&temp_messages, ModelRole::Planner)
+            .await? as u64;
         while prompt_tokens
             > n_ctx
                 .saturating_sub(u64::from(PLAN_MAX_TOKENS))
@@ -193,22 +271,20 @@ impl Agent {
             && temp_messages.len() > 2
         {
             temp_messages.remove(1);
-            prompt_tokens = self.count_message_tokens(&temp_messages).await? as u64;
+            prompt_tokens = self
+                .count_message_tokens(&temp_messages, ModelRole::Planner)
+                .await? as u64;
         }
 
         let body = json!({
             "messages": &temp_messages,
             "temperature": 0.1,
             "max_tokens": PLAN_MAX_TOKENS,
-            "stream": false,
         });
 
         let resp: Value = self
             .client
-            .post(format!(
-                "http://127.0.0.1:{}/v1/chat/completions",
-                self.port
-            ))
+            .post(format!("{base_url}/v1/chat/completions"))
             .json(&body)
             .send()
             .await?
@@ -294,7 +370,8 @@ impl Agent {
                 .manage_context(&sampling, is_debug, interaction)
                 .await?;
             let body = self.build_request_body(&sampling, max_tokens);
-            let url = format!("http://127.0.0.1:{}/v1/chat/completions", self.port);
+            let base_url = self.get_model_url(ModelRole::Chat).await?;
+            let url = format!("{base_url}/v1/chat/completions");
 
             let resp = self.client.post(&url).json(&body).send().await?;
             if !resp.status().is_success() {
@@ -303,7 +380,7 @@ impl Agent {
                     .await;
             }
 
-            let (full_content, tool_calls) = self.process_stream(resp, interaction).await?;
+            let (full_content, tool_calls) = self.process_stream(resp, interaction, is_debug).await?;
 
             if tool_calls.is_empty() {
                 self.messages
@@ -312,7 +389,7 @@ impl Agent {
                 return Ok(full_content);
             }
 
-            self.handle_tool_calls(full_content, tool_calls, is_debug, interaction)
+            self.handle_tool_calls(full_content, tool_calls.clone(), is_debug, interaction)
                 .await?;
         }
     }
@@ -328,7 +405,10 @@ impl Agent {
         let mut max_tokens = sampling.max_tokens.unwrap_or(4096);
 
         let context_u64 = u64::from(context);
-        let mut prompt_tokens = self.count_message_tokens(&self.messages).await? as u64;
+        let messages = self.messages.clone();
+        let mut prompt_tokens = self
+            .count_message_tokens(&messages, ModelRole::Chat)
+            .await? as u64;
 
         let reserved_for_generation = u64::from(max_tokens).max(context_u64 / 4);
         let max_allowed_prompt = context_u64
@@ -337,7 +417,10 @@ impl Agent {
 
         while prompt_tokens > max_allowed_prompt && self.messages.len() > 2 {
             self.messages.remove(1);
-            prompt_tokens = self.count_message_tokens(&self.messages).await? as u64;
+            let messages = self.messages.clone();
+            prompt_tokens = self
+                .count_message_tokens(&messages, ModelRole::Chat)
+                .await? as u64;
         }
 
         let total_estimated = prompt_tokens + u64::from(max_tokens) + SAFETY_BUFFER;
@@ -421,6 +504,7 @@ impl Agent {
         &self,
         resp: reqwest::Response,
         interaction: &dyn crate::ui::interface::InteractionHandler,
+        is_debug: bool,
     ) -> Result<(String, Vec<Value>)> {
         let mut stream = resp.bytes_stream();
         let mut full_content = String::new();
@@ -473,6 +557,10 @@ impl Agent {
                     }
                 };
                 let delta = &chunk["choices"][0]["delta"];
+
+                if is_debug && (!delta["content"].is_null() || !delta["tool_calls"].is_null()) {
+                    interaction.print_debug(&format!("Stream Delta: {}", serde_json::to_string(delta).unwrap_or_default()));
+                }
 
                 if let Some(content) = delta["content"].as_str() {
                     if !has_started_printing {
@@ -655,6 +743,10 @@ impl Agent {
                 }
             };
 
+            // Display tool result to user
+            interaction.print_response(&result_str);
+            interaction.print_stream_start(); // Resume the line prefix for the assistant's potential summary
+
             if is_debug {
                 interaction.print_debug(&format!("Tool Result: {result_str}"));
             }
@@ -668,15 +760,31 @@ impl Agent {
         Ok(())
     }
 
-    async fn ensure_alive(&self) -> Result<()> {
-        if !is_port_open("127.0.0.1", self.port).await {
-            return Err(anyhow!("llama-server not responding on port {}", self.port));
+    async fn ensure_alive(&mut self) -> Result<()> {
+        let handle = self
+            .model_manager
+            .get_or_start_model(
+                ModelRole::Chat,
+                self.config
+                    .models
+                    .get(&ModelRole::Chat)
+                    .ok_or_else(|| anyhow!("Chat model not configured"))?,
+                &self.config.sampling,
+                self.config.debug.unwrap_or(false),
+            )
+            .await?;
+
+        if let ModelBackend::LocalLlama { port, .. } = handle.backend
+            && !is_port_open("127.0.0.1", port).await
+        {
+            return Err(anyhow!("llama-server not responding on port {port}"));
         }
         Ok(())
     }
 
-    async fn count_tokens(&self, content: &str) -> Result<usize> {
-        let url = format!("http://127.0.0.1:{}/tokenize", self.port);
+    async fn count_tokens(&mut self, content: &str, role: ModelRole) -> Result<usize> {
+        let base_url = self.get_model_url(role).await?;
+        let url = format!("{base_url}/tokenize");
 
         let mut attempts = 0;
         let resp: Value = loop {
@@ -694,7 +802,11 @@ impl Agent {
                         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                         continue;
                     }
-                    break resp.error_for_status()?.json().await?;
+                    if !resp.status().is_success() {
+                        // Some backends might not support /tokenize, return approximate
+                        return Ok(content.len() / 4);
+                    }
+                    break resp.json().await?;
                 }
                 Err(_) if attempts < 5 => {
                     attempts += 1;
@@ -710,26 +822,26 @@ impl Agent {
             .ok_or_else(|| anyhow!("Invalid response from /tokenize"))
     }
 
-    async fn count_message_tokens(&self, messages: &[Value]) -> Result<usize> {
+    async fn count_message_tokens(&mut self, messages: &[Value], role: ModelRole) -> Result<usize> {
         // Approximate overhead for chat format (im_start, role, im_end, etc.)
         // For Qwen-style: <|im_start|>role\ncontent<|im_end|>\n
         let mut total = 0;
         for msg in messages {
-            let role = msg["role"].as_str().unwrap_or("");
+            let role_name = msg["role"].as_str().unwrap_or("");
             let content = msg["content"].as_str().unwrap_or("");
 
             // Handle content being a string or potentially null (for assistant tool calls without content)
             if !content.is_empty() {
-                total += self.count_tokens(content).await?;
+                total += self.count_tokens(content, role).await?;
             }
 
-            total += self.count_tokens(role).await?;
+            total += self.count_tokens(role_name, role).await?;
 
             // If it's a tool call, we should also account for the tool calls and results
             if let Some(tool_calls) = msg["tool_calls"].as_array() {
                 for call in tool_calls {
                     let call_str = call.to_string();
-                    total += self.count_tokens(&call_str).await?;
+                    total += self.count_tokens(&call_str, role).await?;
                 }
             }
 

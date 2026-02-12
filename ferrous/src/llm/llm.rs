@@ -39,6 +39,7 @@ pub async fn spawn_server(
     let context_str = context.to_string();
     let temperature_str = temperature.to_string();
     let repeat_penalty_str = repeat_penalty.to_string();
+    println!("Starting llama-server with model {model} on port {port}");
     let args_vec = vec![
         "-m",
         model,

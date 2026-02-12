@@ -95,8 +95,14 @@ pub async fn execute_plan(
         plan.mark_running(step.id);
         interaction.render_plan(&plan);
 
+        // Prepend execution instruction to ensure model uses tools
+        let execution_prompt = format!(
+            "EXECUTE THIS STEP NOW using the appropriate tool calls. DO NOT just describe what you will do - actually call the tools: {}",
+            step.description
+        );
+
         let result = agent
-            .stream(&step.description, sampling.clone(), is_debug, interaction)
+            .stream(&execution_prompt, sampling.clone(), is_debug, interaction)
             .await;
 
         match result {

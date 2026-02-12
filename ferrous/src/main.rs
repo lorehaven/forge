@@ -1,9 +1,8 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use colored::Colorize;
-use ferrous::config::{self, SamplingConfig};
+use ferrous::config::{self, ModelBackend, ModelRole, SamplingConfig};
 use ferrous::core::{Agent, execute_plan, sessions};
-use ferrous::llm::is_port_open;
 use ferrous::ui::interface::InteractionHandler;
 use ferrous::ui::query::QueryMode;
 use ferrous::ui::repl::ReplMode;
@@ -127,66 +126,78 @@ enum Commands {
     },
 }
 
-macro_rules! apply_sampling_if_default {
-    ($args:expr, $field:ident, $defaults:expr, $conf:expr) => {
-        if $args.$field == $defaults.$field {
-            if let Some(v) = $conf.sampling.$field {
-                $args.$field = v;
-            }
-        }
-    };
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut args = Args::parse();
-    let conf = config::load();
+    let args = Args::parse();
+    let mut conf = config::load();
     config::print_loaded(&conf, args.debug);
 
-    let effective_conf = conf.clone();
-    if args.model == DEFAULT_PARAMS.model
-        && let Some(v) = effective_conf.model
-    {
-        args.model = v;
-    }
-    if args.port == DEFAULT_PARAMS.port
-        && let Some(v) = effective_conf.port
-    {
-        args.port = v;
-    }
-
-    apply_sampling_if_default!(args, temperature, DEFAULT_PARAMS, effective_conf);
-    apply_sampling_if_default!(args, top_p, DEFAULT_PARAMS, effective_conf);
-    apply_sampling_if_default!(args, min_p, DEFAULT_PARAMS, effective_conf);
-    apply_sampling_if_default!(args, top_k, DEFAULT_PARAMS, effective_conf);
-    apply_sampling_if_default!(args, repeat_penalty, DEFAULT_PARAMS, effective_conf);
-    apply_sampling_if_default!(args, context, DEFAULT_PARAMS, effective_conf);
-    apply_sampling_if_default!(args, max_tokens, DEFAULT_PARAMS, effective_conf);
-    apply_sampling_if_default!(args, mirostat, DEFAULT_PARAMS, effective_conf);
-    apply_sampling_if_default!(args, mirostat_tau, DEFAULT_PARAMS, effective_conf);
-    apply_sampling_if_default!(args, mirostat_eta, DEFAULT_PARAMS, effective_conf);
-
-    if !args.debug
-        && let Some(debug) = conf.debug
-    {
-        args.debug = debug;
+    // Merge CLI args into config if they are NOT default
+    if args.model != DEFAULT_PARAMS.model || args.port != DEFAULT_PARAMS.port {
+        conf.models.insert(
+            ModelRole::Chat,
+            ModelBackend::LocalLlama {
+                model_path: args.model.clone(),
+                port: args.port,
+                context_size: args.context,
+                num_gpu_layers: 999,
+            },
+        );
     }
 
-    let server_running = is_port_open("127.0.0.1", args.port).await;
+    // Default chat model if nothing configured
+    conf.models
+        .entry(ModelRole::Chat)
+        .or_insert_with(|| ModelBackend::LocalLlama {
+            model_path: DEFAULT_PARAMS.model.to_string(),
+            port: DEFAULT_PARAMS.port,
+            context_size: DEFAULT_PARAMS.context,
+            num_gpu_layers: 999,
+        });
 
-    let mut agent = if server_running {
-        Agent::connect_only(args.port).await?
-    } else {
-        Agent::new(
-            &args.model,
-            args.context,
-            args.temperature,
-            args.repeat_penalty,
-            args.port,
-            args.debug,
-        )
-        .await?
-    };
+    // Ensure Planner role has a backend (fallback to Chat)
+    if !conf.models.contains_key(&ModelRole::Planner)
+        && let Some(chat_backend) = conf.models.get(&ModelRole::Chat).cloned()
+    {
+        conf.models.insert(ModelRole::Planner, chat_backend);
+    }
+
+    if conf.sampling.temperature.is_none() || (args.temperature != DEFAULT_PARAMS.temperature && conf.sampling.temperature != Some(args.temperature)) {
+        conf.sampling.temperature = Some(args.temperature);
+    }
+    if conf.sampling.top_p.is_none() || (args.top_p != DEFAULT_PARAMS.top_p && conf.sampling.top_p != Some(args.top_p)) {
+        conf.sampling.top_p = Some(args.top_p);
+    }
+    if conf.sampling.min_p.is_none() || (args.min_p != DEFAULT_PARAMS.min_p && conf.sampling.min_p != Some(args.min_p)) {
+        conf.sampling.min_p = Some(args.min_p);
+    }
+    if conf.sampling.top_k.is_none() || (args.top_k != DEFAULT_PARAMS.top_k && conf.sampling.top_k != Some(args.top_k)) {
+        conf.sampling.top_k = Some(args.top_k);
+    }
+    if conf.sampling.repeat_penalty.is_none() || (args.repeat_penalty != DEFAULT_PARAMS.repeat_penalty && conf.sampling.repeat_penalty != Some(args.repeat_penalty)) {
+        conf.sampling.repeat_penalty = Some(args.repeat_penalty);
+    }
+    if conf.sampling.context.is_none() || (args.context != DEFAULT_PARAMS.context && conf.sampling.context != Some(args.context)) {
+        conf.sampling.context = Some(args.context);
+    }
+    if conf.sampling.max_tokens.is_none() || (args.max_tokens != DEFAULT_PARAMS.max_tokens && conf.sampling.max_tokens != Some(args.max_tokens)) {
+        conf.sampling.max_tokens = Some(args.max_tokens);
+    }
+    if conf.sampling.mirostat.is_none() || (args.mirostat != DEFAULT_PARAMS.mirostat && conf.sampling.mirostat != Some(args.mirostat)) {
+        conf.sampling.mirostat = Some(args.mirostat);
+    }
+    if conf.sampling.mirostat_tau.is_none() || (args.mirostat_tau != DEFAULT_PARAMS.mirostat_tau && conf.sampling.mirostat_tau != Some(args.mirostat_tau)) {
+        conf.sampling.mirostat_tau = Some(args.mirostat_tau);
+    }
+    if conf.sampling.mirostat_eta.is_none() || (args.mirostat_eta != DEFAULT_PARAMS.mirostat_eta && conf.sampling.mirostat_eta != Some(args.mirostat_eta)) {
+        conf.sampling.mirostat_eta = Some(args.mirostat_eta);
+    }
+
+    if args.debug {
+        conf.debug = Some(true);
+    }
+
+    let mut agent = Agent::with_config(conf.clone())?;
 
     // ── One-shot query mode ───────────────────────────────────────────────
     if let Some(Commands::Query {
@@ -224,9 +235,6 @@ async fn main() -> Result<()> {
 
         execute_plan(&mut agent, plan, sampling, args.debug, &handler).await?;
 
-        if let Some(server) = agent.server.take() {
-            let _ = server.lock().unwrap().kill();
-        }
         return Ok(());
     }
 
@@ -388,9 +396,7 @@ async fn main() -> Result<()> {
         }
     }
 
-    if let Some(server) = agent.server.take() {
-        let _ = server.lock().unwrap().kill();
-    }
-
+    // REPL loop cleanup is not strictly necessary as processes will terminate on exit,
+    // but we could implement a more formal shutdown in ModelManager if needed.
     Ok(())
 }
