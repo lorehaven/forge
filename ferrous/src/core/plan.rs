@@ -90,6 +90,8 @@ pub async fn execute_plan(
     is_debug: bool,
     interaction: &dyn crate::ui::interface::InteractionHandler,
 ) -> anyhow::Result<()> {
+    const MAX_NO_TOOL_RETRIES: usize = 2;
+
     for step in plan.steps.clone() {
         interaction.set_current_step(Some(step.id));
         plan.mark_running(step.id);
@@ -98,52 +100,79 @@ pub async fn execute_plan(
         // Count messages before execution to detect if tool was called
         let messages_before = agent.messages.len();
 
-        // Prepend execution instruction to ensure model uses tools
-        let execution_prompt = format!(
-            "EXECUTE THIS STEP NOW by calling the required tools. You MUST make tool calls to complete this step. DO NOT just say what you will do or mark it as done without action. Step: {}",
-            step.description
-        );
+        let mut attempt = 0usize;
+        loop {
+            // Prepend execution instruction to ensure model uses tools
+            let execution_prompt = if attempt == 0 {
+                format!(
+                    "EXECUTE THIS STEP NOW by calling the required tools. You MUST make tool calls to complete this step. DO NOT just say what you will do or mark it as done without action. Step: {}",
+                    step.description
+                )
+            } else {
+                format!(
+                    "RETRY STEP {}. Previous response did not include a tool call. You MUST call at least one tool now. Do not explain, do not summarize. Step: {}",
+                    step.id, step.description
+                )
+            };
 
-        let result = agent
-            .stream(&execution_prompt, sampling.clone(), is_debug, interaction)
-            .await;
+            let result = agent
+                .stream(&execution_prompt, sampling.clone(), is_debug, interaction)
+                .await;
 
-        match result {
-            Ok(resp) => {
-                // Check if any tool was actually called
-                let messages_after = agent.messages.len();
-                let tool_called = messages_after > messages_before + 1; // assistant msg + at least one tool result
+            match result {
+                Ok(outcome) => {
+                    let tool_called = outcome.tool_calls_executed > 0;
 
-                if is_debug {
-                    interaction.print_debug(&format!(
-                        "Messages before: {}, after: {}, tool_called: {}",
-                        messages_before, messages_after, tool_called
-                    ));
-                }
+                    if is_debug {
+                        interaction.print_debug(&format!(
+                            "Messages before: {}, attempt: {}, tool_calls_executed: {}, tool_called: {}",
+                            messages_before,
+                            attempt + 1,
+                            outcome.tool_calls_executed,
+                            tool_called
+                        ));
+                    }
 
-                if !tool_called && requires_tool_call(&step.description) {
-                    interaction.print_error(&format!(
-                        "Step '{}' requires a tool call but none was made. Response was: '{}'",
-                        step.description,
-                        resp.chars().take(100).collect::<String>()
-                    ));
-                    plan.mark_failed(step.id, "No tool call made when required".to_string());
+                    if !tool_called && requires_tool_call(&step.description) {
+                        if attempt < MAX_NO_TOOL_RETRIES {
+                            if is_debug {
+                                interaction.print_debug(&format!(
+                                    "No tool call made for step {}. Retrying ({}/{})...",
+                                    step.id,
+                                    attempt + 1,
+                                    MAX_NO_TOOL_RETRIES + 1
+                                ));
+                            }
+                            attempt += 1;
+                            continue;
+                        }
+
+                        interaction.print_error(&format!(
+                            "Step '{}' requires a tool call but none was made after retries. Last response was: '{}'",
+                            step.description,
+                            outcome.response.chars().take(140).collect::<String>()
+                        ));
+                        plan.mark_failed(step.id, "No tool call made when required".to_string());
+                        interaction.render_plan(&plan);
+                        return Err(anyhow::anyhow!(
+                            "Execution failed: step required tool call but agent only responded with text"
+                        ));
+                    }
+
+                    if is_debug && is_explanatory_step(&step.description) {
+                        interaction.print_debug("\nResponse:");
+                        interaction.print_response(&outcome.response);
+                    }
+                    plan.mark_done(step.id);
                     interaction.render_plan(&plan);
-                    return Err(anyhow::anyhow!("Execution failed: step required tool call but agent only responded with text"));
+                    break;
                 }
-
-                if is_debug && is_explanatory_step(&step.description) {
-                    interaction.print_debug("\nResponse:");
-                    interaction.print_response(&resp);
+                Err(e) => {
+                    plan.mark_failed(step.id, e.to_string());
+                    interaction.render_plan(&plan);
+                    interaction.print_error(&e.to_string());
+                    return Err(e);
                 }
-                plan.mark_done(step.id);
-                interaction.render_plan(&plan);
-            }
-            Err(e) => {
-                plan.mark_failed(step.id, e.to_string());
-                interaction.render_plan(&plan);
-                interaction.print_error(&e.to_string());
-                return Err(e);
             }
         }
 
@@ -157,32 +186,30 @@ pub async fn execute_plan(
 /// Check if a step description indicates a tool call is required
 fn requires_tool_call(step: &str) -> bool {
     let step_lower = step.to_lowercase();
+    let step_lower = step_lower.trim();
 
     // Skip steps that are purely informational
-    if step_lower.starts_with("answer") {
+    if step_lower.starts_with("answer")
+        || step_lower.starts_with("summarize")
+        || step_lower.starts_with("summary")
+        || step_lower.starts_with("report")
+        || step_lower.starts_with("explain")
+        || step_lower.starts_with("describe")
+        || step_lower.starts_with("present")
+    {
         return false;
     }
 
-    // Most action verbs require tool calls
-    step_lower.contains("check") ||
-    step_lower.contains("review") ||
-    step_lower.contains("lint") ||
-    step_lower.contains("analyze") ||
-    step_lower.contains("search") ||
-    step_lower.contains("find") ||
-    step_lower.contains("list") ||
-    step_lower.contains("read") ||
-    step_lower.contains("write") ||
-    step_lower.contains("create") ||
-    step_lower.contains("modify") ||
-    step_lower.contains("replace") ||
-    step_lower.contains("delete") ||
-    step_lower.contains("run") ||
-    step_lower.contains("execute") ||
-    step_lower.contains("suggest") ||
-    step_lower.contains("show") ||
-    step_lower.contains("display") ||
-    step_lower.contains("get")
+    // Explicit tool invocation intent should always require tool calls.
+    if step_lower.contains("use ") && step_lower.contains("tool") {
+        return true;
+    }
+
+    let tool_verbs = [
+        "check", "review", "lint", "analyze", "search", "find", "list", "read", "write", "create",
+        "modify", "replace", "delete", "run", "execute", "suggest", "show", "display", "get",
+    ];
+    tool_verbs.iter().any(|verb| step_lower.starts_with(verb))
 }
 
 fn is_explanatory_step(step: &str) -> bool {
@@ -197,4 +224,22 @@ fn is_explanatory_step(step: &str) -> bool {
         || s.starts_with("delete")
         || s.starts_with("move")
         || s.starts_with("rename")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::requires_tool_call;
+
+    #[test]
+    fn summary_step_does_not_require_tool() {
+        assert!(!requires_tool_call("Summarize findings for the user"));
+        assert!(!requires_tool_call("Report the final results"));
+    }
+
+    #[test]
+    fn review_step_requires_tool() {
+        assert!(requires_tool_call(
+            "Review ferrous/src for implementation issues"
+        ));
+    }
 }

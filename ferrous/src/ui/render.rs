@@ -248,13 +248,23 @@ fn print_tools() {
             "Find files by name pattern recursively",
         ),
         (
+            "review_code(path)",
+            "Run file-level code review heuristics and recommendations",
+        ),
+        (
+            "review_module([path])",
+            "Run aggregated review across files in a module/directory",
+        ),
+        (
+            "suggest_refactorings(path)",
+            "Suggest refactoring opportunities for a file",
+        ),
+        (
             "execute_shell_command(command)",
-            "Execute allowed shell command (build tools, linters, or other project-specific commands)",
+            "Execute allowed shell command (cargo/rustfmt only)",
         ),
         ("git_status", "Show git status (short)"),
         ("git_diff([path])", "Show git diff (repo or specific path)"),
-        ("git_add(path)", "Stage file or directory for commit"),
-        ("git_commit(message)", "Create git commit with message"),
     ];
 
     for (name, desc) in tools {

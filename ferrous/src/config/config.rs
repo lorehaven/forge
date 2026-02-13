@@ -213,6 +213,7 @@ pub fn load() -> Config {
 
 /// Prints which settings were actually loaded from config.toml
 /// (only non-None fields are shown, with colors for better readability)
+#[allow(clippy::too_many_lines)]
 pub fn print_loaded(config: &Config, is_debug: bool) {
     if !is_debug {
         return;

@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use clap::{Parser, Subcommand};
 use colored::Colorize;
 use ferrous::config::{self, ModelBackend, ModelRole, SamplingConfig};
@@ -126,6 +126,72 @@ enum Commands {
     },
 }
 
+async fn generate_valid_plan(
+    agent: &mut Agent,
+    query: &str,
+    max_attempts: usize,
+    handler: &dyn InteractionHandler,
+    is_debug: bool,
+) -> Result<ferrous::core::ExecutionPlan> {
+    for attempt in 1..=max_attempts {
+        let plan = agent.generate_plan(query).await?;
+        handler.render_plan(&plan);
+
+        match agent.validate_plan(query, &plan).await {
+            Ok(true) => return Ok(plan),
+            Ok(false) => {
+                if attempt < max_attempts {
+                    handler.print_error(&format!(
+                        "Plan validation failed (attempt {attempt}/{max_attempts}). Regenerating..."
+                    ));
+                }
+            }
+            Err(e) => {
+                if is_debug {
+                    handler.print_debug(&format!(
+                        "Plan validation error (continuing with current plan): {e}"
+                    ));
+                }
+                return Ok(plan);
+            }
+        }
+    }
+
+    Err(anyhow!(
+        "Unable to generate a valid plan after {} attempts",
+        max_attempts
+    ))
+}
+
+fn apply_sampling_context_to_local_models(conf: &mut ferrous::config::Config) {
+    let Some(target_ctx) = conf.sampling.context else {
+        return;
+    };
+
+    for backend in conf.models.values_mut() {
+        if let ModelBackend::LocalLlama { context_size, .. } = backend
+            && *context_size < target_ctx
+        {
+            *context_size = target_ctx;
+        }
+    }
+}
+
+fn build_effective_sampling(base: &SamplingConfig) -> SamplingConfig {
+    SamplingConfig {
+        temperature: Some(base.temperature.unwrap_or(DEFAULT_PARAMS.temperature)),
+        top_p: Some(base.top_p.unwrap_or(DEFAULT_PARAMS.top_p)),
+        min_p: Some(base.min_p.unwrap_or(DEFAULT_PARAMS.min_p)),
+        top_k: Some(base.top_k.unwrap_or(DEFAULT_PARAMS.top_k)),
+        repeat_penalty: Some(base.repeat_penalty.unwrap_or(DEFAULT_PARAMS.repeat_penalty)),
+        context: Some(base.context.unwrap_or(DEFAULT_PARAMS.context)),
+        max_tokens: Some(base.max_tokens.unwrap_or(DEFAULT_PARAMS.max_tokens)),
+        mirostat: Some(base.mirostat.unwrap_or(DEFAULT_PARAMS.mirostat)),
+        mirostat_tau: Some(base.mirostat_tau.unwrap_or(DEFAULT_PARAMS.mirostat_tau)),
+        mirostat_eta: Some(base.mirostat_eta.unwrap_or(DEFAULT_PARAMS.mirostat_eta)),
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
@@ -223,6 +289,8 @@ async fn main() -> Result<()> {
         conf.debug = Some(true);
     }
 
+    apply_sampling_context_to_local_models(&mut conf);
+
     let mut agent = Agent::with_config(conf.clone())?;
 
     // ── One-shot query mode ───────────────────────────────────────────────
@@ -243,38 +311,25 @@ async fn main() -> Result<()> {
         let handler = QueryMode;
         handler.print_info("Processing query...");
 
-        let sampling = SamplingConfig {
-            temperature: Some(q_temp.unwrap_or(args.temperature)),
-            top_p: Some(q_top_p.unwrap_or(args.top_p)),
-            min_p: Some(q_min_p.unwrap_or(args.min_p)),
-            top_k: Some(q_top_k.unwrap_or(args.top_k)),
-            repeat_penalty: Some(q_repeat_penalty.unwrap_or(args.repeat_penalty)),
-            context: Some(q_context.unwrap_or(args.context)),
-            max_tokens: Some(q_max_tokens.unwrap_or(args.max_tokens)),
-            mirostat: Some(q_mirostat.unwrap_or(args.mirostat)),
-            mirostat_tau: Some(q_mirostat_tau.unwrap_or(args.mirostat_tau)),
-            mirostat_eta: Some(q_mirostat_eta.unwrap_or(args.mirostat_eta)),
-        };
+        let mut sampling = build_effective_sampling(&conf.sampling);
+        sampling.temperature =
+            Some(q_temp.unwrap_or(sampling.temperature.unwrap_or(args.temperature)));
+        sampling.top_p = Some(q_top_p.unwrap_or(sampling.top_p.unwrap_or(args.top_p)));
+        sampling.min_p = Some(q_min_p.unwrap_or(sampling.min_p.unwrap_or(args.min_p)));
+        sampling.top_k = Some(q_top_k.unwrap_or(sampling.top_k.unwrap_or(args.top_k)));
+        sampling.repeat_penalty = Some(
+            q_repeat_penalty.unwrap_or(sampling.repeat_penalty.unwrap_or(args.repeat_penalty)),
+        );
+        sampling.context = Some(q_context.unwrap_or(sampling.context.unwrap_or(args.context)));
+        sampling.max_tokens =
+            Some(q_max_tokens.unwrap_or(sampling.max_tokens.unwrap_or(args.max_tokens)));
+        sampling.mirostat = Some(q_mirostat.unwrap_or(sampling.mirostat.unwrap_or(args.mirostat)));
+        sampling.mirostat_tau =
+            Some(q_mirostat_tau.unwrap_or(sampling.mirostat_tau.unwrap_or(args.mirostat_tau)));
+        sampling.mirostat_eta =
+            Some(q_mirostat_eta.unwrap_or(sampling.mirostat_eta.unwrap_or(args.mirostat_eta)));
 
-        let mut plan = agent.generate_plan(&text).await?;
-        handler.render_plan(&plan);
-
-        // Validate plan
-        match agent.validate_plan(&text, &plan).await {
-            Ok(true) => {
-                // Plan is valid
-            }
-            Ok(false) => {
-                handler.print_error("Plan does not properly address the query. Regenerating...");
-                plan = agent.generate_plan(&text).await?;
-                handler.render_plan(&plan);
-            }
-            Err(e) => {
-                if args.debug {
-                    handler.print_debug(&format!("Plan validation error (continuing anyway): {e}"));
-                }
-            }
-        }
+        let plan = generate_valid_plan(&mut agent, &text, 3, &handler, args.debug).await?;
 
         execute_plan(&mut agent, plan, sampling, args.debug, &handler).await?;
 
@@ -398,53 +453,18 @@ async fn main() -> Result<()> {
                     }
                     _ => {
                         // ── PLAN PHASE ───────────────────────────────
-                        let mut plan = match agent.generate_plan(input).await {
-                            Ok(p) => p,
-                            Err(e) => {
-                                handler.print_error(&format!("Planning error: {e}"));
-                                continue;
-                            }
-                        };
-
-                        handler.render_plan(&plan);
-
-                        // ── PLAN VALIDATION ──────────────────────────
-                        match agent.validate_plan(input, &plan).await {
-                            Ok(true) => {
-                                // Plan is valid, continue to execution
-                            }
-                            Ok(false) => {
-                                handler.print_error("Plan does not properly address the query. Regenerating...");
-                                // Regenerate plan once
-                                plan = match agent.generate_plan(input).await {
-                                    Ok(p) => p,
-                                    Err(e) => {
-                                        handler.print_error(&format!("Planning error: {e}"));
-                                        continue;
-                                    }
-                                };
-                                handler.render_plan(&plan);
-                            }
-                            Err(e) => {
-                                if args.debug {
-                                    handler.print_debug(&format!("Plan validation error (continuing anyway): {e}"));
+                        let plan =
+                            match generate_valid_plan(&mut agent, input, 3, &handler, args.debug)
+                                .await
+                            {
+                                Ok(p) => p,
+                                Err(e) => {
+                                    handler.print_error(&format!("Planning error: {e}"));
+                                    continue;
                                 }
-                                // Continue with original plan if validation fails
-                            }
-                        }
+                            };
 
-                        let sampling = SamplingConfig {
-                            temperature: Some(args.temperature),
-                            top_p: Some(args.top_p),
-                            min_p: Some(args.min_p),
-                            top_k: Some(args.top_k),
-                            repeat_penalty: Some(args.repeat_penalty),
-                            context: Some(args.context),
-                            max_tokens: Some(args.max_tokens),
-                            mirostat: Some(args.mirostat),
-                            mirostat_tau: Some(args.mirostat_tau),
-                            mirostat_eta: Some(args.mirostat_eta),
-                        };
+                        let sampling = build_effective_sampling(&conf.sampling);
 
                         // ── EXECUTION PHASE ──────────────────────────
                         if let Err(e) =

@@ -254,34 +254,6 @@
   {
     "type": "function",
     "function": {
-      "name": "git_add",
-      "description": "Stage files for commit",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "path": { "type": "string" }
-        },
-        "required": ["path"]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
-      "name": "git_commit",
-      "description": "Create a git commit",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "message": { "type": "string" }
-        },
-        "required": ["message"]
-      }
-    }
-  },
-  {
-    "type": "function",
-    "function": {
       "name": "lint_file",
       "description": "Run a linter on a file to check for syntax errors and code quality issues. Automatically detects file type and runs appropriate linter (cargo check for Rust, eslint for JS/TS, etc.)",
       "parameters": {
@@ -331,6 +303,22 @@
           }
         },
         "required": ["path"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "review_module",
+      "description": "Review all source files in a module or directory and return an aggregated summary with hotspots.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Directory path to review (e.g. 'src/core' or 'ferrous/src'). Defaults to '.' if omitted."
+          }
+        }
       }
     }
   },

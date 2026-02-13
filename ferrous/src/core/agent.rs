@@ -3,7 +3,7 @@ use crate::config::{
 };
 use crate::core::sessions::{load_conversation_by_prefix, save_conversation};
 use crate::core::{ExecutionPlan, Indexer};
-use crate::llm::{ModelManager, StopCondition, get_stop_words_for_language, is_port_open};
+use crate::llm::{ModelManager, is_port_open};
 use crate::tools::execute_tool;
 use anyhow::{Context, Result, anyhow};
 use futures_util::StreamExt;
@@ -48,7 +48,7 @@ Core Rules:
   - Modify only the minimal necessary lines.
   - Never replace an entire file unless explicitly instructed.
   - Never emit placeholders such as <updated-content> or <modified-content>.
-  - ALWAYS verify the changes using appropriate verification tools or commands (e.g., build tools, linters, or 'execute_shell_command' for the project's specific language).
+  - ALWAYS verify the changes using appropriate verification tools or commands (e.g., build tools, linters, or 'execute_shell_command' for cargo/rustfmt commands).
 - If you need to output a code block that ITSELF contains code blocks (e.g., when showing a README.md or a Markdown file), you MUST use 4 backticks (````) for the outer block to avoid breaking the UI.
 - For project-related tasks, first use read_file or list_files_recursive to understand the current state.
 - For general knowledge questions unrelated to the project, do NOT use project exploration tools. Simply answer the question.
@@ -71,7 +71,7 @@ Core Rules:
 - Use search_text to quickly find snippets, functions, or error messages across files.
 - Use find_file to find the exact path of a file if you only know its name.
 
-You have access to these tools: analyze_project, read_file, read_multiple_files, write_file, replace_in_file, list_directory, get_directory_tree, create_directory, file_exists, list_files_recursive, search_text, find_file, search_code_semantic, lint_file, review_code, suggest_refactorings, execute_shell_command, git_status, git_diff.
+You have access to these tools: analyze_project, read_file, read_multiple_files, write_file, replace_in_file, list_directory, get_directory_tree, create_directory, file_exists, list_files_recursive, search_text, find_file, search_code_semantic, lint_file, review_code, review_module, suggest_refactorings, execute_shell_command, git_status, git_diff.
 Respond helpfully and concisely. Think step-by-step before calling tools.
 ";
 
@@ -83,6 +83,99 @@ pub struct Agent {
     pub prompt_manager: PromptManager,
     pub indexer: Option<Indexer>,
     pub config: Config,
+}
+
+#[derive(Debug, Clone)]
+pub struct StreamOutcome {
+    pub response: String,
+    pub tool_calls_executed: usize,
+}
+
+fn parse_indexed_step(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let mut chars = trimmed.char_indices();
+    let mut end_digits = None;
+    for (idx, ch) in chars.by_ref() {
+        if ch.is_ascii_digit() {
+            end_digits = Some(idx + ch.len_utf8());
+        } else {
+            break;
+        }
+    }
+
+    let end_digits = end_digits?;
+
+    let rest = &trimmed[end_digits..];
+    let mut rest_chars = rest.chars();
+    let marker = rest_chars.next()?;
+    if !matches!(marker, '.' | ')' | ':') {
+        return None;
+    }
+
+    let step = rest_chars.as_str().trim();
+    if step.is_empty() {
+        None
+    } else {
+        Some(step.to_string())
+    }
+}
+
+pub fn parse_plan_steps(content: &str, query: &str) -> Vec<String> {
+    let mut steps = Vec::new();
+
+    for raw_line in content.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        let lower = line.to_lowercase();
+        if lower == "plan:" || lower.starts_with("plan ") || line == "```" {
+            continue;
+        }
+
+        if let Some(step) = parse_indexed_step(line) {
+            steps.push(step);
+            continue;
+        }
+
+        let bullet_step = line.strip_prefix("- ").or_else(|| line.strip_prefix("* "));
+        if let Some(step) = bullet_step {
+            let step = step.trim();
+            if !step.is_empty() {
+                steps.push(step.to_string());
+            }
+        }
+    }
+
+    if steps.is_empty() {
+        let lower = content.to_lowercase();
+        if lower.contains("answer the user's question directly") {
+            steps.push(format!("Answer the user's question directly: {query}"));
+            return steps;
+        }
+
+        let fallback = content
+            .lines()
+            .map(str::trim)
+            .find(|line| {
+                !line.is_empty()
+                    && *line != "```"
+                    && !line.eq_ignore_ascii_case("plan:")
+                    && !line.to_lowercase().starts_with("plan ")
+            })
+            .unwrap_or("");
+
+        if !fallback.is_empty() && fallback.len() <= 240 {
+            steps.push(fallback.to_string());
+        }
+    }
+
+    steps
 }
 
 impl Agent {
@@ -220,6 +313,22 @@ impl Agent {
         }
     }
 
+    async fn get_runtime_context_limit(&mut self, role: ModelRole) -> u64 {
+        let Ok(base_url) = self.get_model_url(role).await else {
+            return 8192;
+        };
+        let url_props = format!("{base_url}/props");
+
+        let Ok(resp) = self.client.get(url_props).send().await else {
+            return 8192;
+        };
+        let Ok(props) = resp.json::<Value>().await else {
+            return 8192;
+        };
+
+        props["n_ctx"].as_u64().unwrap_or(8192)
+    }
+
     pub async fn generate_plan(&mut self, query: &str) -> Result<ExecutionPlan> {
         const PLAN_MAX_TOKENS: u32 = 1024;
         const SAFETY_BUFFER: u64 = 1024;
@@ -278,35 +387,7 @@ impl Agent {
             .as_str()
             .unwrap_or("");
 
-        let mut steps = Vec::new();
-
-        for line in content.lines() {
-            let line = line.trim();
-            if let Some(idx) = line.find('.')
-                && line[..idx].chars().all(|c| c.is_ascii_digit())
-            {
-                let step = line[idx + 1..].trim();
-                if !step.is_empty() {
-                    steps.push(step.to_string());
-                }
-            }
-        }
-
-        if steps.is_empty() {
-            if content
-                .to_lowercase()
-                .contains("answer the user's question directly")
-            {
-                steps.push(format!("Answer the user's question directly: {query}"));
-            } else if !content.trim().is_empty() {
-                // If it's not the specific instruction but also not empty and not numbered,
-                // just take the whole thing as a single step if it looks like a step
-                let fallback = content.trim().lines().next().unwrap_or("").trim();
-                if !fallback.is_empty() && fallback.len() < 100 {
-                    steps.push(fallback.to_string());
-                }
-            }
-        }
+        let steps = parse_plan_steps(content, query);
 
         if steps.is_empty() {
             anyhow::bail!("Planner produced no steps");
@@ -319,7 +400,8 @@ impl Agent {
     pub async fn validate_plan(&mut self, query: &str, plan: &ExecutionPlan) -> Result<bool> {
         const VALIDATION_MAX_TOKENS: u32 = 512;
 
-        let plan_summary = plan.steps
+        let plan_summary = plan
+            .steps
             .iter()
             .enumerate()
             .map(|(i, step)| format!("{}. {}", i + 1, step.description))
@@ -340,7 +422,7 @@ impl Agent {
 
         let temp_messages = vec![
             json!({"role": "system", "content": "You are a plan validator. Answer YES or NO followed by a brief reason."}),
-            json!({"role": "user", "content": validation_prompt})
+            json!({"role": "user", "content": validation_prompt}),
         ];
 
         let base_url = self.get_model_url(ModelRole::Chat).await?;
@@ -369,7 +451,7 @@ impl Agent {
         let is_valid = content.to_uppercase().starts_with("YES");
 
         if !is_valid {
-            eprintln!("⚠️  Plan validation failed: {}", content);
+            eprintln!("⚠️  Plan validation failed: {content}");
         }
 
         Ok(is_valid)
@@ -381,7 +463,7 @@ impl Agent {
         sampling: SamplingConfig,
         is_debug: bool,
         interaction: &dyn crate::ui::interface::InteractionHandler,
-    ) -> Result<String> {
+    ) -> Result<StreamOutcome> {
         self.ensure_alive().await?;
 
         // Context-Aware Retrieval
@@ -407,6 +489,8 @@ impl Agent {
         self.messages
             .push(json!({"role": "user", "content": user_input}));
 
+        let mut total_tool_calls_executed = 0usize;
+
         loop {
             let max_tokens = self
                 .manage_context(&sampling, is_debug, interaction)
@@ -429,11 +513,16 @@ impl Agent {
                 self.messages
                     .push(json!({"role": "assistant", "content": full_content}));
                 // interaction.print_stream_end() already handled the newline for streaming text
-                return Ok(full_content);
+                return Ok(StreamOutcome {
+                    response: full_content,
+                    tool_calls_executed: total_tool_calls_executed,
+                });
             }
 
-            self.handle_tool_calls(full_content, tool_calls.clone(), is_debug, interaction)
+            let executed = self
+                .handle_tool_calls(full_content, tool_calls.clone(), is_debug, interaction)
                 .await?;
+            total_tool_calls_executed += executed;
         }
     }
 
@@ -443,15 +532,25 @@ impl Agent {
         is_debug: bool,
         interaction: &dyn crate::ui::interface::InteractionHandler,
     ) -> Result<u32> {
-        const SAFETY_BUFFER: u64 = 1024;
-        let context = sampling.context.unwrap_or(8192);
+        const SAFETY_BUFFER: u64 = 1536;
+        let configured_context = sampling.context.unwrap_or(8192);
+        let runtime_context = self.get_runtime_context_limit(ModelRole::Chat).await;
+        let context = configured_context.min(u32::try_from(runtime_context).unwrap_or(u32::MAX));
         let mut max_tokens = sampling.max_tokens.unwrap_or(4096);
 
         let context_u64 = u64::from(context);
         let messages = self.messages.clone();
-        let mut prompt_tokens = self
+        let message_tokens = self
             .count_message_tokens(&messages, ModelRole::Chat)
             .await? as u64;
+        // The request always sends full tools schema; include it in budgeting to avoid
+        // server-side "request exceeded context size" errors.
+        let tools_payload = serde_json::to_string(&*TOOLS_JSON).unwrap_or_default();
+        let tools_tokens = self
+            .count_tokens(&tools_payload, ModelRole::Chat)
+            .await
+            .unwrap_or(tools_payload.len() / 4) as u64;
+        let mut prompt_tokens = message_tokens + tools_tokens;
 
         let reserved_for_generation = u64::from(max_tokens).max(context_u64 / 4);
         let max_allowed_prompt = context_u64
@@ -461,9 +560,10 @@ impl Agent {
         while prompt_tokens > max_allowed_prompt && self.messages.len() > 2 {
             self.messages.remove(1);
             let messages = self.messages.clone();
-            prompt_tokens = self
+            let reduced_message_tokens = self
                 .count_message_tokens(&messages, ModelRole::Chat)
                 .await? as u64;
+            prompt_tokens = reduced_message_tokens + tools_tokens;
         }
 
         let total_estimated = prompt_tokens + u64::from(max_tokens) + SAFETY_BUFFER;
@@ -486,8 +586,8 @@ impl Agent {
         if is_debug {
             let used_percent = (total_estimated * 100 / context_u64).min(100);
             interaction.print_debug(&format!(
-                "Context usage: ~{total_estimated}/{context_u64} tokens ({used_percent}%). Messages: {}",
-                self.messages.len()
+                "Context usage: ~{total_estimated}/{context_u64} tokens ({used_percent}%). Messages: {}. Runtime n_ctx: {runtime_context}.",
+                self.messages.len(),
             ));
         }
 
@@ -519,7 +619,7 @@ impl Agent {
         body: &Value,
         is_debug: bool,
         interaction: &dyn crate::ui::interface::InteractionHandler,
-    ) -> Result<String> {
+    ) -> Result<StreamOutcome> {
         let status = resp.status();
         let error_body = resp
             .text()
@@ -560,12 +660,6 @@ impl Agent {
         let mut current_fence_size = 0;
         let mut potential_lang = String::new();
         let mut waiting_for_lang = false;
-
-        // Initialize stop condition
-        // For now, we use a generic set of stop words.
-        // In the future, we could detect language from context.
-        let stop_words = get_stop_words_for_language("unknown");
-        let mut stop_condition = StopCondition::new(stop_words);
 
         while let Some(item) = stream.next().await {
             let bytes = item.context("Stream failure")?;
@@ -612,15 +706,6 @@ impl Agent {
                     if !has_started_printing {
                         interaction.print_stream_start();
                         has_started_printing = true;
-                    }
-
-                    let (should_stop, _match_len) = stop_condition.should_stop(content);
-                    if should_stop {
-                        // Abort stream processing
-                        if has_started_printing {
-                            interaction.print_stream_end();
-                        }
-                        return Ok((full_content, tool_calls));
                     }
 
                     Self::process_content_delta(
@@ -764,13 +849,14 @@ impl Agent {
         tool_calls: Vec<Value>,
         is_debug: bool,
         interaction: &dyn crate::ui::interface::InteractionHandler,
-    ) -> Result<()> {
+    ) -> Result<usize> {
         self.messages.push(json!({
             "role": "assistant",
             "content": if full_content.is_empty() { json!(null) } else { json!(full_content) },
             "tool_calls": tool_calls
         }));
 
+        let mut executed = 0usize;
         for tool_call in tool_calls {
             let id = tool_call["id"].as_str().unwrap_or("");
             let name = tool_call["function"]["name"].as_str().unwrap_or("");
@@ -799,11 +885,7 @@ impl Agent {
             if is_debug {
                 let preview = if result_str.chars().count() > 200 {
                     let truncated: String = result_str.chars().take(200).collect();
-                    format!(
-                        "{}... ({} bytes total)",
-                        truncated,
-                        result_str.len()
-                    )
+                    format!("{}... ({} bytes total)", truncated, result_str.len())
                 } else {
                     result_str.clone()
                 };
@@ -815,8 +897,9 @@ impl Agent {
                 "tool_call_id": id,
                 "content": result_str
             }));
+            executed += 1;
         }
-        Ok(())
+        Ok(executed)
     }
 
     async fn ensure_alive(&mut self) -> Result<()> {

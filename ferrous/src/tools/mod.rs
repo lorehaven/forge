@@ -32,12 +32,11 @@ pub async fn execute_tool(name: &str, args: Value, indexer: Option<&Indexer>) ->
         "search_code_semantic" => file::search_code_semantic(indexer, &args),
         "lint_file" => lint_file_tool(&cwd, &args),
         "review_code" => review::review_code(&cwd, &args),
+        "review_module" => review::review_module(&cwd, &args),
         "suggest_refactorings" => review::suggest_refactorings(&cwd, &args),
         "execute_shell_command" => shell::execute_shell_command(&cwd, &args).await,
         "git_status" => git::git_status(&cwd),
         "git_diff" => git::git_diff(&cwd, &args),
-        "git_add" => git::git_add(&cwd, &args),
-        "git_commit" => git::git_commit(&cwd, &args),
         _ => Err(anyhow!("Unknown tool: {name}")),
     }
 }
