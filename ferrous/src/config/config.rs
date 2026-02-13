@@ -51,13 +51,37 @@ pub enum ModelRole {
     Embedding,
 }
 
+#[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum UiMode {
+    #[default]
+    Repl,
+    Web,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum UiTheme {
+    #[default]
+    Dark,
+    Light,
+}
+
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
 #[serde(default)]
 pub struct Config {
     pub base_model_path: Option<String>,
     pub models: HashMap<ModelRole, ModelBackend>,
     pub sampling: SamplingConfig,
+    pub shell: Option<ShellConfig>,
     pub debug: Option<bool>,
+    pub ui: Option<UiMode>,
+    pub theme: Option<UiTheme>,
+}
+
+#[derive(Deserialize, Serialize, Default, Clone, Debug)]
+pub struct ShellConfig {
+    pub allowed_prefixes: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Serialize, Default, Clone, Debug)]
@@ -118,6 +142,20 @@ impl Config {
 
         let fields = vec![
             (
+                "ui",
+                self.ui.map(|v| match v {
+                    UiMode::Repl => "repl".to_string(),
+                    UiMode::Web => "web".to_string(),
+                }),
+            ),
+            (
+                "theme",
+                self.theme.map(|v| match v {
+                    UiTheme::Dark => "dark".to_string(),
+                    UiTheme::Light => "light".to_string(),
+                }),
+            ),
+            (
                 "temperature",
                 self.sampling.temperature.map(|v| format!("{v:.2}")),
             ),
@@ -132,6 +170,14 @@ impl Config {
             (
                 "max_tokens",
                 self.sampling.max_tokens.map(|v| v.to_string()),
+            ),
+            (
+                "shell_allowlist",
+                self.shell.as_ref().and_then(|s| {
+                    s.allowed_prefixes
+                        .as_ref()
+                        .map(|prefixes| format!("{} entries", prefixes.len()))
+                }),
             ),
             ("mirostat", self.sampling.mirostat.map(|v| v.to_string())),
             (
@@ -211,6 +257,17 @@ pub fn load() -> Config {
     }
 }
 
+pub fn save(config: &Config) -> Result<(), anyhow::Error> {
+    let config_path = config_file_path()?;
+    if let Some(parent) = config_path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create config directory {}", parent.display()))?;
+    }
+    let content = toml::to_string_pretty(config).context("Failed to serialize config.toml")?;
+    fs::write(&config_path, content)
+        .with_context(|| format!("Failed to write {}", config_path.display()))
+}
+
 /// Prints which settings were actually loaded from config.toml
 /// (only non-None fields are shown, with colors for better readability)
 #[allow(clippy::too_many_lines)]
@@ -221,6 +278,9 @@ pub fn print_loaded(config: &Config, is_debug: bool) {
 
     // Early exit if nothing is set
     if config.models.is_empty()
+        && config.ui.is_none()
+        && config.theme.is_none()
+        && config.shell.is_none()
         && config.sampling.temperature.is_none()
         && config.sampling.top_p.is_none()
         && config.sampling.min_p.is_none()
@@ -260,6 +320,22 @@ pub fn print_loaded(config: &Config, is_debug: bool) {
 
     let fields = vec![
         ConfigField::new(
+            "ui",
+            config.ui.map(|v| match v {
+                UiMode::Repl => "repl".to_string(),
+                UiMode::Web => "web".to_string(),
+            }),
+            colored::Color::BrightGreen,
+        ),
+        ConfigField::new(
+            "theme",
+            config.theme.map(|v| match v {
+                UiTheme::Dark => "dark".to_string(),
+                UiTheme::Light => "light".to_string(),
+            }),
+            colored::Color::BrightGreen,
+        ),
+        ConfigField::new(
             "temperature",
             config.sampling.temperature.map(|v| format!("{v:.3}")),
             colored::Color::BrightYellow,
@@ -292,6 +368,15 @@ pub fn print_loaded(config: &Config, is_debug: bool) {
         ConfigField::new(
             "max_tokens",
             config.sampling.max_tokens.map(|v| v.to_string()),
+            colored::Color::BrightGreen,
+        ),
+        ConfigField::new(
+            "shell_allowlist",
+            config.shell.as_ref().and_then(|s| {
+                s.allowed_prefixes
+                    .as_ref()
+                    .map(|prefixes| format!("{} entries", prefixes.len()))
+            }),
             colored::Color::BrightGreen,
         ),
         ConfigField::new(

@@ -216,7 +216,7 @@
     "type": "function",
     "function": {
       "name": "execute_shell_command",
-      "description": "Execute an allowed shell command (cargo only)",
+      "description": "Execute an allowed shell command (project-safe commands like anvil/cargo/rustfmt only)",
       "parameters": {
         "type": "object",
         "properties": {

@@ -1,12 +1,18 @@
 use anyhow::{Result, anyhow};
 use clap::{Parser, Subcommand};
 use colored::Colorize;
-use ferrous::config::{self, ModelBackend, ModelRole, SamplingConfig};
+use ferrous::config::{self, ModelBackend, ModelRole, SamplingConfig, UiMode, UiTheme};
 use ferrous::core::{Agent, execute_plan, sessions};
 use ferrous::ui::interface::InteractionHandler;
 use ferrous::ui::query::QueryMode;
 use ferrous::ui::repl::ReplMode;
+use ferrous::ui::web::{EMBEDDED_PAGE, WebMode};
 use rustyline::DefaultEditor;
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::Mutex as AsyncMutex;
 
 #[derive(Clone, Copy, PartialEq)]
 struct Params {
@@ -192,10 +198,400 @@ fn build_effective_sampling(base: &SamplingConfig) -> SamplingConfig {
     }
 }
 
+#[derive(Debug, Deserialize)]
+struct WebAskRequest {
+    text: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct WebThemeRequest {
+    theme: String,
+}
+
+#[derive(Debug, Serialize)]
+struct WebErrorResponse {
+    error: String,
+}
+
+#[derive(Debug)]
+struct HttpRequest {
+    method: String,
+    path: String,
+    body: Vec<u8>,
+}
+
+fn find_header_end(data: &[u8]) -> Option<usize> {
+    data.windows(4).position(|window| window == b"\r\n\r\n")
+}
+
+fn parse_content_length(header: &str) -> usize {
+    header
+        .lines()
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            if name.trim().eq_ignore_ascii_case("content-length") {
+                return value.trim().parse::<usize>().ok();
+            }
+            None
+        })
+        .unwrap_or(0)
+}
+
+async fn read_http_request(stream: &mut TcpStream) -> Result<Option<HttpRequest>> {
+    let mut data = Vec::with_capacity(4096);
+    let mut chunk = [0_u8; 2048];
+    let header_end = loop {
+        let read = stream.read(&mut chunk).await?;
+        if read == 0 {
+            if data.is_empty() {
+                return Ok(None);
+            }
+            return Err(anyhow!(
+                "Connection closed before HTTP headers were complete"
+            ));
+        }
+        data.extend_from_slice(&chunk[..read]);
+
+        if data.len() > 1024 * 1024 {
+            return Err(anyhow!("HTTP request too large"));
+        }
+        if let Some(pos) = find_header_end(&data) {
+            break pos;
+        }
+    };
+
+    let header_bytes = &data[..header_end];
+    let header = std::str::from_utf8(header_bytes).map_err(|_| anyhow!("Invalid HTTP header"))?;
+    let mut lines = header.lines();
+    let first_line = lines
+        .next()
+        .ok_or_else(|| anyhow!("Missing HTTP request line"))?;
+    let mut parts = first_line.split_whitespace();
+    let method = parts
+        .next()
+        .ok_or_else(|| anyhow!("Missing method"))?
+        .to_string();
+    let path = parts
+        .next()
+        .ok_or_else(|| anyhow!("Missing path"))?
+        .to_string();
+
+    let content_length = parse_content_length(header);
+    let body_start = header_end + 4;
+    let mut body = data[body_start..].to_vec();
+    while body.len() < content_length {
+        let read = stream.read(&mut chunk).await?;
+        if read == 0 {
+            break;
+        }
+        body.extend_from_slice(&chunk[..read]);
+    }
+    body.truncate(content_length);
+
+    Ok(Some(HttpRequest { method, path, body }))
+}
+
+fn status_text(status: u16) -> &'static str {
+    match status {
+        200 => "OK",
+        400 => "Bad Request",
+        404 => "Not Found",
+        405 => "Method Not Allowed",
+        409 => "Conflict",
+        500 => "Internal Server Error",
+        _ => "OK",
+    }
+}
+
+async fn write_http_response(
+    stream: &mut TcpStream,
+    status: u16,
+    content_type: &str,
+    body: &[u8],
+) -> Result<()> {
+    let status_line = format!("HTTP/1.1 {} {}\r\n", status, status_text(status));
+    let headers = format!(
+        "Content-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    stream.write_all(status_line.as_bytes()).await?;
+    stream.write_all(headers.as_bytes()).await?;
+    stream.write_all(body).await?;
+    stream.flush().await?;
+    Ok(())
+}
+
+fn json_error(message: &str) -> Vec<u8> {
+    serde_json::to_vec(&WebErrorResponse {
+        error: message.to_string(),
+    })
+    .unwrap_or_else(|_| br#"{"error":"internal"}"#.to_vec())
+}
+
+fn persist_theme(theme: UiTheme) -> Result<()> {
+    let mut cfg = config::load();
+    cfg.theme = Some(theme);
+    config::save(&cfg)?;
+    Ok(())
+}
+
+async fn run_web_mode(agent: Agent, conf: ferrous::config::Config, is_debug: bool) -> Result<()> {
+    let cwd = std::env::current_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| ".".to_string());
+    let handler = WebMode::new(cwd, conf.theme.unwrap_or(UiTheme::Dark));
+    let web_agent = Arc::new(AsyncMutex::new(agent));
+    let listener = TcpListener::bind("127.0.0.1:8787").await?;
+
+    println!(
+        "{} http://127.0.0.1:8787",
+        "Web UI ready at".bright_cyan().bold()
+    );
+
+    loop {
+        let (mut stream, _) = listener.accept().await?;
+        let handler = handler.clone();
+        let conf = conf.clone();
+        let web_agent = Arc::clone(&web_agent);
+
+        tokio::spawn(async move {
+            let req = match read_http_request(&mut stream).await {
+                Ok(Some(r)) => r,
+                Ok(None) => return,
+                Err(e) => {
+                    let _ = write_http_response(
+                        &mut stream,
+                        400,
+                        "application/json",
+                        &json_error(&e.to_string()),
+                    )
+                    .await;
+                    return;
+                }
+            };
+
+            if req.method == "GET" && req.path == "/" {
+                let _ = write_http_response(
+                    &mut stream,
+                    200,
+                    "text/html; charset=utf-8",
+                    EMBEDDED_PAGE.as_bytes(),
+                )
+                .await;
+                return;
+            }
+
+            if req.method == "GET" && req.path == "/api/state" {
+                let snapshot = handler.snapshot();
+                let body = serde_json::to_vec(&snapshot)
+                    .unwrap_or_else(|_| br#"{"error":"failed to serialize state"}"#.to_vec());
+                let _ = write_http_response(&mut stream, 200, "application/json", &body).await;
+                return;
+            }
+
+            if req.method == "POST" && req.path == "/api/ask" {
+                let payload = serde_json::from_slice::<WebAskRequest>(&req.body);
+                let ask = match payload {
+                    Ok(v) => v,
+                    Err(_) => {
+                        let _ = write_http_response(
+                            &mut stream,
+                            400,
+                            "application/json",
+                            &json_error("Invalid JSON body"),
+                        )
+                        .await;
+                        return;
+                    }
+                };
+
+                let prompt = ask.text.trim();
+                if prompt.is_empty() {
+                    let _ = write_http_response(
+                        &mut stream,
+                        400,
+                        "application/json",
+                        &json_error("Prompt is empty"),
+                    )
+                    .await;
+                    return;
+                }
+
+                if !handler.try_start_request(prompt) {
+                    let _ = write_http_response(
+                        &mut stream,
+                        409,
+                        "application/json",
+                        &json_error("A request is already running"),
+                    )
+                    .await;
+                    return;
+                }
+
+                let prompt_owned = prompt.to_string();
+                let handler_bg = handler.clone();
+                let conf_bg = conf.clone();
+                let web_agent_bg = Arc::clone(&web_agent);
+                tokio::spawn(async move {
+                    let mut agent_guard = web_agent_bg.lock().await;
+                    let sampling = build_effective_sampling(&conf_bg.sampling);
+                    let result = async {
+                        let plan = generate_valid_plan(
+                            &mut agent_guard,
+                            &prompt_owned,
+                            3,
+                            &handler_bg,
+                            is_debug,
+                        )
+                        .await?;
+                        execute_plan(
+                            &mut agent_guard,
+                            plan,
+                            &prompt_owned,
+                            sampling,
+                            is_debug,
+                            &handler_bg,
+                        )
+                        .await
+                    }
+                    .await;
+
+                    let autosave_name = {
+                        let trimmed = prompt_owned.trim();
+                        let short: String = trimmed.chars().take(64).collect();
+                        if short.is_empty() {
+                            "web-session".to_string()
+                        } else {
+                            format!("web {short}")
+                        }
+                    };
+                    match agent_guard.save_conversation_named(&autosave_name) {
+                        Ok(filename) => handler_bg.set_latest_call_session_file(Some(filename)),
+                        Err(e) => handler_bg.print_error(&format!("Session autosave failed: {e}")),
+                    }
+
+                    match result {
+                        Ok(()) => handler_bg.finish_request(None),
+                        Err(e) => handler_bg.finish_request(Some(&e.to_string())),
+                    }
+                });
+
+                let _ = write_http_response(
+                    &mut stream,
+                    200,
+                    "application/json",
+                    br#"{"status":"accepted"}"#,
+                )
+                .await;
+                return;
+            }
+
+            if req.method == "POST" && req.path == "/api/theme" {
+                let payload = serde_json::from_slice::<WebThemeRequest>(&req.body);
+                let requested_theme = match payload {
+                    Ok(v) => v.theme,
+                    Err(_) => {
+                        let _ = write_http_response(
+                            &mut stream,
+                            400,
+                            "application/json",
+                            &json_error("Invalid JSON body"),
+                        )
+                        .await;
+                        return;
+                    }
+                };
+
+                let theme = match requested_theme.as_str() {
+                    "dark" => UiTheme::Dark,
+                    "light" => UiTheme::Light,
+                    _ => {
+                        let _ = write_http_response(
+                            &mut stream,
+                            400,
+                            "application/json",
+                            &json_error("Theme must be 'dark' or 'light'"),
+                        )
+                        .await;
+                        return;
+                    }
+                };
+
+                handler.set_theme(theme);
+                if let Err(e) = persist_theme(theme) {
+                    let _ = write_http_response(
+                        &mut stream,
+                        500,
+                        "application/json",
+                        &json_error(&format!("Failed to persist theme: {e}")),
+                    )
+                    .await;
+                    return;
+                }
+
+                let _ = write_http_response(
+                    &mut stream,
+                    200,
+                    "application/json",
+                    br#"{"status":"ok"}"#,
+                )
+                .await;
+                return;
+            }
+
+            if req.method == "POST" && req.path == "/api/history/clear" {
+                if !handler.clear_history() {
+                    let _ = write_http_response(
+                        &mut stream,
+                        409,
+                        "application/json",
+                        &json_error("Cannot clear history while a request is running"),
+                    )
+                    .await;
+                    return;
+                }
+
+                let _ = write_http_response(
+                    &mut stream,
+                    200,
+                    "application/json",
+                    br#"{"status":"ok"}"#,
+                )
+                .await;
+                return;
+            }
+
+            if req.path.starts_with("/api/") {
+                let _ = write_http_response(
+                    &mut stream,
+                    404,
+                    "application/json",
+                    &json_error("Endpoint not found"),
+                )
+                .await;
+                return;
+            }
+
+            let _ =
+                write_http_response(&mut stream, 404, "text/plain; charset=utf-8", b"Not Found")
+                    .await;
+        });
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
     let mut conf = config::load();
+    if conf.theme.is_none() {
+        conf.theme = Some(UiTheme::Dark);
+        if let Err(e) = config::save(&conf) {
+            eprintln!(
+                "{} Failed to persist default theme in .ferrous/config.toml: {e}",
+                "Warning:".yellow().bold()
+            );
+        }
+    }
     config::print_loaded(&conf, args.debug);
 
     // Merge CLI args into config if they are NOT default
@@ -331,9 +727,13 @@ async fn main() -> Result<()> {
 
         let plan = generate_valid_plan(&mut agent, &text, 3, &handler, args.debug).await?;
 
-        execute_plan(&mut agent, plan, sampling, args.debug, &handler).await?;
+        execute_plan(&mut agent, plan, &text, sampling, args.debug, &handler).await?;
 
         return Ok(());
+    }
+
+    if conf.ui == Some(UiMode::Web) {
+        return run_web_mode(agent, conf.clone(), args.debug).await;
     }
 
     // ── REPL mode ────────────────────────────────────────────────────────
@@ -468,7 +868,8 @@ async fn main() -> Result<()> {
 
                         // ── EXECUTION PHASE ──────────────────────────
                         if let Err(e) =
-                            execute_plan(&mut agent, plan, sampling, args.debug, &handler).await
+                            execute_plan(&mut agent, plan, input, sampling, args.debug, &handler)
+                                .await
                         {
                             handler.print_error(&format!("Execution error: {e}"));
                         }

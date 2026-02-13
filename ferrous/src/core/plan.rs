@@ -86,6 +86,7 @@ impl fmt::Display for ExecutionPlan {
 pub async fn execute_plan(
     agent: &mut Agent,
     mut plan: ExecutionPlan,
+    original_query: &str,
     sampling: SamplingConfig,
     is_debug: bool,
     interaction: &dyn crate::ui::interface::InteractionHandler,
@@ -105,13 +106,17 @@ pub async fn execute_plan(
             // Prepend execution instruction to ensure model uses tools
             let execution_prompt = if attempt == 0 {
                 format!(
-                    "EXECUTE THIS STEP NOW by calling the required tools. You MUST make tool calls to complete this step. DO NOT just say what you will do or mark it as done without action. Step: {}",
-                    step.description
+                    "EXECUTE THIS STEP NOW by calling the required tools. You MUST make tool calls to complete this step. DO NOT just say what you will do or mark it as done without action.\n\
+Original request: {}\n\
+Current step: {}",
+                    original_query, step.description
                 )
             } else {
                 format!(
-                    "RETRY STEP {}. Previous response did not include a tool call. You MUST call at least one tool now. Do not explain, do not summarize. Step: {}",
-                    step.id, step.description
+                    "RETRY STEP {}. Previous response did not include a tool call. You MUST call at least one tool now. Do not explain, do not summarize.\n\
+Original request: {}\n\
+Current step: {}",
+                    step.id, original_query, step.description
                 )
             };
 

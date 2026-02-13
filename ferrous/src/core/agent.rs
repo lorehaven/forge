@@ -21,6 +21,11 @@ Generate a simple plan with numbered steps. Each step describes a high-level act
 
 CRITICAL: Do NOT write function calls, tool names, backticks, parentheses, or code. Write in plain English only.
 IMPORTANT: Avoid vague phrases like 'as needed' or 'if necessary'. Be specific about what should be done.
+IMPORTANT: Match the user's request exactly. Do not add unrelated work.
+IMPORTANT: Never use placeholders such as <file-path>, <path>, <file>, <module>, or angle-bracket tokens.
+- If the query contains a command in backticks, include that exact command text in the relevant plan step.
+- If the user asks to describe, explain, or summarize a file/module, keep steps focused on reading and explaining content.
+- Do NOT add issue-finding, review, linting, refactoring, or fixing unless the user explicitly asks for those.
 
 Output format:
 PLAN:
@@ -63,6 +68,7 @@ Core Rules:
   - If validation fails with 'Search string not found', it means your 'search' string did not match the file content exactly. You MUST read the file again to get the exact content.
 - For full-file rewrites or new files → use write_file.
 - After any change, consider using lint_file(path) to verify code integrity, then use git_diff(path) to show what was modified.
+- For command-oriented requests (for example, running `anvil lint`), use execute_shell_command with the exact requested command text.
 - Never use absolute paths. All paths are relative to the current working directory.
 - NEVER run rm, mv, cp, git commit/push/pull/merge/rebase, curl, wget, sudo, or any destructive/network commands — they will be rejected.
 - Stay inside the current project directory — no path traversal.
@@ -89,6 +95,60 @@ pub struct Agent {
 pub struct StreamOutcome {
     pub response: String,
     pub tool_calls_executed: usize,
+}
+
+fn truncate_for_context(content: &str, max_chars: usize) -> String {
+    let total = content.chars().count();
+    if total <= max_chars {
+        return content.to_string();
+    }
+
+    let head = max_chars.saturating_mul(3) / 4;
+    let tail = max_chars.saturating_sub(head);
+    let start: String = content.chars().take(head).collect();
+    let end: String = content
+        .chars()
+        .rev()
+        .take(tail)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+
+    format!(
+        "{start}\n\n...[truncated for context: {} chars omitted]...\n\n{end}",
+        total.saturating_sub(max_chars)
+    )
+}
+
+fn is_execution_control_prompt(content: &str) -> bool {
+    let c = content.trim_start();
+    c.starts_with("EXECUTE THIS STEP NOW") || c.starts_with("RETRY STEP")
+}
+
+fn pruning_candidate_index(messages: &[Value]) -> Option<usize> {
+    if messages.len() <= 2 {
+        return None;
+    }
+
+    // Keep the first non-control user message pinned to preserve original request context.
+    let pinned_user_index = messages.iter().enumerate().find_map(|(i, m)| {
+        let role = m.get("role").and_then(Value::as_str).unwrap_or("");
+        let content = m.get("content").and_then(Value::as_str).unwrap_or("");
+        if role == "user" && !is_execution_control_prompt(content) {
+            Some(i)
+        } else {
+            None
+        }
+    });
+
+    for i in 1..messages.len() {
+        if Some(i) == pinned_user_index {
+            continue;
+        }
+        return Some(i);
+    }
+    None
 }
 
 fn parse_indexed_step(line: &str) -> Option<String> {
@@ -176,6 +236,179 @@ pub fn parse_plan_steps(content: &str, query: &str) -> Vec<String> {
     }
 
     steps
+}
+
+fn is_describe_or_explain_only_query(query: &str) -> bool {
+    let q = query.to_lowercase();
+    let describe_signals = [
+        "describe",
+        "explain",
+        "summarize",
+        "summary",
+        "what does",
+        "what is in",
+        "content of",
+        "walk me through",
+    ];
+
+    let change_or_review_signals = [
+        "fix", "issue", "bug", "review", "lint", "refactor", "improve", "optimize", "rewrite",
+        "edit", "change", "update", "add", "remove", "rename",
+    ];
+
+    let has_describe_signal = describe_signals.iter().any(|s| q.contains(s));
+    let has_change_or_review_signal = change_or_review_signals.iter().any(|s| q.contains(s));
+    has_describe_signal && !has_change_or_review_signal
+}
+
+fn is_review_or_fix_heavy_step(step: &str) -> bool {
+    let s = step.to_lowercase();
+    let review_or_fix_signals = [
+        "identify issues",
+        "identify any issues",
+        "find issues",
+        "issues",
+        "review",
+        "lint",
+        "refactor",
+        "fix",
+        "correct",
+        "improve",
+        "optimize",
+    ];
+    review_or_fix_signals
+        .iter()
+        .any(|signal| s.contains(signal))
+}
+
+fn violates_describe_only_intent(query: &str, plan: &ExecutionPlan) -> bool {
+    if !is_describe_or_explain_only_query(query) {
+        return false;
+    }
+    plan.steps
+        .iter()
+        .any(|step| is_review_or_fix_heavy_step(&step.description))
+}
+
+fn parse_backticked_segments(text: &str) -> Vec<String> {
+    let bytes = text.as_bytes();
+    let mut start = None;
+    let mut out = Vec::new();
+    for (i, b) in bytes.iter().enumerate() {
+        if *b == b'`' {
+            if let Some(s) = start {
+                if i > s + 1 {
+                    let seg = text[s + 1..i].trim();
+                    if !seg.is_empty() {
+                        out.push(seg.to_string());
+                    }
+                }
+                start = None;
+            } else {
+                start = Some(i);
+            }
+        }
+    }
+    out
+}
+
+fn is_command_like_backtick(segment: &str) -> bool {
+    let s = segment.trim();
+    if s.is_empty() {
+        return false;
+    }
+
+    // Single-word snippets like `deny` are frequently code/log tokens, not commands.
+    let has_space = s.contains(char::is_whitespace);
+    let has_flag = s.contains(" -") || s.starts_with('-');
+    let lower = s.to_lowercase();
+    let known_command_starts = [
+        "anvil ", "cargo ", "rustfmt ", "git ", "npm ", "pnpm ", "yarn ", "make ", "cmake ",
+        "python ", "python3 ", "pytest ", "go ", "node ",
+    ];
+
+    has_space
+        || has_flag
+        || known_command_starts
+            .iter()
+            .any(|prefix| lower.starts_with(prefix))
+}
+
+fn extract_backtick_command(query: &str) -> Option<String> {
+    parse_backticked_segments(query)
+        .into_iter()
+        .find(|seg| is_command_like_backtick(seg))
+}
+
+fn plan_contains_placeholders(plan: &ExecutionPlan) -> bool {
+    plan.steps.iter().any(|step| {
+        let s = step.description.as_str();
+        s.contains("<file-path>")
+            || s.contains("<path>")
+            || s.contains("<file>")
+            || s.contains("<module>")
+            || (s.contains('<') && s.contains('>'))
+    })
+}
+
+fn violates_command_intent(query: &str, plan: &ExecutionPlan) -> bool {
+    let Some(cmd) = extract_backtick_command(query) else {
+        return false;
+    };
+    let cmd_lower = cmd.to_lowercase();
+    let mentions_exact_command = plan
+        .steps
+        .iter()
+        .any(|s| s.description.to_lowercase().contains(&cmd_lower));
+    !mentions_exact_command
+}
+
+fn query_asks_fix(query: &str) -> bool {
+    let q = query.to_lowercase();
+    [
+        "fix", "error", "errors", "issue", "issues", "resolve", "correct",
+    ]
+    .iter()
+    .any(|w| q.contains(w))
+}
+
+fn count_steps_with_command(plan: &ExecutionPlan, command: &str) -> usize {
+    let command_lower = command.to_lowercase();
+    plan.steps
+        .iter()
+        .filter(|s| s.description.to_lowercase().contains(&command_lower))
+        .count()
+}
+
+fn violates_command_plan_shape(query: &str, plan: &ExecutionPlan) -> bool {
+    let Some(cmd) = extract_backtick_command(query) else {
+        return false;
+    };
+    let cmd_lower = cmd.to_lowercase();
+
+    let first_cmd_step_index = plan
+        .steps
+        .iter()
+        .position(|s| s.description.to_lowercase().contains(&cmd_lower));
+
+    let Some(first_idx) = first_cmd_step_index else {
+        return true;
+    };
+
+    // For command-centric requests, execute the requested command first.
+    if first_idx != 0 {
+        return true;
+    }
+
+    let command_step_count = count_steps_with_command(plan, &cmd);
+    if !query_asks_fix(query) && command_step_count > 1 {
+        return true;
+    }
+    if query_asks_fix(query) && command_step_count > 2 {
+        return true;
+    }
+
+    false
 }
 
 impl Agent {
@@ -400,6 +633,32 @@ impl Agent {
     pub async fn validate_plan(&mut self, query: &str, plan: &ExecutionPlan) -> Result<bool> {
         const VALIDATION_MAX_TOKENS: u32 = 512;
 
+        if plan_contains_placeholders(plan) {
+            eprintln!("⚠️  Plan validation failed: plan contains placeholder tokens");
+            return Ok(false);
+        }
+
+        if violates_command_intent(query, plan) {
+            eprintln!(
+                "⚠️  Plan validation failed: plan does not include the exact backticked command from query"
+            );
+            return Ok(false);
+        }
+
+        if violates_command_plan_shape(query, plan) {
+            eprintln!(
+                "⚠️  Plan validation failed: command-based plan shape is invalid (command must be first; avoid duplicate command steps unless fixing is requested)"
+            );
+            return Ok(false);
+        }
+
+        if violates_describe_only_intent(query, plan) {
+            eprintln!(
+                "⚠️  Plan validation failed: describe/explain request included review/fix-heavy steps"
+            );
+            return Ok(false);
+        }
+
         let plan_summary = plan
             .steps
             .iter()
@@ -417,6 +676,13 @@ impl Agent {
             - If the query asks to 'review X', the plan should analyze X, not modify it.\n\
             - If the query asks to review a 'module' or 'package', the plan should review ALL files in that module, not just main.rs.\n\
             - If the query asks for analysis/review only, the plan should not include implementation steps.\n\n\
+            - If the query asks to describe/explain/summarize file content, the plan should read and explain only.\n\
+            - For describe/explain/summarize requests, reject plans that add 'identify issues', 'review quality', or 'fix' steps unless explicitly requested.\n\n\
+            - Reject plans that contain placeholders like <file-path> or <module>.\n\
+            - If query includes a backticked command, the plan must include that exact command text.\n\n\
+            - For command-based requests, the first step should run that command.\n\
+            - Do not add exploratory read/list steps before running the requested command.\n\
+            - If the query does not ask to fix anything, avoid multiple steps that rerun the same command.\n\n\
             Answer (YES/NO and why):"
         );
 
@@ -558,7 +824,10 @@ impl Agent {
             .saturating_sub(SAFETY_BUFFER);
 
         while prompt_tokens > max_allowed_prompt && self.messages.len() > 2 {
-            self.messages.remove(1);
+            let Some(idx) = pruning_candidate_index(&self.messages) else {
+                break;
+            };
+            self.messages.remove(idx);
             let messages = self.messages.clone();
             let reduced_message_tokens = self
                 .count_message_tokens(&messages, ModelRole::Chat)
@@ -850,9 +1119,21 @@ impl Agent {
         is_debug: bool,
         interaction: &dyn crate::ui::interface::InteractionHandler,
     ) -> Result<usize> {
+        const ASSISTANT_CONTEXT_CHAR_LIMIT: usize = 24_000;
+        const TOOL_CONTEXT_CHAR_LIMIT: usize = 16_000;
+
+        let assistant_context_content = if full_content.is_empty() {
+            None
+        } else {
+            Some(truncate_for_context(
+                &full_content,
+                ASSISTANT_CONTEXT_CHAR_LIMIT,
+            ))
+        };
+
         self.messages.push(json!({
             "role": "assistant",
-            "content": if full_content.is_empty() { json!(null) } else { json!(full_content) },
+            "content": assistant_context_content,
             "tool_calls": tool_calls
         }));
 
@@ -895,7 +1176,7 @@ impl Agent {
             self.messages.push(json!({
                 "role": "tool",
                 "tool_call_id": id,
-                "content": result_str
+                "content": truncate_for_context(&result_str, TOOL_CONTEXT_CHAR_LIMIT)
             }));
             executed += 1;
         }
@@ -990,5 +1271,109 @@ impl Agent {
             total += 8; // Constant overhead per message
         }
         Ok(total)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        ExecutionPlan, extract_backtick_command, is_describe_or_explain_only_query,
+        is_review_or_fix_heavy_step, plan_contains_placeholders, violates_command_intent,
+        violates_command_plan_shape, violates_describe_only_intent,
+    };
+
+    #[test]
+    fn describe_only_query_detection_works() {
+        assert!(is_describe_or_explain_only_query(
+            "describe the content of ferrous/src/main.rs"
+        ));
+        assert!(!is_describe_or_explain_only_query(
+            "describe and fix issues in ferrous/src/main.rs"
+        ));
+    }
+
+    #[test]
+    fn review_or_fix_step_detection_works() {
+        assert!(is_review_or_fix_heavy_step(
+            "Identify any issues in the code and report them"
+        ));
+        assert!(!is_review_or_fix_heavy_step(
+            "Read the file and explain each section"
+        ));
+    }
+
+    #[test]
+    fn describe_only_intent_rejects_review_fix_plan() {
+        let plan = ExecutionPlan::new(vec![
+            "Read the file".to_string(),
+            "Identify any issues in code".to_string(),
+            "Fix the issues".to_string(),
+        ]);
+        assert!(violates_describe_only_intent(
+            "describe the content of src/lib.rs",
+            &plan
+        ));
+
+        let descriptive_plan = ExecutionPlan::new(vec![
+            "Read the file".to_string(),
+            "Summarize the structure and key logic".to_string(),
+        ]);
+        assert!(!violates_describe_only_intent(
+            "describe the content of src/lib.rs",
+            &descriptive_plan
+        ));
+    }
+
+    #[test]
+    fn command_extraction_and_intent_checks_work() {
+        let query = "run `anvil lint` and fix errors";
+        assert_eq!(
+            extract_backtick_command(query).as_deref(),
+            Some("anvil lint")
+        );
+        assert_eq!(
+            extract_backtick_command("clippy output included `deny` and `unsafe_code`"),
+            None
+        );
+
+        let bad = ExecutionPlan::new(vec![
+            "Read <file-path>".to_string(),
+            "Fix issues".to_string(),
+        ]);
+        assert!(plan_contains_placeholders(&bad));
+        assert!(violates_command_intent(query, &bad));
+
+        let good = ExecutionPlan::new(vec![
+            "Run the command anvil lint and capture output".to_string(),
+            "Fix reported errors if any and rerun anvil lint".to_string(),
+        ]);
+        assert!(!plan_contains_placeholders(&good));
+        assert!(!violates_command_intent(query, &good));
+    }
+
+    #[test]
+    fn command_plan_shape_validation_works() {
+        let query = "review the ferrous module by `anvil lint`";
+
+        let bad_order = ExecutionPlan::new(vec![
+            "Read files to understand current state".to_string(),
+            "Run anvil lint and review output".to_string(),
+        ]);
+        assert!(violates_command_plan_shape(query, &bad_order));
+
+        let duplicate_without_fix = ExecutionPlan::new(vec![
+            "Run anvil lint and capture output".to_string(),
+            "Run anvil lint again to double-check".to_string(),
+        ]);
+        assert!(violates_command_plan_shape(
+            "review module by `anvil lint`",
+            &duplicate_without_fix
+        ));
+
+        let good = ExecutionPlan::new(vec![
+            "Run anvil lint and capture output".to_string(),
+            "Summarize lint findings for the user".to_string(),
+        ]);
+        assert!(!violates_command_plan_shape(query, &good));
     }
 }
