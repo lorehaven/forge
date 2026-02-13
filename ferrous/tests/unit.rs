@@ -6,6 +6,8 @@ mod index_tests;
 mod plan_tests;
 #[path = "unit/prompt_tests.rs"]
 mod prompt_tests;
+#[path = "unit/repl_tests.rs"]
+mod repl_tests;
 #[path = "unit/review_tests.rs"]
 mod review_tests;
 #[path = "unit/session_tests.rs"]

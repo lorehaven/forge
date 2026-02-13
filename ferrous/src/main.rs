@@ -5,7 +5,7 @@ use ferrous::config::{self, ModelBackend, ModelRole, SamplingConfig, UiMode, UiT
 use ferrous::core::{Agent, execute_plan, sessions};
 use ferrous::ui::interface::InteractionHandler;
 use ferrous::ui::query::QueryMode;
-use ferrous::ui::repl::ReplMode;
+use ferrous::ui::repl::{ReplCommand, ReplMode, ReplParseResult};
 use ferrous::ui::web::{EMBEDDED_PAGE, WebMode};
 use rustyline::DefaultEditor;
 use serde::{Deserialize, Serialize};
@@ -196,6 +196,155 @@ fn build_effective_sampling(base: &SamplingConfig) -> SamplingConfig {
         mirostat_tau: Some(base.mirostat_tau.unwrap_or(DEFAULT_PARAMS.mirostat_tau)),
         mirostat_eta: Some(base.mirostat_eta.unwrap_or(DEFAULT_PARAMS.mirostat_eta)),
     }
+}
+
+fn print_saved_conversations(handler: &ReplMode) {
+    match sessions::list_conversations() {
+        Ok(items) if items.is_empty() => {
+            handler.print_message(&format!("{}", "No saved conversations.".bright_yellow()));
+        }
+        Ok(items) => {
+            handler.print_message(&format!("{}", "Saved conversations".bright_cyan().bold()));
+            for (name, short_id, date) in items {
+                handler.print_message(&format!("  {short_id}  {date}  {}", name.bright_white()));
+            }
+        }
+        Err(e) => handler.print_error(&format!("{e}")),
+    }
+}
+
+fn dispatch_repl_command(
+    command: ReplCommand,
+    handler: &ReplMode,
+    agent: &mut Agent,
+    conf: &ferrous::config::Config,
+) -> bool {
+    match command {
+        ReplCommand::Exit => false,
+        ReplCommand::Clear => {
+            agent.messages.truncate(1);
+            handler.print_message(&format!("{}", "Conversation cleared.".bright_yellow()));
+            true
+        }
+        ReplCommand::Help { verbose } => {
+            if verbose {
+                ferrous::ui::render::print_help();
+            } else {
+                ferrous::ui::repl::print_repl_help();
+            }
+            true
+        }
+        ReplCommand::ShowConfig => {
+            conf.display();
+            true
+        }
+        ReplCommand::ListSessions => {
+            print_saved_conversations(handler);
+            true
+        }
+        ReplCommand::Save { name } => {
+            let resolved_name = name.unwrap_or_default();
+            match agent.save_conversation_named(&resolved_name) {
+                Ok(filename) => {
+                    let extra = if resolved_name.trim().is_empty() {
+                        " (auto-named)"
+                    } else {
+                        ""
+                    };
+                    handler.print_message(&format!(
+                        "{} {filename}{extra}",
+                        "Conversation saved as".bright_green(),
+                    ));
+                }
+                Err(e) => handler.print_error(&format!("Save failed: {e}")),
+            }
+            true
+        }
+        ReplCommand::Load { selector } => {
+            match agent.load_conversation(&selector) {
+                Ok(name) => handler.print_message(&format!(
+                    "{} {name} {}",
+                    "Loaded conversation:".bright_green(),
+                    "(current history replaced)".dimmed()
+                )),
+                Err(e) => handler.print_error(&format!("Load failed: {e}")),
+            }
+            true
+        }
+        ReplCommand::Delete { selector } => {
+            match sessions::delete_conversation_by_prefix(&selector) {
+                Ok(name) => handler.print_message(&format!(
+                    "{} {name} {}",
+                    "Deleted:".bright_green(),
+                    "(removed from disk)".dimmed()
+                )),
+                Err(e) => handler.print_error(&format!("Delete failed: {e}")),
+            }
+            true
+        }
+        ReplCommand::UserPrompt(_) => true,
+    }
+}
+
+async fn run_repl_mode(
+    agent: &mut Agent,
+    conf: &ferrous::config::Config,
+    is_debug: bool,
+) -> Result<()> {
+    let handler = ReplMode::new();
+    ferrous::ui::repl::print_banner();
+
+    let mut rl = DefaultEditor::new()?;
+    loop {
+        let readline = rl.readline(&ferrous::ui::repl::prompt());
+        match readline {
+            Ok(line) => {
+                let input = line.trim();
+                if input.is_empty() {
+                    continue;
+                }
+                let _ = rl.add_history_entry(line.as_str());
+
+                match ferrous::ui::repl::parse_repl_input(input) {
+                    ReplParseResult::Empty => continue,
+                    ReplParseResult::UsageError(msg) => {
+                        handler.print_error(&msg);
+                        continue;
+                    }
+                    ReplParseResult::Command(ReplCommand::UserPrompt(prompt)) => {
+                        let plan = match generate_valid_plan(agent, &prompt, 3, &handler, is_debug)
+                            .await
+                        {
+                            Ok(p) => p,
+                            Err(e) => {
+                                handler.print_error(&format!("Planning error: {e}"));
+                                continue;
+                            }
+                        };
+                        let sampling = build_effective_sampling(&conf.sampling);
+                        if let Err(e) =
+                            execute_plan(agent, plan, &prompt, sampling, is_debug, &handler).await
+                        {
+                            handler.print_error(&format!("Execution error: {e}"));
+                        }
+                    }
+                    ReplParseResult::Command(cmd) => {
+                        if !dispatch_repl_command(cmd, &handler, agent, conf) {
+                            break;
+                        }
+                    }
+                }
+            }
+            Err(rustyline::error::ReadlineError::Interrupted)
+            | Err(rustyline::error::ReadlineError::Eof) => break,
+            Err(err) => {
+                eprintln!("Readline error: {err}");
+                break;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 #[derive(Debug, Deserialize)]
@@ -736,156 +885,5 @@ async fn main() -> Result<()> {
         return run_web_mode(agent, conf.clone(), args.debug).await;
     }
 
-    // ── REPL mode ────────────────────────────────────────────────────────
-    let handler = ReplMode;
-    handler.print_message(&format!(
-        "{} {}",
-        "Ferrous coding agent ready.".bright_cyan().bold(),
-        "Type 'help' for commands, 'exit' to quit.".dimmed()
-    ));
-
-    let mut rl = DefaultEditor::new()?;
-
-    loop {
-        let readline = rl.readline(&format!("{}", ">> ".bright_magenta()));
-        match readline {
-            Ok(line) => {
-                let input = line.trim();
-                if input.is_empty() {
-                    continue;
-                }
-                let _ = rl.add_history_entry(&line);
-
-                match input.to_lowercase().as_str() {
-                    "exit" | "quit" => break,
-                    "clear" => {
-                        agent.messages.truncate(1);
-                        handler
-                            .print_message(&format!("{}", "Conversation cleared.".bright_yellow()));
-                    }
-                    "help" => ferrous::ui::render::print_help(),
-                    "config" | "show-config" | "cfg" => {
-                        conf.display();
-                    }
-                    "list" => match sessions::list_conversations() {
-                        Ok(items) if items.is_empty() => {
-                            handler.print_message(&format!(
-                                "{}",
-                                "No saved conversations yet.".bright_yellow()
-                            ));
-                        }
-                        Ok(items) => {
-                            handler.print_message(&format!(
-                                "{}",
-                                "Saved conversations:".bright_cyan().bold()
-                            ));
-                            for (name, short_id, date) in items {
-                                handler.print_message(&format!(
-                                    "  • {} ({short_id}) [{date}]",
-                                    name.bright_white(),
-                                ));
-                            }
-                        }
-                        Err(e) => handler.print_error(&format!("{e}")),
-                    },
-                    cmd if cmd.starts_with("save") => {
-                        let rest = input[4..].trim();
-                        let name = if rest.is_empty() {
-                            "".to_string()
-                        } else {
-                            rest.to_string()
-                        };
-
-                        match agent.save_conversation_named(&name) {
-                            Ok(filename) => {
-                                let extra = if name.trim().is_empty() {
-                                    " (auto-named)"
-                                } else {
-                                    ""
-                                };
-                                handler.print_message(&format!(
-                                    "{} {filename}{extra}",
-                                    "Conversation saved as".bright_green(),
-                                ));
-                            }
-                            Err(e) => handler.print_error(&format!("Save failed: {e}")),
-                        }
-                    }
-
-                    cmd if cmd.starts_with("load") => {
-                        let rest = input[4..].trim();
-                        if rest.is_empty() {
-                            handler.print_message(&format!(
-                                "{}",
-                                "Usage: load <name prefix or short id>".yellow()
-                            ));
-                            continue;
-                        }
-
-                        match agent.load_conversation(rest) {
-                            Ok(name) => handler.print_message(&format!(
-                                "{} {name} {}",
-                                "Loaded conversation:".bright_green(),
-                                "(current history replaced)".dimmed()
-                            )),
-                            Err(e) => handler.print_error(&format!("Load failed: {e}")),
-                        }
-                    }
-
-                    cmd if cmd.starts_with("delete") => {
-                        let rest = input[6..].trim();
-                        if rest.is_empty() {
-                            handler.print_message(&format!(
-                                "{}",
-                                "Usage: delete <name prefix or short id>".yellow()
-                            ));
-                            continue;
-                        }
-
-                        match sessions::delete_conversation_by_prefix(rest) {
-                            Ok(name) => handler.print_message(&format!(
-                                "{} {name} {}",
-                                "Deleted:".bright_green(),
-                                "(removed from disk)".dimmed()
-                            )),
-                            Err(e) => handler.print_error(&format!("Delete failed: {e}")),
-                        }
-                    }
-                    _ => {
-                        // ── PLAN PHASE ───────────────────────────────
-                        let plan =
-                            match generate_valid_plan(&mut agent, input, 3, &handler, args.debug)
-                                .await
-                            {
-                                Ok(p) => p,
-                                Err(e) => {
-                                    handler.print_error(&format!("Planning error: {e}"));
-                                    continue;
-                                }
-                            };
-
-                        let sampling = build_effective_sampling(&conf.sampling);
-
-                        // ── EXECUTION PHASE ──────────────────────────
-                        if let Err(e) =
-                            execute_plan(&mut agent, plan, input, sampling, args.debug, &handler)
-                                .await
-                        {
-                            handler.print_error(&format!("Execution error: {e}"));
-                        }
-                    }
-                }
-            }
-            Err(rustyline::error::ReadlineError::Interrupted)
-            | Err(rustyline::error::ReadlineError::Eof) => break,
-            Err(err) => {
-                eprintln!("Readline error: {err}");
-                break;
-            }
-        }
-    }
-
-    // REPL loop cleanup is not strictly necessary as processes will terminate on exit,
-    // but we could implement a more formal shutdown in ModelManager if needed.
-    Ok(())
+    run_repl_mode(&mut agent, &conf, args.debug).await
 }
