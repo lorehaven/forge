@@ -91,6 +91,7 @@ dependencies = [
  "serde",
  "serde_json",
  "toml",
+ "walkdir",
  "which",
 ]
 

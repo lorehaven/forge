@@ -67,6 +67,35 @@ pub enum Commands {
         /// Specific package to test
         #[arg(short, long)]
         package: Option<String>,
+        /// Optional test name filter (same as cargo test TESTNAME)
+        test_name: Option<String>,
+        /// Run ignored tests (same as cargo test -- --ignored)
+        #[arg(long)]
+        ignored: bool,
+        /// List available tests (same as cargo test -- --list)
+        #[arg(long)]
+        list: bool,
+    },
+    /// Install a package binary with cargo install --path
+    Install {
+        /// Install all workspace packages
+        #[arg(long, conflicts_with = "package")]
+        all: bool,
+        /// Specific package to install (required for multi-package workspace roots)
+        #[arg(short, long)]
+        package: Option<String>,
+    },
+    /// Build and run a package/binary
+    Run {
+        /// Specific package to run
+        #[arg(short, long)]
+        package: Option<String>,
+        /// Build and serve mode: watch for file changes and rebuild/restart
+        #[arg(long)]
+        serve: bool,
+        /// Polling interval in milliseconds for serve mode
+        #[arg(long, default_value_t = 1000)]
+        watch_interval_ms: u64,
     },
     /// Build and publish Docker images
     Docker {

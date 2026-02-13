@@ -660,7 +660,6 @@ pub const EMBEDDED_PAGE: &str = r#"<!doctype html>
         <div class="card"><div class="card-body plan">
           <div class="row">
             <strong>Plan</strong>
-            <span class="muted">Click step to focus</span>
           </div>
           <div id="plan" class="muted">No plan yet.</div>
         </div></div>
@@ -670,7 +669,6 @@ pub const EMBEDDED_PAGE: &str = r#"<!doctype html>
             <strong>History</strong>
             <div class="row-left">
               <button class="btn btn-secondary" id="clearHistoryBtn">Clear History</button>
-              <span class="muted">Click call to focus</span>
             </div>
           </div>
           <div id="history" class="muted">No calls yet.</div>
@@ -685,7 +683,6 @@ pub const EMBEDDED_PAGE: &str = r#"<!doctype html>
         <div class="row-left">
           <button class="btn" id="runBtn">Run</button>
         </div>
-        <div class="muted">Prompt composer is docked at bottom</div>
       </div>
     </div></div>
   </div>

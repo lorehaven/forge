@@ -27,11 +27,11 @@ fn build_package_rslibs() {
 #[test]
 #[ignore]
 fn run_workspace_tests() {
-    let _ = build::test(true, None);
+    let _ = build::test(true, None, None, false, false);
 }
 
 #[test]
 #[ignore]
 fn run_tests_rslibs() {
-    let _ = build::test(false, Some("rslibs".to_string()));
+    let _ = build::test(false, Some("rslibs".to_string()), None, false, false);
 }

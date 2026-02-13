@@ -30,6 +30,7 @@ cargo install --path .
 
 - `anvil build [--all] [--release] [--package <name>]`: Build packages.
 - `anvil test [--all] [--package <name>]`: Run tests.
+- `anvil install [--package <name> | --all]`: Install package binary/binaries via `cargo install --path`.
 - `anvil lint [--all-targets] [--deny-warnings]`: Run clippy with strict rules.
 - `anvil format [--check]`: Format code using `rustfmt`.
 - `anvil list [--format <json|text>]`: List workspace members.

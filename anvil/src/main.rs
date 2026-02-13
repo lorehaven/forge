@@ -25,7 +25,19 @@ fn main() -> Result<()> {
         Commands::Upgrade { incompatible } => commands::workspace::upgrade(incompatible)?,
         Commands::Audit => commands::workspace::audit()?,
         Commands::Machete => commands::workspace::machete()?,
-        Commands::Test { all, package } => commands::build::test(all, package)?,
+        Commands::Test {
+            all,
+            package,
+            test_name,
+            ignored,
+            list,
+        } => commands::build::test(all, package, test_name, ignored, list)?,
+        Commands::Install { all, package } => commands::install::install(package, all)?,
+        Commands::Run {
+            package,
+            serve,
+            watch_interval_ms,
+        } => commands::run::run(package.as_deref(), serve, watch_interval_ms)?,
         Commands::Docker { command } => match command {
             DockerCommands::Build { package } => commands::docker::build(&config, &package)?,
             DockerCommands::Tag { package, registry } => {

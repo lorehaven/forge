@@ -26,7 +26,13 @@ pub fn build(all: bool, all_features: bool, release: bool, package: Option<Strin
     run_command(cmd, "build")
 }
 
-pub fn test(all: bool, package: Option<String>) -> Result<()> {
+pub fn test(
+    all: bool,
+    package: Option<String>,
+    test_name: Option<String>,
+    ignored: bool,
+    list: bool,
+) -> Result<()> {
     let mut cmd = Command::new("cargo");
     cmd.arg("test");
 
@@ -36,6 +42,20 @@ pub fn test(all: bool, package: Option<String>) -> Result<()> {
 
     if let Some(pkg) = package {
         cmd.arg("--package").arg(pkg);
+    }
+
+    if let Some(name) = test_name {
+        cmd.arg(name);
+    }
+
+    if ignored || list {
+        cmd.arg("--");
+        if ignored {
+            cmd.arg("--ignored");
+        }
+        if list {
+            cmd.arg("--list");
+        }
     }
 
     run_command(cmd, "test")
