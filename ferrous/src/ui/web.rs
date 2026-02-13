@@ -333,6 +333,8 @@ pub const EMBEDDED_PAGE: &str = r#"<!doctype html>
       --shadow: rgba(2, 8, 23, 0.35);
       --bg-mid: #101a2b;
       --bg-end: #0e1726;
+      --page-max-width: 1560px;
+      --side-panel-width: 430px;
     }
     body[data-theme="light"] {
       --bg: #eef2f7;
@@ -353,6 +355,8 @@ pub const EMBEDDED_PAGE: &str = r#"<!doctype html>
       --shadow: rgba(15, 23, 42, 0.05);
       --bg-mid: #f8fafc;
       --bg-end: #f3f5f7;
+      --page-max-width: 1560px;
+      --side-panel-width: 430px;
     }
     * { box-sizing: border-box; }
     body {
@@ -362,7 +366,7 @@ pub const EMBEDDED_PAGE: &str = r#"<!doctype html>
       background: linear-gradient(180deg, var(--bg), var(--bg-mid) 38%, var(--bg-end));
     }
     .container {
-      width: min(1200px, calc(100% - 2rem));
+      width: min(var(--page-max-width), calc(100% - 2rem));
       margin: 1rem auto;
       display: grid;
       gap: 1rem;
@@ -381,7 +385,7 @@ pub const EMBEDDED_PAGE: &str = r#"<!doctype html>
     .main-grid {
       display: grid;
       gap: 1rem;
-      grid-template-columns: 1fr 340px;
+      grid-template-columns: minmax(0, 1fr) var(--side-panel-width);
       min-height: 0;
       height: 100%;
       align-items: stretch;
@@ -391,6 +395,7 @@ pub const EMBEDDED_PAGE: &str = r#"<!doctype html>
       grid-template-rows: 1fr 1fr;
       gap: 1rem;
       min-height: 0;
+      width: var(--side-panel-width);
     }
     .side-stack .card {
       min-height: 0;
@@ -443,7 +448,7 @@ pub const EMBEDDED_PAGE: &str = r#"<!doctype html>
       margin-bottom: 0.5rem;
       background: rgba(15, 23, 42, 0.35);
       width: 100%;
-      max-width: 980px;
+      max-width: 100%;
     }
     .event-item:last-child {
       margin-bottom: 0;
