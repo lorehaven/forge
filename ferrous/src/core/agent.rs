@@ -151,6 +151,18 @@ fn pruning_candidate_index(messages: &[Value]) -> Option<usize> {
     None
 }
 
+fn tool_calls_signature(tool_calls: &[Value]) -> String {
+    tool_calls
+        .iter()
+        .map(|call| {
+            let name = call["function"]["name"].as_str().unwrap_or("");
+            let args = call["function"]["arguments"].as_str().unwrap_or("{}");
+            format!("{name}:{args}")
+        })
+        .collect::<Vec<_>>()
+        .join("|")
+}
+
 fn parse_indexed_step(line: &str) -> Option<String> {
     let trimmed = line.trim();
     if trimmed.is_empty() {
@@ -245,6 +257,9 @@ fn is_describe_or_explain_only_query(query: &str) -> bool {
         "explain",
         "summarize",
         "summary",
+        "structure",
+        "project structure",
+        "codebase structure",
         "what does",
         "what is in",
         "content of",
@@ -270,11 +285,25 @@ fn is_review_or_fix_heavy_step(step: &str) -> bool {
         "issues",
         "review",
         "lint",
+        "build",
+        "compile",
+        "test",
+        "run command",
+        "execute command",
+        "execute shell",
+        "anvil ",
+        "cargo ",
         "refactor",
         "fix",
         "correct",
         "improve",
         "optimize",
+        "modify",
+        "write",
+        "delete",
+        "create",
+        "replace",
+        "patch",
     ];
     review_or_fix_signals
         .iter()
@@ -730,6 +759,10 @@ impl Agent {
         is_debug: bool,
         interaction: &dyn crate::ui::interface::InteractionHandler,
     ) -> Result<StreamOutcome> {
+        const MAX_TOOL_ROUNDS_PER_REQUEST: usize = 24;
+        const MAX_IDENTICAL_TOOL_ROUNDS: usize = 3;
+        const MAX_STREAM_RETRIES_PER_ROUND: usize = 2;
+
         self.ensure_alive().await?;
 
         // Context-Aware Retrieval
@@ -756,6 +789,9 @@ impl Agent {
             .push(json!({"role": "user", "content": user_input}));
 
         let mut total_tool_calls_executed = 0usize;
+        let mut tool_rounds = 0usize;
+        let mut previous_signature: Option<String> = None;
+        let mut identical_signature_streak = 0usize;
 
         loop {
             let max_tokens = self
@@ -765,15 +801,15 @@ impl Agent {
             let base_url = self.get_model_url(ModelRole::Chat).await?;
             let url = format!("{base_url}/v1/chat/completions");
 
-            let resp = self.client.post(&url).json(&body).send().await?;
-            if !resp.status().is_success() {
-                return self
-                    .handle_error_response(resp, &url, &body, is_debug, interaction)
-                    .await;
-            }
-
-            let (full_content, tool_calls) =
-                self.process_stream(resp, interaction, is_debug).await?;
+            let (full_content, tool_calls) = self
+                .run_stream_round(
+                    &url,
+                    &body,
+                    is_debug,
+                    interaction,
+                    MAX_STREAM_RETRIES_PER_ROUND,
+                )
+                .await?;
 
             if tool_calls.is_empty() {
                 self.messages
@@ -785,10 +821,80 @@ impl Agent {
                 });
             }
 
+            tool_rounds += 1;
+            if tool_rounds > MAX_TOOL_ROUNDS_PER_REQUEST {
+                return Err(anyhow!(
+                    "Execution stopped: tool-call loop exceeded {MAX_TOOL_ROUNDS_PER_REQUEST} rounds"
+                ));
+            }
+
+            let current_signature = tool_calls_signature(&tool_calls);
+            if previous_signature.as_deref() == Some(current_signature.as_str()) {
+                identical_signature_streak += 1;
+            } else {
+                previous_signature = Some(current_signature);
+                identical_signature_streak = 1;
+            }
+
+            if identical_signature_streak >= MAX_IDENTICAL_TOOL_ROUNDS {
+                return Err(anyhow!(
+                    "Execution stopped: detected repeated identical tool calls across {MAX_IDENTICAL_TOOL_ROUNDS} rounds"
+                ));
+            }
+
             let executed = self
                 .handle_tool_calls(full_content, tool_calls.clone(), is_debug, interaction)
                 .await?;
             total_tool_calls_executed += executed;
+        }
+    }
+
+    async fn run_stream_round(
+        &self,
+        url: &str,
+        body: &Value,
+        is_debug: bool,
+        interaction: &dyn crate::ui::interface::InteractionHandler,
+        max_stream_retries: usize,
+    ) -> Result<(String, Vec<Value>)> {
+        let mut stream_attempt = 0usize;
+        loop {
+            let resp = self.client.post(url).json(body).send().await?;
+            if !resp.status().is_success() {
+                return match self
+                    .handle_error_response(resp, url, body, is_debug, interaction)
+                    .await
+                {
+                    Ok(_) => Err(anyhow!("Unexpected success in error response handler")),
+                    Err(e) => Err(e),
+                };
+            }
+
+            match self.process_stream(resp, interaction, is_debug).await {
+                Ok(streamed) => return Ok(streamed),
+                Err(e) if stream_attempt < max_stream_retries => {
+                    stream_attempt += 1;
+                    interaction.print_message(&format!(
+                        "stream interrupted, retrying ({}/{})...",
+                        stream_attempt,
+                        max_stream_retries + 1
+                    ));
+                    if is_debug {
+                        interaction.print_debug(&format!(
+                            "Stream interrupted (attempt {}/{}). Retrying round...",
+                            stream_attempt,
+                            max_stream_retries + 1
+                        ));
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(350)).await;
+                }
+                Err(e) => {
+                    return Err(e).context(format!(
+                        "Streaming failed after {} attempts",
+                        max_stream_retries + 1
+                    ));
+                }
+            }
         }
     }
 
@@ -931,7 +1037,18 @@ impl Agent {
         let mut waiting_for_lang = false;
 
         while let Some(item) = stream.next().await {
-            let bytes = item.context("Stream failure")?;
+            let bytes = match item {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    if has_started_printing {
+                        interaction.print_stream_end();
+                    }
+                    if has_started_tool_printing {
+                        interaction.print_stream_tool_end();
+                    }
+                    return Err(e).context("Stream failure");
+                }
+            };
             buffer.push_str(&String::from_utf8_lossy(&bytes));
 
             while let Some(pos) = buffer.find('\n') {
@@ -1278,9 +1395,10 @@ impl Agent {
 mod tests {
     use super::{
         ExecutionPlan, extract_backtick_command, is_describe_or_explain_only_query,
-        is_review_or_fix_heavy_step, plan_contains_placeholders, violates_command_intent,
-        violates_command_plan_shape, violates_describe_only_intent,
+        is_review_or_fix_heavy_step, plan_contains_placeholders, tool_calls_signature,
+        violates_command_intent, violates_command_plan_shape, violates_describe_only_intent,
     };
+    use serde_json::json;
 
     #[test]
     fn describe_only_query_detection_works() {
@@ -1321,6 +1439,15 @@ mod tests {
         assert!(!violates_describe_only_intent(
             "describe the content of src/lib.rs",
             &descriptive_plan
+        ));
+
+        let destructive_plan = ExecutionPlan::new(vec![
+            "Run cargo build to validate structure".to_string(),
+            "Modify files to fix discovered issues".to_string(),
+        ]);
+        assert!(violates_describe_only_intent(
+            "describe the project structure",
+            &destructive_plan
         ));
     }
 
@@ -1375,5 +1502,28 @@ mod tests {
             "Summarize lint findings for the user".to_string(),
         ]);
         assert!(!violates_command_plan_shape(query, &good));
+    }
+
+    #[test]
+    fn tool_call_signature_normalizes_name_and_args() {
+        let calls = vec![
+            json!({
+                "function": {
+                    "name": "read_file",
+                    "arguments": "{\"path\":\"README.md\"}"
+                }
+            }),
+            json!({
+                "function": {
+                    "name": "list_directory",
+                    "arguments": "{\"path\":\"src\"}"
+                }
+            }),
+        ];
+
+        assert_eq!(
+            tool_calls_signature(&calls),
+            "read_file:{\"path\":\"README.md\"}|list_directory:{\"path\":\"src\"}"
+        );
     }
 }

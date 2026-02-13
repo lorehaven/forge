@@ -92,6 +92,7 @@ pub async fn execute_plan(
     interaction: &dyn crate::ui::interface::InteractionHandler,
 ) -> anyhow::Result<()> {
     const MAX_NO_TOOL_RETRIES: usize = 2;
+    let is_describe_only = is_describe_or_explain_only_query(original_query);
 
     for step in plan.steps.clone() {
         interaction.set_current_step(Some(step.id));
@@ -103,22 +104,14 @@ pub async fn execute_plan(
 
         let mut attempt = 0usize;
         loop {
-            // Prepend execution instruction to ensure model uses tools
-            let execution_prompt = if attempt == 0 {
-                format!(
-                    "EXECUTE THIS STEP NOW by calling the required tools. You MUST make tool calls to complete this step. DO NOT just say what you will do or mark it as done without action.\n\
-Original request: {}\n\
-Current step: {}",
-                    original_query, step.description
-                )
-            } else {
-                format!(
-                    "RETRY STEP {}. Previous response did not include a tool call. You MUST call at least one tool now. Do not explain, do not summarize.\n\
-Original request: {}\n\
-Current step: {}",
-                    step.id, original_query, step.description
-                )
-            };
+            let requires_tool = requires_tool_call(&step.description);
+            let execution_prompt = build_execution_prompt(
+                original_query,
+                &step.description,
+                step.id,
+                attempt,
+                is_describe_only,
+            );
 
             let result = agent
                 .stream(&execution_prompt, sampling.clone(), is_debug, interaction)
@@ -138,7 +131,7 @@ Current step: {}",
                         ));
                     }
 
-                    if !tool_called && requires_tool_call(&step.description) {
+                    if !tool_called && requires_tool {
                         if attempt < MAX_NO_TOOL_RETRIES {
                             if is_debug {
                                 interaction.print_debug(&format!(
@@ -186,6 +179,76 @@ Current step: {}",
 
     interaction.set_current_step(None);
     Ok(())
+}
+
+fn build_execution_prompt(
+    original_query: &str,
+    step_description: &str,
+    step_id: usize,
+    attempt: usize,
+    is_describe_only: bool,
+) -> String {
+    if attempt == 0 && is_describe_only {
+        return format!(
+            "EXECUTE THIS STEP NOW for a describe/explain request.\n\
+Original request: {original_query}\n\
+Current step: {step_description}\n\n\
+Rules for this step:\n\
+- Use read-only inspection tools only when needed.\n\
+- Allowed tools: get_file_info, read_file, read_multiple_files, list_directory, get_directory_tree, list_files_recursive, search_text, find_file, search_code_semantic.\n\
+- NEVER call write_file, append_to_file, replace_in_file, create_directory, execute_shell_command, analyze_project, lint_file, review_code, review_module, suggest_refactorings, or any command runner.\n\
+- NEVER modify files.\n\
+- Focus on describing structure and content only."
+        );
+    }
+
+    if attempt == 0 {
+        return format!(
+            "EXECUTE THIS STEP NOW by calling the required tools. You MUST make tool calls to complete this step. DO NOT just say what you will do or mark it as done without action.\n\
+Original request: {original_query}\n\
+Current step: {step_description}"
+        );
+    }
+
+    if is_describe_only {
+        return format!(
+            "RETRY STEP {step_id} for a describe/explain request.\n\
+Original request: {original_query}\n\
+Current step: {step_description}\n\n\
+Use only read-only inspection tools. Do NOT call build/lint/review/fix or any file-modifying tools."
+        );
+    }
+
+    format!(
+        "RETRY STEP {step_id}. Previous response did not include a tool call. You MUST call at least one tool now. Do not explain, do not summarize.\n\
+Original request: {original_query}\n\
+Current step: {step_description}"
+    )
+}
+
+fn is_describe_or_explain_only_query(query: &str) -> bool {
+    let q = query.to_lowercase();
+    let describe_signals = [
+        "describe",
+        "explain",
+        "summarize",
+        "summary",
+        "structure",
+        "project structure",
+        "codebase structure",
+        "what does",
+        "what is in",
+        "content of",
+        "walk me through",
+    ];
+    let change_or_review_signals = [
+        "fix", "issue", "bug", "review", "lint", "refactor", "improve", "optimize", "rewrite",
+        "edit", "change", "update", "add", "remove", "rename",
+    ];
+
+    let has_describe_signal = describe_signals.iter().any(|s| q.contains(s));
+    let has_change_or_review_signal = change_or_review_signals.iter().any(|s| q.contains(s));
+    has_describe_signal && !has_change_or_review_signal
 }
 
 /// Check if a step description indicates a tool call is required

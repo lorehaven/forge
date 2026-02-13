@@ -27,6 +27,7 @@ pub enum ReplParseResult {
     UsageError(String),
 }
 
+#[must_use]
 pub fn prompt() -> String {
     format!("{}", "ferrous> ".bright_magenta().bold())
 }
@@ -135,7 +136,7 @@ enum StepMarker {
 }
 
 impl StepMarker {
-    fn from_status(status: &StepStatus) -> Self {
+    const fn from_status(status: &StepStatus) -> Self {
         match status {
             StepStatus::Pending => Self::Pending,
             StepStatus::Running => Self::Running,
@@ -257,7 +258,7 @@ impl InteractionHandler for ReplMode {
             .expect("repl render state lock should not be poisoned");
         guard.current_step = step_id;
         if let Some(id) = step_id {
-            guard.step_runtime.entry(id).or_insert(StepRuntime {
+            guard.step_runtime.entry(id).or_insert_with(|| StepRuntime {
                 started_at: Instant::now(),
                 tool_calls: 0,
             });
@@ -283,33 +284,24 @@ impl InteractionHandler for ReplMode {
     }
 
     fn print_response(&self, response: &str) {
+        println!();
+        println!("{}", "Result".bright_blue().bold());
+        println!(
+            "{}",
+            "────────────────────────────────────────".bright_black()
+        );
+
         if response.lines().count() > 20 {
-            println!();
-            println!("{}", "Result".bright_blue().bold());
-            println!(
-                "{}",
-                "────────────────────────────────────────".bright_black()
-            );
             pretty_print_response(response);
-            println!(
-                "{}",
-                "────────────────────────────────────────".bright_black()
-            );
         } else {
-            println!();
-            println!("{}", "Result".bright_blue().bold());
-            println!(
-                "{}",
-                "────────────────────────────────────────".bright_black()
-            );
             for line in response.lines() {
-                println!("  {}", line);
+                println!("  {line}");
             }
-            println!(
-                "{}",
-                "────────────────────────────────────────".bright_black()
-            );
         }
+        println!(
+            "{}",
+            "────────────────────────────────────────".bright_black()
+        );
     }
 
     fn print_stream_start(&self) {
