@@ -49,9 +49,11 @@ impl Indexer {
                 let path = entry.path();
                 if let Some(ext) = path.extension() {
                     let ext = ext.to_string_lossy().to_lowercase();
+                    // Add more file extensions to the list
                     if matches!(
                         ext.as_str(),
-                        "rs" | "toml" | "md" | "js" | "ts" | "py" | "c" | "cpp" | "h" | "hpp"
+                        "rs" | "toml" | "md" | "js" | "ts" | "py" | "c" | "cpp" | "h" | "hpp" |
+                        "java" | "go" | "swift" | "php" | "rb" | "sh" | "pl" | "r" | "dart" | "scala"
                     ) {
                         let _ = self.index_file(&index_writer, project_root, path);
                     }
