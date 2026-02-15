@@ -21,7 +21,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Print the search results
     for (path, content) in results {
         println!("Path: {}", path);
-        // println!("Content: {}", content);
+        println!("Content: {}", content);
     }
 
     Ok(())
