@@ -1,7 +1,6 @@
 [workspace]
 members = [
     "anvil",
-    "ferrous",
     "riveter",
 ]
 resolver = "2"
