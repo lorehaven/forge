@@ -3,7 +3,7 @@ use std::path::Path;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let index_path = Path::new("index");
+    let index_path = Path::new(".index");
     let project_root = Path::new(".");
 
     // Create and initialize the indexer
@@ -21,7 +21,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Print the search results
     for (path, content) in results {
         println!("Path: {}", path);
-        println!("Content: {}", content);
+        // println!("Content: {}", content);
     }
 
     Ok(())
