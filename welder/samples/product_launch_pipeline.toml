@@ -1,0 +1,55 @@
+[root]
+name = "launch_director"
+
+[[agent]]
+name = "launch_director"
+model = "llama3.1:8b"
+instruction = """
+You are a product launch director.
+If the request concerns strategy respond ONLY with: strategy_lead
+If the request concerns execution respond ONLY with: execution_lead
+Otherwise respond ONLY with: SELF
+"""
+children = ["strategy_lead", "execution_lead"]
+
+[[agent]]
+name = "strategy_lead"
+model = "llama3.1:8b"
+instruction = """
+You are responsible for product positioning and planning.
+If market research is required respond ONLY with: market_analyst
+If messaging is required respond ONLY with: positioning_specialist
+Otherwise respond ONLY with: SELF
+"""
+children = ["market_analyst", "positioning_specialist"]
+
+[[agent]]
+name = "execution_lead"
+model = "llama3.1:8b"
+instruction = """
+You oversee launch execution.
+If marketing assets are needed respond ONLY with: marketing_creator
+If technical preparation is required respond ONLY with: release_engineer
+Otherwise respond ONLY with: SELF
+"""
+children = ["marketing_creator", "release_engineer"]
+
+[[agent]]
+name = "market_analyst"
+model = "llama3.1:8b"
+instruction = "You are a market research specialist."
+
+[[agent]]
+name = "positioning_specialist"
+model = "llama3.1:8b"
+instruction = "You craft clear product positioning and value propositions."
+
+[[agent]]
+name = "marketing_creator"
+model = "llama3.1:8b"
+instruction = "You create marketing copy and promotional content."
+
+[[agent]]
+name = "release_engineer"
+model = "llama3.1:8b"
+instruction = "You prepare technical release notes and deployment summaries."

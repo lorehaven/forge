@@ -2,6 +2,7 @@
 members = [
     "anvil",
     "riveter",
+    "welder",
 ]
 resolver = "2"
 
@@ -13,22 +14,29 @@ repository = "https://github.com/lorehaven/build-tools"
 license = "MIT"
 readme = "README.md"
 
+[workspace.dependencies.adk-core]
+version = "0.3"
+default-features = false
+
+[workspace.dependencies.adk-model]
+version = "0.3"
+default-features = false
+
 [workspace.dependencies.anyhow]
 version = "1.0"
 
-[workspace.dependencies.chrono]
-version = "0.4"
-features = ["serde"]
+[workspace.dependencies.async-trait]
+version = "0.1"
 
 [workspace.dependencies.clap]
 version = "4.5"
 features = ["derive"]
 
-[workspace.dependencies.colored]
-version = "3"
-
 [workspace.dependencies.dotenvy]
 version = "0.15"
+
+[workspace.dependencies.futures]
+version = "0.3"
 
 [workspace.dependencies.futures-util]
 version = "0.3"
@@ -36,9 +44,6 @@ version = "0.3"
 [workspace.dependencies.minijinja]
 version = "2.14"
 features = ["loader", "serde"]
-
-[workspace.dependencies.once_cell]
-version = "1.21"
 
 [workspace.dependencies.regex]
 version = "1.12"
@@ -61,14 +66,8 @@ version = "1.0"
 [workspace.dependencies.serde_yaml]
 version = "0.9.33"
 
-[workspace.dependencies.syntect]
-version = "5.3"
-
-[workspace.dependencies.tantivy]
-version = "0.25"
-
-[workspace.dependencies.tempfile]
-version = "3"
+[workspace.dependencies.thiserror]
+version = "2.0"
 
 [workspace.dependencies.tokio]
 version = "1.49"
@@ -77,8 +76,8 @@ features = ["full"]
 [workspace.dependencies.toml]
 version = "0.9"
 
-[workspace.dependencies.trie-rs]
-version = "0.4"
+[workspace.dependencies.tracing]
+version = "0.1"
 
 [workspace.dependencies.uuid]
 version = "1.20"

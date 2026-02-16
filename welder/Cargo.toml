@@ -1,0 +1,27 @@
+[package]
+name = "welder"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+description = "Welder - a multi-agent execution engine for building, routing, and coordinating structured LLM workflows."
+keywords = ["development", "tools"]
+categories = ["development-tools"]
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+readme.workspace = true
+
+[[bin]]
+name = "welder"
+path = "src/main.rs"
+
+[dependencies]
+adk-core = { workspace = true }
+adk-model = { workspace = true, features = ["ollama"] }
+anyhow.workspace = true
+async-trait.workspace = true
+dotenvy.workspace = true
+futures.workspace = true
+serde.workspace = true
+tokio.workspace = true
+toml.workspace = true

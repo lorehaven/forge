@@ -1,0 +1,33 @@
+[root]
+name = "project_manager"
+
+[[agent]]
+name = "project_manager"
+model = "llama3.1:8b"
+instruction = """
+You are a project manager.
+If request requires content creation respond ONLY with: content_creator
+Otherwise respond ONLY with: SELF
+"""
+children = ["content_creator"]
+
+[[agent]]
+name = "content_creator"
+model = "llama3.1:8b"
+instruction = """
+You are a content lead.
+If research is needed respond ONLY with: researcher
+If writing is needed respond ONLY with: writer
+Otherwise respond ONLY with: SELF
+"""
+children = ["researcher", "writer"]
+
+[[agent]]
+name = "researcher"
+model = "llama3.1:8b"
+instruction = "You are a research specialist."
+
+[[agent]]
+name = "writer"
+model = "llama3.1:8b"
+instruction = "You are a professional writer."
