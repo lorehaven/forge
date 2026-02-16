@@ -25,6 +25,8 @@ pub enum Commands {
         #[arg(short, long)]
         package: Option<String>,
     },
+    /// Clean the workspace or packages
+    Clean,
     /// Lint the workspace with clippy
     Lint {
         /// Apply clippy to all targets

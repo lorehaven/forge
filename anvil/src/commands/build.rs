@@ -26,6 +26,13 @@ pub fn build(all: bool, all_features: bool, release: bool, package: Option<Strin
     run_command(cmd, "build")
 }
 
+pub fn clean() -> Result<()> {
+    let mut cmd = Command::new("cargo");
+    cmd.arg("clean");
+
+    run_command(cmd, "clean")
+}
+
 pub fn test(
     all: bool,
     package: Option<String>,

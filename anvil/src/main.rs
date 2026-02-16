@@ -15,6 +15,7 @@ fn main() -> Result<()> {
             release,
             package,
         } => commands::build::build(all, all_features, release, package)?,
+        Commands::Clean => commands::build::clean()?,
         Commands::Lint {
             all_targets,
             all_features,
