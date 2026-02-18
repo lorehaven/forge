@@ -47,10 +47,7 @@ async fn main() -> anyhow::Result<()> {
 fn get_workflow_path() -> anyhow::Result<String> {
     let mut args = std::env::args().skip(1);
 
-    match args.next() {
-        Some(path) => Ok(path),
-        None => Err(anyhow::anyhow!("Usage: welder <workflow.toml>")),
-    }
+    args.next().map_or_else(|| Err(anyhow::anyhow!("Usage: welder <workflow.toml>")), Ok)
 }
 
 // ─────────────────────────────────────────────────────────────
