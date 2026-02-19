@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "anvil",
-    "quench",
+    "quench/framework",
     "quench/examples/*",
     "riveter",
     "welder",

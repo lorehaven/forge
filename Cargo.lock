@@ -1568,7 +1568,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "quench-basic"
+name = "quench-example-basic"
 version = "0.1.0"
 dependencies = [
  "axum 0.8.8",

@@ -1,5 +1,5 @@
 [package]
-name = "quench-basic"
+name = "quench-example-basic"
 version = "0.1.0"
 edition.workspace = true
 authors.workspace = true
@@ -12,11 +12,11 @@ license.workspace = true
 readme.workspace = true
 
 [[bin]]
-name = "quench-example"
+name = "quench-example-basic"
 path = "src/main.rs"
 
 [dependencies]
-quench = { path = "../.." }
+quench = { path = "../../framework" }
 
 axum = { version = "0.8", features = ["json"] }
 tokio = { version = "1.0", features = ["full"] }
