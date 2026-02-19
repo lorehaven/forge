@@ -5,12 +5,22 @@ use std::fs;
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Config {
-    pub modules: HashMap<String, ModuleConfig>,
-    pub skipped: Option<SkippedConfig>,
+    #[serde(default)]
+    pub docker: DockerConfig,
+
+    #[serde(default)]
+    pub install: InstallConfig,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct DockerConfig {
+    /// Mapping from module name to Docker module configuration
+    #[serde(default)]
+    pub modules: HashMap<String, DockerModuleConfig>,
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ModuleConfig {
+pub struct DockerModuleConfig {
     pub packages: Vec<String>,
     pub dockerfile: String,
 
@@ -18,9 +28,11 @@ pub struct ModuleConfig {
     pub package_dockerfiles: HashMap<String, String>,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct SkippedConfig {
-    pub modules: Vec<String>,
+#[derive(Debug, Default, Deserialize)]
+pub struct InstallConfig {
+    /// List of packages to install
+    #[serde(default)]
+    pub packages: Vec<String>,
 }
 
 pub fn load_config() -> Result<Config> {

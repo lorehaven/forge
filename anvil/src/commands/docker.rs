@@ -5,20 +5,9 @@ use std::fs;
 use std::process::Command;
 
 fn find_module_for_package<'a>(config: &'a config::Config, package: &str) -> Result<&'a str> {
-    for (module, module_cfg) in &config.modules {
+    for (module, module_cfg) in &config.docker.modules {
         if module_cfg.packages.iter().any(|p| p == package) {
             return Ok(module);
-        }
-    }
-
-    if let Some(skipped) = &config.skipped {
-        for module in &skipped.modules {
-            let path = format!("{module}/{package}");
-            if std::path::Path::new(&path).exists() {
-                anyhow::bail!(
-                    "Package '{package}' is in module '{module}' which is skipped for Docker operations"
-                );
-            }
         }
     }
 
@@ -43,7 +32,7 @@ fn get_package_version(module: &str, package: &str) -> Result<String> {
 
 fn get_dockerfile_for_package(config: &config::Config, package: &str) -> Result<String> {
     let module = find_module_for_package(config, package)?;
-    let module_cfg = &config.modules[module];
+    let module_cfg = &config.docker.modules[module];
 
     module_cfg
         .package_dockerfiles
@@ -124,7 +113,7 @@ where
 {
     let mut failures = Vec::new();
 
-    for (module, module_cfg) in &config.modules {
+    for (module, module_cfg) in &config.docker.modules {
         for package in &module_cfg.packages {
             println!("\n=== Processing {module}/{package} ===");
 

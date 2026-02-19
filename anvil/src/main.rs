@@ -33,7 +33,7 @@ fn main() -> Result<()> {
             ignored,
             list,
         } => commands::build::test(all, package, test_name, ignored, list)?,
-        Commands::Install { all, package } => commands::install::install(package, all)?,
+        Commands::Install { all, package } => commands::install::install(&config, package, all)?,
         Commands::Run {
             package,
             serve,
