@@ -1,15 +1,15 @@
 [package]
 name = "quench-example-basic"
 version = "0.1.0"
-edition.workspace = true
-authors.workspace = true
+edition = { workspace = true }
+authors = { workspace = true }
 description = "Quench - sample app"
 keywords = ["development", "tools"]
 categories = ["development-tools"]
-homepage.workspace = true
-repository.workspace = true
-license.workspace = true
-readme.workspace = true
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+readme = { workspace = true }
 
 [[bin]]
 name = "quench-example-basic"
