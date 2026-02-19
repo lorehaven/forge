@@ -13,7 +13,7 @@ Riveter is a specialized tool for managing Kubernetes manifests, powered by Rust
 ## Installation
 
 ```bash
-cd build-tools/riveter
+cd forge/riveter
 cargo install --path .
 ```
 

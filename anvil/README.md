@@ -20,7 +20,7 @@ Anvil is a powerful CLI toolset designed for managing multi-package Rust workspa
 ## Installation
 
 ```bash
-cd build-tools/anvil
+cd forge/anvil
 cargo install --path .
 ```
 

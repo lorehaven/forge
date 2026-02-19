@@ -11,8 +11,8 @@ resolver = "2"
 [workspace.package]
 edition = "2024"
 authors = ["Paweł Walus <pawel.walus@protonmail.com>"]
-homepage = "https://github.com/lorehaven/build-tools"
-repository = "https://github.com/lorehaven/build-tools"
+homepage = "https://github.com/lorehaven/forge"
+repository = "https://github.com/lorehaven/forge"
 license = "MIT"
 readme = "README.md"
 

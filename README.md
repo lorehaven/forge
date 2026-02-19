@@ -1,6 +1,7 @@
-# Build Tools 🛠️
+# Forge 🛠️
 
-A collection of high-performance development and automation tools for modern software projects. This workspace contains several interconnected modules designed to streamline development, CI/CD, and project maintenance.
+A collection of high-performance development and automation tools for modern software projects.
+This workspace contains several modules designed to streamline development, CI/CD, and project maintenance.
 
 ## Getting Started
 
@@ -9,7 +10,7 @@ Each module can be built and used independently, or you can build everything fro
 ### Prerequisites
 
 - **Rust 1.83+** (edition 2024)
-- **llama-server** (required for Ferrous)
+- **ollama** (required for Welder)
 - **kubectl** (required for Riveter)
 - **docker** (required for Anvil's Docker features)
 
@@ -25,6 +26,7 @@ cargo build --release
 .
 ├── anvil/      # Workspace & Docker management CLI
 ├── riveter/    # Kubernetes manifest templating & management
+├── quench/     # Simple Web UI framework
 ├── welder/     # AI-driven agent system framework
 └── target/     # Build artifacts
 ```
