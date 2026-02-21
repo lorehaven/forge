@@ -16,8 +16,7 @@ name = "quench-example-basic"
 path = "src/main.rs"
 
 [dependencies]
-quench = { path = "../../framework" }
-
-axum = { version = "0.8", features = ["json"] }
-tokio = { version = "1.0", features = ["full"] }
-tower-http = { version = "0.6", features = ["fs"] }
+quench = { workspace = true }
+axum = { workspace = true }
+tokio = { workspace = true }
+tower-http = { workspace = true }
