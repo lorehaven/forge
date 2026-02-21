@@ -95,6 +95,9 @@ fn build_agents(workflow: &Workflow) -> anyhow::Result<HashMap<String, AgentNode
                 instruction: cfg.instruction.clone(),
                 model,
                 children: cfg.children.clone().unwrap_or_default(),
+                tools: cfg.tools.clone().unwrap_or_default(),
+                max_tool_steps: cfg.max_tool_steps.unwrap_or(8),
+                run_cmd_allowlist: cfg.run_cmd_allowlist.clone().unwrap_or_default(),
             },
         );
     }

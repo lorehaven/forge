@@ -1,3 +1,4 @@
+pub mod allowlists;
 pub mod app_config;
 pub mod workflow;
 

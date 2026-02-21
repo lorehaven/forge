@@ -3,4 +3,5 @@
 **/dist/
 **/target/
 .anvil.toml
+.claude/
 .warehouse/

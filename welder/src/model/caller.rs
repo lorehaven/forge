@@ -6,7 +6,7 @@ use futures::StreamExt;
 
 pub async fn call_model(model: Arc<dyn Llm>, prompt: String) -> anyhow::Result<String> {
     let request = LlmRequest {
-        model: "llama3.1:8b".to_string(),
+        model: model.name().to_string(),
         contents: vec![Content::new("user").with_text(prompt)],
         tools: HashMap::default(),
         config: None,

@@ -17,4 +17,7 @@ pub struct AgentConfig {
     pub model: String,
     pub instruction: String,
     pub children: Option<Vec<String>>,
+    pub tools: Option<Vec<String>>,
+    pub max_tool_steps: Option<usize>,
+    pub run_cmd_allowlist: Option<Vec<String>>,
 }
