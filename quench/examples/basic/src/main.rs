@@ -1,56 +1,37 @@
 use axum::{Router, response::Html, routing::get};
 use quench::html::*;
-use quench::{
-    AppBuilder, FooterBuilder, HeaderBuilder, NavPanelBuilder, Theme, create_asset_files,
-};
+use quench::{AppShellBuilder, Theme};
 use std::net::SocketAddr;
 use tower_http::services::ServeDir;
 
 #[tokio::main]
 async fn main() {
-    let nav = NavPanelBuilder::new().build();
-
-    let header = HeaderBuilder::new()
-        .label("header_label")
-        .with_nav(nav)
-        .build();
-    let footer = FooterBuilder::new().label("footer_label").build();
-
-    create_asset_files(Theme::Dark);
-    let base_app = AppBuilder::new()
-        .title("Quench")
-        .header(header)
-        .footer(footer);
-
-    let index = base_app
-        .clone()
-        .page_content(
-            content()
-                .class("main-content")
-                .child(div().attr("id", "root").text("Loading...")),
-        )
+    let app_shell = AppShellBuilder::new()
+        .default_theme(Theme::BootstrapDark)
+        .supported_themes(vec![Theme::BootstrapDark, Theme::BootstrapLight])
         .build();
 
-    let about = base_app
-        .clone()
-        .page_content(
-            div()
-                .class("page")
-                .child(h2().text("About Us"))
-                .child(p().text("We are a company that builds amazing SPAs"))
-                .child(p().text("Our mission is to make the web better")),
-        )
-        .build();
+    let index = app_shell.page(
+        content()
+            .class("main-content")
+            .child(div().attr("id", "root").text("Loading...")),
+    );
 
-    let contact = base_app
-        .page_content(
-            div()
-                .class("page")
-                .child(h2().text("Contact Us"))
-                .child(p().text("Email: contact@myapp.com"))
-                .child(p().text("Phone: +1 (123) 456-7890")),
-        )
-        .build();
+    let about = app_shell.page(
+        div()
+            .class("page")
+            .child(h2().text("About Us"))
+            .child(p().text("We are a company that builds amazing SPAs"))
+            .child(p().text("Our mission is to make the web better")),
+    );
+
+    let contact = app_shell.page(
+        div()
+            .class("page")
+            .child(h2().text("Contact Us"))
+            .child(p().text("Email: contact@myapp.com"))
+            .child(p().text("Phone: +1 (123) 456-7890")),
+    );
 
     let app = Router::new()
         .nest_service("/assets", ServeDir::new("dist/assets"))

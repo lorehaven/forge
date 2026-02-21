@@ -1,4 +1,4 @@
-use crate::{Element, div, h1, header, nav_button};
+use crate::{Element, div, header, nav_button, h2};
 
 #[derive(Clone, Debug, Default)]
 pub struct HeaderBuilder {
@@ -28,7 +28,7 @@ impl HeaderBuilder {
             div()
                 .class("left-panel")
                 .child_opt(self.with_nav.then(nav_button))
-                .child(h1().attr("data-i18n", &self.label))
+                .child(h2().attr("data-i18n", &self.label))
                 .child_opt(self.nav_panel),
         )
     }

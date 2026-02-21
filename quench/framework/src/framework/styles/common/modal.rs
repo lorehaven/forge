@@ -11,7 +11,7 @@ fn overlay() -> CssRule {
         .property("top", "4rem")
         .property("bottom", "3rem")
         .property("z-index", "999")
-        .property("background-color", "var(--neutral-800)")
+        .property("background-color", "var(--bs-gray-800)")
         .property("opacity", "0")
         .property("transform", "translateX(-100%)")
         .property("transition", "transform 0.25s ease, opacity 0.25s ease")
@@ -25,9 +25,9 @@ fn overlay() -> CssRule {
 fn modal_shared() -> CssRule {
     CssRule::new(".modal-side,\n.modal-center")
         .property("z-index", "1000")
-        .property("background-color", "var(--neutral-900)")
+        .property("background-color", "var(--bs-gray-900)")
         .property("border-radius", "0.25rem")
-        .property("box-shadow", "0 0 0.2rem var(--neutral-500)")
+        .property("box-shadow", "0 0 0.2rem var(--bs-gray-500)")
         .property("opacity", "0")
         .property("overflow-y", "auto")
         .property("transition", "transform 0.25s ease, opacity 0.25s ease")
@@ -66,12 +66,6 @@ fn modal_side() -> CssRule {
         .property("transform", "translateX(-100%)")
         .child(
             CssRule::new(".modal-content")
-                .child(
-                    CssRule::new("label")
-                        .property("font-size", "1.2rem")
-                        .property("font-weight", "bold")
-                        .property("margin-bottom", "-0.6rem"),
-                )
                 .child(CssRule::new("select").property("font-size", "1.2rem"))
                 .child(
                     CssRule::new("button.nav")
@@ -81,26 +75,26 @@ fn modal_side() -> CssRule {
                         .property("text-decoration", "none")
                         .property("padding", "0.8rem 1rem")
                         .property("border-radius", "0.25rem")
-                        .property("background-color", "var(--neutral-800)")
-                        .property("border", "0.1rem var(--neutral-700) solid")
+                        .property("background-color", "var(--bs-gray-800)")
+                        .property("border", "0.1rem var(--bs-gray-700) solid")
                         .property("transition", "background-color 0.3s ease")
                         .child(
                             CssRule::new("&:hover")
-                                .property("background-color", "var(--neutral-700)"),
+                                .property("background-color", "var(--bs-gray-700)"),
                         )
                         .child(
                             CssRule::new("&:active")
-                                .property("background-color", "var(--neutral-600)"),
+                                .property("background-color", "var(--bs-gray-600)"),
                         )
                         .child(
                             CssRule::new("&.current")
-                                .property("border-color", "var(--emerald-900)")
-                                .property("box-shadow", "0 0 0.6rem var(--emerald-900)"),
+                                .property("border-color", "var(--bs-success-900)")
+                                .property("box-shadow", "0 0 0.6rem var(--bs-success-900)"),
                         ),
                 )
                 .child(
                     CssRule::new("a.nav-entry-active")
-                        .property("box-shadow", "0 0 0.6rem var(--emerald-900)"),
+                        .property("box-shadow", "0 0 0.6rem var(--bs-success-900)"),
                 ),
         )
 }
@@ -148,9 +142,9 @@ fn modal_center() -> CssRule {
                         .property("justify-content", "center")
                         .property("align-items", "center")
                         .property("gap", "1rem")
-                        .property("background-color", "var(--gray-800)")
+                        .property("background-color", "var(--bs-code-bg)")
                         .property("border-radius", "0.25rem")
-                        .property("border", "var(--neutral-800)")
+                        .property("border", "var(--bs-gray-800)")
                         .property("padding", "1rem 2rem")
                         .property("font-size", "1.2rem")
                         .property("font-family", "monospace")
@@ -171,11 +165,11 @@ fn modal_center() -> CssRule {
                                 .property("flex", "0 0 auto")
                                 .property("cursor", "pointer")
                                 .child(
-                                    CssRule::new("&:hover").property("color", "var(--neutral-200)"),
+                                    CssRule::new("&:hover").property("color", "var(--bs-gray-200)"),
                                 )
                                 .child(
                                     CssRule::new("&:active")
-                                        .property("color", "var(--neutral-100)"),
+                                        .property("color", "var(--bs-gray-100)"),
                                 ),
                         ),
                 )

@@ -14,10 +14,10 @@ pub fn root() -> Vec<CssRule> {
             .property("min-width", "100vw")
             .property("display", "flex")
             .property("flex-direction", "column")
-            .property("background-color", "var(--neutral-800)"),
+            .property("background-color", "var(--bs-gray-800)"),
         CssRule::new("*")
             .property("font-family", "'Roboto', sans-serif")
-            .property("color", "var(--neutral-300)"),
+            .property("color", "var(--bs-gray-300)"),
         CssRule::new("*")
             .child(
                 CssRule::new("&::-webkit-scrollbar")
@@ -26,17 +26,17 @@ pub fn root() -> Vec<CssRule> {
             )
             .child(
                 CssRule::new("&::-webkit-scrollbar-track")
-                    .property("background", "var(--neutral-400)"),
+                    .property("background", "var(--bs-gray-400)"),
             )
             .child(
                 CssRule::new("&::-webkit-scrollbar-thumb")
-                    .property("background-color", "var(--neutral-600)")
+                    .property("background-color", "var(--bs-gray-600)")
                     .property("border-radius", "0.3rem")
-                    .property("border", "0.1rem solid var(--neutral-500)"),
+                    .property("border", "0.1rem solid var(--bs-gray-500)"),
             )
             .child(
                 CssRule::new("&::-webkit-scrollbar-thumb:hover")
-                    .property("background-color", "var(--neutral-500)"),
+                    .property("background-color", "var(--bs-gray-500)"),
             ),
     ]
 }
