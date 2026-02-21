@@ -6,6 +6,7 @@ pub mod admin;
 pub mod crates;
 pub mod docker;
 pub mod health;
+pub mod ui;
 
 static DOCKER_STORAGE_ROOT: LazyLock<String> =
     LazyLock::new(|| envmnt::get_or("STORAGE_PATH", "./storage"));
@@ -26,5 +27,12 @@ pub struct OpenApiDoc;
 async fn swagger_redirect() -> HttpResponse {
     HttpResponse::PermanentRedirect()
         .append_header(("Location", "/swagger-ui/"))
+        .finish()
+}
+
+#[get("/swagger-ui/")]
+async fn swagger_index_redirect() -> HttpResponse {
+    HttpResponse::PermanentRedirect()
+        .append_header(("Location", "/swagger-ui/index.html"))
         .finish()
 }

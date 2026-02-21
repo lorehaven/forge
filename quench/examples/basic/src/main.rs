@@ -1,6 +1,5 @@
 use axum::{Router, response::Html, routing::get};
-use quench::html::*;
-use quench::{AppShellBuilder, Theme};
+use quench::prelude::*;
 use std::net::SocketAddr;
 use tower_http::services::ServeDir;
 

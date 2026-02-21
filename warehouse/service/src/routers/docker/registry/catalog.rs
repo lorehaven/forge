@@ -1,7 +1,6 @@
-use crate::routers::DOCKER_STORAGE_ROOT;
+use crate::routers::docker::registry::storage::list_repositories;
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
 use utoipa::ToSchema;
 
 #[derive(Deserialize, ToSchema)]
@@ -39,12 +38,7 @@ pub async fn handle(req: HttpRequest) -> impl Responder {
     let n = query.as_ref().and_then(|q| q.n).unwrap_or(100);
     let last = query.as_ref().and_then(|q| q.last.clone());
 
-    let mut repos = Vec::new();
-    let root = PathBuf::from(DOCKER_STORAGE_ROOT.as_str());
-
-    collect_repositories(&root, "", &mut repos);
-
-    repos.sort();
+    let repos = list_repositories();
 
     let start = last
         .as_ref()
@@ -64,37 +58,4 @@ pub async fn handle(req: HttpRequest) -> impl Responder {
     }
 
     response.json(CatalogResponse { repositories: page })
-}
-
-fn collect_repositories(dir: &Path, prefix: &str, repos: &mut Vec<String>) {
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                if prefix.is_empty()
-                    && matches!(
-                        entry.file_name().to_str(),
-                        Some("blobs" | "manifests" | "_uploads")
-                    )
-                {
-                    continue;
-                }
-
-                let name = entry.file_name();
-                let name = name.to_string_lossy();
-                let repo_name = if prefix.is_empty() {
-                    name.to_string()
-                } else {
-                    format!("{}/{}", prefix, name)
-                };
-
-                // Repositories are identified by tag namespace in this storage layout.
-                if path.join("tags").exists() {
-                    repos.push(repo_name.clone());
-                }
-
-                collect_repositories(&path, &repo_name, repos);
-            }
-        }
-    }
 }

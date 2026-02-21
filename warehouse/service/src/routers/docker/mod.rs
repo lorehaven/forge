@@ -7,7 +7,7 @@ use utoipa::OpenApi;
 
 mod blob;
 mod manifest;
-mod registry;
+pub(crate) mod registry;
 pub mod token;
 
 fn upload_path(name: &str, uuid: &str) -> Option<PathBuf> {

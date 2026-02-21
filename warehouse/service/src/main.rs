@@ -46,8 +46,11 @@ async fn main() -> std::io::Result<()> {
             .service(routers::docker::token::handle)
             .service(routers::health::scope())
             .service(routers::crates::scope())
+            .service(routers::ui::assets)
+            .service(routers::ui::scope())
             // Swagger UI
             .service(routers::swagger_redirect)
+            .service(routers::swagger_index_redirect)
             .service(
                 SwaggerUi::new("/swagger-ui/{_:.*}")
                     .url("/api-doc/openapi.json", routers::OpenApiDoc::openapi()),

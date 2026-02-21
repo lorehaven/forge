@@ -1,4 +1,4 @@
-use crate::routers::docker::repository_path;
+use crate::routers::docker::registry::storage::{TagListError, list_tags_for_repository};
 use crate::shared::docker_error;
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
 use serde::{Deserialize, Serialize};
@@ -43,34 +43,23 @@ pub async fn handle(req: HttpRequest, path: web::Path<String>) -> impl Responder
     let n = query.as_ref().and_then(|q| q.n).unwrap_or(100);
     let last = query.as_ref().and_then(|q| q.last.clone());
 
-    let Some(repo_root) = repository_path(&name) else {
-        return docker_error::response(
-            actix_web::http::StatusCode::BAD_REQUEST,
-            docker_error::NAME_UNKNOWN,
-            "invalid repository name",
-        );
-    };
-    let repo_path = repo_root.join("tags");
-
-    if !repo_path.exists() {
-        return docker_error::response(
-            actix_web::http::StatusCode::NOT_FOUND,
-            docker_error::NAME_UNKNOWN,
-            "repository name not known to registry",
-        );
-    }
-
-    let mut tags = Vec::new();
-
-    if let Ok(entries) = std::fs::read_dir(&repo_path) {
-        for entry in entries.flatten() {
-            if let Some(tag) = entry.file_name().to_str() {
-                tags.push(tag.to_string());
-            }
+    let tags = match list_tags_for_repository(&name) {
+        Ok(tags) => tags,
+        Err(TagListError::InvalidName) => {
+            return docker_error::response(
+                actix_web::http::StatusCode::BAD_REQUEST,
+                docker_error::NAME_UNKNOWN,
+                "invalid repository name",
+            );
         }
-    }
-
-    tags.sort();
+        Err(TagListError::NotFound) => {
+            return docker_error::response(
+                actix_web::http::StatusCode::NOT_FOUND,
+                docker_error::NAME_UNKNOWN,
+                "repository name not known to registry",
+            );
+        }
+    };
 
     let start = last
         .as_ref()

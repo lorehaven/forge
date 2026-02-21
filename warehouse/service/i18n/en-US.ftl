@@ -1,0 +1,29 @@
+# required
+header_label = Warehouse
+footer_label = © 2026 Paweł Walus — Order of Devs
+locale_label = Language
+theme_label = Theme
+
+ui_header_docker = Warehouse - Docker Repository Explorer
+ui_logout = Log out
+ui_repositories = Repositories
+ui_tags = Tags
+ui_tags_for = Tags for
+ui_metadata = Metadata
+ui_metadata_for = Metadata for
+ui_col_tag = Tag
+ui_col_digest = Digest
+ui_col_media_type = Media Type
+ui_empty_select_repo = Select a repository from the tree.
+ui_empty_no_tags = No tags found.
+ui_empty_select_tag = Select a tag to inspect metadata.
+ui_meta_tag = Tag
+ui_meta_digest = Digest
+ui_meta_media_type = Media Type
+ui_meta_manifest_size = Manifest Size
+ui_meta_unknown = unknown
+ui_login_sign_in = Sign in
+ui_login_username = Username
+ui_login_password = Password
+ui_login_submit = Log in
+ui_login_invalid_credentials = Invalid credentials
