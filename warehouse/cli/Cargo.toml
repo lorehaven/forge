@@ -1,0 +1,24 @@
+[package]
+name = "warehouse-cli"
+version = "0.1.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "Warehouse - cli tool"
+keywords = ["development", "tools"]
+categories = ["development-tools"]
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+readme = { workspace = true }
+
+[[bin]]
+name = "warehouse"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+tokio = { workspace = true }
+toml = { workspace = true }
