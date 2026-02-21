@@ -177,7 +177,10 @@ fn tabs() -> CssRule {
                 .property("padding", "0 0.5rem 0.3rem 0")
                 .property("border-bottom", "0.2rem solid var(--bs-gray-300)"),
         )
-        .child(CssRule::new(".tab.active").property("border-bottom", "0.2rem solid var(--bs-success-700)"))
+        .child(
+            CssRule::new(".tab.active")
+                .property("border-bottom", "0.2rem solid var(--bs-success-700)"),
+        )
 }
 
 fn slides_container() -> CssRule {
@@ -252,7 +255,10 @@ fn table() -> CssRule {
         .child(
             CssRule::new(".header")
                 .property("display", "grid")
-                .property("grid-template-columns", "repeat(auto-fit, minmax(10rem, 1fr))")
+                .property(
+                    "grid-template-columns",
+                    "repeat(auto-fit, minmax(10rem, 1fr))",
+                )
                 .property("font-size", "1.4rem")
                 .property("font-weight", "600")
                 .property("background-color", "var(--bs-gray-700)")
@@ -268,7 +274,10 @@ fn table() -> CssRule {
                 .child(
                     CssRule::new(".row")
                         .property("display", "grid")
-                        .property("grid-template-columns", "repeat(auto-fit, minmax(10rem, 1fr))")
+                        .property(
+                            "grid-template-columns",
+                            "repeat(auto-fit, minmax(10rem, 1fr))",
+                        )
                         .child(
                             CssRule::new("&:not(:last-child)")
                                 .property("border-bottom", "0.1rem solid var(--bs-gray-700)"),
@@ -301,10 +310,7 @@ fn table() -> CssRule {
                                 .property("display", "inline-block")
                                 .property("transform", "scaleY(-1)")
                                 .property("opacity", "0")
-                                .property(
-                                    "transition",
-                                    "transform 180ms ease, opacity 360ms ease",
-                                ),
+                                .property("transition", "transform 180ms ease, opacity 360ms ease"),
                         )
                         .child(CssRule::new(".indicator.active").property("opacity", "1"))
                         .child(CssRule::new(".indicator.desc").property("transform", "scaleY(1)")),
@@ -324,8 +330,7 @@ fn table() -> CssRule {
                                         .property("opacity", "0.5"),
                                 )
                                 .child(
-                                    CssRule::new("&:hover")
-                                        .property("color", "var(--bs-gray-200)"),
+                                    CssRule::new("&:hover").property("color", "var(--bs-gray-200)"),
                                 )
                                 .child(
                                     CssRule::new("&:active")
@@ -359,9 +364,7 @@ fn table_mobile() -> CssRule {
                 .property("flex-direction", "row")
                 .property("justify-content", "space-evenly")
                 .property("gap", "0.5rem")
-                .child(
-                    CssRule::new("button.action").property("width", "100%"),
-                ),
+                .child(CssRule::new("button.action").property("width", "100%")),
         )
         .child(
             CssRule::new("button.disabled")

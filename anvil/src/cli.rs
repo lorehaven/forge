@@ -93,6 +93,7 @@ pub enum Commands {
         #[arg(short, long)]
         package: Option<String>,
         /// Build and serve mode: watch for file changes and rebuild/restart
+        /// Hotkeys in serve mode: `r` rebuild now, `R` toggle auto-rebuild, `q/Q/e/E` quit
         #[arg(long)]
         serve: bool,
         /// Polling interval in milliseconds for serve mode

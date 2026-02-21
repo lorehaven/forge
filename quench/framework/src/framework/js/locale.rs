@@ -99,7 +99,10 @@ pub fn locale_js() -> String {
     locale_js_with_options(&locales, None)
 }
 
-pub fn locale_js_with_options(supported_locales: &[String], default_locale: Option<&str>) -> String {
+pub fn locale_js_with_options(
+    supported_locales: &[String],
+    default_locale: Option<&str>,
+) -> String {
     let resolved_default_locale = match default_locale {
         Some(locale) if supported_locales.iter().any(|l| l == locale) => locale.to_string(),
         _ => supported_locales

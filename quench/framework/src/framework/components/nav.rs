@@ -1,5 +1,5 @@
-use crate::js::locale::available_locales;
 use crate::dom::{on_dom_ready, set_select_value, toggle_modal, update_from_select};
+use crate::js::locale::available_locales;
 use crate::{Element, Theme, div, i, label, nav, option, script, select};
 use strum::IntoEnumIterator;
 
@@ -83,7 +83,9 @@ impl NavPanelBuilder {
             .on_change(&update_from_select("locale-select", "updateLocale"));
 
         for locale in locales {
-            let label = format!("{} {}", locale_flag(&locale), locale).trim().to_string();
+            let label = format!("{} {}", locale_flag(&locale), locale)
+                .trim()
+                .to_string();
             element = element
                 .clone()
                 .child(option().attr("value", &locale).text(&label));

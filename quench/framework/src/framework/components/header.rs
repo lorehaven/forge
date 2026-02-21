@@ -1,4 +1,4 @@
-use crate::{Element, div, header, nav_button, h2};
+use crate::{Element, div, h2, header, nav_button};
 
 #[derive(Clone, Debug, Default)]
 pub struct HeaderBuilder {

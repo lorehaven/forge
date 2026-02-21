@@ -13,7 +13,7 @@ async fn main() {
     let index = app_shell.page(
         content()
             .class("main-content")
-            .child(div().attr("id", "root").text("Loading...")),
+            .child(h1().attr("id", "root").text("Hello.")),
     );
 
     let about = app_shell.page(
