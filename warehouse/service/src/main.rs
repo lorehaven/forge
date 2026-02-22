@@ -1,5 +1,5 @@
 use actix_web::middleware::Logger;
-use actix_web::{App, HttpServer, web};
+use actix_web::{App, HttpRequest, HttpResponse, HttpServer, web};
 use rustls::ServerConfig;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls_pemfile::{certs, pkcs8_private_keys};
@@ -18,9 +18,10 @@ async fn main() -> std::io::Result<()> {
     tracing_subscriber::fmt().init();
     dotenvy::dotenv().ok();
 
-    let addr: SocketAddr = envmnt::get_or("SERVER_ADDR", "0.0.0.0:8698")
-        .parse()
-        .unwrap();
+    let addr_str: String = envmnt::get_or("SERVER_ADDR", "0.0.0.0:443");
+    let addr_redir_str: String = envmnt::get_or("SERVER_HTTP_REDIRECT_ADDR", "0.0.0.0:80");
+
+    let addr: SocketAddr = addr_str.parse().unwrap();
 
     let jwt_config = domain::jwt::JwtConfig::init();
     let max_body_bytes: usize = envmnt::get_or("MAX_REQUEST_BODY_BYTES", "1073741824")
@@ -61,11 +62,58 @@ async fn main() -> std::io::Result<()> {
         envmnt::get_or("SERVER_CERT_PATH", "cert.pem"),
         envmnt::get_or("SERVER_KEY_PATH", "key.pem"),
     ) {
-        println!("🔒 Starting HTTPS server");
-        server.bind_rustls_0_23(addr, config)?.run().await
+        let http_redirect_addr: SocketAddr = addr_redir_str.parse().unwrap();
+        let https_port = addr.port();
+
+        println!("🔒 Starting HTTPS server on {addr}");
+        println!("↪ Starting HTTP redirect server on {http_redirect_addr}");
+
+        let https_server = server.bind_rustls_0_23(addr, config)?.run();
+
+        let redirect_server = HttpServer::new(move || {
+            App::new().default_service(web::to(move |req: HttpRequest| {
+                redirect_to_https(req, https_port)
+            }))
+        })
+        .bind(http_redirect_addr)?
+        .run();
+
+        tokio::try_join!(https_server, redirect_server)?;
+        Ok(())
     } else {
         println!("⚠ Starting plain HTTP server");
         server.bind(addr)?.run().await
+    }
+}
+
+async fn redirect_to_https(req: HttpRequest, https_port: u16) -> HttpResponse {
+    let host = req.connection_info().host().to_string();
+    let authority = build_https_authority(&host, https_port);
+    let location = format!("https://{authority}{}", req.uri());
+
+    HttpResponse::PermanentRedirect()
+        .insert_header(("Location", location))
+        .finish()
+}
+
+fn build_https_authority(host: &str, https_port: u16) -> String {
+    if let Ok(authority) = host.parse::<actix_web::http::uri::Authority>() {
+        let parsed_host = authority.host();
+        let rendered_host = if parsed_host.contains(':') {
+            format!("[{parsed_host}]")
+        } else {
+            parsed_host.to_string()
+        };
+
+        if https_port == 443 {
+            rendered_host
+        } else {
+            format!("{rendered_host}:{https_port}")
+        }
+    } else if https_port == 443 {
+        host.to_string()
+    } else {
+        format!("{host}:{https_port}")
     }
 }
 
