@@ -1,4 +1,4 @@
-use crate::shared::docker_error;
+use crate::domain::docker_error;
 use actix_web::{
     Error,
     body::{EitherBody, MessageBody},

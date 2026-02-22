@@ -1,5 +1,5 @@
+use crate::domain::docker_error;
 use crate::routers::docker::{blob_exists, repository_path, validate_digest};
-use crate::shared::docker_error;
 use actix_web::{HttpResponse, Responder, post, web};
 use serde::Deserialize;
 use utoipa::ToSchema;

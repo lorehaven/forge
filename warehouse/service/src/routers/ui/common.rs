@@ -1,4 +1,4 @@
-use crate::shared::jwt::JwtConfig;
+use crate::domain::jwt::JwtConfig;
 use actix_web::{HttpResponse, Responder, get, http::header::ContentType, web};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use quench::prelude::*;

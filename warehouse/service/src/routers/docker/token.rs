@@ -1,4 +1,4 @@
-use crate::shared::jwt::{Claims, JwtConfig};
+use crate::domain::jwt::{Claims, JwtConfig};
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::{Duration, Utc};

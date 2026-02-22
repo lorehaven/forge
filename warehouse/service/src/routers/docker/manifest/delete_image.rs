@@ -1,5 +1,5 @@
+use crate::domain::docker_error;
 use crate::routers::docker::{manifest_path, repository_path, validate_digest};
-use crate::shared::docker_error;
 use actix_web::{HttpResponse, Responder, delete, web};
 
 #[utoipa::path(

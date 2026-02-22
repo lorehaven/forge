@@ -1,5 +1,5 @@
+use crate::domain::docker_error;
 use crate::routers::docker::upload_path;
-use crate::shared::docker_error;
 use actix_web::{HttpRequest, HttpResponse, Responder, patch, web};
 use tokio::io::AsyncWriteExt;
 

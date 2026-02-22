@@ -1,7 +1,7 @@
+use crate::domain::docker_error;
 use crate::routers::docker::{
     manifest_path, repository_path, validate_digest, validate_tag_reference,
 };
-use crate::shared::docker_error;
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};

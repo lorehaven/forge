@@ -1,5 +1,5 @@
+use crate::domain::docker_error;
 use crate::routers::docker::{DigestQuery, blob_path, upload_path, validate_digest};
-use crate::shared::docker_error;
 use actix_web::{HttpResponse, Responder, put, web};
 use sha2::{Digest, Sha256};
 

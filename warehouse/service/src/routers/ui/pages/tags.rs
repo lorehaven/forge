@@ -1,5 +1,5 @@
+use crate::domain::jwt::JwtConfig;
 use crate::routers::ui::common::{is_ui_authenticated, ui_login_redirect};
-use crate::shared::jwt::JwtConfig;
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
 
 #[get("/docker/tags/{repository:.+}")]

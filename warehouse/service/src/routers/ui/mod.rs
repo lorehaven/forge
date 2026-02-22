@@ -1,4 +1,4 @@
-use crate::shared::jwt::JwtConfig;
+use crate::domain::jwt::JwtConfig;
 use actix_web::dev::HttpServiceFactory;
 use actix_web::{HttpResponse, Responder, get, web};
 use serde::Deserialize;

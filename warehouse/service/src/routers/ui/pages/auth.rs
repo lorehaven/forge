@@ -1,5 +1,5 @@
+use crate::domain::jwt::JwtConfig;
 use crate::routers::ui::common::{UI_SESSION_COOKIE, UiPageKind, render_page};
-use crate::shared::jwt::JwtConfig;
 use actix_web::cookie::{Cookie, SameSite};
 use actix_web::{HttpResponse, Responder, get, post, web};
 use base64::{Engine as _, engine::general_purpose::STANDARD};

@@ -9,9 +9,9 @@ use std::net::SocketAddr;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
+pub mod domain;
 pub mod middleware;
 pub mod routers;
-pub mod shared;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -22,7 +22,7 @@ async fn main() -> std::io::Result<()> {
         .parse()
         .unwrap();
 
-    let jwt_config = shared::jwt::JwtConfig::init();
+    let jwt_config = domain::jwt::JwtConfig::init();
     let max_body_bytes: usize = envmnt::get_or("MAX_REQUEST_BODY_BYTES", "1073741824")
         .parse()
         .unwrap_or(1024 * 1024 * 1024);

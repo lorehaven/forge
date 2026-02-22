@@ -1,5 +1,5 @@
+use crate::domain::docker_error;
 use crate::routers::docker::{blob_path, validate_digest};
-use crate::shared::docker_error;
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
 use std::io::SeekFrom;
 use std::path::PathBuf;

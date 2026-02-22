@@ -9,7 +9,7 @@ pub mod health;
 pub mod ui;
 
 static DOCKER_STORAGE_ROOT: LazyLock<String> =
-    LazyLock::new(|| envmnt::get_or("STORAGE_PATH", "./storage"));
+    LazyLock::new(|| envmnt::get_or("STORAGE_PATH", "./storage/docker"));
 
 #[derive(OpenApi)]
 #[openapi(

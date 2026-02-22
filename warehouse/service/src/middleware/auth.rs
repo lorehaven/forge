@@ -1,5 +1,5 @@
-use crate::shared::docker_error;
-use crate::shared::jwt::{Claims, JwtConfig};
+use crate::domain::docker_error;
+use crate::domain::jwt::{Claims, JwtConfig};
 use actix_web::{
     Error,
     body::{EitherBody, MessageBody},

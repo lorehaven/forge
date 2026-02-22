@@ -1,5 +1,5 @@
+use crate::domain::docker_error;
 use crate::routers::docker::registry::storage::{TagListError, list_tags_for_repository};
-use crate::shared::docker_error;
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
