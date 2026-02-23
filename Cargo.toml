@@ -1,11 +1,12 @@
 [workspace]
 members = [
     "anvil",
+    "pulley",
     "quench/quench",
     "quench/examples/*",
     "riveter",
     "warehouse/*",
-    "welder", "pulley",
+    "welder",
 ]
 resolver = "2"
 
