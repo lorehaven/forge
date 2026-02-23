@@ -19,7 +19,7 @@ struct TagsQuery {
 #[utoipa::path(
     get,
     operation_id = "get_tags",
-    path = "/v2/{name}/tags/list",
+    path = "/{name}/tags/list",
     tag = "docker",
     params(
         ("name" = String, Path, description = "Repository name"),
