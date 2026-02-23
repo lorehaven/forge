@@ -1,0 +1,40 @@
+# Pulley Backup Configuration Example
+#
+# Global configs: Place in ~/.config/pulley/*.toml for shared jobs
+#                 Examples: personal.toml, servers.toml, work.toml
+#
+# Local configs:  Place in the current directory as *.pulley.toml
+#                 Examples: project.pulley.toml, home.pulley.toml
+#
+# Multiple config files are supported and merged alphabetically.
+# Local jobs override global jobs with matching IDs.
+
+# Local backup example
+[[jobs]]
+id = "documents"
+desc = "Backup documents folder"
+src = "/home/losseheil/Documents"
+dest = "/tmp/documents"
+delete = true
+skip = ["temp", "cache"]
+no-confirm = false
+
+# Remote backup example (via SSH)
+[[jobs]]
+id = "remote-photos"
+desc = "Backup photos from remote server"
+src = "user@server.com:/home/user/photos"
+dest = "/mnt/backup/photos"
+delete = false
+skip = ["thumbnails"]
+no-confirm = true
+
+# Another local backup
+[[jobs]]
+id = "projects"
+desc = "Backup project files"
+src = "/home/user/projects"
+dest = "/mnt/backup/projects"
+delete = true
+skip = ["target", "node_modules", ".git"]
+no-confirm = false

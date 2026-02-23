@@ -5,7 +5,7 @@ members = [
     "quench/examples/*",
     "riveter",
     "warehouse/*",
-    "welder",
+    "welder", "pulley",
 ]
 resolver = "2"
 

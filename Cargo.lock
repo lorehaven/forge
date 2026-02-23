@@ -2553,6 +2553,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "pulley"
+version = "0.1.0"
+dependencies = [
+ "rustyline",
+ "serde",
+ "thiserror 2.0.18",
+ "toml",
+]
+
+[[package]]
 name = "quench"
 version = "0.1.0"
 dependencies = [
