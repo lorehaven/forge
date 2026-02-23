@@ -1,7 +1,7 @@
 [workspace]
 members = [
     "anvil",
-    "quench/framework",
+    "quench/quench",
     "quench/examples/*",
     "riveter",
     "warehouse/*",
@@ -82,7 +82,7 @@ version = "2.15"
 features = ["loader", "serde"]
 
 [workspace.dependencies.quench]
-path = "quench/framework"
+path = "quench/quench"
 
 [workspace.dependencies.regex]
 version = "1.12"
