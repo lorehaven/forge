@@ -14,7 +14,6 @@ pub mod docker;
 pub struct AdminApiDoc;
 
 pub fn scope() -> impl HttpServiceFactory {
-    web::scope("/admin")
-        // Admin endpoints
-        .service(docker::gc::handle)
+    // Admin endpoints
+    web::scope("/admin").service(docker::gc::handle)
 }

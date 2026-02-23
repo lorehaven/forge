@@ -14,7 +14,7 @@ struct GcReport {
 
 #[utoipa::path(
     post,
-    path = "/gc",
+    path = "/docker/gc",
     operation_id = "run_garbage_collection",
     tags = ["admin"],
     responses(
@@ -22,7 +22,7 @@ struct GcReport {
         (status = 500, description = "GC failure")
     )
 )]
-#[post("/gc")]
+#[post("/docker/gc")]
 pub async fn handle() -> impl Responder {
     match garbage_collect().await {
         Ok(report) => HttpResponse::Ok().json(report),

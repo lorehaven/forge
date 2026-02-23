@@ -6,7 +6,6 @@ use rustls_pemfile::{certs, pkcs8_private_keys};
 use std::fs::File;
 use std::io::BufReader;
 use std::net::SocketAddr;
-use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 pub mod domain;
@@ -54,7 +53,7 @@ async fn main() -> std::io::Result<()> {
             .service(routers::swagger_index_redirect)
             .service(
                 SwaggerUi::new("/swagger-ui/{_:.*}")
-                    .url("/api-doc/openapi.json", routers::OpenApiDoc::openapi()),
+                    .url("/api-doc/openapi.json", routers::openapi()),
             )
     });
 
