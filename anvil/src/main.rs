@@ -41,17 +41,17 @@ fn main() -> Result<()> {
         } => commands::run::run(package.as_deref(), serve, watch_interval_ms)?,
         Commands::Docker { command } => match command {
             DockerCommands::Build { package } => commands::docker::build(&config, &package)?,
-            DockerCommands::Tag { package, registry } => {
-                commands::docker::tag(&config, &package, &registry)?;
+            DockerCommands::Tag { package } => {
+                commands::docker::tag(&config, &package)?;
             }
-            DockerCommands::Push { package, registry } => {
-                commands::docker::push(&config, &package, &registry)?;
+            DockerCommands::Push { package } => {
+                commands::docker::push(&config, &package)?;
             }
-            DockerCommands::Release { package, registry } => {
-                commands::docker::release(&config, &package, &registry)?;
+            DockerCommands::Release { package } => {
+                commands::docker::release(&config, &package)?;
             }
-            DockerCommands::ReleaseAll { registry } => {
-                commands::docker::release_all(&config, &registry)?;
+            DockerCommands::ReleaseAll => {
+                commands::docker::release_all(&config)?;
             }
             DockerCommands::BuildAll => commands::docker::build_all(&config)?,
         },

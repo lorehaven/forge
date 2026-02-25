@@ -14,6 +14,7 @@ pub struct Config {
 
 #[derive(Debug, Default, Deserialize)]
 pub struct DockerConfig {
+    pub registry: String,
     /// Mapping from module name to Docker module configuration
     #[serde(default)]
     pub modules: HashMap<String, DockerModuleConfig>,
@@ -26,6 +27,9 @@ pub struct DockerModuleConfig {
 
     #[serde(default)]
     pub package_dockerfiles: HashMap<String, String>,
+
+    #[serde(default)]
+    pub package_images: HashMap<String, String>,
 }
 
 #[derive(Debug, Default, Deserialize)]

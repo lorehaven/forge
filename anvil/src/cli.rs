@@ -120,34 +120,21 @@ pub enum DockerCommands {
         /// Package name
         #[arg(short, long)]
         package: String,
-        /// Docker registry repository path
-        #[arg(long, default_value = "ossiriand.arda:30021/ossiriand-1/ossiriand")]
-        registry: String,
     },
     /// Push Docker image to registry
     Push {
         /// Package name
         #[arg(short, long)]
         package: String,
-        /// Docker registry repository path
-        #[arg(long, default_value = "ossiriand.arda:30021/ossiriand-1/ossiriand")]
-        registry: String,
     },
     /// Build, tag, and push Docker image
     Release {
         /// Package name
         #[arg(short, long)]
         package: String,
-        /// Docker registry repository path
-        #[arg(long, default_value = "ossiriand.arda:30021/ossiriand-1/ossiriand")]
-        registry: String,
     },
     /// Build all Docker images
     BuildAll,
     /// Build, tag, and push all Docker images
-    ReleaseAll {
-        /// Docker registry repository path
-        #[arg(long, default_value = "ossiriand.arda:30021/ossiriand-1/ossiriand")]
-        registry: String,
-    },
+    ReleaseAll,
 }

@@ -12,7 +12,7 @@ license = { workspace = true }
 readme = { workspace = true }
 
 [[bin]]
-name = "warehouse-app"
+name = "warehouse-service"
 path = "src/main.rs"
 
 [dependencies]

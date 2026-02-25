@@ -26,7 +26,7 @@ fn get_package_version(module: &str, package: &str) -> Result<String> {
         .get("package")
         .and_then(|p| p.get("version"))
         .and_then(toml::Value::as_str)
-        .map(std::string::ToString::to_string)
+        .map(ToString::to_string)
         .with_context(|| format!("Version not found in {path}"))
 }
 
@@ -40,8 +40,19 @@ fn get_dockerfile_for_package(config: &config::Config, package: &str) -> Result<
         .map_or_else(|| Ok(module_cfg.dockerfile.clone()), |df| Ok(df.clone()))
 }
 
+fn get_image_name_for_package(config: &config::Config, package: &str) -> Result<String> {
+    let module = find_module_for_package(config, package)?;
+    let module_cfg = &config.docker.modules[module];
+
+    module_cfg
+        .package_images
+        .get(package)
+        .map_or_else(|| Ok(package.to_string()), |im| Ok(im.clone()))
+}
+
 pub fn build(config: &config::Config, package: &str) -> Result<()> {
     let dockerfile = get_dockerfile_for_package(config, package)?;
+    let image_name = get_image_name_for_package(config, package)?;
     println!("Building Docker image for package: {package} using {dockerfile}");
 
     let mut cmd = Command::new("docker");
@@ -51,7 +62,7 @@ pub fn build(config: &config::Config, package: &str) -> Result<()> {
         .arg("--build-arg")
         .arg(format!("PROJECT_NAME={package}"))
         .arg("-t")
-        .arg(package)
+        .arg(image_name)
         .arg(".");
 
     // Enable BuildKit
@@ -60,7 +71,8 @@ pub fn build(config: &config::Config, package: &str) -> Result<()> {
     run_command(cmd, &format!("docker build {package}"))
 }
 
-pub fn tag(config: &config::Config, package: &str, registry: &str) -> Result<()> {
+pub fn tag(config: &config::Config, package: &str) -> Result<()> {
+    let registry = &config.docker.registry;
     let module = find_module_for_package(config, package)?;
     let version = get_package_version(module, package)?;
 
@@ -73,7 +85,8 @@ pub fn tag(config: &config::Config, package: &str, registry: &str) -> Result<()>
     run_command(cmd, &format!("docker tag {package}"))
 }
 
-pub fn push(config: &config::Config, package: &str, registry: &str) -> Result<()> {
+pub fn push(config: &config::Config, package: &str) -> Result<()> {
+    let registry = &config.docker.registry;
     let module = find_module_for_package(config, package)?;
     let version = get_package_version(module, package)?;
 
@@ -86,20 +99,16 @@ pub fn push(config: &config::Config, package: &str, registry: &str) -> Result<()
     run_command(cmd, &format!("docker push {full_tag}"))
 }
 
-pub fn release(config: &config::Config, package: &str, registry: &str) -> Result<()> {
+pub fn release(config: &config::Config, package: &str) -> Result<()> {
     build(config, package)?;
-    tag(config, package, registry)?;
-    push(config, package, registry)?;
+    tag(config, package)?;
+    push(config, package)?;
     Ok(())
 }
 
-pub fn release_all(config: &config::Config, registry: &str) -> Result<()> {
+pub fn release_all(config: &config::Config) -> Result<()> {
     println!("Starting release-all...");
-    process_all_packages(
-        config,
-        |package| release(config, package, registry),
-        "release",
-    )
+    process_all_packages(config, |package| release(config, package), "release")
 }
 
 pub fn build_all(config: &config::Config) -> Result<()> {
