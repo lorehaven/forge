@@ -1,6 +1,6 @@
 use crate::domain::docker_error;
 use crate::routers::docker::upload_path;
-use actix_web::{HttpRequest, HttpResponse, Responder, patch, web};
+use actix_web::{HttpResponse, Responder, patch, web};
 use tokio::io::AsyncWriteExt;
 
 #[utoipa::path(
@@ -28,12 +28,9 @@ use tokio::io::AsyncWriteExt;
     )
 )]
 #[patch("/{name:.*}/blobs/uploads/{uuid}")]
-pub async fn handle(
-    req: HttpRequest,
-    path: web::Path<(String, String)>,
-    body: web::Bytes,
-) -> impl Responder {
+pub async fn handle(path: web::Path<(String, String)>, body: web::Bytes) -> impl Responder {
     let (name, uuid) = path.into_inner();
+
     let Some(file_path) = upload_path(&name, &uuid) else {
         return docker_error::response(
             actix_web::http::StatusCode::BAD_REQUEST,
@@ -50,6 +47,14 @@ pub async fn handle(
         );
     }
 
+    if body.is_empty() {
+        return docker_error::response(
+            actix_web::http::StatusCode::BAD_REQUEST,
+            docker_error::UNSUPPORTED,
+            "empty upload chunk",
+        );
+    }
+
     let metadata = match tokio::fs::metadata(&file_path).await {
         Ok(m) => m,
         Err(_) => {
@@ -62,47 +67,6 @@ pub async fn handle(
     };
 
     let current_size = metadata.len();
-
-    let content_range = req
-        .headers()
-        .get("Content-Range")
-        .and_then(|v| v.to_str().ok());
-
-    if content_range.is_none() {
-        return docker_error::response(
-            actix_web::http::StatusCode::BAD_REQUEST,
-            docker_error::UNSUPPORTED,
-            "missing content range",
-        );
-    }
-
-    if body.is_empty() {
-        return docker_error::response(
-            actix_web::http::StatusCode::BAD_REQUEST,
-            docker_error::UNSUPPORTED,
-            "empty upload chunk",
-        );
-    }
-
-    let (start, end) = match parse_content_range(content_range.unwrap()) {
-        Some(r) => r,
-        None => {
-            return docker_error::response(
-                actix_web::http::StatusCode::BAD_REQUEST,
-                docker_error::UNSUPPORTED,
-                "invalid content range",
-            );
-        }
-    };
-
-    let expected_end = start + body.len() as u64 - 1;
-    if start != current_size || end != expected_end {
-        return docker_error::response(
-            actix_web::http::StatusCode::RANGE_NOT_SATISFIABLE,
-            docker_error::UNSUPPORTED,
-            "invalid content range",
-        );
-    }
 
     let mut file = match tokio::fs::OpenOptions::new()
         .append(true)
@@ -131,23 +95,7 @@ pub async fn handle(
 
     HttpResponse::Accepted()
         .append_header(("Range", format!("0-{}", new_size - 1)))
-        .append_header(("Docker-Upload-UUID", uuid))
+        .append_header(("Docker-Upload-UUID", uuid.clone()))
+        .append_header(("Location", format!("/v2/{}/blobs/uploads/{}", name, uuid)))
         .finish()
-}
-
-fn parse_content_range(header: &str) -> Option<(u64, u64)> {
-    let raw = header.trim();
-    let raw = raw
-        .strip_prefix("bytes ")
-        .or_else(|| raw.strip_prefix("bytes="))
-        .unwrap_or(raw);
-    let raw = raw.split('/').next()?;
-
-    let parts: Vec<&str> = raw.split('-').collect();
-    if parts.len() != 2 {
-        return None;
-    }
-    let start = parts[0].parse().ok()?;
-    let end = parts[1].parse().ok()?;
-    Some((start, end))
 }
