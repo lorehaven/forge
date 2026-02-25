@@ -36,7 +36,7 @@ impl Debug for AgentNode {
     }
 }
 
-use crate::ui::{RESET, CYAN, BLUE, YELLOW, BOLD, DIM, SEP, SEP_THIN};
+use crate::ui::{BLUE, BOLD, CYAN, DIM, RESET, SEP, SEP_THIN, YELLOW};
 
 #[must_use]
 pub fn execute<'a, S: std::hash::BuildHasher + Sync>(
@@ -52,7 +52,9 @@ pub fn execute<'a, S: std::hash::BuildHasher + Sync>(
         let model_hint = agents.get(name).map_or(String::new(), |n| {
             format!("  {DIM}{}{RESET}", n.model.name())
         });
-        println!("\n{CYAN}{sep}{RESET}\n{indent}{BOLD}{BLUE}  ▸ {name}{RESET}{model_hint}\n{CYAN}{sep}{RESET}");
+        println!(
+            "\n{CYAN}{sep}{RESET}\n{indent}{BOLD}{BLUE}  ▸ {name}{RESET}{model_hint}\n{CYAN}{sep}{RESET}"
+        );
 
         let node = agents
             .get(name)
@@ -65,15 +67,23 @@ pub fn execute<'a, S: std::hash::BuildHasher + Sync>(
                 .children
                 .iter()
                 .filter_map(|c| {
-                    agents.get(c).map(|n| format!("  - {}: {}", c, first_sentence(&n.instruction)))
+                    agents
+                        .get(c)
+                        .map(|n| format!("  - {}: {}", c, first_sentence(&n.instruction)))
                 })
                 .collect::<Vec<_>>()
                 .join("\n");
 
             let routing_prompt = format!(
-                "Pick ONE delegate for the request.\n                 Reply with ONLY the delegate name, nothing else.\n\n                 Delegates:\n{descriptions}\n\n                 Request: {input}\n\nDelegate:",
-                descriptions = child_descriptions,
-                input = input,
+                r"Pick ONE delegate for the request.
+Reply with ONLY the delegate name, nothing else.
+
+Delegates:
+{child_descriptions}
+
+Request: {input}
+
+Delegate:"
             );
 
             let raw_decision = call_model(node.model.clone(), routing_prompt).await?;
@@ -120,7 +130,6 @@ struct ToolResponse {
     args: Option<Value>,
 }
 
-
 fn extract_json(raw: &str) -> Option<String> {
     let trimmed = raw.trim();
     if trimmed.starts_with('{') {
@@ -136,7 +145,11 @@ fn extract_json(raw: &str) -> Option<String> {
     }
     let start = raw.find('{')?;
     let end = raw.rfind('}')?;
-    if end > start { Some(raw[start..=end].to_string()) } else { None }
+    if end > start {
+        Some(raw[start..=end].to_string())
+    } else {
+        None
+    }
 }
 
 fn first_sentence(s: &str) -> &str {
@@ -189,8 +202,7 @@ Step {step}/{max_steps}. Output your JSON now:",
         );
 
         let raw = call_model(node.model.clone(), prompt).await?;
-        let parsed = extract_json(&raw)
-            .and_then(|s| serde_json::from_str::<ToolResponse>(&s).ok());
+        let parsed = extract_json(&raw).and_then(|s| serde_json::from_str::<ToolResponse>(&s).ok());
 
         let Some(response) = parsed else {
             return Ok(raw);
