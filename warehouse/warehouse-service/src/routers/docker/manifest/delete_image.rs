@@ -5,7 +5,7 @@ use actix_web::{HttpResponse, Responder, delete, web};
 #[utoipa::path(
     delete,
     operation_id = "delete_image",
-    tags = ["docker"],
+    tags = ["docker - manifest"],
     path = "/{name}/manifests/{reference}",
     params(
         ("name" = String, Path, description = "Repository name (may contain slashes)"),

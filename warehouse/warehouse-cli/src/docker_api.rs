@@ -25,11 +25,11 @@ struct BearerChallenge {
     service: Option<String>,
 }
 
-pub struct RegistryApi {
+pub struct DockerApi {
     client: reqwest::Client,
 }
 
-impl RegistryApi {
+impl DockerApi {
     pub fn new(registry: &RegistryConfig) -> Result<Self> {
         let client = reqwest::Client::builder()
             .danger_accept_invalid_certs(registry.docker.insecure_tls)

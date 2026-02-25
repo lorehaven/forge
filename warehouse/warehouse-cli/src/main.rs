@@ -1,8 +1,9 @@
 mod application;
 mod cli;
 mod config;
+mod crates_api;
+mod docker_api;
 mod domain;
-mod registry_api;
 
 use anyhow::Result;
 use clap::Parser;

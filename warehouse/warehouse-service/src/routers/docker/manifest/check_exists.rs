@@ -4,7 +4,7 @@ use actix_web::{HttpRequest, HttpResponse, Responder, head, web};
 #[utoipa::path(
     head,
     operation_id = "check_exists",
-    tags = ["docker"],
+    tags = ["docker - manifest"],
     path = "/{name}/manifests/{reference}",
     params(
         ("Accept" = Option<String>, Header, description = "Manifest media types supported by client"),

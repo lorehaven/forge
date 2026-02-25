@@ -5,7 +5,7 @@ use actix_web::{HttpResponse, Responder, head, web};
 #[utoipa::path(
     head,
     operation_id = "check_exists",
-    tags = ["docker"],
+    tags = ["docker - blob"],
     path = "/{name}/blobs/{digest}",
     params(
         ("name" = String, Path, description = "Repository name (may contain slashes)"),

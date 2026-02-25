@@ -34,7 +34,7 @@ pub(super) async fn login_submit(
 ) -> impl Responder {
     if !config.auth_enabled {
         return HttpResponse::Found()
-            .append_header(("Location", "/ui/docker/catalog"))
+            .append_header(("Location", "/ui/home"))
             .finish();
     }
 
@@ -64,7 +64,7 @@ pub(super) async fn login_submit(
 
     HttpResponse::Found()
         .cookie(cookie)
-        .append_header(("Location", "/ui/docker/catalog"))
+        .append_header(("Location", "/ui/home"))
         .finish()
 }
 

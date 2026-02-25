@@ -106,7 +106,11 @@ pub struct DigestQuery {
         manifest::put_image::handle,
         manifest::delete_image::handle,
     ),
-    tags((name = "docker", description = "Docker endpoints"))
+    tags(
+        (name = "docker - blob", description = "Docker blob endpoints"),
+        (name = "docker - manifest", description = "Docker manifests endpoints"),
+        (name = "docker - registry", description = "Docker registry endpoints"),
+    )
 )]
 pub struct DockerApiDoc;
 

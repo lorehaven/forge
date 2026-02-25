@@ -20,7 +20,7 @@ struct TagsQuery {
     get,
     operation_id = "get_tags",
     path = "/{name}/tags/list",
-    tag = "docker",
+    tag = "docker - registry",
     params(
         ("name" = String, Path, description = "Repository name"),
         ("n" = Option<usize>, Query, description = "Maximum number of repositories to return"),

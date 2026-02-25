@@ -15,7 +15,7 @@ struct RepoTreeNode {
 }
 
 #[get("/docker/catalog")]
-pub(super) async fn docker_catalog(
+pub(in crate::routers::ui::pages) async fn docker_catalog(
     req: HttpRequest,
     query: web::Query<PageQuery>,
     config: web::Data<JwtConfig>,
@@ -27,7 +27,7 @@ pub(super) async fn docker_catalog(
 }
 
 #[get("/docker/catalog/")]
-pub(super) async fn docker_catalog_slash(
+pub(in crate::routers::ui::pages) async fn docker_catalog_slash(
     req: HttpRequest,
     query: web::Query<PageQuery>,
     config: web::Data<JwtConfig>,

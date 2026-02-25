@@ -1,3 +1,4 @@
 pub mod auth;
-pub mod catalog;
-pub mod tags;
+pub mod crates;
+pub mod docker;
+pub mod home;

@@ -5,7 +5,7 @@ use actix_web::{HttpResponse, Responder, get, web};
 #[utoipa::path(
     get,
     operation_id = "get_upload_status",
-    tags = ["docker"],
+    tags = ["docker - blob"],
     path = "/{name}/blobs/uploads/{uuid}",
     params(
         ("name" = String, Path, description = "Repository name (may contain slashes)"),

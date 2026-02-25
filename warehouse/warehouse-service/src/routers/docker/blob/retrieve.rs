@@ -9,7 +9,7 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt};
 #[utoipa::path(
     get,
     operation_id = "retrieve",
-    tags = ["docker"],
+    tags = ["docker - blob"],
     path = "/{name}/blobs/{digest}",
     params(
         ("name" = String, Path, description = "Repository name (may contain slashes)"),

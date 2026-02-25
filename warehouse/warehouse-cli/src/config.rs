@@ -69,6 +69,7 @@ impl ConfigStore {
         fs::write(&path, content).with_context(|| format!("failed to write {}", path.display()))
     }
 
+    /// Resolves a docker registry name: explicit name → effective active docker registry.
     pub fn resolve_registry_name(&self, requested: Option<String>) -> Result<String> {
         if let Some(name) = requested {
             validate_registry_name(&name)?;
@@ -81,7 +82,7 @@ impl ConfigStore {
         let cfg = self.load_effective_root_config()?;
         let name = cfg.docker.current_registry.ok_or_else(|| {
             anyhow!(
-                "no active registry configured; use `warehouse docker registry add ... --use` or `warehouse docker registry use ...`"
+                "no active docker registry; use `warehouse docker registry add ... --use` or `warehouse docker registry use ...`"
             )
         })?;
 
@@ -89,7 +90,32 @@ impl ConfigStore {
         if self.registry_exists_effective(&name) {
             Ok(name)
         } else {
-            bail!("active registry '{}' does not exist", name)
+            bail!("active docker registry '{}' does not exist", name)
+        }
+    }
+
+    /// Resolves a crates registry name: explicit name → effective active crates registry.
+    pub fn resolve_crates_registry_name(&self, requested: Option<String>) -> Result<String> {
+        if let Some(name) = requested {
+            validate_registry_name(&name)?;
+            if self.registry_exists_effective(&name) {
+                return Ok(name);
+            }
+            bail!("registry '{}' does not exist", name);
+        }
+
+        let cfg = self.load_effective_root_config()?;
+        let name = cfg.crates.current_registry.ok_or_else(|| {
+            anyhow!(
+                "no active crates registry; use `warehouse crates registry add ... --use` or `warehouse crates registry use ...`"
+            )
+        })?;
+
+        validate_registry_name(&name)?;
+        if self.registry_exists_effective(&name) {
+            Ok(name)
+        } else {
+            bail!("active crates registry '{}' does not exist", name)
         }
     }
 

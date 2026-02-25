@@ -5,7 +5,7 @@ use actix_web::{HttpResponse, Responder, delete, web};
 #[utoipa::path(
     delete,
     operation_id = "cancel_upload",
-    tags = ["docker"],
+    tags = ["docker - blob"],
     path = "/{name}/blobs/uploads/{uuid}",
     params(
         ("name" = String, Path, description = "Repository name (may contain slashes)"),

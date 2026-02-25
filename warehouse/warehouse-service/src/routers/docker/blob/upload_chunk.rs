@@ -6,7 +6,7 @@ use tokio::io::AsyncWriteExt;
 #[utoipa::path(
     patch,
     operation_id = "upload_chunk",
-    tags = ["docker"],
+    tags = ["docker - blob"],
     path = "/{name}/blobs/uploads/{uuid}",
     params(
         ("name" = String, Path, description = "Repository name (may contain slashes)"),

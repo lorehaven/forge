@@ -8,6 +8,9 @@ pub mod docker;
 pub mod health;
 pub mod ui;
 
+static CRATES_STORAGE_ROOT: LazyLock<String> =
+    LazyLock::new(|| envmnt::get_or("CRATES_STORAGE_PATH", "./storage/crates"));
+
 static DOCKER_STORAGE_ROOT: LazyLock<String> =
     LazyLock::new(|| envmnt::get_or("STORAGE_PATH", "./storage/docker"));
 
@@ -61,6 +64,7 @@ struct DockerOpenApiDoc;
 #[openapi(
     nest(
         (path = "/v1/api/crates", api = crates::CratesApiDoc),
+        (path = "/index", api = crates::CratesIndexApiDoc),
     )
 )]
 struct CratesOpenApiDoc;

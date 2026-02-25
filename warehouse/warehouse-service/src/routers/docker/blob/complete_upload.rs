@@ -6,7 +6,7 @@ use sha2::{Digest, Sha256};
 #[utoipa::path(
     put,
     operation_id = "complete_upload",
-    tags = ["docker"],
+    tags = ["docker - blob"],
     path = "/{name}/blobs/uploads/{uuid}",
     params(
         ("name" = String, Path, description = "Repository name (may contain slashes)"),

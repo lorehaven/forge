@@ -14,7 +14,7 @@ pub struct MountQuery {
 #[utoipa::path(
     post,
     operation_id = "start_upload",
-    tags = ["docker"],
+    tags = ["docker - blob"],
     path = "/{name}/blobs/uploads/",
     params(
         ("name" = String, Path, description = "Repository name (may contain slashes)"),

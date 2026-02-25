@@ -17,7 +17,7 @@ struct CatalogResponse {
 #[utoipa::path(
     get,
     operation_id = "catalog",
-    tags = ["docker"],
+    tags = ["docker - registry"],
     path = "/_catalog",
     params(
         ("n" = Option<usize>, Query, description = "Maximum number of repositories to return"),

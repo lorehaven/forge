@@ -4172,6 +4172,7 @@ dependencies = [
  "clap",
  "reqwest 0.13.2",
  "serde",
+ "serde_json",
  "tokio",
  "toml",
 ]
@@ -4194,6 +4195,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "tokio",
+ "tracing",
  "tracing-subscriber",
  "utoipa",
  "utoipa-swagger-ui",

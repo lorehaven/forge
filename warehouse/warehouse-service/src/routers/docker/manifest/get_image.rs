@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 #[utoipa::path(
     get,
     operation_id = "get_image",
-    tags = ["docker"],
+    tags = ["docker - manifest"],
     path = "/{name}/manifests/{reference}",
     params(
         ("Accept" = Option<String>, Header, description = "Manifest media types supported by client"),

@@ -12,7 +12,7 @@ const OCI_IMAGE_INDEX_V1: &str = "application/vnd.oci.image.index.v1+json";
 #[utoipa::path(
     put,
     operation_id = "put_image",
-    tags = ["docker"],
+    tags = ["docker - manifest"],
     path = "/{name}/manifests/{reference}",
     params(
         ("name" = String, Path, description = "Repository name (may contain slashes)"),
