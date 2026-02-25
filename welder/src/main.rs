@@ -29,6 +29,7 @@ pub mod backend;
 pub mod config;
 pub mod engine;
 pub mod model;
+pub mod ui;
 
 use config::workflow::Workflow;
 use engine::executor::{AgentNode, execute};
@@ -46,7 +47,6 @@ async fn main() -> anyhow::Result<()> {
 
 fn get_workflow_path() -> anyhow::Result<String> {
     let mut args = std::env::args().skip(1);
-
     args.next()
         .map_or_else(|| Err(anyhow::anyhow!("Usage: welder <workflow.toml>")), Ok)
 }
@@ -114,16 +114,10 @@ async fn run_repl(
     workflow_path: &str,
     agents: &HashMap<String, AgentNode>,
 ) -> anyhow::Result<()> {
-    println!("Dynamic Workflow Loaded from file: {workflow_path}",);
-    println!("Root: {}\n", workflow.root.name);
-
-    println!("Agent Graph:\n");
-    print_graph(&workflow.root.name, agents, 0);
-
-    println!("Type 'exit' to quit.\n");
+    ui::print_workflow_header(workflow_path, &workflow.root.name, agents);
 
     loop {
-        print!("You ▸ ");
+        ui::print_prompt();
         io::stdout().flush()?;
 
         let mut input = String::new();
@@ -135,20 +129,8 @@ async fn run_repl(
         }
 
         let result = execute(&workflow.root.name, input.to_string(), agents, 0).await?;
-
-        println!("{}", result.trim());
+        ui::print_answer(&result);
     }
 
     Ok(())
-}
-
-fn print_graph(name: &str, agents: &HashMap<String, AgentNode>, depth: usize) {
-    let indent = "  ".repeat(depth);
-    println!("{indent}- {name}");
-
-    if let Some(node) = agents.get(name) {
-        for child in &node.children {
-            print_graph(child, agents, depth + 1);
-        }
-    }
 }

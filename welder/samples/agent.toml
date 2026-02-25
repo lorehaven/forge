@@ -1,0 +1,104 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Welder — coding agent pipeline
+#
+# Model choices (all available via `ollama pull <model>`):
+#
+#  coding_lead        qwen2.5:14b
+#    General-purpose Qwen2.5 instruct. Strong instruction-following and
+#    structured output discipline — important for the router role where
+#    the model must emit a single name and nothing else. 14B is the sweet
+#    spot: fast enough to use as a lightweight coordinator, capable enough
+#    not to mis-route. Alternatively drop to qwen2.5:7b on tighter hardware.
+#
+#  repo_analyst       qwen2.5-coder:7b
+#    Code-specific Qwen2.5 variant. Understands project structure, symbol
+#    relationships, and Rust/TS/Python idioms natively. Tool-call discipline
+#    is solid at 7B — it follows the JSON protocol reliably without the
+#    hallucination issues seen with llama3.1:8b.
+#    Alternatives: deepseek-coder-v2:16b (heavier, better on large codebases)
+#
+#  implementation_engineer   qwen2.5-coder:14b
+#    The 14B coder variant has GPT-4o-competitive scores on Aider (code repair
+#    benchmark) and EvalPlus. It handles multi-file context well and produces
+#    minimal, correct diffs. If you have the VRAM, qwen2.5-coder:32b is the
+#    strongest open-weight option currently available on Ollama.
+#    Alternatives: deepseek-coder-v2:16b, codellama:13b
+#
+#  refactor_engineer  deepseek-coder-v2:16b
+#    DeepSeek-Coder-V2 (MoE, 16B active params) excels at understanding
+#    existing code before changing it — the "debugging partner" quality
+#    developers describe. Its chain-of-thought reasoning makes it less likely
+#    to introduce subtle call-site breakage during structural edits.
+#    Alternatives: qwen2.5-coder:14b, codellama:13b
+#
+#  qa_engineer        deepseek-r1:8b (or qwen2.5-coder:7b)
+#    QA is mostly about reading command output and drawing conclusions — a
+#    reasoning-focused model fits better here than a pure coder. DeepSeek-R1
+#    distilled at 8B has strong chain-of-thought for spotting failure patterns.
+#    If R1 is too slow on your hardware, qwen2.5-coder:7b is a fine substitute.
+#    Alternatives: qwen2.5:7b, phi4:14b
+#
+# Hardware guide (approximate VRAM needed at Q4_K_M):
+#   8GB  → use :7b variants everywhere
+#   16GB → mix 7b router + 14b specialists
+#   24GB → use the config below as-is
+#   48GB → upgrade implementation_engineer and refactor_engineer to :32b
+# ─────────────────────────────────────────────────────────────────────────────
+
+[root]
+name = "coding_lead"
+
+[[agent]]
+name = "coding_lead"
+model = "qwen2.5:14b"
+instruction = """
+You are the coding lead for this repository. Route requests to the best specialist.
+Send codebase exploration, architecture review, and refactor suggestions to repo_analyst — it has tool access to read real files.
+Send new feature implementation and bug fixes to implementation_engineer.
+Send actual refactoring edits (after analysis is done) to refactor_engineer.
+Send test runs, lint, and validation to qa_engineer.
+"""
+children = ["repo_analyst", "implementation_engineer", "refactor_engineer", "qa_engineer"]
+
+[[agent]]
+name = "repo_analyst"
+model = "qwen2.5-coder:7b"
+instruction = """
+You are a repository analyst with tool access. Always index the project first, then search and read real files.
+Never invent file names or module names — only report what tools actually return.
+Produce a concrete, grounded summary with exact file paths and line references.
+"""
+tools = ["index_project", "search", "list_dir", "read_file"]
+max_tool_steps = 12
+
+[[agent]]
+name = "implementation_engineer"
+model = "qwen2.5-coder:14b"
+instruction = """
+You are an implementation engineer. Use tools to read relevant code, make minimal focused edits, and verify with run_cmd.
+Never invent file contents — read them first with search and read_file.
+Prefer the smallest diff that correctly satisfies the request.
+"""
+tools = ["index_project", "search", "list_dir", "read_file", "write_file", "replace_in_file", "run_cmd"]
+max_tool_steps = 14
+
+[[agent]]
+name = "refactor_engineer"
+model = "qwen2.5-coder:14b"
+instruction = """
+You are a refactoring engineer. Read actual source files with tools before proposing or making any changes.
+Confirm all call sites before renaming or restructuring. Summarise the concrete impact of each change with exact file and line references.
+Preserve observable behavior — only structure and readability may change.
+"""
+tools = ["index_project", "search", "read_file", "write_file", "replace_in_file", "run_cmd"]
+max_tool_steps = 14
+
+[[agent]]
+name = "qa_engineer"
+model = "qwen2.5-coder:7b"
+instruction = """
+You are a QA engineer. Run real checks with run_cmd and report exactly what the commands output.
+Never fabricate test results — only report what actually ran. Identify failure patterns and missing coverage with concrete evidence.
+"""
+tools = ["index_project", "search", "read_file", "run_cmd"]
+max_tool_steps = 10

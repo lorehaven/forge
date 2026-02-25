@@ -1,5 +1,6 @@
 use crate::backend::Backend;
 use crate::config::CONFIG;
+use crate::ui;
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 
@@ -50,16 +51,7 @@ impl Backend for OllamaBackend {
             .clone()
             .expect("config error: backend.ollama_url must be set");
 
-        println!(
-            r"
-============================================================
-                      LLM BACKEND READY
-============================================================
-  Type   : ollama
-  URL    : {url}
-============================================================
-"
-        );
+        ui::print_backend_banner("ollama", &url);
     }
 
     fn is_running(&self) -> bool {

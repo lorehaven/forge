@@ -36,12 +36,7 @@ impl Debug for AgentNode {
     }
 }
 
-const RESET: &str = "\x1b[0m";
-const CYAN: &str = "\x1b[36m";
-const BLUE: &str = "\x1b[34m";
-const GREEN: &str = "\x1b[32m";
-const YELLOW: &str = "\x1b[33m";
-const SEP: &str = "────────────────────────────────────────────────────────";
+use crate::ui::{RESET, CYAN, BLUE, YELLOW, BOLD, DIM, SEP, SEP_THIN};
 
 #[must_use]
 pub fn execute<'a, S: std::hash::BuildHasher + Sync>(
@@ -53,35 +48,56 @@ pub fn execute<'a, S: std::hash::BuildHasher + Sync>(
     Box::pin(async move {
         let indent = "  ".repeat(depth);
 
-        println!("\n{CYAN}{SEP}{RESET}\n{BLUE}{indent}Agent ▸ {name}{RESET}\n{CYAN}{SEP}{RESET}");
+        let sep = if depth == 0 { SEP } else { SEP_THIN };
+        let model_hint = agents.get(name).map_or(String::new(), |n| {
+            format!("  {DIM}{}{RESET}", n.model.name())
+        });
+        println!("\n{CYAN}{sep}{RESET}\n{indent}{BOLD}{BLUE}  ▸ {name}{RESET}{model_hint}\n{CYAN}{sep}{RESET}");
 
         let node = agents
             .get(name)
             .ok_or_else(|| anyhow::anyhow!("Agent not found: {name}"))?;
 
-        println!("{YELLOW}{indent}Routing...{RESET}");
+        if !node.children.is_empty() {
+            println!("{DIM}{indent}  routing…{RESET}");
 
-        let routing_prompt = format!(
-            "{}\n\n\
-             If delegation is required, respond ONLY with one of:\n\
-             {}\n\
-             Otherwise respond ONLY with: SELF\n\n\
-             User request:\n{input}",
-            node.instruction,
-            node.children.join(", "),
-        );
+            let child_descriptions: String = node
+                .children
+                .iter()
+                .filter_map(|c| {
+                    agents.get(c).map(|n| format!("  - {}: {}", c, first_sentence(&n.instruction)))
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
 
-        let decision = call_model(node.model.clone(), routing_prompt).await?;
-        let decision = decision.trim();
+            let routing_prompt = format!(
+                "Pick ONE delegate for the request.\n                 Reply with ONLY the delegate name, nothing else.\n\n                 Delegates:\n{descriptions}\n\n                 Request: {input}\n\nDelegate:",
+                descriptions = child_descriptions,
+                input = input,
+            );
 
-        for child in &node.children {
-            if decision == child {
-                println!("{YELLOW}{indent}Delegating → {child}{RESET}");
-                return execute(child, input, agents, depth + 1).await;
+            let raw_decision = call_model(node.model.clone(), routing_prompt).await?;
+            let decision = raw_decision
+                .lines()
+                .map(str::trim)
+                .find(|l| !l.is_empty())
+                .unwrap_or("")
+                .trim_matches(|c: char| !c.is_alphanumeric() && c != '_')
+                .to_ascii_lowercase();
+
+            if let Some(child) = node
+                .children
+                .iter()
+                .find(|c| c.to_ascii_lowercase() == decision)
+            {
+                let child = child.clone();
+                println!("{YELLOW}{indent}  ↳ {child}{RESET}");
+                return execute(&child, input, agents, depth + 1).await;
             }
+            println!("{DIM}{indent}  no delegate matched — executing as SELF{RESET}");
         }
 
-        println!("{YELLOW}{indent}Executing task...{RESET}");
+        println!("{DIM}{indent}  executing…{RESET}");
 
         let result = if node.tools.is_empty() {
             let execution_prompt = format!("{}\n\nUser request:\n{input}", node.instruction);
@@ -90,7 +106,7 @@ pub fn execute<'a, S: std::hash::BuildHasher + Sync>(
             execute_with_tools(node, input).await?
         };
 
-        println!("{GREEN}{indent}Completed by {name}{RESET}");
+        println!("{CYAN}{indent}  ✓ {name}{RESET}");
 
         Ok(result)
     })
@@ -102,6 +118,31 @@ struct ToolResponse {
     content: Option<String>,
     tool: Option<String>,
     args: Option<Value>,
+}
+
+
+fn extract_json(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.starts_with('{') {
+        return Some(trimmed.to_string());
+    }
+    let stripped = trimmed
+        .trim_start_matches("```json")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim();
+    if stripped.starts_with('{') {
+        return Some(stripped.to_string());
+    }
+    let start = raw.find('{')?;
+    let end = raw.rfind('}')?;
+    if end > start { Some(raw[start..=end].to_string()) } else { None }
+}
+
+fn first_sentence(s: &str) -> &str {
+    s.trim()
+        .split_once(['.', '!', '?'])
+        .map_or_else(|| s.trim(), |(first, _)| first.trim())
 }
 
 async fn execute_with_tools(node: &AgentNode, input: String) -> Result<String> {
@@ -124,31 +165,20 @@ async fn execute_with_tools(node: &AgentNode, input: String) -> Result<String> {
 
     for step in 1..=max_steps {
         let prompt = format!(
-            "{instruction}
-
-You are operating with tools.
-Return ONLY JSON in one of two formats:
-{{\"action\":\"tool\",\"tool\":\"<tool_name>\",\"args\":{{...}}}}
-{{\"action\":\"final\",\"content\":\"<answer for user>\"}}
-
-Rules:
-- Never wrap JSON in markdown.
-- Only use tools from this allowed list: {allowed_tools:?}
-- Use tools before making claims about repository contents.
-- If a tool fails, adapt and retry or return a concise failure summary.
-- Project was pre-indexed before this step. Use that context.
-
-Tool reference:
-{tools_doc}
-
-User request:
-{input}
-
-Tool interaction history:
-{history}
-
-Current step: {step}/{max_steps}
-",
+            "### ROLE\n{instruction}\n\n\
+### OUTPUT\n\
+Respond with ONE raw JSON object — no prose, no markdown fences.\n\
+To call a tool use:  {{\"action\":\"tool\",\"tool\":\"TOOLNAME\",\"args\":{{...}}}}\n\
+To give the answer:  {{\"action\":\"final\",\"content\":\"your full answer\"}}\n\n\
+### TOOLS\n{tools_doc}\n\n\
+### RULES\n\
+- Output exactly one JSON object and nothing else.\n\
+- Never narrate or simulate tool output. Call the tool and wait.\n\
+- Read real files before making claims about the codebase.\n\
+- Allowed tool names: {allowed_tools:?}\n\n\
+### TASK\n{input}\n\n\
+### HISTORY\n{history}\n\
+Step {step}/{max_steps}. Output your JSON now:",
             instruction = node.instruction,
             allowed_tools = node.tools,
             tools_doc = tools_doc,
@@ -159,10 +189,10 @@ Current step: {step}/{max_steps}
         );
 
         let raw = call_model(node.model.clone(), prompt).await?;
-        let parsed = serde_json::from_str::<ToolResponse>(raw.trim());
+        let parsed = extract_json(&raw)
+            .and_then(|s| serde_json::from_str::<ToolResponse>(&s).ok());
 
-        let Ok(response) = parsed else {
-            // Fallback for models that don't follow tool JSON protocol.
+        let Some(response) = parsed else {
             return Ok(raw);
         };
 
