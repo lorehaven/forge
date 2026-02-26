@@ -74,9 +74,10 @@ pub fn build(config: &config::Config, package: &str) -> Result<()> {
 pub fn tag(config: &config::Config, package: &str) -> Result<()> {
     let registry = &config.docker.registry;
     let module = find_module_for_package(config, package)?;
+    let image_name = get_image_name_for_package(config, package)?;
     let version = get_package_version(module, package)?;
 
-    let full_tag = format!("{registry}/{module}/{package}:{version}");
+    let full_tag = format!("{registry}/{module}/{image_name}:{version}");
     println!("Tagging image {package} as {full_tag}");
 
     let mut cmd = Command::new("docker");
@@ -88,9 +89,10 @@ pub fn tag(config: &config::Config, package: &str) -> Result<()> {
 pub fn push(config: &config::Config, package: &str) -> Result<()> {
     let registry = &config.docker.registry;
     let module = find_module_for_package(config, package)?;
+    let image_name = get_image_name_for_package(config, package)?;
     let version = get_package_version(module, package)?;
 
-    let full_tag = format!("{registry}/{module}/{package}:{version}");
+    let full_tag = format!("{registry}/{module}/{image_name}:{version}");
     println!("Pushing image: {full_tag}");
 
     let mut cmd = Command::new("docker");
