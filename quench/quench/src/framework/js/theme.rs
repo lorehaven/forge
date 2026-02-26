@@ -1,17 +1,17 @@
 use crate::Theme;
 use strum::IntoEnumIterator;
 
-pub fn theme_js(default_theme: &str) -> String {
+pub fn theme_js(default_theme: &str, resources_prefix: &str) -> String {
     let themes = Theme::iter().collect::<Vec<_>>();
-    theme_js_with_options(default_theme, &themes)
+    theme_js_with_options(default_theme, &themes, resources_prefix)
 }
 
-pub fn theme_js_with_options(default_theme: &str, supported_themes: &[Theme]) -> String {
+pub fn theme_js_with_options(default_theme: &str, supported_themes: &[Theme], resources_prefix: &str) -> String {
     let themes = supported_themes
         .iter()
         .map(|theme| {
             let theme_str = theme.to_string();
-            format!("\"{theme_str}\": \"/assets/css/themes/{theme_str}.css\"")
+            format!("\"{theme_str}\": \"{resources_prefix}/assets/css/themes/{theme_str}.css\"")
         })
         .collect::<Vec<_>>()
         .join(",\n");

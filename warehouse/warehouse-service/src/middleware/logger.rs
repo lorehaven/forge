@@ -53,7 +53,7 @@ where
 
         Box::pin(async move {
             let res = fut.await?;
-            if path != "/health" {
+            if path != "/health" && !path.starts_with("/ui") {
                 tracing::info!("{} {} -> {}", res.request().method(), path, res.status());
             }
             Ok(res)

@@ -109,16 +109,17 @@ impl AppBuilder {
     }
 }
 
-pub fn create_asset_files(default_theme: Theme) {
+pub fn create_asset_files(default_theme: Theme, resources_prefix: &str) {
     let supported_themes = Theme::iter().collect::<Vec<_>>();
     let supported_locales = available_locales().unwrap_or_default();
-    create_asset_files_with_options(default_theme, &supported_themes, &supported_locales);
+    create_asset_files_with_options(default_theme, &supported_themes, &supported_locales, resources_prefix);
 }
 
 pub fn create_asset_files_with_options(
     default_theme: Theme,
     supported_themes: &[Theme],
     supported_locales: &[String],
+    resources_prefix: &str,
 ) {
     if let Err(err) = std::fs::create_dir_all("dist/assets/css/themes") {
         eprintln!("ERROR: failed to create css themes directory: {err}");
@@ -150,7 +151,7 @@ pub fn create_asset_files_with_options(
 
     if let Err(err) = std::fs::write(
         "dist/assets/js/theme.js",
-        theme_js_with_options(&default_theme.to_string(), supported_themes),
+        theme_js_with_options(&default_theme.to_string(), supported_themes, resources_prefix),
     ) {
         eprintln!("ERROR: failed to write theme.js: {err}");
     }
@@ -305,7 +306,7 @@ impl AppShellBuilder {
         );
         let _ = std::fs::write(
             "dist/assets/js/theme.js",
-            theme_js_with_options(&effective_default_theme.to_string(), &supported_themes),
+            theme_js_with_options(&effective_default_theme.to_string(), &supported_themes, &self.resources_prefix),
         );
 
         let header = self.header.unwrap_or_else(|| {
