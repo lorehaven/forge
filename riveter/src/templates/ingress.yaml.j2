@@ -8,7 +8,8 @@ metadata:
     env: {{ env }}
   annotations:
     # cert-manager annotation for automatic certificate
-    cert-manager.io/cluster-issuer: letsencrypt-prod
+    cert-manager.io/cluster-issuer: {{ res.issuer_name }}
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "{{ res.force_ssl_redirect }}"
 spec:
   ingressClassName: nginx
   tls:
@@ -16,7 +17,7 @@ spec:
 {% for route in res.routes %}
         - {{ route.host }}
 {% endfor %}
-      secretName: {{ res.name }}-tls
+      secretName: {{ res.secret_name }}-tls
   rules:
 {% for route in res.routes %}
     - host: {{ route.host }}
