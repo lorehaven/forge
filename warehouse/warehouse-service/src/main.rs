@@ -1,4 +1,3 @@
-use actix_web::middleware::Logger;
 use actix_web::{App, HttpRequest, HttpResponse, HttpServer, web};
 use rustls::ServerConfig;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
@@ -35,11 +34,9 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::PayloadConfig::new(max_body_bytes))
             .app_data(web::Data::new(jwt_config.clone()))
             // Middleware
-            .wrap(middleware::limits::WarehouseLimits::new(
-                max_concurrent_uploads,
-            ))
+            .wrap(middleware::limits::WarehouseLimits::new(max_concurrent_uploads))
             .wrap(middleware::auth::WarehouseAuth::new(jwt_config.clone()))
-            .wrap(Logger::default())
+            .wrap(middleware::logger::FilteredLogger::new())
             // Register Actix services
             .service(routers::admin::scope())
             .service(routers::docker::scope())
