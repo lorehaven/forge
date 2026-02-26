@@ -81,7 +81,7 @@ pub fn tag(config: &config::Config, package: &str) -> Result<()> {
     println!("Tagging image {package} as {full_tag}");
 
     let mut cmd = Command::new("docker");
-    cmd.arg("tag").arg(package).arg(&full_tag);
+    cmd.arg("tag").arg(image_name).arg(&full_tag);
 
     run_command(cmd, &format!("docker tag {package}"))
 }
