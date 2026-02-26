@@ -17,18 +17,20 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     cargo build --release --target x86_64-unknown-linux-musl --workspace
 
-RUN ls /usr/src/app/target/x86_64-unknown-linux-musl/release
-
 # ---------- Runtime stage ----------
 FROM alpine:3.22
 
 ARG PROJECT_NAME
 ENV PROJECT_NAME=${PROJECT_NAME}
 
+ARG RESOURCES_PATH
+ENV RESOURCES_PATH=${RESOURCES_PATH}
+
 RUN apk add --no-cache ca-certificates
 
 WORKDIR /usr/local/bin
 
+COPY --from=builder /usr/src/app/${RESOURCES_PATH}/i18n ./i18n
 COPY --from=builder /usr/src/app/target/x86_64-unknown-linux-musl/release/${PROJECT_NAME} ./app
 RUN strip /usr/local/bin/app || true
 

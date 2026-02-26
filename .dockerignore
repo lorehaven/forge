@@ -3,4 +3,25 @@
 .dockerignore
 .gitignore
 docker/
-target/
+**/target/
+**/dist/
+**/storage/
+**/*.pem
+**/*.sh
+
+❯ tree -d .
+.
+├── anvil
+├── docker
+├── pulley
+├── quench
+ ├── examples
+  └── basic
+ └── quench
+├── riveter
+├── warehouse
+ ├── warehouse-cli
+ └── warehouse-service
+     ├── i18n
+     ├── src
+└── welder

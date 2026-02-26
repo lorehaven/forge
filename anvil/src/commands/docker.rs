@@ -53,6 +53,8 @@ fn get_image_name_for_package(config: &config::Config, package: &str) -> Result<
 pub fn build(config: &config::Config, package: &str) -> Result<()> {
     let dockerfile = get_dockerfile_for_package(config, package)?;
     let image_name = get_image_name_for_package(config, package)?;
+    let module = find_module_for_package(config, package)?;
+    let resources_path = format!("{module}/{package}");
     println!("Building Docker image for package: {package} using {dockerfile}");
 
     let mut cmd = Command::new("docker");
@@ -61,6 +63,8 @@ pub fn build(config: &config::Config, package: &str) -> Result<()> {
         .arg(&dockerfile)
         .arg("--build-arg")
         .arg(format!("PROJECT_NAME={package}"))
+        .arg("--build-arg")
+        .arg(format!("RESOURCES_PATH={resources_path}"))
         .arg("-t")
         .arg(image_name)
         .arg(".");
