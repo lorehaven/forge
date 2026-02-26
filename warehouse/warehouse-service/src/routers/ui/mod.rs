@@ -99,6 +99,7 @@ pub fn scope() -> impl HttpServiceFactory {
         // Root
         .service(root)
         .service(root_slash)
+        .service(assets)
         // Docker
         .service(docker_root)
         .service(docker_root_slash)

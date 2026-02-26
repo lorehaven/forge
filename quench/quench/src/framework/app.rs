@@ -19,6 +19,7 @@ pub struct AppBuilder {
     header: Option<Element>,
     content: Option<Element>,
     footer: Option<Element>,
+    resources_prefix: String,
 }
 
 impl AppBuilder {
@@ -64,23 +65,28 @@ impl AppBuilder {
         self
     }
 
+    pub fn resources_prefix(mut self, value: String) -> Self {
+        self.resources_prefix = value;
+        self
+    }
+
     pub fn build(self) -> String {
         let mut links = vec![
             Link::new("stylesheet", FONTAWESOME_CSS),
-            Link::new("stylesheet", "/assets/css/style.css"),
+            Link::new("stylesheet", &format!("{}/assets/css/style.css", self.resources_prefix)),
         ];
         self.supported_themes.iter().for_each(|theme| {
             let theme = theme.to_string();
             links.push(Link::new(
                 "stylesheet",
-                &format!("/assets/css/themes/{theme}.css"),
+                &format!("{}/assets/css/themes/{theme}.css", self.resources_prefix),
             ))
         });
         links.extend(self.links);
 
         let mut scripts = vec![
-            Script::new("/assets/js/locale.js"),
-            Script::new("/assets/js/theme.js"),
+            Script::new(&format!("{}/assets/js/locale.js", self.resources_prefix)),
+            Script::new(&format!("{}/assets/js/theme.js", self.resources_prefix)),
         ];
         scripts.extend(self.scripts);
 
@@ -114,25 +120,40 @@ pub fn create_asset_files_with_options(
     supported_themes: &[Theme],
     supported_locales: &[String],
 ) {
-    let _ = std::fs::create_dir_all("dist/assets/css/themes");
-    let _ = std::fs::write("dist/assets/css/style.css", theme_shared());
-    supported_themes.iter().for_each(|theme| {
-        let theme_str = theme.to_string();
-        let _ = std::fs::write(
-            format!("dist/assets/css/themes/{theme_str}.css"),
-            Theme::theme(*theme),
-        );
-    });
+    if let Err(err) = std::fs::create_dir_all("dist/assets/css/themes") {
+        eprintln!("ERROR: failed to create css themes directory: {err}");
+    }
 
-    let _ = std::fs::create_dir_all("dist/assets/js");
-    let _ = std::fs::write(
+    if let Err(err) = std::fs::write("dist/assets/css/style.css", theme_shared()) {
+        eprintln!("ERROR: failed to write style.css: {err}");
+    }
+
+    for theme in supported_themes {
+        let theme_str = theme.to_string();
+        let path = format!("dist/assets/css/themes/{theme_str}.css");
+
+        if let Err(err) = std::fs::write(&path, Theme::theme(*theme)) {
+            eprintln!("ERROR: failed to write theme file {path}: {err}");
+        }
+    }
+
+    if let Err(err) = std::fs::create_dir_all("dist/assets/js") {
+        eprintln!("ERROR: failed to create js directory: {err}");
+    }
+
+    if let Err(err) = std::fs::write(
         "dist/assets/js/locale.js",
         locale_js_with_options(supported_locales, None),
-    );
-    let _ = std::fs::write(
+    ) {
+        eprintln!("ERROR: failed to write locale.js: {err}");
+    }
+
+    if let Err(err) = std::fs::write(
         "dist/assets/js/theme.js",
         theme_js_with_options(&default_theme.to_string(), supported_themes),
-    );
+    ) {
+        eprintln!("ERROR: failed to write theme.js: {err}");
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -149,6 +170,7 @@ pub struct AppShellBuilder {
     scripts: Vec<Script>,
     supported_themes: Option<Vec<Theme>>,
     supported_locales: Option<Vec<String>>,
+    resources_prefix: String,
 }
 
 impl Default for AppShellBuilder {
@@ -166,6 +188,7 @@ impl Default for AppShellBuilder {
             scripts: Vec::new(),
             supported_themes: None,
             supported_locales: None,
+            resources_prefix: String::new(),
         }
     }
 }
@@ -232,6 +255,11 @@ impl AppShellBuilder {
 
     pub fn supported_locales(mut self, value: Vec<String>) -> Self {
         self.supported_locales = Some(value);
+        self
+    }
+
+    pub fn resources_prefix(mut self, value: String) -> Self {
+        self.resources_prefix = value;
         self
     }
 
@@ -304,7 +332,8 @@ impl AppShellBuilder {
             .scripts(self.scripts)
             .supported_themes(supported_themes)
             .header(header)
-            .footer(footer);
+            .footer(footer)
+            .resources_prefix(self.resources_prefix);
 
         Ok(AppShell { base })
     }

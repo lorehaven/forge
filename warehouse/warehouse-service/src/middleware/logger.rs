@@ -1,16 +1,15 @@
 use actix_web::dev::{ServiceRequest, ServiceResponse};
 
+#[derive(Clone, Default)]
 pub struct FilteredLogger;
-
-impl FilteredLogger {
-    pub fn new() -> Self {
-        Self
-    }
-}
 
 impl<S, B> actix_web::dev::Transform<S, ServiceRequest> for FilteredLogger
 where
-    S: actix_web::dev::Service<ServiceRequest, Response = ServiceResponse<B>, Error = actix_web::Error> + 'static,
+    S: actix_web::dev::Service<
+            ServiceRequest,
+            Response = ServiceResponse<B>,
+            Error = actix_web::Error,
+        > + 'static,
     B: actix_web::body::MessageBody + 'static,
 {
     type Response = ServiceResponse<B>;
@@ -30,7 +29,11 @@ pub struct FilteredLoggerMiddleware<S> {
 
 impl<S, B> actix_web::dev::Service<ServiceRequest> for FilteredLoggerMiddleware<S>
 where
-    S: actix_web::dev::Service<ServiceRequest, Response = ServiceResponse<B>, Error = actix_web::Error> + 'static,
+    S: actix_web::dev::Service<
+            ServiceRequest,
+            Response = ServiceResponse<B>,
+            Error = actix_web::Error,
+        > + 'static,
     B: actix_web::body::MessageBody + 'static,
 {
     type Response = ServiceResponse<B>;

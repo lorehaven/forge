@@ -28,11 +28,14 @@ ENV RESOURCES_PATH=${RESOURCES_PATH}
 
 RUN apk add --no-cache ca-certificates
 
-WORKDIR /usr/local/bin
+WORKDIR /app
 
 COPY --from=builder /usr/src/app/${RESOURCES_PATH}/i18n ./i18n
-COPY --from=builder /usr/src/app/target/x86_64-unknown-linux-musl/release/${PROJECT_NAME} ./app
-RUN strip /usr/local/bin/app || true
+COPY --from=builder /usr/src/app/target/x86_64-unknown-linux-musl/release/${PROJECT_NAME} ./service
+RUN strip ./service || true
 
-EXPOSE 8000
-ENTRYPOINT ["./app"]
+# Ensure ownership
+RUN chown -R 999:999 /app
+
+EXPOSE 80
+ENTRYPOINT ["./service"]

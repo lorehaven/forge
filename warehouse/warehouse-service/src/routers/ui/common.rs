@@ -17,8 +17,12 @@ static UI_SHELL_DOCKER: LazyLock<AppShell> = LazyLock::new(|| {
         .default_theme(Theme::BootstrapDark)
         .supported_themes(vec![Theme::BootstrapDark])
         .header(ui_header(Some("ui_header_docker"), true))
-        .links(vec![Link::new("stylesheet", "/assets/css/warehouse.css")])
+        .links(vec![Link::new(
+            "stylesheet",
+            "/ui/assets/css/warehouse.css",
+        )])
         .with_nav(false)
+        .resources_prefix("/ui".to_string())
         .build()
 });
 
@@ -31,8 +35,12 @@ static UI_SHELL_CRATES: LazyLock<AppShell> = LazyLock::new(|| {
         .default_theme(Theme::BootstrapDark)
         .supported_themes(vec![Theme::BootstrapDark])
         .header(ui_header(Some("ui_header_crates"), true))
-        .links(vec![Link::new("stylesheet", "/assets/css/warehouse.css")])
+        .links(vec![Link::new(
+            "stylesheet",
+            "/ui/assets/css/warehouse.css",
+        )])
         .with_nav(false)
+        .resources_prefix("/ui".to_string())
         .build()
 });
 
@@ -45,8 +53,12 @@ static UI_SHELL_HOME: LazyLock<AppShell> = LazyLock::new(|| {
         .default_theme(Theme::BootstrapDark)
         .supported_themes(vec![Theme::BootstrapDark])
         .header(ui_header(Some("ui_header_home"), true))
-        .links(vec![Link::new("stylesheet", "/assets/css/warehouse.css")])
+        .links(vec![Link::new(
+            "stylesheet",
+            "/ui/assets/css/warehouse.css",
+        )])
         .with_nav(false)
+        .resources_prefix("/ui".to_string())
         .build()
 });
 
@@ -59,8 +71,12 @@ static UI_SHELL_AUTH: LazyLock<AppShell> = LazyLock::new(|| {
         .default_theme(Theme::BootstrapDark)
         .supported_themes(vec![Theme::BootstrapDark])
         .header(ui_header(None, false))
-        .links(vec![Link::new("stylesheet", "/assets/css/warehouse.css")])
+        .links(vec![Link::new(
+            "stylesheet",
+            "/ui/assets/css/warehouse.css",
+        )])
         .with_nav(false)
+        .resources_prefix("/ui".to_string())
         .build()
 });
 
