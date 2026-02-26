@@ -76,6 +76,7 @@ fn load_embedded_templates(env: &mut Environment<'_>) {
     let templates = [
         "cronjob.yaml.j2",
         "deployment.yaml.j2",
+        "ingress.yaml.j2",
         "ingressroute.yaml.j2",
         "job.yaml.j2",
         "middleware.yaml.j2",
@@ -95,6 +96,7 @@ fn get_template_source(name: &str) -> &'static str {
     match name {
         "cronjob.yaml.j2" => include_str!("templates/cronjob.yaml.j2"),
         "deployment.yaml.j2" => include_str!("templates/deployment.yaml.j2"),
+        "ingress.yaml.j2" => include_str!("templates/ingress.yaml.j2"),
         "ingressroute.yaml.j2" => include_str!("templates/ingressroute.yaml.j2"),
         "job.yaml.j2" => include_str!("templates/job.yaml.j2"),
         "middleware.yaml.j2" => include_str!("templates/middleware.yaml.j2"),

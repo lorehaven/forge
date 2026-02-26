@@ -1,0 +1,34 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ res.name }}
+  namespace: {{ data.namespace_name }}
+  labels:
+    app.kubernetes.io/managed-by: custom-tool
+    env: {{ env }}
+  annotations:
+    # cert-manager annotation for automatic certificate
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+{% for route in res.routes %}
+        - {{ route.host }}
+{% endfor %}
+      secretName: {{ res.name }}-tls
+  rules:
+{% for route in res.routes %}
+    - host: {{ route.host }}
+      http:
+        paths:
+{% for path in route.paths %}
+          - path: {{ path.path }}
+            pathType: {{ path.type | default('Prefix') }}
+            backend:
+              service:
+                name: {{ path.service_name }}
+                port:
+                  number: {{ path.service_port }}
+{% endfor %}
+{% endfor %}
