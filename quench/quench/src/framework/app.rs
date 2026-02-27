@@ -73,7 +73,10 @@ impl AppBuilder {
     pub fn build(self) -> String {
         let mut links = vec![
             Link::new("stylesheet", FONTAWESOME_CSS),
-            Link::new("stylesheet", &format!("{}/assets/css/style.css", self.resources_prefix)),
+            Link::new(
+                "stylesheet",
+                &format!("{}/assets/css/style.css", self.resources_prefix),
+            ),
         ];
         self.supported_themes.iter().for_each(|theme| {
             let theme = theme.to_string();
@@ -112,7 +115,12 @@ impl AppBuilder {
 pub fn create_asset_files(default_theme: Theme, resources_prefix: &str) {
     let supported_themes = Theme::iter().collect::<Vec<_>>();
     let supported_locales = available_locales().unwrap_or_default();
-    create_asset_files_with_options(default_theme, &supported_themes, &supported_locales, resources_prefix);
+    create_asset_files_with_options(
+        default_theme,
+        &supported_themes,
+        &supported_locales,
+        resources_prefix,
+    );
 }
 
 pub fn create_asset_files_with_options(
@@ -151,7 +159,11 @@ pub fn create_asset_files_with_options(
 
     if let Err(err) = std::fs::write(
         "dist/assets/js/theme.js",
-        theme_js_with_options(&default_theme.to_string(), supported_themes, resources_prefix),
+        theme_js_with_options(
+            &default_theme.to_string(),
+            supported_themes,
+            resources_prefix,
+        ),
     ) {
         eprintln!("ERROR: failed to write theme.js: {err}");
     }
@@ -306,7 +318,11 @@ impl AppShellBuilder {
         );
         let _ = std::fs::write(
             "dist/assets/js/theme.js",
-            theme_js_with_options(&effective_default_theme.to_string(), &supported_themes, &self.resources_prefix),
+            theme_js_with_options(
+                &effective_default_theme.to_string(),
+                &supported_themes,
+                &self.resources_prefix,
+            ),
         );
 
         let header = self.header.unwrap_or_else(|| {
