@@ -1,4 +1,5 @@
 use crate::domain::jwt::{Claims, JwtConfig};
+use actix_web::http::header;
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::{Duration, Utc};
@@ -84,20 +85,31 @@ pub async fn handle(
 }
 
 fn validate_basic(req: &HttpRequest, config: &JwtConfig) -> Option<String> {
-    if !config.auth_enabled {
-        return Some("anonymous".to_string());
+    // 1. Try Authorization header
+    if let Some(header_value) = req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|h| h.to_str().ok())
+        && let Some(encoded) = header_value.strip_prefix("Basic ")
+        && let Some(username) = validate_basic_encoded(encoded, config)
+    {
+        return Some(username);
     }
 
-    let header = req
-        .headers()
-        .get("Authorization")
-        .and_then(|h| h.to_str().ok())?;
+    // 2. Fallback to HttpOnly cookie
+    if let Some(cookie) = req.cookie("warehouse_ui_session")
+        && let Some(username) = validate_basic_encoded(cookie.value(), config)
+    {
+        return Some(username);
+    }
 
-    let encoded = header.strip_prefix("Basic ")?;
+    None
+}
 
+fn validate_basic_encoded(encoded: &str, config: &JwtConfig) -> Option<String> {
     let decoded = STANDARD.decode(encoded).ok()?;
-    let credentials = String::from_utf8(decoded).ok()?;
-    let (username, password) = credentials.split_once(':')?;
+    let creds = String::from_utf8(decoded).ok()?;
+    let (username, password) = creds.split_once(':')?;
 
     if config.username.as_deref() == Some(username) && config.password.as_deref() == Some(password)
     {

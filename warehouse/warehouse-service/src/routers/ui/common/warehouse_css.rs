@@ -114,10 +114,10 @@ fn warehouse_css_rules() -> Vec<CssRule> {
         // Docker tags grid
         CssRule::new(".tags-grid")
             .child(CssRule::new(".header,\n.body > .row").property("display", "grid"))
-            .child(CssRule::new(".header").property("grid-template-columns", "2fr 2fr 3fr"))
+            .child(CssRule::new(".header").property("grid-template-columns", "2fr 2fr 3fr 1fr"))
             .child(
                 CssRule::new(".body > .row")
-                    .property("grid-template-columns", "2fr 2fr 3fr")
+                    .property("grid-template-columns", "2fr 2fr 3fr 1fr")
                     .child(CssRule::new("&.active").property("background-color", "var(--bs-gray-800)"))
                     .child(
                         CssRule::new("&:not(:last-child)")

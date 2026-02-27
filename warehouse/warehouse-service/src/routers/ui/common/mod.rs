@@ -7,12 +7,14 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::LazyLock;
 
 mod crates_js;
+mod docker_js;
 mod warehouse_css;
 
 pub(super) const UI_SESSION_COOKIE: &str = "warehouse_ui_session";
 
 static UI_SHELL_DOCKER: LazyLock<AppShell> = LazyLock::new(|| {
     warehouse_css::ensure_warehouse_css();
+    docker_js::ensure_docker_js();
 
     AppShellBuilder::new()
         .title("Warehouse")
@@ -24,6 +26,7 @@ static UI_SHELL_DOCKER: LazyLock<AppShell> = LazyLock::new(|| {
             "stylesheet",
             "/ui/assets/css/warehouse.css",
         )])
+        .scripts(vec![Script::new("/ui/assets/js/docker.js")])
         .with_nav(false)
         .resources_prefix("/ui".to_string())
         .build()

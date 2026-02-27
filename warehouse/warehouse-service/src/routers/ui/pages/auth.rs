@@ -60,6 +60,7 @@ pub(super) async fn login_submit(
         .path("/")
         .http_only(true)
         .same_site(SameSite::Lax)
+        .secure(true)
         .finish();
 
     HttpResponse::Found()

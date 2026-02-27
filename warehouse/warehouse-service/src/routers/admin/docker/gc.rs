@@ -66,6 +66,8 @@ async fn garbage_collect() -> std::io::Result<GcReport> {
         }
     }
 
+    cleanup_empty_dirs(&root).await?;
+
     Ok(GcReport { deleted, kept })
 }
 
@@ -181,4 +183,41 @@ fn mark_manifest_references(
             }
         }
     }
+}
+
+async fn cleanup_empty_dirs(root: &Path) -> std::io::Result<()> {
+    let mut dirs = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+
+    // Collect all directories
+    while let Some(dir) = stack.pop() {
+        let mut entries = match tokio::fs::read_dir(&dir).await {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+
+        while let Some(entry) = entries.next_entry().await? {
+            let path = entry.path();
+            if entry.file_type().await?.is_dir() {
+                stack.push(path.clone());
+                dirs.push(path);
+            }
+        }
+    }
+
+    // Sort deepest first
+    dirs.sort_by_key(|p| std::cmp::Reverse(p.components().count()));
+
+    for dir in dirs {
+        if dir == root {
+            continue;
+        }
+
+        let mut entries = tokio::fs::read_dir(&dir).await?;
+        if entries.next_entry().await?.is_none() {
+            let _ = tokio::fs::remove_dir(&dir).await;
+        }
+    }
+
+    Ok(())
 }

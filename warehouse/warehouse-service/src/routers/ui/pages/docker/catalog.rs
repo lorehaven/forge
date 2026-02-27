@@ -135,21 +135,34 @@ fn render_tags_panel(
                 "row"
             };
 
-            body = body.child(
-                div()
-                    .class(row_class)
-                    .child(
-                        div()
-                            .class("cell")
-                            .child(a().attr("href", &link).class("tag-link").text(&meta.tag)),
-                    )
-                    .child(div().class("cell mono").text(&short_digest(&meta.digest)))
-                    .child(
-                        div()
-                            .class("cell mono")
-                            .text(meta.media_type.as_deref().unwrap_or("-")),
+            let row = div()
+                .class(row_class)
+                .child(
+                    div()
+                        .class("cell")
+                        .child(a().attr("href", &link).class("tag-link").text(&meta.tag)),
+                )
+                .child(div().class("cell mono").text(&short_digest(&meta.digest)))
+                .child(
+                    div()
+                        .class("cell mono")
+                        .text(meta.media_type.as_deref().unwrap_or("-")),
+                )
+                .child(
+                    div().class("cell actions").child(
+                        i().class("fas fa-trash")
+                            .attr("aria-hidden", "true")
+                            .attr("data-action", "delete-image")
+                            .attr("data-repository", repo_name)
+                            .attr("data-digest", &meta.digest)
+                            .attr("title", "Delete image")
+                            .attr("role", "button")
+                            .attr("aria-label", "Delete image")
+                            .on_click("handleDeleteImageClick(event)"),
                     ),
-            );
+                );
+
+            body = body.child(row);
         }
     }
 
