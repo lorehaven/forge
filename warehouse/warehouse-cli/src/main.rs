@@ -1,8 +1,7 @@
+mod api;
 mod application;
 mod cli;
 mod config;
-mod crates_api;
-mod docker_api;
 mod domain;
 
 use anyhow::Result;

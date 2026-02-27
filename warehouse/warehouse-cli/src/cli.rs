@@ -19,6 +19,11 @@ pub enum Commands {
         #[command(subcommand)]
         command: CratesCommands,
     },
+    /// Admin operations
+    Admin {
+        #[command(subcommand)]
+        command: AdminCommands,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -273,4 +278,27 @@ pub struct CratesUnyankArgs {
     /// Registry name; defaults to active crates registry from config
     #[arg(long)]
     pub registry: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Admin commands
+// ---------------------------------------------------------------------------
+
+#[derive(Subcommand)]
+pub enum AdminCommands {
+    /// Run garbage collection for both Docker and crates
+    Gc(AdminGcArgs),
+}
+
+#[derive(Args)]
+pub struct AdminGcArgs {
+    /// Registry name; defaults to active registry from config
+    #[arg(long)]
+    pub registry: Option<String>,
+    /// Run garbage collection for Docker only
+    #[arg(long)]
+    pub docker: bool,
+    /// Run garbage collection for crates only
+    #[arg(long)]
+    pub crates: bool,
 }

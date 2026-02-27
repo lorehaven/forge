@@ -1,12 +1,13 @@
+use crate::api::admin_api::AdminApi;
+use crate::api::crates_api::CratesApi;
+use crate::api::docker_api::DockerApi;
 use crate::cli::{
-    CatalogArgs, Cli, Commands, CratesCommands, CratesLoginArgs, CratesRegistryAddArgs,
-    CratesRegistryCommands, CratesRegistryRemoveArgs, CratesRegistryUseArgs, CratesSearchArgs,
-    CratesUnyankArgs, CratesVersionsArgs, CratesYankArgs, DockerCommands, LoginArgs,
-    RegistryAddArgs, RegistryCommands, RegistryRemoveArgs, RegistryUseArgs, TagsArgs,
+    AdminCommands, AdminGcArgs, CatalogArgs, Cli, Commands, CratesCommands, CratesLoginArgs,
+    CratesRegistryAddArgs, CratesRegistryCommands, CratesRegistryRemoveArgs, CratesRegistryUseArgs,
+    CratesSearchArgs, CratesUnyankArgs, CratesVersionsArgs, CratesYankArgs, DockerCommands,
+    LoginArgs, RegistryAddArgs, RegistryCommands, RegistryRemoveArgs, RegistryUseArgs, TagsArgs,
 };
 use crate::config::{ConfigScope, ConfigStore, RegistrySource};
-use crate::crates_api::CratesApi;
-use crate::docker_api::DockerApi;
 use crate::domain::{RegistryConfig, validate_registry_name};
 use anyhow::{Result, bail};
 
@@ -16,6 +17,7 @@ pub async fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Commands::Docker { command } => run_docker(&store, command).await,
         Commands::Crates { command } => run_crates(&store, command).await,
+        Commands::Admin { command } => run_admin(&store, command).await,
     }
 }
 
@@ -60,7 +62,7 @@ async fn run_crates(store: &ConfigStore, command: CratesCommands) -> Result<()> 
 }
 
 // ---------------------------------------------------------------------------
-// Docker commands  (unchanged from original)
+// Docker commands
 // ---------------------------------------------------------------------------
 
 fn cmd_registry_add(store: &ConfigStore, args: RegistryAddArgs) -> Result<()> {
@@ -465,5 +467,65 @@ async fn cmd_crates_unyank(store: &ConfigStore, args: CratesUnyankArgs) -> Resul
         "unyanked {}-{} in '{}'",
         args.crate_name, args.version, registry_name
     );
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Admin commands
+// ---------------------------------------------------------------------------
+
+async fn run_admin(store: &ConfigStore, command: AdminCommands) -> Result<()> {
+    match command {
+        AdminCommands::Gc(args) => cmd_admin_gc(store, args).await,
+    }
+}
+
+async fn cmd_admin_gc(store: &ConfigStore, args: AdminGcArgs) -> Result<()> {
+    // Determine which registry to use
+    let registry_name = store.resolve_registry_name(args.registry)?;
+    let registry = store.load_effective_registry(&registry_name)?.config;
+    
+    let admin_api = AdminApi::new(&registry)?;
+
+    println!(
+        "Running garbage collection for registry '{}'",
+        registry_name
+    );
+
+    // Run Docker GC if requested or if no specific type was specified
+    if args.docker || !args.crates {
+        println!("Running Docker garbage collection...");
+        match admin_api.run_docker_gc(&registry, "/admin/docker/gc").await {
+            Ok(report) => {
+                println!("Docker GC completed:");
+                println!("  Deleted: {}", report.deleted);
+                println!("  Kept: {}", report.kept);
+            }
+            Err(e) => {
+                eprintln!("Docker GC failed: {}", e);
+                return Err(e);
+            }
+        }
+    }
+
+    // Run Crates GC if requested or if no specific type was specified
+    if args.crates || !args.docker {
+        println!("Running crates garbage collection...");
+        match admin_api.run_crates_gc(&registry, "/admin/crates/gc").await {
+            Ok(report) => {
+                println!("Crates GC completed:");
+                println!("  Deleted crates: {}", report.deleted_crates);
+                println!("  Kept crates: {}", report.kept_crates);
+                println!("  Removed index entries: {}", report.removed_index_entries);
+                println!("  Deleted owner files: {}", report.deleted_owner_files);
+                println!("  Removed empty dirs: {}", report.removed_empty_dirs);
+            }
+            Err(e) => {
+                eprintln!("Crates GC failed: {}", e);
+                return Err(e);
+            }
+        }
+    }
+
     Ok(())
 }
