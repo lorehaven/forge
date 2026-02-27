@@ -52,6 +52,8 @@ ui_col_checksum = Checksum
 
 ui_status_active = active
 ui_status_yanked = yanked
+ui_yank = Yank
+ui_unyank = Unyank
 
 ui_empty_select_crate = Select a crate from the list.
 ui_empty_no_versions = No versions found.

@@ -484,7 +484,7 @@ async fn cmd_admin_gc(store: &ConfigStore, args: AdminGcArgs) -> Result<()> {
     // Determine which registry to use
     let registry_name = store.resolve_registry_name(args.registry)?;
     let registry = store.load_effective_registry(&registry_name)?.config;
-    
+
     let admin_api = AdminApi::new(&registry)?;
 
     println!(

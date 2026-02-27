@@ -177,21 +177,54 @@ fn render_versions_panel(
                 "ui_status_active"
             };
 
-            body = body.child(
-                div()
-                    .class(row_class)
-                    .child(
-                        div()
-                            .class("cell")
-                            .child(a().attr("href", &href).class("tag-link").text(&record.vers)),
-                    )
-                    .child(
-                        div()
-                            .class("cell")
-                            .child(span().attr("data-i18n", status_key)),
-                    )
-                    .child(div().class("cell mono").text(&short_hex(&record.cksum))),
-            );
+            let mut row = div()
+                .class(row_class)
+                .child(
+                    div()
+                        .class("cell")
+                        .child(a().attr("href", &href).class("tag-link").text(&record.vers)),
+                )
+                .child(
+                    div()
+                        .class("cell")
+                        .child(span().attr("data-i18n", status_key)),
+                )
+                .child(div().class("cell mono").text(&short_hex(&record.cksum)));
+
+            // Add yank/unyank buttons for yankable versions
+            if record.yanked {
+                // Add unyank button with Font Awesome icon
+                row = row.child(
+                    div().class("cell").class("actions").child(
+                        i().class("fas fa-undo")
+                            .attr("aria-hidden", "true")
+                            .attr("data-action", "unyank")
+                            .attr("data-crate", crate_name)
+                            .attr("data-version", &record.vers)
+                            .attr("title", "Unyank version")
+                            .attr("role", "button")
+                            .attr("aria-label", "Unyank version")
+                            .on_click("handleUnyankClick(event)"),
+                    ),
+                );
+            } else {
+                // Add yank button with Font Awesome icon
+                row = row.child(
+                    div().class("cell").class("actions").child(
+                        i().class("fas fa-ban")
+                            .attr("aria-hidden", "true")
+                            .attr("data-action", "yank")
+                            .attr("data-crate", crate_name)
+                            .attr("data-version", &record.vers)
+                            .attr("title", "Yank version")
+                            .attr("role", "button")
+                            .attr("aria-label", "Yank version")
+                            .on_click("handleYankClick(event)"),
+                    ),
+                );
+            }
+
+            body = body.child(row);
         }
     }
 

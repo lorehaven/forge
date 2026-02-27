@@ -127,6 +127,8 @@ pub fn scope() -> impl HttpServiceFactory {
         .service(search::handle)
         .service(publish::handle)
         .service(download::handle)
+        .service(unyank::handle)
+        .service(yank::handle)
         .service(owners::list)
         .service(owners::add)
         .service(owners::remove)

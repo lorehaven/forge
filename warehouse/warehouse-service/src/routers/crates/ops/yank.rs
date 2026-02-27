@@ -60,11 +60,7 @@ pub async fn handle(path: web::Path<(String, String)>) -> impl Responder {
 /// Rewrites the index file so that the entry for `version` has `yanked` set to
 /// `yanked_value`.  Returns `Ok(true)` when the version was found and updated,
 /// `Ok(false)` when not found, or `Err(String)` on I/O failures.
-pub(in crate::routers::crates) async fn set_yanked(
-    name: &str,
-    version: &str,
-    yanked_value: bool,
-) -> Result<bool, String> {
+pub async fn set_yanked(name: &str, version: &str, yanked_value: bool) -> Result<bool, String> {
     let Some(index_path) = index_file_path(name) else {
         return Err("failed to resolve index path".into());
     };

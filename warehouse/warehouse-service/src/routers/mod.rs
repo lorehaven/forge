@@ -63,7 +63,7 @@ struct DockerOpenApiDoc;
 #[derive(OpenApi)]
 #[openapi(
     nest(
-        (path = "/v1/api/crates", api = crates::CratesApiDoc),
+        (path = "/api/v1/crates", api = crates::CratesApiDoc),
         (path = "/index", api = crates::CratesIndexApiDoc),
     )
 )]
