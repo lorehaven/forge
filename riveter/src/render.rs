@@ -8,20 +8,47 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResourceScope {
+    Mutable,
+    Immutable,
+    All,
+}
+
+#[derive(Debug, Clone)]
+pub struct RenderedManifest {
+    pub path: String,
+    pub resource_count: usize,
+}
+
 pub fn generate_manifests(env_name: &str) -> anyhow::Result<String> {
+    Ok(generate_manifests_with_scope(env_name, ResourceScope::All)?.path)
+}
+
+pub fn generate_manifests_with_scope(
+    env_name: &str,
+    scope: ResourceScope,
+) -> anyhow::Result<RenderedManifest> {
     load_env(env_name);
 
     let data = render_overlay(env_name)?;
-    let rendered_resources = render_resources(env_name, &data)?;
+    let rendered_resources = render_resources(env_name, &data, scope)?;
 
     fs::create_dir_all(OUTPUT_DIR)?;
-    let path = manifest_path(env_name);
+    let path = scoped_manifest_path(env_name, scope);
     fs::write(
         &path,
-        strip_empty_lines(&(rendered_resources.join("\n---\n") + "\n")),
+        if rendered_resources.is_empty() {
+            String::new()
+        } else {
+            strip_empty_lines(&(rendered_resources.join("\n---\n") + "\n"))
+        },
     )?;
 
-    Ok(path)
+    Ok(RenderedManifest {
+        path,
+        resource_count: rendered_resources.len(),
+    })
 }
 
 fn render_overlay(env_name: &str) -> anyhow::Result<YamlValue> {
@@ -40,7 +67,11 @@ fn render_overlay(env_name: &str) -> anyhow::Result<YamlValue> {
     Ok(data)
 }
 
-fn render_resources(env_name: &str, data: &YamlValue) -> anyhow::Result<Vec<String>> {
+fn render_resources(
+    env_name: &str,
+    data: &YamlValue,
+    scope: ResourceScope,
+) -> anyhow::Result<Vec<String>> {
     let resources = data["resources"]
         .as_sequence()
         .context("resources must be a list")?;
@@ -51,6 +82,10 @@ fn render_resources(env_name: &str, data: &YamlValue) -> anyhow::Result<Vec<Stri
 
     let mut out = Vec::new();
     for res in resources {
+        if !resource_in_scope(res, scope) {
+            continue;
+        }
+
         let kind = res["kind"].as_str().context("kind missing")?;
         let tpl = format!("{}.yaml.j2", kind.to_lowercase());
         let y = tpl_env.get_template(&tpl)?.render(context! {
@@ -61,6 +96,36 @@ fn render_resources(env_name: &str, data: &YamlValue) -> anyhow::Result<Vec<Stri
         out.push(y.trim().to_string());
     }
     Ok(out)
+}
+
+fn scoped_manifest_path(env: &str, scope: ResourceScope) -> String {
+    match scope {
+        ResourceScope::All => manifest_path(env),
+        ResourceScope::Mutable => format!("{OUTPUT_DIR}/{env}-manifests.mutable.yaml"),
+        ResourceScope::Immutable => format!("{OUTPUT_DIR}/{env}-manifests.immutable.yaml"),
+    }
+}
+
+fn resource_in_scope(res: &YamlValue, scope: ResourceScope) -> bool {
+    match scope {
+        ResourceScope::All => true,
+        ResourceScope::Mutable => !resource_is_immutable(res),
+        ResourceScope::Immutable => resource_is_immutable(res),
+    }
+}
+
+fn resource_is_immutable(res: &YamlValue) -> bool {
+    if res["immutable"].as_bool().unwrap_or(false) {
+        return true;
+    }
+
+    if let Some(lifecycle) = res["lifecycle"].as_str() {
+        let lifecycle = lifecycle.trim();
+        return lifecycle.eq_ignore_ascii_case("immutable")
+            || lifecycle.eq_ignore_ascii_case("static");
+    }
+
+    false
 }
 
 fn load_env(env: &str) {
@@ -131,4 +196,35 @@ pub fn strip_empty_lines(s: &str) -> String {
         .collect::<Vec<_>>()
         .join("\n")
         + "\n"
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ResourceScope, resource_in_scope};
+    use serde_yaml::Value as YamlValue;
+
+    fn parse_resource(yaml: &str) -> YamlValue {
+        serde_yaml::from_str(yaml).expect("resource yaml should parse")
+    }
+
+    #[test]
+    fn immutable_flag_marks_resource_immutable() {
+        let res = parse_resource("kind: namespace\nimmutable: true\n");
+        assert!(!resource_in_scope(&res, ResourceScope::Mutable));
+        assert!(resource_in_scope(&res, ResourceScope::Immutable));
+    }
+
+    #[test]
+    fn lifecycle_static_marks_resource_immutable() {
+        let res = parse_resource("kind: ingress\nlifecycle: static\n");
+        assert!(!resource_in_scope(&res, ResourceScope::Mutable));
+        assert!(resource_in_scope(&res, ResourceScope::Immutable));
+    }
+
+    #[test]
+    fn default_resources_are_mutable() {
+        let res = parse_resource("kind: deployment\n");
+        assert!(resource_in_scope(&res, ResourceScope::Mutable));
+        assert!(!resource_in_scope(&res, ResourceScope::Immutable));
+    }
 }

@@ -1,11 +1,7 @@
-use crate::env::{current_env, env_list, env_set, env_show, manifest_path};
-use crate::render::generate_manifests;
-use std::path::Path;
+use crate::env::{current_env, env_list, env_set, env_show};
+use crate::render::{ResourceScope, generate_manifests_with_scope};
+use anyhow::Context;
 use std::process::Command;
-
-fn manifest_exists(env: &str) -> bool {
-    Path::new(&manifest_path(env)).exists()
-}
 
 pub fn ok(msg: &str) {
     println!("\x1b[32m✓\x1b[0m {msg}");
@@ -29,9 +25,12 @@ Commands:
     set <env>           Set current environment
     show                Show current environment
 
-  render                Render manifests
-  apply [--dry-run]     Apply manifests via kubectl
-  delete                Delete manifests via kubectl
+  render [--scope mutable|immutable|all]
+                        Render manifests
+  apply [--dry-run] [--scope mutable|immutable|all]
+                        Apply manifests via kubectl
+  delete [--scope mutable|immutable|all]
+                        Delete manifests via kubectl
 
   help                  Show this help
   exit | quit            Leave REPL
@@ -69,33 +68,34 @@ fn handle_repl_command(input: &str) -> anyhow::Result<bool> {
 
         "render" | "r" => {
             let env = current_env()?;
-            generate_manifests(&env)?;
-            ok(&format!("rendered {}", manifest_path(&env)));
+            let scope = parse_scope_arg(&args, ResourceScope::All)?;
+            let rendered = generate_manifests_with_scope(&env, scope)?;
+            ok(&format!("rendered {}", rendered.path));
         }
 
         "apply" | "a" => {
             let env = current_env()?;
-            if manifest_exists(&env) {
-                let dry = args.contains(&"--dry-run");
-                kubectl_apply(&env, dry)?;
-                if dry {
-                    ok("kubectl apply --dry-run succeeded");
-                } else {
-                    ok("kubectl apply succeeded");
-                }
+            let dry = args.contains(&"--dry-run");
+            let scope = parse_scope_arg(&args, ResourceScope::Mutable)?;
+            let count = kubectl_apply(&env, dry, scope)?;
+            if count == 0 {
+                ok("no resources matched selected scope");
+            } else if dry {
+                ok("kubectl apply --dry-run succeeded");
             } else {
-                warn("manifest not found — run `render` first");
+                ok("kubectl apply succeeded");
             }
         }
 
         "delete" | "del" | "d" => {
             let env = current_env()?;
-            if manifest_exists(&env) {
-                warn(&format!("deleting resources for env: {env}"));
-                kubectl_delete(&env)?;
+            let scope = parse_scope_arg(&args, ResourceScope::Mutable)?;
+            let count = kubectl_delete(&env, scope)?;
+            if count > 0 {
+                warn(&format!("deleted resources for env: {env}"));
                 ok("kubectl delete completed");
             } else {
-                warn("manifest not found — nothing to delete");
+                ok("no resources matched selected scope");
             }
         }
 
@@ -133,20 +133,48 @@ pub fn repl() -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn kubectl_apply(env: &str, dry: bool) -> anyhow::Result<()> {
+pub fn kubectl_apply(env: &str, dry: bool, scope: ResourceScope) -> anyhow::Result<usize> {
+    let rendered = generate_manifests_with_scope(env, scope)?;
+    if rendered.resource_count == 0 {
+        return Ok(0);
+    }
+
     let mut cmd = Command::new("kubectl");
     cmd.arg("apply");
     if dry {
         cmd.arg("--dry-run=client");
     }
-    cmd.arg("-f").arg(manifest_path(env));
-    cmd.status()?;
-    Ok(())
+    let status = cmd.arg("-f").arg(rendered.path).status()?;
+    anyhow::ensure!(status.success(), "kubectl apply failed");
+    Ok(rendered.resource_count)
 }
 
-pub fn kubectl_delete(env: &str) -> anyhow::Result<()> {
-    Command::new("kubectl")
-        .args(["delete", "-f", &manifest_path(env)])
+pub fn kubectl_delete(env: &str, scope: ResourceScope) -> anyhow::Result<usize> {
+    let rendered = generate_manifests_with_scope(env, scope)?;
+    if rendered.resource_count == 0 {
+        return Ok(0);
+    }
+
+    let status = Command::new("kubectl")
+        .args(["delete", "-f", &rendered.path])
         .status()?;
-    Ok(())
+    anyhow::ensure!(status.success(), "kubectl delete failed");
+    Ok(rendered.resource_count)
+}
+
+fn parse_scope_arg(args: &[&str], default: ResourceScope) -> anyhow::Result<ResourceScope> {
+    let Some((idx, _)) = args.iter().enumerate().find(|(_, arg)| **arg == "--scope") else {
+        return Ok(default);
+    };
+
+    let raw = args
+        .get(idx + 1)
+        .context("missing value for --scope (expected mutable|immutable|all)")?;
+
+    match raw.to_ascii_lowercase().as_str() {
+        "mutable" => Ok(ResourceScope::Mutable),
+        "immutable" => Ok(ResourceScope::Immutable),
+        "all" => Ok(ResourceScope::All),
+        _ => anyhow::bail!("invalid --scope value `{raw}` (expected mutable|immutable|all)"),
+    }
 }

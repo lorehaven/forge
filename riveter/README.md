@@ -27,9 +27,22 @@ cargo install --path .
 
 ### Manifest Operations
 
-- `riveter render`: Render templates for the current environment.
-- `riveter apply [--dry-run]`: Apply the rendered manifests to the Kubernetes cluster.
-- `riveter delete`: Delete the resources defined in the manifests from the cluster.
+- `riveter render [--scope mutable|immutable|all]`: Render templates for the current environment.
+- `riveter apply [--dry-run] [--scope mutable|immutable|all]`: Apply resources to the Kubernetes cluster.
+- `riveter delete [--scope mutable|immutable|all]`: Delete resources from the Kubernetes cluster.
+
+By default, `apply` and `delete` use `--scope mutable`, which skips resources marked immutable.
+To include everything explicitly, use `--scope all`.
+
+You can mark immutable resources inside `resources` entries:
+
+```yaml
+- kind: namespace
+  immutable: true
+
+- kind: ingress
+  lifecycle: immutable # `static` also works
+```
 
 ### Interactive REPL
 
