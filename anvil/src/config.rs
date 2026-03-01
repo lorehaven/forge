@@ -10,6 +10,9 @@ pub struct Config {
 
     #[serde(default)]
     pub install: InstallConfig,
+
+    #[serde(default)]
+    pub publish: PublishConfig,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -45,6 +48,16 @@ pub struct DockerPackageOverride {
 #[derive(Debug, Default, Deserialize)]
 pub struct InstallConfig {
     /// List of packages to install
+    #[serde(default)]
+    pub packages: Vec<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct PublishConfig {
+    /// Cargo registry to publish to
+    #[serde(default)]
+    pub registry: String,
+    /// List of publishable packages
     #[serde(default)]
     pub packages: Vec<String>,
 }

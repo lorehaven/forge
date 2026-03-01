@@ -31,6 +31,7 @@ cargo install --path .
 - `anvil build [--all] [--release] [--package <name>]`: Build packages.
 - `anvil test [--all] [--package <name>]`: Run tests.
 - `anvil install [--package <name> | --all]`: Install package binary/binaries via `cargo install --path`.
+- `anvil publish [--package <name> | --all]`: Publish package(s) via `cargo publish`.
 - `anvil lint [--all-targets] [--deny-warnings]`: Run clippy with strict rules.
 - `anvil format [--check]`: Format code using `rustfmt`.
 - `anvil list [--format <json|text>]`: List workspace members.
@@ -60,6 +61,10 @@ dockerfile = "Dockerfile"
 dockerfile = "Dockerfile.worker"
 image_name = "core-worker"
 registry = "registry.internal/my-org"
+
+[publish]
+registry = "forge-registry"
+packages = ["service", "worker"]
 ```
 
 `[docker].registry` is optional only if every package has its own `registry` override.

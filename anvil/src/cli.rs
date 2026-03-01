@@ -87,6 +87,15 @@ pub enum Commands {
         #[arg(short, long)]
         package: Option<String>,
     },
+    /// Publish workspace package(s) with cargo publish
+    Publish {
+        /// Publish all packages configured in [publish].packages
+        #[arg(long, conflicts_with = "package")]
+        all: bool,
+        /// Specific package to publish (required for multi-package workspace roots)
+        #[arg(short, long)]
+        package: Option<String>,
+    },
     /// Build and run a package/binary
     Run {
         /// Specific package to run

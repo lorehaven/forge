@@ -34,6 +34,7 @@ fn main() -> Result<()> {
             list,
         } => commands::build::test(all, package, test_name, ignored, list)?,
         Commands::Install { all, package } => commands::install::install(&config, package, all)?,
+        Commands::Publish { all, package } => commands::publish::publish(&config, package, all)?,
         Commands::Run {
             package,
             serve,

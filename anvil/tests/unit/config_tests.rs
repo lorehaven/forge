@@ -5,6 +5,8 @@ fn test_default_config() {
     let config = Config::default();
     assert!(config.docker.modules.is_empty());
     assert!(config.install.packages.is_empty());
+    assert!(config.publish.registry.is_empty());
+    assert!(config.publish.packages.is_empty());
 }
 
 #[test]
@@ -24,6 +26,10 @@ registry = "registry.internal/override"
 
 [install]
 packages = ["cli", "service"]
+
+[publish]
+registry = "forge-registry"
+packages = ["service"]
     "#;
     let config: Config = toml::from_str(toml_str).unwrap();
     assert_eq!(config.docker.modules.len(), 1);
@@ -51,6 +57,8 @@ packages = ["cli", "service"]
         Some("registry.internal/override")
     );
     assert_eq!(config.install.packages.len(), 2);
+    assert_eq!(config.publish.registry, "forge-registry");
+    assert_eq!(config.publish.packages, vec!["service"]);
 }
 
 #[test]
