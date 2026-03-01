@@ -92,6 +92,15 @@ where
             });
         }
 
+        // Anonymous mode: bypass Bearer validation entirely.
+        if !self.config.auth_enabled {
+            let fut = self.service.call(req);
+            return Box::pin(async move {
+                let res = fut.await?;
+                Ok(res.map_into_left_body())
+            });
+        }
+
         if too_many_auth_failures(&req, self.max_failures, self.window) {
             return throttled(req, &self.config);
         }

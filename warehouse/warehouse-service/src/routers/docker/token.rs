@@ -85,6 +85,10 @@ pub async fn handle(
 }
 
 fn validate_basic(req: &HttpRequest, config: &JwtConfig) -> Option<String> {
+    if !config.auth_enabled {
+        return Some("anonymous".to_string());
+    }
+
     // 1. Try Authorization header
     if let Some(header_value) = req
         .headers()

@@ -32,7 +32,7 @@ spec:
       containers:
         - name: {{ res.container_name | default("ossiriand") }}
           image: {{ res.image }}
-          imagePullPolicy: Always
+          imagePullPolicy: {{ res.pull_policy | default(Always) }}
 {% if res.port is defined %}
           ports:
             - containerPort: {{ res.port }}
