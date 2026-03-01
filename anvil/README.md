@@ -48,5 +48,21 @@ cargo install --path .
 
 Anvil looks for configuration in the workspace root. It uses these settings to determine Docker registries and package-specific build options.
 
+```toml
+[docker]
+registry = "ghcr.io/my-org"
+
+[docker.modules.core]
+packages = ["service", "worker"]
+dockerfile = "Dockerfile"
+
+[docker.modules.core.worker]
+dockerfile = "Dockerfile.worker"
+image_name = "core-worker"
+registry = "registry.internal/my-org"
+```
+
+`[docker].registry` is optional only if every package has its own `registry` override.
+
 ## License
 MIT

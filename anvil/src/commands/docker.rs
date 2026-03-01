@@ -34,20 +34,54 @@ fn get_dockerfile_for_package(config: &config::Config, package: &str) -> Result<
     let module = find_module_for_package(config, package)?;
     let module_cfg = &config.docker.modules[module];
 
-    module_cfg
-        .package_dockerfiles
+    Ok(if let Some(dockerfile) = module_cfg
+        .package_overrides
         .get(package)
-        .map_or_else(|| Ok(module_cfg.dockerfile.clone()), |df| Ok(df.clone()))
+        .and_then(|override_cfg| override_cfg.dockerfile.as_ref())
+    {
+        dockerfile.clone()
+    } else {
+        module_cfg.dockerfile.clone()
+    })
 }
 
 fn get_image_name_for_package(config: &config::Config, package: &str) -> Result<String> {
     let module = find_module_for_package(config, package)?;
     let module_cfg = &config.docker.modules[module];
 
-    module_cfg
-        .package_images
+    Ok(if let Some(image_name) = module_cfg
+        .package_overrides
         .get(package)
-        .map_or_else(|| Ok(package.to_string()), |im| Ok(im.clone()))
+        .and_then(|override_cfg| override_cfg.image_name.as_ref())
+    {
+        image_name.clone()
+    } else {
+        package.to_string()
+    })
+}
+
+fn get_registry_for_package(config: &config::Config, package: &str) -> Result<String> {
+    let module = find_module_for_package(config, package)?;
+    let module_cfg = &config.docker.modules[module];
+
+    let registry = if let Some(registry) = module_cfg
+        .package_overrides
+        .get(package)
+        .and_then(|override_cfg| override_cfg.registry.as_ref())
+    {
+        registry.clone()
+    } else {
+        config.docker.registry.clone()
+    };
+
+    if registry.trim().is_empty() {
+        anyhow::bail!(
+            "No Docker registry configured for package '{package}'. Set [docker].registry, \
+             or [docker.modules.<module>.{package}].registry"
+        );
+    }
+
+    Ok(registry)
 }
 
 pub fn build(config: &config::Config, package: &str) -> Result<()> {
@@ -76,7 +110,7 @@ pub fn build(config: &config::Config, package: &str) -> Result<()> {
 }
 
 pub fn tag(config: &config::Config, package: &str) -> Result<()> {
-    let registry = &config.docker.registry;
+    let registry = get_registry_for_package(config, package)?;
     let module = find_module_for_package(config, package)?;
     let image_name = get_image_name_for_package(config, package)?;
     let version = get_package_version(module, package)?;
@@ -91,7 +125,7 @@ pub fn tag(config: &config::Config, package: &str) -> Result<()> {
 }
 
 pub fn push(config: &config::Config, package: &str) -> Result<()> {
-    let registry = &config.docker.registry;
+    let registry = get_registry_for_package(config, package)?;
     let module = find_module_for_package(config, package)?;
     let image_name = get_image_name_for_package(config, package)?;
     let version = get_package_version(module, package)?;

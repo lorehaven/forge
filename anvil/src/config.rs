@@ -14,6 +14,7 @@ pub struct Config {
 
 #[derive(Debug, Default, Deserialize)]
 pub struct DockerConfig {
+    #[serde(default)]
     pub registry: String,
     /// Mapping from module name to Docker module configuration
     #[serde(default)]
@@ -25,11 +26,20 @@ pub struct DockerModuleConfig {
     pub packages: Vec<String>,
     pub dockerfile: String,
 
+    #[serde(default, flatten)]
+    pub package_overrides: HashMap<String, DockerPackageOverride>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct DockerPackageOverride {
     #[serde(default)]
-    pub package_dockerfiles: HashMap<String, String>,
+    pub dockerfile: Option<String>,
 
     #[serde(default)]
-    pub package_images: HashMap<String, String>,
+    pub image_name: Option<String>,
+
+    #[serde(default)]
+    pub registry: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
