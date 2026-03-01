@@ -21,15 +21,6 @@ enum ReleaseKind {
     Cargo,
 }
 
-impl ReleaseKind {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Docker => "docker release",
-            Self::Cargo => "cargo publish + install",
-        }
-    }
-}
-
 #[derive(Debug)]
 struct ReleasePlanItem {
     package: String,
@@ -38,6 +29,7 @@ struct ReleasePlanItem {
     kind: ReleaseKind,
     tag_to_create: String,
     bump_version: bool,
+    install_after_publish: bool,
 }
 
 pub fn release(config: &Config, package: Option<String>, all: bool, dry_run: bool) -> Result<()> {
@@ -68,7 +60,9 @@ pub fn release(config: &Config, package: Option<String>, all: bool, dry_run: boo
             }
             ReleaseKind::Cargo => {
                 publish::publish(config, Some(item.package.clone()), false)?;
-                install::install(config, Some(item.package.clone()), false)?;
+                if item.install_after_publish {
+                    install::install(config, Some(item.package.clone()), false)?;
+                }
             }
         }
     }
@@ -219,6 +213,7 @@ fn build_release_plan(
         } else {
             ReleaseKind::Cargo
         };
+        let install_after_publish = should_install_package(config, package_name);
 
         if let Some(last_tag) = latest_package_tag(package_name)? {
             if !package_changed_since_tag(&workspace_root, &pkg.dir, &last_tag)? {
@@ -233,6 +228,7 @@ fn build_release_plan(
                 kind,
                 tag_to_create: package_tag_name(package_name, &next_version),
                 bump_version: true,
+                install_after_publish,
             });
         } else {
             // First release for this package: tag current version and publish as-is.
@@ -243,6 +239,7 @@ fn build_release_plan(
                 kind,
                 tag_to_create: package_tag_name(package_name, &current_version),
                 bump_version: false,
+                install_after_publish,
             });
         }
     }
@@ -339,13 +336,22 @@ fn print_dry_run_plan(plan: &[ReleasePlanItem]) {
         } else {
             format!("{} (no bump; initial package tag)", item.from_version)
         };
+        let action = release_action_label(item);
         println!(
             "- {}: {} ({}), tag: {}",
             item.package,
             version_note,
-            item.kind.label(),
+            action,
             item.tag_to_create
         );
+    }
+}
+
+fn release_action_label(item: &ReleasePlanItem) -> &'static str {
+    match item.kind {
+        ReleaseKind::Docker => "docker release",
+        ReleaseKind::Cargo if item.install_after_publish => "cargo publish + install",
+        ReleaseKind::Cargo => "cargo publish",
     }
 }
 
@@ -469,4 +475,8 @@ fn is_docker_package(config: &Config, package: &str) -> bool {
         .modules
         .values()
         .any(|module| module.packages.iter().any(|p| p == package))
+}
+
+fn should_install_package(config: &Config, package: &str) -> bool {
+    config.install.packages.iter().any(|p| p == package)
 }

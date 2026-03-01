@@ -32,7 +32,7 @@ cargo install --path .
 - `anvil test [--all] [--package <name>]`: Run tests.
 - `anvil install [--package <name> | --all]`: Install package binary/binaries via `cargo install --path`.
 - `anvil publish [--package <name> | --all]`: Publish package(s) via `cargo publish`.
-- `anvil release [--package <name> | --all] [--dry-run]`: Release package(s) based on package tags (`<package>-v<version>`). `--all` uses the union of `[publish].packages` and `[docker.modules.*].packages`. If a package has a prior tag, release only when it changed since that tag (with patch bump). If no package tag exists, create an initial tag at current version and publish as-is.
+- `anvil release [--package <name> | --all] [--dry-run]`: Release package(s) based on package tags (`<package>-v<version>`). `--all` uses the union of `[publish].packages` and `[docker.modules.*].packages`. If a package has a prior tag, release only when it changed since that tag (with patch bump). If no package tag exists, create an initial tag at current version and publish as-is. Cargo package install runs only for packages listed in `[install].packages`.
 - `anvil lint [--all-targets] [--deny-warnings]`: Run clippy with strict rules.
 - `anvil format [--check]`: Format code using `rustfmt`.
 - `anvil list [--format <json|text>]`: List workspace members.
