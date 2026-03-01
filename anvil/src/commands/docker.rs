@@ -60,28 +60,54 @@ fn get_image_name_for_package(config: &config::Config, package: &str) -> Result<
     })
 }
 
-fn get_registry_for_package(config: &config::Config, package: &str) -> Result<String> {
+fn get_registries_for_package(config: &config::Config, package: &str) -> Result<Vec<String>> {
     let module = find_module_for_package(config, package)?;
     let module_cfg = &config.docker.modules[module];
 
-    let registry = if let Some(registry) = module_cfg
-        .package_overrides
-        .get(package)
-        .and_then(|override_cfg| override_cfg.registry.as_ref())
-    {
-        registry.clone()
+    let registries = if let Some(override_cfg) = module_cfg.package_overrides.get(package) {
+        if !override_cfg.registries.is_empty() {
+            override_cfg.registries.clone()
+        } else if let Some(registry) = override_cfg.registry.as_ref() {
+            vec![registry.clone()]
+        } else if !config.docker.registry.trim().is_empty() {
+            vec![config.docker.registry.clone()]
+        } else {
+            Vec::new()
+        }
+    } else if !config.docker.registry.trim().is_empty() {
+        vec![config.docker.registry.clone()]
     } else {
-        config.docker.registry.clone()
+        Vec::new()
     };
 
-    if registry.trim().is_empty() {
+    if registries.is_empty() {
         anyhow::bail!(
             "No Docker registry configured for package '{package}'. Set [docker].registry, \
-             or [docker.modules.<module>.{package}].registry"
+             [docker.modules.<module>.{package}].registries, or \
+             [docker.modules.<module>.{package}].registry"
         );
     }
 
-    Ok(registry)
+    let filtered: Vec<String> = registries
+        .into_iter()
+        .filter(|reg| !reg.trim().is_empty())
+        .collect();
+    if filtered.is_empty() {
+        anyhow::bail!("Docker registries for package '{package}' are empty");
+    }
+
+    Ok(filtered)
+}
+
+fn full_tags_for_package(config: &config::Config, package: &str) -> Result<Vec<String>> {
+    let registries = get_registries_for_package(config, package)?;
+    let module = find_module_for_package(config, package)?;
+    let image_name = get_image_name_for_package(config, package)?;
+    let version = get_package_version(module, package)?;
+    Ok(registries
+        .iter()
+        .map(|registry| format!("{registry}/{module}/{image_name}:{version}"))
+        .collect())
 }
 
 pub fn build(config: &config::Config, package: &str) -> Result<()> {
@@ -110,33 +136,33 @@ pub fn build(config: &config::Config, package: &str) -> Result<()> {
 }
 
 pub fn tag(config: &config::Config, package: &str) -> Result<()> {
-    let registry = get_registry_for_package(config, package)?;
-    let module = find_module_for_package(config, package)?;
     let image_name = get_image_name_for_package(config, package)?;
-    let version = get_package_version(module, package)?;
+    let full_tags = full_tags_for_package(config, package)?;
 
-    let full_tag = format!("{registry}/{module}/{image_name}:{version}");
-    println!("Tagging image {package} as {full_tag}");
+    for full_tag in full_tags {
+        println!("Tagging image {package} as {full_tag}");
 
-    let mut cmd = Command::new("docker");
-    cmd.arg("tag").arg(image_name).arg(&full_tag);
+        let mut cmd = Command::new("docker");
+        cmd.arg("tag").arg(&image_name).arg(&full_tag);
 
-    run_command(cmd, &format!("docker tag {package}"))
+        run_command(cmd, &format!("docker tag {package} -> {full_tag}"))?;
+    }
+
+    Ok(())
 }
 
 pub fn push(config: &config::Config, package: &str) -> Result<()> {
-    let registry = get_registry_for_package(config, package)?;
-    let module = find_module_for_package(config, package)?;
-    let image_name = get_image_name_for_package(config, package)?;
-    let version = get_package_version(module, package)?;
+    let full_tags = full_tags_for_package(config, package)?;
 
-    let full_tag = format!("{registry}/{module}/{image_name}:{version}");
-    println!("Pushing image: {full_tag}");
+    for full_tag in full_tags {
+        println!("Pushing image: {full_tag}");
 
-    let mut cmd = Command::new("docker");
-    cmd.arg("push").arg(&full_tag);
+        let mut cmd = Command::new("docker");
+        cmd.arg("push").arg(&full_tag);
+        run_command(cmd, &format!("docker push {full_tag}"))?;
+    }
 
-    run_command(cmd, &format!("docker push {full_tag}"))
+    Ok(())
 }
 
 pub fn release(config: &config::Config, package: &str) -> Result<()> {

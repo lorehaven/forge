@@ -42,6 +42,10 @@ pub struct DockerPackageOverride {
     pub image_name: Option<String>,
 
     #[serde(default)]
+    pub registries: Vec<String>,
+
+    // Deprecated single-registry override, kept for backward compatibility.
+    #[serde(default)]
     pub registry: Option<String>,
 }
 

@@ -22,7 +22,7 @@ dockerfile = "Dockerfile.core"
 [docker.modules.core.service]
 dockerfile = "Dockerfile.service.override"
 image_name = "svc-override"
-registry = "registry.internal/override"
+registries = ["registry.internal/override", "backup-registry.internal/override"]
 
 [install]
 packages = ["cli", "service"]
@@ -53,8 +53,11 @@ packages = ["service"]
     );
     assert_eq!(service_override.image_name.as_deref(), Some("svc-override"));
     assert_eq!(
-        service_override.registry.as_deref(),
-        Some("registry.internal/override")
+        service_override.registries,
+        vec![
+            "registry.internal/override".to_string(),
+            "backup-registry.internal/override".to_string()
+        ]
     );
     assert_eq!(config.install.packages.len(), 2);
     assert_eq!(config.publish.registry, "forge-registry");
@@ -71,7 +74,7 @@ dockerfile = "docker/Dockerfile.alpine"
 [docker.modules.warehouse.warehouse-service]
 dockerfile = "docker/Dockerfile.alpine"
 image_name = "warehouse"
-registry = "ossiriand.arda:8080/forge"
+registries = ["ossiriand.arda:8080/forge"]
     "#;
     let config: Config = toml::from_str(toml_str).unwrap();
     assert_eq!(config.docker.registry, "");
@@ -87,7 +90,7 @@ registry = "ossiriand.arda:8080/forge"
     );
     assert_eq!(package_override.image_name.as_deref(), Some("warehouse"));
     assert_eq!(
-        package_override.registry.as_deref(),
-        Some("ossiriand.arda:8080/forge")
+        package_override.registries,
+        vec!["ossiriand.arda:8080/forge".to_string()]
     );
 }

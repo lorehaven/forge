@@ -61,14 +61,14 @@ dockerfile = "Dockerfile"
 [docker.modules.core.worker]
 dockerfile = "Dockerfile.worker"
 image_name = "core-worker"
-registry = "registry.internal/my-org"
+registries = ["registry.internal/my-org", "backup-registry.internal/my-org"]
 
 [publish]
 registry = "forge-registry"
 packages = ["service", "worker"]
 ```
 
-`[docker].registry` is optional only if every package has its own `registry` override.
+`[docker].registry` is optional only if every package has its own `registries` override.
 
 ## License
 MIT
