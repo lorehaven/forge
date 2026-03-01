@@ -10,12 +10,13 @@ use strum::IntoEnumIterator;
 const FONTAWESOME_CSS: &str =
     "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css";
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct AppBuilder {
     title: String,
     links: Vec<Link>,
     scripts: Vec<Script>,
     supported_themes: Vec<Theme>,
+    default_theme: Theme,
     header: Option<Element>,
     content: Option<Element>,
     footer: Option<Element>,
@@ -26,6 +27,7 @@ impl AppBuilder {
     pub fn new() -> Self {
         Self {
             supported_themes: Theme::iter().collect(),
+            default_theme: Theme::DefaultDark,
             ..Self::default()
         }
     }
@@ -50,6 +52,11 @@ impl AppBuilder {
         self
     }
 
+    pub fn default_theme(mut self, value: Theme) -> Self {
+        self.default_theme = value;
+        self
+    }
+
     pub fn header(mut self, value: Element) -> Self {
         self.header = Some(value);
         self
@@ -71,27 +78,42 @@ impl AppBuilder {
     }
 
     pub fn build(self) -> String {
+        let active_theme = self.default_theme.to_string();
+        let mut scripts = vec![
+            Script::new(&format!("{}/assets/js/locale.js", self.resources_prefix)),
+            Script::new(&format!("{}/assets/js/theme.js", self.resources_prefix)),
+        ];
+        scripts.extend(self.scripts);
+
         let mut links = vec![
             Link::new("stylesheet", FONTAWESOME_CSS),
             Link::new(
                 "stylesheet",
                 &format!("{}/assets/css/style.css", self.resources_prefix),
             ),
+            Link::new(
+                "stylesheet",
+                &format!(
+                    "{}/assets/css/themes/{active_theme}.css",
+                    self.resources_prefix
+                ),
+            )
+            .attr("id", "theme-link"),
         ];
         self.supported_themes.iter().for_each(|theme| {
             let theme = theme.to_string();
-            links.push(Link::new(
-                "stylesheet",
-                &format!("{}/assets/css/themes/{theme}.css", self.resources_prefix),
-            ))
+            if theme == active_theme {
+                return;
+            }
+            links.push(
+                Link::new(
+                    "preload",
+                    &format!("{}/assets/css/themes/{theme}.css", self.resources_prefix),
+                )
+                .attr("as", "style"),
+            )
         });
         links.extend(self.links);
-
-        let mut scripts = vec![
-            Script::new(&format!("{}/assets/js/locale.js", self.resources_prefix)),
-            Script::new(&format!("{}/assets/js/theme.js", self.resources_prefix)),
-        ];
-        scripts.extend(self.scripts);
 
         let app = div()
             .class("app")
@@ -109,6 +131,22 @@ impl AppBuilder {
             .scripts(scripts)
             .content(app)
             .build()
+    }
+}
+
+impl Default for AppBuilder {
+    fn default() -> Self {
+        Self {
+            title: String::new(),
+            links: Vec::new(),
+            scripts: Vec::new(),
+            supported_themes: Vec::new(),
+            default_theme: Theme::DefaultDark,
+            header: None,
+            content: None,
+            footer: None,
+            resources_prefix: String::new(),
+        }
     }
 }
 
@@ -348,6 +386,7 @@ impl AppShellBuilder {
             .links(self.links)
             .scripts(self.scripts)
             .supported_themes(supported_themes)
+            .default_theme(effective_default_theme)
             .header(header)
             .footer(footer)
             .resources_prefix(self.resources_prefix);

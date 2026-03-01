@@ -1,5 +1,6 @@
+use crate::routers::files::list_storage_infos;
 use crate::routers::ui::common::{UiPageKind, render_page};
-use crate::routers::{crates_enabled, docker_enabled};
+use crate::routers::{crates_enabled, docker_enabled, files_enabled};
 use actix_web::{HttpResponse, Responder, get};
 use quench::prelude::*;
 
@@ -34,8 +35,35 @@ fn render_home_page() -> HttpResponse {
         ));
     }
 
+    if files_enabled() {
+        for storage in list_storage_infos() {
+            cards = cards.child(
+                a().attr(
+                    "href",
+                    &format!("/ui/files/catalog?storage={}", storage.name),
+                )
+                .class("home-card home-card-files")
+                .child(
+                    div()
+                        .class("home-card-body")
+                        .child(
+                            div()
+                                .class("home-card-title")
+                                .text(&format!("Files: {}", storage.name)),
+                        )
+                        .child(
+                            div()
+                                .class("home-card-desc")
+                                .text(&format!("Root: {}", storage.root)),
+                        ),
+                )
+                .child(div().class("home-card-arrow").text("→")),
+            );
+        }
+    }
+
     // If somehow neither feature is on, show a placeholder
-    if !docker_enabled() && !crates_enabled() {
+    if !docker_enabled() && !crates_enabled() && !files_enabled() {
         cards = cards.child(
             div()
                 .class("empty")

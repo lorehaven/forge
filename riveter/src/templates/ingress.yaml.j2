@@ -10,6 +10,11 @@ metadata:
     # cert-manager annotation for automatic certificate
     cert-manager.io/cluster-issuer: {{ res.issuer_name }}
     nginx.ingress.kubernetes.io/force-ssl-redirect: "{{ res.force_ssl_redirect }}"
+{% if res.annotations is defined %}
+{% for k, v in res.annotations | dictsort %}
+    {{ k }}: "{{ v }}"
+{% endfor %}
+{% endif %}
 spec:
   ingressClassName: nginx
   tls:

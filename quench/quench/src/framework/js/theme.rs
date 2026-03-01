@@ -46,9 +46,12 @@ function applyTheme(theme) {{
         link.rel = "stylesheet";
         document.head.appendChild(link);
     }}
-    if (THEMES[theme]) {{
-        link.href = THEMES[theme];
-    }}
+    const targetHref = THEMES[theme];
+    if (!targetHref) return;
+
+    // Avoid forcing stylesheet reload when the active href is already correct.
+    if (link.getAttribute("href") === targetHref) return;
+    link.href = targetHref;
 }}
 
 function updateTheme(newTheme) {{
@@ -70,12 +73,10 @@ function watchThemeChanges() {{
     }}, 500);
 }}
 
-// On page load
-document.addEventListener("DOMContentLoaded", () => {{
-    currentTheme = getTheme();
-    applyTheme(currentTheme);
-    watchThemeChanges();
-}});
+// Apply immediately when this script executes (defer scripts run before DOMContentLoaded)
+currentTheme = getTheme();
+applyTheme(currentTheme);
+watchThemeChanges();
 
     "#
     )

@@ -17,6 +17,9 @@ ui_service_docker_desc = Browse images, tags, and manifests.
 ui_service_crates_title = Crates Registry
 ui_service_crates_desc = Browse published crates and versions.
 
+ui_service_files_title = File Storage
+ui_service_files_desc = Browse and manage plain files.
+
 # ── Docker ───────────────────────────────────────────────────────────────────
 
 ui_header_docker = Warehouse - Docker Repository Explorer
@@ -37,6 +40,26 @@ ui_meta_digest = Digest
 ui_meta_media_type = Media Type
 ui_meta_manifest_size = Manifest Size
 ui_meta_unknown = unknown
+
+# ── Files ────────────────────────────────────────────────────────────────────
+
+ui_header_files = Warehouse - File Storage Explorer
+ui_files_storages = Storages
+ui_files_entries = Entries
+ui_files_entries_for = Entries for
+ui_files_metadata = Metadata
+ui_files_col_name = Name
+ui_files_col_type = Type
+ui_files_col_size = Size
+ui_files_col_actions = Actions
+ui_files_upload = Upload
+ui_files_download_folder = Download folder
+ui_files_add_folder = Add folder
+ui_files_bulk_download = Bulk download
+ui_files_bulk_delete = Bulk delete
+ui_files_up = Up
+ui_files_empty_storages = No storages configured.
+ui_files_empty_dir = Directory is empty.
 
 # ── Crates ───────────────────────────────────────────────────────────────────
 

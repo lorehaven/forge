@@ -8,6 +8,7 @@ use std::sync::LazyLock;
 
 mod crates_js;
 mod docker_js;
+mod files_js;
 mod warehouse_css;
 
 pub(super) const UI_SESSION_COOKIE: &str = "warehouse_ui_session";
@@ -47,6 +48,26 @@ static UI_SHELL_CRATES: LazyLock<AppShell> = LazyLock::new(|| {
             "/ui/assets/css/warehouse.css",
         )])
         .scripts(vec![Script::new("/ui/assets/js/crates.js")])
+        .with_nav(false)
+        .resources_prefix("/ui".to_string())
+        .build()
+});
+
+static UI_SHELL_FILES: LazyLock<AppShell> = LazyLock::new(|| {
+    warehouse_css::ensure_warehouse_css();
+    files_js::ensure_files_js();
+
+    AppShellBuilder::new()
+        .title("Warehouse — Files")
+        .supported_locales(vec!["en-US".to_string()])
+        .default_theme(Theme::BootstrapDark)
+        .supported_themes(vec![Theme::BootstrapDark])
+        .header(ui_header(Some("ui_header_files"), true))
+        .links(vec![Link::new(
+            "stylesheet",
+            "/ui/assets/css/warehouse.css",
+        )])
+        .scripts(vec![Script::new("/ui/assets/js/files.js")])
         .with_nav(false)
         .resources_prefix("/ui".to_string())
         .build()
@@ -115,7 +136,10 @@ pub async fn assets(path: web::Path<String>) -> impl Responder {
     };
 
     let content_type = content_type_for_path(&full_path);
-    HttpResponse::Ok().content_type(content_type).body(body)
+    HttpResponse::Ok()
+        .append_header(("Cache-Control", "public, max-age=3600"))
+        .content_type(content_type)
+        .body(body)
 }
 
 pub(super) fn render_page(
@@ -127,6 +151,7 @@ pub(super) fn render_page(
         UiPageKind::Home => &*UI_SHELL_HOME,
         UiPageKind::Docker => &*UI_SHELL_DOCKER,
         UiPageKind::Crates => &*UI_SHELL_CRATES,
+        UiPageKind::Files => &*UI_SHELL_FILES,
         UiPageKind::Auth => &*UI_SHELL_AUTH,
     };
     builder
@@ -138,6 +163,7 @@ pub(super) enum UiPageKind {
     Home,
     Docker,
     Crates,
+    Files,
     Auth,
 }
 

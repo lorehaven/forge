@@ -1,11 +1,15 @@
 use crate::api::admin_api::AdminApi;
 use crate::api::crates_api::CratesApi;
 use crate::api::docker_api::DockerApi;
+use crate::api::files_api::{FilesApi, remote_path_for_upload};
 use crate::cli::{
     AdminCommands, AdminGcArgs, CatalogArgs, Cli, Commands, CratesCommands, CratesLoginArgs,
     CratesRegistryAddArgs, CratesRegistryCommands, CratesRegistryRemoveArgs, CratesRegistryUseArgs,
     CratesSearchArgs, CratesUnyankArgs, CratesVersionsArgs, CratesYankArgs, DockerCommands,
-    LoginArgs, RegistryAddArgs, RegistryCommands, RegistryRemoveArgs, RegistryUseArgs, TagsArgs,
+    FilesBulkDeleteArgs, FilesBulkDownloadArgs, FilesCommands, FilesDeleteArgs, FilesDownloadArgs,
+    FilesLsArgs, FilesMkdirArgs, FilesPreviewArgs, FilesRmdirArgs, FilesStoragesArgs,
+    FilesUploadArgs, LoginArgs, RegistryAddArgs, RegistryCommands, RegistryRemoveArgs,
+    RegistryUseArgs, TagsArgs,
 };
 use crate::config::{ConfigScope, ConfigStore, RegistrySource};
 use crate::domain::{RegistryConfig, validate_registry_name};
@@ -17,6 +21,7 @@ pub async fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Commands::Docker { command } => run_docker(&store, command).await,
         Commands::Crates { command } => run_crates(&store, command).await,
+        Commands::Files { command } => run_files(&store, command).await,
         Commands::Admin { command } => run_admin(&store, command).await,
     }
 }
@@ -57,6 +62,22 @@ async fn run_crates(store: &ConfigStore, command: CratesCommands) -> Result<()> 
         CratesCommands::Versions(args) => cmd_crates_versions(store, args).await?,
         CratesCommands::Yank(args) => cmd_crates_yank(store, args).await?,
         CratesCommands::Unyank(args) => cmd_crates_unyank(store, args).await?,
+    }
+    Ok(())
+}
+
+async fn run_files(store: &ConfigStore, command: FilesCommands) -> Result<()> {
+    match command {
+        FilesCommands::Storages(args) => cmd_files_storages(store, args).await?,
+        FilesCommands::Ls(args) => cmd_files_ls(store, args).await?,
+        FilesCommands::Upload(args) => cmd_files_upload(store, args).await?,
+        FilesCommands::Preview(args) => cmd_files_preview(store, args).await?,
+        FilesCommands::Download(args) => cmd_files_download(store, args).await?,
+        FilesCommands::Mkdir(args) => cmd_files_mkdir(store, args).await?,
+        FilesCommands::Rmdir(args) => cmd_files_rmdir(store, args).await?,
+        FilesCommands::Delete(args) => cmd_files_delete(store, args).await?,
+        FilesCommands::BulkDelete(args) => cmd_files_bulk_delete(store, args).await?,
+        FilesCommands::BulkDownload(args) => cmd_files_bulk_download(store, args).await?,
     }
     Ok(())
 }
@@ -467,6 +488,163 @@ async fn cmd_crates_unyank(store: &ConfigStore, args: CratesUnyankArgs) -> Resul
         "unyanked {}-{} in '{}'",
         args.crate_name, args.version, registry_name
     );
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Files commands
+// ---------------------------------------------------------------------------
+
+async fn cmd_files_storages(store: &ConfigStore, args: FilesStoragesArgs) -> Result<()> {
+    let registry_name = store.resolve_registry_name(args.registry)?;
+    let registry = store.load_effective_registry(&registry_name)?.config;
+    let api = FilesApi::new(&registry)?;
+    let storages = api.storages(&registry).await?;
+
+    println!("registry: {}", registry_name);
+    if storages.is_empty() {
+        println!("no storages configured");
+        return Ok(());
+    }
+
+    for storage in storages {
+        println!("{} -> {}", storage.name, storage.root);
+    }
+    Ok(())
+}
+
+async fn cmd_files_ls(store: &ConfigStore, args: FilesLsArgs) -> Result<()> {
+    let registry_name = store.resolve_registry_name(args.registry)?;
+    let registry = store.load_effective_registry(&registry_name)?.config;
+    let api = FilesApi::new(&registry)?;
+    let result = api.list(&registry, &args.storage, &args.path).await?;
+
+    println!("registry: {}", registry_name);
+    println!("storage: {}", result.storage);
+    println!("path: /{}", result.path);
+    println!();
+
+    if result.entries.is_empty() {
+        println!("(empty)");
+        return Ok(());
+    }
+
+    for entry in result.entries {
+        let kind = if entry.is_dir { "dir " } else { "file" };
+        let size = if entry.is_dir {
+            "-".to_string()
+        } else {
+            entry.size_bytes.to_string()
+        };
+        println!("{} {:>10} {}", kind, size, entry.path);
+    }
+    Ok(())
+}
+
+async fn cmd_files_upload(store: &ConfigStore, args: FilesUploadArgs) -> Result<()> {
+    if args.local_files.is_empty() {
+        bail!("at least one local file is required");
+    }
+
+    let registry_name = store.resolve_registry_name(args.registry)?;
+    let registry = store.load_effective_registry(&registry_name)?.config;
+    let api = FilesApi::new(&registry)?;
+
+    for local_file in &args.local_files {
+        let bytes = std::fs::read(local_file)
+            .map_err(|err| anyhow::anyhow!("failed to read {}: {}", local_file, err))?;
+        let remote_path = remote_path_for_upload(local_file, args.remote_dir.as_deref())?;
+        api.upload(&registry, &args.storage, &remote_path, bytes)
+            .await?;
+        println!("uploaded {} -> {}", local_file, remote_path);
+    }
+
+    Ok(())
+}
+
+async fn cmd_files_preview(store: &ConfigStore, args: FilesPreviewArgs) -> Result<()> {
+    let registry_name = store.resolve_registry_name(args.registry)?;
+    let registry = store.load_effective_registry(&registry_name)?.config;
+    let api = FilesApi::new(&registry)?;
+    let preview = api.preview(&registry, &args.storage, &args.path).await?;
+
+    println!("storage: {}", preview.storage);
+    println!("path: {}", preview.path);
+    println!("kind: {}", preview.kind);
+    println!("truncated: {}", preview.truncated);
+    println!();
+    println!("{}", preview.content);
+    Ok(())
+}
+
+async fn cmd_files_download(store: &ConfigStore, args: FilesDownloadArgs) -> Result<()> {
+    let registry_name = store.resolve_registry_name(args.registry)?;
+    let registry = store.load_effective_registry(&registry_name)?.config;
+    let api = FilesApi::new(&registry)?;
+    let (bytes, server_name) = api.download(&registry, &args.storage, &args.path).await?;
+
+    let output = args
+        .output
+        .or(server_name)
+        .unwrap_or_else(|| "download.bin".to_string());
+    std::fs::write(&output, bytes)?;
+    println!("saved {}", output);
+    Ok(())
+}
+
+async fn cmd_files_mkdir(store: &ConfigStore, args: FilesMkdirArgs) -> Result<()> {
+    let registry_name = store.resolve_registry_name(args.registry)?;
+    let registry = store.load_effective_registry(&registry_name)?.config;
+    let api = FilesApi::new(&registry)?;
+    api.mkdir(&registry, &args.storage, &args.path).await?;
+    println!("folder created: {}", args.path);
+    Ok(())
+}
+
+async fn cmd_files_rmdir(store: &ConfigStore, args: FilesRmdirArgs) -> Result<()> {
+    let registry_name = store.resolve_registry_name(args.registry)?;
+    let registry = store.load_effective_registry(&registry_name)?.config;
+    let api = FilesApi::new(&registry)?;
+    api.rmdir(&registry, &args.storage, &args.path).await?;
+    println!("folder deleted: {}", args.path);
+    Ok(())
+}
+
+async fn cmd_files_delete(store: &ConfigStore, args: FilesDeleteArgs) -> Result<()> {
+    let registry_name = store.resolve_registry_name(args.registry)?;
+    let registry = store.load_effective_registry(&registry_name)?.config;
+    let api = FilesApi::new(&registry)?;
+    api.delete_file(&registry, &args.storage, &args.path)
+        .await?;
+    println!("file deleted: {}", args.path);
+    Ok(())
+}
+
+async fn cmd_files_bulk_delete(store: &ConfigStore, args: FilesBulkDeleteArgs) -> Result<()> {
+    if args.paths.is_empty() {
+        bail!("at least one path is required");
+    }
+    let registry_name = store.resolve_registry_name(args.registry)?;
+    let registry = store.load_effective_registry(&registry_name)?.config;
+    let api = FilesApi::new(&registry)?;
+    api.bulk_delete(&registry, &args.storage, &args.paths)
+        .await?;
+    println!("bulk delete complete");
+    Ok(())
+}
+
+async fn cmd_files_bulk_download(store: &ConfigStore, args: FilesBulkDownloadArgs) -> Result<()> {
+    if args.paths.is_empty() {
+        bail!("at least one path is required");
+    }
+    let registry_name = store.resolve_registry_name(args.registry)?;
+    let registry = store.load_effective_registry(&registry_name)?.config;
+    let api = FilesApi::new(&registry)?;
+    let bytes = api
+        .bulk_download(&registry, &args.storage, &args.paths)
+        .await?;
+    std::fs::write(&args.output, bytes)?;
+    println!("saved {}", args.output);
     Ok(())
 }
 

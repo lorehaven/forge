@@ -19,6 +19,11 @@ pub enum Commands {
         #[command(subcommand)]
         command: CratesCommands,
     },
+    /// Manage plain file storage
+    Files {
+        #[command(subcommand)]
+        command: FilesCommands,
+    },
     /// Admin operations
     Admin {
         #[command(subcommand)]
@@ -66,6 +71,34 @@ pub enum CratesCommands {
     Yank(CratesYankArgs),
     /// Un-yank a previously yanked crate version
     Unyank(CratesUnyankArgs),
+}
+
+// ---------------------------------------------------------------------------
+// Files
+// ---------------------------------------------------------------------------
+
+#[derive(Subcommand)]
+pub enum FilesCommands {
+    /// List configured file storages in the service
+    Storages(FilesStoragesArgs),
+    /// List directory entries
+    Ls(FilesLsArgs),
+    /// Upload one or more files
+    Upload(FilesUploadArgs),
+    /// Preview a file
+    Preview(FilesPreviewArgs),
+    /// Download a file or folder (folder is downloaded as zip)
+    Download(FilesDownloadArgs),
+    /// Create a folder
+    Mkdir(FilesMkdirArgs),
+    /// Delete a folder recursively
+    Rmdir(FilesRmdirArgs),
+    /// Delete one file
+    Delete(FilesDeleteArgs),
+    /// Bulk delete files/folders
+    BulkDelete(FilesBulkDeleteArgs),
+    /// Bulk download files/folders as zip
+    BulkDownload(FilesBulkDownloadArgs),
 }
 
 // ---------------------------------------------------------------------------
@@ -276,6 +309,122 @@ pub struct CratesUnyankArgs {
     /// Version to un-yank
     pub version: String,
     /// Registry name; defaults to active crates registry from config
+    #[arg(long)]
+    pub registry: Option<String>,
+}
+
+#[derive(Args)]
+pub struct FilesStoragesArgs {
+    /// Registry name; defaults to active docker registry from config
+    #[arg(long)]
+    pub registry: Option<String>,
+}
+
+#[derive(Args)]
+pub struct FilesLsArgs {
+    /// Storage name
+    pub storage: String,
+    /// Path inside storage (default: root)
+    #[arg(long, default_value = "")]
+    pub path: String,
+    /// Registry name; defaults to active docker registry from config
+    #[arg(long)]
+    pub registry: Option<String>,
+}
+
+#[derive(Args)]
+pub struct FilesUploadArgs {
+    /// Storage name
+    pub storage: String,
+    /// Local files to upload
+    pub local_files: Vec<String>,
+    /// Destination directory inside storage
+    #[arg(long)]
+    pub remote_dir: Option<String>,
+    /// Registry name; defaults to active docker registry from config
+    #[arg(long)]
+    pub registry: Option<String>,
+}
+
+#[derive(Args)]
+pub struct FilesPreviewArgs {
+    /// Storage name
+    pub storage: String,
+    /// File path inside storage
+    pub path: String,
+    /// Registry name; defaults to active docker registry from config
+    #[arg(long)]
+    pub registry: Option<String>,
+}
+
+#[derive(Args)]
+pub struct FilesDownloadArgs {
+    /// Storage name
+    pub storage: String,
+    /// File or folder path inside storage
+    pub path: String,
+    /// Output file path; if omitted, use server filename
+    #[arg(long)]
+    pub output: Option<String>,
+    /// Registry name; defaults to active docker registry from config
+    #[arg(long)]
+    pub registry: Option<String>,
+}
+
+#[derive(Args)]
+pub struct FilesMkdirArgs {
+    /// Storage name
+    pub storage: String,
+    /// Folder path inside storage
+    pub path: String,
+    /// Registry name; defaults to active docker registry from config
+    #[arg(long)]
+    pub registry: Option<String>,
+}
+
+#[derive(Args)]
+pub struct FilesRmdirArgs {
+    /// Storage name
+    pub storage: String,
+    /// Folder path inside storage
+    pub path: String,
+    /// Registry name; defaults to active docker registry from config
+    #[arg(long)]
+    pub registry: Option<String>,
+}
+
+#[derive(Args)]
+pub struct FilesDeleteArgs {
+    /// Storage name
+    pub storage: String,
+    /// File path inside storage
+    pub path: String,
+    /// Registry name; defaults to active docker registry from config
+    #[arg(long)]
+    pub registry: Option<String>,
+}
+
+#[derive(Args)]
+pub struct FilesBulkDeleteArgs {
+    /// Storage name
+    pub storage: String,
+    /// File/folder paths
+    pub paths: Vec<String>,
+    /// Registry name; defaults to active docker registry from config
+    #[arg(long)]
+    pub registry: Option<String>,
+}
+
+#[derive(Args)]
+pub struct FilesBulkDownloadArgs {
+    /// Storage name
+    pub storage: String,
+    /// File/folder paths
+    pub paths: Vec<String>,
+    /// Output zip path
+    #[arg(long, default_value = "files-bulk.zip")]
+    pub output: String,
+    /// Registry name; defaults to active docker registry from config
     #[arg(long)]
     pub registry: Option<String>,
 }

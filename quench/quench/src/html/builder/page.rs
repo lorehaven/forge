@@ -2,11 +2,13 @@ use crate::Element;
 use html5ever::parse_document;
 use html5ever::tendril::TendrilSink;
 use markup5ever_rcdom::{Handle, RcDom};
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Default)]
 pub struct Link {
     pub rel: String,
     pub href: String,
+    pub attrs: BTreeMap<String, String>,
 }
 
 impl Link {
@@ -14,7 +16,13 @@ impl Link {
         Self {
             rel: rel.to_string(),
             href: href.to_string(),
+            attrs: BTreeMap::new(),
         }
+    }
+
+    pub fn attr(mut self, key: &str, value: &str) -> Self {
+        self.attrs.insert(key.to_string(), value.to_string());
+        self
     }
 }
 
@@ -35,6 +43,7 @@ impl Script {
 pub struct PageBuilder {
     title: String,
     links: Vec<Link>,
+    head_link_static_attrs: BTreeMap<String, String>,
     scripts: Vec<Script>,
     content: Option<Element>,
 }
@@ -54,6 +63,17 @@ impl PageBuilder {
         self
     }
 
+    pub fn head_link_static_attr(mut self, key: &str, value: &str) -> Self {
+        self.head_link_static_attrs
+            .insert(key.to_string(), value.to_string());
+        self
+    }
+
+    pub fn head_link_static_attrs(mut self, value: BTreeMap<String, String>) -> Self {
+        self.head_link_static_attrs.extend(value);
+        self
+    }
+
     pub fn scripts(mut self, value: Vec<Script>) -> Self {
         self.scripts = value;
         self
@@ -65,10 +85,12 @@ impl PageBuilder {
     }
 
     pub fn build(self) -> String {
-        let links = self
-            .links
+        let mut head_links = vec![Link::new("icon", "assets/favicon.ico")];
+        head_links.extend(self.links);
+        let links = self.head_link_static_attrs;
+        let links = head_links
             .into_iter()
-            .map(|link| format!("<link rel=\"{}\" href=\"{}\"></link>", link.rel, link.href))
+            .map(|link| render_head_link(link, &links))
             .collect::<Vec<_>>()
             .join("\n");
         let scripts = self
@@ -84,7 +106,6 @@ impl PageBuilder {
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <link rel="icon" href="assets/favicon.ico"></link>
         {links}
         {scripts}
         <title>{}</title>
@@ -97,6 +118,20 @@ impl PageBuilder {
 
         pretty_print_html(&html_string)
     }
+}
+
+fn render_head_link(link: Link, static_attrs: &BTreeMap<String, String>) -> String {
+    let mut attrs = static_attrs.clone();
+    attrs.extend(link.attrs);
+    attrs.insert("rel".to_string(), link.rel);
+    attrs.insert("href".to_string(), link.href);
+
+    let attrs = attrs
+        .into_iter()
+        .map(|(key, value)| format!("{key}=\"{value}\""))
+        .collect::<Vec<_>>()
+        .join(" ");
+    format!("<link {attrs}></link>")
 }
 
 fn pretty_html_string(node: &Handle, indent: usize) -> String {

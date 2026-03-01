@@ -45,6 +45,7 @@ async fn main() -> std::io::Result<()> {
             .service(routers::docker::token::handle)
             .service(routers::crates::scope())
             .service(routers::crates::scope_index())
+            .service(routers::files::scope())
             .service(routers::health::scope())
             .service(routers::ui::scope())
             // Swagger UI

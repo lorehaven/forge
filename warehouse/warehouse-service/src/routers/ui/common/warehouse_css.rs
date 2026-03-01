@@ -149,6 +149,43 @@ fn warehouse_css_rules() -> Vec<CssRule> {
                     .property("display", "flex")
                     .property("align-items", "center"),
             ),
+        // Files entries grid
+        CssRule::new(".file-grid")
+            .child(CssRule::new(".header,\n.body > .row").property("display", "grid"))
+            .child(
+                CssRule::new(".header")
+                    .property("grid-template-columns", "0.5fr 3fr 1fr 1fr 2fr"),
+            )
+            .child(
+                CssRule::new(".body > .row")
+                    .property("grid-template-columns", "0.5fr 3fr 1fr 1fr 2fr")
+                    .property("cursor", "pointer")
+                    .child(
+                        CssRule::new("&:not(:last-child)")
+                            .property("border-bottom", "0.1rem solid var(--bs-gray-700)"),
+                    ),
+            )
+            .child(
+                CssRule::new(".cell")
+                    .property("padding", "0.45rem 0.55rem")
+                    .property("display", "flex")
+                    .property("align-items", "center"),
+            ),
+        CssRule::new(".files-toolbar")
+            .property("display", "flex")
+            .property("flex-wrap", "wrap")
+            .property("gap", "0.5rem")
+            .property("padding", "0.75rem")
+            .property("border-bottom", "0.1rem solid var(--bs-gray-700)")
+            .child(CssRule::new("input[type=\"file\"]").property("max-width", "20rem")),
+        CssRule::new(".actions")
+            .property("gap", "0.6rem")
+            .child(
+                CssRule::new("i")
+                    .property("cursor", "pointer")
+                    .property("color", "var(--bs-gray-300)")
+                    .child(CssRule::new("&:hover").property("color", "var(--bs-gray-100)")),
+            ),
         CssRule::new(".tag-link")
             .property("text-decoration", "none")
             .property("color", "var(--bs-gray-300)")

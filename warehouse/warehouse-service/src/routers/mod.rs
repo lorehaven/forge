@@ -5,6 +5,7 @@ use utoipa::OpenApi;
 pub mod admin;
 pub mod crates;
 pub mod docker;
+pub mod files;
 pub mod health;
 pub mod ui;
 
@@ -17,11 +18,13 @@ static DOCKER_STORAGE_ROOT: LazyLock<String> =
 struct FeatureFlags {
     docker: bool,
     crates: bool,
+    files: bool,
 }
 
 static FEATURE_FLAGS: LazyLock<FeatureFlags> = LazyLock::new(|| FeatureFlags {
     docker: feature_enabled("FEATURE_DOCKER_ENABLED", false),
     crates: feature_enabled("FEATURE_CRATES_ENABLED", false),
+    files: feature_enabled("FEATURE_FILES_ENABLED", false),
 });
 
 fn feature_enabled(name: &str, default: bool) -> bool {
@@ -42,6 +45,10 @@ pub fn docker_enabled() -> bool {
 
 pub fn crates_enabled() -> bool {
     FEATURE_FLAGS.crates
+}
+
+pub fn files_enabled() -> bool {
+    FEATURE_FLAGS.files
 }
 
 #[derive(OpenApi)]
@@ -69,6 +76,10 @@ struct DockerOpenApiDoc;
 )]
 struct CratesOpenApiDoc;
 
+#[derive(OpenApi)]
+#[openapi(nest((path = "/api/v1/files", api = files::FilesApiDoc),))]
+struct FilesOpenApiDoc;
+
 pub fn openapi() -> utoipa::openapi::OpenApi {
     let mut doc = BaseOpenApiDoc::openapi();
     if docker_enabled() {
@@ -76,6 +87,9 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
     }
     if crates_enabled() {
         doc.merge(CratesOpenApiDoc::openapi());
+    }
+    if files_enabled() {
+        doc.merge(FilesOpenApiDoc::openapi());
     }
     doc
 }
