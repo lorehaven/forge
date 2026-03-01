@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
 #[command(name = "anvil")]
+#[command(version)]
 #[command(about = "Anvil - Workspace tools for building, linting, and publishing", long_about = None)]
 pub struct Cli {
     #[command(subcommand)]

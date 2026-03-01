@@ -36,6 +36,10 @@ use engine::executor::{AgentNode, execute};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    if handle_version_flag() {
+        return Ok(());
+    }
+
     init_runtime().await?;
 
     let workflow_path = get_workflow_path()?;
@@ -43,6 +47,17 @@ async fn main() -> anyhow::Result<()> {
     let agents = build_agents(&workflow)?;
 
     run_repl(&workflow, &workflow_path, &agents).await
+}
+
+fn handle_version_flag() -> bool {
+    let mut args = std::env::args().skip(1);
+    if let Some(arg) = args.next()
+        && (arg == "--version" || arg == "-V")
+    {
+        println!("welder {}", env!("CARGO_PKG_VERSION"));
+        return true;
+    }
+    false
 }
 
 fn get_workflow_path() -> anyhow::Result<String> {

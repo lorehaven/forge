@@ -6,6 +6,10 @@ use config::Config;
 use repl::Repl;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if handle_version_flag() {
+        return Ok(());
+    }
+
     let config = match Config::load_merged() {
         Ok(config) => {
             println!(
@@ -40,4 +44,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     repl.run()?;
 
     Ok(())
+}
+
+fn handle_version_flag() -> bool {
+    let mut args = std::env::args().skip(1);
+    if let Some(arg) = args.next()
+        && (arg == "--version" || arg == "-V")
+    {
+        println!("pulley {}", env!("CARGO_PKG_VERSION"));
+        return true;
+    }
+    false
 }

@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser, Debug)]
 #[command(name = "riveter")]
+#[command(version)]
 pub struct Cli {
     #[command(subcommand)]
     pub cmd: Option<Cmd>,
