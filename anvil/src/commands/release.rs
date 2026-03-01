@@ -285,15 +285,13 @@ fn latest_package_tag(package: &str) -> Result<Option<String>> {
 }
 
 fn package_changed_since_tag(workspace_root: &Path, package_dir: &Path, tag: &str) -> Result<bool> {
-    let relative_dir = package_dir
-        .strip_prefix(workspace_root)
-        .with_context(|| {
-            format!(
-                "Package dir {} is not under workspace root {}",
-                package_dir.display(),
-                workspace_root.display()
-            )
-        })?;
+    let relative_dir = package_dir.strip_prefix(workspace_root).with_context(|| {
+        format!(
+            "Package dir {} is not under workspace root {}",
+            package_dir.display(),
+            workspace_root.display()
+        )
+    })?;
     let range = format!("{tag}..HEAD");
     let pathspec = relative_dir
         .to_str()
@@ -356,15 +354,12 @@ fn print_dry_run_plan(plan: &[ReleasePlanItem]) {
         let action = release_action_label(item);
         println!(
             "- {}: {} ({}), tag: {}",
-            item.package,
-            version_note,
-            action,
-            item.tag_to_create
+            item.package, version_note, action, item.tag_to_create
         );
     }
 }
 
-fn release_action_label(item: &ReleasePlanItem) -> &'static str {
+const fn release_action_label(item: &ReleasePlanItem) -> &'static str {
     match item.kind {
         ReleaseKind::Docker => "docker release",
         ReleaseKind::Cargo if item.install_after_publish => "cargo publish + install",
@@ -384,7 +379,9 @@ fn bump_patch_versions(metadata: &Value, plan: &[ReleasePlanItem]) -> Result<Vec
         let pkg = workspace
             .iter()
             .find(|pkg| pkg.name.as_str() == item.package.as_str())
-            .with_context(|| format!("Package '{}' not found in workspace metadata", item.package))?;
+            .with_context(|| {
+                format!("Package '{}' not found in workspace metadata", item.package)
+            })?;
 
         set_manifest_version(&pkg.manifest, &item.to_version)?;
         manifests.push(pkg.manifest.clone());
@@ -403,7 +400,10 @@ fn set_manifest_version(path: &Path, version: &str) -> Result<()> {
         .get_mut("package")
         .and_then(toml::Value::as_table_mut)
         .context("Manifest missing [package] table")?;
-    package.insert("version".to_string(), toml::Value::String(version.to_string()));
+    package.insert(
+        "version".to_string(),
+        toml::Value::String(version.to_string()),
+    );
 
     let updated = toml::to_string(&value).context("Failed to serialize updated Cargo.toml")?;
     fs::write(path, updated)
@@ -465,7 +465,10 @@ fn create_version_commit(metadata: &Value, manifests: &[PathBuf]) -> Result<()> 
     run_command(add_cmd, "git add version update files")?;
 
     let mut commit_cmd = Command::new("git");
-    commit_cmd.arg("commit").arg("-m").arg("anvil version update");
+    commit_cmd
+        .arg("commit")
+        .arg("-m")
+        .arg("anvil version update");
     commit_cmd.arg("--");
     commit_cmd.args(&commit_paths);
     run_command(commit_cmd, "git commit version update")?;

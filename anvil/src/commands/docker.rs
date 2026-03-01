@@ -34,51 +34,48 @@ fn get_dockerfile_for_package(config: &config::Config, package: &str) -> Result<
     let module = find_module_for_package(config, package)?;
     let module_cfg = &config.docker.modules[module];
 
-    Ok(if let Some(dockerfile) = module_cfg
+    Ok(module_cfg
         .package_overrides
         .get(package)
         .and_then(|override_cfg| override_cfg.dockerfile.as_ref())
-    {
-        dockerfile.clone()
-    } else {
-        module_cfg.dockerfile.clone()
-    })
+        .map_or_else(|| module_cfg.dockerfile.clone(), Clone::clone))
 }
 
 fn get_image_name_for_package(config: &config::Config, package: &str) -> Result<String> {
     let module = find_module_for_package(config, package)?;
     let module_cfg = &config.docker.modules[module];
 
-    Ok(if let Some(image_name) = module_cfg
+    Ok(module_cfg
         .package_overrides
         .get(package)
         .and_then(|override_cfg| override_cfg.image_name.as_ref())
-    {
-        image_name.clone()
-    } else {
-        package.to_string()
-    })
+        .map_or_else(|| package.to_string(), Clone::clone))
 }
 
 fn get_registries_for_package(config: &config::Config, package: &str) -> Result<Vec<String>> {
     let module = find_module_for_package(config, package)?;
     let module_cfg = &config.docker.modules[module];
 
-    let registries = if let Some(override_cfg) = module_cfg.package_overrides.get(package) {
-        if !override_cfg.registries.is_empty() {
-            override_cfg.registries.clone()
-        } else if let Some(registry) = override_cfg.registry.as_ref() {
-            vec![registry.clone()]
-        } else if !config.docker.registry.trim().is_empty() {
-            vec![config.docker.registry.clone()]
-        } else {
-            Vec::new()
-        }
-    } else if !config.docker.registry.trim().is_empty() {
-        vec![config.docker.registry.clone()]
-    } else {
-        Vec::new()
-    };
+    let registries = module_cfg.package_overrides.get(package).map_or_else(
+        || {
+            if config.docker.registry.trim().is_empty() {
+                Vec::new()
+            } else {
+                vec![config.docker.registry.clone()]
+            }
+        },
+        |override_cfg| {
+            if !override_cfg.registries.is_empty() {
+                override_cfg.registries.clone()
+            } else if let Some(registry) = override_cfg.registry.as_ref() {
+                vec![registry.clone()]
+            } else if !config.docker.registry.trim().is_empty() {
+                vec![config.docker.registry.clone()]
+            } else {
+                Vec::new()
+            }
+        },
+    );
 
     if registries.is_empty() {
         anyhow::bail!(
