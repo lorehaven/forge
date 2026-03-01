@@ -22,7 +22,7 @@ static UI_SHELL_DOCKER: LazyLock<AppShell> = LazyLock::new(|| {
         .supported_locales(vec!["en-US".to_string()])
         .default_theme(Theme::BootstrapDark)
         .supported_themes(vec![Theme::BootstrapDark])
-        .header(ui_header(Some("ui_header_docker"), true))
+        .header(ui_header(Some("ui_header_docker"), true, true))
         .links(vec![Link::new(
             "stylesheet",
             "/ui/assets/css/warehouse.css",
@@ -42,7 +42,7 @@ static UI_SHELL_CRATES: LazyLock<AppShell> = LazyLock::new(|| {
         .supported_locales(vec!["en-US".to_string()])
         .default_theme(Theme::BootstrapDark)
         .supported_themes(vec![Theme::BootstrapDark])
-        .header(ui_header(Some("ui_header_crates"), true))
+        .header(ui_header(Some("ui_header_crates"), true, true))
         .links(vec![Link::new(
             "stylesheet",
             "/ui/assets/css/warehouse.css",
@@ -62,7 +62,7 @@ static UI_SHELL_FILES: LazyLock<AppShell> = LazyLock::new(|| {
         .supported_locales(vec!["en-US".to_string()])
         .default_theme(Theme::BootstrapDark)
         .supported_themes(vec![Theme::BootstrapDark])
-        .header(ui_header(Some("ui_header_files"), true))
+        .header(ui_header(Some("ui_header_files"), true, true))
         .links(vec![Link::new(
             "stylesheet",
             "/ui/assets/css/warehouse.css",
@@ -81,7 +81,7 @@ static UI_SHELL_HOME: LazyLock<AppShell> = LazyLock::new(|| {
         .supported_locales(vec!["en-US".to_string()])
         .default_theme(Theme::BootstrapDark)
         .supported_themes(vec![Theme::BootstrapDark])
-        .header(ui_header(Some("ui_header_home"), true))
+        .header(ui_header(Some("ui_header_home"), true, true))
         .links(vec![Link::new(
             "stylesheet",
             "/ui/assets/css/warehouse.css",
@@ -99,7 +99,7 @@ static UI_SHELL_AUTH: LazyLock<AppShell> = LazyLock::new(|| {
         .supported_locales(vec!["en-US".to_string()])
         .default_theme(Theme::BootstrapDark)
         .supported_themes(vec![Theme::BootstrapDark])
-        .header(ui_header(None, false))
+        .header(ui_header(None, false, false))
         .links(vec![Link::new(
             "stylesheet",
             "/ui/assets/css/warehouse.css",
@@ -109,7 +109,7 @@ static UI_SHELL_AUTH: LazyLock<AppShell> = LazyLock::new(|| {
         .build()
 });
 
-fn ui_header(title_key: Option<&str>, show_logout: bool) -> Element {
+fn ui_header(title_key: Option<&str>, show_home: bool, show_logout: bool) -> Element {
     let title = match title_key {
         Some(key) => h2().attr("data-i18n", key),
         None => h2().attr("data-i18n", "header_label"),
@@ -117,11 +117,20 @@ fn ui_header(title_key: Option<&str>, show_logout: bool) -> Element {
 
     header()
         .child(div().class("left-panel").child(title))
-        .child(div().class("right-panel").child_opt(show_logout.then(|| {
-            a().attr("href", "/ui/logout")
-                .class("button")
-                .attr("data-i18n", "ui_logout")
-        })))
+        .child(
+            div()
+                .class("right-panel")
+                .child_opt(show_home.then(|| {
+                    a().attr("href", "/ui/home")
+                        .class("button")
+                        .attr("data-i18n", "ui_home_button")
+                }))
+                .child_opt(show_logout.then(|| {
+                    a().attr("href", "/ui/logout")
+                        .class("button")
+                        .attr("data-i18n", "ui_logout")
+                })),
+        )
 }
 
 #[get("/assets/{path:.*}")]

@@ -48,6 +48,7 @@ fn warehouse_css_rules() -> Vec<CssRule> {
         CssRule::new("header .right-panel")
             .property("display", "flex")
             .property("align-items", "center")
+            .property("gap", "1rem")
             .child(CssRule::new("a.button").property("padding", "0.6rem 1rem")),
         CssRule::new(".split-left,\n.split-right").property("min-height", "0"),
         CssRule::new(".split-right")
@@ -233,29 +234,51 @@ fn warehouse_css_rules() -> Vec<CssRule> {
             .property("color", "var(--bs-gray-300)")
             .property("padding", "0.1rem 0"),
         // Home / service index
-        CssRule::new(".home-layout")
+        CssRule::new(".home-content")
+            .property("width", "100%"),
+        CssRule::new(".home-container")
             .property("display", "flex")
             .property("flex-direction", "column")
             .property("gap", "2rem")
-            .property("max-width", "56rem")
-            .property("margin", "0 auto")
-            .property("padding-top", "3rem"),
+            .property("width", "100%")
+            .property("max-width", "84rem")
+            .property("margin", "0")
+            .property("padding", "3rem"),
+        CssRule::new("@media screen and (max-width: 768px)").child(
+            CssRule::new(".home-container").property("padding", "1.5rem"),
+        ),
         CssRule::new(".home-header")
             .property("display", "flex")
             .property("flex-direction", "column")
             .property("gap", "0.4rem"),
+        CssRule::new(".home-sections")
+            .property("display", "flex")
+            .property("flex-direction", "column")
+            .property("gap", "2rem"),
+        CssRule::new(".home-section")
+            .property("display", "flex")
+            .property("flex-direction", "column")
+            .property("gap", "0.8rem"),
+        CssRule::new(".home-section-title")
+            .property("margin", "0")
+            .property("font-size", "1rem")
+            .property("font-weight", "700")
+            .property("letter-spacing", "0.04em")
+            .property("text-transform", "uppercase")
+            .property("color", "var(--bs-gray-500)"),
         CssRule::new(".home-subtitle")
             .property("color", "var(--bs-gray-500)")
             .property("margin", "0"),
         CssRule::new(".home-grid")
             .property("display", "grid")
-            .property("grid-template-columns", "repeat(auto-fill, minmax(18rem, 1fr))")
-            .property("gap", "1rem"),
+            .property("grid-template-columns", "repeat(auto-fill, minmax(23rem, 1fr))")
+            .property("gap", "1.25rem"),
         CssRule::new(".home-card")
             .property("display", "flex")
             .property("align-items", "center")
             .property("justify-content", "space-between")
-            .property("padding", "1.25rem 1.5rem")
+            .property("min-height", "8rem")
+            .property("padding", "0 2rem")
             .property("border", "0.1rem solid var(--bs-gray-700)")
             .property("border-radius", "0.4rem")
             .property("background-color", "var(--bs-gray-900)")
@@ -270,13 +293,13 @@ fn warehouse_css_rules() -> Vec<CssRule> {
         CssRule::new(".home-card-body")
             .property("display", "flex")
             .property("flex-direction", "column")
-            .property("gap", "0.35rem"),
+            .property("gap", "0.55rem"),
         CssRule::new(".home-card-title")
-            .property("font-size", "1.05rem")
+            .property("font-size", "1.2rem")
             .property("font-weight", "600")
             .property("color", "var(--bs-gray-100)"),
         CssRule::new(".home-card-desc")
-            .property("font-size", "0.85rem")
+            .property("font-size", "0.95rem")
             .property("color", "var(--bs-gray-400)"),
         CssRule::new(".home-card-arrow")
             .property("font-size", "1.25rem")

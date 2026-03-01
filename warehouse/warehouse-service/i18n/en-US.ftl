@@ -7,9 +7,11 @@ theme_label = Theme
 # ── Home ─────────────────────────────────────────────────────────────────────
 
 ui_header_home = Warehouse
+ui_home_button = Home
 ui_home_title = Services
-ui_home_subtitle = Select a service to get started.
 ui_home_no_services = No services are currently enabled.
+ui_home_group_services = Registry Services
+ui_home_group_files = File Storages
 
 ui_service_docker_title = Docker Registry
 ui_service_docker_desc = Browse images, tags, and manifests.

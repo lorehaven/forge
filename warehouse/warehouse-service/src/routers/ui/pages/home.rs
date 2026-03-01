@@ -15,10 +15,14 @@ pub(super) async fn home_slash() -> impl Responder {
 }
 
 fn render_home_page() -> HttpResponse {
-    let mut cards = div().class("home-grid");
+    let mut service_cards = div().class("home-grid");
+    let mut file_cards = div().class("home-grid");
+    let mut has_service_cards = false;
+    let mut has_file_cards = false;
 
     if docker_enabled() {
-        cards = cards.child(service_card(
+        has_service_cards = true;
+        service_cards = service_cards.child(service_card(
             "/ui/docker/catalog",
             "ui_service_docker_title",
             "ui_service_docker_desc",
@@ -27,7 +31,8 @@ fn render_home_page() -> HttpResponse {
     }
 
     if crates_enabled() {
-        cards = cards.child(service_card(
+        has_service_cards = true;
+        service_cards = service_cards.child(service_card(
             "/ui/crates/catalog",
             "ui_service_crates_title",
             "ui_service_crates_desc",
@@ -36,8 +41,9 @@ fn render_home_page() -> HttpResponse {
     }
 
     if files_enabled() {
+        has_file_cards = true;
         for storage in list_storage_infos() {
-            cards = cards.child(
+            file_cards = file_cards.child(
                 a().attr(
                     "href",
                     &format!("/ui/files/catalog?storage={}", storage.name),
@@ -62,9 +68,36 @@ fn render_home_page() -> HttpResponse {
         }
     }
 
-    // If somehow neither feature is on, show a placeholder
-    if !docker_enabled() && !crates_enabled() && !files_enabled() {
-        cards = cards.child(
+    let mut sections = div().class("home-sections");
+
+    if has_service_cards {
+        sections = sections.child(
+            div()
+                .class("home-section")
+                .child(
+                    h3()
+                        .class("home-section-title")
+                        .attr("data-i18n", "ui_home_group_services"),
+                )
+                .child(service_cards),
+        );
+    }
+
+    if has_file_cards {
+        sections = sections.child(
+            div()
+                .class("home-section")
+                .child(
+                    h3()
+                        .class("home-section-title")
+                        .attr("data-i18n", "ui_home_group_files"),
+                )
+                .child(file_cards),
+        );
+    }
+
+    if !has_service_cards && !has_file_cards {
+        sections = sections.child(
             div()
                 .class("empty")
                 .attr("data-i18n", "ui_home_no_services"),
@@ -73,19 +106,15 @@ fn render_home_page() -> HttpResponse {
 
     render_page(
         HttpResponse::Ok(),
-        content().class("container-fluid py-4").child(
+        content().class("home-content").child(
             div()
-                .class("home-layout")
+                .class("home-container")
                 .child(
                     div()
                         .class("home-header")
-                        .child(h3().attr("data-i18n", "ui_home_title"))
-                        .child(
-                            p().class("home-subtitle")
-                                .attr("data-i18n", "ui_home_subtitle"),
-                        ),
+                        .child(h3().attr("data-i18n", "ui_home_title")),
                 )
-                .child(cards),
+                .child(sections),
         ),
         UiPageKind::Home,
     )
