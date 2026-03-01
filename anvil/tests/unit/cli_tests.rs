@@ -139,3 +139,54 @@ fn parse_publish_supports_all_flag() {
         _ => panic!("expected publish command"),
     }
 }
+
+#[test]
+fn parse_release_supports_package_flag() {
+    let cli = Cli::parse_from(["anvil", "release", "--package", "ferrous"]);
+    match cli.command {
+        Commands::Release {
+            all,
+            package,
+            dry_run,
+        } => {
+            assert!(!all);
+            assert_eq!(package.as_deref(), Some("ferrous"));
+            assert!(!dry_run);
+        }
+        _ => panic!("expected release command"),
+    }
+}
+
+#[test]
+fn parse_release_supports_all_flag() {
+    let cli = Cli::parse_from(["anvil", "release", "--all"]);
+    match cli.command {
+        Commands::Release {
+            all,
+            package,
+            dry_run,
+        } => {
+            assert!(all);
+            assert!(package.is_none());
+            assert!(!dry_run);
+        }
+        _ => panic!("expected release command"),
+    }
+}
+
+#[test]
+fn parse_release_supports_dry_run_flag() {
+    let cli = Cli::parse_from(["anvil", "release", "--all", "--dry-run"]);
+    match cli.command {
+        Commands::Release {
+            all,
+            package,
+            dry_run,
+        } => {
+            assert!(all);
+            assert!(package.is_none());
+            assert!(dry_run);
+        }
+        _ => panic!("expected release command"),
+    }
+}

@@ -96,6 +96,18 @@ pub enum Commands {
         #[arg(short, long)]
         package: Option<String>,
     },
+    /// Release package(s): bump patch version, commit, then docker release or cargo publish+install
+    Release {
+        /// Release all packages configured in [publish].packages
+        #[arg(long, conflicts_with = "package")]
+        all: bool,
+        /// Specific package to release
+        #[arg(short, long)]
+        package: Option<String>,
+        /// Preview what would be released without changing files or publishing
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Build and run a package/binary
     Run {
         /// Specific package to run
