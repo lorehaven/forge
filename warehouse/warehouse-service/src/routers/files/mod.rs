@@ -7,7 +7,7 @@ use std::io::Cursor;
 use std::path::{Component, Path, PathBuf};
 use std::sync::LazyLock;
 use utoipa::OpenApi;
-use zip::write::FileOptions;
+use zip::write::SimpleFileOptions;
 
 #[derive(Clone, Debug)]
 pub(crate) struct FileStorage {
@@ -193,7 +193,7 @@ fn file_name_from_path(raw_path: &str, fallback: &str) -> String {
 fn create_zip_from_paths(storage: &FileStorage, paths: &[String]) -> std::io::Result<Vec<u8>> {
     let buffer = Cursor::new(Vec::<u8>::new());
     let mut writer = zip::ZipWriter::new(buffer);
-    let options = FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
     for raw_path in paths {
         let Some(relative) = sanitize_relative_path(raw_path) else {
@@ -219,7 +219,7 @@ fn add_dir_to_zip(
     writer: &mut zip::ZipWriter<Cursor<Vec<u8>>>,
     dir: &Path,
     root: &Path,
-    options: FileOptions,
+    options: SimpleFileOptions,
 ) -> std::io::Result<()> {
     let read_dir = std::fs::read_dir(dir)?;
     for entry in read_dir {
