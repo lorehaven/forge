@@ -75,8 +75,7 @@ fn render_home_page() -> HttpResponse {
             div()
                 .class("home-section")
                 .child(
-                    h3()
-                        .class("home-section-title")
+                    h3().class("home-section-title")
                         .attr("data-i18n", "ui_home_group_services"),
                 )
                 .child(service_cards),
@@ -88,8 +87,7 @@ fn render_home_page() -> HttpResponse {
             div()
                 .class("home-section")
                 .child(
-                    h3()
-                        .class("home-section-title")
+                    h3().class("home-section-title")
                         .attr("data-i18n", "ui_home_group_files"),
                 )
                 .child(file_cards),
