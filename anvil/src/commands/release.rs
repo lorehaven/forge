@@ -50,7 +50,9 @@ pub fn release(config: &Config, package: Option<String>, all: bool, dry_run: boo
     ensure_release_tags_absent(&plan)?;
     let manifests = bump_patch_versions(&metadata, &plan)?;
     if !manifests.is_empty() {
-        create_version_commit(&manifests)?;
+        run_build_for_bumped_packages(&plan)?;
+        create_version_commit(&metadata, &manifests)?;
+        push_version_commit()?;
     }
 
     for item in &plan {
@@ -214,22 +216,37 @@ fn build_release_plan(
             ReleaseKind::Cargo
         };
         let install_after_publish = should_install_package(config, package_name);
+        let current_version_tag = package_tag_name(package_name, &current_version);
+        let current_version_tag_exists = tag_exists(&current_version_tag)?;
 
         if let Some(last_tag) = latest_package_tag(package_name)? {
             if !package_changed_since_tag(&workspace_root, &pkg.dir, &last_tag)? {
                 continue;
             }
 
-            let next_version = bump_patch(&current_version)?;
-            plan.push(ReleasePlanItem {
-                package: package_name.clone(),
-                from_version: current_version,
-                to_version: next_version.clone(),
-                kind,
-                tag_to_create: package_tag_name(package_name, &next_version),
-                bump_version: true,
-                install_after_publish,
-            });
+            if current_version_tag_exists {
+                let next_version = bump_patch(&current_version)?;
+                plan.push(ReleasePlanItem {
+                    package: package_name.clone(),
+                    from_version: current_version,
+                    to_version: next_version.clone(),
+                    kind,
+                    tag_to_create: package_tag_name(package_name, &next_version),
+                    bump_version: true,
+                    install_after_publish,
+                });
+            } else {
+                // Manual bump flow: current version has no tag yet, publish it as-is.
+                plan.push(ReleasePlanItem {
+                    package: package_name.clone(),
+                    from_version: current_version.clone(),
+                    to_version: current_version.clone(),
+                    kind,
+                    tag_to_create: current_version_tag,
+                    bump_version: false,
+                    install_after_publish,
+                });
+            }
         } else {
             // First release for this package: tag current version and publish as-is.
             plan.push(ReleasePlanItem {
@@ -419,17 +436,46 @@ fn bump_patch(version: &str) -> Result<String> {
     Ok(format!("{major}.{minor}.{}", patch + 1))
 }
 
-fn create_version_commit(manifests: &[PathBuf]) -> Result<()> {
+fn run_build_for_bumped_packages(plan: &[ReleasePlanItem]) -> Result<()> {
+    for item in plan {
+        if !item.bump_version {
+            continue;
+        }
+        let mut cmd = Command::new("cargo");
+        cmd.arg("build").arg("--package").arg(&item.package);
+        run_command(cmd, &format!("build ({})", item.package))?;
+    }
+    Ok(())
+}
+
+fn create_version_commit(metadata: &Value, manifests: &[PathBuf]) -> Result<()> {
+    let mut commit_paths = manifests.to_vec();
+    let workspace_root = PathBuf::from(
+        metadata["workspace_root"]
+            .as_str()
+            .context("Invalid cargo metadata: missing workspace_root")?,
+    );
+    let cargo_lock = workspace_root.join("Cargo.lock");
+    if cargo_lock.exists() {
+        commit_paths.push(cargo_lock);
+    }
+
     let mut add_cmd = Command::new("git");
-    add_cmd.arg("add").args(manifests);
-    run_command(add_cmd, "git add bumped manifests")?;
+    add_cmd.arg("add").args(&commit_paths);
+    run_command(add_cmd, "git add version update files")?;
 
     let mut commit_cmd = Command::new("git");
     commit_cmd.arg("commit").arg("-m").arg("anvil version update");
     commit_cmd.arg("--");
-    commit_cmd.args(manifests);
+    commit_cmd.args(&commit_paths);
     run_command(commit_cmd, "git commit version update")?;
     Ok(())
+}
+
+fn push_version_commit() -> Result<()> {
+    let mut push_cmd = Command::new("git");
+    push_cmd.arg("push");
+    run_command(push_cmd, "git push version update commit")
 }
 
 fn package_tag_name(package: &str, version: &str) -> String {
