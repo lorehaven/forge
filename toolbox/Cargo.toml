@@ -1,3 +1,16 @@
+[package]
+name = "forge-toolbox"
+version = "0.1.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "Forge Toolbox - monitor and self-update Forge installables"
+keywords = ["development", "tools", "forge"]
+categories = ["development-tools"]
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+readme = { workspace = true }
+
 [[bin]]
 name = "forge-toolbox"
 path = "src/main.rs"
@@ -7,28 +20,3 @@ anyhow = { workspace = true }
 clap = { workspace = true }
 crossterm = { workspace = true }
 semver = { workspace = true }
-
-[package]
-name = "forge-toolbox"
-version = "0.1.0"
-categories = ["development-tools"]
-description = "Forge Toolbox - monitor and self-update Forge installables"
-keywords = ["development", "tools", "forge"]
-
-[package.authors]
-workspace = true
-
-[package.edition]
-workspace = true
-
-[package.homepage]
-workspace = true
-
-[package.license]
-workspace = true
-
-[package.readme]
-workspace = true
-
-[package.repository]
-workspace = true
