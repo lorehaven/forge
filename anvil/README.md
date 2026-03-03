@@ -26,25 +26,40 @@ cargo install --path .
 
 ## Usage
 
-### General Commands
+### Command Help
 
-- `anvil build [--all] [--release] [--package <name>]`: Build packages.
-- `anvil test [--all] [--package <name>]`: Run tests.
-- `anvil install [--package <name> | --all]`: Install package binary/binaries via `cargo install --path`.
-- `anvil publish [--package <name> | --all]`: Publish package(s) via `cargo publish`.
-- `anvil release [--package <name> | --all] [--dry-run]`: Release package(s) based on package tags (`<package>-v<version>`). `--all` uses the union of `[publish].packages` and `[docker.modules.*].packages`. If a package has a prior tag and the current version is already tagged, Anvil bumps patch; if current version is not tagged (manual bump), Anvil publishes current version as-is. If no package tag exists, Anvil creates an initial tag at current version and publishes as-is. When versions are auto-bumped, Anvil runs `cargo build --package <name>`, creates the version update commit, and pushes that commit. Cargo package install runs only for packages listed in `[install].packages`.
-- `anvil lint [--all-targets] [--deny-warnings]`: Run clippy with strict rules.
-- `anvil format [--check]`: Format code using `rustfmt`.
-- `anvil list [--format <json|text>]`: List workspace members.
-- `anvil upgrade [--incompatible]`: Update dependencies.
-- `anvil audit`: Run security audit.
-- `anvil machete`: Check for unused dependencies.
+#### Workspace and Cargo Commands
 
-### Docker Commands
+- `anvil build [--all] [--all-features] [--release] [-p|--package <name>]`
+- `anvil clean`
+- `anvil test [--all] [-p|--package <name>] [<test_name>] [--ignored] [--list]`
+- `anvil run [-p|--package <name>] [--serve] [--watch-interval-ms <ms>]`
+  - `--serve` starts watch/rebuild mode.
+  - Hotkeys: `r` rebuild now, `R` toggle auto-rebuild, `q|Q|e|E` quit.
+- `anvil lint [--all-targets] [--all-features] [--deny-warnings]`
+  - Defaults are `true` for these three flags.
+- `anvil format [--check]`
+- `anvil list [--format names|json]` (default: `names`)
+- `anvil upgrade [--incompatible]`
+- `anvil audit`
+- `anvil machete`
 
-- `anvil docker build <package>`: Build Docker image for a package.
-- `anvil docker release <package> <registry>`: Build, tag, and push.
-- `anvil docker release-all <registry>`: Release all packages to a registry.
+#### Release and Distribution Commands
+
+- `anvil install [--all | -p|--package <name>]`
+- `anvil publish [--all | -p|--package <name>]`
+- `anvil release [--all | -p|--package <name>] [--dry-run]`
+  - `--all` uses packages configured in `[publish].packages` and Docker module package lists.
+  - In non-dry runs, auto-bumps and tagging can trigger build/commit/push flow before publish/install.
+
+#### Docker Commands
+
+- `anvil docker build -p|--package <name>`: build one image
+- `anvil docker tag -p|--package <name>`: tag one image
+- `anvil docker push -p|--package <name>`: push one image
+- `anvil docker release -p|--package <name>`: build + tag + push
+- `anvil docker build-all`: build all configured Docker packages
+- `anvil docker release-all`: build + tag + push all configured Docker packages
 
 ## Configuration
 

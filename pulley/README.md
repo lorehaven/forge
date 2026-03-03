@@ -132,12 +132,16 @@ Run the REPL:
 cargo run -p pulley
 ```
 
+Binary flags:
+
+- `pulley --version` or `pulley -V`: print version and exit.
+
 ### REPL Commands
 
 - `list` - List all configured jobs
 - `run <job_id> [job_id2...]` - Run specific job(s) by ID
 - `run all` - Run all configured jobs
-- `reload` - Reload configuration file
+- `reload` - Reload merged global/local configuration files
 - `help` - Show available commands
 - `quit` or `exit` - Exit the REPL
 

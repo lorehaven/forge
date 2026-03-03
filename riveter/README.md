@@ -52,6 +52,23 @@ Simply run `riveter` or `riveter repl` to enter the interactive shell:
 riveter
 ```
 
+REPL commands:
+
+- `env list`
+- `env set <env>`
+- `env show`
+- `render [--scope mutable|immutable|all]`
+- `apply [--dry-run] [--scope mutable|immutable|all]`
+- `delete [--scope mutable|immutable|all]`
+- `help` or `h`
+- `exit`, `quit`, or `q`
+
+REPL aliases:
+
+- `render` -> `r`
+- `apply` -> `a`
+- `delete` -> `d` or `del`
+
 ## Templates
 
 Riveter expects templates to be located in `src/templates` within the module (or as configured). Templates use the `.yaml.j2` extension.
