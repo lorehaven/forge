@@ -2,7 +2,7 @@ use crate::routers::files::list_storage_infos;
 use crate::routers::ui::common::{UiPageKind, render_page};
 use crate::routers::{crates_enabled, docker_enabled, files_enabled};
 use actix_web::{HttpResponse, Responder, get};
-use quench::prelude::*;
+use quench_web::prelude::*;
 
 #[get("/home")]
 pub(super) async fn home() -> impl Responder {

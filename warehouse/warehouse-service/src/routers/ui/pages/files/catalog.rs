@@ -2,7 +2,7 @@ use crate::domain::jwt::JwtConfig;
 use crate::routers::files::{list_directory, list_storage_infos};
 use crate::routers::ui::common::{UiPageKind, is_ui_authenticated, render_page, ui_login_redirect};
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
-use quench::prelude::*;
+use quench_web::prelude::*;
 use serde::Deserialize;
 
 #[derive(Deserialize)]

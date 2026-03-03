@@ -1,8 +1,13 @@
 use anyhow::{Context, Result};
+use quench_cli::terminal::{Tone, print_status};
 use std::process::{Command, Stdio};
 
 pub fn run_command(mut cmd: Command, operation: &str) -> Result<()> {
-    println!("Running {operation} operation...");
+    print_status(
+        Tone::Info,
+        "anvil",
+        &format!("running {operation} operation..."),
+    );
 
     let status = cmd
         .stdin(Stdio::inherit())
@@ -15,6 +20,10 @@ pub fn run_command(mut cmd: Command, operation: &str) -> Result<()> {
         anyhow::bail!("{operation} operation failed with status: {status}");
     }
 
-    println!("{operation} operation completed successfully");
+    print_status(
+        Tone::Success,
+        "anvil",
+        &format!("{operation} operation completed successfully"),
+    );
     Ok(())
 }

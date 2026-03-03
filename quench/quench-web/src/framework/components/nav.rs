@@ -5,6 +5,7 @@ use strum::IntoEnumIterator;
 
 pub fn nav_button() -> Element {
     nav()
+        .class("q-shell-nav-trigger")
         .on_click(&toggle_modal("modal-overlay", "modal-side", "show"))
         .child(i().class("fas").class("fa-grip"))
 }
@@ -52,9 +53,10 @@ impl NavPanelBuilder {
         div()
             .child(div().class("modal-overlay").on_click(&toggle_modal_js))
             .child(
-                div().class("modal-side").child(
+                div().class("modal-side").class("q-shell-modal-side").child(
                     div()
                         .class("modal-content")
+                        .class("q-shell-modal-content")
                         .child(label().attr("data-i18n", "locale_label"))
                         .child(self.select_locale())
                         .child(label().attr("data-i18n", "theme_label"))

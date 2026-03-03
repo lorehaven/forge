@@ -1,3 +1,4 @@
+use quench_cli::terminal::{Tone, print_status};
 use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -122,7 +123,11 @@ impl Config {
                     loaded_files.push(config_path.display().to_string());
                 }
                 Err(e) => {
-                    eprintln!("Warning: Failed to load {}: {}", config_path.display(), e);
+                    print_status(
+                        Tone::Warn,
+                        "pulley",
+                        &format!("failed to load {}: {}", config_path.display(), e),
+                    );
                 }
             }
         }
@@ -138,7 +143,11 @@ impl Config {
                     loaded_files.push(config_path.display().to_string());
                 }
                 Err(e) => {
-                    eprintln!("Warning: Failed to load {}: {}", config_path.display(), e);
+                    print_status(
+                        Tone::Warn,
+                        "pulley",
+                        &format!("failed to load {}: {}", config_path.display(), e),
+                    );
                 }
             }
         }
@@ -154,7 +163,7 @@ impl Config {
         }
 
         if !loaded_files.is_empty() {
-            println!("Loaded configuration from:");
+            print_status(Tone::Info, "pulley", "loaded configuration from:");
             for file in &loaded_files {
                 println!("  - {}", file);
             }

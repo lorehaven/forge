@@ -24,9 +24,10 @@ impl HeaderBuilder {
     }
 
     pub fn build(self) -> Element {
-        header().child(
+        header().class("q-shell-header").child(
             div()
                 .class("left-panel")
+                .class("q-shell-header-left")
                 .child_opt(self.with_nav.then(nav_button))
                 .child(h2().attr("data-i18n", &self.label))
                 .child_opt(self.nav_panel),

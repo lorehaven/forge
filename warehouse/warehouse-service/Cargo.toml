@@ -23,7 +23,8 @@ dotenvy = { workspace = true }
 envmnt = { workspace = true }
 futures-util = { workspace = true }
 jsonwebtoken = { workspace = true }
-quench = { workspace = true }
+quench-cli = { workspace = true }
+quench-web = { workspace = true }
 rustls = { workspace = true }
 rustls-pemfile = { workspace = true }
 serde = { workspace = true }

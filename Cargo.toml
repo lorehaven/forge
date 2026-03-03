@@ -2,8 +2,9 @@
 members = [
     "anvil",
     "pulley",
-    "quench/quench",
     "quench/examples/*",
+    "quench/quench-cli",
+    "quench/quench-web",
     "riveter",
     "toolbox",
     "warehouse/*",
@@ -83,8 +84,11 @@ version = "0.38"
 version = "2.16"
 features = ["loader", "serde"]
 
-[workspace.dependencies.quench]
-path = "quench/quench"
+[workspace.dependencies.quench-web]
+path = "quench/quench-web"
+
+[workspace.dependencies.quench-cli]
+path = "quench/quench-cli"
 
 [workspace.dependencies.regex]
 version = "1.12"

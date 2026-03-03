@@ -1,5 +1,6 @@
 use crate::config;
 use anyhow::Context;
+use quench_cli::terminal::{Tone, print_status};
 use std::fs;
 use std::path::Path;
 
@@ -38,7 +39,11 @@ pub fn env_set(env: &str) -> anyhow::Result<()> {
 
 pub fn env_show() -> anyhow::Result<()> {
     let env = current_env()?;
-    println!("Current environment: {env}");
+    print_status(
+        Tone::Info,
+        "riveter",
+        &format!("current environment: {env}"),
+    );
     Ok(())
 }
 

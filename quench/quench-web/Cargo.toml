@@ -1,5 +1,5 @@
 [package]
-name = "quench"
+name = "quench-web"
 version = "0.1.0"
 edition = { workspace = true }
 authors = { workspace = true }
@@ -12,7 +12,7 @@ license = { workspace = true }
 readme = { workspace = true }
 
 [lib]
-name = "quench"
+name = "quench_web"
 path = "src/lib.rs"
 
 [dependencies]

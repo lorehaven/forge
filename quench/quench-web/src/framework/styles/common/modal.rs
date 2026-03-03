@@ -23,11 +23,12 @@ fn overlay() -> CssRule {
 }
 
 fn modal_shared() -> CssRule {
-    CssRule::new(".modal-side,\n.modal-center")
+    CssRule::new(".modal-side,\n.modal-center,\n.q-shell-modal-side")
         .property("z-index", "1000")
-        .property("background-color", "var(--bs-gray-900)")
-        .property("border-radius", "0.25rem")
-        .property("box-shadow", "0 0 0.2rem var(--bs-gray-500)")
+        .property("background-color", "var(--q-shell-panel-bg)")
+        .property("border-radius", "var(--q-shell-panel-radius)")
+        .property("border", "var(--q-shell-panel-border)")
+        .property("box-shadow", "var(--q-shell-panel-shadow)")
         .property("opacity", "0")
         .property("overflow-y", "auto")
         .property("transition", "transform 0.25s ease, opacity 0.25s ease")
@@ -41,7 +42,7 @@ fn modal_shared() -> CssRule {
                 .child(CssRule::new("&").property("width", "100%")),
         )
         .child(
-            CssRule::new(".modal-content")
+            CssRule::new(".modal-content,\n.q-shell-modal-content")
                 .property("padding", "2rem")
                 .property("display", "flex")
                 .property("flex-direction", "column")

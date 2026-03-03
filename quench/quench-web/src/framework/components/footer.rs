@@ -18,6 +18,7 @@ impl FooterBuilder {
     pub fn build(self) -> Element {
         footer()
             .class("footer")
+            .class("q-shell-footer")
             .child(p().attr("data-i18n", &self.label))
     }
 }

@@ -1,14 +1,17 @@
-# Quench
+# Quench Web
 
 Quench is a simple web UI framework for building HTML-based interfaces.
 
+The built-in shell components (`HeaderBuilder`, `NavPanelBuilder`, `FooterBuilder`, and modal helpers)
+share one common style system (`q-shell-*` classes) so web and terminal entrypoints can keep consistent UI semantics.
+
 ## Available API
 
-`quench` is the library-only crate in this workspace.
+`quench-web` (`quench_web`) is the library-only crate in this workspace.
 
 ### Primary Entry Points
 
-- `quench::prelude::*` re-exports the main API surface:
+- `quench_web::prelude::*` re-exports the main API surface:
   - app/shell builders: `AppBuilder`, `AppShellBuilder`, `AppShell`
   - theme enum: `Theme`
   - asset generation: `create_asset_files`, `create_asset_files_with_options`
@@ -62,7 +65,7 @@ These return JavaScript snippets that can be embedded into `<script>` elements.
 ### Example
 
 ```rust
-use quench::prelude::*;
+use quench_web::prelude::*;
 
 fn page() -> String {
     create_asset_files(Theme::DefaultDark, "");

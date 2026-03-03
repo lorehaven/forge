@@ -1,4 +1,5 @@
 use anyhow::Result;
+use quench_cli::terminal::{Tone, print_status};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
@@ -69,12 +70,20 @@ pub struct PublishConfig {
 pub fn load_config() -> Result<Config> {
     let config = fs::read_to_string(".anvil.toml").map_or_else(
         |_| {
-            eprintln!("⚠️  Failed to read .anvil.toml, defaulting to empty config");
+            print_status(
+                Tone::Warn,
+                "anvil",
+                "failed to read .anvil.toml, defaulting to empty config",
+            );
             Config::default()
         },
         |content| {
             toml::from_str(&content).unwrap_or_else(|err| {
-                eprintln!("⚠️  Failed to parse .anvil.toml ({err}), defaulting to empty config");
+                print_status(
+                    Tone::Warn,
+                    "anvil",
+                    &format!("failed to parse .anvil.toml ({err}), defaulting to empty config"),
+                );
                 Config::default()
             })
         },

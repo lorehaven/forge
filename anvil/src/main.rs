@@ -3,8 +3,10 @@ use anvil::commands;
 use anvil::config;
 use anyhow::Result;
 use clap::Parser;
+use quench_cli::terminal::print_box_banner;
 
 fn main() -> Result<()> {
+    print_box_banner("Anvil CLI", "workspace build and release");
     let config = config::load_config()?;
     let cli = Cli::parse();
 

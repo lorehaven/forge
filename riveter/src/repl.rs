@@ -1,19 +1,20 @@
 use crate::env::{current_env, env_list, env_set, env_show};
 use crate::render::{ResourceScope, generate_manifests_with_scope};
 use anyhow::Context;
+use quench_cli::terminal::{Tone, print_box_banner, print_status, repl_prompt};
 use std::process::Command;
 
 pub fn ok(msg: &str) {
-    println!("\x1b[32m✓\x1b[0m {msg}");
+    print_status(Tone::Success, "ok", msg);
 }
 
 fn warn(msg: &str) {
-    println!("\x1b[33m⚠\x1b[0m {msg}");
+    print_status(Tone::Warn, "warn", msg);
 }
 
 fn prompt() -> String {
     let env = current_env().unwrap_or_else(|_| "unset".into());
-    format!("\x1b[1;34mriveter\x1b[0m(\x1b[1;32m{env}\x1b[0m)> ")
+    repl_prompt("riveter", &env)
 }
 
 fn repl_help() {
@@ -109,6 +110,9 @@ fn handle_repl_command(input: &str) -> anyhow::Result<bool> {
 
 pub fn repl() -> anyhow::Result<()> {
     use rustyline::{DefaultEditor, error::ReadlineError};
+
+    print_box_banner("Riveter REPL", "env-aware manifest commands");
+    print_status(Tone::Info, "hint", "type `help` to list commands");
 
     let mut rl = DefaultEditor::new()?;
 

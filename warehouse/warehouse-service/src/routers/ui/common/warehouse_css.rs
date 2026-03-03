@@ -1,4 +1,4 @@
-use quench::prelude::CssRule;
+use quench_web::prelude::CssRule;
 
 pub fn ensure_warehouse_css() {
     let css = warehouse_css_rules()

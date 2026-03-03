@@ -1,4 +1,5 @@
 use actix_web::{App, HttpRequest, HttpResponse, HttpServer, web};
+use quench_cli::terminal::{Tone, print_status};
 use rustls::ServerConfig;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls_pemfile::{certs, pkcs8_private_keys};
@@ -64,8 +65,16 @@ async fn main() -> std::io::Result<()> {
         let http_redirect_addr: SocketAddr = addr_redir_str.parse().unwrap();
         let https_port = addr.port();
 
-        println!("🔒 Starting HTTPS server on {addr}");
-        println!("↪ Starting HTTP redirect server on {http_redirect_addr}");
+        print_status(
+            Tone::Success,
+            "warehouse-service",
+            &format!("starting HTTPS server on {addr}"),
+        );
+        print_status(
+            Tone::Info,
+            "warehouse-service",
+            &format!("starting HTTP redirect server on {http_redirect_addr}"),
+        );
 
         let https_server = server.bind_rustls_0_23(addr, config)?.run();
 
@@ -80,7 +89,11 @@ async fn main() -> std::io::Result<()> {
         tokio::try_join!(https_server, redirect_server)?;
         Ok(())
     } else {
-        println!("⚠ Starting plain HTTP server");
+        print_status(
+            Tone::Warn,
+            "warehouse-service",
+            "starting plain HTTP server",
+        );
         server.bind(addr)?.run().await
     }
 }

@@ -13,7 +13,17 @@ use crate::cli::{
 };
 use crate::config::{ConfigScope, ConfigStore, RegistrySource};
 use crate::domain::{RegistryConfig, validate_registry_name};
+use crate::ui;
 use anyhow::{Result, bail};
+
+macro_rules! qprintln {
+    () => {{
+        ui::line("");
+    }};
+    ($($arg:tt)*) => {{
+        ui::line(format!($($arg)*));
+    }};
+}
 
 pub async fn run(cli: Cli) -> Result<()> {
     let store = ConfigStore::new();
@@ -113,7 +123,7 @@ fn cmd_registry_add(store: &ConfigStore, args: RegistryAddArgs) -> Result<()> {
         store.save_root_config(scope, &effective_root)?;
     }
 
-    println!("registry '{}' saved", args.name);
+    ui::ok(format!("registry '{}' saved", args.name));
     Ok(())
 }
 
@@ -123,7 +133,7 @@ fn cmd_registry_list(store: &ConfigStore) -> Result<()> {
 
     let entries = store.list_effective_registries()?;
     if entries.is_empty() {
-        println!("no registries configured");
+        ui::warn("no registries configured");
         return Ok(());
     }
 
@@ -138,7 +148,7 @@ fn cmd_registry_list(store: &ConfigStore) -> Result<()> {
             RegistrySource::Global => "global",
         };
 
-        println!(
+        qprintln!(
             "{} {} -> {}{} ({})",
             marker,
             entry.name,
@@ -166,7 +176,7 @@ fn cmd_registry_use(store: &ConfigStore, args: RegistryUseArgs) -> Result<()> {
     cfg.docker.current_registry = Some(args.name.clone());
     store.save_root_config(scope, &cfg)?;
 
-    println!("active registry set to '{}'", args.name);
+    ui::ok(format!("active registry set to '{}'", args.name));
     Ok(())
 }
 
@@ -185,7 +195,7 @@ fn cmd_registry_remove(store: &ConfigStore, args: RegistryRemoveArgs) -> Result<
         store.save_root_config(scope, &cfg)?;
     }
 
-    println!("registry '{}' removed", args.name);
+    ui::ok(format!("registry '{}' removed", args.name));
     Ok(())
 }
 
@@ -202,7 +212,7 @@ fn cmd_docker_login(store: &ConfigStore, args: LoginArgs) -> Result<()> {
         ConfigScope::Local
     };
     store.save_registry(scope, &registry_name, &reg)?;
-    println!("credentials saved for '{}'", registry_name);
+    ui::ok(format!("credentials saved for '{}'", registry_name));
     Ok(())
 }
 
@@ -213,9 +223,9 @@ async fn cmd_docker_catalog(store: &ConfigStore, args: CatalogArgs) -> Result<()
     let api = DockerApi::new(&reg)?;
     let repositories = api.catalog(&reg, args.n).await?;
 
-    println!("registry: {}", registry_name);
+    qprintln!("registry: {}", registry_name);
     for repository in repositories {
-        println!("{}", repository);
+        qprintln!("{}", repository);
     }
 
     Ok(())
@@ -228,10 +238,10 @@ async fn cmd_docker_tags(store: &ConfigStore, args: TagsArgs) -> Result<()> {
     let api = DockerApi::new(&reg)?;
     let (name, tags) = api.tags(&reg, &args.repository, args.n).await?;
 
-    println!("registry: {}", registry_name);
-    println!("repository: {}", name);
+    qprintln!("registry: {}", registry_name);
+    qprintln!("repository: {}", name);
     for tag in tags {
-        println!("{}", tag);
+        qprintln!("{}", tag);
     }
 
     Ok(())
@@ -266,7 +276,7 @@ fn cmd_crates_registry_add(store: &ConfigStore, args: CratesRegistryAddArgs) -> 
         store.save_root_config(scope, &effective_root)?;
     }
 
-    println!("crates registry '{}' saved", args.name);
+    ui::ok(format!("crates registry '{}' saved", args.name));
     Ok(())
 }
 
@@ -282,7 +292,7 @@ fn cmd_crates_registry_list(store: &ConfigStore) -> Result<()> {
         .collect();
 
     if crates_entries.is_empty() {
-        println!("no crates registries configured");
+        ui::warn("no crates registries configured");
         return Ok(());
     }
 
@@ -302,9 +312,13 @@ fn cmd_crates_registry_list(store: &ConfigStore) -> Result<()> {
             ""
         };
 
-        println!(
+        qprintln!(
             "{} {} -> {}{} ({})",
-            marker, entry.name, entry.config.crates.url, authed, source
+            marker,
+            entry.name,
+            entry.config.crates.url,
+            authed,
+            source
         );
     }
 
@@ -326,7 +340,7 @@ fn cmd_crates_registry_use(store: &ConfigStore, args: CratesRegistryUseArgs) -> 
     cfg.crates.current_registry = Some(args.name.clone());
     store.save_root_config(scope, &cfg)?;
 
-    println!("active crates registry set to '{}'", args.name);
+    ui::ok(format!("active crates registry set to '{}'", args.name));
     Ok(())
 }
 
@@ -345,7 +359,7 @@ fn cmd_crates_registry_remove(store: &ConfigStore, args: CratesRegistryRemoveArg
         store.save_root_config(scope, &cfg)?;
     }
 
-    println!("crates registry '{}' removed", args.name);
+    ui::ok(format!("crates registry '{}' removed", args.name));
     Ok(())
 }
 
@@ -361,7 +375,10 @@ fn cmd_crates_login(store: &ConfigStore, args: CratesLoginArgs) -> Result<()> {
         ConfigScope::Local
     };
     store.save_registry(scope, &registry_name, &reg)?;
-    println!("token saved for crates registry '{}'", registry_name);
+    ui::ok(format!(
+        "token saved for crates registry '{}'",
+        registry_name
+    ));
     Ok(())
 }
 
@@ -372,12 +389,12 @@ async fn cmd_crates_search(store: &ConfigStore, args: CratesSearchArgs) -> Resul
     let api = CratesApi::new(&reg.crates)?;
     let (crates, total) = api.search(&reg.crates, &args.query, args.limit).await?;
 
-    println!("registry: {}", registry_name);
-    println!("query: \"{}\"  ({} total)", args.query, total);
-    println!();
+    qprintln!("registry: {}", registry_name);
+    qprintln!("query: \"{}\"  ({} total)", args.query, total);
+    qprintln!();
 
     if crates.is_empty() {
-        println!("no crates found");
+        ui::warn("no crates found");
         return Ok(());
     }
 
@@ -391,7 +408,7 @@ async fn cmd_crates_search(store: &ConfigStore, args: CratesSearchArgs) -> Resul
 
     for c in &crates {
         let desc = c.description.as_deref().unwrap_or("");
-        println!(
+        qprintln!(
             "{:<name_w$}  {:<ver_w$}  {}",
             c.name,
             c.max_version,
@@ -411,9 +428,9 @@ async fn cmd_crates_versions(store: &ConfigStore, args: CratesVersionsArgs) -> R
     let api = CratesApi::new(&reg.crates)?;
     let records = api.versions(&reg.crates, &args.crate_name).await?;
 
-    println!("registry: {}", registry_name);
-    println!("crate: {}", args.crate_name);
-    println!();
+    qprintln!("registry: {}", registry_name);
+    qprintln!("crate: {}", args.crate_name);
+    qprintln!();
 
     let to_show: Vec<_> = if args.all {
         records.iter().collect()
@@ -423,16 +440,16 @@ async fn cmd_crates_versions(store: &ConfigStore, args: CratesVersionsArgs) -> R
 
     if to_show.is_empty() {
         if args.all {
-            println!("no versions found");
+            ui::warn("no versions found");
         } else {
-            println!("no active versions (use --all to include yanked)");
+            ui::warn("no active versions (use --all to include yanked)");
         }
         return Ok(());
     }
 
     // Header
-    println!("{:<20}  {:<8}  checksum", "version", "status");
-    println!("{}", "-".repeat(72));
+    qprintln!("{:<20}  {:<8}  checksum", "version", "status");
+    qprintln!("{}", "-".repeat(72));
 
     for r in to_show.iter().rev() {
         let status = if r.yanked { "yanked" } else { "active" };
@@ -441,7 +458,7 @@ async fn cmd_crates_versions(store: &ConfigStore, args: CratesVersionsArgs) -> R
         } else {
             r.cksum.clone()
         };
-        println!("{:<20}  {:<8}  {}", r.vers, status, short_cksum);
+        qprintln!("{:<20}  {:<8}  {}", r.vers, status, short_cksum);
     }
 
     Ok(())
@@ -462,10 +479,10 @@ async fn cmd_crates_yank(store: &ConfigStore, args: CratesYankArgs) -> Result<()
     api.yank(&reg.crates, &args.crate_name, &args.version)
         .await?;
 
-    println!(
+    ui::ok(format!(
         "yanked {}-{} from '{}'",
         args.crate_name, args.version, registry_name
-    );
+    ));
     Ok(())
 }
 
@@ -484,10 +501,10 @@ async fn cmd_crates_unyank(store: &ConfigStore, args: CratesUnyankArgs) -> Resul
     api.unyank(&reg.crates, &args.crate_name, &args.version)
         .await?;
 
-    println!(
+    ui::ok(format!(
         "unyanked {}-{} in '{}'",
         args.crate_name, args.version, registry_name
-    );
+    ));
     Ok(())
 }
 
@@ -501,14 +518,14 @@ async fn cmd_files_storages(store: &ConfigStore, args: FilesStoragesArgs) -> Res
     let api = FilesApi::new(&registry)?;
     let storages = api.storages(&registry).await?;
 
-    println!("registry: {}", registry_name);
+    qprintln!("registry: {}", registry_name);
     if storages.is_empty() {
-        println!("no storages configured");
+        ui::warn("no storages configured");
         return Ok(());
     }
 
     for storage in storages {
-        println!("{} -> {}", storage.name, storage.root);
+        qprintln!("{} -> {}", storage.name, storage.root);
     }
     Ok(())
 }
@@ -519,13 +536,13 @@ async fn cmd_files_ls(store: &ConfigStore, args: FilesLsArgs) -> Result<()> {
     let api = FilesApi::new(&registry)?;
     let result = api.list(&registry, &args.storage, &args.path).await?;
 
-    println!("registry: {}", registry_name);
-    println!("storage: {}", result.storage);
-    println!("path: /{}", result.path);
-    println!();
+    qprintln!("registry: {}", registry_name);
+    qprintln!("storage: {}", result.storage);
+    qprintln!("path: /{}", result.path);
+    qprintln!();
 
     if result.entries.is_empty() {
-        println!("(empty)");
+        qprintln!("(empty)");
         return Ok(());
     }
 
@@ -536,7 +553,7 @@ async fn cmd_files_ls(store: &ConfigStore, args: FilesLsArgs) -> Result<()> {
         } else {
             entry.size_bytes.to_string()
         };
-        println!("{} {:>10} {}", kind, size, entry.path);
+        qprintln!("{} {:>10} {}", kind, size, entry.path);
     }
     Ok(())
 }
@@ -556,7 +573,7 @@ async fn cmd_files_upload(store: &ConfigStore, args: FilesUploadArgs) -> Result<
         let remote_path = remote_path_for_upload(local_file, args.remote_dir.as_deref())?;
         api.upload(&registry, &args.storage, &remote_path, bytes)
             .await?;
-        println!("uploaded {} -> {}", local_file, remote_path);
+        ui::ok(format!("uploaded {} -> {}", local_file, remote_path));
     }
 
     Ok(())
@@ -568,12 +585,12 @@ async fn cmd_files_preview(store: &ConfigStore, args: FilesPreviewArgs) -> Resul
     let api = FilesApi::new(&registry)?;
     let preview = api.preview(&registry, &args.storage, &args.path).await?;
 
-    println!("storage: {}", preview.storage);
-    println!("path: {}", preview.path);
-    println!("kind: {}", preview.kind);
-    println!("truncated: {}", preview.truncated);
-    println!();
-    println!("{}", preview.content);
+    qprintln!("storage: {}", preview.storage);
+    qprintln!("path: {}", preview.path);
+    qprintln!("kind: {}", preview.kind);
+    qprintln!("truncated: {}", preview.truncated);
+    qprintln!();
+    qprintln!("{}", preview.content);
     Ok(())
 }
 
@@ -588,7 +605,7 @@ async fn cmd_files_download(store: &ConfigStore, args: FilesDownloadArgs) -> Res
         .or(server_name)
         .unwrap_or_else(|| "download.bin".to_string());
     std::fs::write(&output, bytes)?;
-    println!("saved {}", output);
+    ui::ok(format!("saved {}", output));
     Ok(())
 }
 
@@ -597,7 +614,7 @@ async fn cmd_files_mkdir(store: &ConfigStore, args: FilesMkdirArgs) -> Result<()
     let registry = store.load_effective_registry(&registry_name)?.config;
     let api = FilesApi::new(&registry)?;
     api.mkdir(&registry, &args.storage, &args.path).await?;
-    println!("folder created: {}", args.path);
+    ui::ok(format!("folder created: {}", args.path));
     Ok(())
 }
 
@@ -606,7 +623,7 @@ async fn cmd_files_rmdir(store: &ConfigStore, args: FilesRmdirArgs) -> Result<()
     let registry = store.load_effective_registry(&registry_name)?.config;
     let api = FilesApi::new(&registry)?;
     api.rmdir(&registry, &args.storage, &args.path).await?;
-    println!("folder deleted: {}", args.path);
+    ui::ok(format!("folder deleted: {}", args.path));
     Ok(())
 }
 
@@ -616,7 +633,7 @@ async fn cmd_files_delete(store: &ConfigStore, args: FilesDeleteArgs) -> Result<
     let api = FilesApi::new(&registry)?;
     api.delete_file(&registry, &args.storage, &args.path)
         .await?;
-    println!("file deleted: {}", args.path);
+    ui::ok(format!("file deleted: {}", args.path));
     Ok(())
 }
 
@@ -629,7 +646,7 @@ async fn cmd_files_bulk_delete(store: &ConfigStore, args: FilesBulkDeleteArgs) -
     let api = FilesApi::new(&registry)?;
     api.bulk_delete(&registry, &args.storage, &args.paths)
         .await?;
-    println!("bulk delete complete");
+    ui::ok("bulk delete complete");
     Ok(())
 }
 
@@ -644,7 +661,7 @@ async fn cmd_files_bulk_download(store: &ConfigStore, args: FilesBulkDownloadArg
         .bulk_download(&registry, &args.storage, &args.paths)
         .await?;
     std::fs::write(&args.output, bytes)?;
-    println!("saved {}", args.output);
+    ui::ok(format!("saved {}", args.output));
     Ok(())
 }
 
@@ -665,22 +682,22 @@ async fn cmd_admin_gc(store: &ConfigStore, args: AdminGcArgs) -> Result<()> {
 
     let admin_api = AdminApi::new(&registry)?;
 
-    println!(
-        "Running garbage collection for registry '{}'",
+    ui::info(format!(
+        "running garbage collection for registry '{}'",
         registry_name
-    );
+    ));
 
     // Run Docker GC if requested or if no specific type was specified
     if args.docker || !args.crates {
-        println!("Running Docker garbage collection...");
+        ui::info("running Docker garbage collection...");
         match admin_api.run_docker_gc(&registry, "/admin/docker/gc").await {
             Ok(report) => {
-                println!("Docker GC completed:");
-                println!("  Deleted: {}", report.deleted);
-                println!("  Kept: {}", report.kept);
+                ui::ok("Docker GC completed");
+                qprintln!("  Deleted: {}", report.deleted);
+                qprintln!("  Kept: {}", report.kept);
             }
             Err(e) => {
-                eprintln!("Docker GC failed: {}", e);
+                ui::error(format!("Docker GC failed: {}", e));
                 return Err(e);
             }
         }
@@ -688,18 +705,18 @@ async fn cmd_admin_gc(store: &ConfigStore, args: AdminGcArgs) -> Result<()> {
 
     // Run Crates GC if requested or if no specific type was specified
     if args.crates || !args.docker {
-        println!("Running crates garbage collection...");
+        ui::info("running crates garbage collection...");
         match admin_api.run_crates_gc(&registry, "/admin/crates/gc").await {
             Ok(report) => {
-                println!("Crates GC completed:");
-                println!("  Deleted crates: {}", report.deleted_crates);
-                println!("  Kept crates: {}", report.kept_crates);
-                println!("  Removed index entries: {}", report.removed_index_entries);
-                println!("  Deleted owner files: {}", report.deleted_owner_files);
-                println!("  Removed empty dirs: {}", report.removed_empty_dirs);
+                ui::ok("Crates GC completed");
+                qprintln!("  Deleted crates: {}", report.deleted_crates);
+                qprintln!("  Kept crates: {}", report.kept_crates);
+                qprintln!("  Removed index entries: {}", report.removed_index_entries);
+                qprintln!("  Deleted owner files: {}", report.deleted_owner_files);
+                qprintln!("  Removed empty dirs: {}", report.removed_empty_dirs);
             }
             Err(e) => {
-                eprintln!("Crates GC failed: {}", e);
+                ui::error(format!("Crates GC failed: {}", e));
                 return Err(e);
             }
         }

@@ -19,4 +19,5 @@ path = "src/main.rs"
 anyhow = { workspace = true }
 clap = { workspace = true }
 crossterm = { workspace = true }
+quench-cli = { workspace = true }
 semver = { workspace = true }

@@ -1,0 +1,19 @@
+[package]
+name = "quench-cli"
+version = "0.1.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "Quench CLI and REPL with unified toolbox-style terminal UI"
+keywords = ["development", "tools"]
+categories = ["development-tools"]
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+readme = "README.md"
+
+[lib]
+name = "quench_cli"
+path = "src/lib.rs"
+
+[dependencies]
+crossterm = { workspace = true }

@@ -117,11 +117,15 @@ impl AppBuilder {
 
         let app = div()
             .class("app")
+            .class("q-shell-app")
             .child_opt(self.header)
             .child(
-                div()
-                    .class("content")
-                    .child(div().class("content-inner").child_opt(self.content)),
+                div().class("content").class("q-shell-content").child(
+                    div()
+                        .class("content-inner")
+                        .class("q-shell-content-inner")
+                        .child_opt(self.content),
+                ),
             )
             .child_opt(self.footer);
 

@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
+use quench_cli::terminal::{Tone, print_status};
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
@@ -28,13 +29,21 @@ fn run_serve_mode(package: Option<&str>, watch_interval_ms: u64) -> Result<()> {
     let interval = Duration::from_millis(watch_interval_ms.max(200));
     let mut auto_rebuild = true;
 
-    println!(
-        "Starting serve mode (watch + rebuild){}",
-        package_ref
-            .map(|p| format!(" for package '{p}'"))
-            .unwrap_or_default()
+    print_status(
+        Tone::Info,
+        "anvil",
+        &format!(
+            "starting serve mode (watch + rebuild){}",
+            package_ref
+                .map(|p| format!(" for package '{p}'"))
+                .unwrap_or_default()
+        ),
     );
-    println!("Hotkeys: 'r' = rebuild now, 'R' = toggle auto-rebuild, 'q'/'Q'/'e'/'E' = quit");
+    print_status(
+        Tone::Info,
+        "anvil",
+        "hotkeys: 'r' rebuild, 'R' auto-rebuild, 'q'/'Q'/'e'/'E' quit",
+    );
 
     let mut child: Option<Child> = None;
     rebuild_and_restart(package_ref, &mut child, "Initial build");
@@ -46,19 +55,23 @@ fn run_serve_mode(package: Option<&str>, watch_interval_ms: u64) -> Result<()> {
         for event in read_hotkeys()? {
             match event {
                 HotkeyEvent::Rebuild => {
-                    println!("Manual rebuild requested.");
+                    print_status(Tone::Info, "anvil", "manual rebuild requested");
                     rebuild_and_restart(package_ref, &mut child, "Manual rebuild");
                     last_snapshot = file_snapshot(".")?;
                 }
                 HotkeyEvent::ToggleAutoRebuild => {
                     auto_rebuild = !auto_rebuild;
-                    println!(
-                        "Auto-rebuild: {}",
-                        if auto_rebuild { "enabled" } else { "disabled" }
+                    print_status(
+                        Tone::Info,
+                        "anvil",
+                        &format!(
+                            "auto-rebuild: {}",
+                            if auto_rebuild { "enabled" } else { "disabled" }
+                        ),
                     );
                 }
                 HotkeyEvent::Quit => {
-                    println!("Quit requested.");
+                    print_status(Tone::Info, "anvil", "quit requested");
                     stop_child_if_running(&mut child)?;
                     return Ok(());
                 }
@@ -70,7 +83,11 @@ fn run_serve_mode(package: Option<&str>, watch_interval_ms: u64) -> Result<()> {
                 .try_wait()
                 .context("Failed to check run process status")?
         {
-            println!("Run process exited with status {status}. Waiting for file changes...");
+            print_status(
+                Tone::Warn,
+                "anvil",
+                &format!("run process exited with status {status}. waiting for file changes..."),
+            );
             child = None;
         }
 
@@ -81,11 +98,15 @@ fn run_serve_mode(package: Option<&str>, watch_interval_ms: u64) -> Result<()> {
         last_snapshot = snapshot;
 
         if !auto_rebuild {
-            println!("Detected file change (auto-rebuild disabled).");
+            print_status(
+                Tone::Warn,
+                "anvil",
+                "detected file change (auto-rebuild disabled)",
+            );
             continue;
         }
 
-        println!("Detected file change. Rebuilding...");
+        print_status(Tone::Info, "anvil", "detected file change. rebuilding...");
         rebuild_and_restart(package_ref, &mut child, "Auto rebuild");
     }
 }
@@ -134,21 +155,41 @@ fn rebuild_and_restart(package: Option<&str>, child: &mut Option<Child>, reason:
     match run_command(build_command(package, true), "build") {
         Ok(()) => {
             if let Err(err) = stop_child_if_running(child) {
-                eprintln!("Failed to stop previous process: {err}");
+                print_status(
+                    Tone::Error,
+                    "anvil",
+                    &format!("failed to stop previous process: {err}"),
+                );
             }
             match spawn_run_child(package) {
                 Ok(new_child) => {
                     *child = Some(new_child);
-                    println!("{reason}: build succeeded, process running.");
+                    print_status(
+                        Tone::Success,
+                        "anvil",
+                        &format!("{reason}: build succeeded, process running"),
+                    );
                 }
                 Err(err) => {
-                    eprintln!("{reason}: build succeeded but failed to start process: {err}");
+                    print_status(
+                        Tone::Error,
+                        "anvil",
+                        &format!("{reason}: build succeeded but failed to start process: {err}"),
+                    );
                 }
             }
         }
         Err(err) => {
-            eprintln!("{reason}: build failed: {err}");
-            eprintln!("Waiting for next change or manual rebuild.");
+            print_status(
+                Tone::Error,
+                "anvil",
+                &format!("{reason}: build failed: {err}"),
+            );
+            print_status(
+                Tone::Warn,
+                "anvil",
+                "waiting for next change or manual rebuild",
+            );
         }
     }
 }

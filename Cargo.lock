@@ -365,6 +365,7 @@ dependencies = [
  "anyhow",
  "clap",
  "crossterm",
+ "quench-cli",
  "serde",
  "serde_json",
  "toml",
@@ -1239,6 +1240,7 @@ dependencies = [
  "anyhow",
  "clap",
  "crossterm",
+ "quench-cli",
  "semver",
 ]
 
@@ -2650,6 +2652,7 @@ dependencies = [
 name = "pulley"
 version = "0.1.1"
 dependencies = [
+ "quench-cli",
  "rustyline",
  "serde",
  "thiserror 2.0.18",
@@ -2657,7 +2660,24 @@ dependencies = [
 ]
 
 [[package]]
-name = "quench"
+name = "quench-cli"
+version = "0.1.0"
+dependencies = [
+ "crossterm",
+]
+
+[[package]]
+name = "quench-example-basic"
+version = "0.1.0"
+dependencies = [
+ "axum 0.8.8",
+ "quench-web",
+ "tokio",
+ "tower-http",
+]
+
+[[package]]
+name = "quench-web"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -2667,16 +2687,6 @@ dependencies = [
  "serde_json",
  "strum",
  "strum_macros",
-]
-
-[[package]]
-name = "quench-example-basic"
-version = "0.1.0"
-dependencies = [
- "axum 0.8.8",
- "quench",
- "tokio",
- "tower-http",
 ]
 
 [[package]]
@@ -2990,6 +3000,7 @@ dependencies = [
  "clap",
  "dotenvy",
  "minijinja",
+ "quench-cli",
  "regex",
  "rustyline",
  "serde",
@@ -4272,6 +4283,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "clap",
+ "quench-cli",
  "reqwest 0.13.2",
  "serde",
  "serde_json",
@@ -4290,7 +4302,8 @@ dependencies = [
  "envmnt",
  "futures-util",
  "jsonwebtoken",
- "quench",
+ "quench-cli",
+ "quench-web",
  "rustls",
  "rustls-pemfile",
  "serde",
@@ -4509,6 +4522,7 @@ dependencies = [
  "async-trait",
  "dotenvy",
  "futures",
+ "quench-cli",
  "serde",
  "serde_json",
  "shlex",

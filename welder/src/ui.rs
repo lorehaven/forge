@@ -1,19 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// Shared UI — colours, separators, and display helpers used by
-// the backend banner, REPL, and agent executor alike.
-// ─────────────────────────────────────────────────────────────
-
-pub const RESET: &str = "\x1b[0m";
-pub const BOLD: &str = "\x1b[1m";
-pub const DIM: &str = "\x1b[2m";
-pub const CYAN: &str = "\x1b[36m";
-pub const BLUE: &str = "\x1b[34m";
-pub const GREEN: &str = "\x1b[32m";
-pub const YELLOW: &str = "\x1b[33m";
-pub const WHITE: &str = "\x1b[37m";
-
-pub const SEP: &str = "────────────────────────────────────────────────────────";
-pub const SEP_THIN: &str = "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄";
+pub use quench_cli::terminal::{BLUE, BOLD, CYAN, DIM, GREEN, RESET, SEP, SEP_THIN, WHITE, YELLOW};
 
 /// Print the backend-ready banner.
 pub fn print_backend_banner(kind: &str, url: &str) {

@@ -5,7 +5,7 @@ use crate::routers::docker::registry::storage::{
 use crate::routers::ui::PageQuery;
 use crate::routers::ui::common::{UiPageKind, is_ui_authenticated, render_page, ui_login_redirect};
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
-use quench::prelude::*;
+use quench_web::prelude::*;
 use std::collections::BTreeMap;
 
 #[derive(Default)]

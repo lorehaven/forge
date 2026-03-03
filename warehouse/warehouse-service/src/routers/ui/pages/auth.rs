@@ -3,7 +3,7 @@ use crate::routers::ui::common::{UI_SESSION_COOKIE, UiPageKind, render_page};
 use actix_web::cookie::{Cookie, SameSite};
 use actix_web::{HttpResponse, Responder, get, post, web};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use quench::prelude::*;
+use quench_web::prelude::*;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
