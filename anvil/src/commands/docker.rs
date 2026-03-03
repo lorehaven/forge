@@ -96,6 +96,11 @@ fn get_registries_for_package(config: &config::Config, package: &str) -> Result<
     Ok(filtered)
 }
 
+fn ennor_registry_index() -> String {
+    std::env::var("CARGO_REGISTRIES_ENNOR_INDEX")
+        .unwrap_or_else(|_| "sparse+https://ennor.ddns.net/index/".to_string())
+}
+
 fn full_tags_for_package(config: &config::Config, package: &str) -> Result<Vec<String>> {
     let registries = get_registries_for_package(config, package)?;
     let module = find_module_for_package(config, package)?;
@@ -119,12 +124,21 @@ pub fn build(config: &config::Config, package: &str) -> Result<()> {
         .arg("-f")
         .arg(&dockerfile)
         .arg("--build-arg")
+        .arg(format!("CARGO_REGISTRIES_ENNOR_INDEX={}", ennor_registry_index()))
+        .arg("--build-arg")
         .arg(format!("PROJECT_NAME={package}"))
         .arg("--build-arg")
         .arg(format!("RESOURCES_PATH={resources_path}"))
         .arg("-t")
         .arg(image_name)
         .arg(".");
+
+    if let Ok(token) = std::env::var("CARGO_REGISTRIES_ENNOR_TOKEN")
+        && !token.trim().is_empty()
+    {
+        cmd.arg("--build-arg")
+            .arg(format!("CARGO_REGISTRIES_ENNOR_TOKEN={token}"));
+    }
 
     // Enable BuildKit
     cmd.env("DOCKER_BUILDKIT", "1");
