@@ -86,10 +86,12 @@ features = ["loader", "serde"]
 
 [workspace.dependencies.quench-web]
 path = "quench/quench-web"
+registry = "ennor"
 version = "0.1.0"
 
 [workspace.dependencies.quench-cli]
 path = "quench/quench-cli"
+registry = "ennor"
 version = "0.1.0"
 
 [workspace.dependencies.regex]
