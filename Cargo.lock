@@ -360,7 +360,7 @@ dependencies = [
 
 [[package]]
 name = "anvil"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "clap",
@@ -1235,7 +1235,7 @@ checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
 
 [[package]]
 name = "forge-toolbox"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -2650,7 +2650,7 @@ dependencies = [
 
 [[package]]
 name = "pulley"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "quench-cli",
  "rustyline",
@@ -2994,7 +2994,7 @@ dependencies = [
 
 [[package]]
 name = "riveter"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -4278,7 +4278,7 @@ dependencies = [
 
 [[package]]
 name = "warehouse-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -4293,7 +4293,7 @@ dependencies = [
 
 [[package]]
 name = "warehouse-service"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "actix-web",
  "base64 0.22.1",
@@ -4514,7 +4514,7 @@ dependencies = [
 
 [[package]]
 name = "welder"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "adk-core",
  "adk-model",

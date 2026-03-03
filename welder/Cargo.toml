@@ -1,34 +1,71 @@
-[package]
-name = "welder"
-version = "0.1.1"
-edition = { workspace = true }
-authors = { workspace = true }
-description = "Welder - a multi-agent execution engine for building, routing, and coordinating structured LLM workflows."
-keywords = ["development", "tools"]
-categories = ["development-tools"]
-homepage = { workspace = true }
-repository = { workspace = true }
-license = { workspace = true }
-readme = { workspace = true }
-
 [[bin]]
 name = "welder"
 path = "src/main.rs"
 
-[dependencies]
-adk-core = { workspace = true }
-adk-model = { workspace = true, features = ["ollama"] }
-anyhow = { workspace = true }
-async-trait = { workspace = true }
-dotenvy = { workspace = true }
-futures = { workspace = true }
-quench-cli = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-shlex = { workspace = true }
-tokio = { workspace = true }
-toml = { workspace = true }
+[build-dependencies.serde]
+workspace = true
 
-[build-dependencies]
-serde = { workspace = true }
-toml = { workspace = true }
+[build-dependencies.toml]
+workspace = true
+
+[dependencies.adk-core]
+workspace = true
+
+[dependencies.adk-model]
+features = ["ollama"]
+workspace = true
+
+[dependencies.anyhow]
+workspace = true
+
+[dependencies.async-trait]
+workspace = true
+
+[dependencies.dotenvy]
+workspace = true
+
+[dependencies.futures]
+workspace = true
+
+[dependencies.quench-cli]
+workspace = true
+
+[dependencies.serde]
+workspace = true
+
+[dependencies.serde_json]
+workspace = true
+
+[dependencies.shlex]
+workspace = true
+
+[dependencies.tokio]
+workspace = true
+
+[dependencies.toml]
+workspace = true
+
+[package]
+categories = ["development-tools"]
+description = "Welder - a multi-agent execution engine for building, routing, and coordinating structured LLM workflows."
+keywords = ["development", "tools"]
+name = "welder"
+version = "0.1.2"
+
+[package.authors]
+workspace = true
+
+[package.edition]
+workspace = true
+
+[package.homepage]
+workspace = true
+
+[package.license]
+workspace = true
+
+[package.readme]
+workspace = true
+
+[package.repository]
+workspace = true
