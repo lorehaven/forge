@@ -1,43 +1,23 @@
+[package]
+name = "forge-toolbox"
+version = "0.1.1"
+edition.workspace = true
+authors.workspace = true
+description = "Forge Toolbox - monitor and self-update Forge installables"
+keywords = ["development", "tools", "forge"]
+categories = ["development-tools"]
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+readme.workspace = true
+
 [[bin]]
 name = "forge-toolbox"
 path = "src/main.rs"
 
-[dependencies.anyhow]
-workspace = true
-
-[dependencies.clap]
-workspace = true
-
-[dependencies.crossterm]
-workspace = true
-
-[dependencies.quench-cli]
-workspace = true
-
-[dependencies.semver]
-workspace = true
-
-[package]
-categories = ["development-tools"]
-description = "Forge Toolbox - monitor and self-update Forge installables"
-keywords = ["development", "tools", "forge"]
-name = "forge-toolbox"
-version = "0.1.1"
-
-[package.authors]
-workspace = true
-
-[package.edition]
-workspace = true
-
-[package.homepage]
-workspace = true
-
-[package.license]
-workspace = true
-
-[package.readme]
-workspace = true
-
-[package.repository]
-workspace = true
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+crossterm.workspace = true
+quench-cli.workspace = true
+semver.workspace = true

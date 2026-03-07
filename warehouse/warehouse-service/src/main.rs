@@ -1,10 +1,7 @@
 use actix_web::{App, HttpRequest, HttpResponse, HttpServer, web};
 use quench_cli::terminal::{Tone, print_status};
 use rustls::ServerConfig;
-use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-use rustls_pemfile::{certs, pkcs8_private_keys};
-use std::fs::File;
-use std::io::BufReader;
+use rustls::pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
 use std::net::SocketAddr;
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -133,20 +130,12 @@ fn load_tls(
     cert_path: impl AsRef<std::path::Path>,
     key_path: impl AsRef<std::path::Path>,
 ) -> Option<ServerConfig> {
-    let mut cert_reader = BufReader::new(File::open(cert_path).ok()?);
-    let mut key_reader = BufReader::new(File::open(key_path).ok()?);
-
-    let cert_chain: Vec<CertificateDer<'static>> =
-        certs(&mut cert_reader).collect::<Result<_, _>>().ok()?;
-
-    let mut keys = pkcs8_private_keys(&mut key_reader)
-        .collect::<Result<Vec<_>, _>>()
+    let cert_chain: Vec<CertificateDer<'static>> = CertificateDer::pem_file_iter(cert_path)
+        .ok()?
+        .collect::<Result<_, _>>()
         .ok()?;
 
-    let key = keys.pop()?;
-
-    // Convert PrivatePkcs8KeyDer -> PrivateKeyDer
-    let key: PrivateKeyDer<'static> = key.into();
+    let key: PrivateKeyDer<'static> = PrivateKeyDer::from_pem_file(key_path).ok()?;
 
     let config = ServerConfig::builder()
         .with_no_client_auth()

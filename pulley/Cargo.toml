@@ -1,43 +1,23 @@
+[package]
+name = "pulley"
+version = "0.1.2"
+edition.workspace = true
+authors.workspace = true
+description = "Pulley CLI - sync/backup jobs powered by rsync"
+keywords = ["development", "tools"]
+categories = ["development-tools"]
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+readme.workspace = true
+
 [[bin]]
 name = "pulley"
 path = "src/main.rs"
 
-[dependencies.quench-cli]
-workspace = true
-
-[dependencies.rustyline]
-workspace = true
-
-[dependencies.serde]
-workspace = true
-
-[dependencies.thiserror]
-workspace = true
-
-[dependencies.toml]
-workspace = true
-
-[package]
-categories = ["development-tools"]
-description = "Pulley CLI - sync/backup jobs powered by rsync"
-keywords = ["development", "tools"]
-name = "pulley"
-version = "0.1.2"
-
-[package.authors]
-workspace = true
-
-[package.edition]
-workspace = true
-
-[package.homepage]
-workspace = true
-
-[package.license]
-workspace = true
-
-[package.readme]
-workspace = true
-
-[package.repository]
-workspace = true
+[dependencies]
+quench-cli.workspace = true
+rustyline.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+toml.workspace = true
