@@ -145,7 +145,8 @@ fn render_versions_panel(
         .class("header")
         .child(div().class("cell").attr("data-i18n", "ui_col_version"))
         .child(div().class("cell").attr("data-i18n", "ui_col_status"))
-        .child(div().class("cell").attr("data-i18n", "ui_col_checksum"));
+        .child(div().class("cell").attr("data-i18n", "ui_col_checksum"))
+        .child(div().class("cell").attr("data-i18n", "ui_col_actions"));
 
     let mut body = div().class("body");
 
@@ -231,8 +232,7 @@ fn render_versions_panel(
     div()
         .class("panel table versions-grid")
         .child(title)
-        .child(header)
-        .child(body)
+        .child(div().class("table-scroll").child(header).child(body))
 }
 
 // ---------------------------------------------------------------------------

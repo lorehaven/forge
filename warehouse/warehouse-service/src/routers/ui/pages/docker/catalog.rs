@@ -169,14 +169,16 @@ fn render_tags_panel(
     div()
         .class("panel table tags-grid")
         .child(title)
-        .child(
-            div()
-                .class("header")
-                .child(div().class("cell").attr("data-i18n", "ui_col_tag"))
-                .child(div().class("cell").attr("data-i18n", "ui_col_digest"))
-                .child(div().class("cell").attr("data-i18n", "ui_col_media_type")),
-        )
-        .child(body)
+        .child(div().class("table-scroll")
+            .child(
+                div()
+                    .class("header")
+                    .child(div().class("cell").attr("data-i18n", "ui_col_tag"))
+                    .child(div().class("cell").attr("data-i18n", "ui_col_digest"))
+                    .child(div().class("cell").attr("data-i18n", "ui_col_media_type"))
+                    .child(div().class("cell").attr("data-i18n", "ui_col_actions")),
+            )
+            .child(body))
 }
 
 fn render_metadata_panel(repo: Option<&str>, selected_meta: Option<&TagMetadata>) -> Element {

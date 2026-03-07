@@ -17,6 +17,7 @@ fn warehouse_css_rules() -> Vec<CssRule> {
             .child(CssRule::new(".left-panel")
                 .property("flex", "1")
                 .property("min-width", "0")
+                .property("justify-content", "left !important")
                 .child(CssRule::new("h2")
                     .property("margin", "0")
                     .property("white-space", "nowrap")
@@ -72,12 +73,15 @@ fn warehouse_css_rules() -> Vec<CssRule> {
                     .child(CssRule::new("&").property("grid-template-rows", "minmax(20rem, auto) minmax(14rem, auto)")),
             ),
         CssRule::new(".panel")
-            .property("min-width", "0")
-            .property("min-height", "0")
             .property("border", "0.1rem solid var(--bs-gray-700)")
             .property("border-radius", "0.3rem")
             .property("background-color", "var(--bs-gray-900)")
-            .property("overflow", "auto"),
+            .property("display", "flex")
+            .property("flex-direction", "column")
+            .property("min-height", "0")
+            .property("overflow", "hidden"),
+        CssRule::new(".split-left.panel,\n.split-right .right-top > .panel,\n.split-right .right-bottom > .panel")
+            .property("height", "100%"),
         CssRule::new(".panel-title")
             .property("padding", "0.75rem 1rem")
             .property("font-weight", "600")
@@ -116,20 +120,49 @@ fn warehouse_css_rules() -> Vec<CssRule> {
             .property("flex-direction", "column")
             .property("min-height", "0")
             .property("height", "100%")
-            .child(CssRule::new(".header").property("display", "grid"))
-            .child(
-                CssRule::new(".body")
-                    .property("flex", "1 1 auto")
-                    .property("overflow", "auto")
-                    .property("min-height", "0"),
-            ),
+            .child(CssRule::new(".body").property("flex", "1 1 auto").property("min-height", "0")),
+        CssRule::new(".table .cell")
+            .property("min-width", "0")
+            .property("overflow", "hidden")
+            .property("white-space", "nowrap")
+            .property("text-overflow", "ellipsis"),
+        CssRule::new(".table .cell > *")
+            .property("display", "block")
+            .property("min-width", "0")
+            .property("max-width", "100%")
+            .property("overflow", "hidden")
+            .property("white-space", "nowrap")
+            .property("text-overflow", "ellipsis"),
+        CssRule::new(".table .cell.actions,\n.table .cell.actions > *")
+            .property("overflow", "visible")
+            .property("white-space", "normal")
+            .property("text-overflow", "clip"),
+        CssRule::new(".table-scroll")
+            .property("display", "flex")
+            .property("flex-direction", "column")
+            .property("flex", "1 1 auto")
+            .property("min-height", "0")
+            .property("overflow-x", "auto")
+            .property("overflow-y", "auto"),
+        CssRule::new(".table .header")
+            .property("position", "sticky")
+            .property("top", "0")
+            .property("z-index", "1")
+            .property("padding-right", "0.3rem"),
+        CssRule::new(".tags-grid .header,\n.tags-grid .body,\n.versions-grid .header,\n.versions-grid .body")
+            .property("min-width", "100%")
+            .property("width", "max(100%, var(--table-min-width, 100%))"),
         // Docker tags grid
+        CssRule::new(".tags-grid").property("--table-min-width", "66rem"),
         CssRule::new(".tags-grid")
             .child(CssRule::new(".header,\n.body > .row").property("display", "grid"))
-            .child(CssRule::new(".header").property("grid-template-columns", "2fr 2fr 3fr 1fr"))
+            .child(
+                CssRule::new(".header")
+                    .property("grid-template-columns", "minmax(12rem, 2fr) minmax(14rem, 2fr) minmax(18rem, 3fr) minmax(7rem, 1fr)"),
+            )
             .child(
                 CssRule::new(".body > .row")
-                    .property("grid-template-columns", "2fr 2fr 3fr 1fr")
+                    .property("grid-template-columns", "minmax(12rem, 2fr) minmax(14rem, 2fr) minmax(18rem, 3fr) minmax(7rem, 1fr)")
                     .child(CssRule::new("&.active").property("background-color", "var(--bs-gray-800)"))
                     .child(
                         CssRule::new("&:not(:last-child)")
@@ -143,12 +176,16 @@ fn warehouse_css_rules() -> Vec<CssRule> {
                     .property("align-items", "center"),
             ),
         // Crates versions grid  – version | status | checksum
+        CssRule::new(".versions-grid").property("--table-min-width", "56rem"),
         CssRule::new(".versions-grid")
             .child(CssRule::new(".header,\n.body > .row").property("display", "grid"))
-            .child(CssRule::new(".header").property("grid-template-columns", "2fr 1fr 3fr 1fr"))
+            .child(
+                CssRule::new(".header")
+                    .property("grid-template-columns", "minmax(12rem, 2fr) minmax(9rem, 1fr) minmax(16rem, 3fr) minmax(7rem, 1fr)"),
+            )
             .child(
                 CssRule::new(".body > .row")
-                    .property("grid-template-columns", "2fr 1fr 3fr 1fr")
+                    .property("grid-template-columns", "minmax(12rem, 2fr) minmax(9rem, 1fr) minmax(16rem, 3fr) minmax(7rem, 1fr)")
                     .child(CssRule::new("&.active").property("background-color", "var(--bs-gray-800)"))
                     .child(
                         CssRule::new("&:not(:last-child)")
@@ -162,15 +199,16 @@ fn warehouse_css_rules() -> Vec<CssRule> {
                     .property("align-items", "center"),
             ),
         // Files entries grid
+        CssRule::new(".file-grid").property("--table-min-width", "68rem"),
         CssRule::new(".file-grid")
             .child(CssRule::new(".header,\n.body > .row").property("display", "grid"))
             .child(
                 CssRule::new(".header")
-                    .property("grid-template-columns", "0.5fr 3fr 1fr 1fr 2fr"),
+                    .property("grid-template-columns", "minmax(0, 4rem) minmax(0, 24rem) minmax(0, 10rem) minmax(0, 10rem) minmax(0, 20rem)"),
             )
             .child(
                 CssRule::new(".body > .row")
-                    .property("grid-template-columns", "0.5fr 3fr 1fr 1fr 2fr")
+                    .property("grid-template-columns", "minmax(0, 4rem) minmax(0, 24rem) minmax(0, 10rem) minmax(0, 10rem) minmax(0, 20rem)")
                     .property("cursor", "pointer")
                     .child(
                         CssRule::new("&:not(:last-child)")
@@ -210,16 +248,17 @@ fn warehouse_css_rules() -> Vec<CssRule> {
             .property("padding", "0.75rem 1rem")
             .property("display", "flex")
             .property("flex-direction", "column")
-            .property("gap", "0.5rem"),
+            .property("gap", "0.5rem")
+            .property("flex", "1 1 auto")
+            .property("min-height", "0")
+            .property("overflow", "auto"),
         CssRule::new(".meta-row")
             .property("display", "grid")
-            .property("grid-template-columns", "10rem 1fr")
-            .property("gap", "0.75rem")
-            .property("padding", "0.35rem 0")
-            .child(
-                CssRule::new("&:not(:last-child)")
-                    .property("border-bottom", "0.1rem solid var(--bs-gray-800)"),
-            ),
+            .property("grid-template-columns", "10rem minmax(0, 1fr)")
+            .property("min-width", "100%")
+            .property("width", "max-content")
+            .property(r"gap", "0.75rem")
+            .property("padding", "0.35rem 0"),
         CssRule::new(".meta-label").property("color", "var(--bs-gray-500)"),
         CssRule::new(".mono").property("font-family", "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace"),
         CssRule::new(".empty")

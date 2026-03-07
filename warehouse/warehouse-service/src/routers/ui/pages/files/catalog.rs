@@ -355,8 +355,7 @@ fn render_entries_panel(
         .class("panel table file-grid")
         .child(title)
         .child(toolbar)
-        .child(header)
-        .child(body)
+        .child(div().class("table-scroll").child(header).child(body))
 }
 
 fn render_metadata_panel(
