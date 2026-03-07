@@ -13,6 +13,15 @@ pub fn ensure_warehouse_css() {
 
 fn warehouse_css_rules() -> Vec<CssRule> {
     vec![
+        CssRule::new("header")
+            .child(CssRule::new(".left-panel")
+                .property("flex", "1")
+                .property("min-width", "0")
+                .child(CssRule::new("h2")
+                    .property("margin", "0")
+                    .property("white-space", "nowrap")
+                    .property("overflow", "hidden")
+                    .property("text-overflow", "ellipsis"))),
         CssRule::new(".content")
             .property("overflow-y", "hidden")
             .property("padding", "1rem"),
@@ -52,21 +61,23 @@ fn warehouse_css_rules() -> Vec<CssRule> {
             .child(CssRule::new("a.button").property("padding", "0.6rem 1rem")),
         CssRule::new(".split-left,\n.split-right").property("min-height", "0"),
         CssRule::new(".split-right")
+            .property("min-width", "0")
             .property("display", "grid")
             .property("grid-template-rows", "minmax(0, 1fr) minmax(0, 1fr)")
             .property("gap", "1rem")
+            .child(CssRule::new(".right-top, .right-bottom")
+                .property("min-width", "0"))
             .child(
                 CssRule::new("@media screen and (max-width: 1024px)")
                     .child(CssRule::new("&").property("grid-template-rows", "minmax(20rem, auto) minmax(14rem, auto)")),
             ),
         CssRule::new(".panel")
-            .property("height", "100%")
+            .property("min-width", "0")
+            .property("min-height", "0")
             .property("border", "0.1rem solid var(--bs-gray-700)")
             .property("border-radius", "0.3rem")
             .property("background-color", "var(--bs-gray-900)")
-            .property("display", "flex")
-            .property("flex-direction", "column")
-            .property("overflow", "hidden"),
+            .property("overflow", "auto"),
         CssRule::new(".panel-title")
             .property("padding", "0.75rem 1rem")
             .property("font-weight", "600")
@@ -240,7 +251,6 @@ fn warehouse_css_rules() -> Vec<CssRule> {
             .property("display", "flex")
             .property("flex-direction", "column")
             .property("gap", "2rem")
-            .property("width", "100%")
             .property("max-width", "84rem")
             .property("margin", "0")
             .property("padding", "3rem"),

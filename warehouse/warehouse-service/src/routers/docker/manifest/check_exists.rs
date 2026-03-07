@@ -39,6 +39,5 @@ pub async fn handle(req: HttpRequest, path: web::Path<(String, String)>) -> impl
     HttpResponse::Ok()
         .append_header(("Content-Type", resolved.media_type))
         .append_header(("Docker-Content-Digest", resolved.digest))
-        .append_header(("Content-Length", resolved.data.len()))
-        .finish()
+        .body(resolved.data)
 }
