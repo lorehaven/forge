@@ -3,8 +3,6 @@ use crate::routers::docker::{
     manifest_path, repository_path, validate_digest, validate_tag_reference,
 };
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
-use serde::Deserialize;
-use sha2::{Digest, Sha256};
 
 #[utoipa::path(
     get,
@@ -142,61 +140,63 @@ pub(super) async fn resolve_manifest_response(
         .and_then(|h| h.to_str().ok())
         .unwrap_or("");
 
-    let mut response_data = data;
-    let mut response_media_type = stored_media_type;
-    let mut skip_negotiation = false;
-
-    // If a manifest list/index is requested, resolve and return the matching image manifest.
-    if is_index_media_type(stored_media_type) && accept_requests_index(accept) {
-        let platform = client_platform(req);
-        let resolved = match resolve_platform_manifest(&response_data, &platform).await {
-            Ok(Some(v)) => v,
-            Ok(None) => {
-                return Err(docker_error::response(
-                    actix_web::http::StatusCode::NOT_FOUND,
-                    docker_error::MANIFEST_UNKNOWN,
-                    "no manifest found for requested platform",
-                ));
-            }
-            Err(()) => {
-                return Err(docker_error::response(
-                    actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-                    docker_error::UNSUPPORTED,
-                    "manifest index resolution failed",
-                ));
-            }
-        };
-
-        response_data = resolved.data;
-        response_media_type = resolved.media_type;
-        skip_negotiation = true;
-    }
-
-    let chosen = if skip_negotiation {
-        response_media_type
-    } else {
-        match negotiate_media_type(accept, &[response_media_type]) {
-            Some(mt) => mt,
-            None => {
-                return Err(docker_error::response(
-                    actix_web::http::StatusCode::NOT_ACCEPTABLE,
-                    docker_error::UNSUPPORTED,
-                    "requested media type is not supported",
-                ));
-            }
+    let chosen = match negotiate_media_type(accept, &[stored_media_type]) {
+        Some(mt) => mt,
+        None => {
+            return Err(docker_error::response(
+                actix_web::http::StatusCode::NOT_ACCEPTABLE,
+                docker_error::UNSUPPORTED,
+                "requested media type is not supported",
+            ));
         }
     };
 
-    // Recompute digest
-    let mut hasher = Sha256::new();
-    hasher.update(&response_data);
-    let computed = format!("sha256:{:x}", hasher.finalize());
-
     Ok(ResolvedManifestResponse {
-        data: response_data,
+        data,
         media_type: chosen,
-        digest: computed,
+        digest,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_docker_manifest_list_for_oci_index() {
+        let accept = "application/vnd.docker.distribution.manifest.list.v2+json";
+
+        let negotiated = negotiate_media_type(accept, &[OCI_IMAGE_INDEX_V1]);
+
+        assert_eq!(negotiated, Some(OCI_IMAGE_INDEX_V1));
+    }
+
+    #[test]
+    fn accepts_docker_manifest_for_oci_manifest() {
+        let accept = "application/vnd.docker.distribution.manifest.v2+json";
+
+        let negotiated = negotiate_media_type(accept, &[OCI_IMAGE_MANIFEST_V1]);
+
+        assert_eq!(negotiated, Some(OCI_IMAGE_MANIFEST_V1));
+    }
+
+    #[test]
+    fn prefers_specific_media_type_over_wildcard() {
+        let accept = "*/*;q=0.5,application/vnd.oci.image.manifest.v1+json;q=1";
+
+        let negotiated = negotiate_media_type(accept, &[OCI_IMAGE_MANIFEST_V1]);
+
+        assert_eq!(negotiated, Some(OCI_IMAGE_MANIFEST_V1));
+    }
+
+    #[test]
+    fn rejects_non_matching_media_type() {
+        let accept = "application/json";
+
+        let negotiated = negotiate_media_type(accept, &[DOCKER_MANIFEST_V2]);
+
+        assert_eq!(negotiated, None);
+    }
 }
 
 const DOCKER_MANIFEST_V2: &str = "application/vnd.docker.distribution.manifest.v2+json";
@@ -348,140 +348,4 @@ fn parse_accept(header: &str) -> Vec<MediaRange> {
             Some(MediaRange { value, q })
         })
         .collect()
-}
-
-#[derive(Debug, Clone)]
-struct ClientPlatform {
-    os: String,
-    architecture: String,
-    variant: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct ManifestIndex {
-    manifests: Vec<ManifestDescriptor>,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ManifestDescriptor {
-    digest: String,
-    media_type: String,
-    platform: Option<DescriptorPlatform>,
-}
-
-#[derive(Deserialize)]
-struct DescriptorPlatform {
-    os: String,
-    architecture: String,
-    variant: Option<String>,
-}
-
-struct ResolvedIndexManifest {
-    data: Vec<u8>,
-    media_type: &'static str,
-}
-
-fn is_index_media_type(media_type: &str) -> bool {
-    media_type == DOCKER_MANIFEST_LIST_V2 || media_type == OCI_IMAGE_INDEX_V1
-}
-
-fn accept_requests_index(accept: &str) -> bool {
-    if accept.is_empty() {
-        return false;
-    }
-
-    parse_accept(accept).into_iter().any(|range| {
-        media_match(&range.value, DOCKER_MANIFEST_LIST_V2)
-            || media_match(&range.value, OCI_IMAGE_INDEX_V1)
-    })
-}
-
-fn client_platform(req: &HttpRequest) -> ClientPlatform {
-    const PLATFORM_HEADERS: [&str; 2] = ["Docker-Platform", "X-Docker-Platform"];
-
-    for header_name in PLATFORM_HEADERS {
-        if let Some(value) = req.headers().get(header_name).and_then(|v| v.to_str().ok())
-            && let Some(platform) = parse_platform(value)
-        {
-            return platform;
-        }
-    }
-
-    ClientPlatform {
-        os: "linux".to_string(),
-        architecture: "amd64".to_string(),
-        variant: None,
-    }
-}
-
-fn parse_platform(value: &str) -> Option<ClientPlatform> {
-    let mut parts = value.split('/');
-    let os = parts.next()?.trim();
-    let architecture = parts.next()?.trim();
-    let variant = parts.next().map(|v| v.trim().to_string());
-
-    if os.is_empty() || architecture.is_empty() || parts.next().is_some() {
-        return None;
-    }
-
-    Some(ClientPlatform {
-        os: os.to_string(),
-        architecture: architecture.to_string(),
-        variant,
-    })
-}
-
-async fn resolve_platform_manifest(
-    index_data: &[u8],
-    platform: &ClientPlatform,
-) -> Result<Option<ResolvedIndexManifest>, ()> {
-    let index: ManifestIndex = serde_json::from_slice(index_data).map_err(|_| ())?;
-
-    let descriptor = index
-        .manifests
-        .iter()
-        .find(|desc| descriptor_matches_platform(desc, platform));
-
-    let descriptor = match descriptor {
-        Some(d) => d,
-        None => return Ok(None),
-    };
-
-    if !validate_digest(&descriptor.digest) {
-        return Err(());
-    }
-
-    let media_type = detect_media_type_value(&descriptor.media_type).ok_or(())?;
-    let manifest_path = manifest_path(&descriptor.digest).ok_or(())?;
-    let data = tokio::fs::read(manifest_path).await.map_err(|_| ())?;
-
-    Ok(Some(ResolvedIndexManifest { data, media_type }))
-}
-
-fn descriptor_matches_platform(desc: &ManifestDescriptor, target: &ClientPlatform) -> bool {
-    let platform = match &desc.platform {
-        Some(p) => p,
-        None => return false,
-    };
-
-    if platform.os != target.os || platform.architecture != target.architecture {
-        return false;
-    }
-
-    match (&target.variant, &platform.variant) {
-        (Some(a), Some(b)) => a == b,
-        (Some(_), None) => false,
-        (None, _) => true,
-    }
-}
-
-fn detect_media_type_value(media_type: &str) -> Option<&'static str> {
-    match media_type {
-        DOCKER_MANIFEST_V2 => Some(DOCKER_MANIFEST_V2),
-        OCI_IMAGE_MANIFEST_V1 => Some(OCI_IMAGE_MANIFEST_V1),
-        DOCKER_MANIFEST_LIST_V2 => Some(DOCKER_MANIFEST_LIST_V2),
-        OCI_IMAGE_INDEX_V1 => Some(OCI_IMAGE_INDEX_V1),
-        _ => None,
-    }
 }
