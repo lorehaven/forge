@@ -140,16 +140,9 @@ pub(super) async fn resolve_manifest_response(
         .and_then(|h| h.to_str().ok())
         .unwrap_or("");
 
-    let chosen = match negotiate_media_type(accept, &[stored_media_type]) {
-        Some(mt) => mt,
-        None => {
-            return Err(docker_error::response(
-                actix_web::http::StatusCode::NOT_ACCEPTABLE,
-                docker_error::UNSUPPORTED,
-                "requested media type is not supported",
-            ));
-        }
-    };
+    // Docker clients use several manifest probe patterns across HEAD/GET requests.
+    // Prefer serving the stored manifest over failing the pull with a strict 406.
+    let chosen = negotiate_media_type(accept, &[stored_media_type]).unwrap_or(stored_media_type);
 
     Ok(ResolvedManifestResponse {
         data,
@@ -196,6 +189,16 @@ mod tests {
         let negotiated = negotiate_media_type(accept, &[DOCKER_MANIFEST_V2]);
 
         assert_eq!(negotiated, None);
+    }
+
+    #[test]
+    fn falls_back_to_stored_media_type_when_accept_does_not_match() {
+        let accept = "application/json";
+        let stored = OCI_IMAGE_MANIFEST_V1;
+
+        let chosen = negotiate_media_type(accept, &[stored]).unwrap_or(stored);
+
+        assert_eq!(chosen, stored);
     }
 }
 
