@@ -70,7 +70,7 @@ categories = ["development-tools"]
 description = "Warehouse - storage service"
 keywords = ["development", "tools"]
 name = "warehouse-service"
-version = "0.1.4"
+version = "0.1.5"
 
 [package.authors]
 workspace = true
