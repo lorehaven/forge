@@ -124,7 +124,10 @@ pub fn build(config: &config::Config, package: &str) -> Result<()> {
         .arg("-f")
         .arg(&dockerfile)
         .arg("--build-arg")
-        .arg(format!("CARGO_REGISTRIES_ENNOR_INDEX={}", ennor_registry_index()))
+        .arg(format!(
+            "CARGO_REGISTRIES_ENNOR_INDEX={}",
+            ennor_registry_index()
+        ))
         .arg("--build-arg")
         .arg(format!("PROJECT_NAME={package}"))
         .arg("--build-arg")

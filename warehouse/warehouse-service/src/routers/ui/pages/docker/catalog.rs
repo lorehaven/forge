@@ -166,10 +166,9 @@ fn render_tags_panel(
         }
     }
 
-    div()
-        .class("panel table tags-grid")
-        .child(title)
-        .child(div().class("table-scroll")
+    div().class("panel table tags-grid").child(title).child(
+        div()
+            .class("table-scroll")
             .child(
                 div()
                     .class("header")
@@ -178,7 +177,8 @@ fn render_tags_panel(
                     .child(div().class("cell").attr("data-i18n", "ui_col_media_type"))
                     .child(div().class("cell").attr("data-i18n", "ui_col_actions")),
             )
-            .child(body))
+            .child(body),
+    )
 }
 
 fn render_metadata_panel(repo: Option<&str>, selected_meta: Option<&TagMetadata>) -> Element {
