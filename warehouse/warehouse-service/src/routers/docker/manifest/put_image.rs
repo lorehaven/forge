@@ -1,8 +1,9 @@
 use crate::domain::docker_error;
 use crate::routers::docker::{
-    manifest_path, repository_path, validate_digest, validate_tag_reference,
+    blob_path, manifest_path, repository_path, validate_digest, validate_tag_reference,
 };
 use actix_web::{HttpRequest, HttpResponse, Responder, put, web};
+use serde_json::{Number, Value};
 
 const DOCKER_MANIFEST_V2: &str = "application/vnd.docker.distribution.manifest.v2+json";
 const DOCKER_MANIFEST_LIST_V2: &str = "application/vnd.docker.distribution.manifest.list.v2+json";
@@ -63,6 +64,17 @@ pub async fn handle(
             "manifest media type unsupported",
         );
     }
+
+    let body = match normalize_manifest_body(&body).await {
+        Ok(body) => body,
+        Err(message) => {
+            return docker_error::response(
+                actix_web::http::StatusCode::BAD_REQUEST,
+                docker_error::UNSUPPORTED,
+                message,
+            );
+        }
+    };
 
     // Compute manifest digest
     let mut hasher = Sha256::new();
@@ -127,6 +139,72 @@ pub async fn handle(
         .append_header(("Location", format!("/v2/{name}/manifests/{reference}")))
         .append_header(("Docker-Content-Digest", digest))
         .finish()
+}
+
+async fn normalize_manifest_body(body: &[u8]) -> Result<Vec<u8>, &'static str> {
+    let mut value: Value = serde_json::from_slice(body).map_err(|_| "invalid manifest payload")?;
+
+    if value.get("schemaVersion").and_then(Value::as_u64) != Some(2) {
+        return Err("unsupported manifest schema");
+    }
+
+    if let Some(manifests) = value.get_mut("manifests").and_then(Value::as_array_mut) {
+        for descriptor in manifests {
+            populate_descriptor_size(descriptor, DescriptorKind::Manifest).await?;
+        }
+    }
+
+    if let Some(config) = value.get_mut("config") {
+        populate_descriptor_size(config, DescriptorKind::Blob).await?;
+    }
+
+    if let Some(layers) = value.get_mut("layers").and_then(Value::as_array_mut) {
+        for layer in layers {
+            populate_descriptor_size(layer, DescriptorKind::Blob).await?;
+        }
+    }
+
+    serde_json::to_vec(&value).map_err(|_| "invalid manifest payload")
+}
+
+enum DescriptorKind {
+    Blob,
+    Manifest,
+}
+
+async fn populate_descriptor_size(
+    descriptor: &mut Value,
+    kind: DescriptorKind,
+) -> Result<(), &'static str> {
+    let Some(object) = descriptor.as_object_mut() else {
+        return Err("invalid manifest descriptor");
+    };
+
+    if object.get("size").and_then(Value::as_u64).unwrap_or(0) > 0 {
+        return Ok(());
+    }
+
+    let digest = object
+        .get("digest")
+        .and_then(Value::as_str)
+        .ok_or("manifest descriptor is missing digest")?;
+
+    if !validate_digest(digest) {
+        return Err("manifest descriptor has invalid digest");
+    }
+
+    let path = match kind {
+        DescriptorKind::Blob => blob_path(digest),
+        DescriptorKind::Manifest => manifest_path(digest),
+    }
+    .ok_or("manifest descriptor has invalid digest")?;
+
+    let metadata = tokio::fs::metadata(path)
+        .await
+        .map_err(|_| "manifest references missing content")?;
+
+    object.insert("size".to_string(), Value::Number(Number::from(metadata.len())));
+    Ok(())
 }
 
 fn normalize_media_type(raw: &str) -> Option<&str> {
