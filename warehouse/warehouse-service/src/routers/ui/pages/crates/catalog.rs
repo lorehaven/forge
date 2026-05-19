@@ -1,7 +1,9 @@
 use super::storage::{IndexDep, IndexRecord, list_crates, list_versions};
 use crate::domain::jwt::JwtConfig;
 use crate::routers::ui::PageQuery;
-use crate::routers::ui::common::{UiPageKind, is_ui_authenticated, render_page, ui_login_redirect};
+use crate::routers::ui::common::{
+    UiPageKind, is_ui_authenticated, render_page, ui_login_redirect, ui_path,
+};
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
 use quench_web::prelude::*;
 
@@ -113,7 +115,7 @@ fn render_crate_list(crates: &[String], selected: Option<&str>) -> Element {
 
     let mut list = ul().class("repo-tree"); // reuse repo-tree styles for identical look
     for name in crates {
-        let href = format!("/ui/crates/catalog?repo={name}");
+        let href = format!("{}?repo={name}", ui_path("/crates/catalog"));
         let class = if Some(name.as_str()) == selected {
             "repo-link active"
         } else {
@@ -166,7 +168,11 @@ fn render_versions_panel(
         // Show newest first
         for record in versions.iter().rev() {
             let Some(crate_name) = krate else { break };
-            let href = format!("/ui/crates/catalog?repo={crate_name}&tag={}", record.vers);
+            let href = format!(
+                "{}?repo={crate_name}&tag={}",
+                ui_path("/crates/catalog"),
+                record.vers
+            );
             let row_class = if Some(record.vers.as_str()) == active_version {
                 "row active"
             } else {

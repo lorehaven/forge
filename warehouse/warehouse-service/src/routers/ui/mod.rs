@@ -74,7 +74,7 @@ async fn crates_root(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) 
         return common::ui_login_redirect();
     }
     HttpResponse::PermanentRedirect()
-        .append_header(("Location", with_base_path("/ui/crates/index")))
+        .append_header(("Location", with_base_path("/ui/crates/catalog")))
         .finish()
 }
 
@@ -112,7 +112,7 @@ async fn crates_root_slash(
         return common::ui_login_redirect();
     }
     HttpResponse::PermanentRedirect()
-        .append_header(("Location", with_base_path("/ui/crates/index")))
+        .append_header(("Location", with_base_path("/ui/crates/catalog")))
         .finish()
 }
 

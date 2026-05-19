@@ -1,3 +1,5 @@
+use crate::routers::with_base_path;
+
 pub fn ensure_crates_js() {
     let js = crates_js();
 
@@ -6,6 +8,7 @@ pub fn ensure_crates_js() {
 }
 
 fn crates_js() -> String {
+    let yank_base = with_base_path("/api/v1/crates");
     r#"
 // ---- yank ----
 function handleYankClick(event) {
@@ -18,7 +21,7 @@ function handleYankClick(event) {
         return;
     }
 
-    fetch(`/api/v1/crates/${crateName}/${version}/yank`, {
+    fetch(`__CRATES_API_BASE__/${crateName}/${version}/yank`, {
         method: 'DELETE',
         headers: {
             'Content-Type': 'application/json'
@@ -48,7 +51,7 @@ function handleUnyankClick(event) {
         return;
     }
 
-    fetch(`/api/v1/crates/${crateName}/${version}/unyank`, {
+    fetch(`__CRATES_API_BASE__/${crateName}/${version}/unyank`, {
         method: 'PUT',
         headers: {
             'Content-Type': 'application/json'
@@ -67,5 +70,5 @@ function handleUnyankClick(event) {
     });
 }
     "#
-    .to_string()
+    .replace("__CRATES_API_BASE__", &yank_base)
 }

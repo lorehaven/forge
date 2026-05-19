@@ -3,7 +3,9 @@ use crate::routers::docker::registry::storage::{
     TagListError, TagMetadata, list_repositories, list_tag_metadata_for_repository,
 };
 use crate::routers::ui::PageQuery;
-use crate::routers::ui::common::{UiPageKind, is_ui_authenticated, render_page, ui_login_redirect};
+use crate::routers::ui::common::{
+    UiPageKind, is_ui_authenticated, render_page, ui_login_redirect, ui_path,
+};
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
 use quench_web::prelude::*;
 use std::collections::BTreeMap;
@@ -128,7 +130,11 @@ fn render_tags_panel(
     } else {
         for meta in tags_meta {
             let Some(repo_name) = repo else { break };
-            let link = format!("/ui/docker/catalog?repo={repo_name}&tag={}", meta.tag);
+            let link = format!(
+                "{}?repo={repo_name}&tag={}",
+                ui_path("/docker/catalog"),
+                meta.tag
+            );
             let row_class = if Some(meta.tag.as_str()) == active_tag {
                 "row active"
             } else {
@@ -262,9 +268,12 @@ fn render_repo_node(name: &str, node: &RepoTreeNode, selected_repo: Option<&str>
                 "repo-link"
             };
             item = item.child(
-                a().attr("href", &format!("/ui/docker/catalog?repo={repo}"))
-                    .class(class_name)
-                    .text(name),
+                a().attr(
+                    "href",
+                    &format!("{}?repo={repo}", ui_path("/docker/catalog")),
+                )
+                .class(class_name)
+                .text(name),
             );
         } else {
             item = item.child(span().text(name));

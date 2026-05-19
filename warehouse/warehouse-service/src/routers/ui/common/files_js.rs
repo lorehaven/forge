@@ -1,3 +1,5 @@
+use crate::routers::with_base_path;
+
 pub fn ensure_files_js() {
     let js = files_js();
 
@@ -6,6 +8,7 @@ pub fn ensure_files_js() {
 }
 
 fn files_js() -> String {
+    let files_api_base = with_base_path("/api/v1/files");
     r#"
 function currentDir() {
     const el = document.getElementById('current-path');
@@ -29,7 +32,7 @@ async function uploadFiles(storageName) {
     const basePath = currentDir();
     for (const file of input.files) {
         const target = basePath ? `${basePath}/${file.name}` : file.name;
-        const endpoint = `/api/v1/files/${storageName}/file?path=${encodeURIComponent(target)}`;
+        const endpoint = `__FILES_API_BASE__/${storageName}/file?path=${encodeURIComponent(target)}`;
         const response = await fetch(endpoint, {
             method: 'PUT',
             body: file
@@ -55,7 +58,7 @@ async function bulkDelete(storageName) {
     const paths = selectedPaths();
     if (paths.length === 0) return;
 
-    const response = await fetch(`/api/v1/files/${storageName}/bulk`, {
+    const response = await fetch(`__FILES_API_BASE__/${storageName}/bulk`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ paths })
@@ -69,7 +72,7 @@ async function createFolder(storageName, currentPath) {
     if (!name) return;
 
     const path = currentPath ? `${currentPath}/${name}` : name;
-    const response = await fetch(`/api/v1/files/${storageName}/folder?path=${encodeURIComponent(path)}`, {
+    const response = await fetch(`__FILES_API_BASE__/${storageName}/folder?path=${encodeURIComponent(path)}`, {
         method: 'POST'
     });
     if (response.ok) location.reload();
@@ -77,19 +80,19 @@ async function createFolder(storageName, currentPath) {
 
 async function deletePath(storageName, path, isDir) {
     const endpoint = isDir ? 'folder' : 'file';
-    const response = await fetch(`/api/v1/files/${storageName}/${endpoint}?path=${encodeURIComponent(path)}`, {
+    const response = await fetch(`__FILES_API_BASE__/${storageName}/${endpoint}?path=${encodeURIComponent(path)}`, {
         method: 'DELETE'
     });
     if (response.ok) location.reload();
 }
 
 function previewPath(storageName, path) {
-    const url = `/api/v1/files/${storageName}/preview?path=${encodeURIComponent(path)}`;
+    const url = `__FILES_API_BASE__/${storageName}/preview?path=${encodeURIComponent(path)}`;
     window.open(url, '_blank');
 }
 
 function downloadPath(storageName, path) {
-    const url = `/api/v1/files/${storageName}/download?path=${encodeURIComponent(path)}`;
+    const url = `__FILES_API_BASE__/${storageName}/download?path=${encodeURIComponent(path)}`;
     window.location.assign(url);
 }
 
@@ -97,7 +100,7 @@ async function bulkDownload(storageName) {
     const paths = selectedPaths();
     if (paths.length === 0) return;
 
-    const response = await fetch(`/api/v1/files/${storageName}/bulk-download`, {
+    const response = await fetch(`__FILES_API_BASE__/${storageName}/bulk-download`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ paths })
@@ -116,5 +119,5 @@ async function bulkDownload(storageName) {
     window.URL.revokeObjectURL(url);
 }
 "#
-    .to_string()
+    .replace("__FILES_API_BASE__", &files_api_base)
 }

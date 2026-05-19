@@ -26,11 +26,11 @@ static UI_SHELL_DOCKER: LazyLock<AppShell> = LazyLock::new(|| {
         .header(ui_header(Some("ui_header_docker"), true, true))
         .links(vec![Link::new(
             "stylesheet",
-            "/ui/assets/css/warehouse.css",
+            &ui_asset_path("/css/warehouse.css"),
         )])
-        .scripts(vec![Script::new("/ui/assets/js/docker.js")])
+        .scripts(vec![Script::new(&ui_asset_path("/js/docker.js"))])
         .with_nav(false)
-        .resources_prefix("/ui".to_string())
+        .resources_prefix(ui_path(""))
         .build()
 });
 
@@ -46,11 +46,11 @@ static UI_SHELL_CRATES: LazyLock<AppShell> = LazyLock::new(|| {
         .header(ui_header(Some("ui_header_crates"), true, true))
         .links(vec![Link::new(
             "stylesheet",
-            "/ui/assets/css/warehouse.css",
+            &ui_asset_path("/css/warehouse.css"),
         )])
-        .scripts(vec![Script::new("/ui/assets/js/crates.js")])
+        .scripts(vec![Script::new(&ui_asset_path("/js/crates.js"))])
         .with_nav(false)
-        .resources_prefix("/ui".to_string())
+        .resources_prefix(ui_path(""))
         .build()
 });
 
@@ -66,11 +66,11 @@ static UI_SHELL_FILES: LazyLock<AppShell> = LazyLock::new(|| {
         .header(ui_header(Some("ui_header_files"), true, true))
         .links(vec![Link::new(
             "stylesheet",
-            "/ui/assets/css/warehouse.css",
+            &ui_asset_path("/css/warehouse.css"),
         )])
-        .scripts(vec![Script::new("/ui/assets/js/files.js")])
+        .scripts(vec![Script::new(&ui_asset_path("/js/files.js"))])
         .with_nav(false)
-        .resources_prefix("/ui".to_string())
+        .resources_prefix(ui_path(""))
         .build()
 });
 
@@ -85,10 +85,10 @@ static UI_SHELL_HOME: LazyLock<AppShell> = LazyLock::new(|| {
         .header(ui_header(Some("ui_header_home"), true, true))
         .links(vec![Link::new(
             "stylesheet",
-            "/ui/assets/css/warehouse.css",
+            &ui_asset_path("/css/warehouse.css"),
         )])
         .with_nav(false)
-        .resources_prefix("/ui".to_string())
+        .resources_prefix(ui_path(""))
         .build()
 });
 
@@ -103,10 +103,10 @@ static UI_SHELL_AUTH: LazyLock<AppShell> = LazyLock::new(|| {
         .header(ui_header(None, false, false))
         .links(vec![Link::new(
             "stylesheet",
-            "/ui/assets/css/warehouse.css",
+            &ui_asset_path("/css/warehouse.css"),
         )])
         .with_nav(false)
-        .resources_prefix("/ui".to_string())
+        .resources_prefix(ui_path(""))
         .build()
 });
 
@@ -122,16 +122,24 @@ fn ui_header(title_key: Option<&str>, show_home: bool, show_logout: bool) -> Ele
             div()
                 .class("right-panel")
                 .child_opt(show_home.then(|| {
-                    a().attr("href", "/ui/home")
+                    a().attr("href", &ui_path("/home"))
                         .class("button")
                         .attr("data-i18n", "ui_home_button")
                 }))
                 .child_opt(show_logout.then(|| {
-                    a().attr("href", "/ui/logout")
+                    a().attr("href", &ui_path("/logout"))
                         .class("button")
                         .attr("data-i18n", "ui_logout")
                 })),
         )
+}
+
+pub(super) fn ui_path(path: &str) -> String {
+    with_base_path(&format!("/ui{path}"))
+}
+
+pub(super) fn ui_asset_path(path: &str) -> String {
+    ui_path(&format!("/assets{path}"))
 }
 
 #[get("/assets/{path:.*}")]

@@ -1,6 +1,9 @@
 use crate::domain::jwt::JwtConfig;
 use crate::routers::files::{list_directory, list_storage_infos};
-use crate::routers::ui::common::{UiPageKind, is_ui_authenticated, render_page, ui_login_redirect};
+use crate::routers::ui::common::{
+    UiPageKind, is_ui_authenticated, render_page, ui_login_redirect, ui_path,
+};
+use crate::routers::with_base_path;
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
 use quench_web::prelude::*;
 use serde::Deserialize;
@@ -110,7 +113,11 @@ fn render_storage_list(
 
     let mut list = ul().class("repo-tree");
     for storage in storages {
-        let href = format!("/ui/files/catalog?storage={}&path=", storage.name);
+        let href = format!(
+            "{}?storage={}&path=",
+            ui_path("/files/catalog"),
+            storage.name
+        );
         let class = if Some(storage.name.as_str()) == selected {
             "repo-link active"
         } else {
@@ -147,9 +154,12 @@ fn render_entries_panel(
     if let Some(storage_name) = storage {
         let parent_link = parent_path(path).map(|parent| {
             let href = if parent.is_empty() {
-                format!("/ui/files/catalog?storage={storage_name}")
+                format!("{}?storage={storage_name}", ui_path("/files/catalog"))
             } else {
-                format!("/ui/files/catalog?storage={storage_name}&path={parent}")
+                format!(
+                    "{}?storage={storage_name}&path={parent}",
+                    ui_path("/files/catalog")
+                )
             };
             a().attr("href", &href)
                 .class("button")
@@ -181,7 +191,8 @@ fn render_entries_panel(
                 a().attr(
                     "href",
                     &format!(
-                        "/api/v1/files/{storage_name}/download?path={}",
+                        "{}/download?path={}",
+                        with_base_path(&format!("/api/v1/files/{storage_name}")),
                         url_encode(path)
                     ),
                 )
@@ -240,12 +251,14 @@ fn render_entries_panel(
         for entry in entries {
             let item_url = if path.is_empty() {
                 format!(
-                    "/ui/files/catalog?storage={storage_name}&item={}",
+                    "{}?storage={storage_name}&item={}",
+                    ui_path("/files/catalog"),
                     url_encode(&entry.path)
                 )
             } else {
                 format!(
-                    "/ui/files/catalog?storage={storage_name}&path={}&item={}",
+                    "{}?storage={storage_name}&path={}&item={}",
+                    ui_path("/files/catalog"),
                     url_encode(path),
                     url_encode(&entry.path)
                 )
@@ -257,7 +270,8 @@ fn render_entries_panel(
             };
             let open_link = if entry.is_dir {
                 let href = format!(
-                    "/ui/files/catalog?storage={storage_name}&path={}",
+                    "{}?storage={storage_name}&path={}",
+                    ui_path("/files/catalog"),
                     url_encode(&entry.path)
                 );
                 a().attr("href", &href).class("tag-link").text(&entry.name)

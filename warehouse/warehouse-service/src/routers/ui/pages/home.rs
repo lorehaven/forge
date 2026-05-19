@@ -1,5 +1,5 @@
 use crate::routers::files::list_storage_infos;
-use crate::routers::ui::common::{UiPageKind, render_page};
+use crate::routers::ui::common::{UiPageKind, render_page, ui_path};
 use crate::routers::{crates_enabled, docker_enabled, files_enabled};
 use actix_web::{HttpResponse, Responder, get};
 use quench_web::prelude::*;
@@ -23,7 +23,7 @@ fn render_home_page() -> HttpResponse {
     if docker_enabled() {
         has_service_cards = true;
         service_cards = service_cards.child(service_card(
-            "/ui/docker/catalog",
+            &ui_path("/docker/catalog"),
             "ui_service_docker_title",
             "ui_service_docker_desc",
             "home-card-docker",
@@ -33,7 +33,7 @@ fn render_home_page() -> HttpResponse {
     if crates_enabled() {
         has_service_cards = true;
         service_cards = service_cards.child(service_card(
-            "/ui/crates/catalog",
+            &ui_path("/crates/catalog"),
             "ui_service_crates_title",
             "ui_service_crates_desc",
             "home-card-crates",
@@ -46,7 +46,7 @@ fn render_home_page() -> HttpResponse {
             file_cards = file_cards.child(
                 a().attr(
                     "href",
-                    &format!("/ui/files/catalog?storage={}", storage.name),
+                    &format!("{}?storage={}", ui_path("/files/catalog"), storage.name),
                 )
                 .class("home-card home-card-files")
                 .child(

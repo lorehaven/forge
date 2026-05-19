@@ -1,5 +1,5 @@
 use crate::domain::jwt::JwtConfig;
-use crate::routers::ui::common::{UI_SESSION_COOKIE, UiPageKind, render_page};
+use crate::routers::ui::common::{UI_SESSION_COOKIE, UiPageKind, render_page, ui_path};
 use crate::routers::with_base_path;
 use actix_web::cookie::{Cookie, SameSite};
 use actix_web::{HttpResponse, Responder, get, post, web};
@@ -88,7 +88,7 @@ pub(super) async fn logout() -> impl Responder {
 fn render_login_page(error: bool) -> HttpResponse {
     let mut login_form = form()
         .attr("method", "post")
-        .attr("action", "/ui/login")
+        .attr("action", &ui_path("/login"))
         .child(
             label()
                 .attr("for", "username")
