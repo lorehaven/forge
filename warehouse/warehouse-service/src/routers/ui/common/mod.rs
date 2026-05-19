@@ -1,4 +1,5 @@
 use crate::domain::jwt::JwtConfig;
+use crate::routers::with_base_path;
 use actix_web::{HttpResponse, Responder, get, http::header::ContentType, web};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use quench_web::prelude::*;
@@ -178,7 +179,7 @@ pub(super) enum UiPageKind {
 
 pub(super) fn ui_login_redirect() -> HttpResponse {
     HttpResponse::Found()
-        .append_header(("Location", "/ui/login"))
+        .append_header(("Location", with_base_path("/ui/login")))
         .finish()
 }
 

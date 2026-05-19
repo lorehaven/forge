@@ -29,31 +29,32 @@ async fn main() -> std::io::Result<()> {
 
     let base_path = envmnt::get_or("BASE_PATH", "/");
     let server = HttpServer::new(move || {
-        App::new().service(
-            web::scope(&base_path)
-                .app_data(web::PayloadConfig::new(max_body_bytes))
-                .app_data(web::Data::new(jwt_config.clone()))
-                // Middleware
-                .wrap(middleware::limits::WarehouseLimits::new(
-                    max_concurrent_uploads,
-                ))
-                .wrap(middleware::auth::WarehouseAuth::new(jwt_config.clone()))
-                .wrap(middleware::logger::FilteredLogger)
-                // Register Actix services
-                .service(routers::admin::scope())
-                .service(routers::crates::scope())
-                .service(routers::crates::scope_index())
-                .service(routers::files::scope())
-                .service(routers::health::scope())
-                .service(routers::ui::scope())
-                // Swagger UI
-                .service(routers::swagger_redirect)
-                .service(routers::swagger_index_redirect)
-                .service(
-                    SwaggerUi::new("/swagger-ui/{_:.*}")
-                        .url("/api-doc/openapi.json", routers::openapi()),
-                ),
-        )
+        App::new()
+            .service(
+                web::scope(&base_path)
+                    .app_data(web::PayloadConfig::new(max_body_bytes))
+                    .app_data(web::Data::new(jwt_config.clone()))
+                    // Middleware
+                    .wrap(middleware::limits::WarehouseLimits::new(
+                        max_concurrent_uploads,
+                    ))
+                    .wrap(middleware::auth::WarehouseAuth::new(jwt_config.clone()))
+                    .wrap(middleware::logger::FilteredLogger)
+                    // Register Actix services
+                    .service(routers::admin::scope())
+                    .service(routers::crates::scope())
+                    .service(routers::crates::scope_index())
+                    .service(routers::files::scope())
+                    .service(routers::health::scope())
+                    .service(routers::ui::scope())
+                    // Swagger UI
+                    .service(routers::swagger_redirect)
+                    .service(routers::swagger_index_redirect)
+                    .service(
+                        SwaggerUi::new("/swagger-ui/{_:.*}")
+                            .url("/api-doc/openapi.json", routers::openapi()),
+                    ),
+            )
             .service(routers::docker::scope())
             .service(routers::docker::token::handle)
     });

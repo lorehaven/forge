@@ -1,4 +1,4 @@
-use crate::domain::RegistryConfig;
+use crate::domain::{RegistryConfig, service_url};
 use anyhow::{Context, Result, anyhow, bail};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
@@ -52,7 +52,7 @@ impl AdminApi {
         registry: &RegistryConfig,
         endpoint: &str,
     ) -> Result<CratesGcReport> {
-        let url = format!("{}{}", registry.crates.url, endpoint);
+        let url = service_url(&registry.crates.url, &registry.base_path, endpoint)?;
         let mut headers = HeaderMap::new();
 
         if let Some(token) = &registry.crates.token {

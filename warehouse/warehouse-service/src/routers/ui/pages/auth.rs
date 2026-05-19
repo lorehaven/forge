@@ -1,5 +1,6 @@
 use crate::domain::jwt::JwtConfig;
 use crate::routers::ui::common::{UI_SESSION_COOKIE, UiPageKind, render_page};
+use crate::routers::with_base_path;
 use actix_web::cookie::{Cookie, SameSite};
 use actix_web::{HttpResponse, Responder, get, post, web};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -34,24 +35,24 @@ pub(super) async fn login_submit(
 ) -> impl Responder {
     if !config.auth_enabled {
         return HttpResponse::Found()
-            .append_header(("Location", "/ui/home"))
+            .append_header(("Location", with_base_path("/ui/home")))
             .finish();
     }
 
     let Some(expected_user) = config.username.as_deref() else {
         return HttpResponse::Found()
-            .append_header(("Location", "/ui/login?err=1"))
+            .append_header(("Location", with_base_path("/ui/login?err=1")))
             .finish();
     };
     let Some(expected_pass) = config.password.as_deref() else {
         return HttpResponse::Found()
-            .append_header(("Location", "/ui/login?err=1"))
+            .append_header(("Location", with_base_path("/ui/login?err=1")))
             .finish();
     };
 
     if form.username != expected_user || form.password != expected_pass {
         return HttpResponse::Found()
-            .append_header(("Location", "/ui/login?err=1"))
+            .append_header(("Location", with_base_path("/ui/login?err=1")))
             .finish();
     }
 
@@ -65,7 +66,7 @@ pub(super) async fn login_submit(
 
     HttpResponse::Found()
         .cookie(cookie)
-        .append_header(("Location", "/ui/home"))
+        .append_header(("Location", with_base_path("/ui/home")))
         .finish()
 }
 
@@ -80,7 +81,7 @@ pub(super) async fn logout() -> impl Responder {
 
     HttpResponse::Found()
         .cookie(cookie)
-        .append_header(("Location", "/ui/login"))
+        .append_header(("Location", with_base_path("/ui/login")))
         .finish()
 }
 

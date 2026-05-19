@@ -1,5 +1,6 @@
 use crate::domain::{
-    RegistryConfig, RootConfig, merge_root_config, normalize_path, validate_registry_name,
+    RegistryConfig, RootConfig, merge_root_config, normalize_base_path, normalize_path,
+    validate_registry_name,
 };
 use anyhow::{Context, Result, anyhow, bail};
 use std::collections::BTreeMap;
@@ -180,6 +181,7 @@ impl ConfigStore {
         let path = self.registry_file_path(scope, name)?;
 
         let mut normalized = cfg.clone();
+        normalized.base_path = normalize_base_path(&normalized.base_path);
         normalized.docker.path = normalize_path(&normalized.docker.path);
 
         let content =

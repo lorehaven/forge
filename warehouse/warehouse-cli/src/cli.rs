@@ -141,6 +141,9 @@ pub struct RegistryAddArgs {
     /// Registry base URL, e.g. http://registry.local:8698
     #[arg(long)]
     pub url: String,
+    /// Service base path for crates/files/admin endpoints, e.g. /warehouse
+    #[arg(long, default_value = "")]
+    pub base_path: String,
     /// Docker API path segment, defaults to /v2
     #[arg(long, default_value = "/v2")]
     pub path: String,
@@ -225,6 +228,9 @@ pub struct CratesRegistryAddArgs {
     /// Registry base URL, e.g. https://registry.example.com
     #[arg(long)]
     pub url: String,
+    /// Service base path for crates/files/admin endpoints, e.g. /warehouse
+    #[arg(long, default_value = "")]
+    pub base_path: String,
     /// Skip TLS certificate validation
     #[arg(long)]
     pub insecure_tls: bool,

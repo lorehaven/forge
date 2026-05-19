@@ -15,6 +15,9 @@ static CRATES_STORAGE_ROOT: LazyLock<String> =
 static DOCKER_STORAGE_ROOT: LazyLock<String> =
     LazyLock::new(|| envmnt::get_or("STORAGE_PATH", "./storage/docker"));
 
+static BASE_PATH: LazyLock<String> =
+    LazyLock::new(|| normalize_base_path(&envmnt::get_or("BASE_PATH", "/")));
+
 struct FeatureFlags {
     docker: bool,
     crates: bool,
@@ -49,6 +52,18 @@ pub fn crates_enabled() -> bool {
 
 pub fn files_enabled() -> bool {
     FEATURE_FLAGS.files
+}
+
+pub fn with_base_path(path: &str) -> String {
+    if BASE_PATH.as_str() == "/" {
+        return path.to_string();
+    }
+
+    match path {
+        "" => BASE_PATH.clone(),
+        "/" => format!("{}/", BASE_PATH.as_str()),
+        _ => format!("{}{}", BASE_PATH.as_str(), path),
+    }
 }
 
 #[derive(OpenApi)]
@@ -97,13 +112,49 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
 #[get("/swagger-ui")]
 async fn swagger_redirect() -> HttpResponse {
     HttpResponse::PermanentRedirect()
-        .append_header(("Location", "/swagger-ui/"))
+        .append_header(("Location", with_base_path("/swagger-ui/")))
         .finish()
 }
 
 #[get("/swagger-ui/")]
 async fn swagger_index_redirect() -> HttpResponse {
     HttpResponse::PermanentRedirect()
-        .append_header(("Location", "/swagger-ui/index.html"))
+        .append_header(("Location", with_base_path("/swagger-ui/index.html")))
         .finish()
+}
+
+fn normalize_base_path(raw: &str) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed == "/" {
+        return "/".to_string();
+    }
+
+    let without_trailing = trimmed.trim_end_matches('/');
+    if without_trailing.is_empty() {
+        "/".to_string()
+    } else if without_trailing.starts_with('/') {
+        without_trailing.to_string()
+    } else {
+        format!("/{without_trailing}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{normalize_base_path, with_base_path};
+
+    #[test]
+    fn normalizes_base_path_values() {
+        assert_eq!(normalize_base_path(""), "/");
+        assert_eq!(normalize_base_path("/"), "/");
+        assert_eq!(normalize_base_path("warehouse"), "/warehouse");
+        assert_eq!(normalize_base_path("/warehouse"), "/warehouse");
+        assert_eq!(normalize_base_path("/warehouse/"), "/warehouse");
+    }
+
+    #[test]
+    fn prefixes_redirect_paths() {
+        assert!(with_base_path("/").starts_with('/'));
+        assert!(with_base_path("/swagger-ui").starts_with('/'));
+    }
 }

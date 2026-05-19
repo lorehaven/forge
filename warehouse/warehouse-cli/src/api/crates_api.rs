@@ -1,4 +1,4 @@
-use crate::domain::{RegistryCratesConfig, crates_api_url, crates_index_url};
+use crate::domain::{RegistryConfig, RegistryCratesConfig, crates_api_url, crates_index_url};
 use anyhow::{Context, Result, bail};
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use serde::Deserialize;
@@ -76,7 +76,7 @@ impl CratesApi {
     /// `GET /api/v1/crates?q=<query>&per_page=<n>`
     pub async fn search(
         &self,
-        config: &RegistryCratesConfig,
+        registry: &RegistryConfig,
         query: &str,
         per_page: usize,
     ) -> Result<(Vec<SearchCrate>, usize)> {
@@ -85,8 +85,8 @@ impl CratesApi {
             urlencoding_simple(query),
             per_page
         );
-        let url = crates_api_url(config, &endpoint)?;
-        let resp = self.get_authed(config, &url).await?;
+        let url = crates_api_url(&registry.crates, &registry.base_path, &endpoint)?;
+        let resp = self.get_authed(&registry.crates, &url).await?;
         ensure_success(&resp, &url)?;
         let body: SearchResponse = resp
             .json()
@@ -98,11 +98,11 @@ impl CratesApi {
     /// Fetches the sparse index file for a crate and returns all version records.
     pub async fn versions(
         &self,
-        config: &RegistryCratesConfig,
+        registry: &RegistryConfig,
         crate_name: &str,
     ) -> Result<Vec<IndexRecord>> {
-        let url = crates_index_url(config, crate_name)?;
-        let resp = self.get_authed(config, &url).await?;
+        let url = crates_index_url(&registry.crates, &registry.base_path, crate_name)?;
+        let resp = self.get_authed(&registry.crates, &url).await?;
 
         if resp.status() == reqwest::StatusCode::NOT_FOUND {
             bail!("crate '{}' not found", crate_name);
@@ -130,17 +130,17 @@ impl CratesApi {
     /// `DELETE /api/v1/crates/<name>/<version>/yank`
     pub async fn yank(
         &self,
-        config: &RegistryCratesConfig,
+        registry: &RegistryConfig,
         crate_name: &str,
         version: &str,
     ) -> Result<()> {
         let endpoint = format!("/api/v1/crates/{crate_name}/{version}/yank");
-        let url = crates_api_url(config, &endpoint)?;
+        let url = crates_api_url(&registry.crates, &registry.base_path, &endpoint)?;
 
         let req = self
             .client
             .delete(&url)
-            .headers(auth_headers(config)?)
+            .headers(auth_headers(&registry.crates)?)
             .build()
             .context("failed to build yank request")?;
 
@@ -165,17 +165,17 @@ impl CratesApi {
     /// `PUT /api/v1/crates/<name>/<version>/unyank`
     pub async fn unyank(
         &self,
-        config: &RegistryCratesConfig,
+        registry: &RegistryConfig,
         crate_name: &str,
         version: &str,
     ) -> Result<()> {
         let endpoint = format!("/api/v1/crates/{crate_name}/{version}/unyank");
-        let url = crates_api_url(config, &endpoint)?;
+        let url = crates_api_url(&registry.crates, &registry.base_path, &endpoint)?;
 
         let req = self
             .client
             .put(&url)
-            .headers(auth_headers(config)?)
+            .headers(auth_headers(&registry.crates)?)
             .header("Content-Length", "0")
             .build()
             .context("failed to build unyank request")?;

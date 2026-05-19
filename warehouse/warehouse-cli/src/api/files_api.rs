@@ -1,4 +1,4 @@
-use crate::domain::RegistryConfig;
+use crate::domain::{RegistryConfig, service_url};
 use anyhow::{Context, Result, bail};
 use reqwest::header::{CONTENT_DISPOSITION, CONTENT_TYPE};
 use serde::Deserialize;
@@ -240,13 +240,13 @@ fn ensure_success(response: &reqwest::Response, url: &str) -> Result<()> {
 
 fn base_url(registry: &RegistryConfig, endpoint: &str) -> Result<String> {
     let base = if !registry.docker.url.trim().is_empty() {
-        registry.docker.url.trim().trim_end_matches('/')
+        registry.docker.url.as_str()
     } else if !registry.crates.url.trim().is_empty() {
-        registry.crates.url.trim().trim_end_matches('/')
+        registry.crates.url.as_str()
     } else {
         bail!("registry URL is empty");
     };
-    Ok(format!("{base}/{}", endpoint.trim_start_matches('/')))
+    service_url(base, &registry.base_path, endpoint)
 }
 
 fn url_encode(value: &str, keep_slash: bool) -> String {

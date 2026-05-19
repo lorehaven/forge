@@ -19,7 +19,7 @@ Top-level commands:
 
 Docker command group:
 
-- `warehouse docker registry add <name> --url <url> [--path /v2] [--service <svc>] [--insecure-tls] [--use] [--global]`
+- `warehouse docker registry add <name> --url <url> [--base-path /warehouse] [--path /v2] [--service <svc>] [--insecure-tls] [--use] [--global]`
 - `warehouse docker registry list`
 - `warehouse docker registry use <name> [--global]`
 - `warehouse docker registry remove <name> [--global]`
@@ -29,7 +29,7 @@ Docker command group:
 
 Crates command group:
 
-- `warehouse crates registry add <name> --url <url> [--insecure-tls] [--use] [--global]`
+- `warehouse crates registry add <name> --url <url> [--base-path /warehouse] [--insecure-tls] [--use] [--global]`
 - `warehouse crates registry list`
 - `warehouse crates registry use <name> [--global]`
 - `warehouse crates registry remove <name> [--global]`

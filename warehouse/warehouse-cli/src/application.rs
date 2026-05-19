@@ -12,7 +12,7 @@ use crate::cli::{
     RegistryUseArgs, TagsArgs,
 };
 use crate::config::{ConfigScope, ConfigStore, RegistrySource};
-use crate::domain::{RegistryConfig, validate_registry_name};
+use crate::domain::{RegistryConfig, normalize_base_path, validate_registry_name};
 use crate::ui;
 use anyhow::{Result, bail};
 
@@ -112,6 +112,7 @@ fn cmd_registry_add(store: &ConfigStore, args: RegistryAddArgs) -> Result<()> {
         .unwrap_or_default();
 
     reg.docker.url = args.url.trim().trim_end_matches('/').to_string();
+    reg.base_path = normalize_base_path(&args.base_path);
     reg.docker.path = crate::domain::normalize_path(&args.path);
     reg.docker.service = args.service;
     reg.docker.insecure_tls = args.insecure_tls;
@@ -148,12 +149,19 @@ fn cmd_registry_list(store: &ConfigStore) -> Result<()> {
             RegistrySource::Global => "global",
         };
 
+        let base_path = if entry.config.base_path.is_empty() {
+            String::new()
+        } else {
+            format!(" base-path={}", entry.config.base_path)
+        };
+
         qprintln!(
-            "{} {} -> {}{} ({})",
+            "{} {} -> {}{}{} ({})",
             marker,
             entry.name,
             entry.config.docker.url,
             crate::domain::normalize_path(&entry.config.docker.path),
+            base_path,
             source
         );
     }
@@ -267,6 +275,7 @@ fn cmd_crates_registry_add(store: &ConfigStore, args: CratesRegistryAddArgs) -> 
         .unwrap_or_default();
 
     reg.crates.url = args.url.trim().trim_end_matches('/').to_string();
+    reg.base_path = normalize_base_path(&args.base_path);
     reg.crates.insecure_tls = args.insecure_tls;
 
     store.save_registry(scope, &args.name, &reg)?;
@@ -312,11 +321,18 @@ fn cmd_crates_registry_list(store: &ConfigStore) -> Result<()> {
             ""
         };
 
+        let base_path = if entry.config.base_path.is_empty() {
+            String::new()
+        } else {
+            format!(" base-path={}", entry.config.base_path)
+        };
+
         qprintln!(
-            "{} {} -> {}{} ({})",
+            "{} {} -> {}{}{} ({})",
             marker,
             entry.name,
             entry.config.crates.url,
+            base_path,
             authed,
             source
         );
@@ -387,7 +403,7 @@ async fn cmd_crates_search(store: &ConfigStore, args: CratesSearchArgs) -> Resul
     let reg = store.load_effective_registry(&registry_name)?.config;
 
     let api = CratesApi::new(&reg.crates)?;
-    let (crates, total) = api.search(&reg.crates, &args.query, args.limit).await?;
+    let (crates, total) = api.search(&reg, &args.query, args.limit).await?;
 
     qprintln!("registry: {}", registry_name);
     qprintln!("query: \"{}\"  ({} total)", args.query, total);
@@ -426,7 +442,7 @@ async fn cmd_crates_versions(store: &ConfigStore, args: CratesVersionsArgs) -> R
     let reg = store.load_effective_registry(&registry_name)?.config;
 
     let api = CratesApi::new(&reg.crates)?;
-    let records = api.versions(&reg.crates, &args.crate_name).await?;
+    let records = api.versions(&reg, &args.crate_name).await?;
 
     qprintln!("registry: {}", registry_name);
     qprintln!("crate: {}", args.crate_name);
@@ -476,8 +492,7 @@ async fn cmd_crates_yank(store: &ConfigStore, args: CratesYankArgs) -> Result<()
     }
 
     let api = CratesApi::new(&reg.crates)?;
-    api.yank(&reg.crates, &args.crate_name, &args.version)
-        .await?;
+    api.yank(&reg, &args.crate_name, &args.version).await?;
 
     ui::ok(format!(
         "yanked {}-{} from '{}'",
@@ -498,8 +513,7 @@ async fn cmd_crates_unyank(store: &ConfigStore, args: CratesUnyankArgs) -> Resul
     }
 
     let api = CratesApi::new(&reg.crates)?;
-    api.unyank(&reg.crates, &args.crate_name, &args.version)
-        .await?;
+    api.unyank(&reg, &args.crate_name, &args.version).await?;
 
     ui::ok(format!(
         "unyanked {}-{} in '{}'",

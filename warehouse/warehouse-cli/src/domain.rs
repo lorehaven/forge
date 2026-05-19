@@ -47,6 +47,8 @@ pub fn merge_root_config(global: RootConfig, local: RootConfig) -> RootConfig {
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct RegistryConfig {
     #[serde(default)]
+    pub base_path: String,
+    #[serde(default)]
     pub docker: RegistryDockerConfig,
     #[serde(default)]
     pub crates: RegistryCratesConfig,
@@ -90,6 +92,22 @@ pub struct RegistryCratesConfig {
 
 pub fn default_docker_path() -> String {
     "/v2".to_string()
+}
+
+pub fn normalize_base_path(path: &str) -> String {
+    let trimmed = path.trim();
+    if trimmed.is_empty() || trimmed == "/" {
+        return String::new();
+    }
+
+    let without_trailing = trimmed.trim_end_matches('/');
+    if without_trailing.is_empty() || without_trailing == "/" {
+        String::new()
+    } else if without_trailing.starts_with('/') {
+        without_trailing.to_string()
+    } else {
+        format!("/{without_trailing}")
+    }
 }
 
 pub fn normalize_path(path: &str) -> String {
@@ -136,30 +154,48 @@ pub fn api_url(reg: &RegistryConfig, endpoint: &str) -> Result<String> {
     Ok(format!("{base}{path}/{endpoint}"))
 }
 
+pub fn service_url(base_url: &str, base_path: &str, endpoint: &str) -> Result<String> {
+    let base = base_url.trim().trim_end_matches('/');
+    if base.is_empty() {
+        bail!("registry URL is empty");
+    }
+
+    let base_path = normalize_base_path(base_path);
+    let endpoint = endpoint.trim_start_matches('/');
+    if base_path.is_empty() {
+        Ok(format!("{base}/{endpoint}"))
+    } else {
+        Ok(format!("{base}{base_path}/{endpoint}"))
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Crates helpers
 // ---------------------------------------------------------------------------
 
 /// Builds a full URL for a crates API endpoint.
 /// `endpoint` should start with `/`, e.g. `/api/v1/crates?q=foo`.
-pub fn crates_api_url(reg: &RegistryCratesConfig, endpoint: &str) -> Result<String> {
-    let base = reg.url.trim().trim_end_matches('/');
-    if base.is_empty() {
-        bail!("crates registry URL is empty");
-    }
-    let endpoint = endpoint.trim_start_matches('/');
-    Ok(format!("{base}/{endpoint}"))
+pub fn crates_api_url(
+    reg: &RegistryCratesConfig,
+    base_path: &str,
+    endpoint: &str,
+) -> Result<String> {
+    service_url(&reg.url, base_path, endpoint)
 }
 
 /// Builds the sparse index URL for a given crate name.
 /// Follows the crates.io prefix convention.
-pub fn crates_index_url(reg: &RegistryCratesConfig, crate_name: &str) -> Result<String> {
-    let base = reg.url.trim().trim_end_matches('/');
-    if base.is_empty() {
-        bail!("crates registry URL is empty");
-    }
+pub fn crates_index_url(
+    reg: &RegistryCratesConfig,
+    base_path: &str,
+    crate_name: &str,
+) -> Result<String> {
     let prefix = index_prefix(crate_name);
-    Ok(format!("{base}/index/{prefix}/{crate_name}"))
+    service_url(
+        &reg.url,
+        base_path,
+        &format!("/index/{prefix}/{crate_name}"),
+    )
 }
 
 /// Computes the sparse index directory prefix for a crate name,
@@ -191,4 +227,30 @@ pub fn validate_registry_name(name: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{normalize_base_path, service_url};
+
+    #[test]
+    fn normalizes_base_paths() {
+        assert_eq!(normalize_base_path(""), "");
+        assert_eq!(normalize_base_path("/"), "");
+        assert_eq!(normalize_base_path("warehouse"), "/warehouse");
+        assert_eq!(normalize_base_path("/warehouse"), "/warehouse");
+        assert_eq!(normalize_base_path("/warehouse/"), "/warehouse");
+    }
+
+    #[test]
+    fn builds_service_urls_with_base_path() {
+        assert_eq!(
+            service_url("https://example.test", "/warehouse", "/api/v1/files").unwrap(),
+            "https://example.test/warehouse/api/v1/files"
+        );
+        assert_eq!(
+            service_url("https://example.test", "", "/api/v1/files").unwrap(),
+            "https://example.test/api/v1/files"
+        );
+    }
 }

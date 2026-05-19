@@ -1,4 +1,5 @@
 use crate::domain::jwt::JwtConfig;
+use crate::routers::with_base_path;
 use actix_web::dev::HttpServiceFactory;
 use actix_web::{HttpResponse, Responder, get, web};
 use serde::Deserialize;
@@ -26,7 +27,7 @@ async fn root(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -> impl
         return common::ui_login_redirect();
     }
     HttpResponse::Found()
-        .append_header(("Location", "/ui/home"))
+        .append_header(("Location", with_base_path("/ui/home")))
         .finish()
 }
 
@@ -36,7 +37,7 @@ async fn root_slash(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -
         return common::ui_login_redirect();
     }
     HttpResponse::Found()
-        .append_header(("Location", "/ui/home"))
+        .append_header(("Location", with_base_path("/ui/home")))
         .finish()
 }
 
@@ -48,7 +49,7 @@ async fn docker_root(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) 
         return common::ui_login_redirect();
     }
     HttpResponse::PermanentRedirect()
-        .append_header(("Location", "/ui/docker/catalog"))
+        .append_header(("Location", with_base_path("/ui/docker/catalog")))
         .finish()
 }
 
@@ -61,7 +62,7 @@ async fn docker_root_slash(
         return common::ui_login_redirect();
     }
     HttpResponse::PermanentRedirect()
-        .append_header(("Location", "/ui/docker/catalog"))
+        .append_header(("Location", with_base_path("/ui/docker/catalog")))
         .finish()
 }
 
@@ -73,7 +74,7 @@ async fn crates_root(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) 
         return common::ui_login_redirect();
     }
     HttpResponse::PermanentRedirect()
-        .append_header(("Location", "/ui/crates/index"))
+        .append_header(("Location", with_base_path("/ui/crates/index")))
         .finish()
 }
 
@@ -85,7 +86,7 @@ async fn files_root(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -
         return common::ui_login_redirect();
     }
     HttpResponse::PermanentRedirect()
-        .append_header(("Location", "/ui/files/catalog"))
+        .append_header(("Location", with_base_path("/ui/files/catalog")))
         .finish()
 }
 
@@ -98,7 +99,7 @@ async fn files_root_slash(
         return common::ui_login_redirect();
     }
     HttpResponse::PermanentRedirect()
-        .append_header(("Location", "/ui/files/catalog"))
+        .append_header(("Location", with_base_path("/ui/files/catalog")))
         .finish()
 }
 
@@ -111,7 +112,7 @@ async fn crates_root_slash(
         return common::ui_login_redirect();
     }
     HttpResponse::PermanentRedirect()
-        .append_header(("Location", "/ui/crates/index"))
+        .append_header(("Location", with_base_path("/ui/crates/index")))
         .finish()
 }
 
