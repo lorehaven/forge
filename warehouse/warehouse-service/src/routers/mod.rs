@@ -123,7 +123,7 @@ async fn swagger_index_redirect() -> HttpResponse {
         .finish()
 }
 
-fn normalize_base_path(raw: &str) -> String {
+pub fn normalize_base_path(raw: &str) -> String {
     let trimmed = raw.trim();
     if trimmed.is_empty() || trimmed == "/" {
         return "/".to_string();
@@ -156,5 +156,11 @@ mod tests {
     fn prefixes_redirect_paths() {
         assert!(with_base_path("/").starts_with('/'));
         assert!(with_base_path("/swagger-ui").starts_with('/'));
+    }
+
+    #[test]
+    fn normalized_base_path_is_stable_for_scope_mounts() {
+        assert_eq!(normalize_base_path("warehouse"), "/warehouse");
+        assert_eq!(normalize_base_path("/warehouse/"), "/warehouse");
     }
 }

@@ -1,5 +1,6 @@
 use actix_web::{App, HttpRequest, HttpResponse, HttpServer, web};
 use quench_cli::terminal::{Tone, print_status};
+use routers::normalize_base_path;
 use rustls::ServerConfig;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
 use std::net::SocketAddr;
@@ -27,7 +28,7 @@ async fn main() -> std::io::Result<()> {
         .parse()
         .unwrap_or(32);
 
-    let base_path = envmnt::get_or("BASE_PATH", "/");
+    let base_path = normalize_base_path(&envmnt::get_or("BASE_PATH", "/"));
     let server = HttpServer::new(move || {
         App::new()
             .service(
