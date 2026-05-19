@@ -1,5 +1,5 @@
-use actix_web::dev::{ServiceRequest, ServiceResponse};
 use crate::routers::with_base_path;
+use actix_web::dev::{ServiceRequest, ServiceResponse};
 
 #[derive(Clone, Default)]
 pub struct FilteredLogger;
