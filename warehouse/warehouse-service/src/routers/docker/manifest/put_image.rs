@@ -203,7 +203,10 @@ async fn populate_descriptor_size(
         .await
         .map_err(|_| "manifest references missing content")?;
 
-    object.insert("size".to_string(), Value::Number(Number::from(metadata.len())));
+    object.insert(
+        "size".to_string(),
+        Value::Number(Number::from(metadata.len())),
+    );
     Ok(())
 }
 

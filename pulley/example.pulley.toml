@@ -13,7 +13,7 @@
 [[jobs]]
 id = "documents"
 desc = "Backup documents folder"
-src = "/home/losseheil/Documents"
+src = "/home/user/Documents"
 dest = "/tmp/documents"
 delete = true
 skip = ["temp", "cache"]
