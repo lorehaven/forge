@@ -1,4 +1,5 @@
 use actix_web::dev::{ServiceRequest, ServiceResponse};
+use crate::routers::with_base_path;
 
 #[derive(Clone, Default)]
 pub struct FilteredLogger;
@@ -53,7 +54,7 @@ where
 
         Box::pin(async move {
             let res = fut.await?;
-            if path != "/health" && !path.starts_with("/ui") {
+            if path != with_base_path("/health") && !path.starts_with(&with_base_path("/ui")) {
                 tracing::info!("{} {} -> {}", res.request().method(), path, res.status());
             }
             Ok(res)
