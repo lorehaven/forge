@@ -1,7 +1,7 @@
 use crate::domain::docker_error;
 use crate::routers::docker::{DigestQuery, blob_path, upload_path, validate_digest};
+use crate::utils::sha256::sha256_hex;
 use actix_web::{HttpResponse, Responder, put, web};
-use sha2::{Digest, Sha256};
 
 #[utoipa::path(
     put,
@@ -129,9 +129,7 @@ pub async fn handle(
     };
 
     // Verify digest
-    let mut hasher = Sha256::new();
-    hasher.update(&data);
-    let computed = format!("sha256:{:x}", hasher.finalize());
+    let computed = format!("sha256:{}", sha256_hex(&data));
 
     if &computed != digest {
         return docker_error::response(

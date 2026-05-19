@@ -9,6 +9,7 @@ use utoipa_swagger_ui::SwaggerUi;
 pub mod domain;
 pub mod middleware;
 pub mod routers;
+pub mod utils;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {

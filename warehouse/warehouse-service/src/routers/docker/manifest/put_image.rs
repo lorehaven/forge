@@ -2,6 +2,7 @@ use crate::domain::docker_error;
 use crate::routers::docker::{
     blob_path, manifest_path, repository_path, validate_digest, validate_tag_reference,
 };
+use crate::utils::sha256::sha256_hex;
 use actix_web::{HttpRequest, HttpResponse, Responder, put, web};
 use serde_json::{Number, Value};
 
@@ -47,8 +48,6 @@ pub async fn handle(
 ) -> impl Responder {
     let (name, reference) = path.into_inner();
 
-    use sha2::{Digest, Sha256};
-
     let content_type = req
         .headers()
         .get("Content-Type")
@@ -77,9 +76,7 @@ pub async fn handle(
     };
 
     // Compute manifest digest
-    let mut hasher = Sha256::new();
-    hasher.update(&body);
-    let digest = format!("sha256:{:x}", hasher.finalize());
+    let digest = format!("sha256:{}", sha256_hex(&body));
 
     let Some(repo_path) = repository_path(&name) else {
         return docker_error::response(

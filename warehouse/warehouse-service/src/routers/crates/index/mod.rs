@@ -1,10 +1,9 @@
 use crate::routers::crates::{index_file_path, index_prefix, validate_crate_name};
+use crate::utils::sha256::sha256_hex;
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 use std::sync::LazyLock;
 use utoipa::ToSchema;
-
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
@@ -92,11 +91,7 @@ async fn get_crate_index(req: HttpRequest, path: web::Path<String>) -> impl Resp
         .unwrap_or_else(|_| b"[]".to_vec());
 
     // ETag based on SHA-256 of the file contents
-    let etag = {
-        let mut h = Sha256::new();
-        h.update(&data);
-        format!("\"{:x}\"", h.finalize())
-    };
+    let etag = format!("sha256:{}", sha256_hex(&data));
 
     // Conditional GET support
     if let Some(inm) = req

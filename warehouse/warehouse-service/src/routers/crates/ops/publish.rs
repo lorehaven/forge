@@ -1,12 +1,11 @@
 use crate::routers::crates::{
     crate_file_path, index_file_path, validate_crate_name, validate_version,
 };
+use crate::utils::sha256::sha256_hex;
 use actix_web::{HttpResponse, Responder, put, web};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use utoipa::ToSchema;
-
 // ---------------------------------------------------------------------------
 // Wire-format structs (cargo publish binary payload → metadata JSON)
 // ---------------------------------------------------------------------------
@@ -187,11 +186,7 @@ pub async fn handle(body: web::Bytes) -> impl Responder {
     // ------------------------------------------------------------------
     // 5. Compute SHA-256 checksum
     // ------------------------------------------------------------------
-    let cksum = {
-        let mut hasher = Sha256::new();
-        hasher.update(crate_bytes);
-        format!("{:x}", hasher.finalize())
-    };
+    let cksum = sha256_hex(crate_bytes);
 
     // ------------------------------------------------------------------
     // 6. Build index record
