@@ -206,7 +206,10 @@ fn build_agents(
                     .clone()
                     .unwrap_or_else(|| "127.0.0.1:11434".to_string());
 
-                Arc::new(OllamaModel::new(&cfg.model, format!("http://{ollama_url}"))?)
+                Arc::new(OllamaModel::new(
+                    &cfg.model,
+                    format!("http://{ollama_url}"),
+                )?)
             }
             backend => {
                 return Err(anyhow::anyhow!("Unsupported backend: {backend}"));
