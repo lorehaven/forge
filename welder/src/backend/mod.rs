@@ -2,6 +2,7 @@ use crate::config::CONFIG;
 use std::sync::{Arc, LazyLock};
 
 pub mod ollama;
+pub mod vllm;
 
 #[async_trait::async_trait]
 pub trait Backend: Send + Sync {
@@ -24,5 +25,11 @@ pub static BACKEND: LazyLock<Arc<dyn Backend>> =
                 .expect("error: failed to initialize backend");
             Arc::new(back)
         }
-        _ => panic!("unsupported backend"),
+        "vllm" => {
+            let back = vllm::VllmBackend::new();
+            back.initialize()
+                .expect("error: failed to initialize vllm backend");
+            Arc::new(back)
+        }
+        _ => panic!("unsupported backend: {}", CONFIG.backend.kind),
     });

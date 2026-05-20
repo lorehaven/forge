@@ -1,0 +1,56 @@
+[root]
+name = "project_manager"
+
+[vllm]
+timeout_seconds = 600
+
+# Shared model definitions
+[models.llama3-8b]
+url = "127.0.0.1:8000"
+model_path = "/mnt/dev/quantized/Meta-Llama-3.1-8B-Instruct-Q4_K_L.gguf"
+dtype = "float16"
+max_model_len = 4096
+gpu_memory_utilization = 0.80
+tensor_parallel_size = 1
+
+[[agent]]
+name = "project_manager"
+model = "llama3-8b"
+vllm_model = "llama3-8b"
+instruction = """
+You are a project manager who oversees content creation projects.
+Delegate content creation requests to content_creator.
+Handle project status, planning, and coordination yourself.
+"""
+children = ["content_creator"]
+
+[[agent]]
+name = "content_creator"
+model = "llama3-8b"
+vllm_model = "llama3-8b"
+instruction = """
+You are a content lead who coordinates research and writing.
+Delegate fact-finding and research tasks to researcher.
+Delegate writing, drafting, and editing tasks to writer.
+Handle content strategy and review yourself.
+"""
+children = ["researcher", "writer"]
+
+[[agent]]
+name = "researcher"
+model = "llama3-8b"
+vllm_model = "llama3-8b"
+instruction = """
+You are a research specialist. Gather facts, analyze topics, and produce structured
+research notes. Be thorough and cite key points clearly. Provide only the research
+and stop when complete.
+"""
+
+[[agent]]
+name = "writer"
+model = "llama3-8b"
+vllm_model = "llama3-8b"
+instruction = """
+You are a professional writer. You produce clear, engaging, well-structured
+written content. Use the research provided and write for a general audience.
+"""

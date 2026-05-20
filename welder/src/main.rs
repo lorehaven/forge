@@ -24,6 +24,7 @@ use std::{
 
 use adk_core::Llm;
 use adk_model::ollama::{OllamaConfig, OllamaModel};
+use model::vllm_client::{VllmConfig, VllmModel};
 
 pub mod backend;
 pub mod config;
@@ -33,6 +34,7 @@ pub mod ui;
 
 use config::workflow::Workflow;
 use engine::executor::{AgentNode, execute};
+use model::ModelManager;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -43,10 +45,49 @@ async fn main() -> anyhow::Result<()> {
     init_runtime().await?;
 
     let workflow_path = get_workflow_path()?;
+    println!("[welder] Loading workflow from: {workflow_path}");
     let workflow = load_workflow(&workflow_path)?;
-    let agents = build_agents(&workflow)?;
+    println!("[welder] ✓ Workflow loaded");
 
-    run_repl(&workflow, &workflow_path, &agents).await
+    println!("[welder] Initializing model manager...");
+    let vllm_instances = extract_vllm_instances(&workflow)?;
+    if vllm_instances.is_empty() {
+        println!("[welder] ⚠ No vLLM configuration found in workflow agents");
+        println!("[welder] Agents must have [agent.vllm] configuration");
+        Err(anyhow::anyhow!(
+            "vLLM not configured for any agents in workflow"
+        ))
+    } else {
+        println!("[welder] Found {} vLLM instance(s)", vllm_instances.len());
+        for inst in &vllm_instances {
+            println!("[welder]   - {} on {}", inst.model, inst.url);
+        }
+
+        let vllm_cfg = model::VllmConfig {
+            timeout_seconds: workflow
+                .vllm
+                .as_ref()
+                .and_then(|v| v.timeout_seconds)
+                .unwrap_or(300),
+        };
+
+        let mut model_manager = ModelManager::new(vllm_cfg);
+        for inst in vllm_instances {
+            model_manager.register(inst);
+        }
+        model_manager.initialize().await?;
+        println!("[welder] ✓ Model manager ready");
+
+        println!("[welder] Building agents...");
+        let agents = build_agents(&workflow, &model_manager)?;
+        println!("[welder] ✓ {} agent(s) ready", agents.len());
+        for agent_name in agents.keys() {
+            println!("[welder]   - {agent_name}");
+        }
+
+        println!("[welder] Starting REPL...");
+        run_repl(&workflow, &workflow_path, &agents).await
+    }
 }
 
 fn handle_version_flag() -> bool {
@@ -98,11 +139,81 @@ fn load_workflow(path: &str) -> anyhow::Result<Workflow> {
 // BUILD AGENTS
 // ─────────────────────────────────────────────────────────────
 
-fn build_agents(workflow: &Workflow) -> anyhow::Result<HashMap<String, AgentNode>> {
+fn extract_vllm_instances(workflow: &Workflow) -> anyhow::Result<Vec<model::ModelInstanceConfig>> {
+    let mut instances = std::collections::HashMap::new();
+    let empty_models = std::collections::HashMap::new();
+    let model_defs = workflow.models.as_ref().unwrap_or(&empty_models);
+
+    for agent_cfg in &workflow.agent {
+        // Resolve vllm config: either direct vllm block or reference to models section
+        let vllm_cfg = if let Some(ref model_ref) = agent_cfg.vllm_model {
+            model_defs.get(model_ref).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Agent '{}' references model '{}' which is not defined in [models]",
+                    agent_cfg.name,
+                    model_ref
+                )
+            })?
+        } else if let Some(ref vllm) = agent_cfg.vllm {
+            vllm
+        } else {
+            continue; // No vllm config for this agent
+        };
+
+        let key = (agent_cfg.model.clone(), vllm_cfg.url.clone());
+
+        instances
+            .entry(key)
+            .or_insert_with(|| model::ModelInstanceConfig {
+                model: agent_cfg.model.clone(),
+                url: vllm_cfg.url.clone(),
+                model_path: vllm_cfg.model_path.clone(),
+                dtype: vllm_cfg.dtype.clone().unwrap_or_else(|| "auto".to_string()),
+                max_model_len: vllm_cfg.max_model_len,
+                gpu_memory_utilization: vllm_cfg.gpu_memory_utilization.unwrap_or(0.9),
+                tensor_parallel_size: vllm_cfg.tensor_parallel_size.unwrap_or(1),
+            });
+    }
+
+    Ok(instances.into_values().collect())
+}
+
+fn build_agents(
+    workflow: &Workflow,
+    model_manager: &ModelManager,
+) -> anyhow::Result<HashMap<String, AgentNode>> {
     let mut agents = HashMap::new();
 
     for cfg in &workflow.agent {
-        let model: Arc<dyn Llm> = Arc::new(OllamaModel::new(OllamaConfig::new(&cfg.model))?);
+        let model: Arc<dyn Llm> = match config::CONFIG.backend.kind.as_str() {
+            "vllm" => {
+                let model_url = model_manager.get_url(&cfg.model).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Agent '{}' references model '{}' but no vLLM config found for it",
+                        cfg.name,
+                        cfg.model
+                    )
+                })?;
+
+                let mut config = VllmConfig::new(&cfg.model);
+                config.host = format!("http://{model_url}");
+                Arc::new(VllmModel::new(config)?)
+            }
+            "ollama" => {
+                let ollama_url = config::CONFIG
+                    .backend
+                    .ollama_url
+                    .clone()
+                    .unwrap_or_else(|| "127.0.0.1:11434".to_string());
+
+                let mut config = OllamaConfig::new(&cfg.model);
+                config.host = format!("http://{ollama_url}");
+                Arc::new(OllamaModel::new(config)?)
+            }
+            backend => {
+                return Err(anyhow::anyhow!("Unsupported backend: {backend}"));
+            }
+        };
 
         agents.insert(
             cfg.name.clone(),

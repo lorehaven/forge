@@ -87,18 +87,28 @@ Delegate:"
             );
 
             let raw_decision = call_model(node.model.clone(), routing_prompt).await?;
-            let decision = raw_decision
-                .lines()
-                .map(str::trim)
-                .find(|l| !l.is_empty())
-                .unwrap_or("")
-                .trim_matches(|c: char| !c.is_alphanumeric() && c != '_')
-                .to_ascii_lowercase();
+            let response_lower = raw_decision.to_ascii_lowercase();
 
-            if let Some(child) = node
+            // Try to find any delegate name in the response
+            let decision = node
                 .children
                 .iter()
-                .find(|c| c.to_ascii_lowercase() == decision)
+                .find(|child| response_lower.contains(&child.to_ascii_lowercase()))
+                .map(|c| c.to_ascii_lowercase())
+                .unwrap_or_default();
+
+            eprintln!(
+                "[routing-debug] raw: {:?} | matched: '{}' | children: {:?}",
+                raw_decision.lines().next().unwrap_or("(empty)"),
+                decision,
+                node.children
+            );
+
+            if !decision.is_empty()
+                && let Some(child) = node
+                    .children
+                    .iter()
+                    .find(|c| c.to_ascii_lowercase() == decision)
             {
                 let child = child.clone();
                 println!("{YELLOW}{indent}  ↳ {child}{RESET}");

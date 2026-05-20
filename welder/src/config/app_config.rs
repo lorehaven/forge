@@ -16,12 +16,13 @@ pub struct Config {
 pub struct BackendConfig {
     pub kind: String,
     pub ollama_url: Option<String>,
+    pub debug: bool,
 }
 
 impl Config {
     fn config_file_path() -> Result<PathBuf, anyhow::Error> {
         let cwd = std::env::current_dir().context("Cannot determine current working directory")?;
-        Ok(cwd.join(".forge").join("config.toml"))
+        Ok(cwd.join(".welder").join("config.toml"))
     }
 
     #[must_use]
@@ -36,11 +37,11 @@ impl Config {
 
         match fs::read_to_string(&config_path) {
             Ok(content) => toml::from_str(&content).unwrap_or_else(|e| {
-                eprintln!("Warning: Invalid .foundry.toml: {e}. Using defaults.");
+                eprintln!("Warning: Invalid .welder.toml: {e}. Using defaults.");
                 Self::default()
             }),
             Err(e) => {
-                eprintln!("Warning: Failed to read .foundry.toml: {e}. Using defaults.");
+                eprintln!("Warning: Failed to read .welder.toml: {e}. Using defaults.");
                 Self::default()
             }
         }
@@ -52,6 +53,7 @@ impl Default for BackendConfig {
         Self {
             kind: "ollama".to_string(),
             ollama_url: Some("127.0.0.1:11434".to_string()),
+            debug: false,
         }
     }
 }

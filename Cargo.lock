@@ -4225,6 +4225,7 @@ dependencies = [
  "dotenvy",
  "futures",
  "quench-cli",
+ "reqwest 0.13.2",
  "serde",
  "serde_json",
  "shlex 2.0.1",
