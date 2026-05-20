@@ -1,8 +1,6 @@
-use adk_core::{AdkError, Content, Llm, LlmRequest, LlmResponse, Part};
+use crate::llm::{Content, Llm, LlmRequest, LlmResponse, Part};
 use async_trait::async_trait;
-use futures::stream;
 use serde::{Deserialize, Serialize};
-use std::pin::Pin;
 
 #[derive(Debug, Clone)]
 pub struct VllmConfig {
@@ -72,23 +70,15 @@ impl Llm for VllmModel {
         &self.config.model
     }
 
-    async fn generate_content(
-        &self,
-        request: LlmRequest,
-        _stream: bool,
-    ) -> Result<
-        Pin<Box<dyn futures::stream::Stream<Item = Result<LlmResponse, AdkError>> + Send>>,
-        AdkError,
-    > {
+    async fn generate_content(&self, request: LlmRequest) -> anyhow::Result<LlmResponse> {
         let url = format!("{}/v1/chat/completions", self.config.host);
 
         // Extract text from contents
         let mut prompt = String::new();
         for content in &request.contents {
             for part in &content.parts {
-                if let Part::Text { text } = part {
-                    prompt.push_str(text);
-                }
+                let Part::Text(text) = part;
+                prompt.push_str(text);
             }
         }
 
@@ -111,52 +101,34 @@ impl Llm for VllmModel {
             ]),
         };
 
-        // Perform the async operation and collect result
         eprintln!("Calling vLLM: {url}");
-        let result = async {
-            let response = self
-                .client
-                .post(&url)
-                .json(&chat_request)
-                .send()
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to call vLLM: {e}"))?;
+        let response = self
+            .client
+            .post(&url)
+            .json(&chat_request)
+            .send()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to call vLLM: {e}"))?;
 
-            if !response.status().is_success() {
-                let error_text = response.text().await.unwrap_or_default();
-                return Err(anyhow::anyhow!("vLLM error: {error_text}"));
-            }
-
-            let chat_response: ChatCompletionResponse = response
-                .json()
-                .await
-                .map_err(|e| anyhow::anyhow!("Failed to parse vLLM response: {e}"))?;
-
-            let content = chat_response
-                .choices
-                .first()
-                .map_or_else(|| "No response".to_string(), |c| c.message.content.clone());
-
-            Ok::<String, anyhow::Error>(content)
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!("vLLM error: {error_text}"));
         }
-        .await
-        .map_err(|e| {
-            // Create a generic error for vLLM communication failures
-            AdkError::new(
-                adk_core::ErrorComponent::Model,
-                adk_core::ErrorCategory::InvalidInput,
-                "vllm_call_failed",
-                format!("Failed to call vLLM server: {e}"),
-            )
-        })?;
+
+        let chat_response: ChatCompletionResponse = response
+            .json()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to parse vLLM response: {e}"))?;
+
+        let content = chat_response
+            .choices
+            .first()
+            .map_or_else(|| "No response".to_string(), |c| c.message.content.clone());
 
         let llm_response = LlmResponse {
-            content: Some(Content::new("assistant").with_text(result)),
-            ..Default::default()
+            content: Some(Content::new("assistant").with_text(content)),
         };
 
-        // Convert single response to stream using Result<_, AdkError>
-        let response_stream = stream::once(async { Ok::<LlmResponse, AdkError>(llm_response) });
-        Ok(Box::pin(response_stream))
+        Ok(llm_response)
     }
 }

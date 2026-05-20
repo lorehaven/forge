@@ -22,13 +22,13 @@ use std::{
     time::Duration,
 };
 
-use adk_core::Llm;
-use adk_model::ollama::{OllamaConfig, OllamaModel};
+use crate::llm::{Llm, ollama::OllamaModel};
 use model::vllm_client::{VllmConfig, VllmModel};
 
 pub mod backend;
 pub mod config;
 pub mod engine;
+pub mod llm;
 pub mod model;
 pub mod ui;
 
@@ -206,9 +206,7 @@ fn build_agents(
                     .clone()
                     .unwrap_or_else(|| "127.0.0.1:11434".to_string());
 
-                let mut config = OllamaConfig::new(&cfg.model);
-                config.host = format!("http://{ollama_url}");
-                Arc::new(OllamaModel::new(config)?)
+                Arc::new(OllamaModel::new(&cfg.model, format!("http://{ollama_url}"))?)
             }
             backend => {
                 return Err(anyhow::anyhow!("Unsupported backend: {backend}"));

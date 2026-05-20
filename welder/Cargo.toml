@@ -16,12 +16,9 @@ name = "welder"
 path = "src/main.rs"
 
 [dependencies]
-adk-core.workspace = true
-adk-model = { workspace = true, features = ["ollama"] }
 anyhow.workspace = true
 async-trait.workspace = true
 dotenvy.workspace = true
-futures.workspace = true
 quench-cli.workspace = true
 reqwest.workspace = true
 serde.workspace = true

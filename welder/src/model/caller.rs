@@ -1,31 +1,21 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
-use adk_core::{Content, Llm, LlmRequest, Part};
-use futures::StreamExt;
+use crate::llm::{Content, Llm, LlmRequest, Part};
 
 pub async fn call_model(model: Arc<dyn Llm>, prompt: String) -> anyhow::Result<String> {
     let request = LlmRequest {
         model: model.name().to_string(),
         contents: vec![Content::new("user").with_text(prompt)],
-        tools: HashMap::default(),
-        config: None,
     };
 
-    let stream = model.generate_content(request, false).await?;
-    futures::pin_mut!(stream);
+    let resp = model.generate_content(request).await?;
 
     let mut full = String::new();
 
-    while let Some(resp) = stream.next().await {
-        let resp = resp?;
-
-        if let Some(content) = resp.content {
-            for part in content.parts {
-                if let Part::Text { text } = part {
-                    full.push_str(&text);
-                }
-            }
+    if let Some(content) = resp.content {
+        for part in content.parts {
+            let Part::Text(text) = part;
+            full.push_str(&text);
         }
     }
 

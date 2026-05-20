@@ -22,8 +22,6 @@ readme = "README.md"
 
 [workspace.dependencies]
 actix-web = { version = "4.13", features = ["rustls-0_23"] }
-adk-core = { version = "0.8", default-features = false }
-adk-model = { version = "0.8", default-features = false }
 anyhow = { version = "1.0" }
 async-trait = { version = "0.1" }
 axum = { version = "0.8", features = ["json"] }
