@@ -40,7 +40,7 @@ html5ever = { version = "0.39" }
 hmac = { version = "0.13" }
 jsonwebtoken = { version = "10.4", features = ["rust_crypto"] }
 markup5ever_rcdom = { version = "0.39.0" }
-minijinja = { version = "2.19", features = ["loader", "serde"] }
+minijinja = { version = "2.20", features = ["loader", "serde"] }
 quench-web = { path = "quench/quench-web", registry = "ennor", version = "0.1.0" }
 quench-cli = { path = "quench/quench-cli", registry = "ennor", version = "0.1.0" }
 regex = { version = "1.12" }
