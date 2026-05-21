@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
+use crate::prelude::with_base_path;
 
 static AUTH_FAILURES: LazyLock<Mutex<HashMap<String, Vec<Instant>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -19,6 +20,7 @@ static AUTH_FAILURES: LazyLock<Mutex<HashMap<String, Vec<Instant>>>> =
 pub struct QuenchAuth {
     config: JwtConfig,
     max_failures: usize,
+    unprotected_apis: Vec<String>,
     window: Duration,
 }
 
@@ -30,10 +32,15 @@ impl QuenchAuth {
         let window_secs = envmnt::get_or("AUTH_FAILURE_WINDOW_SECONDS", "60")
             .parse()
             .unwrap_or(60);
+        let unprotected_apis = envmnt::get_or("UNPROTECTED_APIS", "")
+            .split(",")
+            .map(String::from
+            ).collect();
 
         Self {
             config,
             max_failures,
+            unprotected_apis,
             window: Duration::from_secs(window_secs),
         }
     }
@@ -55,6 +62,7 @@ where
             service,
             config: self.config.clone(),
             max_failures: self.max_failures,
+            unprotected_apis: self.unprotected_apis.clone(),
             window: self.window,
         })
     }
@@ -64,6 +72,7 @@ pub struct QuenchAuthMiddleware<S> {
     service: S,
     config: JwtConfig,
     max_failures: usize,
+    unprotected_apis: Vec<String>,
     window: Duration,
 }
 
@@ -83,8 +92,10 @@ where
     fn call(&self, req: ServiceRequest) -> Self::Future {
         let path = req.path().to_string();
 
-        // Only protect /v2/*
-        if !path.starts_with("/v2/") {
+        // skip auth if api is unprotected
+        let is_health = path == with_base_path("/health");
+        let is_unprotected = self.unprotected_apis.iter().any(|api| path.starts_with(api));
+        if is_health || is_unprotected {
             let fut = self.service.call(req);
             return Box::pin(async move {
                 let res = fut.await?;
