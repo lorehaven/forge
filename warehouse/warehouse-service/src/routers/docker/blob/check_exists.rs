@@ -1,6 +1,7 @@
 use crate::domain::docker_error;
 use crate::routers::docker::{blob_path, validate_digest};
 use actix_web::{HttpResponse, Responder, head, web};
+use quench_srv::prelude::error;
 
 #[utoipa::path(
     head,
@@ -32,17 +33,17 @@ pub async fn handle(path: web::Path<(String, String)>) -> impl Responder {
 
     // Validate digest format
     if !validate_digest(&digest) {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::BAD_REQUEST,
-            docker_error::UNSUPPORTED,
+            error::UNSUPPORTED,
             "invalid digest",
         );
     }
 
     let Some(blob_path) = blob_path(&digest) else {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::BAD_REQUEST,
-            docker_error::UNSUPPORTED,
+            error::UNSUPPORTED,
             "invalid digest",
         );
     };
@@ -53,7 +54,7 @@ pub async fn handle(path: web::Path<(String, String)>) -> impl Responder {
             .append_header(("Content-Length", metadata.len()))
             .append_header(("Accept-Ranges", "bytes"))
             .finish(),
-        Err(_) => docker_error::response(
+        Err(_) => error::response(
             actix_web::http::StatusCode::NOT_FOUND,
             docker_error::BLOB_UNKNOWN,
             "blob unknown to registry",

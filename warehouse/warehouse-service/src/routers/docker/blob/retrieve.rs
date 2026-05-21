@@ -1,8 +1,8 @@
 use crate::domain::docker_error;
 use crate::routers::docker::{blob_path, validate_digest};
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
-use std::io::SeekFrom;
-use std::path::PathBuf;
+use quench_srv::prelude::error;
+use std::{io::SeekFrom, path::PathBuf};
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
@@ -61,22 +61,22 @@ pub async fn handle(req: HttpRequest, path: web::Path<(String, String)>) -> impl
     let (_, digest) = path.into_inner();
 
     if !validate_digest(&digest) {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::BAD_REQUEST,
-            docker_error::UNSUPPORTED,
+            error::UNSUPPORTED,
             "invalid digest",
         );
     }
 
     let Some(blob_path) = blob_path(&digest) else {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::BAD_REQUEST,
-            docker_error::UNSUPPORTED,
+            error::UNSUPPORTED,
             "invalid digest",
         );
     };
     if !blob_path.exists() {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::NOT_FOUND,
             docker_error::BLOB_UNKNOWN,
             "blob unknown to registry",
@@ -114,9 +114,9 @@ async fn serve_with_range(req: HttpRequest, blob_path: PathBuf, digest: String) 
     let file = match File::open(&blob_path).await {
         Ok(f) => f,
         Err(_) => {
-            return docker_error::response(
+            return error::response(
                 actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-                docker_error::UNSUPPORTED,
+                error::UNSUPPORTED,
                 "internal server error",
             );
         }
@@ -125,9 +125,9 @@ async fn serve_with_range(req: HttpRequest, blob_path: PathBuf, digest: String) 
     let metadata = match file.metadata().await {
         Ok(m) => m,
         Err(_) => {
-            return docker_error::response(
+            return error::response(
                 actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-                docker_error::UNSUPPORTED,
+                error::UNSUPPORTED,
                 "internal server error",
             );
         }
@@ -141,9 +141,9 @@ async fn serve_with_range(req: HttpRequest, blob_path: PathBuf, digest: String) 
         if let Some((start, end)) = parse_range(range_str, total_size) {
             return serve_partial(file, start, end, total_size, &digest).await;
         }
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::RANGE_NOT_SATISFIABLE,
-            docker_error::UNSUPPORTED,
+            error::UNSUPPORTED,
             "requested range not satisfiable",
         );
     }
@@ -161,18 +161,18 @@ async fn serve_partial(
     let length = end - start + 1;
 
     if file.seek(SeekFrom::Start(start)).await.is_err() {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-            docker_error::UNSUPPORTED,
+            error::UNSUPPORTED,
             "internal server error",
         );
     }
 
     let mut buffer = vec![0u8; length as usize];
     if file.read_exact(&mut buffer).await.is_err() {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-            docker_error::UNSUPPORTED,
+            error::UNSUPPORTED,
             "internal server error",
         );
     }
@@ -193,9 +193,9 @@ async fn serve_full(mut file: File, total_size: u64, digest: &str) -> HttpRespon
     let mut buffer = Vec::with_capacity(total_size as usize);
 
     if file.read_to_end(&mut buffer).await.is_err() {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-            docker_error::UNSUPPORTED,
+            error::UNSUPPORTED,
             "internal server error",
         );
     }

@@ -1,6 +1,7 @@
 use crate::domain::docker_error;
 use crate::routers::docker::registry::storage::{TagListError, list_tags_for_repository};
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
+use quench_srv::prelude::error;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -46,14 +47,14 @@ pub async fn handle(req: HttpRequest, path: web::Path<String>) -> impl Responder
     let tags = match list_tags_for_repository(&name) {
         Ok(tags) => tags,
         Err(TagListError::InvalidName) => {
-            return docker_error::response(
+            return error::response(
                 actix_web::http::StatusCode::BAD_REQUEST,
                 docker_error::NAME_UNKNOWN,
                 "invalid repository name",
             );
         }
         Err(TagListError::NotFound) => {
-            return docker_error::response(
+            return error::response(
                 actix_web::http::StatusCode::NOT_FOUND,
                 docker_error::NAME_UNKNOWN,
                 "repository name not known to registry",

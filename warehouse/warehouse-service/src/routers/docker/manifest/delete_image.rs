@@ -1,6 +1,7 @@
 use crate::domain::docker_error;
 use crate::routers::docker::{manifest_path, repository_path, validate_digest};
 use actix_web::{HttpResponse, Responder, delete, web};
+use quench_srv::prelude::error;
 
 #[utoipa::path(
     delete,
@@ -26,15 +27,15 @@ pub async fn handle(path: web::Path<(String, String)>) -> impl Responder {
 
     // Must delete by digest only
     if !validate_digest(&reference) {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::METHOD_NOT_ALLOWED,
-            docker_error::UNSUPPORTED,
+            error::UNSUPPORTED,
             "manifest deletion requires a digest reference",
         );
     }
 
     let Some(repo_path) = repository_path(&name) else {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::BAD_REQUEST,
             docker_error::NAME_UNKNOWN,
             "invalid repository name",
@@ -42,14 +43,14 @@ pub async fn handle(path: web::Path<(String, String)>) -> impl Responder {
     };
 
     let Some(manifest_path) = manifest_path(&reference) else {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::METHOD_NOT_ALLOWED,
-            docker_error::UNSUPPORTED,
+            error::UNSUPPORTED,
             "manifest deletion requires a digest reference",
         );
     };
     if !manifest_path.exists() {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::NOT_FOUND,
             docker_error::MANIFEST_UNKNOWN,
             "manifest unknown",
@@ -58,9 +59,9 @@ pub async fn handle(path: web::Path<(String, String)>) -> impl Responder {
 
     // Remove manifest file
     if tokio::fs::remove_file(&manifest_path).await.is_err() {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-            docker_error::UNSUPPORTED,
+            error::UNSUPPORTED,
             "internal server error",
         );
     }

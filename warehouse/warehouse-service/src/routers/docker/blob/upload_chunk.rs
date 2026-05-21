@@ -1,6 +1,7 @@
 use crate::domain::docker_error;
 use crate::routers::docker::upload_path;
 use actix_web::{HttpResponse, Responder, patch, web};
+use quench_srv::prelude::error;
 use tokio::io::AsyncWriteExt;
 
 #[utoipa::path(
@@ -32,7 +33,7 @@ pub async fn handle(path: web::Path<(String, String)>, body: web::Bytes) -> impl
     let (name, uuid) = path.into_inner();
 
     let Some(file_path) = upload_path(&name, &uuid) else {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::BAD_REQUEST,
             docker_error::NAME_UNKNOWN,
             "invalid repository name",
@@ -40,7 +41,7 @@ pub async fn handle(path: web::Path<(String, String)>, body: web::Bytes) -> impl
     };
 
     if !file_path.exists() {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::NOT_FOUND,
             docker_error::BLOB_UNKNOWN,
             "blob upload unknown to registry",
@@ -48,9 +49,9 @@ pub async fn handle(path: web::Path<(String, String)>, body: web::Bytes) -> impl
     }
 
     if body.is_empty() {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::BAD_REQUEST,
-            docker_error::UNSUPPORTED,
+            error::UNSUPPORTED,
             "empty upload chunk",
         );
     }
@@ -58,9 +59,9 @@ pub async fn handle(path: web::Path<(String, String)>, body: web::Bytes) -> impl
     let metadata = match tokio::fs::metadata(&file_path).await {
         Ok(m) => m,
         Err(_) => {
-            return docker_error::response(
+            return error::response(
                 actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-                docker_error::UNSUPPORTED,
+                error::UNSUPPORTED,
                 "internal server error",
             );
         }
@@ -75,18 +76,18 @@ pub async fn handle(path: web::Path<(String, String)>, body: web::Bytes) -> impl
     {
         Ok(f) => f,
         Err(_) => {
-            return docker_error::response(
+            return error::response(
                 actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-                docker_error::UNSUPPORTED,
+                error::UNSUPPORTED,
                 "internal server error",
             );
         }
     };
 
     if file.write_all(&body).await.is_err() {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-            docker_error::UNSUPPORTED,
+            error::UNSUPPORTED,
             "internal server error",
         );
     }

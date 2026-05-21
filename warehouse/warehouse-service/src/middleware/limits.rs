@@ -1,12 +1,14 @@
-use crate::domain::docker_error;
 use actix_web::{
     Error,
     body::{EitherBody, MessageBody},
     dev::{Service, ServiceRequest, ServiceResponse, Transform},
 };
 use futures_util::future::{LocalBoxFuture, Ready, ok};
-use std::sync::Arc;
-use std::task::{Context, Poll};
+use quench_srv::prelude::error;
+use std::{
+    sync::Arc,
+    task::{Context, Poll},
+};
 use tokio::sync::Semaphore;
 
 pub struct WarehouseLimits {
@@ -71,9 +73,9 @@ where
         let permit = match self.upload_semaphore.clone().try_acquire_owned() {
             Ok(p) => p,
             Err(_) => {
-                let response = docker_error::response(
+                let response = error::response(
                     actix_web::http::StatusCode::TOO_MANY_REQUESTS,
-                    docker_error::DENIED,
+                    error::DENIED,
                     "too many concurrent upload requests",
                 )
                 .map_into_right_body();

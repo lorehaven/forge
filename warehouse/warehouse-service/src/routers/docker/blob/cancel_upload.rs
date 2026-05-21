@@ -1,6 +1,7 @@
 use crate::domain::docker_error;
 use crate::routers::docker::upload_path;
 use actix_web::{HttpResponse, Responder, delete, web};
+use quench_srv::prelude::error;
 
 #[utoipa::path(
     delete,
@@ -24,14 +25,14 @@ pub async fn handle(path: web::Path<(String, String)>) -> impl Responder {
     let (name, uuid) = path.into_inner();
 
     let Some(upload_path) = upload_path(&name, &uuid) else {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::BAD_REQUEST,
             docker_error::NAME_UNKNOWN,
             "invalid repository name",
         );
     };
     if !upload_path.exists() {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::NOT_FOUND,
             docker_error::BLOB_UNKNOWN,
             "blob upload unknown to registry",
@@ -40,9 +41,9 @@ pub async fn handle(path: web::Path<(String, String)>) -> impl Responder {
 
     match tokio::fs::remove_file(&upload_path).await {
         Ok(_) => HttpResponse::NoContent().finish(),
-        Err(_) => docker_error::response(
+        Err(_) => error::response(
             actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-            docker_error::UNSUPPORTED,
+            error::UNSUPPORTED,
             "internal server error",
         ),
     }

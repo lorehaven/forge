@@ -1,9 +1,8 @@
-use crate::domain::jwt::{Claims, JwtConfig};
-use actix_web::http::header;
-use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
+use actix_web::{HttpRequest, HttpResponse, Responder, get, http::header, web};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::{Duration, Utc};
 use jsonwebtoken::{EncodingKey, Header, encode};
+use quench_srv::prelude::jwt::{Claims, JwtConfig};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 

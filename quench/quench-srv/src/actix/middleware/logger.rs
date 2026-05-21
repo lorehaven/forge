@@ -1,4 +1,4 @@
-use crate::routers::with_base_path;
+use crate::common::routes::with_base_path;
 use actix_web::dev::{ServiceRequest, ServiceResponse};
 
 #[derive(Clone, Default)]

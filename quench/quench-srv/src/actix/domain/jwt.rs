@@ -13,16 +13,16 @@ pub struct JwtConfig {
 impl JwtConfig {
     pub fn init() -> Self {
         let jwt_secret = envmnt::get_or_panic("JWT_SECRET").into_bytes();
-        let service_name = envmnt::get_or("REGISTRY_SERVICE", "warehouse");
-        let realm = envmnt::get_or("REGISTRY_REALM", "https://localhost:8698/token");
+        let service_name = envmnt::get_or("SERVICE_NAME", "service");
+        let realm = envmnt::get_or("SERVICE_REALM", "https://localhost:8698/token");
 
-        let auth_enabled = envmnt::get_or("REGISTRY_AUTH_ENABLED", "false")
+        let auth_enabled = envmnt::get_or("SERVICE_AUTH_ENABLED", "false")
             .parse()
             .unwrap_or(false);
         let (username, password) = if auth_enabled {
             (
-                Some(envmnt::get_or_panic("REGISTRY_USERNAME")),
-                Some(envmnt::get_or_panic("REGISTRY_PASSWORD")),
+                Some(envmnt::get_or_panic("SERVICE_USERNAME")),
+                Some(envmnt::get_or_panic("SERVICE_PASSWORD")),
             )
         } else {
             (None, None)

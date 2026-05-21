@@ -1,4 +1,3 @@
-use crate::domain::jwt::JwtConfig;
 use crate::routers::docker::registry::storage::{
     TagListError, TagMetadata, list_repositories, list_tag_metadata_for_repository,
 };
@@ -7,6 +6,7 @@ use crate::routers::ui::common::{
     UiPageKind, is_ui_authenticated, render_page, ui_login_redirect, ui_path,
 };
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
+use quench_srv::prelude::jwt::JwtConfig;
 use quench_web::prelude::*;
 use std::collections::BTreeMap;
 

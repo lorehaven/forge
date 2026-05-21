@@ -1,6 +1,7 @@
 use crate::domain::docker_error;
 use crate::routers::docker::upload_path;
 use actix_web::{HttpResponse, Responder, get, web};
+use quench_srv::prelude::error;
 
 #[utoipa::path(
     get,
@@ -24,7 +25,7 @@ pub async fn handle(path: web::Path<(String, String)>) -> impl Responder {
     let (name, uuid) = path.into_inner();
 
     let Some(upload_path) = upload_path(&name, &uuid) else {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::BAD_REQUEST,
             docker_error::NAME_UNKNOWN,
             "invalid repository name",
@@ -33,7 +34,7 @@ pub async fn handle(path: web::Path<(String, String)>) -> impl Responder {
     let metadata = match tokio::fs::metadata(&upload_path).await {
         Ok(m) => m,
         Err(_) => {
-            return docker_error::response(
+            return error::response(
                 actix_web::http::StatusCode::NOT_FOUND,
                 docker_error::BLOB_UNKNOWN,
                 "blob upload unknown to registry",

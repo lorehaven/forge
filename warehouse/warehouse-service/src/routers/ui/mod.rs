@@ -1,13 +1,12 @@
-use crate::domain::jwt::JwtConfig;
 use crate::routers::with_base_path;
 use actix_web::dev::HttpServiceFactory;
 use actix_web::{HttpResponse, Responder, get, web};
+pub use common::assets;
+use quench_srv::prelude::jwt::JwtConfig;
 use serde::Deserialize;
 
 mod common;
 mod pages;
-
-pub use common::assets;
 
 #[derive(Deserialize)]
 pub(super) struct PageQuery {

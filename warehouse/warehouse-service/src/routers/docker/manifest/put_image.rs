@@ -4,6 +4,7 @@ use crate::routers::docker::{
 };
 use crate::utils::sha256::sha256_hex;
 use actix_web::{HttpRequest, HttpResponse, Responder, put, web};
+use quench_srv::prelude::error;
 use serde_json::{Number, Value};
 
 const DOCKER_MANIFEST_V2: &str = "application/vnd.docker.distribution.manifest.v2+json";
@@ -57,9 +58,9 @@ pub async fn handle(
     if let Some(ct) = content_type
         && !is_supported_manifest_media_type(ct)
     {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            docker_error::UNSUPPORTED,
+            error::UNSUPPORTED,
             "manifest media type unsupported",
         );
     }
@@ -67,9 +68,9 @@ pub async fn handle(
     let body = match normalize_manifest_body(&body).await {
         Ok(body) => body,
         Err(message) => {
-            return docker_error::response(
+            return error::response(
                 actix_web::http::StatusCode::BAD_REQUEST,
-                docker_error::UNSUPPORTED,
+                error::UNSUPPORTED,
                 message,
             );
         }
@@ -79,7 +80,7 @@ pub async fn handle(
     let digest = format!("sha256:{}", sha256_hex(&body));
 
     let Some(repo_path) = repository_path(&name) else {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::BAD_REQUEST,
             docker_error::NAME_UNKNOWN,
             "invalid repository name",
@@ -87,18 +88,18 @@ pub async fn handle(
     };
 
     if tokio::fs::create_dir_all(&repo_path).await.is_err() {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-            docker_error::UNSUPPORTED,
+            error::UNSUPPORTED,
             "internal server error",
         );
     }
 
     // Save manifest by digest
     let Some(manifest_path) = manifest_path(&digest) else {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-            docker_error::UNSUPPORTED,
+            error::UNSUPPORTED,
             "internal server error",
         );
     };
@@ -107,9 +108,9 @@ pub async fn handle(
     }
 
     if tokio::fs::write(&manifest_path, &body).await.is_err() {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-            docker_error::UNSUPPORTED,
+            error::UNSUPPORTED,
             "internal server error",
         );
     }
@@ -117,9 +118,9 @@ pub async fn handle(
     // Save tag reference only when reference is a tag (not a digest).
     if !validate_digest(&reference) {
         if !validate_tag_reference(&reference) {
-            return docker_error::response(
+            return error::response(
                 actix_web::http::StatusCode::BAD_REQUEST,
-                docker_error::UNSUPPORTED,
+                error::UNSUPPORTED,
                 "invalid manifest reference",
             );
         }

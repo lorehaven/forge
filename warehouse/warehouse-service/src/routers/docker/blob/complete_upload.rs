@@ -2,6 +2,7 @@ use crate::domain::docker_error;
 use crate::routers::docker::{DigestQuery, blob_path, upload_path, validate_digest};
 use crate::utils::sha256::sha256_hex;
 use actix_web::{HttpResponse, Responder, put, web};
+use quench_srv::prelude::error;
 
 #[utoipa::path(
     put,
@@ -38,24 +39,24 @@ pub async fn handle(
     let digest = &query.digest;
 
     if !validate_digest(digest) {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::BAD_REQUEST,
-            docker_error::UNSUPPORTED,
+            error::UNSUPPORTED,
             "invalid digest",
         );
     }
 
     let Some(upload_file) = upload_path(&name, &uuid) else {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::BAD_REQUEST,
             docker_error::NAME_UNKNOWN,
             "invalid repository name",
         );
     };
     let Some(final_path) = blob_path(digest) else {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::BAD_REQUEST,
-            docker_error::UNSUPPORTED,
+            error::UNSUPPORTED,
             "invalid digest",
         );
     };
@@ -69,7 +70,7 @@ pub async fn handle(
     }
 
     if !upload_file.exists() {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::NOT_FOUND,
             docker_error::BLOB_UNKNOWN,
             "blob upload unknown to registry",
@@ -86,25 +87,25 @@ pub async fn handle(
         {
             Ok(f) => f,
             Err(_) => {
-                return docker_error::response(
+                return error::response(
                     actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-                    docker_error::UNSUPPORTED,
+                    error::UNSUPPORTED,
                     "internal server error",
                 );
             }
         };
 
         if file.write_all(&body).await.is_err() {
-            return docker_error::response(
+            return error::response(
                 actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-                docker_error::UNSUPPORTED,
+                error::UNSUPPORTED,
                 "internal server error",
             );
         }
         if file.sync_data().await.is_err() {
-            return docker_error::response(
+            return error::response(
                 actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-                docker_error::UNSUPPORTED,
+                error::UNSUPPORTED,
                 "internal server error",
             );
         }
@@ -120,9 +121,9 @@ pub async fn handle(
                     .append_header(("Docker-Content-Digest", digest.clone()))
                     .finish();
             }
-            return docker_error::response(
+            return error::response(
                 actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-                docker_error::UNSUPPORTED,
+                error::UNSUPPORTED,
                 "internal server error",
             );
         }
@@ -132,7 +133,7 @@ pub async fn handle(
     let computed = format!("sha256:{}", sha256_hex(&data));
 
     if &computed != digest {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::BAD_REQUEST,
             docker_error::BLOB_UNKNOWN,
             "digest invalid",
@@ -140,16 +141,16 @@ pub async fn handle(
     }
 
     let Some(final_parent) = final_path.parent() else {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-            docker_error::UNSUPPORTED,
+            error::UNSUPPORTED,
             "internal server error",
         );
     };
     if tokio::fs::create_dir_all(final_parent).await.is_err() {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-            docker_error::UNSUPPORTED,
+            error::UNSUPPORTED,
             "internal server error",
         );
     }
@@ -168,9 +169,9 @@ pub async fn handle(
             let _ = tokio::fs::remove_file(&upload_file).await;
         } else {
             let _ = err;
-            return docker_error::response(
+            return error::response(
                 actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-                docker_error::UNSUPPORTED,
+                error::UNSUPPORTED,
                 "internal server error",
             );
         }

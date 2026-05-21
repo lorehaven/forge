@@ -1,14 +1,15 @@
 [workspace]
 members = [
-    "anvil",
-    "pulley",
-    "quench/examples/*",
-    "quench/quench-cli",
-    "quench/quench-web",
-    "riveter",
-    "toolbox",
-    "warehouse/*",
-    "welder",
+  "anvil",
+  "pulley",
+  "quench/examples/*",
+  "quench/quench-cli",
+  "quench/quench-srv",
+  "quench/quench-web",
+  "riveter",
+  "toolbox",
+  "warehouse/*",
+  "welder",
 ]
 resolver = "2"
 
@@ -21,6 +22,8 @@ license = "MIT"
 readme = "README.md"
 
 [workspace.dependencies]
+actix-http = { version = "3.12" }
+actix-service = { version = "2.0" }
 actix-web = { version = "4.13", features = ["rustls-0_23"] }
 anyhow = { version = "1.0" }
 async-trait = { version = "0.1" }
@@ -39,10 +42,15 @@ hmac = { version = "0.13" }
 jsonwebtoken = { version = "10.4", features = ["rust_crypto"] }
 markup5ever_rcdom = { version = "0.39.0" }
 minijinja = { version = "2.20", features = ["loader", "serde"] }
-quench-web = { path = "quench/quench-web", registry = "ennor", version = "0.1.0" }
 quench-cli = { path = "quench/quench-cli", registry = "ennor", version = "0.1.0" }
+quench-srv = { path = "quench/quench-srv", registry = "ennor", version = "0.1.0" }
+quench-web = { path = "quench/quench-web", registry = "ennor", version = "0.1.0" }
 regex = { version = "1.12" }
-reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "rustls"] }
+reqwest = { version = "0.13", default-features = false, features = [
+  "json",
+  "stream",
+  "rustls",
+] }
 rustls = { version = "0.23" }
 rustls-pemfile = { version = "2" }
 rustyline = { version = "18.0" }
@@ -55,7 +63,15 @@ sha2 = { version = "0.11" }
 strum = { version = "0.28" }
 strum_macros = { version = "0.28" }
 thiserror = { version = "2.0" }
-tokio = { version = "1.52", features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "1.52", features = [
+  "fs",
+  "io-util",
+  "macros",
+  "net",
+  "rt-multi-thread",
+  "sync",
+  "time",
+] }
 toml = { version = "1.1" }
 tower-http = { version = "0.6", features = ["fs"] }
 tracing = { version = "0.1" }

@@ -1,5 +1,5 @@
-use crate::domain::docker_error;
-use crate::domain::jwt::{Claims, JwtConfig};
+use crate::actix::domain::error;
+use crate::actix::domain::jwt::{Claims, JwtConfig};
 use actix_web::{
     Error,
     body::{EitherBody, MessageBody},
@@ -16,13 +16,13 @@ use std::time::{Duration, Instant};
 static AUTH_FAILURES: LazyLock<Mutex<HashMap<String, Vec<Instant>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
-pub struct WarehouseAuth {
+pub struct QuenchAuth {
     config: JwtConfig,
     max_failures: usize,
     window: Duration,
 }
 
-impl WarehouseAuth {
+impl QuenchAuth {
     pub fn new(config: JwtConfig) -> Self {
         let max_failures = envmnt::get_or("MAX_AUTH_FAILURES_PER_MINUTE", "30")
             .parse()
@@ -39,19 +39,19 @@ impl WarehouseAuth {
     }
 }
 
-impl<S, B> Transform<S, ServiceRequest> for WarehouseAuth
+impl<S, B> Transform<S, ServiceRequest> for QuenchAuth
 where
     S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
     B: MessageBody + 'static,
 {
     type Response = ServiceResponse<EitherBody<B>>;
     type Error = Error;
-    type Transform = WarehouseAuthMiddleware<S>;
+    type Transform = QuenchAuthMiddleware<S>;
     type InitError = ();
     type Future = Ready<Result<Self::Transform, Self::InitError>>;
 
     fn new_transform(&self, service: S) -> Self::Future {
-        ok(WarehouseAuthMiddleware {
+        ok(QuenchAuthMiddleware {
             service,
             config: self.config.clone(),
             max_failures: self.max_failures,
@@ -60,14 +60,14 @@ where
     }
 }
 
-pub struct WarehouseAuthMiddleware<S> {
+pub struct QuenchAuthMiddleware<S> {
     service: S,
     config: JwtConfig,
     max_failures: usize,
     window: Duration,
 }
 
-impl<S, B> Service<ServiceRequest> for WarehouseAuthMiddleware<S>
+impl<S, B> Service<ServiceRequest> for QuenchAuthMiddleware<S>
 where
     S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
     B: MessageBody + 'static,
@@ -171,9 +171,9 @@ where
     );
 
     Box::pin(async move {
-        let mut response = docker_error::response(
+        let mut response = error::response(
             actix_web::http::StatusCode::TOO_MANY_REQUESTS,
-            docker_error::DENIED,
+            error::DENIED,
             "too many authentication attempts",
         );
         if let Ok(value) = HeaderValue::from_str(&header) {
@@ -191,9 +191,9 @@ where
     B: MessageBody + 'static,
 {
     Box::pin(async move {
-        let response = docker_error::response(
+        let response = error::response(
             actix_web::http::StatusCode::FORBIDDEN,
-            docker_error::DENIED,
+            error::DENIED,
             "requested access to the resource is denied",
         )
         .map_into_right_body();
@@ -264,9 +264,9 @@ where
     );
 
     Box::pin(async move {
-        let mut response = docker_error::response(
+        let mut response = error::response(
             actix_web::http::StatusCode::UNAUTHORIZED,
-            docker_error::UNAUTHORIZED,
+            error::UNAUTHORIZED,
             "authentication required",
         );
         if let Ok(value) = HeaderValue::from_str(&header) {

@@ -1,11 +1,13 @@
-use crate::domain::jwt::JwtConfig;
 use crate::routers::with_base_path;
 use actix_web::{HttpResponse, Responder, get, http::header::ContentType, web};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use quench_srv::prelude::jwt::JwtConfig;
 use quench_web::prelude::*;
-use std::fs;
-use std::path::{Component, Path, PathBuf};
-use std::sync::LazyLock;
+use std::{
+    fs,
+    path::{Component, Path, PathBuf},
+    sync::LazyLock,
+};
 
 mod crates_js;
 mod docker_js;

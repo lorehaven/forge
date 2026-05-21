@@ -1,10 +1,10 @@
 use super::storage::{IndexDep, IndexRecord, list_crates, list_versions};
-use crate::domain::jwt::JwtConfig;
 use crate::routers::ui::PageQuery;
 use crate::routers::ui::common::{
     UiPageKind, is_ui_authenticated, render_page, ui_login_redirect, ui_path,
 };
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
+use quench_srv::prelude::jwt::JwtConfig;
 use quench_web::prelude::*;
 
 #[get("/crates/catalog")]

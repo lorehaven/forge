@@ -1,6 +1,7 @@
 use crate::domain::docker_error;
 use crate::routers::docker::{blob_exists, repository_path, validate_digest};
 use actix_web::{HttpResponse, Responder, post, web};
+use quench_srv::prelude::error;
 use serde::Deserialize;
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -51,7 +52,7 @@ pub struct MountQuery {
 pub async fn handle(path: web::Path<String>, query: web::Query<MountQuery>) -> impl Responder {
     let name = path.into_inner();
     if repository_path(&name).is_none() {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::BAD_REQUEST,
             docker_error::NAME_UNKNOWN,
             "invalid repository name",
@@ -61,9 +62,9 @@ pub async fn handle(path: web::Path<String>, query: web::Query<MountQuery>) -> i
     // Attempt cross-repository mount
     if let (Some(digest), Some(_)) = (&query.mount, &query.from) {
         if !validate_digest(digest) {
-            return docker_error::response(
+            return error::response(
                 actix_web::http::StatusCode::BAD_REQUEST,
-                docker_error::UNSUPPORTED,
+                error::UNSUPPORTED,
                 "invalid digest",
             );
         }
@@ -83,7 +84,7 @@ async fn start_regular_upload(name: String) -> HttpResponse {
     let uuid = Uuid::new_v4().to_string();
 
     let Some(repo_path) = repository_path(&name) else {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::BAD_REQUEST,
             docker_error::NAME_UNKNOWN,
             "invalid repository name",
@@ -92,9 +93,9 @@ async fn start_regular_upload(name: String) -> HttpResponse {
     let upload_dir = repo_path.join("_uploads");
 
     if tokio::fs::create_dir_all(&upload_dir).await.is_err() {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-            docker_error::UNSUPPORTED,
+            error::UNSUPPORTED,
             "internal server error",
         );
     }
@@ -102,9 +103,9 @@ async fn start_regular_upload(name: String) -> HttpResponse {
     let file_path = upload_dir.join(&uuid);
 
     if tokio::fs::File::create(&file_path).await.is_err() {
-        return docker_error::response(
+        return error::response(
             actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-            docker_error::UNSUPPORTED,
+            error::UNSUPPORTED,
             "internal server error",
         );
     }

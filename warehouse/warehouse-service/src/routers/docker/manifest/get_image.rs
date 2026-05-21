@@ -3,6 +3,7 @@ use crate::routers::docker::{
     manifest_path, repository_path, validate_digest, validate_tag_reference,
 };
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
+use quench_srv::prelude::error;
 
 #[utoipa::path(
     get,
@@ -64,7 +65,7 @@ pub(super) async fn resolve_manifest_response(
     reference: &str,
 ) -> Result<ResolvedManifestResponse, HttpResponse> {
     let repo_path = repository_path(name).ok_or_else(|| {
-        docker_error::response(
+        error::response(
             actix_web::http::StatusCode::BAD_REQUEST,
             docker_error::NAME_UNKNOWN,
             "invalid repository name",
@@ -76,9 +77,9 @@ pub(super) async fn resolve_manifest_response(
         reference.to_string()
     } else {
         if !validate_tag_reference(reference) {
-            return Err(docker_error::response(
+            return Err(error::response(
                 actix_web::http::StatusCode::BAD_REQUEST,
-                docker_error::UNSUPPORTED,
+                error::UNSUPPORTED,
                 "invalid manifest reference",
             ));
         }
@@ -86,7 +87,7 @@ pub(super) async fn resolve_manifest_response(
         match tokio::fs::read_to_string(&tag_path).await {
             Ok(d) => d.trim().to_string(),
             Err(_) => {
-                return Err(docker_error::response(
+                return Err(error::response(
                     actix_web::http::StatusCode::NOT_FOUND,
                     docker_error::MANIFEST_UNKNOWN,
                     "manifest unknown",
@@ -96,7 +97,7 @@ pub(super) async fn resolve_manifest_response(
     };
 
     if !validate_digest(&digest) {
-        return Err(docker_error::response(
+        return Err(error::response(
             actix_web::http::StatusCode::NOT_FOUND,
             docker_error::MANIFEST_UNKNOWN,
             "manifest unknown",
@@ -104,7 +105,7 @@ pub(super) async fn resolve_manifest_response(
     }
 
     let Some(manifest_path) = manifest_path(&digest) else {
-        return Err(docker_error::response(
+        return Err(error::response(
             actix_web::http::StatusCode::NOT_FOUND,
             docker_error::MANIFEST_UNKNOWN,
             "manifest unknown",
@@ -113,7 +114,7 @@ pub(super) async fn resolve_manifest_response(
     let data = match tokio::fs::read(&manifest_path).await {
         Ok(d) => d,
         Err(_) => {
-            return Err(docker_error::response(
+            return Err(error::response(
                 actix_web::http::StatusCode::NOT_FOUND,
                 docker_error::MANIFEST_UNKNOWN,
                 "manifest unknown",
@@ -125,9 +126,9 @@ pub(super) async fn resolve_manifest_response(
     let stored_media_type = match detect_manifest_media_type(&data) {
         Some(mt) => mt,
         None => {
-            return Err(docker_error::response(
+            return Err(error::response(
                 actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-                docker_error::UNSUPPORTED,
+                error::UNSUPPORTED,
                 "manifest media type unsupported",
             ));
         }
