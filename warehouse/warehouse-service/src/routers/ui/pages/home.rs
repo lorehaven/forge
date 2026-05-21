@@ -1,16 +1,23 @@
 use crate::routers::files::list_storage_infos;
-use crate::routers::ui::common::{UiPageKind, render_page, ui_path};
+use crate::routers::ui::common::{self, UiPageKind, render_page, ui_path};
 use crate::routers::{crates_enabled, docker_enabled, files_enabled};
-use actix_web::{HttpResponse, Responder, get};
+use actix_web::{HttpResponse, Responder, get, web};
+use quench_srv::prelude::jwt::JwtConfig;
 use quench_web::prelude::*;
 
 #[get("/home")]
-pub(super) async fn home() -> impl Responder {
+pub(super) async fn home(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
+    if !common::is_ui_authenticated(&req, &config) {
+        return common::ui_login_redirect();
+    }
     render_home_page()
 }
 
 #[get("/home/")]
-pub(super) async fn home_slash() -> impl Responder {
+pub(super) async fn home_slash(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
+    if !common::is_ui_authenticated(&req, &config) {
+        return common::ui_login_redirect();
+    }
     render_home_page()
 }
 
