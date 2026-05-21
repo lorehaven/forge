@@ -7,6 +7,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use toml_edit::{value, DocumentMut};
 
 #[derive(Debug)]
 struct WorkspacePackage {
@@ -393,21 +394,16 @@ fn bump_patch_versions(metadata: &Value, plan: &[ReleasePlanItem]) -> Result<Vec
 fn set_manifest_version(path: &Path, version: &str) -> Result<()> {
     let content = fs::read_to_string(path)
         .with_context(|| format!("Failed to read manifest at {}", path.display()))?;
-    let mut value: toml::Value = toml::from_str(&content)
+
+    let mut doc = content
+        .parse::<DocumentMut>()
         .with_context(|| format!("Failed to parse manifest at {}", path.display()))?;
 
-    let package = value
-        .get_mut("package")
-        .and_then(toml::Value::as_table_mut)
-        .context("Manifest missing [package] table")?;
-    package.insert(
-        "version".to_string(),
-        toml::Value::String(version.to_string()),
-    );
+    doc["package"]["version"] = value(version);
 
-    let updated = toml::to_string(&value).context("Failed to serialize updated Cargo.toml")?;
-    fs::write(path, updated)
+    fs::write(path, doc.to_string())
         .with_context(|| format!("Failed to write manifest at {}", path.display()))?;
+
     Ok(())
 }
 

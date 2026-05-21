@@ -27,5 +27,6 @@ quench-cli.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
+toml_edit.workspace = true
 walkdir.workspace = true
 which.workspace = true
