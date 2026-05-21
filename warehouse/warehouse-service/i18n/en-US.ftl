@@ -25,7 +25,6 @@ ui_service_files_desc = Browse and manage plain files.
 # ── Docker ───────────────────────────────────────────────────────────────────
 
 ui_header_docker = Warehouse - Docker Repository Explorer
-ui_logout = Log out
 ui_repositories = Repositories
 ui_tags = Tags
 ui_tags_for = Tags for
@@ -103,3 +102,4 @@ ui_login_username = Username
 ui_login_password = Password
 ui_login_submit = Log in
 ui_login_invalid_credentials = Invalid credentials
+ui_logout = Log out
