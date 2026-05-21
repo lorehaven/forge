@@ -50,9 +50,9 @@ where
             .app_data(web::Data::new(jwt_config.clone()))
             .wrap(middleware::logger::FilteredLogger)
             .wrap(middleware::auth::QuenchAuth::new(jwt_config.clone()))
+            .service(root_module())
             .service(
                 web::scope(&base_path)
-                    .service(root_module())
                     .service(routers::health::scope())
                     .service(routers::swagger::swagger_redirect)
                     .service(routers::swagger::swagger_index_redirect)
