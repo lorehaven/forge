@@ -1,7 +1,7 @@
 use crate::routers::ui::common::{is_ui_authenticated, ui_login_redirect};
-use crate::routers::with_base_path;
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
 use quench_srv::prelude::jwt::JwtConfig;
+use quench_srv::prelude::with_base_path;
 
 #[get("/docker/tags/{repository:.+}")]
 pub(in crate::routers::ui::pages) async fn docker_tags(

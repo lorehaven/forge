@@ -1,9 +1,9 @@
 use crate::routers::ui::common::{UI_SESSION_COOKIE, UiPageKind, render_page, ui_path};
-use crate::routers::with_base_path;
 use actix_web::cookie::{Cookie, SameSite};
 use actix_web::{HttpResponse, Responder, get, post, web};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use quench_srv::prelude::jwt::JwtConfig;
+use quench_srv::prelude::with_base_path;
 use quench_web::prelude::*;
 use serde::Deserialize;
 

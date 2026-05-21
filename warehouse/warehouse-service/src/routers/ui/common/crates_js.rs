@@ -1,4 +1,4 @@
-use crate::routers::with_base_path;
+use quench_srv::prelude::with_base_path;
 
 pub fn ensure_crates_js() {
     let js = crates_js();

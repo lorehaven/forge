@@ -1,4 +1,4 @@
-use quench_srv::prelude::{routers::BaseOpenApiDoc, with_base_path};
+use quench_srv::prelude::routers::BaseOpenApiDoc;
 use std::sync::LazyLock;
 use utoipa::OpenApi;
 

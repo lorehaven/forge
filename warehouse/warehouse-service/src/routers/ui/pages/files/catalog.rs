@@ -2,9 +2,9 @@ use crate::routers::files::{list_directory, list_storage_infos};
 use crate::routers::ui::common::{
     UiPageKind, is_ui_authenticated, render_page, ui_login_redirect, ui_path,
 };
-use crate::routers::with_base_path;
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
 use quench_srv::prelude::jwt::JwtConfig;
+use quench_srv::prelude::with_base_path;
 use quench_web::prelude::*;
 use serde::Deserialize;
 
