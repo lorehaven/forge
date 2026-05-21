@@ -15,17 +15,17 @@ Warehouse implements Docker Registry HTTP API v2 endpoints under `/v2`, plus tok
 ### Auth Flow
 
 1. Client requests `/v2/...`.
-2. Service responds with `401` and `WWW-Authenticate: Bearer realm="<REGISTRY_REALM>",service="<REGISTRY_SERVICE>"` when token is missing/invalid.
-3. Client requests `GET /token?service=<REGISTRY_SERVICE>&scope=repository:<repo>:pull,push` with Basic auth (or anonymous when auth is disabled).
+2. Service responds with `401` and `WWW-Authenticate: Bearer realm="<SERVICE_REALM>",service="<SERVICE_NAME>"` when token is missing/invalid.
+3. Client requests `GET /token?service=<SERVICE_NAME>&scope=repository:<repo>:pull,push` with Basic auth (or anonymous when auth is disabled).
 4. Client retries `/v2/...` with `Authorization: Bearer <jwt>`.
 
 Key environment variables:
 
 - `JWT_SECRET` (required)
-- `REGISTRY_AUTH_ENABLED` (`true|false`, default `false`)
-- `REGISTRY_USERNAME`, `REGISTRY_PASSWORD` (required when auth is enabled)
-- `REGISTRY_SERVICE` (default `warehouse`)
-- `REGISTRY_REALM` (default `https://localhost:8698/token`)
+- `SERVICE_AUTH_ENABLED` (`true|false`, default `false`)
+- `SERVICE_USERNAME`, `SERVICE_PASSWORD` (required when auth is enabled)
+- `SERVICE_NAME` (default `warehouse`)
+- `SERVICE_REALM` (default `https://localhost:8698/token`)
 - `STORAGE_PATH` (default `./storage/docker`)
 
 ### Endpoint Summary
