@@ -1,8 +1,9 @@
 use crate::routers::crates::{index_file_path, index_prefix, validate_crate_name};
 use crate::utils::sha256::sha256_hex;
-use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
-use serde::Serialize;
 use std::sync::LazyLock;
+use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
+use quench_srv::prelude::with_base_path;
+use serde::Serialize;
 use utoipa::ToSchema;
 // ---------------------------------------------------------------------------
 // Config
@@ -33,10 +34,10 @@ struct IndexConfig {
 )]
 #[get("/config.json")]
 async fn get_index_config() -> impl Responder {
-    let base = REGISTRY_BASE_URL.as_str().trim_end_matches('/');
+    let base = format!("{}{}", REGISTRY_BASE_URL.as_str().trim_end_matches('/'), with_base_path(""));
     let config = IndexConfig {
         dl: format!("{base}/api/v1/crates/{{crate}}/{{version}}/download"),
-        api: base.to_string(),
+        api: format!("{base}"),
         auth_required: false,
     };
     HttpResponse::Ok()
