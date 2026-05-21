@@ -50,7 +50,6 @@ where
             .app_data(web::Data::new(jwt_config.clone()))
             .wrap(middleware::logger::FilteredLogger)
             .wrap(middleware::auth::QuenchAuth::new(jwt_config.clone()))
-            .service(root_module())
             .service(
                 web::scope(&base_path)
                     .service(routers::health::scope())
@@ -62,6 +61,7 @@ where
                     )
                     .service(scoped_module()),
             )
+            .service(root_module())
     });
 
     if let Some(config) = load_tls(
