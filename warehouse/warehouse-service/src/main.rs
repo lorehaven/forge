@@ -1,4 +1,4 @@
-use quench_srv::prelude::{serve, HttpServiceFactory};
+use quench_srv::prelude::{HttpServiceFactory, serve};
 
 pub mod domain;
 pub mod middleware;

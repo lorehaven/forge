@@ -6,7 +6,10 @@ use quench_srv::prelude::jwt::JwtConfig;
 use quench_web::prelude::*;
 
 #[get("/home")]
-pub(super) async fn home(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
+pub(super) async fn home(
+    req: actix_web::HttpRequest,
+    config: web::Data<JwtConfig>,
+) -> impl Responder {
     if !common::is_ui_authenticated(&req, &config) {
         return common::ui_login_redirect();
     }
@@ -14,7 +17,10 @@ pub(super) async fn home(req: actix_web::HttpRequest, config: web::Data<JwtConfi
 }
 
 #[get("/home/")]
-pub(super) async fn home_slash(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
+pub(super) async fn home_slash(
+    req: actix_web::HttpRequest,
+    config: web::Data<JwtConfig>,
+) -> impl Responder {
     if !common::is_ui_authenticated(&req, &config) {
         return common::ui_login_redirect();
     }
