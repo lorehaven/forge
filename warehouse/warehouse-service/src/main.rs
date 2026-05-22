@@ -1,4 +1,4 @@
-use quench_srv::prelude::{HttpServiceFactory, serve};
+use quench_srv::prelude::{HttpServiceFactory, domain::jwt::JwtConfig, serve};
 
 pub mod domain;
 pub mod middleware;
@@ -15,6 +15,7 @@ pub fn root_scope() -> impl HttpServiceFactory {
 
     actix_web::web::scope("")
         .app_data(actix_web::web::PayloadConfig::new(max_body_bytes))
+        .wrap(middleware::auth::WarehouseAuth::new(JwtConfig::init()))
         .wrap(middleware::limits::WarehouseLimits::new(
             max_concurrent_uploads,
         ))
