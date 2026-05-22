@@ -7,6 +7,7 @@ members = [
   "quench/quench-srv",
   "quench/quench-web",
   "riveter",
+  "switchboard",
   "toolbox",
   "warehouse/*",
   "welder",
@@ -25,6 +26,7 @@ readme = "README.md"
 actix-http = { version = "3.12" }
 actix-service = { version = "2.0" }
 actix-web = { version = "4.13", features = ["rustls-0_23"] }
+actix-ws = { version = "0.4" }
 anyhow = { version = "1.0" }
 async-trait = { version = "0.1" }
 axum = { version = "0.8", features = ["json"] }
@@ -37,13 +39,15 @@ envmnt = { version = "0.10" }
 fluent-syntax = { version = "0.12" }
 futures = { version = "0.3" }
 futures-util = { version = "0.3" }
+gguf = { version = "0.1" }
 html5ever = { version = "0.39" }
 hmac = { version = "0.13" }
 jsonwebtoken = { version = "10.4", features = ["rust_crypto"] }
 markup5ever_rcdom = { version = "0.39.0" }
 minijinja = { version = "2.20", features = ["loader", "serde"] }
+moka = { version = "0.12", features = ["sync"] }
 quench-cli = { path = "quench/quench-cli", registry = "ennor", version = "0.1.0" }
-quench-srv = { path = "quench/quench-srv", registry = "ennor", version = "0.1.2" }
+quench-srv = { path = "quench/quench-srv", registry = "ennor", version = "0.1.4" }
 quench-web = { path = "quench/quench-web", registry = "ennor", version = "0.1.0" }
 regex = { version = "1.12" }
 reqwest = { version = "0.13", default-features = false, features = [

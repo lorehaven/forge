@@ -1,6 +1,6 @@
 [package]
 name = "quench-srv"
-version = "0.1.3"
+version = "0.1.4"
 edition.workspace = true
 authors.workspace = true
 description = "Quench - simple server framework"
@@ -19,8 +19,6 @@ path = "src/lib.rs"
 actix-service.workspace = true
 actix-web.workspace = true
 envmnt.workspace = true
-futures-util.workspace = true
-jsonwebtoken.workspace = true
 quench-cli.workspace = true
 rustls.workspace = true
 serde.workspace = true

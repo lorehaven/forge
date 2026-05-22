@@ -49,7 +49,6 @@ where
         App::new()
             .app_data(web::Data::new(jwt_config.clone()))
             .wrap(middleware::logger::FilteredLogger)
-            .wrap(middleware::auth::QuenchAuth::new(jwt_config.clone()))
             .service(
                 web::scope(&base_path)
                     .service(routers::health::scope())

@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use toml_edit::{value, DocumentMut};
+use toml_edit::{DocumentMut, value};
 
 #[derive(Debug)]
 struct WorkspacePackage {

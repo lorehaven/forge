@@ -1,5 +1,3 @@
-use crate::actix::domain::error;
-use crate::actix::domain::jwt::{Claims, JwtConfig};
 use actix_web::{
     Error,
     body::{EitherBody, MessageBody},
@@ -8,23 +6,25 @@ use actix_web::{
 };
 use futures_util::future::{LocalBoxFuture, Ready, ok};
 use jsonwebtoken::{DecodingKey, Validation, decode};
+use quench_srv::prelude::{
+    error,
+    jwt::{Claims, JwtConfig},
+};
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
-use crate::prelude::with_base_path;
 
 static AUTH_FAILURES: LazyLock<Mutex<HashMap<String, Vec<Instant>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
-pub struct QuenchAuth {
+pub struct WarehouseAuth {
     config: JwtConfig,
     max_failures: usize,
-    unprotected_apis: Vec<String>,
     window: Duration,
 }
 
-impl QuenchAuth {
+impl WarehouseAuth {
     pub fn new(config: JwtConfig) -> Self {
         let max_failures = envmnt::get_or("MAX_AUTH_FAILURES_PER_MINUTE", "30")
             .parse()
@@ -32,51 +32,44 @@ impl QuenchAuth {
         let window_secs = envmnt::get_or("AUTH_FAILURE_WINDOW_SECONDS", "60")
             .parse()
             .unwrap_or(60);
-        let unprotected_apis = envmnt::get_or("UNPROTECTED_APIS", "")
-            .split(",")
-            .map(String::from
-            ).collect();
 
         Self {
             config,
             max_failures,
-            unprotected_apis,
             window: Duration::from_secs(window_secs),
         }
     }
 }
 
-impl<S, B> Transform<S, ServiceRequest> for QuenchAuth
+impl<S, B> Transform<S, ServiceRequest> for WarehouseAuth
 where
     S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
     B: MessageBody + 'static,
 {
     type Response = ServiceResponse<EitherBody<B>>;
     type Error = Error;
-    type Transform = QuenchAuthMiddleware<S>;
+    type Transform = WarehouseAuthMiddleware<S>;
     type InitError = ();
     type Future = Ready<Result<Self::Transform, Self::InitError>>;
 
     fn new_transform(&self, service: S) -> Self::Future {
-        ok(QuenchAuthMiddleware {
+        ok(WarehouseAuthMiddleware {
             service,
             config: self.config.clone(),
             max_failures: self.max_failures,
-            unprotected_apis: self.unprotected_apis.clone(),
             window: self.window,
         })
     }
 }
 
-pub struct QuenchAuthMiddleware<S> {
+pub struct WarehouseAuthMiddleware<S> {
     service: S,
     config: JwtConfig,
     max_failures: usize,
-    unprotected_apis: Vec<String>,
     window: Duration,
 }
 
-impl<S, B> Service<ServiceRequest> for QuenchAuthMiddleware<S>
+impl<S, B> Service<ServiceRequest> for WarehouseAuthMiddleware<S>
 where
     S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
     B: MessageBody + 'static,
@@ -92,10 +85,8 @@ where
     fn call(&self, req: ServiceRequest) -> Self::Future {
         let path = req.path().to_string();
 
-        // skip auth if api is unprotected
-        let is_health = path == with_base_path("/health");
-        let is_unprotected = self.unprotected_apis.iter().any(|api| path.starts_with(api));
-        if is_health || is_unprotected {
+        // Only protect /v2/*
+        if !path.starts_with("/v2/") {
             let fut = self.service.call(req);
             return Box::pin(async move {
                 let res = fut.await?;
