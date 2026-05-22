@@ -12,6 +12,16 @@ pub fn ensure_switchboard_css() {
 }
 
 fn switchboard_css_rules() -> Vec<CssRule> {
+    let mut rules = Vec::new();
+    rules.extend(layout_rules());
+    rules.extend(home_rules());
+    rules.extend(models_rules());
+    rules.extend(login_rules());
+    rules.extend(estimates_modal_rules());
+    rules
+}
+
+fn layout_rules() -> Vec<CssRule> {
     vec![
         CssRule::new("header").child(
             CssRule::new(".left-panel")
@@ -79,6 +89,11 @@ fn switchboard_css_rules() -> Vec<CssRule> {
             .property("font-weight", "600")
             .property("border-bottom", "0.1rem solid var(--bs-gray-700)")
             .property("background-color", "var(--bs-gray-800)"),
+    ]
+}
+
+fn home_rules() -> Vec<CssRule> {
+    vec![
         // Home / service index
         CssRule::new(".meta-list")
             .property("padding", "0.75rem 1rem")
@@ -160,6 +175,11 @@ fn switchboard_css_rules() -> Vec<CssRule> {
             .property("color", "var(--bs-gray-500)")
             .property("flex-shrink", "0")
             .property("padding-left", "1rem"),
+    ]
+}
+
+fn models_rules() -> Vec<CssRule> {
+    vec![
         // Models dashboard
         CssRule::new(".content:has(div > div.page > .models-dashboard-content)")
             .property("padding", "0")
@@ -319,6 +339,11 @@ fn switchboard_css_rules() -> Vec<CssRule> {
                             ),
                     ),
             ),
+    ]
+}
+
+fn login_rules() -> Vec<CssRule> {
+    vec![
         // Login
         CssRule::new(".login-layout")
             .property("min-height", "calc(100vh - 10rem)")
@@ -328,6 +353,11 @@ fn switchboard_css_rules() -> Vec<CssRule> {
         CssRule::new(".login-panel")
             .property("width", "100%")
             .property("max-width", "28rem"),
+    ]
+}
+
+fn estimates_modal_rules() -> Vec<CssRule> {
+    vec![
         CssRule::new("#estimates-modal")
             .property("position", "fixed")
             .property("inset", "0")

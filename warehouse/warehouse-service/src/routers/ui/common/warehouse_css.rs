@@ -12,6 +12,18 @@ pub fn ensure_warehouse_css() {
 }
 
 fn warehouse_css_rules() -> Vec<CssRule> {
+    let mut rules = Vec::new();
+    rules.extend(layout_rules());
+    rules.extend(tree_rules());
+    rules.extend(table_rules());
+    rules.extend(grid_rules());
+    rules.extend(meta_rules());
+    rules.extend(home_rules());
+    rules.extend(login_rules());
+    rules
+}
+
+fn layout_rules() -> Vec<CssRule> {
     vec![
         CssRule::new("header")
             .child(CssRule::new(".left-panel")
@@ -87,6 +99,11 @@ fn warehouse_css_rules() -> Vec<CssRule> {
             .property("font-weight", "600")
             .property("border-bottom", "0.1rem solid var(--bs-gray-700)")
             .property("background-color", "var(--bs-gray-800)"),
+    ]
+}
+
+fn tree_rules() -> Vec<CssRule> {
+    vec![
         CssRule::new(".tree-scroll")
             .property("flex", "1 1 auto")
             .property("min-height", "0")
@@ -115,6 +132,11 @@ fn warehouse_css_rules() -> Vec<CssRule> {
         CssRule::new(".repo-link.active")
             .property("background-color", "var(--bs-success-900)")
             .property("color", "var(--bs-gray-100)"),
+    ]
+}
+
+fn table_rules() -> Vec<CssRule> {
+    vec![
         CssRule::new(".table")
             .property("display", "flex")
             .property("flex-direction", "column")
@@ -152,6 +174,26 @@ fn warehouse_css_rules() -> Vec<CssRule> {
         CssRule::new(".tags-grid .header,\n.tags-grid .body,\n.versions-grid .header,\n.versions-grid .body")
             .property("min-width", "100%")
             .property("width", "max(100%, var(--table-min-width, 100%))"),
+        CssRule::new(".files-toolbar")
+            .property("display", "flex")
+            .property("flex-wrap", "wrap")
+            .property("gap", "0.5rem")
+            .property("padding", "0.75rem")
+            .property("border-bottom", "0.1rem solid var(--bs-gray-700)")
+            .child(CssRule::new("input[type=\"file\"]").property("max-width", "20rem")),
+        CssRule::new(".actions")
+            .property("gap", "0.6rem")
+            .child(
+                CssRule::new("i")
+                    .property("cursor", "pointer")
+                    .property("color", "var(--bs-gray-300)")
+                    .child(CssRule::new("&:hover").property("color", "var(--bs-gray-100)")),
+            ),
+    ]
+}
+
+fn grid_rules() -> Vec<CssRule> {
+    vec![
         // Docker tags grid
         CssRule::new(".tags-grid").property("--table-min-width", "66rem"),
         CssRule::new(".tags-grid")
@@ -221,21 +263,11 @@ fn warehouse_css_rules() -> Vec<CssRule> {
                     .property("display", "flex")
                     .property("align-items", "center"),
             ),
-        CssRule::new(".files-toolbar")
-            .property("display", "flex")
-            .property("flex-wrap", "wrap")
-            .property("gap", "0.5rem")
-            .property("padding", "0.75rem")
-            .property("border-bottom", "0.1rem solid var(--bs-gray-700)")
-            .child(CssRule::new("input[type=\"file\"]").property("max-width", "20rem")),
-        CssRule::new(".actions")
-            .property("gap", "0.6rem")
-            .child(
-                CssRule::new("i")
-                    .property("cursor", "pointer")
-                    .property("color", "var(--bs-gray-300)")
-                    .child(CssRule::new("&:hover").property("color", "var(--bs-gray-100)")),
-            ),
+    ]
+}
+
+fn meta_rules() -> Vec<CssRule> {
+    vec![
         CssRule::new(".tag-link")
             .property("text-decoration", "none")
             .property("color", "var(--bs-gray-300)")
@@ -283,6 +315,11 @@ fn warehouse_css_rules() -> Vec<CssRule> {
             .property("font-size", "0.85rem")
             .property("color", "var(--bs-gray-300)")
             .property("padding", "0.1rem 0"),
+    ]
+}
+
+fn home_rules() -> Vec<CssRule> {
+    vec![
         // Home / service index
         CssRule::new(".home-content")
             .property("width", "100%"),
@@ -355,6 +392,11 @@ fn warehouse_css_rules() -> Vec<CssRule> {
             .property("color", "var(--bs-gray-500)")
             .property("flex-shrink", "0")
             .property("padding-left", "1rem"),
+    ]
+}
+
+fn login_rules() -> Vec<CssRule> {
+    vec![
         // Login
         CssRule::new(".login-layout")
             .property("min-height", "calc(100vh - 10rem)")
