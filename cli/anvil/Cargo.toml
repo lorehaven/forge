@@ -1,6 +1,6 @@
 [package]
 name = "anvil"
-version = "0.1.7"
+version = "0.1.8"
 edition.workspace = true
 authors.workspace = true
 description = "Anvil CLI - workspace build tools for cargo projects"
