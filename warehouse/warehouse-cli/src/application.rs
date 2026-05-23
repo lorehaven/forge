@@ -7,7 +7,8 @@ use crate::cli::{
     CratesRegistryAddArgs, CratesRegistryCommands, CratesRegistryRemoveArgs, CratesRegistryUseArgs,
     CratesSearchArgs, CratesUnyankArgs, CratesVersionsArgs, CratesYankArgs, DockerCommands,
     FilesBulkDeleteArgs, FilesBulkDownloadArgs, FilesCommands, FilesDeleteArgs, FilesDownloadArgs,
-    FilesLsArgs, FilesMkdirArgs, FilesPreviewArgs, FilesRmdirArgs, FilesStoragesArgs,
+    FilesLsArgs, FilesMkdirArgs, FilesPreviewArgs, FilesRegistryAddArgs, FilesRegistryCommands,
+    FilesRegistryRemoveArgs, FilesRegistryUseArgs, FilesRmdirArgs, FilesStoragesArgs,
     FilesUploadArgs, LoginArgs, RegistryAddArgs, RegistryCommands, RegistryRemoveArgs,
     RegistryUseArgs, TagsArgs,
 };
@@ -78,6 +79,12 @@ async fn run_crates(store: &ConfigStore, command: CratesCommands) -> Result<()> 
 
 async fn run_files(store: &ConfigStore, command: FilesCommands) -> Result<()> {
     match command {
+        FilesCommands::Registry { command } => match command {
+            FilesRegistryCommands::Add(args) => cmd_files_registry_add(store, args)?,
+            FilesRegistryCommands::List => cmd_files_registry_list(store)?,
+            FilesRegistryCommands::Use(args) => cmd_files_registry_use(store, args)?,
+            FilesRegistryCommands::Remove(args) => cmd_files_registry_remove(store, args)?,
+        },
         FilesCommands::Storages(args) => cmd_files_storages(store, args).await?,
         FilesCommands::Ls(args) => cmd_files_ls(store, args).await?,
         FilesCommands::Upload(args) => cmd_files_upload(store, args).await?,
@@ -379,6 +386,118 @@ fn cmd_crates_registry_remove(store: &ConfigStore, args: CratesRegistryRemoveArg
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// Files registry commands
+// ---------------------------------------------------------------------------
+
+fn cmd_files_registry_add(store: &ConfigStore, args: FilesRegistryAddArgs) -> Result<()> {
+    validate_registry_name(&args.name)?;
+    let scope = if args.global {
+        ConfigScope::Global
+    } else {
+        ConfigScope::Local
+    };
+    store.ensure_layout(scope)?;
+
+    let mut effective_root = store.load_effective_root_config()?;
+    let mut reg = store
+        .load_effective_registry_optional(&args.name)?
+        .map(|entry| entry.config)
+        .unwrap_or_default();
+
+    reg.files.url = args.url.trim().trim_end_matches('/').to_string();
+    reg.base_path = normalize_base_path(&args.base_path);
+    reg.files.insecure_tls = args.insecure_tls;
+
+    store.save_registry(scope, &args.name, &reg)?;
+
+    if args.r#use || effective_root.files.current_registry.is_none() {
+        effective_root.files.current_registry = Some(args.name.clone());
+        store.save_root_config(scope, &effective_root)?;
+    }
+
+    ui::ok(format!("files registry '{}' saved", args.name));
+    Ok(())
+}
+
+fn cmd_files_registry_list(store: &ConfigStore) -> Result<()> {
+    let cfg = store.load_effective_root_config()?;
+    let current = cfg.files.current_registry.as_deref();
+
+    let entries = store.list_effective_registries()?;
+    if entries.is_empty() {
+        ui::warn("no registries configured");
+        return Ok(());
+    }
+
+    for entry in entries {
+        let marker = if Some(entry.name.as_str()) == current {
+            "*"
+        } else {
+            " "
+        };
+        let source = match entry.source {
+            RegistrySource::Local => "local",
+            RegistrySource::Global => "global",
+        };
+
+        let base_path = if entry.config.base_path.is_empty() {
+            String::new()
+        } else {
+            format!(" base-path={}", entry.config.base_path)
+        };
+
+        qprintln!(
+            "{} {} -> {}{} ({})",
+            marker,
+            entry.name,
+            entry.config.files.url,
+            base_path,
+            source
+        );
+    }
+
+    Ok(())
+}
+
+fn cmd_files_registry_use(store: &ConfigStore, args: FilesRegistryUseArgs) -> Result<()> {
+    validate_registry_name(&args.name)?;
+    let scope = if args.global {
+        ConfigScope::Global
+    } else {
+        ConfigScope::Local
+    };
+    if !store.registry_exists_in_scope(scope, &args.name) {
+        bail!("registry '{}' does not exist", args.name);
+    }
+
+    let mut cfg = store.load_effective_root_config()?;
+    cfg.files.current_registry = Some(args.name.clone());
+    store.save_root_config(scope, &cfg)?;
+
+    ui::ok(format!("using files registry '{}'", args.name));
+    Ok(())
+}
+
+fn cmd_files_registry_remove(store: &ConfigStore, args: FilesRegistryRemoveArgs) -> Result<()> {
+    validate_registry_name(&args.name)?;
+    let scope = if args.global {
+        ConfigScope::Global
+    } else {
+        ConfigScope::Local
+    };
+    store.remove_registry(scope, &args.name)?;
+
+    let mut root = store.load_effective_root_config()?;
+    if root.files.current_registry.as_deref() == Some(&args.name) {
+        root.files.current_registry = None;
+        store.save_root_config(scope, &root)?;
+    }
+
+    ui::ok(format!("files registry '{}' removed", args.name));
+    Ok(())
+}
+
 fn cmd_crates_login(store: &ConfigStore, args: CratesLoginArgs) -> Result<()> {
     let registry_name = store.resolve_crates_registry_name(args.registry)?;
     let mut reg = store.load_effective_registry(&registry_name)?.config;
@@ -527,7 +646,7 @@ async fn cmd_crates_unyank(store: &ConfigStore, args: CratesUnyankArgs) -> Resul
 // ---------------------------------------------------------------------------
 
 async fn cmd_files_storages(store: &ConfigStore, args: FilesStoragesArgs) -> Result<()> {
-    let registry_name = store.resolve_registry_name(args.registry)?;
+    let registry_name = store.resolve_files_registry_name(args.registry)?;
     let registry = store.load_effective_registry(&registry_name)?.config;
     let api = FilesApi::new(&registry)?;
     let storages = api.storages(&registry).await?;
@@ -545,7 +664,7 @@ async fn cmd_files_storages(store: &ConfigStore, args: FilesStoragesArgs) -> Res
 }
 
 async fn cmd_files_ls(store: &ConfigStore, args: FilesLsArgs) -> Result<()> {
-    let registry_name = store.resolve_registry_name(args.registry)?;
+    let registry_name = store.resolve_files_registry_name(args.registry)?;
     let registry = store.load_effective_registry(&registry_name)?.config;
     let api = FilesApi::new(&registry)?;
     let result = api.list(&registry, &args.storage, &args.path).await?;
@@ -577,7 +696,7 @@ async fn cmd_files_upload(store: &ConfigStore, args: FilesUploadArgs) -> Result<
         bail!("at least one local file is required");
     }
 
-    let registry_name = store.resolve_registry_name(args.registry)?;
+    let registry_name = store.resolve_files_registry_name(args.registry)?;
     let registry = store.load_effective_registry(&registry_name)?.config;
     let api = FilesApi::new(&registry)?;
 
@@ -594,7 +713,7 @@ async fn cmd_files_upload(store: &ConfigStore, args: FilesUploadArgs) -> Result<
 }
 
 async fn cmd_files_preview(store: &ConfigStore, args: FilesPreviewArgs) -> Result<()> {
-    let registry_name = store.resolve_registry_name(args.registry)?;
+    let registry_name = store.resolve_files_registry_name(args.registry)?;
     let registry = store.load_effective_registry(&registry_name)?.config;
     let api = FilesApi::new(&registry)?;
     let preview = api.preview(&registry, &args.storage, &args.path).await?;
@@ -609,7 +728,7 @@ async fn cmd_files_preview(store: &ConfigStore, args: FilesPreviewArgs) -> Resul
 }
 
 async fn cmd_files_download(store: &ConfigStore, args: FilesDownloadArgs) -> Result<()> {
-    let registry_name = store.resolve_registry_name(args.registry)?;
+    let registry_name = store.resolve_files_registry_name(args.registry)?;
     let registry = store.load_effective_registry(&registry_name)?.config;
     let api = FilesApi::new(&registry)?;
     let (bytes, server_name) = api.download(&registry, &args.storage, &args.path).await?;
@@ -624,7 +743,7 @@ async fn cmd_files_download(store: &ConfigStore, args: FilesDownloadArgs) -> Res
 }
 
 async fn cmd_files_mkdir(store: &ConfigStore, args: FilesMkdirArgs) -> Result<()> {
-    let registry_name = store.resolve_registry_name(args.registry)?;
+    let registry_name = store.resolve_files_registry_name(args.registry)?;
     let registry = store.load_effective_registry(&registry_name)?.config;
     let api = FilesApi::new(&registry)?;
     api.mkdir(&registry, &args.storage, &args.path).await?;
@@ -633,7 +752,7 @@ async fn cmd_files_mkdir(store: &ConfigStore, args: FilesMkdirArgs) -> Result<()
 }
 
 async fn cmd_files_rmdir(store: &ConfigStore, args: FilesRmdirArgs) -> Result<()> {
-    let registry_name = store.resolve_registry_name(args.registry)?;
+    let registry_name = store.resolve_files_registry_name(args.registry)?;
     let registry = store.load_effective_registry(&registry_name)?.config;
     let api = FilesApi::new(&registry)?;
     api.rmdir(&registry, &args.storage, &args.path).await?;
@@ -642,7 +761,7 @@ async fn cmd_files_rmdir(store: &ConfigStore, args: FilesRmdirArgs) -> Result<()
 }
 
 async fn cmd_files_delete(store: &ConfigStore, args: FilesDeleteArgs) -> Result<()> {
-    let registry_name = store.resolve_registry_name(args.registry)?;
+    let registry_name = store.resolve_files_registry_name(args.registry)?;
     let registry = store.load_effective_registry(&registry_name)?.config;
     let api = FilesApi::new(&registry)?;
     api.delete_file(&registry, &args.storage, &args.path)
@@ -655,7 +774,7 @@ async fn cmd_files_bulk_delete(store: &ConfigStore, args: FilesBulkDeleteArgs) -
     if args.paths.is_empty() {
         bail!("at least one path is required");
     }
-    let registry_name = store.resolve_registry_name(args.registry)?;
+    let registry_name = store.resolve_files_registry_name(args.registry)?;
     let registry = store.load_effective_registry(&registry_name)?.config;
     let api = FilesApi::new(&registry)?;
     api.bulk_delete(&registry, &args.storage, &args.paths)
@@ -668,7 +787,7 @@ async fn cmd_files_bulk_download(store: &ConfigStore, args: FilesBulkDownloadArg
     if args.paths.is_empty() {
         bail!("at least one path is required");
     }
-    let registry_name = store.resolve_registry_name(args.registry)?;
+    let registry_name = store.resolve_files_registry_name(args.registry)?;
     let registry = store.load_effective_registry(&registry_name)?.config;
     let api = FilesApi::new(&registry)?;
     let bytes = api

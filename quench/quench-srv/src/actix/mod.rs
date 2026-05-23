@@ -1,3 +1,4 @@
+use crate::actix::domain::auth::UserDb;
 use crate::actix::domain::jwt::JwtConfig;
 use crate::prelude::normalize_base_path;
 use actix_service::ServiceFactory;
@@ -43,11 +44,13 @@ where
     let base_path = normalize_base_path(&envmnt::get_or("BASE_PATH", "/"));
 
     let jwt_config = JwtConfig::init();
+    let user_db = UserDb::init();
     let (https_addr, http_addr) = get_server_addr();
 
     let server = HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(jwt_config.clone()))
+            .app_data(web::Data::from(user_db.clone()))
             .wrap(middleware::logger::FilteredLogger)
             .service(
                 web::scope(&base_path)

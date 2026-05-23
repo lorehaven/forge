@@ -79,6 +79,11 @@ pub enum CratesCommands {
 
 #[derive(Subcommand)]
 pub enum FilesCommands {
+    /// File registry management
+    Registry {
+        #[command(subcommand)]
+        command: FilesRegistryCommands,
+    },
     /// List configured file storages in the service
     Storages(FilesStoragesArgs),
     /// List directory entries
@@ -128,6 +133,18 @@ pub enum CratesRegistryCommands {
     Use(CratesRegistryUseArgs),
     /// Remove a crates registry
     Remove(CratesRegistryRemoveArgs),
+}
+
+#[derive(Subcommand)]
+pub enum FilesRegistryCommands {
+    /// Add or update a files registry config
+    Add(FilesRegistryAddArgs),
+    /// List configured files registries
+    List,
+    /// Set active files registry
+    Use(FilesRegistryUseArgs),
+    /// Remove a files registry
+    Remove(FilesRegistryRemoveArgs),
 }
 
 // ---------------------------------------------------------------------------
@@ -317,6 +334,49 @@ pub struct CratesUnyankArgs {
     /// Registry name; defaults to active crates registry from config
     #[arg(long)]
     pub registry: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Files args
+// ---------------------------------------------------------------------------
+
+#[derive(Args)]
+pub struct FilesRegistryAddArgs {
+    /// Registry name used in local configuration
+    pub name: String,
+    /// Registry base URL, e.g. http://registry.local:8698
+    #[arg(long)]
+    pub url: String,
+    /// Service base path for crates/files/admin endpoints, e.g. /warehouse
+    #[arg(long, default_value = "")]
+    pub base_path: String,
+    /// Skip TLS certificate validation for this registry
+    #[arg(long)]
+    pub insecure_tls: bool,
+    /// Set as current active registry
+    #[arg(long)]
+    pub r#use: bool,
+    /// Write to ~/.config/warehouse instead of .warehouse
+    #[arg(long)]
+    pub global: bool,
+}
+
+#[derive(Args)]
+pub struct FilesRegistryUseArgs {
+    /// Registry name
+    pub name: String,
+    /// Update ~/.config/warehouse instead of .warehouse
+    #[arg(long)]
+    pub global: bool,
+}
+
+#[derive(Args)]
+pub struct FilesRegistryRemoveArgs {
+    /// Registry name
+    pub name: String,
+    /// Remove from ~/.config/warehouse instead of .warehouse
+    #[arg(long)]
+    pub global: bool,
 }
 
 #[derive(Args)]

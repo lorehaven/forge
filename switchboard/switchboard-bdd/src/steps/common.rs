@@ -1,0 +1,90 @@
+use cucumber::World;
+use reqwest::Response;
+use serde_json::Value;
+use std::env;
+
+#[derive(Debug, World)]
+#[world(init = Self::new)]
+pub struct SwitchboardWorld {
+    pub api_url: String,
+    pub client: reqwest::Client,
+    pub last_status: Option<u16>,
+    pub last_json: Option<Value>,
+    pub last_headers: reqwest::header::HeaderMap,
+    pub last_response_headers: reqwest::header::HeaderMap,
+}
+
+impl SwitchboardWorld {
+    pub async fn new() -> Self {
+        let base_url =
+            env::var("SWITCHBOARD_API_URL").unwrap_or_else(|_| "http://localhost:8554".to_string());
+        let base_path = env::var("BASE_PATH").unwrap_or_else(|_| "".to_string());
+
+        let api_url = format!("{}{}", base_url, base_path);
+
+        let client = reqwest::Client::builder()
+            .danger_accept_invalid_certs(true)
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+
+        Self {
+            api_url,
+            client,
+            last_status: None,
+            last_json: None,
+            last_headers: reqwest::header::HeaderMap::new(),
+            last_response_headers: reqwest::header::HeaderMap::new(),
+        }
+    }
+
+    pub async fn record_response(&mut self, res: Response) {
+        self.last_status = Some(res.status().as_u16());
+        self.last_headers = res.headers().clone();
+        self.last_response_headers = res.headers().clone();
+        if res
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|h| h.to_str().ok())
+            .map(|s| s.contains("application/json"))
+            .unwrap_or(false)
+        {
+            self.last_json = res.json().await.ok();
+        } else {
+            self.last_json = None;
+        }
+    }
+}
+
+#[cucumber::given("switchboard API is available")]
+async fn api_available(world: &mut SwitchboardWorld) {
+    // Check UI login page as a proxy for availability if no health check
+    let res = world
+        .client
+        .get(format!("{}/ui/login", world.api_url))
+        .send()
+        .await;
+    assert!(
+        res.is_ok(),
+        "API is not available at {}: {:?}",
+        world.api_url,
+        res.err()
+    );
+}
+
+#[cucumber::then(expr = "response status should be {int}")]
+async fn check_status(world: &mut SwitchboardWorld, status: u16) {
+    assert_eq!(world.last_status.expect("No response available"), status);
+}
+
+#[cucumber::when(expr = "GET request is sent to {string}")]
+async fn send_get_request(world: &mut SwitchboardWorld, path: String) {
+    let url = format!("{}{}", world.api_url, path);
+    let res = world
+        .client
+        .get(&url)
+        .send()
+        .await
+        .expect("Failed to send GET request");
+    world.last_response_headers = res.headers().clone();
+    world.record_response(res).await;
+}

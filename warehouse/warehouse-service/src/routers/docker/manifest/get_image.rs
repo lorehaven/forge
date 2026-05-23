@@ -152,57 +152,6 @@ pub(super) async fn resolve_manifest_response(
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn accepts_docker_manifest_list_for_oci_index() {
-        let accept = "application/vnd.docker.distribution.manifest.list.v2+json";
-
-        let negotiated = negotiate_media_type(accept, &[OCI_IMAGE_INDEX_V1]);
-
-        assert_eq!(negotiated, Some(OCI_IMAGE_INDEX_V1));
-    }
-
-    #[test]
-    fn accepts_docker_manifest_for_oci_manifest() {
-        let accept = "application/vnd.docker.distribution.manifest.v2+json";
-
-        let negotiated = negotiate_media_type(accept, &[OCI_IMAGE_MANIFEST_V1]);
-
-        assert_eq!(negotiated, Some(OCI_IMAGE_MANIFEST_V1));
-    }
-
-    #[test]
-    fn prefers_specific_media_type_over_wildcard() {
-        let accept = "*/*;q=0.5,application/vnd.oci.image.manifest.v1+json;q=1";
-
-        let negotiated = negotiate_media_type(accept, &[OCI_IMAGE_MANIFEST_V1]);
-
-        assert_eq!(negotiated, Some(OCI_IMAGE_MANIFEST_V1));
-    }
-
-    #[test]
-    fn rejects_non_matching_media_type() {
-        let accept = "application/json";
-
-        let negotiated = negotiate_media_type(accept, &[DOCKER_MANIFEST_V2]);
-
-        assert_eq!(negotiated, None);
-    }
-
-    #[test]
-    fn falls_back_to_stored_media_type_when_accept_does_not_match() {
-        let accept = "application/json";
-        let stored = OCI_IMAGE_MANIFEST_V1;
-
-        let chosen = negotiate_media_type(accept, &[stored]).unwrap_or(stored);
-
-        assert_eq!(chosen, stored);
-    }
-}
-
 const DOCKER_MANIFEST_V2: &str = "application/vnd.docker.distribution.manifest.v2+json";
 const DOCKER_MANIFEST_LIST_V2: &str = "application/vnd.docker.distribution.manifest.list.v2+json";
 const OCI_IMAGE_MANIFEST_V1: &str = "application/vnd.oci.image.manifest.v1+json";

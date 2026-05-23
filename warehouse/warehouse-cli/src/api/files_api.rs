@@ -239,7 +239,9 @@ fn ensure_success(response: &reqwest::Response, url: &str) -> Result<()> {
 }
 
 fn base_url(registry: &RegistryConfig, endpoint: &str) -> Result<String> {
-    let base = if !registry.docker.url.trim().is_empty() {
+    let base = if !registry.files.url.trim().is_empty() {
+        registry.files.url.as_str()
+    } else if !registry.docker.url.trim().is_empty() {
         registry.docker.url.as_str()
     } else if !registry.crates.url.trim().is_empty() {
         registry.crates.url.as_str()

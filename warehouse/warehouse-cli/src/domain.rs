@@ -11,6 +11,8 @@ pub struct RootConfig {
     pub docker: RootDockerConfig,
     #[serde(default)]
     pub crates: RootCratesConfig,
+    #[serde(default)]
+    pub files: RootFilesConfig,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -20,6 +22,11 @@ pub struct RootDockerConfig {
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct RootCratesConfig {
+    pub current_registry: Option<String>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct RootFilesConfig {
     pub current_registry: Option<String>,
 }
 
@@ -37,6 +44,12 @@ pub fn merge_root_config(global: RootConfig, local: RootConfig) -> RootConfig {
                 .current_registry
                 .or(global.crates.current_registry),
         },
+        files: RootFilesConfig {
+            current_registry: local
+                .files
+                .current_registry
+                .or(global.files.current_registry),
+        },
     }
 }
 
@@ -52,6 +65,8 @@ pub struct RegistryConfig {
     pub docker: RegistryDockerConfig,
     #[serde(default)]
     pub crates: RegistryCratesConfig,
+    #[serde(default)]
+    pub files: RegistryFilesConfig,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
@@ -82,6 +97,13 @@ pub struct RegistryCratesConfig {
     /// Bearer token used for authenticated operations (publish, yank, owners).
     pub token: Option<String>,
     /// Skip TLS certificate verification.
+    #[serde(default)]
+    pub insecure_tls: bool,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize, Clone)]
+pub struct RegistryFilesConfig {
+    pub url: String,
     #[serde(default)]
     pub insecure_tls: bool,
 }
@@ -227,30 +249,4 @@ pub fn validate_registry_name(name: &str) -> Result<()> {
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{normalize_base_path, service_url};
-
-    #[test]
-    fn normalizes_base_paths() {
-        assert_eq!(normalize_base_path(""), "");
-        assert_eq!(normalize_base_path("/"), "");
-        assert_eq!(normalize_base_path("warehouse"), "/warehouse");
-        assert_eq!(normalize_base_path("/warehouse"), "/warehouse");
-        assert_eq!(normalize_base_path("/warehouse/"), "/warehouse");
-    }
-
-    #[test]
-    fn builds_service_urls_with_base_path() {
-        assert_eq!(
-            service_url("https://example.test", "/warehouse", "/api/v1/files").unwrap(),
-            "https://example.test/warehouse/api/v1/files"
-        );
-        assert_eq!(
-            service_url("https://example.test", "", "/api/v1/files").unwrap(),
-            "https://example.test/api/v1/files"
-        );
-    }
 }

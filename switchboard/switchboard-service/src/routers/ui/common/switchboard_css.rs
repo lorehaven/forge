@@ -8,7 +8,7 @@ pub fn ensure_switchboard_css() {
         .collect::<Vec<_>>()
         .join("\n");
 
-    let _ = std::fs::create_dir_all("dist/assets/css");
+    let _ = std::fs::create_dir_all("../../../../../../dist/assets/css");
     let _ = std::fs::write("dist/assets/css/switchboard.css", css);
 }
 

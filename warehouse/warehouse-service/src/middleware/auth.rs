@@ -5,11 +5,7 @@ use actix_web::{
     http::header::{HeaderValue, WWW_AUTHENTICATE},
 };
 use futures_util::future::{LocalBoxFuture, Ready, ok};
-use jsonwebtoken::{DecodingKey, Validation, decode};
-use quench_srv::prelude::{
-    error,
-    jwt::{Claims, JwtConfig},
-};
+use quench_srv::prelude::{error, jwt::JwtConfig};
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 use std::task::{Context, Poll};
@@ -124,20 +120,14 @@ where
             return unauthorized(req, &self.config);
         }
 
-        let validation = Validation::default();
-
-        let decoded = decode::<Claims>(
-            token.unwrap(),
-            &DecodingKey::from_secret(self.config.jwt_secret.as_ref()),
-            &validation,
-        );
+        let decoded = self.config.decode_claims(token.unwrap());
 
         if decoded.is_err() {
             record_auth_failure(&req, self.window);
             return unauthorized(req, &self.config);
         }
 
-        let claims = decoded.unwrap().claims;
+        let claims = decoded.unwrap();
 
         if claims.service != self.config.service_name {
             record_auth_failure(&req, self.window);

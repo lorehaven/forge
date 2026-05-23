@@ -18,8 +18,10 @@ path = "src/lib.rs"
 [dependencies]
 actix-service.workspace = true
 actix-web.workspace = true
-base64.workspace = true
+chrono.workspace = true
 envmnt.workspace = true
+futures-util.workspace = true
+jsonwebtoken.workspace = true
 quench-cli.workspace = true
 quench-web.workspace = true
 rustls.workspace = true

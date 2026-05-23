@@ -1,4 +1,5 @@
-use crate::actix::domain::jwt::JwtConfig;
+use crate::actix::domain::auth::UserDb;
+use crate::actix::domain::jwt::{Claims, JwtConfig};
 use crate::actix::routers::ui::ui_path;
 use crate::prelude::with_base_path;
 use actix_web::{
@@ -6,7 +7,6 @@ use actix_web::{
     cookie::{Cookie, SameSite},
     web,
 };
-use base64::{Engine as _, engine::general_purpose::STANDARD};
 use quench_web::prelude::*;
 use serde::Deserialize;
 
@@ -67,33 +67,45 @@ pub fn login_form_element(error: bool) -> Element {
     login_form
 }
 
-pub async fn handle_login_submit(form: web::Form<LoginForm>, config: &JwtConfig) -> HttpResponse {
+pub async fn handle_login_submit(
+    form: web::Form<LoginForm>,
+    config: web::Data<JwtConfig>,
+    user_db: web::Data<UserDb>,
+) -> HttpResponse {
     if !config.auth_enabled {
         return HttpResponse::Found()
             .append_header(("Location", with_base_path("/ui/home")))
             .finish();
     }
 
-    let Some(expected_user) = config.username.as_deref() else {
-        return HttpResponse::Found()
-            .append_header(("Location", with_base_path("/ui/login?err=1")))
-            .finish();
-    };
-    let Some(expected_pass) = config.password.as_deref() else {
+    let Some(user) = user_db.validate(&form.username, &form.password) else {
         return HttpResponse::Found()
             .append_header(("Location", with_base_path("/ui/login?err=1")))
             .finish();
     };
 
-    if form.username != expected_user || form.password != expected_pass {
+    let roles = user
+        .roles
+        .iter()
+        .map(|r| format!("{:?}", r).to_lowercase())
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    let claims = Claims::new(
+        user.username.clone(),
+        config.service_name.clone(),
+        roles,
+        3600 * 24, // 24 hours
+    );
+
+    let Ok(token) = config.encode_claims(&claims) else {
         return HttpResponse::Found()
             .append_header(("Location", with_base_path("/ui/login?err=1")))
             .finish();
-    }
+    };
 
-    let session = STANDARD.encode(format!("{}:{}", form.username, form.password));
     let cookie_name = format!("{}_ui_session", config.service_name);
-    let cookie = Cookie::build(cookie_name, session)
+    let cookie = Cookie::build(cookie_name, token)
         .path("/")
         .http_only(true)
         .same_site(SameSite::Lax)
@@ -106,7 +118,7 @@ pub async fn handle_login_submit(form: web::Form<LoginForm>, config: &JwtConfig)
         .finish()
 }
 
-pub async fn handle_logout(config: &JwtConfig) -> HttpResponse {
+pub async fn handle_logout(config: web::Data<JwtConfig>) -> HttpResponse {
     let cookie_name = format!("{}_ui_session", config.service_name);
     let cookie = Cookie::build(cookie_name, "")
         .path("/")

@@ -1,7 +1,6 @@
 use crate::actix::domain::jwt::JwtConfig;
 use crate::prelude::with_base_path;
 use actix_web::{HttpResponse, web};
-use base64::{Engine as _, engine::general_purpose::STANDARD};
 use std::{
     fs,
     path::{Component, Path, PathBuf},
@@ -29,29 +28,15 @@ pub fn is_ui_authenticated(req: &actix_web::HttpRequest, config: &JwtConfig) -> 
         return true;
     }
 
-    let Some(username) = config.username.as_deref() else {
-        return false;
-    };
-    let Some(password) = config.password.as_deref() else {
-        return false;
-    };
-
     let cookie_name = format!("{}_ui_session", config.service_name);
     let Some(cookie) = req.cookie(&cookie_name) else {
         return false;
     };
 
-    let Ok(decoded) = STANDARD.decode(cookie.value()) else {
-        return false;
-    };
-    let Ok(credentials) = String::from_utf8(decoded) else {
-        return false;
-    };
-    let Some((cookie_user, cookie_pass)) = credentials.split_once(':') else {
-        return false;
-    };
-
-    cookie_user == username && cookie_pass == password
+    match config.decode_claims(cookie.value()) {
+        Ok(claims) => claims.service == config.service_name,
+        Err(_) => false,
+    }
 }
 
 pub async fn serve_assets(path: web::Path<String>, dist_path: &str) -> HttpResponse {

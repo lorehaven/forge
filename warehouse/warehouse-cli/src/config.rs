@@ -120,6 +120,31 @@ impl ConfigStore {
         }
     }
 
+    /// Resolves a files registry name: explicit name → effective active files registry.
+    pub fn resolve_files_registry_name(&self, requested: Option<String>) -> Result<String> {
+        if let Some(name) = requested {
+            validate_registry_name(&name)?;
+            if self.registry_exists_effective(&name) {
+                return Ok(name);
+            }
+            bail!("registry '{}' does not exist", name);
+        }
+
+        let cfg = self.load_effective_root_config()?;
+        let name = cfg.files.current_registry.ok_or_else(|| {
+            anyhow!(
+                "no active files registry; use `warehouse files registry add ... --use` or `warehouse files registry use ...`"
+            )
+        })?;
+
+        validate_registry_name(&name)?;
+        if self.registry_exists_effective(&name) {
+            Ok(name)
+        } else {
+            bail!("active files registry '{}' does not exist", name)
+        }
+    }
+
     pub fn registry_exists_effective(&self, name: &str) -> bool {
         self.local_registry_file_path(name).exists()
             || self

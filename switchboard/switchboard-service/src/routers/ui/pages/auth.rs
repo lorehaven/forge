@@ -1,5 +1,6 @@
 use crate::routers::ui::common::{UiPageKind, render_page};
 use actix_web::{HttpResponse, Responder, get, post, web};
+use quench_srv::actix::domain::auth::UserDb;
 use quench_srv::actix::routers::ui::pages::auth::{
     LoginForm, LoginQuery, handle_login_submit, handle_logout, login_form_element,
 };
@@ -20,13 +21,14 @@ pub(super) async fn login_slash(query: web::Query<LoginQuery>) -> impl Responder
 pub(super) async fn login_submit(
     form: web::Form<LoginForm>,
     config: web::Data<JwtConfig>,
+    user_db: web::Data<UserDb>,
 ) -> impl Responder {
-    handle_login_submit(form, &config).await
+    handle_login_submit(form, config, user_db).await
 }
 
 #[get("/logout")]
 pub(super) async fn logout(config: web::Data<JwtConfig>) -> impl Responder {
-    handle_logout(&config).await
+    handle_logout(config).await
 }
 
 fn render_login_page(error: bool) -> HttpResponse {

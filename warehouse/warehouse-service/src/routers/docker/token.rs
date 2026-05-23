@@ -2,6 +2,7 @@ use actix_web::{HttpRequest, HttpResponse, Responder, get, http::header, web};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::{Duration, Utc};
 use jsonwebtoken::{EncodingKey, Header, encode};
+use quench_srv::actix::domain::auth::UserDb;
 use quench_srv::prelude::jwt::{Claims, JwtConfig};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -41,10 +42,11 @@ pub struct TokenResponse {
 pub async fn handle(
     req: HttpRequest,
     config: web::Data<JwtConfig>,
+    user_db: web::Data<UserDb>,
     query: web::Query<TokenQuery>,
 ) -> impl Responder {
     // Validate Basic authentication (or allow anonymous if disabled)
-    let username = match validate_basic(&req, &config) {
+    let username = match validate_basic(&req, &config, &user_db) {
         Some(u) => u,
         None => {
             return HttpResponse::Unauthorized()
@@ -83,7 +85,7 @@ pub async fn handle(
     })
 }
 
-fn validate_basic(req: &HttpRequest, config: &JwtConfig) -> Option<String> {
+fn validate_basic(req: &HttpRequest, config: &JwtConfig, user_db: &UserDb) -> Option<String> {
     if !config.auth_enabled {
         return Some("anonymous".to_string());
     }
@@ -94,28 +96,28 @@ fn validate_basic(req: &HttpRequest, config: &JwtConfig) -> Option<String> {
         .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok())
         && let Some(encoded) = header_value.strip_prefix("Basic ")
-        && let Some(username) = validate_basic_encoded(encoded, config)
+        && let Some(username) = validate_basic_encoded(encoded, user_db)
     {
         return Some(username);
     }
 
-    // 2. Fallback to HttpOnly cookie
-    if let Some(cookie) = req.cookie("warehouse_ui_session")
-        && let Some(username) = validate_basic_encoded(cookie.value(), config)
+    // 2. Fallback to HttpOnly cookie (UI session)
+    let cookie_name = format!("{}_ui_session", config.service_name);
+    if let Some(cookie) = req.cookie(&cookie_name)
+        && let Ok(claims) = config.decode_claims(cookie.value())
     {
-        return Some(username);
+        return Some(claims.sub);
     }
 
     None
 }
 
-fn validate_basic_encoded(encoded: &str, config: &JwtConfig) -> Option<String> {
+fn validate_basic_encoded(encoded: &str, user_db: &UserDb) -> Option<String> {
     let decoded = STANDARD.decode(encoded).ok()?;
     let creds = String::from_utf8(decoded).ok()?;
     let (username, password) = creds.split_once(':')?;
 
-    if config.username.as_deref() == Some(username) && config.password.as_deref() == Some(password)
-    {
+    if user_db.validate(username, password).is_some() {
         Some(username.to_string())
     } else {
         None

@@ -1,5 +1,5 @@
 [package]
-name = "switchboard"
+name = "switchboard-service"
 version = "0.1.0"
 edition.workspace = true
 authors.workspace = true
@@ -12,7 +12,7 @@ license.workspace = true
 readme.workspace = true
 
 [[bin]]
-name = "switchboard"
+name = "switchboard-service"
 path = "src/main.rs"
 
 [dependencies]

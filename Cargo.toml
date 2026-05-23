@@ -3,11 +3,9 @@ members = [
   "anvil",
   "pulley",
   "quench/examples/*",
-  "quench/quench-cli",
-  "quench/quench-srv",
-  "quench/quench-web",
+  "quench/quench-*",
   "riveter",
-  "switchboard",
+  "switchboard/*",
   "toolbox",
   "warehouse/*",
   "welder",
@@ -34,6 +32,7 @@ base64 = { version = "0.22" }
 chrono = { version = "0.4" }
 clap = { version = "4.6", features = ["derive"] }
 crossterm = { version = "0.29" }
+cucumber = { version = "0.23" }
 dotenvy = { version = "0.15" }
 envmnt = { version = "0.10" }
 fluent-syntax = { version = "0.12" }
@@ -46,9 +45,9 @@ jsonwebtoken = { version = "10.4", features = ["rust_crypto"] }
 markup5ever_rcdom = { version = "0.39.0" }
 minijinja = { version = "2.20", features = ["loader", "serde"] }
 moka = { version = "0.12", features = ["sync"] }
-quench-cli = { path = "quench/quench-cli", registry = "ennor", version = "0.1.0" }
-quench-srv = { path = "quench/quench-srv", registry = "ennor", version = "0.1.5" }
-quench-web = { path = "quench/quench-web", registry = "ennor", version = "0.1.0" }
+quench-cli = { path = "quench/quench-cli" }
+quench-srv = { path = "quench/quench-srv" }
+quench-web = { path = "quench/quench-web" }
 regex = { version = "1.12" }
 reqwest = { version = "0.13", default-features = false, features = [
   "json",
