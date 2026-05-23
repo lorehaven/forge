@@ -38,10 +38,31 @@ fn render_models_dashboard_page() -> HttpResponse {
                             .class("gpu")
                             .attr("id", "gpu-status")
                             .child(div().class("gpu-name").text("GPU: n/a"))
-                            .child(div().class("gpu-total").text("Total: n/a GB"))
-                            .child(div().class("gpu-free").text("Free: n/a GB")),
+                            .child(
+                                div()
+                                    .class("gpu-total")
+                                    .child(span().attr("data-i18n", "ui_models_gpu_total"))
+                                    .child(span().text(" n/a GB")),
+                            )
+                            .child(
+                                div()
+                                    .class("gpu-free")
+                                    .child(span().attr("data-i18n", "ui_models_gpu_free"))
+                                    .child(span().text(" n/a GB")),
+                            ),
                     )
                     .child(div().class("flex-1"))
+                    .child(
+                        select()
+                            .attr("id", "sort")
+                            .child(option().attr("value", "name_asc").attr("data-i18n", "ui_models_sort_name_asc"))
+                            .child(option().attr("value", "name_desc").attr("data-i18n", "ui_models_sort_name_desc"))
+                            .child(option().attr("value", "params_asc").attr("data-i18n", "ui_models_sort_params_asc"))
+                            .child(option().attr("value", "params_desc").attr("data-i18n", "ui_models_sort_params_desc"))
+                            .child(option().attr("value", "vram_asc").attr("data-i18n", "ui_models_sort_vram_asc"))
+                            .child(option().attr("value", "vram_desc").attr("data-i18n", "ui_models_sort_vram_desc"))
+                            .on_change("onChangeSort()"),
+                    )
                     .child(
                         div()
                             .class("model-tabs")
@@ -49,111 +70,111 @@ fn render_models_dashboard_page() -> HttpResponse {
                                 div()
                                     .attr("id", "model-tab-hf")
                                     .class("tab active")
-                                    .text("HF")
+                                    .attr("data-i18n", "ui_models_tab_hf")
                                     .on_click("toggleModelSource(event)"),
                             )
                             .child(
                                 div()
                                     .attr("id", "model-tab-gguf")
                                     .class("tab")
-                                    .text("GGUF")
+                                    .attr("data-i18n", "ui_models_tab_gguf")
                                     .on_click("toggleModelSource(event)"),
                             ),
                     )
                     .child(
                         div()
                             .class("model-filters")
-                            .child(input().attr("id", "search").attr("placeholder", "search"))
+                            .child(input().attr("id", "search").attr("placeholder", "search").attr("data-i18n-placeholder", "ui_models_search_placeholder"))
                             .child(
                                 select()
                                     .attr("id", "quant")
-                                    .child(option().attr("value", "ALL").text("all quants"))
+                                    .child(option().attr("value", "ALL").attr("data-i18n", "ui_models_filter_all_quants"))
                                     // HF
                                     .child(
                                         option()
                                             .class("quant-hf")
                                             .attr("value", "FP16")
-                                            .text("fp16"),
+                                            .attr("data-i18n", "ui_models_quant_fp16"),
                                     )
                                     .child(
                                         option()
                                             .class("quant-hf")
                                             .attr("value", "BF16")
-                                            .text("bf16"),
+                                            .attr("data-i18n", "ui_models_quant_bf16"),
                                     )
                                     .child(
-                                        option().class("quant-hf").attr("value", "FP8").text("fp8"),
+                                        option().class("quant-hf").attr("value", "FP8").attr("data-i18n", "ui_models_quant_fp8"),
                                     )
                                     .child(
                                         option()
                                             .class("quant-hf")
                                             .attr("value", "INT8")
-                                            .text("int8"),
+                                            .attr("data-i18n", "ui_models_quant_int8"),
                                     )
                                     .child(
-                                        option().class("quant-hf").attr("value", "AWQ").text("awq"),
+                                        option().class("quant-hf").attr("value", "AWQ").attr("data-i18n", "ui_models_quant_awq"),
                                     )
                                     .child(
                                         option()
                                             .class("quant-hf")
                                             .attr("value", "GPTQ")
-                                            .text("gptq"),
+                                            .attr("data-i18n", "ui_models_quant_gptq"),
                                     )
                                     // GGUF
                                     .child(
                                         option()
                                             .class("quant-gguf hidden")
                                             .attr("value", "Q8_0")
-                                            .text("q8_0"),
+                                            .attr("data-i18n", "ui_models_quant_q8_0"),
                                     )
                                     .child(
                                         option()
                                             .class("quant-gguf hidden")
                                             .attr("value", "Q6_K")
-                                            .text("q6_k"),
+                                            .attr("data-i18n", "ui_models_quant_q6_k"),
                                     )
                                     .child(
                                         option()
                                             .class("quant-gguf hidden")
                                             .attr("value", "Q5_K_M")
-                                            .text("q5_k_m"),
+                                            .attr("data-i18n", "ui_models_quant_q5_k_m"),
                                     )
                                     .child(
                                         option()
                                             .class("quant-gguf hidden")
                                             .attr("value", "Q5_0")
-                                            .text("q5_0"),
+                                            .attr("data-i18n", "ui_models_quant_q5_0"),
                                     )
                                     .child(
                                         option()
                                             .class("quant-gguf hidden")
                                             .attr("value", "Q4_K_M")
-                                            .text("q4_k_m"),
+                                            .attr("data-i18n", "ui_models_quant_q4_k_m"),
                                     )
                                     .child(
                                         option()
                                             .class("quant-gguf hidden")
                                             .attr("value", "Q4_0")
-                                            .text("q4_0"),
+                                            .attr("data-i18n", "ui_models_quant_q4_0"),
                                     )
                                     .child(
                                         option()
                                             .class("quant-gguf hidden")
                                             .attr("value", "Q3_K_M")
-                                            .text("q3_k_m"),
+                                            .attr("data-i18n", "ui_models_quant_q3_k_m"),
                                     )
                                     .child(
                                         option()
                                             .class("quant-gguf hidden")
                                             .attr("value", "Q2_K")
-                                            .text("q2_k"),
+                                            .attr("data-i18n", "ui_models_quant_q2_k"),
                                     )
                                     .on_change("onChangeQuant()"),
                             )
                             .child(
                                 select()
                                     .attr("id", "context")
-                                    .child(option().attr("value", "0").text("all contexts"))
+                                    .child(option().attr("value", "0").attr("data-i18n", "ui_models_filter_all_contexts"))
                                     .child(option().attr("value", "512").text("512"))
                                     .child(option().attr("value", "1024").text("1024"))
                                     .child(option().attr("value", "2048").text("2048"))

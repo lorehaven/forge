@@ -35,7 +35,7 @@ static UI_SHELL_MODELS_DASHBOARD: LazyLock<AppShell> = LazyLock::new(|| {
         .supported_locales(vec!["en-US".to_string()])
         .default_theme(Theme::DefaultDark)
         .supported_themes(vec![Theme::DefaultDark])
-        .header(ui_header(Some("ui_header_models_dashboard"), true, true))
+        .header(ui_header_split("ui_header_dashboard", "ui_header_models", true, true))
         .links(vec![Link::new(
             "stylesheet",
             &ui_asset_path("/css/switchboard.css"),
@@ -72,6 +72,36 @@ fn ui_header(title_key: Option<&str>, show_home: bool, show_logout: bool) -> Ele
         Some(key) => h2().attr("data-i18n", key),
         None => h2().attr("data-i18n", "header_label"),
     };
+
+    header()
+        .child(div().class("left-panel").child(title))
+        .child(
+            div()
+                .class("right-panel")
+                .child_opt(show_home.then(|| {
+                    a().attr("href", &ui_path("/home"))
+                        .class("button")
+                        .attr("data-i18n", "ui_home_button")
+                }))
+                .child_opt(show_logout.then(|| {
+                    a().attr("href", &ui_path("/logout"))
+                        .class("button")
+                        .attr("data-i18n", "ui_logout")
+                })),
+        )
+}
+
+fn ui_header_split(
+    title1_key: &str,
+    title2_key: &str,
+    show_home: bool,
+    show_logout: bool,
+) -> Element {
+    let title = div()
+        .class("header-split")
+        .child(h2().attr("data-i18n", title1_key))
+        .child(span().text("|"))
+        .child(h2().attr("data-i18n", title2_key));
 
     header()
         .child(div().class("left-panel").child(title))

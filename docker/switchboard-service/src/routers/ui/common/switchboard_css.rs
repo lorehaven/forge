@@ -18,9 +18,27 @@ fn switchboard_css_rules() -> Vec<CssRule> {
     rules.extend(css::home_rules());
     rules.extend(css::login_rules());
     rules.extend(css::meta_rules());
+    rules.extend(header_rules());
     rules.extend(models_rules());
     rules.extend(estimates_modal_rules());
     rules
+}
+
+
+fn header_rules() -> Vec<CssRule> {
+    vec![
+        CssRule::new(".header-split")
+            .property("display", "flex")
+            .property("align-items", "center")
+            .property("gap", "1rem")
+            .child(
+                CssRule::new(".separator")
+                    .property("color", "var(--bs-gray-600)")
+                    .property("font-size", "1.5rem")
+                    .property("font-weight", "300"),
+            )
+            .child(CssRule::new("h2").property("margin", "0")),
+    ]
 }
 
 fn models_rules() -> Vec<CssRule> {
@@ -92,6 +110,10 @@ fn models_rules() -> Vec<CssRule> {
                                 CssRule::new("select").property("width", "8rem").child(
                                     CssRule::new("option.hidden").property("display", "none"),
                                 ),
+                            )
+                            .child(
+                                CssRule::new("#sort")
+                                    .property("width", "9rem"),
                             ),
                     )
                     .child(CssRule::new(".flex-1").property("flex", "1")),
@@ -118,17 +140,23 @@ fn models_rules() -> Vec<CssRule> {
                                 CssRule::new(".card-header")
                                     .property("display", "flex")
                                     .property("justify-content", "space-between")
-                                    .property("align-items", "flex-start")
+                                    .property("align-items", "center")
                                     .property("gap", "1rem")
+                                    .property("min-width", "0")
                                     .child(
                                         CssRule::new(".card-title")
                                             .property("font-family", "monospace")
                                             .property("font-size", "1.2rem")
                                             .property("font-weight", "bold")
-                                            .property("word-break", "break-word"),
+                                            .property("overflow", "hidden")
+                                            .property("text-overflow", "ellipsis")
+                                            .property("white-space", "nowrap")
+                                            .property("min-width", "0")
+                                            .property("flex", "1"),
                                     )
                                     .child(
                                         CssRule::new(".card-delete")
+                                            .property("flex-shrink", "0")
                                             .property("background", "transparent")
                                             .property("border", "none")
                                             .property("color", "var(--bs-gray-600)")

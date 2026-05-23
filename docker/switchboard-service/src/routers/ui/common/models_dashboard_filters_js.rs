@@ -13,11 +13,19 @@ fn models_dashboard_filters_js() -> String {
 
     let js = format!(
         r#"
+function t(key) {{
+    if (typeof TRANSLATIONS === 'undefined') return key;
+    const locale = getLocale();
+    const dict = TRANSLATIONS[locale];
+    return dict ? (dict[key] || key) : key;
+}}
+
 let currentGpuInfo = null;
 let currentModelSource = "hf";
 let currentQuant = "ALL";
 let currentContext = "0";
 let currentSearch = "";
+let currentSort = "name_asc";
 let estimatesModal = null;
 let confirmDeleteModal = null;
 let modelToDelete = null;
@@ -29,6 +37,7 @@ let isAdmin = false;
 {toggle_source}
 {on_change_quant}
 {on_change_context}
+{on_change_sort}
 {refresh_models}
 {create_model_card}
 {update_model_fits}
@@ -56,6 +65,7 @@ checkAuth().then(() => refreshModels());
         toggle_source = toggle_model_source(),
         on_change_quant = on_change_quant(),
         on_change_context = on_change_context(),
+        on_change_sort = on_change_sort(),
         refresh_models = refresh_models(),
         create_model_card = create_model_card(),
         update_model_fits = update_model_fits(),
@@ -84,8 +94,10 @@ fn dom_loaded() -> String {
 window.addEventListener("DOMContentLoaded", () => {
     const quant = document.getElementById("quant");
     const context = document.getElementById("context");
+    const sort = document.getElementById("sort");
     if (quant) quant.value = currentQuant;
     if (context) context.value = String(currentContext);
+    if (sort) sort.value = currentSort;
 
     const search = document.getElementById("search");
     if (search) {
@@ -181,6 +193,16 @@ function onChangeContext() {
     .to_string()
 }
 
+fn on_change_sort() -> String {
+    r#"
+function onChangeSort() {
+    currentSort = event.currentTarget.value;
+    refreshModels();
+}
+"#
+    .to_string()
+}
+
 fn refresh_models() -> String {
     r#"
 async function refreshModels() {
@@ -195,13 +217,42 @@ async function refreshModels() {
         }),
     });
     const models = await response.json();
+    
+    const sortedModels = sortModels(models);
+
     const grid = document.getElementById("models-grid");
     if (!grid) return;
 
     grid.innerHTML = "";
-    for (const model of models) {
+    for (const model of sortedModels) {
         grid.appendChild(createModelCard(model));
     }
+}
+
+function sortModels(models) {
+    return models.sort((a, b) => {
+        const [field, direction] = currentSort.split("_");
+        const isAsc = direction === "asc";
+        
+        let result = 0;
+        if (field === "name") {
+            result = a.name.localeCompare(b.name);
+        } else if (field === "params") {
+            result = (a.params_billion || 0) - (b.params_billion || 0);
+        } else if (field === "vram") {
+            const availableVram = currentGpuInfo?.free_gb || 0;
+            const bestA = findBestEstimate(a.estimates, availableVram);
+            const bestB = findBestEstimate(b.estimates, availableVram);
+            const minA = findMinimumEstimate(a.estimates);
+            const minB = findMinimumEstimate(b.estimates);
+            
+            const vramA = bestA ? bestA.total_gb : (minA ? minA.total_gb + 1000 : 2000);
+            const vramB = bestB ? bestB.total_gb : (minB ? minB.total_gb + 1000 : 2000);
+            result = vramA - vramB;
+        }
+        
+        return isAsc ? result : -result;
+    });
 }
 "#
     .to_string()
@@ -216,7 +267,7 @@ function createModelCard(model) {
     
     let deleteBtn = "";
     if (isAdmin) {
-        deleteBtn = `<button class="card-delete" title="Delete Model"><i class="fa-solid fa-trash"></i></button>`;
+        deleteBtn = `<button class="card-delete" title="${t("ui_models_card_delete_tooltip")}"><i class="fa-solid fa-trash"></i></button>`;
     }
 
     card.innerHTML = `
@@ -225,11 +276,11 @@ function createModelCard(model) {
             ${deleteBtn}
         </div>
         <div class="card-meta">
-            <div><strong>Params:</strong> ${model.params_billion}B<br>
-                <strong>Quant:</strong> ${model.quant}<br>
-                <strong>Context:</strong> ${model.context}</div>
-            <div><strong>Layers:</strong> ${model.layers}<br>
-                <strong>Hidden:</strong> ${model.hidden_size}</div>
+            <div><strong data-i18n="ui_models_card_params">${t("ui_models_card_params")}</strong>: ${model.params_billion}B<br>
+                <strong data-i18n="ui_models_card_quant">${t("ui_models_card_quant")}</strong>: ${model.quant}<br>
+                <strong data-i18n="ui_models_card_context">${t("ui_models_card_context")}</strong>: ${model.context}</div>
+            <div><strong data-i18n="ui_models_card_layers">${t("ui_models_card_layers")}</strong>: ${model.layers}<br>
+                <strong data-i18n="ui_models_card_hidden">${t("ui_models_card_hidden")}</strong>: ${model.hidden_size}</div>
         </div>
         <div class="card-fit"></div>
         <div class="card-path">${model.path}</div>
@@ -297,13 +348,13 @@ function renderFit(best, availableVram) {
     const fitClass = tight ? "fit-warn" : "fit-ok";
     return `
         <div class="fit-line ${fitClass}">
-            ${renderFitItem("Fits", "YES")}
+            ${renderFitItem("ui_models_card_fits_yes", t("ui_models_card_fits_yes"))}
             ${renderSeparator()}
-            ${renderFitItem("Best", `${best.context} / ${best.quant}`)}
+            ${renderFitItem("ui_models_card_best", t("ui_models_card_best"), `${best.context} / ${best.quant}`)}
             ${renderSeparator()}
-            ${renderFitItem("VRAM", `${best.total_gb} GB`)}
+            ${renderFitItem("ui_models_card_vram", t("ui_models_card_vram"), `${best.total_gb} GB`)}
             ${renderSeparator()}
-            ${renderFitItem("Margin", `${margin.toFixed(2)} GB`)}
+            ${renderFitItem("ui_models_card_margin", t("ui_models_card_margin"), `${margin.toFixed(2)} GB`)}
         </div>
     `;
 }
@@ -316,9 +367,9 @@ fn render_no_fit() -> String {
 function renderNoFit(minimum, availableVram) {
     return `
         <div class="fit-line fit-no">
-            ${renderFitItem("Fits", "NO")}
+            ${renderFitItem("ui_models_card_fits_no", t("ui_models_card_fits_no"))}
             ${renderSeparator()}
-            ${renderFitItem("Minimum", minimum ? `${minimum.total_gb} GB` : "?")}
+            ${renderFitItem("ui_models_card_minimum", t("ui_models_card_minimum"), minimum ? `${minimum.total_gb} GB` : "?")}
             ${renderSeparator()}
         </div>
     `;
@@ -329,8 +380,11 @@ function renderNoFit(minimum, availableVram) {
 
 fn render_fit_item() -> String {
     r#"
-function renderFitItem(label, value) {
-    return `<span><strong>${label}:</strong> ${value}</span>`;
+function renderFitItem(key, label, value) {
+    if (value === undefined) {
+        return `<span data-i18n="${key}">${label}</span>`;
+    }
+    return `<span><strong data-i18n="${key}">${label}</strong>: ${value}</span>`;
 }
 "#
     .to_string()
@@ -355,7 +409,7 @@ function ensureEstimatesModal() {
         <div class="estimates-modal-backdrop"></div>
         <div class="estimates-modal-content">
             <div class="estimates-modal-header">
-                <div class="estimates-modal-title">Estimates</div>
+                <div class="estimates-modal-title" data-i18n="ui_models_modal_estimates_title">${t("ui_models_modal_estimates_title")}</div>
                 <button class="estimates-modal-close" onclick="closeEstimatesModal()"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="estimates-modal-body" id="estimates-modal-body"></div>
@@ -381,18 +435,18 @@ function openEstimatesModal(model) {
     body.innerHTML = `
         <div class="estimate-filters">
             <select id="estimate-fit-filter">
-                <option value="all">All</option>
-                <option value="fit">Fits</option>
-                <option value="nofit">Does Not Fit</option>
+                <option value="all" data-i18n="ui_models_modal_estimates_filter_all">${t("ui_models_modal_estimates_filter_all")}</option>
+                <option value="fit" data-i18n="ui_models_modal_estimates_filter_fits">${t("ui_models_modal_estimates_filter_fits")}</option>
+                <option value="nofit" data-i18n="ui_models_modal_estimates_filter_nofit">${t("ui_models_modal_estimates_filter_nofit")}</option>
             </select>
 
             <select id="estimate-context-filter">
-                <option value="all">All Contexts</option>
+                <option value="all" data-i18n="ui_models_modal_estimates_filter_all_contexts">${t("ui_models_modal_estimates_filter_all_contexts")}</option>
                 ${buildContextOptions(model.estimates)}
             </select>
 
             <select id="estimate-quant-filter">
-                <option value="all">All Quants</option>
+                <option value="all" data-i18n="ui_models_modal_estimates_filter_all_quants">${t("ui_models_modal_estimates_filter_all_quants")}</option>
                 ${buildQuantOptions(model.estimates)}
             </select>
         </div>
@@ -401,7 +455,7 @@ function openEstimatesModal(model) {
     `;
 
     const title = document.querySelector(".estimates-modal-title");
-    if (title) { title.textContent = `Estimates — ${model.name}`; }
+    if (title) { title.textContent = `${t("ui_models_modal_estimates_title")} — ${model.name}`; }
 
     bindEstimateFilters(model, availableVram);
     renderEstimateGrid(model, availableVram);
@@ -508,15 +562,15 @@ function ensureConfirmDeleteModal() {
         <div class="estimates-modal-backdrop"></div>
         <div class="estimates-modal-content small">
             <div class="estimates-modal-header">
-                <div class="estimates-modal-title">Confirm Delete</div>
+                <div class="estimates-modal-title" data-i18n="ui_models_modal_delete_title">${t("ui_models_modal_delete_title")}</div>
                 <button class="estimates-modal-close" onclick="closeConfirmDeleteModal()"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="estimates-modal-body">
-                <p>Are you sure you want to physically delete this model from drive?</p>
+                <p data-i18n="ui_models_modal_delete_text">${t("ui_models_modal_delete_text")}</p>
                 <div class="model-to-delete-name" id="model-to-delete-name"></div>
                 <div class="confirm-actions">
-                    <button class="button cancel" onclick="closeConfirmDeleteModal()">Cancel</button>
-                    <button class="button delete" onclick="confirmDelete()">Delete</button>
+                    <button class="button cancel" onclick="closeConfirmDeleteModal()" data-i18n="ui_models_modal_delete_cancel">${t("ui_models_modal_delete_cancel")}</button>
+                    <button class="button delete" onclick="confirmDelete()" data-i18n="ui_models_modal_delete_confirm">${t("ui_models_modal_delete_confirm")}</button>
                 </div>
             </div>
         </div>
@@ -572,10 +626,10 @@ function renderEstimateRow(estimate, availableVram) {
 
     return `
         <div class="fit-line ${cls}">
-            <div>${renderFitItem("Context", estimate.context)}</div>
-            <div>${renderFitItem("Quant", estimate.quant)}</div>
-            <div>${renderFitItem("VRAM", `${estimate.total_gb} GB`)}</div>
-            <div>${renderFitItem("Margin", `${margin.toFixed(2)} GB`)}</div>
+            <div>${renderFitItem("ui_models_card_context", t("ui_models_card_context"), estimate.context)}</div>
+            <div>${renderFitItem("ui_models_card_quant", t("ui_models_card_quant"), estimate.quant)}</div>
+            <div>${renderFitItem("ui_models_card_vram", t("ui_models_card_vram"), `${estimate.total_gb} GB`)}</div>
+            <div>${renderFitItem("ui_models_card_margin", t("ui_models_card_margin"), `${margin.toFixed(2)} GB`)}</div>
         </div>
     `;
 }
