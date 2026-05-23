@@ -2395,12 +2395,14 @@ dependencies = [
 
 [[package]]
 name = "quench-srv"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "actix-service",
  "actix-web",
+ "base64",
  "envmnt",
  "quench-cli",
+ "quench-web",
  "rustls",
  "serde",
  "serde_json",
@@ -3290,7 +3292,6 @@ version = "0.1.0"
 dependencies = [
  "actix-web",
  "actix-ws",
- "base64",
  "dotenvy",
  "envmnt",
  "futures-util",

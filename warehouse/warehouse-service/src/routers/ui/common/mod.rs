@@ -1,20 +1,12 @@
 use actix_web::{HttpResponse, Responder, get, http::header::ContentType, web};
-use base64::{Engine as _, engine::general_purpose::STANDARD};
-use quench_srv::prelude::jwt::JwtConfig;
-use quench_srv::prelude::with_base_path;
+pub use quench_srv::actix::routers::ui::{is_ui_authenticated, ui_asset_path, ui_path};
 use quench_web::prelude::*;
-use std::{
-    fs,
-    path::{Component, Path, PathBuf},
-    sync::LazyLock,
-};
+use std::sync::LazyLock;
 
 mod crates_js;
 mod docker_js;
 mod files_js;
 mod warehouse_css;
-
-pub(super) const UI_SESSION_COOKIE: &str = "warehouse_ui_session";
 
 static UI_SHELL_DOCKER: LazyLock<AppShell> = LazyLock::new(|| {
     warehouse_css::ensure_warehouse_css();
@@ -136,30 +128,9 @@ fn ui_header(title_key: Option<&str>, show_home: bool, show_logout: bool) -> Ele
         )
 }
 
-pub(super) fn ui_path(path: &str) -> String {
-    with_base_path(&format!("/ui{path}"))
-}
-
-pub(super) fn ui_asset_path(path: &str) -> String {
-    ui_path(&format!("/assets{path}"))
-}
-
 #[get("/assets/{path:.*}")]
 pub async fn assets(path: web::Path<String>) -> impl Responder {
-    let Some(relative) = sanitize_asset_path(&path) else {
-        return HttpResponse::BadRequest().finish();
-    };
-
-    let full_path = Path::new("dist/assets").join(relative);
-    let Ok(body) = fs::read(&full_path) else {
-        return HttpResponse::NotFound().finish();
-    };
-
-    let content_type = content_type_for_path(&full_path);
-    HttpResponse::Ok()
-        .append_header(("Cache-Control", "public, max-age=3600"))
-        .content_type(content_type)
-        .body(body)
+    quench_srv::actix::routers::ui::serve_assets(path, "dist/assets").await
 }
 
 pub(super) fn render_page(
@@ -188,66 +159,5 @@ pub(super) enum UiPageKind {
 }
 
 pub(super) fn ui_login_redirect() -> HttpResponse {
-    HttpResponse::Found()
-        .append_header(("Location", with_base_path("/ui/login")))
-        .finish()
-}
-
-pub(super) fn is_ui_authenticated(req: &actix_web::HttpRequest, config: &JwtConfig) -> bool {
-    if !config.auth_enabled {
-        return true;
-    }
-
-    let Some(username) = config.username.as_deref() else {
-        return false;
-    };
-    let Some(password) = config.password.as_deref() else {
-        return false;
-    };
-
-    let Some(cookie) = req.cookie(UI_SESSION_COOKIE) else {
-        return false;
-    };
-
-    let Ok(decoded) = STANDARD.decode(cookie.value()) else {
-        return false;
-    };
-    let Ok(credentials) = String::from_utf8(decoded) else {
-        return false;
-    };
-    let Some((cookie_user, cookie_pass)) = credentials.split_once(':') else {
-        return false;
-    };
-
-    cookie_user == username && cookie_pass == password
-}
-
-fn sanitize_asset_path(raw: &str) -> Option<PathBuf> {
-    if raw.is_empty() {
-        return None;
-    }
-
-    let candidate = Path::new(raw);
-    let mut clean = PathBuf::new();
-    for component in candidate.components() {
-        match component {
-            Component::Normal(part) => clean.push(part),
-            _ => return None,
-        }
-    }
-
-    Some(clean)
-}
-
-fn content_type_for_path(path: &Path) -> &'static str {
-    match path.extension().and_then(|e| e.to_str()) {
-        Some("css") => "text/css; charset=utf-8",
-        Some("js") => "application/javascript; charset=utf-8",
-        Some("json") => "application/json; charset=utf-8",
-        Some("svg") => "image/svg+xml",
-        Some("png") => "image/png",
-        Some("jpg") | Some("jpeg") => "image/jpeg",
-        Some("ico") => "image/x-icon",
-        _ => "application/octet-stream",
-    }
+    quench_srv::actix::routers::ui::ui_login_redirect()
 }

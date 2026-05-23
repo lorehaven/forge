@@ -1,6 +1,7 @@
-use crate::routers::ui::common::{self, UiPageKind, render_page, ui_path};
+use crate::routers::ui::common::{UiPageKind, render_page, ui_path};
 use crate::routers::{models_dashboard_enabled, vllm_management_enabled};
 use actix_web::{HttpResponse, Responder, get, web};
+use quench_srv::actix::routers::ui::pages::home::{handle_home, service_card};
 use quench_srv::prelude::jwt::JwtConfig;
 use quench_web::prelude::*;
 
@@ -9,10 +10,7 @@ pub(super) async fn home(
     req: actix_web::HttpRequest,
     config: web::Data<JwtConfig>,
 ) -> impl Responder {
-    if !common::is_ui_authenticated(&req, &config) {
-        return common::ui_login_redirect();
-    }
-    render_home_page()
+    handle_home(req, config, render_home_page).await
 }
 
 #[get("/home/")]
@@ -20,10 +18,7 @@ pub(super) async fn home_slash(
     req: actix_web::HttpRequest,
     config: web::Data<JwtConfig>,
 ) -> impl Responder {
-    if !common::is_ui_authenticated(&req, &config) {
-        return common::ui_login_redirect();
-    }
-    render_home_page()
+    handle_home(req, config, render_home_page).await
 }
 
 fn render_home_page() -> HttpResponse {
@@ -86,16 +81,4 @@ fn render_home_page() -> HttpResponse {
         ),
         UiPageKind::Home,
     )
-}
-
-fn service_card(href: &str, title_key: &str, desc_key: &str, extra_class: &str) -> Element {
-    a().attr("href", href)
-        .class(&format!("home-card {extra_class}"))
-        .child(
-            div()
-                .class("home-card-body")
-                .child(div().class("home-card-title").attr("data-i18n", title_key))
-                .child(div().class("home-card-desc").attr("data-i18n", desc_key)),
-        )
-        .child(div().class("home-card-arrow").text("→"))
 }
