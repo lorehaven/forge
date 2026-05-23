@@ -3778,6 +3778,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "switchboard-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "quench-cli",
+]
+
+[[package]]
 name = "switchboard-service"
 version = "0.1.0"
 dependencies = [

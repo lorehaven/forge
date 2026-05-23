@@ -1,0 +1,21 @@
+[package]
+name = "switchboard-cli"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+description = "Switchboard CLI - command line interface for Switchboard"
+keywords = ["development", "tools"]
+categories = ["development-tools"]
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+readme.workspace = true
+
+[[bin]]
+name = "switchboard-cli"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+quench-cli.workspace = true
