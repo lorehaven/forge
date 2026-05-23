@@ -52,7 +52,7 @@ pub fn release(config: &Config, package: Option<String>, all: bool, dry_run: boo
     let manifests = bump_patch_versions(&metadata, &plan)?;
     if !manifests.is_empty() {
         run_build_for_bumped_packages(&plan)?;
-        create_version_commit(&metadata, &manifests)?;
+        create_version_commit(&metadata, &manifests, &plan)?;
         push_version_commit()?;
     }
 
@@ -444,7 +444,11 @@ fn run_build_for_bumped_packages(plan: &[ReleasePlanItem]) -> Result<()> {
     Ok(())
 }
 
-fn create_version_commit(metadata: &Value, manifests: &[PathBuf]) -> Result<()> {
+fn create_version_commit(
+    metadata: &Value,
+    manifests: &[PathBuf],
+    plan: &[ReleasePlanItem],
+) -> Result<()> {
     let mut commit_paths = manifests.to_vec();
     let workspace_root = PathBuf::from(
         metadata["workspace_root"]
@@ -460,11 +464,23 @@ fn create_version_commit(metadata: &Value, manifests: &[PathBuf]) -> Result<()> 
     add_cmd.arg("add").args(&commit_paths);
     run_command(add_cmd, "git add version update files")?;
 
+    let package_summaries = plan
+        .iter()
+        .filter(|item| item.bump_version)
+        .map(|item| format!("{} v{}", item.package, item.to_version))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let commit_message = format!(
+        "release: bump package versions ({package_summaries})"
+    );
+
     let mut commit_cmd = Command::new("git");
     commit_cmd
         .arg("commit")
         .arg("-m")
-        .arg("anvil version update");
+        .arg(commit_message);
+
     commit_cmd.arg("--");
     commit_cmd.args(&commit_paths);
     run_command(commit_cmd, "git commit version update")?;
