@@ -2,6 +2,7 @@ use actix_web::dev::HttpServiceFactory;
 use actix_web::web::Json;
 use actix_web::{HttpResponse, Responder, post, web};
 use gguf::GGUFMetadataValue;
+use quench_srv::prelude::jwt::JwtConfig;
 use regex::Regex;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::{HashMap, HashSet};
@@ -34,12 +35,19 @@ pub struct ModelsApiDoc;
 // ---------------------------------------------------------------------------
 
 pub fn scope() -> impl HttpServiceFactory {
-    web::scope("/api/v1/models").service(handle)
+    web::scope("/api/v1/models")
+        .service(handle)
+        .service(delete_model)
 }
 
 // ---------------------------------------------------------------------------
 // Request type
 // ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct DeleteModelRequest {
+    pub path: String,
+}
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, ToSchema, PartialEq, Eq, Hash)]
 pub enum ModelType {
@@ -307,6 +315,76 @@ async fn handle(body: Json<SearchQuery>) -> impl Responder {
         body.quant,
         body.context,
     ))
+}
+
+#[utoipa::path(
+    post,
+    path = "/delete",
+    operation_id = "delete_model",
+    tags = ["models"],
+    request_body(
+        content = DeleteModelRequest,
+        description = "Model deletion request",
+        content_type = "application/json"
+    ),
+    responses(
+        (status = 200, description = "Model deleted successfully"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - Admin role required"),
+        (status = 500, description = "Failed to delete model"),
+    )
+)]
+#[post("/delete")]
+async fn delete_model(
+    req: actix_web::HttpRequest,
+    config: web::Data<JwtConfig>,
+    body: Json<DeleteModelRequest>,
+) -> impl Responder {
+    if !config.auth_enabled {
+        // If auth is disabled, allow deletion (development mode)
+    } else {
+        let cookie_name = format!("{}_ui_session", config.service_name);
+        let Some(cookie) = req.cookie(&cookie_name) else {
+            return HttpResponse::Unauthorized().finish();
+        };
+
+        match config.decode_claims(cookie.value()) {
+            Ok(claims) => {
+                if !claims.scope.contains("admin") {
+                    return HttpResponse::Forbidden().finish();
+                }
+            }
+            Err(_) => return HttpResponse::Unauthorized().finish(),
+        }
+    }
+
+    let path = Path::new(&body.path);
+
+    // Security check: ensure the path is within HF_ROOTS or GGUF_ROOTS
+    let is_valid_hf = HF_ROOTS.iter().any(|root| path.starts_with(root));
+    let is_valid_gguf = GGUF_ROOTS.iter().any(|root| path.starts_with(root));
+
+    if !is_valid_hf && !is_valid_gguf {
+        return HttpResponse::Forbidden().body("Invalid model path");
+    }
+
+    if !path.exists() {
+        return HttpResponse::NotFound().body("Model not found on disk");
+    }
+
+    let res = if path.is_dir() {
+        std::fs::remove_dir_all(path)
+    } else {
+        std::fs::remove_file(path)
+    };
+
+    match res {
+        Ok(_) => {
+            MODEL_CACHE.write().unwrap().remove(&body.path);
+            HttpResponse::Ok().finish()
+        }
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    }
 }
 
 // ---------------------------------------------------------------------------

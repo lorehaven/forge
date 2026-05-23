@@ -98,13 +98,13 @@ fn models_rules() -> Vec<CssRule> {
             )
             .child(
                 CssRule::new(".grid")
-                    .property("flex", "1")
                     .property("padding", "1rem 0.5rem")
                     .property("display", "grid")
                     .property(
                         "grid-template-columns",
-                        "repeat(auto-fill, minmax(520px, 1fr))",
+                        "repeat(auto-fill, minmax(32.5rem, 1fr))",
                     )
+                    .property("grid-template-rows", "max-content")
                     .property("gap", "1rem")
                     .child(
                         CssRule::new(".card")
@@ -113,22 +113,42 @@ fn models_rules() -> Vec<CssRule> {
                             .property("gap", "1rem")
                             .property("padding", "2rem 1.25rem")
                             .property("background", "var(--bs-gray-900)")
+                            .property("position", "relative")
                             .child(
-                                CssRule::new(".card-title")
-                                    .property("font-family", "monospace")
-                                    .property("font-size", "1.2rem")
-                                    .property("font-weight", "bold")
-                                    .property("word-break", "break-word"),
+                                CssRule::new(".card-header")
+                                    .property("display", "flex")
+                                    .property("justify-content", "space-between")
+                                    .property("align-items", "flex-start")
+                                    .property("gap", "1rem")
+                                    .child(
+                                        CssRule::new(".card-title")
+                                            .property("font-family", "monospace")
+                                            .property("font-size", "1.2rem")
+                                            .property("font-weight", "bold")
+                                            .property("word-break", "break-word"),
+                                    )
+                                    .child(
+                                        CssRule::new(".card-delete")
+                                            .property("background", "transparent")
+                                            .property("border", "none")
+                                            .property("color", "var(--bs-gray-600)")
+                                            .property("font-size", "1.1rem")
+                                            .property("line-height", "1")
+                                            .property("cursor", "pointer")
+                                            .property("padding", "0.2rem 0.5rem")
+                                            .property("transition", "color 0.2s"),
+                                    )
+                                    .child(
+                                        CssRule::new(".card-delete:hover")
+                                            .property("color", "var(--bs-danger)"),
+                                    ),
                             )
                             .child(
                                 CssRule::new(".card-meta")
                                     .property("font-family", "monospace")
                                     .property("padding", "0.4rem")
                                     .property("display", "grid")
-                                    .property(
-                                        "grid-template-columns",
-                                        "repeat(auto-fit, minmax(140px, 1fr))",
-                                    )
+                                    .property("grid-template-columns", "1fr 1fr")
                                     .property("gap", "0.75rem")
                                     .property("font-size", "0.8rem")
                                     .property("line-height", "1.5")
@@ -159,19 +179,19 @@ fn models_rules() -> Vec<CssRule> {
                                     .child(
                                         CssRule::new(".fit-ok")
                                             .property("background", "rgba(25, 135, 84, 0.18)")
-                                            .property("border", "1px solid rgba(25, 135, 84, 0.5)")
+                                            .property("border", "0.0625rem solid rgba(25, 135, 84, 0.5)")
                                             .property("color", "rgb(120, 255, 170)"),
                                     )
                                     .child(
                                         CssRule::new(".fit-warn")
                                             .property("background", "rgba(255, 193, 7, 0.18)")
-                                            .property("border", "1px solid rgba(255, 193, 7, 0.5)")
+                                            .property("border", "0.0625rem solid rgba(255, 193, 7, 0.5)")
                                             .property("color", "rgb(255, 230, 140)"),
                                     )
                                     .child(
                                         CssRule::new(".fit-no")
                                             .property("background", "rgba(220, 53, 69, 0.18)")
-                                            .property("border", "1px solid rgba(220, 53, 69, 0.5)")
+                                            .property("border", "0.0625rem solid rgba(220, 53, 69, 0.5)")
                                             .property("color", "rgb(255, 160, 170)"),
                                     ),
                             )
@@ -189,7 +209,7 @@ fn models_rules() -> Vec<CssRule> {
 
 fn estimates_modal_rules() -> Vec<CssRule> {
     vec![
-        CssRule::new("#estimates-modal")
+        CssRule::new("#estimates-modal, #confirm-delete-modal")
             .property("position", "fixed")
             .property("inset", "0")
             .property("display", "none")
@@ -211,7 +231,13 @@ fn estimates_modal_rules() -> Vec<CssRule> {
                     .property("display", "flex")
                     .property("flex-direction", "column")
                     .property("background", "var(--bs-gray-900)")
-                    .property("border-radius", "0.5rem"),
+                    .property("border-radius", "0.5rem")
+                    .child(
+                        CssRule::new("&.small")
+                            .property("width", "30rem")
+                            .property("height", "auto")
+                            .property("max-height", "80vh"),
+                    ),
             )
             .child(
                 CssRule::new(".estimates-modal-header")
@@ -219,7 +245,7 @@ fn estimates_modal_rules() -> Vec<CssRule> {
                     .property("justify-content", "space-between")
                     .property("align-items", "center")
                     .property("padding", "1rem 1.25rem")
-                    .property("border-bottom", "1px solid var(--bs-gray-700)"),
+                    .property("border-bottom", "0.0625rem solid var(--bs-gray-700)"),
             )
             .child(
                 CssRule::new(".estimates-modal-title")
@@ -232,8 +258,11 @@ fn estimates_modal_rules() -> Vec<CssRule> {
                     .property("border", "none")
                     .property("background", "transparent")
                     .property("color", "white")
-                    .property("font-size", "2rem")
-                    .property("cursor", "pointer"),
+                    .property("font-size", "1.4rem")
+                    .property("cursor", "pointer")
+                    .property("padding", "0.5rem")
+                    .property("line-height", "1")
+                    .child(CssRule::new(":hover").property("color", "var(--bs-gray-400)")),
             )
             .child(
                 CssRule::new(".estimates-modal-body")
@@ -241,7 +270,28 @@ fn estimates_modal_rules() -> Vec<CssRule> {
                     .property("flex-direction", "column")
                     .property("align-items", "center")
                     .property("padding", "1rem")
-                    .property("overflow", "auto"),
+                    .property("overflow", "auto")
+                    .child(
+                        CssRule::new("p")
+                            .property("text-align", "center")
+                            .property("margin-bottom", "1rem"),
+                    )
+                    .child(
+                        CssRule::new(".model-to-delete-name")
+                            .property("font-family", "monospace")
+                            .property("font-weight", "bold")
+                            .property("color", "var(--bs-warning)")
+                            .property("margin-bottom", "2rem")
+                            .property("word-break", "break-all")
+                            .property("text-align", "center"),
+                    )
+                    .child(
+                        CssRule::new(".confirm-actions")
+                            .property("display", "flex")
+                            .property("gap", "1rem")
+                            .property("justify-content", "center")
+                            .property("width", "100%"),
+                    ),
             )
             .child(
                 CssRule::new(".estimate-grid")
@@ -265,19 +315,19 @@ fn estimates_modal_rules() -> Vec<CssRule> {
                     .child(
                         CssRule::new(".fit-line.fit-ok")
                             .property("background-color", "#1e3a2f")
-                            .property("border", "1px solid rgba(25, 135, 84, 0.5)")
+                            .property("border", "0.0625rem solid rgba(25, 135, 84, 0.5)")
                             .property("color", "#a1e3b8"),
                     )
                     .child(
                         CssRule::new(".fit-line.fit-warn")
                             .property("background-color", "#3f2e1e")
-                            .property("border", "1px solid rgba(255, 193, 7, 0.5)")
+                            .property("border", "0.0625rem solid rgba(255, 193, 7, 0.5)")
                             .property("color", "#ffd38a"),
                     )
                     .child(
                         CssRule::new(".fit-line.fit-no")
                             .property("background-color", "#3a1f1f")
-                            .property("border", "1px solid rgba(220, 53, 69, 0.5)")
+                            .property("border", "0.0625rem solid rgba(220, 53, 69, 0.5)")
                             .property("color", "#ff9a9a"),
                     ),
             )
@@ -290,7 +340,7 @@ fn estimates_modal_rules() -> Vec<CssRule> {
                     .child(
                         CssRule::new("select")
                             .property("background", "var(--bs-gray-800)")
-                            .property("border", "1px solid var(--bs-gray-700)")
+                            .property("border", "0.0625rem solid var(--bs-gray-700)")
                             .property("color", "white")
                             .property("padding", "0.5rem")
                             .property("font-family", "monospace")

@@ -9,6 +9,7 @@ pub fn ensure_filters_js() {
 
 fn models_dashboard_filters_js() -> String {
     let models_api_base = with_base_path("/api/v1/models");
+    let ui_base = with_base_path("/ui");
 
     let js = format!(
         r#"
@@ -18,8 +19,12 @@ let currentQuant = "ALL";
 let currentContext = "0";
 let currentSearch = "";
 let estimatesModal = null;
+let confirmDeleteModal = null;
+let modelToDelete = null;
+let isAdmin = false;
 
 {dom_loaded}
+{check_auth}
 {apply_defaults}
 {toggle_source}
 {on_change_quant}
@@ -43,9 +48,10 @@ let estimatesModal = null;
 {find_min}
 
 applySourceDefaults();
-refreshModels();
+checkAuth().then(() => refreshModels());
     "#,
         dom_loaded = dom_loaded(),
+        check_auth = check_auth(),
         apply_defaults = apply_source_defaults(),
         toggle_source = toggle_model_source(),
         on_change_quant = on_change_quant(),
@@ -70,6 +76,7 @@ refreshModels();
     );
 
     js.replace("__MODELS_API_BASE__", &models_api_base)
+      .replace("__UI_BASE__", &ui_base)
 }
 
 fn dom_loaded() -> String {
@@ -93,6 +100,23 @@ window.addEventListener("DOMContentLoaded", () => {
         updateModelFits();
     });
 });
+"#
+    .to_string()
+}
+
+fn check_auth() -> String {
+    r#"
+async function checkAuth() {
+    try {
+        const response = await fetch("__UI_BASE__/status");
+        if (response.ok) {
+            const status = await response.json();
+            isAdmin = status.roles.includes("admin");
+        }
+    } catch (e) {
+        console.error("Failed to check auth status", e);
+    }
+}
 "#
     .to_string()
 }
@@ -189,8 +213,17 @@ function createModelCard(model) {
     const card = document.createElement("div");
     card.className = "card";
     card.dataset.model = JSON.stringify(model);
+    
+    let deleteBtn = "";
+    if (isAdmin) {
+        deleteBtn = `<button class="card-delete" title="Delete Model"><i class="fa-solid fa-trash"></i></button>`;
+    }
+
     card.innerHTML = `
-        <div class="card-title">${model.name}</div>
+        <div class="card-header">
+            <div class="card-title">${model.name}</div>
+            ${deleteBtn}
+        </div>
         <div class="card-meta">
             <div><strong>Params:</strong> ${model.params_billion}B<br>
                 <strong>Quant:</strong> ${model.quant}<br>
@@ -205,6 +238,14 @@ function createModelCard(model) {
     const fit = card.querySelector(".card-fit");
     if (fit) {
         fit.addEventListener("click", () => openEstimatesModal(model));
+    }
+
+    const del = card.querySelector(".card-delete");
+    if (del) {
+        del.addEventListener("click", (e) => {
+            e.stopPropagation();
+            openConfirmDeleteModal(model);
+        });
     }
 
     updateCardFit(card);
@@ -315,7 +356,7 @@ function ensureEstimatesModal() {
         <div class="estimates-modal-content">
             <div class="estimates-modal-header">
                 <div class="estimates-modal-title">Estimates</div>
-                <button class="estimates-modal-close" onclick="closeEstimatesModal()">×</button>
+                <button class="estimates-modal-close" onclick="closeEstimatesModal()"><i class="fa-solid fa-xmark"></i></button>
             </div>
             <div class="estimates-modal-body" id="estimates-modal-body"></div>
         </div>
@@ -456,6 +497,65 @@ fn close_estimates_modal() -> String {
 function closeEstimatesModal() {
     if (!estimatesModal) return;
     estimatesModal.classList.remove("open");
+}
+
+function ensureConfirmDeleteModal() {
+    if (document.getElementById("confirm-delete-modal")) return;
+    const modal = document.createElement("div");
+    modal.id = "confirm-delete-modal";
+    modal.className = "estimates-modal"; // Reusing class for layout
+    modal.innerHTML = `
+        <div class="estimates-modal-backdrop"></div>
+        <div class="estimates-modal-content small">
+            <div class="estimates-modal-header">
+                <div class="estimates-modal-title">Confirm Delete</div>
+                <button class="estimates-modal-close" onclick="closeConfirmDeleteModal()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="estimates-modal-body">
+                <p>Are you sure you want to physically delete this model from drive?</p>
+                <div class="model-to-delete-name" id="model-to-delete-name"></div>
+                <div class="confirm-actions">
+                    <button class="button cancel" onclick="closeConfirmDeleteModal()">Cancel</button>
+                    <button class="button delete" onclick="confirmDelete()">Delete</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    confirmDeleteModal = modal;
+    modal.querySelector(".estimates-modal-backdrop")?.addEventListener("click", closeConfirmDeleteModal);
+}
+
+function openConfirmDeleteModal(model) {
+    ensureConfirmDeleteModal();
+    modelToDelete = model;
+    const nameEl = document.getElementById("model-to-delete-name");
+    if (nameEl) nameEl.textContent = model.name;
+    confirmDeleteModal.classList.add("open");
+}
+
+function closeConfirmDeleteModal() {
+    if (!confirmDeleteModal) return;
+    confirmDeleteModal.classList.remove("open");
+    modelToDelete = null;
+}
+
+async function confirmDelete() {
+    if (!modelToDelete) return;
+    
+    const response = await fetch("__MODELS_API_BASE__/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: modelToDelete.path }),
+    });
+
+    if (response.ok) {
+        closeConfirmDeleteModal();
+        refreshModels();
+    } else {
+        const err = await response.text();
+        alert("Failed to delete model: " + err);
+    }
 }
 "#
     .to_string()
