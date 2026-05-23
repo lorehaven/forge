@@ -24,7 +24,6 @@ fn switchboard_css_rules() -> Vec<CssRule> {
     rules
 }
 
-
 fn header_rules() -> Vec<CssRule> {
     vec![
         CssRule::new(".header-split")
@@ -111,10 +110,7 @@ fn models_rules() -> Vec<CssRule> {
                                     CssRule::new("option.hidden").property("display", "none"),
                                 ),
                             )
-                            .child(
-                                CssRule::new("#sort")
-                                    .property("width", "9rem"),
-                            ),
+                            .child(CssRule::new("#sort").property("width", "9rem")),
                     )
                     .child(CssRule::new(".flex-1").property("flex", "1")),
             )
@@ -207,19 +203,28 @@ fn models_rules() -> Vec<CssRule> {
                                     .child(
                                         CssRule::new(".fit-ok")
                                             .property("background", "rgba(25, 135, 84, 0.18)")
-                                            .property("border", "0.0625rem solid rgba(25, 135, 84, 0.5)")
+                                            .property(
+                                                "border",
+                                                "0.0625rem solid rgba(25, 135, 84, 0.5)",
+                                            )
                                             .property("color", "rgb(120, 255, 170)"),
                                     )
                                     .child(
                                         CssRule::new(".fit-warn")
                                             .property("background", "rgba(255, 193, 7, 0.18)")
-                                            .property("border", "0.0625rem solid rgba(255, 193, 7, 0.5)")
+                                            .property(
+                                                "border",
+                                                "0.0625rem solid rgba(255, 193, 7, 0.5)",
+                                            )
                                             .property("color", "rgb(255, 230, 140)"),
                                     )
                                     .child(
                                         CssRule::new(".fit-no")
                                             .property("background", "rgba(220, 53, 69, 0.18)")
-                                            .property("border", "0.0625rem solid rgba(220, 53, 69, 0.5)")
+                                            .property(
+                                                "border",
+                                                "0.0625rem solid rgba(220, 53, 69, 0.5)",
+                                            )
                                             .property("color", "rgb(255, 160, 170)"),
                                     ),
                             )

@@ -35,7 +35,12 @@ static UI_SHELL_MODELS_DASHBOARD: LazyLock<AppShell> = LazyLock::new(|| {
         .supported_locales(vec!["en-US".to_string()])
         .default_theme(Theme::DefaultDark)
         .supported_themes(vec![Theme::DefaultDark])
-        .header(ui_header_split("ui_header_dashboard", "ui_header_models", true, true))
+        .header(ui_header_split(
+            "ui_header_dashboard",
+            "ui_header_models",
+            true,
+            true,
+        ))
         .links(vec![Link::new(
             "stylesheet",
             &ui_asset_path("/css/switchboard.css"),

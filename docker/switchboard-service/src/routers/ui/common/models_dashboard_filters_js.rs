@@ -86,7 +86,7 @@ checkAuth().then(() => refreshModels());
     );
 
     js.replace("__MODELS_API_BASE__", &models_api_base)
-      .replace("__UI_BASE__", &ui_base)
+        .replace("__UI_BASE__", &ui_base)
 }
 
 fn dom_loaded() -> String {

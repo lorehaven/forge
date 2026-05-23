@@ -55,12 +55,36 @@ fn render_models_dashboard_page() -> HttpResponse {
                     .child(
                         select()
                             .attr("id", "sort")
-                            .child(option().attr("value", "name_asc").attr("data-i18n", "ui_models_sort_name_asc"))
-                            .child(option().attr("value", "name_desc").attr("data-i18n", "ui_models_sort_name_desc"))
-                            .child(option().attr("value", "params_asc").attr("data-i18n", "ui_models_sort_params_asc"))
-                            .child(option().attr("value", "params_desc").attr("data-i18n", "ui_models_sort_params_desc"))
-                            .child(option().attr("value", "vram_asc").attr("data-i18n", "ui_models_sort_vram_asc"))
-                            .child(option().attr("value", "vram_desc").attr("data-i18n", "ui_models_sort_vram_desc"))
+                            .child(
+                                option()
+                                    .attr("value", "name_asc")
+                                    .attr("data-i18n", "ui_models_sort_name_asc"),
+                            )
+                            .child(
+                                option()
+                                    .attr("value", "name_desc")
+                                    .attr("data-i18n", "ui_models_sort_name_desc"),
+                            )
+                            .child(
+                                option()
+                                    .attr("value", "params_asc")
+                                    .attr("data-i18n", "ui_models_sort_params_asc"),
+                            )
+                            .child(
+                                option()
+                                    .attr("value", "params_desc")
+                                    .attr("data-i18n", "ui_models_sort_params_desc"),
+                            )
+                            .child(
+                                option()
+                                    .attr("value", "vram_asc")
+                                    .attr("data-i18n", "ui_models_sort_vram_asc"),
+                            )
+                            .child(
+                                option()
+                                    .attr("value", "vram_desc")
+                                    .attr("data-i18n", "ui_models_sort_vram_desc"),
+                            )
                             .on_change("onChangeSort()"),
                     )
                     .child(
@@ -84,11 +108,20 @@ fn render_models_dashboard_page() -> HttpResponse {
                     .child(
                         div()
                             .class("model-filters")
-                            .child(input().attr("id", "search").attr("placeholder", "search").attr("data-i18n-placeholder", "ui_models_search_placeholder"))
+                            .child(
+                                input()
+                                    .attr("id", "search")
+                                    .attr("placeholder", "search")
+                                    .attr("data-i18n-placeholder", "ui_models_search_placeholder"),
+                            )
                             .child(
                                 select()
                                     .attr("id", "quant")
-                                    .child(option().attr("value", "ALL").attr("data-i18n", "ui_models_filter_all_quants"))
+                                    .child(
+                                        option()
+                                            .attr("value", "ALL")
+                                            .attr("data-i18n", "ui_models_filter_all_quants"),
+                                    )
                                     // HF
                                     .child(
                                         option()
@@ -103,7 +136,10 @@ fn render_models_dashboard_page() -> HttpResponse {
                                             .attr("data-i18n", "ui_models_quant_bf16"),
                                     )
                                     .child(
-                                        option().class("quant-hf").attr("value", "FP8").attr("data-i18n", "ui_models_quant_fp8"),
+                                        option()
+                                            .class("quant-hf")
+                                            .attr("value", "FP8")
+                                            .attr("data-i18n", "ui_models_quant_fp8"),
                                     )
                                     .child(
                                         option()
@@ -112,7 +148,10 @@ fn render_models_dashboard_page() -> HttpResponse {
                                             .attr("data-i18n", "ui_models_quant_int8"),
                                     )
                                     .child(
-                                        option().class("quant-hf").attr("value", "AWQ").attr("data-i18n", "ui_models_quant_awq"),
+                                        option()
+                                            .class("quant-hf")
+                                            .attr("value", "AWQ")
+                                            .attr("data-i18n", "ui_models_quant_awq"),
                                     )
                                     .child(
                                         option()
@@ -174,7 +213,11 @@ fn render_models_dashboard_page() -> HttpResponse {
                             .child(
                                 select()
                                     .attr("id", "context")
-                                    .child(option().attr("value", "0").attr("data-i18n", "ui_models_filter_all_contexts"))
+                                    .child(
+                                        option()
+                                            .attr("value", "0")
+                                            .attr("data-i18n", "ui_models_filter_all_contexts"),
+                                    )
                                     .child(option().attr("value", "512").text("512"))
                                     .child(option().attr("value", "1024").text("1024"))
                                     .child(option().attr("value", "2048").text("2048"))
