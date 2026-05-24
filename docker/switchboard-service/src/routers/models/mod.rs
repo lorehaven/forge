@@ -19,6 +19,24 @@ pub static HF_ROOTS: LazyLock<Vec<String>> =
 pub static GGUF_ROOTS: LazyLock<Vec<String>> =
     LazyLock::new(|| load_paths("GGUF_ROOTS", &["/mnt/dev/quantized"]));
 
+#[derive(Debug, Deserialize)]
+struct VllmArchitecturesFile {
+    architectures: Vec<String>,
+}
+
+pub static VLLM_SUPPORTED_ARCHITECTURES: LazyLock<HashSet<String>> = LazyLock::new(|| {
+    let path = std::env::var("VLLM_ARCHITECTURES_FILE")
+        .unwrap_or_else(|_| "/opt/vllm_architectures.json".to_string());
+
+    let contents = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("failed to read vLLM architectures file {path}: {e}"));
+
+    let parsed: VllmArchitecturesFile = serde_json::from_str(&contents)
+        .unwrap_or_else(|e| panic!("invalid vLLM architectures json {path}: {e}"));
+
+    parsed.architectures.into_iter().collect()
+});
+
 // ---------------------------------------------------------------------------
 // OpenAPI
 // ---------------------------------------------------------------------------
@@ -258,6 +276,8 @@ pub struct Model {
     pub source: String,
     pub name: String,
     pub path: String,
+    pub architecture: Option<String>,
+    pub vllm_supported: bool,
     pub quant: Quant,
     pub context: Context,
     pub layers: usize,
@@ -448,6 +468,16 @@ fn fetch_hf_models() -> Vec<Model> {
             let vocab_size = json["vocab_size"].as_u64().unwrap_or(32000) as f64;
             let max_position_embeddings = json["max_position_embeddings"].as_u64().unwrap_or(4096);
             let torch_dtype = json["torch_dtype"].as_str().unwrap_or("float16");
+            let architecture = json["architectures"]
+                .as_array()
+                .and_then(|a| a.first())
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+
+            let vllm_supported = architecture
+                .as_ref()
+                .map(|arch| VLLM_SUPPORTED_ARCHITECTURES.contains(arch.as_str()))
+                .unwrap_or(false);
 
             let quant = infer_hf_quant(torch_dtype);
             let context = infer_context(max_position_embeddings);
@@ -459,7 +489,8 @@ fn fetch_hf_models() -> Vec<Model> {
                 source: format!("{:?}", ModelType::HF),
                 name,
                 path: cache_key.clone(),
-
+                architecture,
+                vllm_supported,
                 quant,
                 context,
 
@@ -519,7 +550,8 @@ fn fetch_gguf_models() -> Vec<Model> {
                 source: format!("{:?}", ModelType::GGUF),
                 name: filename.clone(),
                 path: path_str.clone(),
-
+                architecture: None,
+                vllm_supported: false,
                 quant,
                 context,
 

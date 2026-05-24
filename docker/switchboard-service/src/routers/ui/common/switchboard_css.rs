@@ -100,6 +100,8 @@ fn models_rules() -> Vec<CssRule> {
                     )
                     .child(
                         CssRule::new(".model-filters")
+                            .property("display", "flex")
+                            .property("gap", "0.2rem")
                             .child(
                                 CssRule::new("input")
                                     .property("width", "12rem")
@@ -110,7 +112,28 @@ fn models_rules() -> Vec<CssRule> {
                                     CssRule::new("option.hidden").property("display", "none"),
                                 ),
                             )
-                            .child(CssRule::new("#sort").property("width", "9rem")),
+                            .child(CssRule::new("#sort").property("width", "9rem"))
+                            .child(
+                                CssRule::new(".vllm-filter")
+                                    .property("display", "flex")
+                                    .property("align-items", "center")
+                                    .property("gap", "0.4rem")
+                                    .property("color", "var(--q-shell-text)")
+                                    .property("font-size", "0.9rem")
+                                    .property("cursor", "pointer")
+                                    .property("user-select", "none")
+                                    .property("margin-left", "0.5rem")
+                                    .property("border", "0.1rem solid var(--bs-gray-700)")
+                                    .property("border-radius", "0.3rem")
+                                    .property("padding", "0.5rem 1rem")
+                                    .child(
+                                        CssRule::new("input")
+                                            .property("width", "unset")
+                                            .property("cursor", "pointer")
+                                            .property("margin", "0")
+                                            .property("accent-color", "var(--bs-success-500)"),
+                                    ),
+                            ),
                     )
                     .child(CssRule::new(".flex-1").property("flex", "1")),
             )
@@ -165,6 +188,25 @@ fn models_rules() -> Vec<CssRule> {
                                     .child(
                                         CssRule::new(".card-delete:hover")
                                             .property("color", "var(--bs-danger)"),
+                                    )
+                                    .child(
+                                        CssRule::new(".vllm-badge")
+                                            .property("background-color", "var(--bs-success-500)")
+                                            .property("color", "var(--bs-gray-950)")
+                                            .property("font-size", "0.6rem")
+                                            .property("padding", "0.15rem 0.5rem")
+                                            .property("border-radius", "1rem") // Pill shape
+                                            .property("margin-right", "0.5rem")
+                                            .property("vertical-align", "middle")
+                                            .property("font-family", "sans-serif")
+                                            .property("font-weight", "800")
+                                            .property("text-transform", "uppercase")
+                                            .property("letter-spacing", "0.05rem")
+                                            .property("display", "inline-block")
+                                            .property(
+                                                "box-shadow",
+                                                "0 0.0625rem 0.125rem rgba(0,0,0,0.1)",
+                                            ),
                                     ),
                             )
                             .child(
@@ -202,30 +244,27 @@ fn models_rules() -> Vec<CssRule> {
                                     )
                                     .child(
                                         CssRule::new(".fit-ok")
-                                            .property("background", "rgba(25, 135, 84, 0.18)")
+                                            .property("background", "var(--bs-success-900)")
+                                            .property("opacity", "0.8")
                                             .property(
                                                 "border",
-                                                "0.0625rem solid rgba(25, 135, 84, 0.5)",
+                                                "0.0625rem solid var(--bs-success-700)",
                                             )
-                                            .property("color", "rgb(120, 255, 170)"),
+                                            .property("color", "var(--bs-gray-100)"),
                                     )
                                     .child(
                                         CssRule::new(".fit-warn")
-                                            .property("background", "rgba(255, 193, 7, 0.18)")
-                                            .property(
-                                                "border",
-                                                "0.0625rem solid rgba(255, 193, 7, 0.5)",
-                                            )
-                                            .property("color", "rgb(255, 230, 140)"),
+                                            .property("background", "var(--bs-warning)")
+                                            .property("opacity", "0.8")
+                                            .property("border", "0.0625rem solid var(--bs-warning)")
+                                            .property("color", "var(--bs-gray-950)"),
                                     )
                                     .child(
                                         CssRule::new(".fit-no")
-                                            .property("background", "rgba(220, 53, 69, 0.18)")
-                                            .property(
-                                                "border",
-                                                "0.0625rem solid rgba(220, 53, 69, 0.5)",
-                                            )
-                                            .property("color", "rgb(255, 160, 170)"),
+                                            .property("background", "var(--bs-danger)")
+                                            .property("opacity", "0.8")
+                                            .property("border", "0.0625rem solid var(--bs-danger)")
+                                            .property("color", "var(--bs-gray-100)"),
                                     ),
                             )
                             .child(
@@ -290,7 +329,7 @@ fn estimates_modal_rules() -> Vec<CssRule> {
                 CssRule::new(".estimates-modal-close")
                     .property("border", "none")
                     .property("background", "transparent")
-                    .property("color", "white")
+                    .property("color", "var(--bs-gray-100)")
                     .property("font-size", "1.4rem")
                     .property("cursor", "pointer")
                     .property("padding", "0.5rem")
@@ -347,21 +386,21 @@ fn estimates_modal_rules() -> Vec<CssRule> {
                     )
                     .child(
                         CssRule::new(".fit-line.fit-ok")
-                            .property("background-color", "#1e3a2f")
-                            .property("border", "0.0625rem solid rgba(25, 135, 84, 0.5)")
-                            .property("color", "#a1e3b8"),
+                            .property("background-color", "var(--bs-success-900)")
+                            .property("border", "0.0625rem solid var(--bs-success-700)")
+                            .property("color", "var(--bs-gray-100)"),
                     )
                     .child(
                         CssRule::new(".fit-line.fit-warn")
-                            .property("background-color", "#3f2e1e")
-                            .property("border", "0.0625rem solid rgba(255, 193, 7, 0.5)")
-                            .property("color", "#ffd38a"),
+                            .property("background-color", "var(--bs-warning)")
+                            .property("border", "0.0625rem solid var(--bs-warning)")
+                            .property("color", "var(--bs-gray-950)"),
                     )
                     .child(
                         CssRule::new(".fit-line.fit-no")
-                            .property("background-color", "#3a1f1f")
-                            .property("border", "0.0625rem solid rgba(220, 53, 69, 0.5)")
-                            .property("color", "#ff9a9a"),
+                            .property("background-color", "var(--bs-danger)")
+                            .property("border", "0.0625rem solid var(--bs-danger)")
+                            .property("color", "var(--bs-gray-100)"),
                     ),
             )
             .child(
@@ -374,7 +413,7 @@ fn estimates_modal_rules() -> Vec<CssRule> {
                         CssRule::new("select")
                             .property("background", "var(--bs-gray-800)")
                             .property("border", "0.0625rem solid var(--bs-gray-700)")
-                            .property("color", "white")
+                            .property("color", "var(--bs-gray-100)")
                             .property("padding", "0.5rem")
                             .property("font-family", "monospace")
                             .property("font-size", "0.85rem"),

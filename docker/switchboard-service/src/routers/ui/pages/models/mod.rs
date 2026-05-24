@@ -228,6 +228,17 @@ fn render_models_dashboard_page() -> HttpResponse {
                                     .child(option().attr("value", "65536").text("65536"))
                                     .child(option().attr("value", "131072").text("131072"))
                                     .on_change("onChangeContext()"),
+                            )
+                            .child(
+                                label()
+                                    .class("vllm-filter")
+                                    .child(
+                                        input()
+                                            .attr("type", "checkbox")
+                                            .attr("id", "vllm-only")
+                                            .on_change("onChangeVllmOnly()"),
+                                    )
+                                    .child(span().attr("data-i18n", "ui_models_filter_vllm_only")),
                             ),
                     ),
             )

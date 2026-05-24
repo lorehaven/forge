@@ -24,6 +24,7 @@ let currentGpuInfo = null;
 let currentModelSource = "hf";
 let currentQuant = "ALL";
 let currentContext = "0";
+let currentVllmOnly = false;
 let currentSearch = "";
 let currentSort = "name_asc";
 let estimatesModal = null;
@@ -37,6 +38,7 @@ let isAdmin = false;
 {toggle_source}
 {on_change_quant}
 {on_change_context}
+{on_change_vllm_only}
 {on_change_sort}
 {refresh_models}
 {create_model_card}
@@ -65,6 +67,7 @@ checkAuth().then(() => refreshModels());
         toggle_source = toggle_model_source(),
         on_change_quant = on_change_quant(),
         on_change_context = on_change_context(),
+        on_change_vllm_only = on_change_vllm_only(),
         on_change_sort = on_change_sort(),
         refresh_models = refresh_models(),
         create_model_card = create_model_card(),
@@ -94,9 +97,11 @@ fn dom_loaded() -> String {
 window.addEventListener("DOMContentLoaded", () => {
     const quant = document.getElementById("quant");
     const context = document.getElementById("context");
+    const vllmOnly = document.getElementById("vllm-only");
     const sort = document.getElementById("sort");
     if (quant) quant.value = currentQuant;
     if (context) context.value = String(currentContext);
+    if (vllmOnly) vllmOnly.checked = currentVllmOnly;
     if (sort) sort.value = currentSort;
 
     const search = document.getElementById("search");
@@ -193,6 +198,16 @@ function onChangeContext() {
     .to_string()
 }
 
+fn on_change_vllm_only() -> String {
+    r#"
+function onChangeVllmOnly() {
+    currentVllmOnly = event.currentTarget.checked;
+    refreshModels();
+}
+"#
+    .to_string()
+}
+
 fn on_change_sort() -> String {
     r#"
 function onChangeSort() {
@@ -218,7 +233,12 @@ async function refreshModels() {
     });
     const models = await response.json();
     
-    const sortedModels = sortModels(models);
+    let filteredModels = models;
+    if (currentVllmOnly) {
+        filteredModels = models.filter(m => m.vllm_supported);
+    }
+    
+    const sortedModels = sortModels(filteredModels);
 
     const grid = document.getElementById("models-grid");
     if (!grid) return;
@@ -270,9 +290,14 @@ function createModelCard(model) {
         deleteBtn = `<button class="card-delete" title="${t("ui_models_card_delete_tooltip")}"><i class="fa-solid fa-trash"></i></button>`;
     }
 
+    let vllmBadge = "";
+    if (model.vllm_supported) {
+        vllmBadge = `<span class="vllm-badge" title="Supported by vLLM">vLLM</span>`;
+    }
+
     card.innerHTML = `
         <div class="card-header">
-            <div class="card-title">${model.name}</div>
+            <div class="card-title">${vllmBadge} ${model.name}</div>
             ${deleteBtn}
         </div>
         <div class="card-meta">

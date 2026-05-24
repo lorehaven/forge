@@ -36,6 +36,7 @@ ui_models_tab_hf = HF
 ui_models_tab_gguf = GGUF
 ui_models_filter_all_quants = all quants
 ui_models_filter_all_contexts = all contexts
+ui_models_filter_vllm_only = vLLM only
 ui_models_card_delete_tooltip = Delete Model
 ui_models_card_params = Params
 ui_models_card_context = Context
