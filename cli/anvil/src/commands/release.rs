@@ -471,15 +471,10 @@ fn create_version_commit(
         .collect::<Vec<_>>()
         .join(", ");
 
-    let commit_message = format!(
-        "release: bump package versions ({package_summaries})"
-    );
+    let commit_message = format!("release: bump package versions ({package_summaries})");
 
     let mut commit_cmd = Command::new("git");
-    commit_cmd
-        .arg("commit")
-        .arg("-m")
-        .arg(commit_message);
+    commit_cmd.arg("commit").arg("-m").arg(commit_message);
 
     commit_cmd.arg("--");
     commit_cmd.args(&commit_paths);
