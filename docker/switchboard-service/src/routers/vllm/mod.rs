@@ -6,6 +6,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::fs::OpenOptions;
 use std::net::TcpListener;
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 use std::process::{Command, Stdio};
 use std::sync::{LazyLock, RwLock};
 use std::time::Duration;
@@ -58,6 +60,7 @@ pub struct LaunchRequest {
 
 #[derive(Debug, Clone)]
 struct LaunchRecord {
+    pid: u32,
     log_path: Option<String>,
     last_error: Option<String>,
 }
@@ -132,6 +135,15 @@ fn discover_vllm_instances() -> Vec<VllmInstance> {
 
         let record_key = instance_key(&model, port);
         let record = records.get(&record_key);
+        let status = match record {
+            Some(r) if r.pid == pid => match r.log_path.as_deref() {
+                Some(path) if log_indicates_started(path, r.pid) => "running",
+                Some(_) => "starting",
+                None => "starting",
+            },
+            Some(_) => "running",
+            None => "running",
+        };
 
         instances.push(VllmInstance {
             id: format!("pid-{pid}"),
@@ -143,7 +155,7 @@ fn discover_vllm_instances() -> Vec<VllmInstance> {
             gpu_memory_utilization,
             enable_prefix_caching,
             started_at,
-            status: "running".to_string(),
+            status: status.to_string(),
             log_path: record.and_then(|r| r.log_path.clone()),
             last_error: record.and_then(|r| r.last_error.clone()),
         });
@@ -197,6 +209,22 @@ fn create_launch_log_path(model: &str, port: u16) -> String {
         safe_model,
         port
     )
+}
+
+fn create_pid_log_path(base_log_path: &str, pid: u32) -> String {
+    match base_log_path.strip_suffix(".log") {
+        Some(prefix) => format!("{prefix}-pid-{pid}.log"),
+        None => format!("{base_log_path}-pid-{pid}"),
+    }
+}
+
+fn log_indicates_started(path: &str, pid: u32) -> bool {
+    let contents = match fs::read_to_string(path) {
+        Ok(contents) => contents,
+        Err(_) => return false,
+    };
+
+    contents.contains(&format!("Started server process [{pid}]"))
 }
 
 fn read_log_tail(path: &str, max_lines: usize) -> Option<String> {
@@ -292,17 +320,29 @@ async fn launch_instance(req: web::Json<LaunchRequest>) -> impl Responder {
         }
     };
 
-    match Command::new("vllm")
+    let mut command = Command::new("vllm");
+    command
         .args(&args)
+        .stdin(Stdio::null())
         .stdout(Stdio::from(stdout_file))
-        .stderr(Stdio::from(stderr_file))
-        .spawn()
-    {
+        .stderr(Stdio::from(stderr_file));
+
+    #[cfg(unix)]
+    command.process_group(0);
+
+    match command.spawn() {
         Ok(mut child) => {
+            let pid = child.id();
+            let pid_log_path = create_pid_log_path(&log_path, pid);
+            let log_path = match fs::rename(&log_path, &pid_log_path) {
+                Ok(_) => pid_log_path,
+                Err(_) => log_path,
+            };
             let started_at = Utc::now();
             LAUNCH_RECORDS.write().unwrap().insert(
                 id.clone(),
                 LaunchRecord {
+                    pid,
                     log_path: Some(log_path.clone()),
                     last_error: None,
                 },
@@ -315,6 +355,7 @@ async fn launch_instance(req: web::Json<LaunchRequest>) -> impl Responder {
                 LAUNCH_RECORDS.write().unwrap().insert(
                     id.clone(),
                     LaunchRecord {
+                        pid,
                         log_path: Some(log_path.clone()),
                         last_error: log_tail.clone(),
                     },
@@ -334,13 +375,14 @@ async fn launch_instance(req: web::Json<LaunchRequest>) -> impl Responder {
             LAUNCH_RECORDS.write().unwrap().insert(
                 id.clone(),
                 LaunchRecord {
+                    pid,
                     log_path: Some(log_path.clone()),
                     last_error: None,
                 },
             );
 
             let instance = VllmInstance {
-                id,
+                id: format!("pid-{pid}"),
                 model: req.model.clone(),
                 host: req.host.clone(),
                 port,
@@ -349,7 +391,7 @@ async fn launch_instance(req: web::Json<LaunchRequest>) -> impl Responder {
                 gpu_memory_utilization: req.gpu_memory_utilization,
                 enable_prefix_caching: req.enable_prefix_caching,
                 started_at,
-                status: "running".to_string(),
+                status: "starting".to_string(),
                 log_path: Some(log_path),
                 last_error: None,
             };

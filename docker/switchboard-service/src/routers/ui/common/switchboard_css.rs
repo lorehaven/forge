@@ -156,7 +156,9 @@ fn shared_dashboard_rules() -> Vec<CssRule> {
             .property("opacity", "0.8")
             .property("border", "0.0625rem solid var(--bs-warning)")
             .child(CssRule::new("*")
-                .property("color", "var(--bs-gray-950)")),
+                .property("color", "var(--bs-gray-950)"))
+            .child(CssRule::new(".badge")
+                .property("background", "var(--bs-gray-300)")),
         CssRule::new(".fit-no")
             .property("background", "var(--bs-danger)")
             .property("opacity", "0.8")

@@ -140,13 +140,16 @@ function cloneTemplateNode(id) {
 
 function buildInstanceBadges(inst) {
     const badges = [];
+    const model = availableModels.find(m => m.name === inst.model);
+    const quantization = inst.quantization || normalizeInstanceQuant(model?.quant);
+    const context = inst.max_model_len || normalizeInstanceContext(model?.context);
 
-    if (inst.quantization) {
-        badges.push(createBadge(inst.quantization));
+    if (quantization) {
+        badges.push(createBadge(quantization));
     }
 
-    if (inst.max_model_len) {
-        badges.push(createBadge(`ctx: ${inst.max_model_len}`));
+    if (context) {
+        badges.push(createBadge(`ctx: ${context}`));
     }
 
     if (inst.gpu_memory_utilization) {
@@ -158,6 +161,16 @@ function buildInstanceBadges(inst) {
     }
 
     return badges;
+}
+
+function normalizeInstanceQuant(quant) {
+    if (!quant) return null;
+    return String(quant).toLowerCase();
+}
+
+function normalizeInstanceContext(context) {
+    const parsed = parseInt(String(context || ''), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
 function createBadge(text) {
