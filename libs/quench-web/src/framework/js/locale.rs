@@ -119,7 +119,7 @@ const DEFAULT_LOCALE = "{resolved_default_locale}";
 const COOKIE_NAME = "qlocale";
 
 // Example translations
-const TRANSLATIONS = {};
+const TRANSLATIONS = {translations};
 
 // ---- Cookie Utilities ----
 
@@ -201,7 +201,8 @@ document.addEventListener("DOMContentLoaded", () => {{
 // Expose for manual switching
 window.setLocale = updateLocale;
     "#,
-        parse_ftl_with_options(Some(supported_locales)).unwrap_or_default()
+        resolved_default_locale = resolved_default_locale,
+        translations = parse_ftl_with_options(Some(supported_locales)).unwrap_or_default()
     )
     .trim()
     .to_string()

@@ -281,35 +281,35 @@ function sortModels(models) {
 fn create_model_card() -> String {
     r#"
 function createModelCard(model) {
-    const card = document.createElement("div");
-    card.className = "card";
+    const card = cloneTemplateNode("models-card-template");
+    if (!card) return document.createElement("div");
     card.dataset.model = JSON.stringify(model);
-    
-    let deleteBtn = "";
-    if (isAdmin) {
-        deleteBtn = `<button class="card-delete" title="${t("ui_models_card_delete_tooltip")}"><i class="fa-solid fa-trash"></i></button>`;
+
+    const badge = card.querySelector(".vllm-badge");
+    if (badge) {
+        badge.style.display = model.vllm_supported ? "" : "none";
     }
 
-    let vllmBadge = "";
-    if (model.vllm_supported) {
-        vllmBadge = `<span class="vllm-badge" title="Supported by vLLM">vLLM</span>`;
-    }
+    const title = card.querySelector(".card-title-text");
+    if (title) title.textContent = model.name;
 
-    card.innerHTML = `
-        <div class="card-header">
-            <div class="card-title">${vllmBadge} ${model.name}</div>
-            ${deleteBtn}
-        </div>
-        <div class="card-meta">
-            <div><strong data-i18n="ui_models_card_params">${t("ui_models_card_params")}</strong>: ${model.params_billion}B<br>
-                <strong data-i18n="ui_models_card_quant">${t("ui_models_card_quant")}</strong>: ${model.quant}<br>
-                <strong data-i18n="ui_models_card_context">${t("ui_models_card_context")}</strong>: ${model.context}</div>
-            <div><strong data-i18n="ui_models_card_layers">${t("ui_models_card_layers")}</strong>: ${model.layers}<br>
-                <strong data-i18n="ui_models_card_hidden">${t("ui_models_card_hidden")}</strong>: ${model.hidden_size}</div>
-        </div>
-        <div class="card-fit"></div>
-        <div class="card-path">${model.path}</div>
-    `;
+    const params = card.querySelector(".card-params");
+    if (params) params.textContent = `${model.params_billion}B`;
+
+    const quant = card.querySelector(".card-quant");
+    if (quant) quant.textContent = model.quant;
+
+    const context = card.querySelector(".card-context");
+    if (context) context.textContent = model.context;
+
+    const layers = card.querySelector(".card-layers");
+    if (layers) layers.textContent = model.layers;
+
+    const hiddenSize = card.querySelector(".card-hidden-size");
+    if (hiddenSize) hiddenSize.textContent = model.hidden_size;
+
+    const path = card.querySelector(".card-path");
+    if (path) path.textContent = model.path;
 
     const fit = card.querySelector(".card-fit");
     if (fit) {
@@ -318,6 +318,8 @@ function createModelCard(model) {
 
     const del = card.querySelector(".card-delete");
     if (del) {
+        del.style.display = isAdmin ? "" : "none";
+        del.title = t("ui_models_card_delete_tooltip");
         del.addEventListener("click", (e) => {
             e.stopPropagation();
             openConfirmDeleteModal(model);
@@ -427,57 +429,35 @@ function renderSeparator() {
 fn ensure_estimates_modal() -> String {
     r#"
 function ensureEstimatesModal() {
-    if (document.getElementById("estimates-modal")) return;
-    const modal = document.createElement("div");
-    modal.id = "estimates-modal";
-    modal.innerHTML = `
-        <div class="estimates-modal-backdrop"></div>
-        <div class="estimates-modal-content">
-            <div class="estimates-modal-header">
-                <div class="estimates-modal-title" data-i18n="ui_models_modal_estimates_title">${t("ui_models_modal_estimates_title")}</div>
-                <button class="estimates-modal-close" onclick="closeEstimatesModal()"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-            <div class="estimates-modal-body" id="estimates-modal-body"></div>
-        </div>
-    `;
-    document.body.appendChild(modal);
-    estimatesModal = modal;
-    modal.querySelector(".estimates-modal-backdrop")?.addEventListener("click", closeEstimatesModal);
+    if (!estimatesModal) {
+        estimatesModal = document.getElementById("estimates-modal");
+    }
 }
-"#.to_string()
+"#
+    .to_string()
 }
 
 fn open_estimates_modal() -> String {
     r#"
 function openEstimatesModal(model) {
     ensureEstimatesModal();
-
-    const body = document.getElementById("estimates-modal-body");
-    if (!body) return;
+    if (!estimatesModal) return;
 
     const availableVram = currentGpuInfo?.free_gb || 0;
+    const fitFilter = document.getElementById("estimate-fit-filter");
+    const contextFilter = document.getElementById("estimate-context-filter");
+    const quantFilter = document.getElementById("estimate-quant-filter");
+    if (!fitFilter || !contextFilter || !quantFilter) return;
 
-    body.innerHTML = `
-        <div class="estimate-filters">
-            <select id="estimate-fit-filter">
-                <option value="all" data-i18n="ui_models_modal_estimates_filter_all">${t("ui_models_modal_estimates_filter_all")}</option>
-                <option value="fit" data-i18n="ui_models_modal_estimates_filter_fits">${t("ui_models_modal_estimates_filter_fits")}</option>
-                <option value="nofit" data-i18n="ui_models_modal_estimates_filter_nofit">${t("ui_models_modal_estimates_filter_nofit")}</option>
-            </select>
-
-            <select id="estimate-context-filter">
-                <option value="all" data-i18n="ui_models_modal_estimates_filter_all_contexts">${t("ui_models_modal_estimates_filter_all_contexts")}</option>
-                ${buildContextOptions(model.estimates)}
-            </select>
-
-            <select id="estimate-quant-filter">
-                <option value="all" data-i18n="ui_models_modal_estimates_filter_all_quants">${t("ui_models_modal_estimates_filter_all_quants")}</option>
-                ${buildQuantOptions(model.estimates)}
-            </select>
-        </div>
-
-        <div class="estimate-grid" id="estimate-grid"></div>
-    `;
+    fitFilter.value = "all";
+    replaceOptions(contextFilter, [
+        createOption("all", t("ui_models_modal_estimates_filter_all_contexts"), "ui_models_modal_estimates_filter_all_contexts"),
+        ...buildContextOptions(model.estimates),
+    ]);
+    replaceOptions(quantFilter, [
+        createOption("all", t("ui_models_modal_estimates_filter_all_quants"), "ui_models_modal_estimates_filter_all_quants"),
+        ...buildQuantOptions(model.estimates),
+    ]);
 
     const title = document.querySelector(".estimates-modal-title");
     if (title) { title.textContent = `${t("ui_models_modal_estimates_title")} — ${model.name}`; }
@@ -546,7 +526,7 @@ function renderEstimateGrid(model, availableVram) {
             return true;
         });
 
-    grid.innerHTML = estimates.map(e => renderEstimateRow(e, availableVram)).join("");
+    grid.replaceChildren(...estimates.map(e => renderEstimateRow(e, availableVram)));
 }
 
 function buildContextOptions(estimates) {
@@ -554,8 +534,7 @@ function buildContextOptions(estimates) {
     values.sort((a, b) => contextValue(b) - contextValue(a));
 
     return values
-        .map(v => `<option value="${v}">${v}</option>`)
-        .join("");
+        .map(v => createOption(String(v), String(v)));
 }
 
 function buildQuantOptions(estimates) {
@@ -564,8 +543,27 @@ function buildQuantOptions(estimates) {
     values.sort((a, b) => quantRank(b) - quantRank(a));
 
     return values
-        .map(v => `<option value="${v}">${v}</option>`)
-        .join("");
+        .map(v => createOption(v, v));
+}
+
+function replaceOptions(select, options) {
+    select.replaceChildren(...options);
+    select.value = "all";
+}
+
+function createOption(value, text, i18nKey) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = text;
+    if (i18nKey) {
+        option.dataset.i18n = i18nKey;
+    }
+    return option;
+}
+
+function cloneTemplateNode(id) {
+    const template = document.getElementById(id);
+    return template?.firstElementChild?.cloneNode(true) || null;
 }
 "#
     .to_string()
@@ -579,30 +577,9 @@ function closeEstimatesModal() {
 }
 
 function ensureConfirmDeleteModal() {
-    if (document.getElementById("confirm-delete-modal")) return;
-    const modal = document.createElement("div");
-    modal.id = "confirm-delete-modal";
-    modal.className = "estimates-modal"; // Reusing class for layout
-    modal.innerHTML = `
-        <div class="estimates-modal-backdrop"></div>
-        <div class="estimates-modal-content small">
-            <div class="estimates-modal-header">
-                <div class="estimates-modal-title" data-i18n="ui_models_modal_delete_title">${t("ui_models_modal_delete_title")}</div>
-                <button class="estimates-modal-close" onclick="closeConfirmDeleteModal()"><i class="fa-solid fa-xmark"></i></button>
-            </div>
-            <div class="estimates-modal-body">
-                <p data-i18n="ui_models_modal_delete_text">${t("ui_models_modal_delete_text")}</p>
-                <div class="model-to-delete-name" id="model-to-delete-name"></div>
-                <div class="confirm-actions">
-                    <button class="button cancel" onclick="closeConfirmDeleteModal()" data-i18n="ui_models_modal_delete_cancel">${t("ui_models_modal_delete_cancel")}</button>
-                    <button class="button delete" onclick="confirmDelete()" data-i18n="ui_models_modal_delete_confirm">${t("ui_models_modal_delete_confirm")}</button>
-                </div>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(modal);
-    confirmDeleteModal = modal;
-    modal.querySelector(".estimates-modal-backdrop")?.addEventListener("click", closeConfirmDeleteModal);
+    if (!confirmDeleteModal) {
+        confirmDeleteModal = document.getElementById("confirm-delete-modal");
+    }
 }
 
 function openConfirmDeleteModal(model) {
@@ -649,14 +626,36 @@ function renderEstimateRow(estimate, availableVram) {
     let cls = "fit-no";
     if (fits) cls = tight ? "fit-warn" : "fit-ok";
 
-    return `
-        <div class="fit-line ${cls}">
-            <div>${renderFitItem("ui_models_card_context", t("ui_models_card_context"), estimate.context)}</div>
-            <div>${renderFitItem("ui_models_card_quant", t("ui_models_card_quant"), estimate.quant)}</div>
-            <div>${renderFitItem("ui_models_card_vram", t("ui_models_card_vram"), `${estimate.total_gb} GB`)}</div>
-            <div>${renderFitItem("ui_models_card_margin", t("ui_models_card_margin"), `${margin.toFixed(2)} GB`)}</div>
-        </div>
-    `;
+    const row = document.createElement("div");
+    row.className = `fit-line ${cls}`;
+    row.appendChild(renderEstimateField("ui_models_card_context", t("ui_models_card_context"), estimate.context));
+    row.appendChild(renderEstimateField("ui_models_card_quant", t("ui_models_card_quant"), estimate.quant));
+    row.appendChild(renderEstimateField("ui_models_card_vram", t("ui_models_card_vram"), `${estimate.total_gb} GB`));
+    row.appendChild(renderEstimateField("ui_models_card_margin", t("ui_models_card_margin"), `${margin.toFixed(2)} GB`));
+    return row;
+}
+
+function renderEstimateField(key, label, value) {
+    const wrapper = document.createElement("div");
+    wrapper.appendChild(renderFitItemNode(key, label, value));
+    return wrapper;
+}
+
+function renderFitItemNode(key, label, value) {
+    if (value === undefined) {
+        const span = document.createElement("span");
+        span.dataset.i18n = key;
+        span.textContent = label;
+        return span;
+    }
+
+    const span = document.createElement("span");
+    const strong = document.createElement("strong");
+    strong.dataset.i18n = key;
+    strong.textContent = label;
+    span.appendChild(strong);
+    span.append(`: ${value}`);
+    return span;
 }
 "#
     .to_string()

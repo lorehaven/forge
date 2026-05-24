@@ -53,4 +53,7 @@ pub fn scope() -> impl HttpServiceFactory {
         // Models Dashboard
         .service(pages::models::models_dashboard)
         .service(pages::models::models_dashboard_slash)
+        // vLLM Management
+        .service(pages::vllm::vllm_manage)
+        .service(pages::vllm::vllm_manage_slash)
 }

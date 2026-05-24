@@ -7,6 +7,7 @@ use utoipa::OpenApi;
 pub mod gpu;
 pub mod models;
 pub mod ui;
+pub mod vllm;
 
 struct FeatureFlags {
     models_dashboard: bool,
@@ -42,5 +43,6 @@ pub fn openapi() -> utoipa::openapi::OpenApi {
     let mut doc = BaseOpenApiDoc::openapi();
     doc.merge(GpuApiDoc::openapi());
     doc.merge(ModelsApiDoc::openapi());
+    doc.merge(vllm::VllmApiDoc::openapi());
     doc
 }

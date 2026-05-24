@@ -11,6 +11,7 @@ pub fn base_path_scope() -> impl HttpServiceFactory {
     actix_web::web::scope("")
         .service(routers::gpu::scope())
         .service(routers::models::scope())
+        .service(routers::vllm::scope())
         .service(routers::ui::scope())
 }
 

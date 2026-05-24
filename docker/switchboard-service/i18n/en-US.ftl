@@ -20,6 +20,7 @@ ui_service_vllm_management_desc = Manage VLLM instances.
 
 # ── Models Dashboard ─────────────────────────────────────────────────────────
 
+ui_common_cancel = Cancel
 ui_header_dashboard = Dashboard
 ui_header_models = Models
 ui_models_search_placeholder = Search models...
@@ -37,6 +38,20 @@ ui_models_tab_gguf = GGUF
 ui_models_filter_all_quants = all quants
 ui_models_filter_all_contexts = all contexts
 ui_models_filter_vllm_only = vLLM only
+ui_header_vllm = vLLM
+ui_vllm_launch_new = Launch vLLM Instance
+ui_vllm_running_instances = Running Instances
+ui_vllm_launch_modal_title = Launch vLLM Instance
+ui_vllm_form_model = Model
+ui_vllm_form_host = Host
+ui_vllm_form_port = Port
+ui_vllm_form_quant = Quantization
+ui_vllm_form_max_len = Max Model Len
+ui_vllm_form_gpu_util = GPU Memory Utilization
+ui_vllm_form_prefix_caching = Enable Prefix Caching
+ui_vllm_launch_confirm = Launch
+ui_service_vllm_management_title = vLLM Management
+ui_service_vllm_management_desc = Manage running vLLM instances and launch new ones.
 ui_models_card_delete_tooltip = Delete Model
 ui_models_card_params = Params
 ui_models_card_context = Context
@@ -59,7 +74,6 @@ ui_models_modal_estimates_filter_all_quants = All Quants
 ui_models_modal_delete_title = Confirm Delete
 ui_models_modal_delete_text = Are you sure you want to physically delete this model from drive?
 ui_models_modal_delete_confirm = Delete
-ui_models_modal_delete_cancel = Cancel
 ui_models_quant_fp16 = fp16
 ui_models_quant_bf16 = bf16
 ui_models_quant_fp8 = fp8

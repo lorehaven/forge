@@ -6,6 +6,8 @@ use std::sync::LazyLock;
 mod models_dashboard_filters_js;
 mod models_dashboard_ws_js;
 mod switchboard_css;
+mod vllm_management_js;
+mod vllm_management_ws_js;
 
 static UI_SHELL_HOME: LazyLock<AppShell> = LazyLock::new(|| {
     switchboard_css::ensure_switchboard_css();
@@ -48,6 +50,37 @@ static UI_SHELL_MODELS_DASHBOARD: LazyLock<AppShell> = LazyLock::new(|| {
         .scripts(vec![
             Script::new(&ui_asset_path("/js/models_dashboard_filters.js")),
             Script::new(&ui_asset_path("/js/models_dashboard_ws.js")),
+        ])
+        .with_nav(false)
+        .resources_prefix(ui_path(""))
+        .build()
+});
+
+static UI_SHELL_VLLM_MANAGEMENT: LazyLock<AppShell> = LazyLock::new(|| {
+    switchboard_css::ensure_switchboard_css();
+    models_dashboard_ws_js::ensure_ws_js();
+    vllm_management_js::ensure_vllm_js();
+    vllm_management_ws_js::ensure_vllm_ws_js();
+
+    AppShellBuilder::new()
+        .title("Switchboard")
+        .supported_locales(vec!["en-US".to_string()])
+        .default_theme(Theme::DefaultDark)
+        .supported_themes(vec![Theme::DefaultDark])
+        .header(ui_header_split(
+            "ui_header_dashboard",
+            "ui_header_vllm",
+            true,
+            true,
+        ))
+        .links(vec![Link::new(
+            "stylesheet",
+            &ui_asset_path("/css/switchboard.css"),
+        )])
+        .scripts(vec![
+            Script::new(&ui_asset_path("/js/models_dashboard_ws.js")),
+            Script::new(&ui_asset_path("/js/vllm_management.js")),
+            Script::new(&ui_asset_path("/js/vllm_management_ws.js")),
         ])
         .with_nav(false)
         .resources_prefix(ui_path(""))
@@ -139,6 +172,7 @@ pub(super) fn render_page(
     let shell = match page_kind {
         UiPageKind::Home => &*UI_SHELL_HOME,
         UiPageKind::ModelsDashboard => &*UI_SHELL_MODELS_DASHBOARD,
+        UiPageKind::VllmManagement => &*UI_SHELL_VLLM_MANAGEMENT,
         UiPageKind::Auth => &*UI_SHELL_AUTH,
     };
     builder
@@ -149,6 +183,7 @@ pub(super) fn render_page(
 pub(super) enum UiPageKind {
     Home,
     ModelsDashboard,
+    VllmManagement,
     Auth,
 }
 

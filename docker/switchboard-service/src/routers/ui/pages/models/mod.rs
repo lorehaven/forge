@@ -242,7 +242,246 @@ fn render_models_dashboard_page() -> HttpResponse {
                             ),
                     ),
             )
-            .child(div().class("grid").attr("id", "models-grid")),
+            .child(div().class("grid").attr("id", "models-grid"))
+            .child(models_card_template())
+            .child(estimates_modal())
+            .child(confirm_delete_modal()),
         UiPageKind::ModelsDashboard,
     )
+}
+
+fn models_card_template() -> Element {
+    div()
+        .attr("id", "models-card-template")
+        .attr("style", "display: none;")
+        .attr("aria-hidden", "true")
+        .child(
+            div()
+                .class("card")
+                .child(
+                    div()
+                        .class("card-header")
+                        .child(
+                            div()
+                                .class("card-title")
+                                .child(
+                                    span()
+                                        .class("vllm-badge")
+                                        .attr("style", "display: none;")
+                                        .attr("title", "Supported by vLLM")
+                                        .text("vLLM"),
+                                )
+                                .child(span().class("card-title-text")),
+                        )
+                        .child(
+                            button()
+                                .class("card-delete")
+                                .attr("type", "button")
+                                .attr("style", "display: none;")
+                                .attr("data-i18n-title", "ui_models_card_delete_tooltip")
+                                .child(i().class("fa-solid fa-trash")),
+                        ),
+                )
+                .child(
+                    div()
+                        .class("card-meta")
+                        .child(
+                            div()
+                                .child(
+                                    div()
+                                        .child(
+                                            span()
+                                                .attr("data-i18n", "ui_models_card_params")
+                                                .text("Params"),
+                                        )
+                                        .text(": ")
+                                        .child(span().class("card-params")),
+                                )
+                                .child(
+                                    div()
+                                        .child(
+                                            span()
+                                                .attr("data-i18n", "ui_models_card_quant")
+                                                .text("Quant"),
+                                        )
+                                        .text(": ")
+                                        .child(span().class("card-quant")),
+                                )
+                                .child(
+                                    div()
+                                        .child(
+                                            span()
+                                                .attr("data-i18n", "ui_models_card_context")
+                                                .text("Context"),
+                                        )
+                                        .text(": ")
+                                        .child(span().class("card-context")),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .child(
+                                    div()
+                                        .child(
+                                            span()
+                                                .attr("data-i18n", "ui_models_card_layers")
+                                                .text("Layers"),
+                                        )
+                                        .text(": ")
+                                        .child(span().class("card-layers")),
+                                )
+                                .child(
+                                    div()
+                                        .child(
+                                            span()
+                                                .attr("data-i18n", "ui_models_card_hidden")
+                                                .text("Hidden"),
+                                        )
+                                        .text(": ")
+                                        .child(span().class("card-hidden-size")),
+                                ),
+                        ),
+                )
+                .child(div().class("card-fit"))
+                .child(div().class("card-path")),
+        )
+}
+
+fn estimates_modal() -> Element {
+    div()
+        .attr("id", "estimates-modal")
+        .child(
+            div()
+                .class("estimates-modal-backdrop")
+                .attr("onclick", "closeEstimatesModal()"),
+        )
+        .child(
+            div()
+                .class("estimates-modal-content")
+                .child(
+                    div()
+                        .class("estimates-modal-header")
+                        .child(
+                            div()
+                                .class("estimates-modal-title")
+                                .attr("data-i18n", "ui_models_modal_estimates_title")
+                                .text("Estimates"),
+                        )
+                        .child(
+                            button()
+                                .class("estimates-modal-close")
+                                .attr("type", "button")
+                                .on_click("closeEstimatesModal()")
+                                .child(i().class("fa-solid fa-xmark")),
+                        ),
+                )
+                .child(
+                    div()
+                        .class("estimates-modal-body")
+                        .attr("id", "estimates-modal-body")
+                        .child(
+                            div()
+                                .class("estimate-filters")
+                                .child(
+                                    select()
+                                        .attr("id", "estimate-fit-filter")
+                                        .child(
+                                            option()
+                                                .attr("value", "all")
+                                                .attr(
+                                                    "data-i18n",
+                                                    "ui_models_modal_estimates_filter_all",
+                                                )
+                                                .text("All"),
+                                        )
+                                        .child(
+                                            option()
+                                                .attr("value", "fit")
+                                                .attr(
+                                                    "data-i18n",
+                                                    "ui_models_modal_estimates_filter_fits",
+                                                )
+                                                .text("Fits"),
+                                        )
+                                        .child(
+                                            option()
+                                                .attr("value", "nofit")
+                                                .attr(
+                                                    "data-i18n",
+                                                    "ui_models_modal_estimates_filter_nofit",
+                                                )
+                                                .text("Does not fit"),
+                                        ),
+                                )
+                                .child(select().attr("id", "estimate-context-filter"))
+                                .child(select().attr("id", "estimate-quant-filter")),
+                        )
+                        .child(div().class("estimate-grid").attr("id", "estimate-grid")),
+                ),
+        )
+}
+
+fn confirm_delete_modal() -> Element {
+    div()
+        .attr("id", "confirm-delete-modal")
+        .class("estimates-modal")
+        .child(
+            div()
+                .class("estimates-modal-backdrop")
+                .attr("onclick", "closeConfirmDeleteModal()"),
+        )
+        .child(
+            div()
+                .class("estimates-modal-content small")
+                .child(
+                    div()
+                        .class("estimates-modal-header")
+                        .child(
+                            div()
+                                .class("estimates-modal-title")
+                                .attr("data-i18n", "ui_models_modal_delete_title")
+                                .text("Delete Model"),
+                        )
+                        .child(
+                            button()
+                                .class("estimates-modal-close")
+                                .attr("type", "button")
+                                .on_click("closeConfirmDeleteModal()")
+                                .child(i().class("fa-solid fa-xmark")),
+                        ),
+                )
+                .child(
+                    div()
+                        .class("estimates-modal-body")
+                        .child(
+                            p().attr("data-i18n", "ui_models_modal_delete_text")
+                                .text("Are you sure you want to delete this model?"),
+                        )
+                        .child(
+                            div()
+                                .class("model-to-delete-name")
+                                .attr("id", "model-to-delete-name"),
+                        )
+                        .child(
+                            div()
+                                .class("confirm-actions")
+                                .child(
+                                    button()
+                                        .class("button cancel")
+                                        .attr("type", "button")
+                                        .attr("data-i18n", "ui_common_cancel")
+                                        .text("Cancel")
+                                        .on_click("closeConfirmDeleteModal()"),
+                                )
+                                .child(
+                                    button()
+                                        .class("button delete")
+                                        .attr("type", "button")
+                                        .attr("data-i18n", "ui_models_modal_delete_confirm")
+                                        .text("Delete")
+                                        .on_click("confirmDelete()"),
+                                ),
+                        ),
+                ),
+        )
 }
