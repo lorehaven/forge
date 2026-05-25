@@ -1,39 +1,105 @@
 # Forge 🛠️
 
-A collection of high-performance development and automation tools for modern software projects.
-This workspace contains several modules designed to streamline development, CI/CD, and project maintenance.
+A modular Rust workspace for development tooling, infrastructure automation, storage services, and LLM orchestration.
 
 ## Modules
 
-### Development Tools
+### `anvil`
+Workspace and Docker management CLI.
 
-- **anvil** - Workspace and Docker management CLI with unified build, lint, test, and container release workflows
-- **riveter** - Kubernetes manifest templating and management with Jinja2 templates and interactive REPL
-- **welder** - Multi-agent LLM execution engine for building, routing, and coordinating structured AI workflows
+Features:
+- Unified build, lint, and test workflows
+- Docker image build and release pipelines
+- Multi-project workspace orchestration
+- Shared developer automation commands
 
-### Backup/Sync Tools
+Requirements:
+- `docker`
 
-- **pulley** - Interactive REPL-based backup tool with TOML configuration and job management
+---
 
-### Frameworks & Services
+### `riveter`
+Kubernetes manifest templating and deployment tooling.
 
-- **quench-cli** - Unified terminal UI module with CLI and REPL modes
-- **quench-web** - Simple web UI framework library for HTML-based interfaces
-- **warehouse** - Storage service with REST API server and CLI tool for file management
+Features:
+- Jinja2-based manifest templating
+- Interactive REPL workflow
+- Kubernetes configuration composition
+- Environment-aware rendering pipelines
 
-## Getting Started
+Requirements:
+- `kubectl`
 
-Each module can be built and used independently, or you can build everything from the workspace root.
+---
 
-### Prerequisites
+### `welder`
+Multi-agent LLM execution and orchestration engine.
 
-- **Rust 1.84+** (edition 2024)
-- **ollama** (required for Welder)
-- **kubectl** (required for Riveter)
-- **docker** (required for Anvil's Docker features)
-- **rsync** (required for backup tools)
+Features:
+- Structured AI workflow execution
+- Agent routing and coordination
+- Backend abstraction for local inference
+- Workflow-driven execution model
 
-### Building the Workspace
+Requirements:
+- `ollama` or `vllm`
+
+---
+
+### `pulley`
+Interactive backup and synchronization tool.
+
+Features:
+- TOML-based job configuration
+- REPL-driven workflow management
+- Incremental synchronization support
+- Backup orchestration utilities
+
+Requirements:
+- `rsync`
+
+---
+
+### `quench-cli`
+Shared terminal UI framework for CLI and REPL applications.
+
+Features:
+- Unified terminal interaction model
+- Shared REPL infrastructure
+- Consistent command UI patterns
+- TUI component primitives
+
+---
+
+### `quench-web`
+Minimal web UI framework for HTML-based interfaces.
+
+Features:
+- Lightweight HTML rendering utilities
+- Simple web application scaffolding
+- Shared frontend primitives
+- Integration-ready web components
+
+---
+
+### `warehouse`
+Storage service with REST API and CLI tooling.
+
+Features:
+- File storage and retrieval APIs
+- CLI-based file management
+- Service-oriented architecture
+- Local and remote storage workflows
+
+## Prerequisites
+
+- Rust 1.84+ (Edition 2024)
+- `docker` (Anvil)
+- `kubectl` (Riveter)
+- `rsync` (Pulley)
+- `ollama` or `vllm` (Welder)
+
+## Build
 
 ```bash
 cargo build --release
@@ -42,25 +108,25 @@ cargo build --release
 ### Quench UI Smoke Tests
 
 ```bash
-# web shell + components
+# quench web example
 cargo run -p quench-example-basic
 
-# anvil cli (shared quench-cli terminal ui)
+# anvil cli
 cargo run -p anvil -- --help
 
-# riveter repl (shared quench-cli terminal ui)
+# riveter repl
 cargo run -p riveter -- repl
 
-# pulley repl (shared quench-cli terminal ui)
+# pulley repl
 cargo run -p pulley
 
-# warehouse cli (shared quench-cli terminal ui)
+# warehouse cli
 cargo run -p warehouse-cli -- --help
 
-# toolbox tui (shared quench-cli status hook + toolbox layout)
+# toolbox tui
 cargo run -p forge-toolbox
 
-# welder repl (shared quench-cli terminal constants + layout)
+# welder workflow repl
 cargo run -p welder -- --workflow ./welder/samples/agent.toml
 ```
 
@@ -68,12 +134,20 @@ cargo run -p welder -- --workflow ./welder/samples/agent.toml
 
 ```text
 .
-├── anvil/              # Workspace & Docker management CLI
-├── pulley/             # Interactive backup tool (TOML config, REPL)
-├── quench/             # Quench modules (web + cli)
-├── riveter/            # Kubernetes manifest templating
-├── warehouse/          # Storage service (API + CLI)
-└── welder/             # Multi-agent LLM framework
+├── anvil/
+├── cli/
+│   ├── anvil/
+│   ├── pulley/
+│   ├── riveter/
+│   └── warehouse-cli/
+├── libs/
+│   ├── quench-cli/
+│   ├── quench-srv/
+│   └── quench-web/
+├── pulley/
+├── riveter/
+├── warehouse/
+└── welder/
 ```
 
 ## License
