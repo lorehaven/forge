@@ -128,8 +128,34 @@ fn run_command_for_package(package: Option<&str>) -> Command {
     cmd.arg("run");
     if let Some(pkg) = package {
         cmd.arg("--package").arg(pkg);
+        if let Some(pkg_dir) = resolve_package_dir(pkg) {
+            cmd.current_dir(pkg_dir);
+        }
     }
     cmd
+}
+
+fn resolve_package_dir(package_name: &str) -> Option<std::path::PathBuf> {
+    let output = Command::new("cargo")
+        .args(["metadata", "--format-version", "1", "--no-deps"])
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let metadata: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+    let packages = metadata["packages"].as_array()?;
+
+    for pkg in packages {
+        if pkg["name"].as_str() == Some(package_name) {
+            let manifest_path = pkg["manifest_path"].as_str()?;
+            return Path::new(manifest_path).parent().map(|p| p.to_path_buf());
+        }
+    }
+
+    None
 }
 
 fn spawn_run_child(package: Option<&str>) -> Result<Child> {
