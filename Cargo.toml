@@ -44,10 +44,10 @@ markup5ever_rcdom = { version = "0.39" }
 minijinja = { version = "2.20", features = ["loader", "serde"] }
 moka = { version = "0.12", features = ["sync"] }
 predicates = { version = "3.1" }
-quench-cli = { path = "libs/quench-cli", registry = "ennor", version = "0.1.0" }
+quench-cli = { path = "libs/quench-cli", registry = "ennor", version = "0.1.1" }
 quench-db = { path = "libs/quench-db", version = "0.1.0" }
 quench-srv = { path = "libs/quench-srv", registry = "ennor", version = "0.1.6" }
-quench-web = { path = "libs/quench-web", registry = "ennor", version = "0.1.0" }
+quench-web = { path = "libs/quench-web", registry = "ennor", version = "0.1.1" }
 regex = { version = "1.12" }
 reqwest = { version = "0.13", default-features = false, features = [
   "json",
