@@ -1,6 +1,6 @@
 [package]
 name = "pulley"
-version = "0.1.3"
+version = "0.1.4"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Pulley CLI - sync/backup jobs powered by rsync"
