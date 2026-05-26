@@ -2,7 +2,7 @@
 .cargo/
 .dockerignore
 .gitignore
-docker/
+dockerfiles/
 **/target/
 **/dist/
 **/storage/
