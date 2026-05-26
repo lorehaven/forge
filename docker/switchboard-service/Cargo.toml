@@ -18,7 +18,7 @@ path = "src/main.rs"
 [dependencies]
 actix-web.workspace = true
 actix-ws.workspace = true
-chrono = { workspace = true, features = ["serde"] }
+chrono.workspace = true
 dotenvy.workspace = true
 envmnt.workspace = true
 futures-util.workspace = true
