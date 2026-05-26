@@ -330,7 +330,7 @@ dependencies = [
 
 [[package]]
 name = "anvil"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "anyhow",
  "clap",
@@ -1443,7 +1443,7 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "forge-toolbox"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -2961,7 +2961,7 @@ dependencies = [
 
 [[package]]
 name = "pulley"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "quench-cli",
  "rustyline",
@@ -2972,7 +2972,7 @@ dependencies = [
 
 [[package]]
 name = "quench-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "crossterm",
 ]
@@ -3042,7 +3042,7 @@ dependencies = [
 
 [[package]]
 name = "quench-web"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "fluent-syntax",
@@ -3350,7 +3350,7 @@ dependencies = [
 
 [[package]]
 name = "riveter"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -4922,7 +4922,7 @@ dependencies = [
 
 [[package]]
 name = "warehouse-service"
-version = "0.1.16"
+version = "0.1.17"
 dependencies = [
  "actix-web",
  "base64",
@@ -5126,7 +5126,7 @@ dependencies = [
 
 [[package]]
 name = "welder"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "anyhow",
  "async-trait",
