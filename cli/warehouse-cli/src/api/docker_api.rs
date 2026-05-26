@@ -234,10 +234,8 @@ fn parse_bearer_challenge(headers: &HeaderMap) -> Option<BearerChallenge> {
     let raw = headers.get(WWW_AUTHENTICATE)?.to_str().ok()?.trim();
     let raw = if let Some(rest) = raw.strip_prefix("Bearer ") {
         rest
-    } else if let Some(rest) = raw.strip_prefix("bearer ") {
-        rest
     } else {
-        return None;
+        raw.strip_prefix("bearer ")?
     };
 
     let mut realm = None;

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use quench_cli::terminal::{Tone, print_status};
+use quench_cli::prelude::{Tone, print_status};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;

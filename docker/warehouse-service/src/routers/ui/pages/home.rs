@@ -3,7 +3,7 @@ use crate::routers::ui::common::{UiPageKind, render_page, ui_path};
 use crate::routers::{crates_enabled, docker_enabled, files_enabled};
 use actix_web::{HttpResponse, Responder, get, web};
 use quench_srv::actix::routers::ui::pages::home::{handle_home, service_card};
-use quench_srv::prelude::jwt::JwtConfig;
+use quench_srv::prelude::JwtConfig;
 use quench_web::prelude::*;
 
 #[get("/home")]

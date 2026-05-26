@@ -36,14 +36,16 @@ fluent-syntax = { version = "0.12" }
 futures = { version = "0.3" }
 futures-util = { version = "0.3" }
 gguf = { version = "0.1" }
+hex = { version = "0.4" }
 html5ever = { version = "0.39" }
 hmac = { version = "0.13" }
 jsonwebtoken = { version = "10.4", features = ["rust_crypto"] }
-markup5ever_rcdom = { version = "0.39.0" }
+markup5ever_rcdom = { version = "0.39" }
 minijinja = { version = "2.20", features = ["loader", "serde"] }
 moka = { version = "0.12", features = ["sync"] }
 predicates = { version = "3.1" }
 quench-cli = { path = "libs/quench-cli", registry = "ennor", version = "0.1.0" }
+quench-db = { path = "libs/quench-db", version = "0.1.0" }
 quench-srv = { path = "libs/quench-srv", registry = "ennor", version = "0.1.6" }
 quench-web = { path = "libs/quench-web", registry = "ennor", version = "0.1.0" }
 regex = { version = "1.12" }
@@ -55,15 +57,16 @@ reqwest = { version = "0.13", default-features = false, features = [
   "multipart",
   "form",
 ] }
-rustls = { version = "0.23" }
+rustls = { version = "0.23", features = ["ring"] }
 rustls-pemfile = { version = "2" }
 rustyline = { version = "18.0" }
+semver = { version = "1.0" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0" }
+serde_yaml = { version = "0.9" }
 shlex = { version = "2.0" }
-serde_yaml = { version = "0.9.34" }
-semver = { version = "1.0" }
 sha2 = { version = "0.11" }
+sqlx = { version = "0.9", features = ["runtime-tokio", "tls-rustls-ring", "postgres", "macros", "json", "chrono", "uuid"] }
 strum = { version = "0.28" }
 strum_macros = { version = "0.28" }
 tempfile = { version = "3.27" }

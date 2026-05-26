@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
-use quench_cli::terminal::{Tone, print_status};
+use quench_cli::prelude::{Tone, print_status};
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};

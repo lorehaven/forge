@@ -7,7 +7,7 @@ use crossterm::style::Stylize;
 use crossterm::terminal::{
     Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use quench_cli::terminal::{Tone, print_status};
+use quench_cli::prelude::{Tone, print_status};
 use semver::Version;
 use std::collections::HashMap;
 use std::io::{Write, stdout};
@@ -180,11 +180,9 @@ fn run_repl() -> Result<()> {
                 app.selected = app.selected.saturating_sub(1);
                 dirty = true;
             }
-            KeyCode::Down => {
-                if app.selected + 1 < app.statuses.len() {
-                    app.selected += 1;
-                    dirty = true;
-                }
+            KeyCode::Down if app.selected + 1 < app.statuses.len() => {
+                app.selected += 1;
+                dirty = true;
             }
             KeyCode::Char('q') => break,
             KeyCode::Char('r') => {

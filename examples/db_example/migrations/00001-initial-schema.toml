@@ -1,0 +1,10 @@
+[[migrations]]
+id = "0001-initial-schema"
+author = "forge-team"
+
+[[migrations.changes]]
+createTable = { name = "tasks", columns = [
+    { name = "id", data_type = "TEXT", primary_key = true, nullable = false },
+    { name = "title", data_type = "TEXT", nullable = false },
+    { name = "completed", data_type = "BOOLEAN", nullable = false }
+]}

@@ -484,10 +484,8 @@ async fn websocket_receiver(mut stream: actix_ws::MessageStream, mut session: ac
 
     while let Some(item) = stream.next().await {
         match item {
-            Ok(actix_ws::Message::Ping(bytes)) => {
-                if session.pong(&bytes).await.is_err() {
-                    break;
-                }
+            Ok(actix_ws::Message::Ping(bytes)) if session.pong(&bytes).await.is_err() => {
+                break;
             }
 
             Ok(actix_ws::Message::Close(reason)) => {

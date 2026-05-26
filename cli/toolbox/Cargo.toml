@@ -1,23 +1,23 @@
 [package]
 name = "forge-toolbox"
 version = "0.1.1"
-edition.workspace = true
-authors.workspace = true
+edition = { workspace = true }
+authors = { workspace = true }
 description = "Forge Toolbox - monitor and self-update Forge installables"
 keywords = ["development", "tools", "forge"]
 categories = ["development-tools"]
-homepage.workspace = true
-repository.workspace = true
-license.workspace = true
-readme.workspace = true
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+readme = { workspace = true }
 
 [[bin]]
 name = "forge-toolbox"
 path = "src/main.rs"
 
 [dependencies]
-anyhow.workspace = true
-clap.workspace = true
-crossterm.workspace = true
-quench-cli.workspace = true
-semver.workspace = true
+anyhow = { workspace = true }
+clap = { workspace = true }
+crossterm = { workspace = true }
+quench-cli = { workspace = true }
+semver = { workspace = true }

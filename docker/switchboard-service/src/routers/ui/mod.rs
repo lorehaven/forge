@@ -1,7 +1,7 @@
 use actix_web::dev::HttpServiceFactory;
 use actix_web::{HttpResponse, Responder, get, web};
 pub use common::assets;
-use quench_srv::prelude::jwt::JwtConfig;
+use quench_srv::prelude::JwtConfig;
 use quench_srv::prelude::with_base_path;
 
 mod common;

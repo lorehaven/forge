@@ -1,7 +1,7 @@
 use crate::env::{current_env, env_list, env_set, env_show};
 use crate::render::{ResourceScope, generate_manifests_with_scope};
 use anyhow::Context;
-use quench_cli::terminal::{Tone, print_box_banner, print_status, repl_prompt};
+use quench_cli::prelude::{Tone, print_box_banner, print_status, repl_prompt};
 use std::process::Command;
 
 pub fn ok(msg: &str) {

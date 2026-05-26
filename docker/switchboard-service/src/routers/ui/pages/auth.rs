@@ -1,10 +1,10 @@
 use crate::routers::ui::common::{UiPageKind, render_page};
 use actix_web::{HttpResponse, Responder, get, post, web};
-use quench_srv::actix::domain::auth::UserDb;
 use quench_srv::actix::routers::ui::pages::auth::{
     LoginForm, LoginQuery, handle_login_submit, handle_logout, login_form_element,
 };
-use quench_srv::prelude::jwt::JwtConfig;
+use quench_srv::prelude::JwtConfig;
+use quench_srv::prelude::UserDb;
 use quench_web::prelude::*;
 use serde::Serialize;
 
@@ -48,7 +48,7 @@ pub(super) async fn auth_status(
         return HttpResponse::Ok().json(AuthStatus {
             authenticated: true,
             username: Some("dev".to_string()),
-            roles: vec!["Admin".to_string()],
+            roles: vec!["admin".to_string()],
         });
     }
 

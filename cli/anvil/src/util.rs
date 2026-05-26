@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use quench_cli::terminal::{Tone, print_status};
+use quench_cli::prelude::{Tone, print_status};
 use std::process::{Command, Stdio};
 
 pub fn run_command(mut cmd: Command, operation: &str) -> Result<()> {

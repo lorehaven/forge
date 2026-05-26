@@ -1,4 +1,4 @@
-use quench_srv::prelude::{HttpServiceFactory, domain::jwt::JwtConfig, serve};
+use quench_srv::prelude::{HttpServiceFactory, JwtConfig, serve};
 
 pub mod domain;
 pub mod middleware;
@@ -37,5 +37,5 @@ async fn main() -> std::io::Result<()> {
     tracing_subscriber::fmt().init();
     dotenvy::dotenv().ok();
 
-    serve(root_scope, base_path_scope, routers::openapi()).await
+    serve(root_scope, base_path_scope, routers::openapi(), None).await
 }

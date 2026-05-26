@@ -2,8 +2,8 @@ use actix_web::{HttpRequest, HttpResponse, Responder, get, http::header, web};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::{Duration, Utc};
 use jsonwebtoken::{EncodingKey, Header, encode};
-use quench_srv::actix::domain::auth::UserDb;
-use quench_srv::prelude::jwt::{Claims, JwtConfig};
+use quench_srv::prelude::UserDb;
+use quench_srv::prelude::{Claims, JwtConfig};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -46,7 +46,7 @@ pub async fn handle(
     query: web::Query<TokenQuery>,
 ) -> impl Responder {
     // Validate Basic authentication (or allow anonymous if disabled)
-    let username = match validate_basic(&req, &config, &user_db) {
+    let username = match validate_basic(&req, &config, &user_db).await {
         Some(u) => u,
         None => {
             return HttpResponse::Unauthorized()
@@ -85,7 +85,7 @@ pub async fn handle(
     })
 }
 
-fn validate_basic(req: &HttpRequest, config: &JwtConfig, user_db: &UserDb) -> Option<String> {
+async fn validate_basic(req: &HttpRequest, config: &JwtConfig, user_db: &UserDb) -> Option<String> {
     if !config.auth_enabled {
         return Some("anonymous".to_string());
     }
@@ -96,7 +96,7 @@ fn validate_basic(req: &HttpRequest, config: &JwtConfig, user_db: &UserDb) -> Op
         .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok())
         && let Some(encoded) = header_value.strip_prefix("Basic ")
-        && let Some(username) = validate_basic_encoded(encoded, user_db)
+        && let Some(username) = validate_basic_encoded(encoded, user_db).await
     {
         return Some(username);
     }
@@ -112,12 +112,12 @@ fn validate_basic(req: &HttpRequest, config: &JwtConfig, user_db: &UserDb) -> Op
     None
 }
 
-fn validate_basic_encoded(encoded: &str, user_db: &UserDb) -> Option<String> {
+async fn validate_basic_encoded(encoded: &str, user_db: &UserDb) -> Option<String> {
     let decoded = STANDARD.decode(encoded).ok()?;
     let creds = String::from_utf8(decoded).ok()?;
     let (username, password) = creds.split_once(':')?;
 
-    if user_db.validate(username, password).is_some() {
+    if user_db.validate(username, password).await.is_some() {
         Some(username.to_string())
     } else {
         None

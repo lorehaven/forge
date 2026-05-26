@@ -1,4 +1,4 @@
-pub use quench_cli::terminal::{BLUE, BOLD, CYAN, DIM, GREEN, RESET, SEP, SEP_THIN, WHITE, YELLOW};
+pub use quench_cli::prelude::{BLUE, BOLD, CYAN, DIM, GREEN, RESET, SEP, SEP_THIN, WHITE, YELLOW};
 
 /// Print the backend-ready banner.
 pub fn print_backend_banner(kind: &str, url: &str) {

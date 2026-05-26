@@ -1,34 +1,36 @@
 [package]
 name = "switchboard-service"
 version = "0.1.0"
-edition.workspace = true
-authors.workspace = true
+edition = { workspace = true }
+authors = { workspace = true }
 description = "Switchboard - dashboard/management service"
 keywords = ["development", "tools"]
 categories = ["development-tools"]
-homepage.workspace = true
-repository.workspace = true
-license.workspace = true
-readme.workspace = true
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+readme = { workspace = true }
 
 [[bin]]
 name = "switchboard-service"
 path = "src/main.rs"
 
 [dependencies]
-actix-web.workspace = true
-actix-ws.workspace = true
-chrono.workspace = true
-dotenvy.workspace = true
-envmnt.workspace = true
-futures-util.workspace = true
-gguf.workspace = true
-quench-srv.workspace = true
-quench-web.workspace = true
-regex.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-tracing.workspace = true
-tracing-subscriber.workspace = true
-utoipa.workspace = true
-walkdir.workspace = true
+actix-web = { workspace = true }
+actix-ws = { workspace = true }
+chrono = { workspace = true }
+dotenvy = { workspace = true }
+envmnt = { workspace = true }
+futures-util = { workspace = true }
+gguf = { workspace = true }
+quench-db = { workspace = true }
+quench-srv = { workspace = true }
+quench-web = { workspace = true }
+regex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+utoipa = { workspace = true }
+walkdir = { workspace = true }

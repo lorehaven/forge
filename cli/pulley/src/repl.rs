@@ -1,6 +1,6 @@
 use crate::config::{Config, Job};
 use crate::rsync;
-use quench_cli::terminal::{Tone, print_box_banner, print_status, repl_prompt};
+use quench_cli::prelude::{Tone, print_box_banner, print_status, repl_prompt};
 use rustyline::DefaultEditor;
 use rustyline::error::ReadlineError;
 use std::io::{self, Write};

@@ -1,4 +1,4 @@
-use quench_cli::terminal::{Tone, print_box_banner, print_line, print_status};
+use quench_cli::prelude::{Tone, print_box_banner, print_line, print_status};
 
 pub fn banner() {
     print_box_banner("Warehouse CLI", "docker crates files admin");

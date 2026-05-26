@@ -1,7 +1,7 @@
 use crate::routers::ui::common;
 use crate::routers::ui::common::{UiPageKind, render_page};
 use actix_web::{HttpResponse, Responder, get, web};
-use quench_srv::prelude::jwt::JwtConfig;
+use quench_srv::prelude::JwtConfig;
 use quench_web::prelude::*;
 
 #[get("/vllm/manage")]

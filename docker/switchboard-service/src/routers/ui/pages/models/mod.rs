@@ -1,6 +1,6 @@
 use crate::routers::ui::common::{self, UiPageKind, render_page};
 use actix_web::{HttpResponse, Responder, get, web};
-use quench_srv::prelude::jwt::JwtConfig;
+use quench_srv::prelude::JwtConfig;
 use quench_web::prelude::*;
 
 #[get("/models/dashboard")]
@@ -294,7 +294,7 @@ fn models_card_template() -> Element {
                                                 .attr("data-i18n", "ui_models_card_params")
                                                 .text("Params"),
                                         )
-                                        .text(": ")
+                                        .child(span().text(": "))
                                         .child(span().class("card-params")),
                                 )
                                 .child(
@@ -304,7 +304,7 @@ fn models_card_template() -> Element {
                                                 .attr("data-i18n", "ui_models_card_quant")
                                                 .text("Quant"),
                                         )
-                                        .text(": ")
+                                        .child(span().text(": "))
                                         .child(span().class("card-quant")),
                                 )
                                 .child(
@@ -314,7 +314,7 @@ fn models_card_template() -> Element {
                                                 .attr("data-i18n", "ui_models_card_context")
                                                 .text("Context"),
                                         )
-                                        .text(": ")
+                                        .child(span().text(": "))
                                         .child(span().class("card-context")),
                                 ),
                         )
@@ -327,7 +327,7 @@ fn models_card_template() -> Element {
                                                 .attr("data-i18n", "ui_models_card_layers")
                                                 .text("Layers"),
                                         )
-                                        .text(": ")
+                                        .child(span().text(": "))
                                         .child(span().class("card-layers")),
                                 )
                                 .child(
@@ -337,7 +337,7 @@ fn models_card_template() -> Element {
                                                 .attr("data-i18n", "ui_models_card_hidden")
                                                 .text("Hidden"),
                                         )
-                                        .text(": ")
+                                        .child(span().text(": "))
                                         .child(span().class("card-hidden-size")),
                                 ),
                         ),

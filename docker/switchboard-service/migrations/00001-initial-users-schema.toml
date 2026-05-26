@@ -1,0 +1,14 @@
+[[migrations]]
+id = "0001-initial-users-schema"
+author = "quench-srv"
+
+[[migrations.changes]]
+createSchema = { name = "switchboard" }
+
+[[migrations.changes]]
+createTable = { schema = "switchboard", name = "users", columns = [
+    { name = "username", data_type = "TEXT", primary_key = true, nullable = false },
+    { name = "password", data_type = "TEXT", nullable = false },
+    { name = "roles", data_type = "JSONB", nullable = false }
+]}
+

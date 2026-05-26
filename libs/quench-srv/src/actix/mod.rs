@@ -1,14 +1,16 @@
 use crate::actix::domain::auth::UserDb;
+use crate::actix::domain::db::DbWrapper;
 use crate::actix::domain::jwt::JwtConfig;
 use crate::prelude::normalize_base_path;
 use actix_service::ServiceFactory;
 use actix_web::dev::{HttpServiceFactory, ServiceRequest, ServiceResponse};
 use actix_web::{App, Error, HttpRequest, HttpResponse, HttpServer, Scope, web};
-use quench_cli::terminal::{Tone, print_status};
+use quench_cli::prelude::{Tone, print_status};
 use rustls::ServerConfig;
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use std::net::SocketAddr;
+use std::sync::Arc;
 use utoipa::openapi::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -34,6 +36,7 @@ pub async fn serve<R, S, RF, SF>(
     root_module: R,
     scoped_module: S,
     openapi: OpenApi,
+    db: Option<Arc<DbWrapper>>,
 ) -> std::io::Result<()>
 where
     R: Fn() -> RF + Send + Clone + 'static,
@@ -41,14 +44,22 @@ where
     RF: HttpServiceFactory + 'static,
     SF: HttpServiceFactory + 'static,
 {
+    // Install default crypto provider for rustls 0.23+
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     let base_path = normalize_base_path(&envmnt::get_or("BASE_PATH", "/"));
 
+    let db_wrapper = match db {
+        Some(d) => d,
+        None => DbWrapper::init().await,
+    };
     let jwt_config = JwtConfig::init();
-    let user_db = UserDb::init();
+    let user_db = UserDb::init(db_wrapper.db.clone()).await;
     let (https_addr, http_addr) = get_server_addr();
 
     let server = HttpServer::new(move || {
         App::new()
+            .app_data(web::Data::new(db_wrapper.db.clone()))
             .app_data(web::Data::new(jwt_config.clone()))
             .app_data(web::Data::from(user_db.clone()))
             .wrap(middleware::logger::FilteredLogger)

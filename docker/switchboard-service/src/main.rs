@@ -1,4 +1,5 @@
-use crate::routers::models::warm_model_cache;
+use crate::routers::models::{init_model_store, warm_model_cache};
+use quench_srv::actix::domain::db::DbWrapper;
 use quench_srv::prelude::{HttpServiceFactory, serve};
 
 pub mod routers;
@@ -19,7 +20,16 @@ pub fn base_path_scope() -> impl HttpServiceFactory {
 async fn main() -> std::io::Result<()> {
     tracing_subscriber::fmt().init();
     dotenvy::dotenv().ok();
-    warm_model_cache();
 
-    serve(root_scope, base_path_scope, routers::openapi()).await
+    let db_wrapper = DbWrapper::init().await;
+    init_model_store(db_wrapper.db.clone()).await;
+    warm_model_cache().await;
+
+    serve(
+        root_scope,
+        base_path_scope,
+        routers::openapi(),
+        Some(db_wrapper),
+    )
+    .await
 }

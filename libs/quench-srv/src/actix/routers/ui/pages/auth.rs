@@ -78,14 +78,14 @@ pub async fn handle_login_submit(
             .finish();
     }
 
-    let Some(user) = user_db.validate(&form.username, &form.password) else {
+    let Some(user) = user_db.validate(&form.username, &form.password).await else {
         return HttpResponse::Found()
             .append_header(("Location", with_base_path("/ui/login?err=1")))
             .finish();
     };
 
     let roles = user
-        .roles
+        .get_roles()
         .iter()
         .map(|r| format!("{:?}", r).to_lowercase())
         .collect::<Vec<_>>()

@@ -1,6 +1,6 @@
 use crate::routers::ui::common::{is_ui_authenticated, ui_login_redirect};
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
-use quench_srv::prelude::jwt::JwtConfig;
+use quench_srv::prelude::JwtConfig;
 use quench_srv::prelude::with_base_path;
 
 #[get("/docker/tags/{repository:.+}")]

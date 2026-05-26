@@ -1,6 +1,6 @@
 use crate::config;
 use anyhow::Context;
-use quench_cli::terminal::{Tone, print_status};
+use quench_cli::prelude::{Tone, print_status};
 use std::fs;
 use std::path::Path;
 

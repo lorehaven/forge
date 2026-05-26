@@ -3,7 +3,7 @@ mod repl;
 mod rsync;
 
 use config::Config;
-use quench_cli::terminal::{Tone, print_status};
+use quench_cli::prelude::{Tone, print_status};
 use repl::Repl;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

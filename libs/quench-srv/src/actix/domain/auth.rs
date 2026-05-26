@@ -1,39 +1,66 @@
+use quench_db::prelude::{Crud, Db, Model, Repository};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use sha2::{Digest, Sha512};
+use std::sync::Arc;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, sqlx::Type)]
+#[sqlx(rename_all = "lowercase")]
+#[serde(rename_all = "lowercase")]
 pub enum Role {
     Admin,
     User,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct User {
     pub username: String,
     pub password: String,
-    pub roles: Vec<Role>,
+    pub roles: serde_json::Value,
 }
 
-pub struct UserDb {
-    users: RwLock<HashMap<String, User>>,
-}
-
-impl Default for UserDb {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl UserDb {
-    pub fn new() -> Self {
+impl User {
+    pub fn new(username: String, password: String, roles: Vec<Role>) -> Self {
         Self {
-            users: RwLock::new(HashMap::new()),
+            username,
+            password: Self::hash_password(&password),
+            roles: serde_json::to_value(roles).unwrap(),
         }
     }
 
-    pub fn init() -> Arc<Self> {
-        let db = Arc::new(Self::default());
+    pub fn hash_password(password: &str) -> String {
+        let mut hasher = Sha512::new();
+        hasher.update(password.as_bytes());
+        hex::encode(hasher.finalize())
+    }
+
+    pub fn get_roles(&self) -> Vec<Role> {
+        serde_json::from_value(self.roles.clone()).unwrap_or_default()
+    }
+}
+
+impl Model for User {
+    fn table_name() -> String {
+        let schema = envmnt::get_or("DB_SCHEMA", "public");
+        format!("{}.users", schema)
+    }
+
+    fn columns() -> Vec<&'static str> {
+        vec!["username", "password", "roles"]
+    }
+
+    fn primary_key_name() -> String {
+        "username".to_string()
+    }
+}
+
+pub enum UserDb {
+    Base { repo: Repository<User> },
+}
+
+impl UserDb {
+    pub async fn init(db: Db) -> Arc<Self> {
+        let repo = db.repository::<User>();
+        let arc_db = Arc::new(Self::Base { repo });
 
         let auth_enabled = envmnt::get_or("SERVICE_AUTH_ENABLED", "false")
             .parse()
@@ -42,30 +69,44 @@ impl UserDb {
         if auth_enabled {
             let admin_user = envmnt::get_or_panic("SERVICE_USERNAME");
             let admin_pass = envmnt::get_or_panic("SERVICE_PASSWORD");
+            let hashed_admin_pass = User::hash_password(&admin_pass);
 
-            db.add_user(User {
-                username: admin_user,
-                password: admin_pass,
-                roles: vec![Role::Admin],
-            });
+            if let Some(user) = arc_db.get_user(&admin_user).await {
+                if user.password != hashed_admin_pass {
+                    // Update password if it changed in env
+                    arc_db
+                        .add_user(User::new(admin_user, admin_pass, vec![Role::Admin]))
+                        .await;
+                }
+            } else {
+                arc_db
+                    .add_user(User::new(admin_user, admin_pass, vec![Role::Admin]))
+                    .await;
+            }
         }
 
-        db
+        arc_db
     }
 
-    pub fn add_user(&self, user: User) {
-        let mut users = self.users.write().unwrap();
-        users.insert(user.username.clone(), user);
+    pub async fn add_user(&self, user: User) {
+        let Self::Base { repo } = self;
+        // Check if user exists to decide between create and update
+        if repo.read(&user.username).await.unwrap_or(None).is_some() {
+            repo.update(&user).await.ok();
+        } else {
+            repo.create(&user).await.ok();
+        }
     }
 
-    pub fn get_user(&self, username: &str) -> Option<User> {
-        let users = self.users.read().unwrap();
-        users.get(username).cloned()
+    pub async fn get_user(&self, username: &str) -> Option<User> {
+        let Self::Base { repo } = self;
+        repo.read(username).await.unwrap_or(None)
     }
 
-    pub fn validate(&self, username: &str, password: &str) -> Option<User> {
-        let user = self.get_user(username)?;
-        if user.password == password {
+    pub async fn validate(&self, username: &str, password: &str) -> Option<User> {
+        let user = self.get_user(username).await?;
+        let hashed_password = User::hash_password(password);
+        if user.password == hashed_password {
             Some(user)
         } else {
             None
