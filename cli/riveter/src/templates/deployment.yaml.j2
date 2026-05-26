@@ -23,7 +23,7 @@ spec:
       serviceAccountName: {{ res.service_account | default("ossiriand-" ~ env ~ "-sa") }}
 
 {% if res.pod_security_context %}
-      podSecurityContext:
+      securityContext:
 {% if res.pod_security_context.fsGroup is defined %}
         fsGroup: {{ res.pod_security_context.fsGroup }}
 {% endif %}
@@ -69,6 +69,9 @@ spec:
 
           securityContext:
 {% if res.security_context %}
+{% if res.security_context.run_as_non_root is defined %}
+            runAsNonRoot: {{ res.security_context.run_as_non_root }}
+{% endif %}
 {% if res.security_context.run_as_user is defined %}
             runAsUser: {{ res.security_context.run_as_user }}
 {% endif %}
