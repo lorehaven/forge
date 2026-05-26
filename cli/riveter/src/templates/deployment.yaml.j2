@@ -49,22 +49,60 @@ spec:
 {% endif %}
 
 {% if res.probes %}
+{% if res.probes.liveness %}
           livenessProbe:
+
+{% if res.probes.liveness.http_get %}
             httpGet:
-              path: {{ res.probes.path }}
-              port: {{ res.probes.port }}
-              scheme: HTTP
-            failureThreshold: 3
-            periodSeconds: 10
-            timeoutSeconds: 1
+              path: {{ res.probes.liveness.http_get.path }}
+              port: {{ res.probes.liveness.http_get.port }}
+              scheme: {{ res.probes.liveness.http_get.scheme | default("HTTP") }}
+{% endif %}
+
+{% if res.probes.liveness.exec %}
+            exec:
+              command:
+{% for cmd in res.probes.liveness.exec.command %}
+                - {{ cmd }}
+{% endfor %}
+{% endif %}
+
+            failureThreshold: {{ res.probes.liveness.failure_threshold | default(3) }}
+            periodSeconds: {{ res.probes.liveness.period_seconds | default(10) }}
+            timeoutSeconds: {{ res.probes.liveness.timeout_seconds | default(1) }}
+
+{% if res.probes.liveness.initial_delay_seconds %}
+            initialDelaySeconds: {{ res.probes.liveness.initial_delay_seconds }}
+{% endif %}
+{% endif %}
+
+{% if res.probes.readiness %}
           readinessProbe:
+
+{% if res.probes.readiness.http_get %}
             httpGet:
-              path: {{ res.probes.path }}
-              port: {{ res.probes.port }}
-              scheme: HTTP
-            failureThreshold: 3
-            periodSeconds: 10
-            timeoutSeconds: 1
+              path: {{ res.probes.readiness.http_get.path }}
+              port: {{ res.probes.readiness.http_get.port }}
+              scheme: {{ res.probes.readiness.http_get.scheme | default("HTTP") }}
+{% endif %}
+
+{% if res.probes.readiness.exec %}
+            exec:
+              command:
+{% for cmd in res.probes.readiness.exec.command %}
+                - {{ cmd }}
+{% endfor %}
+{% endif %}
+
+            failureThreshold: {{ res.probes.readiness.failure_threshold | default(3) }}
+            periodSeconds: {{ res.probes.readiness.period_seconds | default(10) }}
+            timeoutSeconds: {{ res.probes.readiness.timeout_seconds | default(1) }}
+
+{% if res.probes.readiness.initial_delay_seconds %}
+            initialDelaySeconds: {{ res.probes.readiness.initial_delay_seconds }}
+{% endif %}
+{% endif %}
+
 {% endif %}
 
           securityContext:
