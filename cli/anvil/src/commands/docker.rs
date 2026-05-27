@@ -117,7 +117,7 @@ fn full_tags_for_package(config: &config::Config, package: &str) -> Result<Vec<S
     let module = find_module_for_package(config, package)?;
     let module_name = find_module_name_overwrite(config, package)?;
     let image_name = get_image_name_for_package(config, package)?;
-    let version = get_package_version(&module, package)?;
+    let version = get_package_version(module, package)?;
 
     Ok(registries
         .iter()

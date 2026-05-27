@@ -145,7 +145,7 @@ async fn get_with_wrong_service(world: &mut WarehouseWorld, page: String, servic
 #[when(expr = "a GET request is sent to protected page {string} with token with future iat")]
 async fn get_with_future_iat(world: &mut WarehouseWorld, page: String) {
     let jwt_secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "secret".to_string());
-    
+
     let now = Utc::now();
     let iat = (now + chrono::Duration::seconds(300)).timestamp() as usize; // 5 minutes in future
     let exp = (now + chrono::Duration::seconds(3600)).timestamp() as usize;
@@ -162,7 +162,8 @@ async fn get_with_future_iat(world: &mut WarehouseWorld, page: String) {
         &Header::default(),
         &claims,
         &EncodingKey::from_secret(jwt_secret.as_bytes()),
-    ).expect("Failed to encode token");
+    )
+    .expect("Failed to encode token");
 
     let url = format!("{}{}", world.api_url, page);
     let client = reqwest::Client::builder()

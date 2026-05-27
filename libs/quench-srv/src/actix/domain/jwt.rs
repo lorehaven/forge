@@ -1,4 +1,6 @@
-use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode, errors::ErrorKind};
+use jsonwebtoken::{
+    DecodingKey, EncodingKey, Header, Validation, decode, encode, errors::ErrorKind,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
@@ -89,23 +91,32 @@ mod tests {
     fn test_jwt_expiration() {
         envmnt::set("JWT_SECRET", "test_secret");
         let config = JwtConfig::init();
-        
-        let claims = Claims::new("user".to_string(), "service".to_string(), "scope".to_string(), -300); // Expired 5 minutes ago
+
+        let claims = Claims::new(
+            "user".to_string(),
+            "service".to_string(),
+            "scope".to_string(),
+            -300,
+        ); // Expired 5 minutes ago
         let token = config.encode_claims(&claims).unwrap();
-        
+
         let result = config.decode_claims(&token);
-        assert!(result.is_err(), "Expired token should be rejected: {:?}", result);
+        assert!(
+            result.is_err(),
+            "Expired token should be rejected: {:?}",
+            result
+        );
     }
 
     #[test]
     fn test_jwt_iat_future() {
         envmnt::set("JWT_SECRET", "test_secret");
         let config = JwtConfig::init();
-        
+
         let now = chrono::Utc::now();
         let iat = (now + chrono::Duration::seconds(300)).timestamp() as usize; // Issued 5 minutes in the future
         let exp = (now + chrono::Duration::seconds(600)).timestamp() as usize;
-        
+
         let claims = Claims {
             sub: "user".to_string(),
             service: "service".to_string(),
@@ -113,10 +124,14 @@ mod tests {
             exp,
             iat,
         };
-        
+
         let token = config.encode_claims(&claims).unwrap();
-        
+
         let result = config.decode_claims(&token);
-        assert!(result.is_err(), "Token with future iat should be rejected: {:?}", result);
+        assert!(
+            result.is_err(),
+            "Token with future iat should be rejected: {:?}",
+            result
+        );
     }
 }

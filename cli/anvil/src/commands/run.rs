@@ -151,7 +151,7 @@ fn resolve_package_dir(package_name: &str) -> Option<std::path::PathBuf> {
     for pkg in packages {
         if pkg["name"].as_str() == Some(package_name) {
             let manifest_path = pkg["manifest_path"].as_str()?;
-            return Path::new(manifest_path).parent().map(|p| p.to_path_buf());
+            return Path::new(manifest_path).parent().map(Path::to_path_buf);
         }
     }
 

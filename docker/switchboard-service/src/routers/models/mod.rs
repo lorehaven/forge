@@ -11,7 +11,7 @@ pub mod discovery;
 pub mod store;
 
 pub use discovery::{fetch_gguf_models, fetch_hf_models, fetch_models};
-pub use store::{VLLM_SUPPORTED_ARCHITECTURES, get_store, init_model_store, warm_model_cache};
+pub use store::{get_store, init_model_store, warm_model_cache};
 
 pub static HF_ROOTS: LazyLock<Vec<String>> =
     LazyLock::new(|| load_paths("HF_ROOTS", &["/mnt/dev/huggingface/hub"]));
