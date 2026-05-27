@@ -1,4 +1,4 @@
-use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode, errors::ErrorKind};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
@@ -38,11 +38,19 @@ impl JwtConfig {
     pub fn decode_claims(&self, token: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
         let mut validation = Validation::default();
         validation.validate_exp = true;
+        validation.required_spec_claims.insert("iat".to_string());
+        validation.required_spec_claims.insert("exp".to_string());
         let token_data = decode::<Claims>(
             token,
             &DecodingKey::from_secret(&self.jwt_secret),
             &validation,
         )?;
+
+        let now = chrono::Utc::now().timestamp() as usize;
+        if token_data.claims.iat > now + validation.leeway as usize {
+            return Err(ErrorKind::ImmatureSignature.into());
+        }
+
         Ok(token_data.claims)
     }
 }
@@ -69,5 +77,46 @@ impl Claims {
             exp,
             iat,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use envmnt;
+
+    #[test]
+    fn test_jwt_expiration() {
+        envmnt::set("JWT_SECRET", "test_secret");
+        let config = JwtConfig::init();
+        
+        let claims = Claims::new("user".to_string(), "service".to_string(), "scope".to_string(), -300); // Expired 5 minutes ago
+        let token = config.encode_claims(&claims).unwrap();
+        
+        let result = config.decode_claims(&token);
+        assert!(result.is_err(), "Expired token should be rejected: {:?}", result);
+    }
+
+    #[test]
+    fn test_jwt_iat_future() {
+        envmnt::set("JWT_SECRET", "test_secret");
+        let config = JwtConfig::init();
+        
+        let now = chrono::Utc::now();
+        let iat = (now + chrono::Duration::seconds(300)).timestamp() as usize; // Issued 5 minutes in the future
+        let exp = (now + chrono::Duration::seconds(600)).timestamp() as usize;
+        
+        let claims = Claims {
+            sub: "user".to_string(),
+            service: "service".to_string(),
+            scope: "scope".to_string(),
+            exp,
+            iat,
+        };
+        
+        let token = config.encode_claims(&claims).unwrap();
+        
+        let result = config.decode_claims(&token);
+        assert!(result.is_err(), "Token with future iat should be rejected: {:?}", result);
     }
 }

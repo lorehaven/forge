@@ -148,3 +148,42 @@ async fn get_with_wrong_service(world: &mut SwitchboardWorld, page: String, serv
     world.last_response_headers = res.headers().clone();
     world.record_response(res).await;
 }
+
+#[when(expr = "GET request is sent to protected page {string} with token with future iat")]
+async fn get_with_future_iat(world: &mut SwitchboardWorld, page: String) {
+    let jwt_secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "secret".to_string());
+    
+    let now = Utc::now();
+    let iat = (now + chrono::Duration::seconds(300)).timestamp() as usize; // 5 minutes in future
+    let exp = (now + chrono::Duration::seconds(3600)).timestamp() as usize;
+
+    let claims = Claims {
+        sub: "admin".to_string(),
+        service: "switchboard".to_string(),
+        scope: "admin".to_string(),
+        exp,
+        iat,
+    };
+
+    let token = encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(jwt_secret.as_bytes()),
+    ).expect("Failed to encode token");
+
+    let url = format!("{}{}", world.api_url, page);
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .unwrap();
+    let res = client
+        .get(&url)
+        .header(COOKIE, format!("switchboard_ui_session={}", token))
+        .send()
+        .await
+        .expect("Failed to send GET request");
+
+    world.last_response_headers = res.headers().clone();
+    world.record_response(res).await;
+}

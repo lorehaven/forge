@@ -27,6 +27,9 @@ async fn main() {
     let warehouse_service_dir = std::path::Path::new(manifest_dir)
         .parent()
         .unwrap()
+        .parent()
+        .unwrap()
+        .join("docker")
         .join("warehouse-service");
     let mut child = Command::new("cargo")
         .arg("run")

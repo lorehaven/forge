@@ -25,3 +25,7 @@ Feature: UI JWT Authentication
   Scenario: Request with JWT token for mismatched service
     When GET request is sent to protected page "/ui/home" with token for service "wrong-service"
     Then response should be a redirect to "/switchboard/ui/login"
+
+  Scenario: Request with JWT token with future iat
+    When GET request is sent to protected page "/ui/home" with token with future iat
+    Then response should be a redirect to "/switchboard/ui/login"

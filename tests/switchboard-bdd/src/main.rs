@@ -17,6 +17,9 @@ async fn main() {
     let switchboard_service_dir = std::path::Path::new(manifest_dir)
         .parent()
         .unwrap()
+        .parent()
+        .unwrap()
+        .join("docker")
         .join("switchboard-service");
     let mut child = Command::new("cargo")
         .arg("run")
