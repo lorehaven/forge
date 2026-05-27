@@ -40,7 +40,8 @@ let isAdmin = false;
 {on_change_context}
 {on_change_vllm_only}
 {on_change_sort}
-{refresh_models}
+{list_models}
+{refresh_models_cache}
 {create_model_card}
 {update_model_fits}
 {update_card_fit}
@@ -59,7 +60,7 @@ let isAdmin = false;
 {find_min}
 
 applySourceDefaults();
-checkAuth().then(() => refreshModels());
+checkAuth().then(() => listModels());
     "#,
         dom_loaded = dom_loaded(),
         check_auth = check_auth(),
@@ -69,7 +70,8 @@ checkAuth().then(() => refreshModels());
         on_change_context = on_change_context(),
         on_change_vllm_only = on_change_vllm_only(),
         on_change_sort = on_change_sort(),
-        refresh_models = refresh_models(),
+        list_models = list_models(),
+        refresh_models_cache = refresh_models_cache(),
         create_model_card = create_model_card(),
         update_model_fits = update_model_fits(),
         update_card_fit = update_card_fit(),
@@ -108,7 +110,7 @@ window.addEventListener("DOMContentLoaded", () => {
     if (search) {
         search.addEventListener("input", (e) => {
             currentSearch = e.target.value;
-            refreshModels();
+            listModels();
         });
     }
 
@@ -172,7 +174,7 @@ function toggleModelSource(event) {
 
     currentModelSource = target.id === "model-tab-hf" ? "hf" : "gguf";
     applySourceDefaults();
-    refreshModels();
+    listModels();
 }
 "#
     .to_string()
@@ -182,7 +184,7 @@ fn on_change_quant() -> String {
     r#"
 function onChangeQuant() {
     currentQuant = event.currentTarget.value;
-    refreshModels();
+    listModels();
 }
 "#
     .to_string()
@@ -192,7 +194,7 @@ fn on_change_context() -> String {
     r#"
 function onChangeContext() {
     currentContext = parseInt(event.currentTarget.value, 10);
-    refreshModels();
+    listModels();
 }
 "#
     .to_string()
@@ -202,7 +204,7 @@ fn on_change_vllm_only() -> String {
     r#"
 function onChangeVllmOnly() {
     currentVllmOnly = event.currentTarget.checked;
-    refreshModels();
+    listModels();
 }
 "#
     .to_string()
@@ -212,15 +214,15 @@ fn on_change_sort() -> String {
     r#"
 function onChangeSort() {
     currentSort = event.currentTarget.value;
-    refreshModels();
+    listModels();
 }
 "#
     .to_string()
 }
 
-fn refresh_models() -> String {
+fn list_models() -> String {
     r#"
-async function refreshModels() {
+async function listModels() {
     const response = await fetch("__MODELS_API_BASE__/list", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -273,6 +275,34 @@ function sortModels(models) {
         
         return isAsc ? result : -result;
     });
+}
+"#
+    .to_string()
+}
+
+fn refresh_models_cache() -> String {
+    r#"
+async function refreshModelsCache() {
+    const button = document.querySelector(".refresh-models");
+    if (button) {
+        button.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i>`;
+    }
+
+    const response = await fetch("__MODELS_API_BASE__/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+    });
+
+    if (response.ok) {
+        listModels();
+    } else {
+        const err = await response.text();
+        alert("Failed to refresh models: " + err);
+    }
+    
+    if (button) {
+        button.innerHTML = `<i class="fa-solid fa-arrows-rotate"></i>`;
+    }
 }
 "#
     .to_string()
@@ -607,7 +637,7 @@ async function confirmDelete() {
 
     if (response.ok) {
         closeConfirmDeleteModal();
-        refreshModels();
+        listModels();
     } else {
         const err = await response.text();
         alert("Failed to delete model: " + err);

@@ -2,15 +2,20 @@ use actix_web::dev::HttpServiceFactory;
 use actix_web::web::Json;
 use actix_web::{HttpResponse, Responder, post, web};
 use quench_srv::prelude::JwtConfig;
+use regex::Regex;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::LazyLock;
 use utoipa::{OpenApi, ToSchema};
+use walkdir::WalkDir;
 
 pub mod discovery;
 pub mod store;
 
-pub use discovery::{fetch_gguf_models, fetch_hf_models, fetch_models};
+pub use discovery::{
+    fetch_gguf_models, fetch_hf_models, fetch_models, get_on_disk_model_paths,
+};
 pub use store::{get_store, init_model_store, warm_model_cache};
 
 pub static HF_ROOTS: LazyLock<Vec<String>> =
@@ -30,7 +35,7 @@ pub struct VllmArchitecturesFile {
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(handle, delete_model),
+    paths(handle, delete_model, refresh_models),
     tags((name = "models", description = "Models endpoints"))
 )]
 pub struct ModelsApiDoc;
@@ -43,6 +48,7 @@ pub fn scope() -> impl HttpServiceFactory {
     web::scope("/api/v1/models")
         .service(handle)
         .service(delete_model)
+        .service(refresh_models)
 }
 
 // ---------------------------------------------------------------------------
@@ -298,6 +304,49 @@ async fn handle(body: Json<SearchQuery>) -> impl Responder {
 
 #[utoipa::path(
     post,
+    path = "/refresh",
+    operation_id = "refresh_models",
+    tags = ["models"],
+    responses(
+        (status = 200, description = "Model cache refreshed successfully"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - Admin role required"),
+    )
+)]
+#[post("/refresh")]
+async fn refresh_models(
+    req: actix_web::HttpRequest,
+    config: web::Data<JwtConfig>,
+) -> impl Responder {
+    if !is_admin(&req, &config) {
+        return HttpResponse::Forbidden().finish();
+    }
+
+    let store = get_store();
+    store.clear_in_memory_cache();
+
+    let on_disk_paths = get_on_disk_model_paths();
+
+    let stored_paths = store.get_all_paths().await;
+    let stale_models: Vec<_> = stored_paths
+        .iter()
+        .filter(|p| !on_disk_paths.contains(*p))
+        .collect();
+
+    if !stale_models.is_empty() {
+        tracing::info!("Removing {} stale models from cache.", stale_models.len());
+        for path in stale_models {
+            store.remove_model(path).await;
+        }
+    }
+
+    warm_model_cache().await;
+
+    HttpResponse::Ok().finish()
+}
+
+#[utoipa::path(
+    post,
     path = "/delete",
     operation_id = "delete_model",
     tags = ["models"],
@@ -319,22 +368,8 @@ async fn delete_model(
     config: web::Data<JwtConfig>,
     body: Json<DeleteModelRequest>,
 ) -> impl Responder {
-    if !config.auth_enabled {
-        // If auth is disabled, allow deletion (development mode)
-    } else {
-        let cookie_name = format!("{}_ui_session", config.service_name);
-        let Some(cookie) = req.cookie(&cookie_name) else {
-            return HttpResponse::Unauthorized().finish();
-        };
-
-        match config.decode_claims(cookie.value()) {
-            Ok(claims) => {
-                if !claims.scope.contains("admin") {
-                    return HttpResponse::Forbidden().finish();
-                }
-            }
-            Err(_) => return HttpResponse::Unauthorized().finish(),
-        }
+    if !is_admin(&req, &config) {
+        return HttpResponse::Forbidden().finish();
     }
 
     let path = Path::new(&body.path);
@@ -363,6 +398,26 @@ async fn delete_model(
             HttpResponse::Ok().finish()
         }
         Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+fn is_admin(req: &actix_web::HttpRequest, config: &web::Data<JwtConfig>) -> bool {
+    if !config.auth_enabled {
+        return true;
+    }
+
+    let cookie_name = format!("{}_ui_session", config.service_name);
+    let Some(cookie) = req.cookie(&cookie_name) else {
+        return false;
+    };
+
+    match config.decode_claims(cookie.value()) {
+        Ok(claims) => claims.scope.contains("admin"),
+        Err(_) => false,
     }
 }
 

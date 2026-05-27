@@ -46,6 +46,7 @@ impl OrmModel for CachedModel {
 }
 
 pub struct ModelStore {
+    pub db: Db,
     model_repo: Repository<CachedModel>,
     arch_repo: Repository<VllmArchitecture>,
     // Keep in-memory cache for performance
@@ -58,6 +59,7 @@ impl ModelStore {
         let arch_file = Self::load_architectures_file();
 
         let store = Self {
+            db: db.clone(),
             model_repo: db.repository::<CachedModel>(),
             arch_repo: db.repository::<VllmArchitecture>(),
             cache: RwLock::new(HashMap::new()),
@@ -77,6 +79,28 @@ impl ModelStore {
         }
 
         store
+    }
+
+    pub async fn get_all_paths(&self) -> Vec<String> {
+        let query = format!("SELECT path FROM {}", CachedModel::table_name());
+
+        let pool = match &self.db {
+            Db::Postgres(db) => db.pool(),
+            Db::InMemory(_) => return Vec::new(),
+        };
+
+        let result = sqlx::query_as::<_, (String,)>(sqlx::AssertSqlSafe(query.as_str()))
+            .fetch_all(pool)
+            .await;
+
+        match result {
+            Ok(rows) => rows.into_iter().map(|(path,)| path).collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+
+    pub fn clear_in_memory_cache(&self) {
+        self.cache.write().unwrap().clear();
     }
 
     fn load_architectures_file() -> HashSet<String> {

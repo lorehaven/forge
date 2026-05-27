@@ -107,6 +107,13 @@ fn render_models_dashboard_page() -> HttpResponse {
                     )
                     .child(
                         div()
+                            .class("tab refresh-models")
+                            .attr("title", "Refresh models")
+                            .on_click("refreshModelsCache()")
+                            .child(i().class("fa-solid fa-arrows-rotate")),
+                    )
+                    .child(
+                        div()
                             .class("model-filters")
                             .child(
                                 input()

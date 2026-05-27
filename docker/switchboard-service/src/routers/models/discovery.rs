@@ -31,6 +31,7 @@ pub async fn fetch_hf_models() -> Vec<Model> {
     let mut models = vec![];
     let mut seen = HashSet::new();
     let store = get_store();
+    let mut new_models = 0;
 
     for root in HF_ROOTS.iter() {
         for entry in WalkDir::new(root).into_iter().filter_map(Result::ok) {
@@ -51,6 +52,7 @@ pub async fn fetch_hf_models() -> Vec<Model> {
                 continue;
             }
 
+            new_models += 1;
             let name = normalize_hf_name(model_dir);
             if !seen.insert(name.clone()) {
                 continue;
@@ -110,6 +112,9 @@ pub async fn fetch_hf_models() -> Vec<Model> {
         }
     }
 
+    if new_models > 0 {
+        tracing::info!("Discovered {} new HF models.", new_models);
+    }
     models
 }
 
@@ -117,6 +122,7 @@ pub async fn fetch_gguf_models() -> Vec<Model> {
     let mut models = vec![];
     let mut seen = HashSet::new();
     let store = get_store();
+    let mut new_models = 0;
 
     let shard_regex = Regex::new(r"-\d+-of-\d+").unwrap();
 
@@ -130,6 +136,7 @@ pub async fn fetch_gguf_models() -> Vec<Model> {
                 models.push(model);
                 continue;
             }
+            new_models += 1;
 
             if path.extension().and_then(|s| s.to_str()) != Some("gguf") {
                 continue;
@@ -172,7 +179,41 @@ pub async fn fetch_gguf_models() -> Vec<Model> {
         }
     }
 
+    if new_models > 0 {
+        tracing::info!("Discovered {} new GGUF models.", new_models);
+    }
     models
+}
+
+pub fn get_on_disk_model_paths() -> HashSet<String> {
+    let mut on_disk_paths = HashSet::new();
+
+    // HF models
+    for root in HF_ROOTS.iter() {
+        for entry in WalkDir::new(root).into_iter().filter_map(Result::ok) {
+            if entry.file_name() == "config.json" {
+                if let Some(model_dir) = entry.path().ancestors().nth(3) {
+                    on_disk_paths.insert(model_dir.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
+    // GGUF models
+    let shard_regex = Regex::new(r"-\d+-of-\d+").unwrap();
+    for root in GGUF_ROOTS.iter() {
+        for entry in WalkDir::new(root).into_iter().filter_map(Result::ok) {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("gguf") {
+                let filename = entry.file_name().to_string_lossy().to_string();
+                if !shard_regex.is_match(&filename) {
+                    on_disk_paths.insert(path.to_string_lossy().to_string());
+                }
+            }
+        }
+    }
+
+    on_disk_paths
 }
 
 pub fn round2(v: f64) -> f64 {
