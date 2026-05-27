@@ -40,6 +40,9 @@ pub struct DockerPackageOverride {
     pub dockerfile: Option<String>,
 
     #[serde(default)]
+    pub module_name: Option<String>,
+
+    #[serde(default)]
     pub image_name: Option<String>,
 
     #[serde(default)]

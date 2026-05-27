@@ -14,6 +14,17 @@ fn find_module_for_package<'a>(config: &'a config::Config, package: &str) -> Res
     anyhow::bail!("Module not found for package: {package}")
 }
 
+fn find_module_name_overwrite(config: &config::Config, package: &str) -> Result<String> {
+    let module = find_module_for_package(config, package)?;
+    let module_cfg = &config.docker.modules[module];
+
+    Ok(module_cfg
+        .package_overrides
+        .get(package)
+        .and_then(|override_cfg| override_cfg.module_name.as_ref())
+        .map_or_else(|| module.to_string(), Clone::clone))
+}
+
 fn get_package_version(module: &str, package: &str) -> Result<String> {
     let path = format!("{module}/{package}/Cargo.toml");
     let content = fs::read_to_string(&path)
@@ -104,11 +115,13 @@ fn ennor_registry_index() -> String {
 fn full_tags_for_package(config: &config::Config, package: &str) -> Result<Vec<String>> {
     let registries = get_registries_for_package(config, package)?;
     let module = find_module_for_package(config, package)?;
+    let module_name = find_module_name_overwrite(config, package)?;
     let image_name = get_image_name_for_package(config, package)?;
-    let version = get_package_version(module, package)?;
+    let version = get_package_version(&module, package)?;
+
     Ok(registries
         .iter()
-        .map(|registry| format!("{registry}/{module}/{image_name}:{version}"))
+        .map(|registry| format!("{registry}/{module_name}/{image_name}:{version}"))
         .collect())
 }
 
