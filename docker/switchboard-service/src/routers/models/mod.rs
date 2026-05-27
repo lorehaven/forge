@@ -2,20 +2,15 @@ use actix_web::dev::HttpServiceFactory;
 use actix_web::web::Json;
 use actix_web::{HttpResponse, Responder, post, web};
 use quench_srv::prelude::JwtConfig;
-use regex::Regex;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::collections::HashSet;
 use std::path::Path;
 use std::sync::LazyLock;
 use utoipa::{OpenApi, ToSchema};
-use walkdir::WalkDir;
 
 pub mod discovery;
 pub mod store;
 
-pub use discovery::{
-    fetch_gguf_models, fetch_hf_models, fetch_models, get_on_disk_model_paths,
-};
+pub use discovery::{fetch_gguf_models, fetch_hf_models, fetch_models, get_on_disk_model_paths};
 pub use store::{get_store, init_model_store, warm_model_cache};
 
 pub static HF_ROOTS: LazyLock<Vec<String>> =

@@ -191,10 +191,10 @@ pub fn get_on_disk_model_paths() -> HashSet<String> {
     // HF models
     for root in HF_ROOTS.iter() {
         for entry in WalkDir::new(root).into_iter().filter_map(Result::ok) {
-            if entry.file_name() == "config.json" {
-                if let Some(model_dir) = entry.path().ancestors().nth(3) {
-                    on_disk_paths.insert(model_dir.to_string_lossy().to_string());
-                }
+            if entry.file_name() == "config.json"
+                && let Some(model_dir) = entry.path().ancestors().nth(3)
+            {
+                on_disk_paths.insert(model_dir.to_string_lossy().to_string());
             }
         }
     }
