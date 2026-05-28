@@ -10,15 +10,15 @@ metadata:
 rules:
 {% for rule in res.rules %}
 - apiGroups:
-  {%- for g in rule.apiGroups | default(['']) %}
+{% for g in rule.apiGroups | default(['']) %}
   - "{{ g }}"
-  {%- endfor %}
+{% endfor %}
   resources:
-  {%- for r in rule.resources %}
+{% for r in rule.resources %}
   - "{{ r }}"
-  {%- endfor %}
+{% endfor %}
   verbs:
-  {%- for v in rule.verbs %}
+{% for v in rule.verbs %}
   - "{{ v }}"
-  {%- endfor %}
+{% endfor %}
 {% endfor %}

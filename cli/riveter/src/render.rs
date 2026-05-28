@@ -87,11 +87,13 @@ fn render_resources(
         }
 
         let kind = res["kind"].as_str().context("kind missing")?;
-        let tpl = format!("{}.yaml.j2", kind.to_lowercase());
-        let y = tpl_env
-            .get_template(&tpl)
-            .with_context(|| format!("template for kind `{kind}` not found or invalid"))?
-            .render(context! {
+        let tpl_name = format!("{}.yaml.j2", kind.to_lowercase());
+        
+        let tpl = tpl_env
+            .get_template(&tpl_name)
+            .with_context(|| format!("template for kind `{kind}` not found or invalid. ensure `{tpl_name}` exists in embedded templates."))?;
+
+        let y = tpl.render(context! {
                 data => data,
                 res => res,
                 env => env_name,
@@ -158,14 +160,16 @@ fn load_embedded_templates(env: &mut Environment<'_>) -> anyhow::Result<()> {
     ];
 
     for tpl in templates {
-        env.add_template(tpl, get_template_source(tpl))
-            .with_context(|| format!("failed to load embedded template: {tpl}"))?;
+        if let Some(source) = get_template_source(tpl) {
+            env.add_template(tpl, source)
+                .with_context(|| format!("failed to load embedded template: {tpl}"))?;
+        }
     }
     Ok(())
 }
 
-fn get_template_source(name: &str) -> &'static str {
-    match name {
+fn get_template_source(name: &str) -> Option<&'static str> {
+    Some(match name {
         "cronjob.yaml.j2" => include_str!("templates/cronjob.yaml.j2"),
         "deployment.yaml.j2" => include_str!("templates/deployment.yaml.j2"),
         "ingress.yaml.j2" => include_str!("templates/ingress.yaml.j2"),
@@ -179,8 +183,8 @@ fn get_template_source(name: &str) -> &'static str {
         "rolebinding.yaml.j2" => include_str!("templates/rolebinding.yaml.j2"),
         "service.yaml.j2" => include_str!("templates/service.yaml.j2"),
         "serviceaccount.yaml.j2" => include_str!("templates/serviceaccount.yaml.j2"),
-        _ => panic!("Unknown template: {name}"),
-    }
+        _ => return None,
+    })
 }
 
 fn substitute(value: &mut YamlValue, env: &HashMap<String, String>, re: &Regex) {
