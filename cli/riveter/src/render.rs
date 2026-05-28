@@ -166,6 +166,8 @@ fn load_embedded_templates(env: &mut Environment<'_>) -> anyhow::Result<()> {
         "pvc.yaml.j2",
         "role.yaml.j2",
         "rolebinding.yaml.j2",
+        "clusterrole.yaml.j2",
+        "clusterrolebinding.yaml.j2",
         "service.yaml.j2",
         "serviceaccount.yaml.j2",
     ];
@@ -192,6 +194,8 @@ fn get_template_source(name: &str) -> Option<&'static str> {
         "pvc.yaml.j2" => include_str!("templates/pvc.yaml.j2"),
         "role.yaml.j2" => include_str!("templates/role.yaml.j2"),
         "rolebinding.yaml.j2" => include_str!("templates/rolebinding.yaml.j2"),
+        "clusterrole.yaml.j2" => include_str!("templates/clusterrole.yaml.j2"),
+        "clusterrolebinding.yaml.j2" => include_str!("templates/clusterrolebinding.yaml.j2"),
         "service.yaml.j2" => include_str!("templates/service.yaml.j2"),
         "serviceaccount.yaml.j2" => include_str!("templates/serviceaccount.yaml.j2"),
         _ => return None,

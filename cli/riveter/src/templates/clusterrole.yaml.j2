@@ -1,0 +1,23 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ res.name }}
+  labels:
+    app.kubernetes.io/name: {{ res.app_name | default(res.name) }}
+    app.kubernetes.io/instance: {{ res.instance | default(res.name) }}
+    env: {{ env }}
+rules:
+{% for rule in res.rules %}
+- apiGroups:
+{% for g in rule.apiGroups | default(['']) %}
+  - "{{ g }}"
+{% endfor %}
+  resources:
+{% for r in rule.resources %}
+  - "{{ r }}"
+{% endfor %}
+  verbs:
+{% for v in rule.verbs %}
+  - "{{ v }}"
+{% endfor %}
+{% endfor %}
