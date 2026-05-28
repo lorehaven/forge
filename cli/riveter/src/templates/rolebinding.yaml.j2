@@ -1,0 +1,19 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ res.name }}
+  namespace: {{ data.namespace_name }}
+  labels:
+    app.kubernetes.io/name: {{ res.app_name | default(res.name) }}
+    app.kubernetes.io/instance: {{ res.instance | default(res.name) }}
+    env: {{ env }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: {{ res.roleRef.kind | default('Role') }}
+  name: {{ res.roleRef.name }}
+subjects:
+{% for subject in res.subjects %}
+- kind: {{ subject.kind | default('ServiceAccount') }}
+  name: {{ subject.name }}
+  namespace: {{ subject.namespace | default(data.namespace_name) }}
+{% endfor %}

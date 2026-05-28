@@ -1,0 +1,15 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ res.name }}
+  namespace: {{ data.namespace_name }}
+  labels:
+    app.kubernetes.io/name: {{ res.app_name | default(res.name) }}
+    app.kubernetes.io/instance: {{ res.instance | default(res.name) }}
+    env: {{ env }}
+rules:
+{% for rule in res.rules %}
+- apiGroups: {{ rule.apiGroups | default(['']) | tojson }}
+  resources: {{ rule.resources | tojson }}
+  verbs: {{ rule.verbs | tojson }}
+{% endfor %}

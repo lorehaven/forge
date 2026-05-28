@@ -148,6 +148,8 @@ fn load_embedded_templates(env: &mut Environment<'_>) {
         "namespace.yaml.j2",
         "pv.yaml.j2",
         "pvc.yaml.j2",
+        "role.yaml.j2",
+        "rolebinding.yaml.j2",
         "service.yaml.j2",
         "serviceaccount.yaml.j2",
     ];
@@ -168,6 +170,8 @@ fn get_template_source(name: &str) -> &'static str {
         "namespace.yaml.j2" => include_str!("templates/namespace.yaml.j2"),
         "pv.yaml.j2" => include_str!("templates/pv.yaml.j2"),
         "pvc.yaml.j2" => include_str!("templates/pvc.yaml.j2"),
+        "role.yaml.j2" => include_str!("templates/role.yaml.j2"),
+        "rolebinding.yaml.j2" => include_str!("templates/rolebinding.yaml.j2"),
         "service.yaml.j2" => include_str!("templates/service.yaml.j2"),
         "serviceaccount.yaml.j2" => include_str!("templates/serviceaccount.yaml.j2"),
         _ => panic!("Unknown template: {name}"),
