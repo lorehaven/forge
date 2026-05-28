@@ -376,7 +376,7 @@ fn update_card_fit() -> String {
     r#"
 function updateCardFit(card) {
     const fit = card.querySelector(".card-fit");
-    if (!fit) return;
+    if (!fit || card.dataset.model === undefined) return;
     const model = JSON.parse(card.dataset.model);
     const availableVram = currentGpuInfo?.free_gb || 0;
     fit.innerHTML = renderFitSummary(model, availableVram);
