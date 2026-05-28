@@ -59,7 +59,18 @@ fn render_overlay(env_name: &str) -> anyhow::Result<YamlValue> {
     overlay_jinja.add_global("env", env_name);
 
     let rendered_overlay = overlay_jinja.render_str(&overlay_src, Value::UNDEFINED)?;
-    let mut data: YamlValue = serde_yaml::from_str(&rendered_overlay)?;
+    let mut data: YamlValue = serde_yaml::from_str(&rendered_overlay).map_err(|e| {
+        let msg = format!("Failed to parse overlay.yaml after rendering: {e}");
+        // Print with line numbers for easier debugging
+        let with_lines = rendered_overlay
+            .lines()
+            .enumerate()
+            .map(|(i, l)| format!("{:3} | {}", i + 1, l))
+            .collect::<Vec<_>>()
+            .join("\n");
+        
+        anyhow::anyhow!("{}\n\nRendered source:\n{}", msg, with_lines)
+    })?;
 
     let re = Regex::new(r"\$\{([^}]+)}")?;
     substitute(&mut data, &std::env::vars().collect(), &re);
