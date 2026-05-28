@@ -9,7 +9,16 @@ metadata:
     env: {{ env }}
 rules:
 {% for rule in res.rules %}
-- apiGroups: {{ rule.apiGroups | default(['']) | tojson }}
-  resources: {{ rule.resources | tojson }}
-  verbs: {{ rule.verbs | tojson }}
+- apiGroups:
+  {%- for g in rule.apiGroups | default(['']) %}
+  - "{{ g }}"
+  {%- endfor %}
+  resources:
+  {%- for r in rule.resources %}
+  - "{{ r }}"
+  {%- endfor %}
+  verbs:
+  {%- for v in rule.verbs %}
+  - "{{ v }}"
+  {%- endfor %}
 {% endfor %}

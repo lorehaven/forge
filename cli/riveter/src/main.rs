@@ -9,7 +9,7 @@ use riveter::repl::{kubectl_apply, kubectl_delete, ok, repl};
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    let _ = match cli.cmd {
+    match cli.cmd {
         Some(Cmd::Env { cmd }) => match cmd {
             EnvCmd::List => env_list(),
             EnvCmd::Set { env } => env_set(&env),
@@ -30,9 +30,7 @@ fn main() -> Result<()> {
             kubectl_delete(&env, map_apply_scope(scope)).map(|_| ())
         }
         Some(Cmd::Repl) | None => repl(),
-    };
-
-    Ok(())
+    }
 }
 
 fn map_apply_scope(value: ApplyScope) -> ResourceScope {

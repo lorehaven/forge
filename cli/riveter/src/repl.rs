@@ -108,6 +108,10 @@ fn handle_repl_command(input: &str) -> anyhow::Result<bool> {
     Ok(false)
 }
 
+fn error(msg: &str) {
+    print_status(Tone::Error, "error", msg);
+}
+
 pub fn repl() -> anyhow::Result<()> {
     use rustyline::{DefaultEditor, error::ReadlineError};
 
@@ -125,8 +129,15 @@ pub fn repl() -> anyhow::Result<()> {
                     continue;
                 }
                 rl.add_history_entry(line)?;
-                if handle_repl_command(line)? {
-                    break;
+                match handle_repl_command(line) {
+                    Ok(exit) => {
+                        if exit {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        error(&format!("{e:#}"));
+                    }
                 }
             }
             Err(ReadlineError::Interrupted | ReadlineError::Eof) => break,

@@ -77,7 +77,7 @@ fn render_resources(
         .context("resources must be a list")?;
 
     let mut tpl_env = Environment::new();
-    load_embedded_templates(&mut tpl_env);
+    load_embedded_templates(&mut tpl_env)?;
     tpl_env.add_global("env", env_name);
 
     let mut out = Vec::new();
@@ -88,11 +88,14 @@ fn render_resources(
 
         let kind = res["kind"].as_str().context("kind missing")?;
         let tpl = format!("{}.yaml.j2", kind.to_lowercase());
-        let y = tpl_env.get_template(&tpl)?.render(context! {
-            data => data,
-            res => res,
-            env => env_name,
-        })?;
+        let y = tpl_env
+            .get_template(&tpl)
+            .with_context(|| format!("template for kind `{kind}` not found or invalid"))?
+            .render(context! {
+                data => data,
+                res => res,
+                env => env_name,
+            })?;
         out.push(y.trim().to_string());
     }
     Ok(out)
@@ -137,7 +140,7 @@ fn load_env(env: &str) {
     }
 }
 
-fn load_embedded_templates(env: &mut Environment<'_>) {
+fn load_embedded_templates(env: &mut Environment<'_>) -> anyhow::Result<()> {
     let templates = [
         "cronjob.yaml.j2",
         "deployment.yaml.j2",
@@ -155,8 +158,10 @@ fn load_embedded_templates(env: &mut Environment<'_>) {
     ];
 
     for tpl in templates {
-        env.add_template(tpl, get_template_source(tpl)).unwrap();
+        env.add_template(tpl, get_template_source(tpl))
+            .with_context(|| format!("failed to load embedded template: {tpl}"))?;
     }
+    Ok(())
 }
 
 fn get_template_source(name: &str) -> &'static str {
