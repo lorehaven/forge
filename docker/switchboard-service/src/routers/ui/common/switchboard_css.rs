@@ -82,6 +82,7 @@ fn shared_dashboard_rules() -> Vec<CssRule> {
             .property("padding", "2rem 1.25rem")
             .property("background", "var(--bs-gray-900)")
             .property("position", "relative")
+            .property("user-select", "text")
             .child(
                 CssRule::new(".card-header")
                     .property("display", "flex")

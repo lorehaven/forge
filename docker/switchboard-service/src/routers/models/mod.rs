@@ -1,10 +1,11 @@
+use crate::routers::vllm::engine::VllmEngine;
 use actix_web::dev::HttpServiceFactory;
 use actix_web::web::Json;
-use actix_web::{HttpResponse, Responder, post, web};
+use actix_web::{HttpResponse, Responder, get, post, web};
 use quench_srv::prelude::JwtConfig;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::path::Path;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 use utoipa::{OpenApi, ToSchema};
 
 pub mod discovery;
@@ -30,7 +31,7 @@ pub struct VllmArchitecturesFile {
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(handle, delete_model, refresh_models),
+    paths(handle, delete_model, refresh_models, list_running_models),
     tags((name = "models", description = "Models endpoints"))
 )]
 pub struct ModelsApiDoc;
@@ -39,11 +40,13 @@ pub struct ModelsApiDoc;
 // Scope
 // ---------------------------------------------------------------------------
 
-pub fn scope() -> impl HttpServiceFactory {
+pub fn scope(engine: Arc<dyn VllmEngine>) -> impl HttpServiceFactory {
     web::scope("/api/v1/models")
+        .app_data(web::Data::new(engine))
         .service(handle)
         .service(delete_model)
         .service(refresh_models)
+        .service(list_running_models)
 }
 
 // ---------------------------------------------------------------------------
@@ -274,6 +277,14 @@ pub struct Model {
     pub estimates: Vec<ModelEstimate>,
 }
 
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct RunningModel {
+    pub id: String,
+    pub model: String,
+    pub endpoint: String,
+    pub status: String,
+}
+
 // ---------------------------------------------------------------------------
 // Fetch endpoint
 // ---------------------------------------------------------------------------
@@ -298,6 +309,47 @@ async fn handle(body: Json<SearchQuery>) -> impl Responder {
 }
 
 #[utoipa::path(
+    get,
+    path = "/running",
+    operation_id = "list_running_models",
+    tags = ["models"],
+    responses(
+        (status = 200, description = "List of running models", body = Vec<RunningModel>, content_type = "application/json"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden - Admin or System role required"),
+    )
+)]
+#[get("/running")]
+async fn list_running_models(
+    req: actix_web::HttpRequest,
+    config: web::Data<JwtConfig>,
+    engine: web::Data<Arc<dyn VllmEngine>>,
+) -> impl Responder {
+    if !is_admin(&req, &config) {
+        return HttpResponse::Forbidden().finish();
+    }
+
+    match engine.list_instances().await {
+        Ok(instances) => {
+            let running: Vec<RunningModel> = instances
+                .into_iter()
+                .map(|i| RunningModel {
+                    id: i.id,
+                    model: i.model,
+                    endpoint: format!("http://{}:{}", i.host, i.port),
+                    status: i.status,
+                })
+                .collect();
+            HttpResponse::Ok().json(running)
+        }
+        Err(err) => {
+            tracing::error!("Failed to list running models: {}", err);
+            HttpResponse::InternalServerError().body(err)
+        }
+    }
+}
+
+#[utoipa::path(
     post,
     path = "/refresh",
     operation_id = "refresh_models",
@@ -305,7 +357,7 @@ async fn handle(body: Json<SearchQuery>) -> impl Responder {
     responses(
         (status = 200, description = "Model cache refreshed successfully"),
         (status = 401, description = "Unauthorized"),
-        (status = 403, description = "Forbidden - Admin role required"),
+        (status = 403, description = "Forbidden - Admin or System role required"),
     )
 )]
 #[post("/refresh")]
@@ -353,7 +405,7 @@ async fn refresh_models(
     responses(
         (status = 200, description = "Model deleted successfully"),
         (status = 401, description = "Unauthorized"),
-        (status = 403, description = "Forbidden - Admin role required"),
+        (status = 403, description = "Forbidden - Admin or System role required"),
         (status = 500, description = "Failed to delete model"),
     )
 )]
@@ -411,7 +463,7 @@ fn is_admin(req: &actix_web::HttpRequest, config: &web::Data<JwtConfig>) -> bool
     };
 
     match config.decode_claims(cookie.value()) {
-        Ok(claims) => claims.scope.contains("admin"),
+        Ok(claims) => claims.scope.contains("admin") || claims.scope.contains("system"),
         Err(_) => false,
     }
 }

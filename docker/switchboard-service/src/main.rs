@@ -14,7 +14,7 @@ pub fn root_scope() -> impl HttpServiceFactory {
 pub fn base_path_scope(vllm_engine: Arc<dyn VllmEngine>) -> impl HttpServiceFactory {
     actix_web::web::scope("")
         .service(routers::gpu::scope())
-        .service(routers::models::scope())
+        .service(routers::models::scope(vllm_engine.clone()))
         .service(routers::vllm::scope(vllm_engine))
         .service(routers::ui::scope())
 }
