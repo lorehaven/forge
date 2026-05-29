@@ -1,0 +1,45 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    clang \
+    lld \
+    build-essential \
+    libstdc++6 \
+    libnuma1 \
+    libyaml-cpp-dev \
+    ca-certificates \
+    python3.12 \
+    python3.12-venv \
+    python3.12-dev \
+    libpython3.12 \
+    libopenmpi3 \
+    openmpi-bin \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# CC
+ENV CC=clang
+ENV CXX=clang++
+
+# mounted host venv
+ENV VIRTUAL_ENV=/opt/venv
+ENV PATH="/opt/venv/bin:${PATH}"
+
+# host ROCm
+ENV ROCM_PATH=/opt/rocm
+ENV HSA_PATH=/opt/rocm
+
+ENV LD_LIBRARY_PATH="/opt/rocm/lib:/opt/rocm/lib64"
+
+# vLLM defaults
+ENV HF_HOME=/root/.cache/huggingface
+ENV VLLM_WORKER_MULTIPROC_METHOD=spawn
+
+EXPOSE 8000
+
+ENTRYPOINT ["/opt/venv/bin/python", "-m", "vllm.entrypoints.openai.api_server"]
+CMD ["--model", "facebook/opt-125m"]

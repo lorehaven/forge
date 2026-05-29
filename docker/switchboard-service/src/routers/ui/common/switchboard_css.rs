@@ -448,20 +448,25 @@ fn models_rules() -> Vec<CssRule> {
                     CssRule::new(".card")
                         .child(
                             CssRule::new(".card-header").child(
-                                CssRule::new(".vllm-badge")
-                                    .property("background-color", "var(--bs-success-500)")
-                                    .property("color", "var(--bs-gray-950)")
-                                    .property("font-size", "0.6rem")
-                                    .property("padding", "0.15rem 0.5rem")
-                                    .property("border-radius", "1rem") // Pill shape
-                                    .property("margin-right", "0.5rem")
-                                    .property("vertical-align", "middle")
-                                    .property("font-family", "sans-serif")
-                                    .property("font-weight", "800")
-                                    .property("text-transform", "uppercase")
-                                    .property("letter-spacing", "0.05rem")
-                                    .property("display", "inline-block")
-                                    .property("box-shadow", "0 0.0625rem 0.125rem rgba(0,0,0,0.1)"),
+                                CssRule::new(".card-title").child(
+                                    CssRule::new(".vllm-badge")
+                                        .property("background-color", "var(--bs-success-500)")
+                                        .property("color", "var(--bs-gray-950)")
+                                        .property("font-size", "0.6rem")
+                                        .property("padding", "0.15rem 0.5rem")
+                                        .property("border-radius", "1rem") // Pill shape
+                                        .property("margin-right", "0.5rem")
+                                        .property("vertical-align", "middle")
+                                        .property("font-family", "sans-serif")
+                                        .property("font-weight", "800")
+                                        .property("text-transform", "uppercase")
+                                        .property("letter-spacing", "0.05rem")
+                                        .property("display", "inline-block")
+                                        .property(
+                                            "box-shadow",
+                                            "0 0.0625rem 0.125rem rgba(0,0,0,0.1)",
+                                        ),
+                                ),
                             ),
                         )
                         .child(

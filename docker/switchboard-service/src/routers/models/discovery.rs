@@ -28,12 +28,25 @@ pub async fn fetch_models(
 }
 
 pub async fn fetch_hf_models() -> Vec<Model> {
-    let mut models = vec![];
-    let mut seen = HashSet::new();
     let store = get_store();
+    let mut models = store.get_all_models().await;
+    models.retain(|m| m.source == format!("{:?}", ModelType::HF));
+
+    // Re-verify vLLM support in case architectures list was updated
+    for model in models.iter_mut() {
+        if let Some(arch) = &model.architecture {
+            model.vllm_supported = store.is_vllm_supported(arch);
+        }
+    }
+
+    let mut seen: HashSet<String> = models.iter().map(|m| m.path.clone()).collect();
     let mut new_models = 0;
 
     for root in HF_ROOTS.iter() {
+        if !Path::new(root).exists() {
+            continue;
+        }
+
         for entry in WalkDir::new(root).into_iter().filter_map(Result::ok) {
             if entry.file_name() != "config.json" {
                 continue;
@@ -45,18 +58,14 @@ pub async fn fetch_hf_models() -> Vec<Model> {
                 None => continue,
             };
 
-            // reach cache first
-            let cache_key = model_dir.to_string_lossy().to_string();
-            if let Some(model) = store.get_model(&cache_key).await {
-                models.push(model);
+            let path_str = model_dir.to_string_lossy().to_string();
+            if seen.contains(&path_str) {
                 continue;
             }
 
             new_models += 1;
             let name = normalize_hf_name(model_dir);
-            if !seen.insert(name.clone()) {
-                continue;
-            }
+            seen.insert(path_str.clone());
 
             let content = match std::fs::read_to_string(config_path) {
                 Ok(v) => v,
@@ -93,7 +102,7 @@ pub async fn fetch_hf_models() -> Vec<Model> {
             let mut model = Model {
                 source: format!("{:?}", ModelType::HF),
                 name,
-                path: cache_key.clone(),
+                path: path_str.clone(),
                 architecture,
                 vllm_supported,
                 quant,
@@ -119,24 +128,27 @@ pub async fn fetch_hf_models() -> Vec<Model> {
 }
 
 pub async fn fetch_gguf_models() -> Vec<Model> {
-    let mut models = vec![];
-    let mut seen = HashSet::new();
     let store = get_store();
+    let mut models = store.get_all_models().await;
+    models.retain(|m| m.source == format!("{:?}", ModelType::GGUF));
+
+    let mut seen: HashSet<String> = models.iter().map(|m| m.path.clone()).collect();
     let mut new_models = 0;
 
     let shard_regex = Regex::new(r"-\d+-of-\d+").unwrap();
 
     for root in GGUF_ROOTS.iter() {
+        if !Path::new(root).exists() {
+            continue;
+        }
+
         for entry in WalkDir::new(root).into_iter().filter_map(Result::ok) {
             let path = entry.path();
             let path_str = path.to_string_lossy().into_owned();
 
-            // reach cache first
-            if let Some(model) = store.get_model(&path_str).await {
-                models.push(model);
+            if seen.contains(&path_str) {
                 continue;
             }
-            new_models += 1;
 
             if path.extension().and_then(|s| s.to_str()) != Some("gguf") {
                 continue;
@@ -147,9 +159,8 @@ pub async fn fetch_gguf_models() -> Vec<Model> {
                 continue;
             }
 
-            if !seen.insert(filename.clone()) {
-                continue;
-            }
+            new_models += 1;
+            seen.insert(path_str.clone());
 
             let quant = infer_quant_from_name(&filename).unwrap_or(Quant::ALL);
             let params = infer_params_from_name(&filename).unwrap_or(7.0);

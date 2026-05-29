@@ -66,7 +66,22 @@ impl ModelStore {
             architectures: RwLock::new(arch_file),
         };
 
-        // Sync architectures to DB
+        // Sync architectures: load from DB first, then merge with file
+        if let quench_db::Db::Postgres(pg_db) = &db {
+            let pool = pg_db.pool();
+            let query = format!("SELECT id FROM {}", VllmArchitecture::table_name());
+            if let Ok(rows) = sqlx::query_as::<_, (String,)>(sqlx::AssertSqlSafe(query.as_str()))
+                .fetch_all(pool)
+                .await
+            {
+                let mut archs = store.architectures.write().unwrap();
+                for (id,) in rows {
+                    archs.insert(id);
+                }
+            }
+        }
+
+        // Sync architectures to DB (the ones from file that might be new)
         let ids: Vec<String> = store
             .architectures
             .read()
@@ -79,6 +94,27 @@ impl ModelStore {
         }
 
         store
+    }
+
+    pub async fn get_all_models(&self) -> Vec<Model> {
+        let query = format!("SELECT data FROM {}", CachedModel::table_name());
+
+        let pool = match &self.db {
+            Db::Postgres(db) => db.pool(),
+            Db::InMemory(_) => return Vec::new(),
+        };
+
+        let result = sqlx::query_as::<_, (serde_json::Value,)>(sqlx::AssertSqlSafe(query.as_str()))
+            .fetch_all(pool)
+            .await;
+
+        match result {
+            Ok(rows) => rows
+                .into_iter()
+                .filter_map(|(data,)| serde_json::from_value::<Model>(data).ok())
+                .collect(),
+            Err(_) => Vec::new(),
+        }
     }
 
     pub async fn get_all_paths(&self) -> Vec<String> {
@@ -110,9 +146,41 @@ impl ModelStore {
         if let Ok(contents) = std::fs::read_to_string(&path)
             && let Ok(parsed) = serde_json::from_str::<VllmArchitecturesFile>(&contents)
         {
-            return parsed.architectures.into_iter().collect();
+            let archs: HashSet<String> = parsed.architectures.into_iter().collect();
+            tracing::info!(
+                "Registered {} vLLM architectures from file: {}",
+                archs.len(),
+                path
+            );
+            return archs;
         }
-        HashSet::new()
+
+        tracing::warn!(
+            "vLLM architecture file not found or invalid: {}. Falling back to default list.",
+            path
+        );
+
+        // Fallback common architectures if file is missing
+        [
+            "LlamaForCausalLM",
+            "MistralForCausalLM",
+            "MixtralForCausalLM",
+            "Qwen2ForCausalLM",
+            "GPT2LMHeadModel",
+            "GPTNeoXForCausalLM",
+            "GPTBigCodeForCausalLM",
+            "OPTForCausalLM",
+            "BloomForCausalLM",
+            "FalconForCausalLM",
+            "MPTForCausalLM",
+            "PhiForCausalLM",
+            "GemmaForCausalLM",
+            "DbrxForCausalLM",
+            "ArcticForCausalLM",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
     }
 
     pub fn is_vllm_supported(&self, architecture: &str) -> bool {

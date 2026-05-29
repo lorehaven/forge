@@ -68,8 +68,8 @@ fn render_overlay(env_name: &str) -> anyhow::Result<YamlValue> {
             .map(|(i, l)| format!("{:3} | {}", i + 1, l))
             .collect::<Vec<_>>()
             .join("\n");
-        
-        anyhow::anyhow!("{}\n\nRendered source:\n{}", msg, with_lines)
+
+        anyhow::anyhow!("{msg}\n\nRendered source:\n{with_lines}")
     })?;
 
     let re = Regex::new(r"\$\{([^}]+)}")?;
@@ -99,16 +99,16 @@ fn render_resources(
 
         let kind = res["kind"].as_str().context("kind missing")?;
         let tpl_name = format!("{}.yaml.j2", kind.to_lowercase());
-        
+
         let tpl = tpl_env
             .get_template(&tpl_name)
             .with_context(|| format!("template for kind `{kind}` not found or invalid. ensure `{tpl_name}` exists in embedded templates."))?;
 
         let y = tpl.render(context! {
-                data => data,
-                res => res,
-                env => env_name,
-            })?;
+            data => data,
+            res => res,
+            env => env_name,
+        })?;
         out.push(y.trim().to_string());
     }
     Ok(out)
