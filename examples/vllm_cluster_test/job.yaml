@@ -1,0 +1,19 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vllm-cluster-test
+spec:
+  template:
+    spec:
+      containers:
+      - name: test
+        image: {{REGISTRY}}/vllm-cluster-test:{{TAG}}
+        args: 
+          - "--host"
+          - "{{VLLM_HOST}}"
+          - "--port"
+          - "{{VLLM_PORT}}"
+          - "--model"
+          - "{{VLLM_MODEL}}"
+      restartPolicy: Never
+  backoffLimit: 0
