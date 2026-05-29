@@ -15,6 +15,7 @@ pub fn ensure_warehouse_css() {
 fn warehouse_css_rules() -> Vec<CssRule> {
     let mut rules = Vec::new();
     rules.extend(css::layout_rules());
+    rules.extend(utility_rules());
     rules.extend(tree_rules());
     rules.extend(table_rules());
     rules.extend(grid_rules());
@@ -23,6 +24,39 @@ fn warehouse_css_rules() -> Vec<CssRule> {
     rules.extend(css::home_rules());
     rules.extend(css::login_rules());
     rules
+}
+
+fn utility_rules() -> Vec<CssRule> {
+    vec![
+        CssRule::new(".mr-2").property("margin-right", "0.5rem"),
+        CssRule::new(".mt-4").property("margin-top", "1.5rem"),
+        CssRule::new(".d-flex").property("display", "flex"),
+        CssRule::new(".flex-column").property("flex-direction", "column"),
+        CssRule::new(".h-100").property("height", "100%"),
+        CssRule::new(".flex-1").property("flex", "1"),
+        CssRule::new(".button-danger-sm")
+            .property("display", "inline-flex")
+            .property("align-items", "center")
+            .property("padding", "0.35rem 0.75rem")
+            .property("background-color", "transparent")
+            .property("color", "var(--bs-danger)")
+            .property("border", "0.1rem solid var(--bs-danger)")
+            .property("border-radius", "0.3rem")
+            .property("font-size", "0.85rem")
+            .property("font-weight", "500")
+            .property("cursor", "pointer")
+            .property("transition", "all 0.15s ease-in-out")
+            .child(
+                CssRule::new("&:hover")
+                    .property("background-color", "var(--bs-danger)")
+                    .property("color", "white"),
+            )
+            .child(
+                CssRule::new("&:active")
+                    .property("transform", "scale(0.96)")
+                    .property("background-color", "var(--bs-danger-700)"),
+            ),
+    ]
 }
 
 fn tree_rules() -> Vec<CssRule> {
@@ -40,15 +74,23 @@ fn tree_rules() -> Vec<CssRule> {
             .property("padding-left", "1rem"),
         CssRule::new(".repo-tree").property("padding-left", "0"),
         CssRule::new(".tree-folder")
+            .property("display", "flex")
+            .property("align-items", "center")
             .property("cursor", "pointer")
-            .property("padding", "0.2rem 0"),
+            .property("padding", "0.2rem 0")
+            .child(CssRule::new("i").property("width", "1.5rem").property("flex-shrink", "0")),
+        CssRule::new(".tag-list")
+            .property("list-style", "none")
+            .property("margin", "0.2rem 0")
+            .property("padding-left", "1rem")
+            .property("border-left", "0.1rem solid var(--bs-gray-700)"),
         CssRule::new(".repo-link")
             .property("display", "inline-flex")
             .property("padding", "0.15rem 0.3rem")
             .property("border-radius", "0.2rem")
             .property("text-decoration", "none")
             .property("color", "var(--bs-gray-300)")
-            .child(CssRule::new("&:hover").property("background-color", "var(--bs-gray-800)")),
+            .child(CssRule::new("&:hover").property("background-color", "var(--bs-gray-700)")),
         CssRule::new(".repo-link.active")
             .property("background-color", "var(--bs-success-900)")
             .property("color", "var(--bs-gray-100)"),
@@ -129,7 +171,7 @@ fn grid_rules() -> Vec<CssRule> {
             .child(
                 CssRule::new(".body > .row")
                     .property("grid-template-columns", "minmax(12rem, 2fr) minmax(14rem, 2fr) minmax(18rem, 3fr) minmax(7rem, 1fr)")
-                    .child(CssRule::new("&.active").property("background-color", "var(--bs-gray-800)"))
+                    .child(CssRule::new("&.active").property("background-color", "var(--bs-gray-700)"))
                     .child(
                         CssRule::new("&:not(:last-child)")
                             .property("border-bottom", "0.1rem solid var(--bs-gray-700)"),
@@ -152,7 +194,7 @@ fn grid_rules() -> Vec<CssRule> {
             .child(
                 CssRule::new(".body > .row")
                     .property("grid-template-columns", "minmax(12rem, 2fr) minmax(9rem, 1fr) minmax(16rem, 3fr) minmax(7rem, 1fr)")
-                    .child(CssRule::new("&.active").property("background-color", "var(--bs-gray-800)"))
+                    .child(CssRule::new("&.active").property("background-color", "var(--bs-gray-700)"))
                     .child(
                         CssRule::new("&:not(:last-child)")
                             .property("border-bottom", "0.1rem solid var(--bs-gray-700)"),
@@ -193,13 +235,24 @@ fn grid_rules() -> Vec<CssRule> {
 fn meta_rules() -> Vec<CssRule> {
     vec![
         CssRule::new(".tag-link")
+            .property("display", "flex")
+            .property("align-items", "center")
+            .property("padding", "0.25rem 0.5rem")
+            .property("border-radius", "0.25rem")
             .property("text-decoration", "none")
-            .property("color", "var(--bs-gray-300)")
+            .property("color", "var(--bs-gray-400)")
+            .property("font-size", "0.9rem")
+            .property("transition", "background-color 0.2s, color 0.2s")
+            .child(CssRule::new("i").property("width", "1.2rem").property("flex-shrink", "0"))
             .child(
                 CssRule::new("&:hover")
                     .property("color", "var(--bs-gray-100)")
-                    .property("text-decoration", "underline"),
+                    .property("background-color", "var(--bs-gray-800)"),
             ),
+        CssRule::new(".tag-link.active")
+            .property("background-color", "var(--bs-success-900)")
+            .property("color", "var(--bs-gray-100)")
+            .child(CssRule::new("i").property("color", "var(--bs-gray-100)")),
         CssRule::new(".meta-row")
             .property("display", "grid")
             .property("grid-template-columns", "10rem minmax(0, 1fr)")
@@ -207,7 +260,7 @@ fn meta_rules() -> Vec<CssRule> {
             .property("width", "max-content")
             .property(r"gap", "0.75rem")
             .property("padding", "0.35rem 0"),
-        CssRule::new(".meta-label").property("color", "var(--bs-gray-500)"),
+        CssRule::new(".meta-label").property("color", "var(--bs-gray-400)"),
         CssRule::new(".mono").property("font-family", "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace"),
         // Dependency display within metadata panel
         CssRule::new(".meta-deps")

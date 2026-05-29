@@ -63,15 +63,14 @@ fn render_catalog_page(
     let active_tag = selected_tag
         .as_ref()
         .filter(|tag| tags_meta.iter().any(|meta| &meta.tag == *tag))
-        .cloned()
-        .or_else(|| tags_meta.first().map(|m| m.tag.clone()));
+        .cloned();
 
     let selected_meta = active_tag
         .as_ref()
         .and_then(|tag| tags_meta.iter().find(|m| &m.tag == tag));
 
     let left = div()
-        .class("split-left")
+        .class("split-left panel")
         .child(
             div()
                 .class("panel-title")
@@ -80,21 +79,12 @@ fn render_catalog_page(
         .child(
             div()
                 .class("tree-scroll")
-                .child(render_repo_tree(&tree, repo.as_deref())),
+                .child(render_repo_tree(&tree, repo.as_deref(), &tags_meta, active_tag.as_deref())),
         );
 
     let right = div()
-        .class("split-right")
-        .child(div().class("right-top").child(render_tags_panel(
-            repo.as_deref(),
-            &tags_meta,
-            active_tag.as_deref(),
-        )))
-        .child(
-            div()
-                .class("right-bottom")
-                .child(render_metadata_panel(repo.as_deref(), selected_meta)),
-        );
+        .class("split-right panel")
+        .child(render_metadata_panel(repo.as_deref(), selected_meta));
 
     render_page(
         HttpResponse::Ok(),
@@ -102,88 +92,6 @@ fn render_catalog_page(
             .class("container-fluid py-4")
             .child(div().class("split-view").child(left).child(right)),
         UiPageKind::Docker,
-    )
-}
-
-fn render_tags_panel(
-    repo: Option<&str>,
-    tags_meta: &[TagMetadata],
-    active_tag: Option<&str>,
-) -> Element {
-    let title = match repo {
-        Some(r) => div()
-            .class("panel-title")
-            .child(span().attr("data-i18n", "ui_tags_for"))
-            .child(span().text(&format!(" {r}"))),
-        None => div().class("panel-title").attr("data-i18n", "ui_tags"),
-    };
-
-    let mut body = div().class("body");
-    if repo.is_none() {
-        body = body.child(
-            div()
-                .class("empty")
-                .attr("data-i18n", "ui_empty_select_repo"),
-        );
-    } else if tags_meta.is_empty() {
-        body = body.child(div().class("empty").attr("data-i18n", "ui_empty_no_tags"));
-    } else {
-        for meta in tags_meta {
-            let Some(repo_name) = repo else { break };
-            let link = format!(
-                "{}?repo={repo_name}&tag={}",
-                ui_path("/docker/catalog"),
-                meta.tag
-            );
-            let row_class = if Some(meta.tag.as_str()) == active_tag {
-                "row active"
-            } else {
-                "row"
-            };
-
-            let row = div()
-                .class(row_class)
-                .child(
-                    div()
-                        .class("cell")
-                        .child(a().attr("href", &link).class("tag-link").text(&meta.tag)),
-                )
-                .child(div().class("cell mono").text(&short_digest(&meta.digest)))
-                .child(
-                    div()
-                        .class("cell mono")
-                        .text(meta.media_type.as_deref().unwrap_or("-")),
-                )
-                .child(
-                    div().class("cell actions").child(
-                        i().class("fas fa-trash")
-                            .attr("aria-hidden", "true")
-                            .attr("data-action", "delete-image")
-                            .attr("data-repository", repo_name)
-                            .attr("data-digest", &meta.digest)
-                            .attr("title", "Delete image")
-                            .attr("role", "button")
-                            .attr("aria-label", "Delete image")
-                            .on_click("handleDeleteImageClick(event)"),
-                    ),
-                );
-
-            body = body.child(row);
-        }
-    }
-
-    div().class("panel table tags-grid").child(title).child(
-        div()
-            .class("table-scroll")
-            .child(
-                div()
-                    .class("header")
-                    .child(div().class("cell").attr("data-i18n", "ui_col_tag"))
-                    .child(div().class("cell").attr("data-i18n", "ui_col_digest"))
-                    .child(div().class("cell").attr("data-i18n", "ui_col_media_type"))
-                    .child(div().class("cell").attr("data-i18n", "ui_col_actions")),
-            )
-            .child(body),
     )
 }
 
@@ -211,13 +119,25 @@ fn render_metadata_panel(repo: Option<&str>, selected_meta: Option<&TagMetadata>
                     .size_bytes
                     .map(|v| format!("{v} bytes"))
                     .unwrap_or_else(|| "unknown".to_string()),
-            )),
+            ))
+            .child(
+                div().class("mt-4").child(
+                    button()
+                        .class("button-danger-sm")
+                        .attr("data-action", "delete-image")
+                        .attr("data-repository", repo.unwrap_or(""))
+                        .attr("data-digest", &meta.digest)
+                        .on_click("handleDeleteImageClick(event)")
+                        .child(i().class("fas fa-trash mr-2"))
+                        .child(span().attr("data-i18n", "ui_delete_image").text("Delete Image"))
+                )
+            ),
         None => div()
             .class("empty")
             .attr("data-i18n", "ui_empty_select_tag"),
     };
 
-    div().class("panel").child(title).child(body)
+    div().class("h-100 d-flex flex-column").child(title).child(body)
 }
 
 fn meta_row(label_key: &str, value: &str) -> Element {
@@ -225,14 +145,6 @@ fn meta_row(label_key: &str, value: &str) -> Element {
         .class("meta-row")
         .child(div().class("meta-label").attr("data-i18n", label_key))
         .child(div().class("meta-value mono").text(value))
-}
-
-fn short_digest(digest: &str) -> String {
-    if digest.len() <= 20 {
-        return digest.to_string();
-    }
-
-    format!("{}...{}", &digest[..12], &digest[digest.len() - 8..])
 }
 
 fn build_repo_tree(repositories: &[String]) -> RepoTreeNode {
@@ -249,53 +161,115 @@ fn build_repo_tree(repositories: &[String]) -> RepoTreeNode {
     root
 }
 
-fn render_repo_tree(root: &RepoTreeNode, selected_repo: Option<&str>) -> Element {
+fn render_repo_tree(
+    root: &RepoTreeNode,
+    selected_repo: Option<&str>,
+    tags_meta: &[TagMetadata],
+    active_tag: Option<&str>
+) -> Element {
     let mut tree = ul().class("repo-tree");
     for (name, child) in &root.children {
-        tree = tree.child(render_repo_node(name, child, selected_repo));
+        tree = tree.child(render_repo_node(name, child, "", selected_repo, tags_meta, active_tag));
     }
     tree
 }
 
-fn render_repo_node(name: &str, node: &RepoTreeNode, selected_repo: Option<&str>) -> Element {
+fn render_repo_node(
+    name: &str,
+    node: &RepoTreeNode,
+    parent_path: &str,
+    selected_repo: Option<&str>,
+    tags_meta: &[TagMetadata],
+    active_tag: Option<&str>
+) -> Element {
     let mut item = li();
+    let has_children = !node.children.is_empty();
+    let is_repo = node.full_repo.is_some();
+    let is_selected = node.full_repo.as_deref() == selected_repo;
 
-    if node.children.is_empty() {
-        if let Some(repo) = node.full_repo.as_deref() {
-            let class_name = if Some(repo) == selected_repo {
-                "repo-link active"
-            } else {
-                "repo-link"
-            };
-            item = item.child(
-                a().attr(
-                    "href",
-                    &format!("{}?repo={repo}", ui_path("/docker/catalog")),
-                )
-                .class(class_name)
-                .text(name),
+    let full_path = if parent_path.is_empty() {
+        name.to_string()
+    } else {
+        format!("{}/{}", parent_path, name)
+    };
+
+    // We only need details if there's something to expand (children or tags)
+    let needs_details = has_children || is_selected;
+
+    if !needs_details {
+        if is_repo {
+            let repo = node.full_repo.as_ref().unwrap();
+            return item.child(
+                div().class("tree-folder")
+                    .child(i().class("fas fa-archive mr-2"))
+                    .child(
+                        a().attr("href", &format!("{}?repo={repo}", ui_path("/docker/catalog")))
+                          .class("repo-link")
+                          .text(name)
+                    )
             );
         } else {
-            item = item.child(span().text(name));
+            return item.child(span().class("tree-folder").text(name));
         }
-        return item;
     }
 
-    let mut details = element("details");
-    if selected_repo.is_some_and(|selected| node_has_selected(node, selected)) {
+    let mut details = element("details")
+        .attr("data-path", &full_path);
+    
+    // Server-side hint for the currently active path
+    if selected_repo.is_some_and(|selected| node_has_selected(node, selected)) || is_selected {
         details = details.attr("open", "open");
     }
 
-    let mut children = ul();
-    for (child_name, child_node) in &node.children {
-        children = children.child(render_repo_node(child_name, child_node, selected_repo));
+    let mut summary = element("summary").class("tree-folder");
+    if is_repo {
+        let repo = node.full_repo.as_ref().unwrap();
+        let class = if is_selected { "repo-link active" } else { "repo-link" };
+        summary = summary
+            .child(i().class("fas fa-archive mr-2"))
+            .child(
+                a().attr("href", &format!("{}?repo={repo}", ui_path("/docker/catalog")))
+                  .class(class)
+                  .text(name)
+            );
+    } else {
+        summary = summary.text(name);
+    }
+    details = details.child(summary);
+
+    if has_children {
+        let mut children_list = ul().class("repo-tree");
+        for (child_name, child_node) in &node.children {
+            children_list = children_list.child(render_repo_node(child_name, child_node, &full_path, selected_repo, tags_meta, active_tag));
+        }
+        details = details.child(children_list);
     }
 
-    item.child(
-        details
-            .child(element("summary").class("tree-folder").text(name))
-            .child(children),
-    )
+    if is_selected && !tags_meta.is_empty() {
+        let mut tags_list = ul().class("tag-list");
+        for meta in tags_meta {
+            let repo = node.full_repo.as_ref().unwrap();
+            let tag_class = if Some(meta.tag.as_str()) == active_tag {
+                "tag-link active"
+            } else {
+                "tag-link"
+            };
+            tags_list = tags_list.child(
+                li().child(
+                    a().attr(
+                        "href",
+                        &format!("{}?repo={repo}&tag={}", ui_path("/docker/catalog"), meta.tag),
+                    )
+                    .class(tag_class)
+                    .child(i().class("fas fa-tag mr-2"))
+                    .child(span().text(&meta.tag))
+                )
+            );
+        }
+        details = details.child(tags_list);
+    }
+
+    item.child(details)
 }
 
 fn node_has_selected(node: &RepoTreeNode, selected: &str) -> bool {

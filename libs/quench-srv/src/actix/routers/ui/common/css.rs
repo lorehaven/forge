@@ -50,6 +50,17 @@ pub fn layout_rules() -> Vec<CssRule> {
                 CssRule::new("@media screen and (max-width: 1024px)")
                     .child(CssRule::new(".split-view").property("grid-template-columns", "1fr")),
             ),
+        CssRule::new(".split-right")
+            .property("display", "flex")
+            .property("flex-direction", "column")
+            .property("gap", "1rem")
+            .property("min-height", "0"),
+        CssRule::new(".right-top")
+            .property("flex", "1 1 60%")
+            .property("min-height", "0"),
+        CssRule::new(".right-bottom")
+            .property("flex", "0 0 35%")
+            .property("min-height", "0"),
         CssRule::new("header .right-panel")
             .property("display", "flex")
             .property("align-items", "center")

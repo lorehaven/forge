@@ -15,8 +15,8 @@ static UI_SHELL_DOCKER: LazyLock<AppShell> = LazyLock::new(|| {
     AppShellBuilder::new()
         .title("Warehouse")
         .supported_locales(vec!["en-US".to_string()])
-        .default_theme(Theme::BootstrapDark)
-        .supported_themes(vec![Theme::BootstrapDark])
+        .default_theme(Theme::DefaultDark)
+        .supported_themes(vec![Theme::DefaultDark])
         .header(ui_header(Some("ui_header_docker"), true, true))
         .links(vec![Link::new(
             "stylesheet",
@@ -35,8 +35,8 @@ static UI_SHELL_CRATES: LazyLock<AppShell> = LazyLock::new(|| {
     AppShellBuilder::new()
         .title("Warehouse — Crates")
         .supported_locales(vec!["en-US".to_string()])
-        .default_theme(Theme::BootstrapDark)
-        .supported_themes(vec![Theme::BootstrapDark])
+        .default_theme(Theme::DefaultDark)
+        .supported_themes(vec![Theme::DefaultDark])
         .header(ui_header(Some("ui_header_crates"), true, true))
         .links(vec![Link::new(
             "stylesheet",
@@ -55,8 +55,8 @@ static UI_SHELL_FILES: LazyLock<AppShell> = LazyLock::new(|| {
     AppShellBuilder::new()
         .title("Warehouse — Files")
         .supported_locales(vec!["en-US".to_string()])
-        .default_theme(Theme::BootstrapDark)
-        .supported_themes(vec![Theme::BootstrapDark])
+        .default_theme(Theme::DefaultDark)
+        .supported_themes(vec![Theme::DefaultDark])
         .header(ui_header(Some("ui_header_files"), true, true))
         .links(vec![Link::new(
             "stylesheet",
@@ -74,8 +74,8 @@ static UI_SHELL_HOME: LazyLock<AppShell> = LazyLock::new(|| {
     AppShellBuilder::new()
         .title("Warehouse")
         .supported_locales(vec!["en-US".to_string()])
-        .default_theme(Theme::BootstrapDark)
-        .supported_themes(vec![Theme::BootstrapDark])
+        .default_theme(Theme::DefaultDark)
+        .supported_themes(vec![Theme::DefaultDark])
         .header(ui_header(Some("ui_header_home"), true, true))
         .links(vec![Link::new(
             "stylesheet",
@@ -92,8 +92,8 @@ static UI_SHELL_AUTH: LazyLock<AppShell> = LazyLock::new(|| {
     AppShellBuilder::new()
         .title("Warehouse")
         .supported_locales(vec!["en-US".to_string()])
-        .default_theme(Theme::BootstrapDark)
-        .supported_themes(vec![Theme::BootstrapDark])
+        .default_theme(Theme::DefaultDark)
+        .supported_themes(vec![Theme::DefaultDark])
         .header(ui_header(None, false, false))
         .links(vec![Link::new(
             "stylesheet",

@@ -10,6 +10,41 @@ fn docker_js() -> String {
 
     format!(
         r#"
+document.addEventListener('DOMContentLoaded', () => {{
+    restoreTreeState();
+    setupTreeStateTracking();
+}});
+
+function setupTreeStateTracking() {{
+    const tree = document.querySelector('.repo-tree');
+    if (!tree) return;
+
+    tree.addEventListener('toggle', (event) => {{
+        if (event.target.tagName !== 'DETAILS') return;
+        
+        const path = event.target.getAttribute('data-path');
+        if (!path) return;
+
+        let openPaths = JSON.parse(sessionStorage.getItem('dockerTreeOpenPaths') || '[]');
+        if (event.target.open) {{
+            if (!openPaths.includes(path)) openPaths.push(path);
+        }} else {{
+            openPaths = openPaths.filter(p => p !== path);
+        }}
+        sessionStorage.setItem('dockerTreeOpenPaths', JSON.stringify(openPaths));
+    }}, true);
+}}
+
+function restoreTreeState() {{
+    const openPaths = JSON.parse(sessionStorage.getItem('dockerTreeOpenPaths') || '[]');
+    openPaths.forEach(path => {{
+        const details = document.querySelector(`details[data-path="${{path}}"]`);
+        if (details) {{
+            details.open = true;
+        }}
+    }});
+}}
+
 async function handleDeleteImageClick(event) {{
     const button = event.currentTarget;
     const repository = button.getAttribute('data-repository');
@@ -21,7 +56,6 @@ async function handleDeleteImageClick(event) {{
     }}
 
     try {{
-        // 1. Request JWT using session cookie
         const tokenResponse = await fetch(
             `/token?service={service}&scope=repository:${{repository}}:push`,
             {{
@@ -42,7 +76,6 @@ async function handleDeleteImageClick(event) {{
             return;
         }}
 
-        // 2. Call registry with Bearer token
         const deleteResponse = await fetch(
             `/v2/${{repository}}/manifests/${{digest}}`,
             {{

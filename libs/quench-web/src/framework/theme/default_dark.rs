@@ -22,10 +22,10 @@ impl ThemeSpec for DefaultDarkTheme {
                 .property("--bs-gray-400", "#a3a3a3")
                 .property("--bs-gray-500", "#737373")
                 .property("--bs-gray-600", "#525252")
-                .property("--bs-gray-700", "#404040")
-                .property("--bs-gray-800", "#262626")
-                .property("--bs-gray-900", "#171717")
-                .property("--bs-gray-950", "#0a0a0a"),
+                .property("--bs-gray-700", "#262626")
+                .property("--bs-gray-800", "#121212")
+                .property("--bs-gray-900", "#0d0d0d")
+                .property("--bs-gray-950", "#050505"),
             CssRule::new(".color-green").property("color", "var(--bs-success-700)"),
             CssRule::new(".color-yellow").property("color", "var(--bs-warning)"),
             CssRule::new(".color-red").property("color", "var(--bs-danger)"),
