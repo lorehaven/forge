@@ -2,7 +2,7 @@ use crate::routers::vllm::engine::VllmEngine;
 use crate::routers::vllm::{LaunchRequest, VllmInstance};
 use async_trait::async_trait;
 use chrono::Utc;
-use k8s_openapi::api::core::v1::Pod;
+use k8s_openapi::api::core::v1::{Pod, Service};
 use kube::Client;
 use kube::api::{Api, DeleteParams, ListParams, PostParams};
 use serde_json::json;
@@ -80,13 +80,9 @@ impl VllmEngine for KubernetesVllmEngine {
 
             instances.push(VllmInstance {
                 id: format!("pod:{namespace}:{name}"),
-                namespace,
+                namespace: namespace.clone(),
                 model,
-                host: pod
-                    .status
-                    .as_ref()
-                    .and_then(|s| s.pod_ip.clone())
-                    .unwrap_or_else(|| "unknown".to_string()),
+                host: format!("{name}.{namespace}.svc.cluster.local"),
                 port,
                 quantization: annotations.get("vllm-quantization").cloned(),
                 max_model_len: annotations
@@ -321,6 +317,7 @@ impl VllmEngine for KubernetesVllmEngine {
                     "app.kubernetes.io/managed-by": "switchboard",
                     "vllm-model": req.model.replace('/', "--"), // Labels have restrictions
                     "vllm-port": req.port.to_string(),
+                    "vllm-pod-name": pod_name.clone(),
                 },
                 "annotations": {
                     "vllm-model": req.model.clone(),
@@ -371,14 +368,58 @@ impl VllmEngine for KubernetesVllmEngine {
             .await
             .map_err(|e| format!("Failed to create pod in namespace {namespace}: {e}"))?;
 
+        // Create a ClusterIP service for internal access
+        let pod_uid = pod.metadata.uid.as_deref().unwrap_or_default();
+        let svc_manifest = json!({
+            "apiVersion": "v1",
+            "kind": "Service",
+            "metadata": {
+                "name": pod_name,
+                "labels": {
+                    "app": "vllm",
+                    "app.kubernetes.io/managed-by": "switchboard",
+                },
+                "ownerReferences": [
+                    {
+                        "apiVersion": "v1",
+                        "kind": "Pod",
+                        "name": pod_name,
+                        "uid": pod_uid,
+                        "controller": true,
+                        "blockOwnerDeletion": true
+                    }
+                ]
+            },
+            "spec": {
+                "selector": {
+                    "vllm-pod-name": pod_name
+                },
+                "ports": [
+                    {
+                        "port": req.port,
+                        "targetPort": req.port,
+                        "name": "http"
+                    }
+                ],
+                "type": "ClusterIP"
+            }
+        });
+
+        let s: Service = serde_json::from_value(svc_manifest)
+            .map_err(|e| format!("Failed to deserialize service manifest: {e}"))?;
+
+        let services: Api<Service> = Api::namespaced(self.client.clone(), namespace);
+        services
+            .create(&pp, &s)
+            .await
+            .map_err(|e| format!("Failed to create service in namespace {namespace}: {e}"))?;
+
+        let name = pod.metadata.name.clone().unwrap_or_default();
         Ok(VllmInstance {
-            id: format!(
-                "pod:{namespace}:{name}",
-                name = pod.metadata.name.unwrap_or_default()
-            ),
+            id: format!("pod:{namespace}:{name}"),
             namespace: namespace.to_string(),
             model: req.model.clone(),
-            host: "pending".to_string(),
+            host: format!("{name}.{namespace}.svc.cluster.local"),
             port: req.port,
             quantization: req.quantization.clone(),
             max_model_len: req.max_model_len,
