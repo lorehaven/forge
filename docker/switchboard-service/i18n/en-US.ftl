@@ -45,6 +45,7 @@ ui_vllm_launch_modal_title = Launch vLLM Instance
 ui_vllm_form_model = Model
 ui_vllm_form_host = Host
 ui_vllm_form_port = Port
+ui_vllm_form_namespace = Namespace
 ui_vllm_form_quant = Quantization
 ui_vllm_form_max_len = Max Model Len
 ui_vllm_form_gpu_util = GPU Memory Utilization

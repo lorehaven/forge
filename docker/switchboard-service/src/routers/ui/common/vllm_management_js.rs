@@ -106,6 +106,9 @@ function renderInstances() {
         const id = card.querySelector('.instance-id');
         if (id) id.textContent = inst.id;
 
+        const ns = card.querySelector('.instance-namespace');
+        if (ns) ns.textContent = inst.namespace;
+
         const endpoint = card.querySelector('.instance-endpoint');
         if (endpoint) endpoint.textContent = `${inst.host}:${inst.port}`;
 
@@ -496,6 +499,7 @@ async function launchVllmInstance() {
     const model = document.getElementById('launch-model').value;
     const host = document.getElementById('launch-host').value;
     const port = parseInt(document.getElementById('launch-port').value);
+    const namespace = document.getElementById('launch-namespace').value;
     const quantization = document.getElementById('launch-quant').value;
     const max_model_len = parseInt(document.getElementById('launch-max-len').value) || null;
     const gpu_memory_utilization = parseFloat(document.getElementById('launch-gpu-util').value);
@@ -508,6 +512,7 @@ async function launchVllmInstance() {
 
     const req = {
         model, host, port, 
+        namespace: namespace || null,
         quantization: quantization || null,
         max_model_len,
         gpu_memory_utilization,

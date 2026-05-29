@@ -30,6 +30,7 @@ pub struct VllmApiDoc;
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone)]
 pub struct VllmInstance {
     pub id: String,
+    pub namespace: String,
     pub model: String,
     pub host: String,
     pub port: u16,
@@ -51,6 +52,7 @@ pub struct LaunchRequest {
     pub model: String,
     pub host: String,
     pub port: u16,
+    pub namespace: Option<String>,
     pub quantization: Option<String>,
     pub max_model_len: Option<u32>,
     pub gpu_memory_utilization: Option<f32>,

@@ -26,7 +26,24 @@ pub(super) async fn vllm_manage_slash(
     render_vllm_manage_page()
 }
 
+fn get_vllm_namespace() -> String {
+    use crate::routers::vllm::engine::VllmManagementMode;
+    match VllmManagementMode::from_env() {
+        VllmManagementMode::Kubernetes => std::env::var("VLLM_K8S_NAMESPACE")
+            .ok()
+            .or_else(|| {
+                std::fs::read_to_string("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+                    .ok()
+            })
+            .unwrap_or_else(|| "default".to_string())
+            .trim()
+            .to_string(),
+        VllmManagementMode::Native => "native".to_string(),
+    }
+}
+
 fn render_vllm_manage_page() -> HttpResponse {
+    let current_namespace = get_vllm_namespace();
     render_page(
         HttpResponse::Ok(),
         content()
@@ -143,6 +160,34 @@ fn render_vllm_manage_page() -> HttpResponse {
                                                 ),
                                         ),
                                 )
+                                .child({
+                                    let mut row = div().class("form-row launch-form-row");
+                                    if current_namespace != "native" {
+                                        row = row.child(
+                                            div()
+                                                .class("form-group")
+                                                .child(
+                                                    label().attr("data-i18n", "ui_vllm_form_namespace"),
+                                                )
+                                                .child(
+                                                    input()
+                                                        .attr("type", "text")
+                                                        .attr("id", "launch-namespace")
+                                                        .attr("placeholder", &current_namespace),
+                                                ),
+                                        );
+                                    } else {
+                                        // Hidden field to maintain JS compatibility if needed, 
+                                        // though JS handles empty/null namespace.
+                                        row = row.child(
+                                            input()
+                                                .attr("type", "hidden")
+                                                .attr("id", "launch-namespace")
+                                                .attr("value", "native")
+                                        );
+                                    }
+                                    row
+                                })
                                 .child(
                                     div()
                                         .class("form-row launch-form-row")
@@ -312,6 +357,13 @@ fn vllm_instance_card_template() -> Element {
                                 .child(span().text("ID"))
                                 .text(" ")
                                 .child(span().class("instance-id")),
+                        )
+                        .child(
+                            div()
+                                .class("meta-item")
+                                .child(span().text("Namespace"))
+                                .text(" ")
+                                .child(span().class("instance-namespace")),
                         )
                         .child(
                             div()

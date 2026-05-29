@@ -36,7 +36,7 @@ impl KubernetesVllmEngine {
 #[async_trait]
 impl VllmEngine for KubernetesVllmEngine {
     async fn list_instances(&self) -> Result<Vec<VllmInstance>, String> {
-        let pods: Api<Pod> = Api::namespaced(self.client.clone(), &self.namespace);
+        let pods: Api<Pod> = Api::all(self.client.clone());
         let lp = ListParams::default().labels("app.kubernetes.io/managed-by=switchboard,app=vllm");
         let pod_list = pods
             .list(&lp)
@@ -46,6 +46,11 @@ impl VllmEngine for KubernetesVllmEngine {
         let mut instances = Vec::new();
         for pod in pod_list {
             let name = pod.metadata.name.clone().unwrap_or_default();
+            let namespace = pod
+                .metadata
+                .namespace
+                .clone()
+                .unwrap_or_else(|| "default".to_string());
             let labels = pod.metadata.labels.clone().unwrap_or_default();
             let annotations = pod.metadata.annotations.clone().unwrap_or_default();
 
@@ -74,7 +79,8 @@ impl VllmEngine for KubernetesVllmEngine {
                 .unwrap_or_else(Utc::now);
 
             instances.push(VllmInstance {
-                id: format!("pod-{name}"),
+                id: format!("pod:{namespace}:{name}"),
+                namespace,
                 model,
                 host: pod
                     .status
@@ -104,7 +110,8 @@ impl VllmEngine for KubernetesVllmEngine {
     }
 
     async fn launch_instance(&self, req: LaunchRequest) -> Result<VllmInstance, String> {
-        let pods: Api<Pod> = Api::namespaced(self.client.clone(), &self.namespace);
+        let namespace = req.namespace.as_deref().unwrap_or(&self.namespace);
+        let pods: Api<Pod> = Api::namespaced(self.client.clone(), namespace);
 
         let gpu_resource_key =
             std::env::var("VLLM_K8S_GPU_RESOURCE").unwrap_or_else(|_| "amd.com/gpu".to_string());
@@ -362,10 +369,14 @@ impl VllmEngine for KubernetesVllmEngine {
         let pod = pods
             .create(&pp, &p)
             .await
-            .map_err(|e| format!("Failed to create pod: {e}"))?;
+            .map_err(|e| format!("Failed to create pod in namespace {namespace}: {e}"))?;
 
         Ok(VllmInstance {
-            id: format!("pod-{}", pod.metadata.name.unwrap_or_default()),
+            id: format!(
+                "pod:{namespace}:{name}",
+                name = pod.metadata.name.unwrap_or_default()
+            ),
+            namespace: namespace.to_string(),
             model: req.model.clone(),
             host: "pending".to_string(),
             port: req.port,
@@ -381,16 +392,25 @@ impl VllmEngine for KubernetesVllmEngine {
     }
 
     async fn stop_instance(&self, id: String) -> Result<(), String> {
-        let name = match id.strip_prefix("pod-") {
-            Some(name) => name,
-            None => return Err(format!("Invalid instance id for kubernetes: {id}")),
+        let (namespace, name) = if let Some(rest) = id.strip_prefix("pod:") {
+            let parts: Vec<&str> = rest.splitn(2, ':').collect();
+            if parts.len() == 2 {
+                (parts[0].to_string(), parts[1].to_string())
+            } else {
+                return Err(format!("Invalid instance id format: {id}"));
+            }
+        } else if let Some(name) = id.strip_prefix("pod-") {
+            // Fallback for old ID format
+            (self.namespace.clone(), name.to_string())
+        } else {
+            return Err(format!("Invalid instance id for kubernetes: {id}"));
         };
 
-        let pods: Api<Pod> = Api::namespaced(self.client.clone(), &self.namespace);
+        let pods: Api<Pod> = Api::namespaced(self.client.clone(), &namespace);
         let dp = DeleteParams::default();
-        pods.delete(name, &dp)
+        pods.delete(&name, &dp)
             .await
-            .map_err(|e| format!("Failed to delete pod {name}: {e}"))?;
+            .map_err(|e| format!("Failed to delete pod {name} in namespace {namespace}: {e}"))?;
 
         Ok(())
     }

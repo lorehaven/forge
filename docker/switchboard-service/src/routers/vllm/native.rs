@@ -101,6 +101,7 @@ impl VllmEngine for NativeVllmEngine {
 
             instances.push(VllmInstance {
                 id: format!("pid-{pid}"),
+                namespace: "native".to_string(),
                 model,
                 host,
                 port,
@@ -234,6 +235,7 @@ impl VllmEngine for NativeVllmEngine {
 
                 let instance = VllmInstance {
                     id: format!("pid-{pid}"),
+                    namespace: "native".to_string(),
                     model: req.model.clone(),
                     host: req.host.clone(),
                     port,
