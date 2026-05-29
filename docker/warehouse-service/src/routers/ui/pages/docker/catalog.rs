@@ -76,11 +76,12 @@ fn render_catalog_page(
                 .class("panel-title")
                 .attr("data-i18n", "ui_repositories"),
         )
-        .child(
-            div()
-                .class("tree-scroll")
-                .child(render_repo_tree(&tree, repo.as_deref(), &tags_meta, active_tag.as_deref())),
-        );
+        .child(div().class("tree-scroll").child(render_repo_tree(
+            &tree,
+            repo.as_deref(),
+            &tags_meta,
+            active_tag.as_deref(),
+        )));
 
     let right = div()
         .class("split-right panel")
@@ -129,15 +130,22 @@ fn render_metadata_panel(repo: Option<&str>, selected_meta: Option<&TagMetadata>
                         .attr("data-digest", &meta.digest)
                         .on_click("handleDeleteImageClick(event)")
                         .child(i().class("fas fa-trash mr-2"))
-                        .child(span().attr("data-i18n", "ui_delete_image").text("Delete Image"))
-                )
+                        .child(
+                            span()
+                                .attr("data-i18n", "ui_delete_image")
+                                .text("Delete Image"),
+                        ),
+                ),
             ),
         None => div()
             .class("empty")
             .attr("data-i18n", "ui_empty_select_tag"),
     };
 
-    div().class("h-100 d-flex flex-column").child(title).child(body)
+    div()
+        .class("h-100 d-flex flex-column")
+        .child(title)
+        .child(body)
 }
 
 fn meta_row(label_key: &str, value: &str) -> Element {
@@ -165,11 +173,18 @@ fn render_repo_tree(
     root: &RepoTreeNode,
     selected_repo: Option<&str>,
     tags_meta: &[TagMetadata],
-    active_tag: Option<&str>
+    active_tag: Option<&str>,
 ) -> Element {
     let mut tree = ul().class("repo-tree");
     for (name, child) in &root.children {
-        tree = tree.child(render_repo_node(name, child, "", selected_repo, tags_meta, active_tag));
+        tree = tree.child(render_repo_node(
+            name,
+            child,
+            "",
+            selected_repo,
+            tags_meta,
+            active_tag,
+        ));
     }
     tree
 }
@@ -180,9 +195,9 @@ fn render_repo_node(
     parent_path: &str,
     selected_repo: Option<&str>,
     tags_meta: &[TagMetadata],
-    active_tag: Option<&str>
+    active_tag: Option<&str>,
 ) -> Element {
-    let mut item = li();
+    let item = li();
     let has_children = !node.children.is_empty();
     let is_repo = node.full_repo.is_some();
     let is_selected = node.full_repo.as_deref() == selected_repo;
@@ -200,22 +215,25 @@ fn render_repo_node(
         if is_repo {
             let repo = node.full_repo.as_ref().unwrap();
             return item.child(
-                div().class("tree-folder")
+                div()
+                    .class("tree-folder")
                     .child(i().class("fas fa-archive mr-2"))
                     .child(
-                        a().attr("href", &format!("{}?repo={repo}", ui_path("/docker/catalog")))
-                          .class("repo-link")
-                          .text(name)
-                    )
+                        a().attr(
+                            "href",
+                            &format!("{}?repo={repo}", ui_path("/docker/catalog")),
+                        )
+                        .class("repo-link")
+                        .text(name),
+                    ),
             );
         } else {
             return item.child(span().class("tree-folder").text(name));
         }
     }
 
-    let mut details = element("details")
-        .attr("data-path", &full_path);
-    
+    let mut details = element("details").attr("data-path", &full_path);
+
     // Server-side hint for the currently active path
     if selected_repo.is_some_and(|selected| node_has_selected(node, selected)) || is_selected {
         details = details.attr("open", "open");
@@ -224,14 +242,19 @@ fn render_repo_node(
     let mut summary = element("summary").class("tree-folder");
     if is_repo {
         let repo = node.full_repo.as_ref().unwrap();
-        let class = if is_selected { "repo-link active" } else { "repo-link" };
-        summary = summary
-            .child(i().class("fas fa-archive mr-2"))
-            .child(
-                a().attr("href", &format!("{}?repo={repo}", ui_path("/docker/catalog")))
-                  .class(class)
-                  .text(name)
-            );
+        let class = if is_selected {
+            "repo-link active"
+        } else {
+            "repo-link"
+        };
+        summary = summary.child(i().class("fas fa-archive mr-2")).child(
+            a().attr(
+                "href",
+                &format!("{}?repo={repo}", ui_path("/docker/catalog")),
+            )
+            .class(class)
+            .text(name),
+        );
     } else {
         summary = summary.text(name);
     }
@@ -240,7 +263,14 @@ fn render_repo_node(
     if has_children {
         let mut children_list = ul().class("repo-tree");
         for (child_name, child_node) in &node.children {
-            children_list = children_list.child(render_repo_node(child_name, child_node, &full_path, selected_repo, tags_meta, active_tag));
+            children_list = children_list.child(render_repo_node(
+                child_name,
+                child_node,
+                &full_path,
+                selected_repo,
+                tags_meta,
+                active_tag,
+            ));
         }
         details = details.child(children_list);
     }
@@ -258,12 +288,16 @@ fn render_repo_node(
                 li().child(
                     a().attr(
                         "href",
-                        &format!("{}?repo={repo}&tag={}", ui_path("/docker/catalog"), meta.tag),
+                        &format!(
+                            "{}?repo={repo}&tag={}",
+                            ui_path("/docker/catalog"),
+                            meta.tag
+                        ),
                     )
                     .class(tag_class)
                     .child(i().class("fas fa-tag mr-2"))
-                    .child(span().text(&meta.tag))
-                )
+                    .child(span().text(&meta.tag)),
+                ),
             );
         }
         details = details.child(tags_list);

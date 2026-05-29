@@ -78,7 +78,11 @@ fn tree_rules() -> Vec<CssRule> {
             .property("align-items", "center")
             .property("cursor", "pointer")
             .property("padding", "0.2rem 0")
-            .child(CssRule::new("i").property("width", "1.5rem").property("flex-shrink", "0")),
+            .child(
+                CssRule::new("i")
+                    .property("width", "1.5rem")
+                    .property("flex-shrink", "0"),
+            ),
         CssRule::new(".tag-list")
             .property("list-style", "none")
             .property("margin", "0.2rem 0")
