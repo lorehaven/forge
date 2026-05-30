@@ -6,22 +6,9 @@ use actix_ws::{Message, MessageStream, Session};
 
 use futures_util::StreamExt;
 
-use utoipa::OpenApi;
-
 pub mod monitor;
 
 pub use monitor::{GpuInfo, get_gpu_info};
-
-// ---------------------------------------------------------------------------
-// OpenAPI
-// ---------------------------------------------------------------------------
-
-#[derive(OpenApi)]
-#[openapi(
-    paths(handle_ws),
-    tags((name = "gpu", description = "GPU status endpoints"))
-)]
-pub struct GpuApiDoc;
 
 // ---------------------------------------------------------------------------
 // Scope
@@ -35,18 +22,6 @@ pub fn scope() -> impl HttpServiceFactory {
 // WebSocket endpoint
 // ---------------------------------------------------------------------------
 
-#[utoipa::path(
-    get,
-    path = "/status/ws",
-    operation_id = "gpu_status_ws",
-    tags = ["gpu"],
-    responses(
-        (
-            status = 101,
-            description = "WebSocket upgraded"
-        ),
-    )
-)]
 #[get("/status/ws")]
 pub async fn handle_ws(req: HttpRequest, body: web::Payload) -> Result<HttpResponse, Error> {
     let (response, session, stream) = actix_ws::handle(&req, body)?;

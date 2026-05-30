@@ -3,24 +3,6 @@ use crate::routers::docker::{manifest_path, repository_path, validate_digest};
 use actix_web::{HttpResponse, Responder, delete, web};
 use quench_srv::prelude::error;
 
-#[utoipa::path(
-    delete,
-    operation_id = "delete_image",
-    tags = ["docker - manifest"],
-    path = "/{name}/manifests/{reference}",
-    params(
-        ("name" = String, Path, description = "Repository name (may contain slashes)"),
-        ("reference" = String, Path, description = "Tag or digest of the target manifest"),
-    ),
-    responses(
-        (status = 202, description = "Manifest deleted successfully. No content returned."),
-        (status = 401, description = "Authentication required"),
-        (status = 403, description = "Access denied. The manifest may still be referenced."),
-        (status = 404, description = "Manifest or repository not found"),
-        (status = 405, description = "Only digest-based deletion is allowed."),
-        (status = 429, description = "Too many requests"),
-    )
-)]
 #[delete("/{name:.+}/manifests/{reference}")]
 pub async fn handle(path: web::Path<(String, String)>) -> impl Responder {
     let (name, reference) = path.into_inner();

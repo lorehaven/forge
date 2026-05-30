@@ -5,7 +5,6 @@ use crate::utils::sha256::sha256_hex;
 use actix_web::{HttpResponse, Responder, put, web};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use utoipa::ToSchema;
 // ---------------------------------------------------------------------------
 // Wire-format structs (cargo publish binary payload → metadata JSON)
 // ---------------------------------------------------------------------------
@@ -81,14 +80,14 @@ struct IndexDep {
 // Response types
 // ---------------------------------------------------------------------------
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
 pub struct PublishWarnings {
     invalid_categories: Vec<String>,
     invalid_badges: Vec<String>,
     other: Vec<String>,
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
 pub struct PublishResponse {
     warnings: PublishWarnings,
 }
@@ -97,27 +96,6 @@ pub struct PublishResponse {
 // Handler
 // ---------------------------------------------------------------------------
 
-#[utoipa::path(
-    put,
-    operation_id = "publish_crate",
-    tags = ["crates"],
-    path = "/new",
-    request_body(
-        content = Vec<u8>,
-        content_type = "application/octet-stream",
-        description = "Cargo publish binary payload: u32LE metadata-len, JSON metadata, u32LE crate-len, .crate tarball",
-    ),
-    responses(
-        (status = 200,  description = "Crate published successfully",    body = PublishResponse, content_type = "application/json"),
-        (status = 400,  description = "Bad request / malformed payload"),
-        (status = 401,  description = "Authentication required"),
-        (status = 403,  description = "Access denied"),
-        (status = 409,  description = "Version already exists"),
-        (status = 422,  description = "Validation error"),
-        (status = 429,  description = "Too many requests"),
-    ),
-    security(("bearerAuth" = []))
-)]
 #[put("/new")]
 pub async fn handle(body: web::Bytes) -> impl Responder {
     // ------------------------------------------------------------------

@@ -1,6 +1,6 @@
 [package]
 name = "quench-srv"
-version = "0.1.9"
+version = "0.1.10"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Quench - simple server framework"
@@ -33,5 +33,3 @@ sha2 = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
-utoipa = { workspace = true }
-utoipa-swagger-ui = { workspace = true }

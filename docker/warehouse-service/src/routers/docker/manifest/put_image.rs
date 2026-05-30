@@ -12,35 +12,6 @@ const DOCKER_MANIFEST_LIST_V2: &str = "application/vnd.docker.distribution.manif
 const OCI_IMAGE_MANIFEST_V1: &str = "application/vnd.oci.image.manifest.v1+json";
 const OCI_IMAGE_INDEX_V1: &str = "application/vnd.oci.image.index.v1+json";
 
-#[utoipa::path(
-    put,
-    operation_id = "put_image",
-    tags = ["docker - manifest"],
-    path = "/{name}/manifests/{reference}",
-    params(
-        ("name" = String, Path, description = "Repository name (may contain slashes)"),
-        ("reference" = String, Path, description = "Tag or digest of the target manifest"),
-    ),
-    request_body(
-        content = String,
-        content(
-            ("application/vnd.docker.distribution.manifest.v2+json"),
-            ("application/vnd.oci.image.manifest.v1+json"),
-            ("application/vnd.docker.distribution.manifest.list.v2+json"),
-            ("application/vnd.oci.image.index.v1+json")
-        ),
-        description = "Docker/OCI manifest payload",
-    ),
-    responses(
-        (status = 201, description = "Manifest created successfully"),
-        (status = 400, description = "Invalid name, reference, or manifest."),
-        (status = 401, description = "Authentication required"),
-        (status = 403, description = "Access denied"),
-        (status = 404, description = "Repository not found"),
-        (status = 405, description = "Operation not allowed"),
-        (status = 429, description = "Too many requests"),
-    )
-)]
 #[put("/{name:.+}/manifests/{reference}")]
 pub async fn handle(
     req: HttpRequest,

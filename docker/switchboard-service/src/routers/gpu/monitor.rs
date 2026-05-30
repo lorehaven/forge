@@ -1,8 +1,7 @@
 use serde::Serialize;
 use std::process::Command;
-use utoipa::ToSchema;
 
-#[derive(Debug, Default, Serialize, ToSchema)]
+#[derive(Debug, Default, Serialize)]
 pub struct GpuInfo {
     pub name: String,
     pub total_gb: f64,

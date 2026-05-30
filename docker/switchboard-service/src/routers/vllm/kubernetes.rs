@@ -3,6 +3,7 @@ use crate::routers::vllm::{LaunchRequest, VllmInstance};
 use async_trait::async_trait;
 use chrono::Utc;
 use k8s_openapi::api::core::v1::{Pod, Service};
+use k8s_openapi::jiff;
 use kube::Client;
 use kube::api::{Api, DeleteParams, ListParams, PostParams};
 use serde_json::json;
@@ -76,7 +77,7 @@ impl VllmEngine for KubernetesVllmEngine {
                 .creation_timestamp
                 .as_ref()
                 .map(|t| t.0)
-                .unwrap_or_else(Utc::now);
+                .unwrap_or_else(jiff::Timestamp::now);
 
             instances.push(VllmInstance {
                 id: format!("pod:{namespace}:{name}"),
@@ -95,7 +96,11 @@ impl VllmEngine for KubernetesVllmEngine {
                     .get("vllm-enable-prefix-caching")
                     .map(|v| v == "true")
                     .unwrap_or(false),
-                started_at,
+                started_at: chrono::DateTime::<Utc>::from_timestamp(
+                    started_at.as_second(),
+                    started_at.subsec_nanosecond() as u32,
+                )
+                .expect("timestamp out of range for chrono"),
                 status: status.to_string(),
                 log_path: None, // K8s logs are accessed differently
                 last_error: None,

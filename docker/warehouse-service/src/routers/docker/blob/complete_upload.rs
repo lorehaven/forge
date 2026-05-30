@@ -4,31 +4,6 @@ use crate::utils::sha256::sha256_hex;
 use actix_web::{HttpResponse, Responder, put, web};
 use quench_srv::prelude::error;
 
-#[utoipa::path(
-    put,
-    operation_id = "complete_upload",
-    tags = ["docker - blob"],
-    path = "/{name}/blobs/uploads/{uuid}",
-    params(
-        ("name" = String, Path, description = "Repository name (may contain slashes)"),
-        ("uuid" = String, Path, description = "Upload UUID"),
-        ("digest" = String, Query, description = "sha256 digest"),
-    ),
-    request_body(
-        content = String,
-        content_type = "application/octet-stream",
-        description = "Optional final blob chunk",
-    ),
-    responses(
-        (status = 201, description = "Upload completed successfully"),
-        (status = 400, description = "Bad request"),
-        (status = 401, description = "Authentication required"),
-        (status = 403, description = "Access denied"),
-        (status = 404, description = "Upload session not found"),
-        (status = 416, description = "Requested range not satisfiable"),
-        (status = 429, description = "Too many requests"),
-    )
-)]
 #[put("/{name:.*}/blobs/uploads/{uuid}")]
 pub async fn handle(
     path: web::Path<(String, String)>,

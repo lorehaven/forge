@@ -4,24 +4,13 @@ use serde::Serialize;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
-use utoipa::ToSchema;
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
 struct GcReport {
     deleted: usize,
     kept: usize,
 }
 
-#[utoipa::path(
-    post,
-    path = "/docker/gc",
-    operation_id = "run_garbage_collection",
-    tags = ["admin"],
-    responses(
-        (status = 200, description = "Garbage collection completed", body = GcReport),
-        (status = 500, description = "GC failure")
-    )
-)]
 #[post("/docker/gc")]
 pub async fn handle() -> impl Responder {
     match garbage_collect().await {

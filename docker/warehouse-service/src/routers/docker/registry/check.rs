@@ -1,24 +1,10 @@
 use actix_web::{HttpResponse, Responder, get, head};
 
-#[utoipa::path(
-    get,
-    operation_id = "check",
-    tags = ["docker - registry"],
-    path = "/",
-    responses((status = 200, description = "Registry is available"))
-)]
 #[get("/")]
 pub async fn handle_get() -> impl Responder {
     respond().await
 }
 
-#[utoipa::path(
-    head,
-    operation_id = "check",
-    tags = ["docker - registry"],
-    path = "/",
-    responses((status = 200, description = "Registry is available"))
-)]
 #[head("/")]
 pub async fn handle_head() -> impl Responder {
     respond().await

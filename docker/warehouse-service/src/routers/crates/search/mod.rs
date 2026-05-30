@@ -1,7 +1,6 @@
 use crate::routers::crates::CRATES_STORAGE_ROOT;
 use actix_web::{HttpResponse, Responder, get, web};
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
 
 // ---------------------------------------------------------------------------
 // Query parameters
@@ -30,19 +29,19 @@ fn default_page() -> usize {
 // Response types
 // ---------------------------------------------------------------------------
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
 pub struct SearchCrate {
     name: String,
     max_version: String,
     description: Option<String>,
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
 pub struct SearchMeta {
     total: usize,
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
 pub struct SearchResponse {
     crates: Vec<SearchCrate>,
     meta: SearchMeta,
@@ -52,22 +51,6 @@ pub struct SearchResponse {
 // Handler
 // ---------------------------------------------------------------------------
 
-#[utoipa::path(
-    get,
-    operation_id = "search_crates",
-    tags = ["crates - search"],
-    path = "",
-    params(
-        ("q"        = String,          Query, description = "Search query string"),
-        ("per_page" = Option<usize>,   Query, description = "Results per page (max 100, default 10)"),
-        ("page"     = Option<usize>,   Query, description = "Page number (default 1)"),
-    ),
-    responses(
-        (status = 200, description = "Search results", body = SearchResponse, content_type = "application/json"),
-        (status = 400, description = "Bad request"),
-        (status = 429, description = "Too many requests"),
-    )
-)]
 #[get("")]
 pub async fn handle(query: web::Query<SearchQuery>) -> impl Responder {
     let q = query.q.trim().to_ascii_lowercase();

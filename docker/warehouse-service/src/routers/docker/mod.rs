@@ -3,7 +3,6 @@ use actix_web::dev::HttpServiceFactory;
 use actix_web::web;
 use serde::Deserialize;
 use std::path::{Component, Path, PathBuf};
-use utoipa::OpenApi;
 
 mod blob;
 mod manifest;
@@ -86,40 +85,6 @@ fn validate_tag_reference(reference: &str) -> bool {
 pub struct DigestQuery {
     digest: String,
 }
-
-#[derive(OpenApi)]
-#[openapi(
-    paths(
-        registry::catalog::handle,
-        registry::check::handle_get,
-        registry::check::handle_head,
-        registry::tags::handle,
-        blob::check_exists::handle,
-        blob::retrieve::handle,
-        blob::get_upload_status::handle,
-        blob::cancel_upload::handle,
-        blob::complete_upload::handle,
-        blob::start_upload::handle,
-        blob::upload_chunk::handle,
-        manifest::check_exists::handle,
-        manifest::get_image::handle,
-        manifest::put_image::handle,
-        manifest::delete_image::handle,
-    ),
-    tags(
-        (name = "docker - blob", description = "Docker blob endpoints"),
-        (name = "docker - manifest", description = "Docker manifests endpoints"),
-        (name = "docker - registry", description = "Docker registry endpoints"),
-    )
-)]
-pub struct DockerApiDoc;
-
-#[derive(OpenApi)]
-#[openapi(
-    paths(token::handle),
-    tags((name = "docker", description = "Auth endpoints"))
-)]
-pub struct DockerAuthApiDoc;
 
 pub fn scope() -> impl HttpServiceFactory {
     web::scope("/v2")

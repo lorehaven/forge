@@ -2,7 +2,6 @@ use crate::routers::crates::{CRATES_STORAGE_ROOT, validate_crate_name};
 use actix_web::{HttpResponse, Responder, delete, get, put, web};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use utoipa::ToSchema;
 
 // ---------------------------------------------------------------------------
 // Storage helper
@@ -46,7 +45,7 @@ async fn crate_exists(name: &str) -> bool {
 // Shared types
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Owner {
     /// Numeric id (monotonically assigned on add; stable for the lifetime of
     /// the entry – purely informational for Cargo).
@@ -58,18 +57,18 @@ pub struct Owner {
     pub name: Option<String>,
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
 pub struct OwnersRequest {
     /// List of login names to add or remove.
     pub users: Vec<String>,
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
 pub struct OwnersResponse {
     pub users: Vec<Owner>,
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
 pub struct OkResponse {
     pub ok: bool,
 }
@@ -78,21 +77,6 @@ pub struct OkResponse {
 // GET /api/v1/crates/{name}/owners
 // ---------------------------------------------------------------------------
 
-#[utoipa::path(
-    get,
-    operation_id = "list_owners",
-    tags = ["crates - owners"],
-    path = "/{name}/owners",
-    params(
-        ("name" = String, Path, description = "Crate name"),
-    ),
-    responses(
-        (status = 200, description = "Owner list", body = OwnersResponse, content_type = "application/json"),
-        (status = 401, description = "Authentication required"),
-        (status = 404, description = "Crate not found"),
-    ),
-    security(("bearerAuth" = []))
-)]
 #[get("/{name}/owners")]
 pub async fn list(path: web::Path<String>) -> impl Responder {
     let name = path.into_inner().to_ascii_lowercase();
@@ -112,28 +96,6 @@ pub async fn list(path: web::Path<String>) -> impl Responder {
 // PUT /api/v1/crates/{name}/owners
 // ---------------------------------------------------------------------------
 
-#[utoipa::path(
-    put,
-    operation_id = "add_owners",
-    tags = ["crates - owners"],
-    path = "/{name}/owners",
-    params(
-        ("name" = String, Path, description = "Crate name"),
-    ),
-    request_body(
-        content = OwnersRequest,
-        content_type = "application/json",
-        description = "List of login names to add",
-    ),
-    responses(
-        (status = 200, description = "Owners added", body = OkResponse, content_type = "application/json"),
-        (status = 400, description = "Bad request"),
-        (status = 401, description = "Authentication required"),
-        (status = 403, description = "Access denied"),
-        (status = 404, description = "Crate not found"),
-    ),
-    security(("bearerAuth" = []))
-)]
 #[put("/{name}/owners")]
 pub async fn add(path: web::Path<String>, body: web::Json<OwnersRequest>) -> impl Responder {
     let name = path.into_inner().to_ascii_lowercase();
@@ -186,28 +148,6 @@ pub async fn add(path: web::Path<String>, body: web::Json<OwnersRequest>) -> imp
 // DELETE /api/v1/crates/{name}/owners
 // ---------------------------------------------------------------------------
 
-#[utoipa::path(
-    delete,
-    operation_id = "remove_owners",
-    tags = ["crates - owners"],
-    path = "/{name}/owners",
-    params(
-        ("name" = String, Path, description = "Crate name"),
-    ),
-    request_body(
-        content = OwnersRequest,
-        content_type = "application/json",
-        description = "List of login names to remove",
-    ),
-    responses(
-        (status = 200, description = "Owners removed", body = OkResponse, content_type = "application/json"),
-        (status = 400, description = "Bad request"),
-        (status = 401, description = "Authentication required"),
-        (status = 403, description = "Access denied"),
-        (status = 404, description = "Crate not found"),
-    ),
-    security(("bearerAuth" = []))
-)]
 #[delete("/{name}/owners")]
 pub async fn remove(path: web::Path<String>, body: web::Json<OwnersRequest>) -> impl Responder {
     let name = path.into_inner().to_ascii_lowercase();

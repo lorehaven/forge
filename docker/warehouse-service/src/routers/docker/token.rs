@@ -5,9 +5,8 @@ use jsonwebtoken::{EncodingKey, Header, encode};
 use quench_srv::prelude::UserDb;
 use quench_srv::prelude::{Claims, JwtConfig};
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
 pub struct TokenQuery {
     pub service: String,
     pub scope: Option<String>,
@@ -16,28 +15,13 @@ pub struct TokenQuery {
     pub offline_token: Option<bool>,
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
 pub struct TokenResponse {
     pub token: String,
     pub expires_in: usize,
     pub issued_at: String,
 }
 
-#[utoipa::path(
-    get,
-    path = "",
-    operation_id = "get_token",
-    tags = ["docker"],
-    params(
-        ("service" = String, Query, description = "Registry service name"),
-        ("scope" = String, Query, description = "Requested repository scope")
-    ),
-    responses(
-        (status = 200, description = "JWT token issued", body = TokenResponse),
-        (status = 400, description = "Invalid service"),
-        (status = 401, description = "Authentication required")
-    )
-)]
 #[get("/token")]
 pub async fn handle(
     req: HttpRequest,

@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 use std::io::Cursor;
 use std::path::{Component, Path, PathBuf};
 use std::sync::LazyLock;
-use utoipa::OpenApi;
 use zip::write::SimpleFileOptions;
 
 #[derive(Clone, Debug)]
@@ -243,24 +242,6 @@ fn add_dir_to_zip(
     Ok(())
 }
 
-#[derive(OpenApi)]
-#[openapi(
-    paths(
-        list_storages,
-        list_entries,
-        upload_file,
-        delete_file,
-        preview_file,
-        download_path,
-        create_folder,
-        delete_folder,
-        bulk_delete,
-        bulk_download,
-    ),
-    tags((name = "files", description = "Plain file storage endpoints"))
-)]
-pub struct FilesApiDoc;
-
 pub fn scope() -> impl HttpServiceFactory {
     web::scope("/api/v1/files")
         .wrap(NormalizePath::trim())
@@ -276,12 +257,6 @@ pub fn scope() -> impl HttpServiceFactory {
         .service(bulk_download)
 }
 
-#[utoipa::path(
-    get,
-    tags = ["files"],
-    path = "/storages",
-    responses((status = 200, description = "Configured storages"))
-)]
 #[get("/storages")]
 async fn list_storages() -> impl Responder {
     HttpResponse::Ok().json(StoragesResponse {
@@ -289,16 +264,6 @@ async fn list_storages() -> impl Responder {
     })
 }
 
-#[utoipa::path(
-    get,
-    tags = ["files"],
-    path = "/{storage}/entries",
-    params(
-        ("storage" = String, Path, description = "Storage name"),
-        ("path" = Option<String>, Query, description = "Path inside storage"),
-    ),
-    responses((status = 200, description = "Directory entries"))
-)]
 #[get("/{storage}/entries")]
 async fn list_entries(path: web::Path<String>, query: web::Query<PathQuery>) -> impl Responder {
     let storage_name = path.into_inner();
@@ -316,17 +281,6 @@ async fn list_entries(path: web::Path<String>, query: web::Query<PathQuery>) -> 
     })
 }
 
-#[utoipa::path(
-    put,
-    tags = ["files"],
-    path = "/{storage}/file",
-    request_body = String,
-    params(
-        ("storage" = String, Path, description = "Storage name"),
-        ("path" = String, Query, description = "Path to file"),
-    ),
-    responses((status = 201, description = "File uploaded"))
-)]
 #[put("/{storage}/file")]
 async fn upload_file(
     path: web::Path<String>,
@@ -362,16 +316,6 @@ async fn upload_file(
     }
 }
 
-#[utoipa::path(
-    delete,
-    tags = ["files"],
-    path = "/{storage}/file",
-    params(
-        ("storage" = String, Path, description = "Storage name"),
-        ("path" = String, Query, description = "Path to file"),
-    ),
-    responses((status = 204, description = "File deleted"))
-)]
 #[delete("/{storage}/file")]
 async fn delete_file(path: web::Path<String>, query: web::Query<PathQuery>) -> impl Responder {
     let storage_name = path.into_inner();
@@ -396,16 +340,6 @@ async fn delete_file(path: web::Path<String>, query: web::Query<PathQuery>) -> i
     }
 }
 
-#[utoipa::path(
-    get,
-    tags = ["files"],
-    path = "/{storage}/preview",
-    params(
-        ("storage" = String, Path, description = "Storage name"),
-        ("path" = String, Query, description = "Path to file"),
-    ),
-    responses((status = 200, description = "Preview content"))
-)]
 #[get("/{storage}/preview")]
 async fn preview_file(path: web::Path<String>, query: web::Query<PathQuery>) -> impl Responder {
     let storage_name = path.into_inner();
@@ -451,16 +385,6 @@ async fn preview_file(path: web::Path<String>, query: web::Query<PathQuery>) -> 
     })
 }
 
-#[utoipa::path(
-    get,
-    tags = ["files"],
-    path = "/{storage}/download",
-    params(
-        ("storage" = String, Path, description = "Storage name"),
-        ("path" = String, Query, description = "Path to file or folder"),
-    ),
-    responses((status = 200, description = "File or zip bytes"))
-)]
 #[get("/{storage}/download")]
 async fn download_path(path: web::Path<String>, query: web::Query<PathQuery>) -> impl Responder {
     let storage_name = path.into_inner();
@@ -513,16 +437,6 @@ async fn download_path(path: web::Path<String>, query: web::Query<PathQuery>) ->
     HttpResponse::NotFound().json(serde_json::json!({"error": "path not found"}))
 }
 
-#[utoipa::path(
-    post,
-    tags = ["files"],
-    path = "/{storage}/folder",
-    params(
-        ("storage" = String, Path, description = "Storage name"),
-        ("path" = String, Query, description = "Path to folder"),
-    ),
-    responses((status = 201, description = "Folder created"))
-)]
 #[post("/{storage}/folder")]
 async fn create_folder(path: web::Path<String>, query: web::Query<PathQuery>) -> impl Responder {
     let storage_name = path.into_inner();
@@ -544,16 +458,6 @@ async fn create_folder(path: web::Path<String>, query: web::Query<PathQuery>) ->
     }
 }
 
-#[utoipa::path(
-    delete,
-    tags = ["files"],
-    path = "/{storage}/folder",
-    params(
-        ("storage" = String, Path, description = "Storage name"),
-        ("path" = String, Query, description = "Path to folder"),
-    ),
-    responses((status = 204, description = "Folder deleted"))
-)]
 #[delete("/{storage}/folder")]
 async fn delete_folder(path: web::Path<String>, query: web::Query<PathQuery>) -> impl Responder {
     let storage_name = path.into_inner();
@@ -578,12 +482,6 @@ async fn delete_folder(path: web::Path<String>, query: web::Query<PathQuery>) ->
     }
 }
 
-#[utoipa::path(
-    delete,
-    tags = ["files"],
-    path = "/{storage}/bulk",
-    responses((status = 200, description = "Bulk delete result"))
-)]
 #[delete("/{storage}/bulk")]
 async fn bulk_delete(path: web::Path<String>, body: web::Json<BulkRequest>) -> impl Responder {
     let storage_name = path.into_inner();
@@ -611,12 +509,6 @@ async fn bulk_delete(path: web::Path<String>, body: web::Json<BulkRequest>) -> i
     HttpResponse::Ok().json(BulkDeleteResponse { deleted })
 }
 
-#[utoipa::path(
-    post,
-    tags = ["files"],
-    path = "/{storage}/bulk-download",
-    responses((status = 200, description = "Zip archive with requested paths"))
-)]
 #[post("/{storage}/bulk-download")]
 async fn bulk_download(path: web::Path<String>, body: web::Json<BulkRequest>) -> impl Responder {
     let storage_name = path.into_inner();

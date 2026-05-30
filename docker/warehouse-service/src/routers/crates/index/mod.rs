@@ -4,7 +4,6 @@ use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
 use quench_srv::prelude::with_base_path;
 use serde::Serialize;
 use std::sync::LazyLock;
-use utoipa::ToSchema;
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
@@ -12,7 +11,7 @@ use utoipa::ToSchema;
 static REGISTRY_BASE_URL: LazyLock<String> =
     LazyLock::new(|| envmnt::get_or("REGISTRY_BASE_URL", "https://localhost"));
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
 struct IndexConfig {
     /// Download URL template (or base URL Cargo appends `/{crate}/{version}/download` to)
     dl: String,
@@ -23,15 +22,6 @@ struct IndexConfig {
     auth_required: bool,
 }
 
-#[utoipa::path(
-    get,
-    operation_id = "get_index_config",
-    tags = ["crates - index"],
-    path = "/config.json",
-    responses(
-        (status = 200, description = "Registry config", body = IndexConfig, content_type = "application/json"),
-    )
-)]
 #[get("/config.json")]
 async fn get_index_config() -> impl Responder {
     let base = format!(
@@ -53,22 +43,6 @@ async fn get_index_config() -> impl Responder {
 // Per-crate index
 // ---------------------------------------------------------------------------
 
-#[utoipa::path(
-    get,
-    operation_id = "get_crate_index",
-    tags = ["crates - index"],
-    path = "/{prefix}/{name}",
-    params(
-        ("prefix" = String, Path, description = "Directory prefix derived from crate name"),
-        ("name"   = String, Path, description = "Lowercase crate name"),
-        ("If-None-Match" = Option<String>, Header, description = "ETag from a previous response"),
-    ),
-    responses(
-        (status = 200, description = "Newline-delimited JSON index records", content_type = "text/plain"),
-        (status = 304, description = "Not modified"),
-        (status = 404, description = "Crate not found"),
-    )
-)]
 #[get("/{path:.*}")]
 async fn get_crate_index(req: HttpRequest, path: web::Path<String>) -> impl Responder {
     let full_path = path.into_inner();

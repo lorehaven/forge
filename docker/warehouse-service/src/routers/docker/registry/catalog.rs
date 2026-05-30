@@ -1,36 +1,18 @@
 use crate::routers::docker::registry::storage::list_repositories;
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
 struct CatalogQuery {
     n: Option<usize>,
     last: Option<String>,
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
 struct CatalogResponse {
     repositories: Vec<String>,
 }
 
-#[utoipa::path(
-    get,
-    operation_id = "catalog",
-    tags = ["docker - registry"],
-    path = "/_catalog",
-    params(
-        ("n" = Option<usize>, Query, description = "Maximum number of repositories to return"),
-        ("last" = Option<String>, Query, description = "Last repository from previous page"),
-    ),
-    responses(
-        (
-            status = 200,
-            description = "List of repositories",
-            body = CatalogResponse
-        )
-    )
-)]
 #[get("/_catalog")]
 pub async fn handle(req: HttpRequest) -> impl Responder {
     let query = web::Query::<CatalogQuery>::from_query(req.query_string()).ok();

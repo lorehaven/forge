@@ -11,8 +11,6 @@ use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use utoipa::openapi::OpenApi;
-use utoipa_swagger_ui::SwaggerUi;
 
 pub mod domain;
 pub mod middleware;
@@ -35,7 +33,6 @@ pub trait ScopedModule: Send + Sync + 'static {
 pub async fn serve<R, S, RF, SF>(
     root_module: R,
     scoped_module: S,
-    openapi: OpenApi,
     db: Option<Arc<DbWrapper>>,
 ) -> std::io::Result<()>
 where
@@ -68,10 +65,6 @@ where
                     .service(routers::health::scope())
                     .service(routers::swagger::swagger_redirect)
                     .service(routers::swagger::swagger_index_redirect)
-                    .service(
-                        SwaggerUi::new("/swagger-ui/{_:.*}")
-                            .url("/api-doc/openapi.json", openapi.clone()),
-                    )
                     .service(scoped_module()),
             )
             .service(root_module())

@@ -6,7 +6,6 @@ use quench_srv::prelude::JwtConfig;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::path::Path;
 use std::sync::{Arc, LazyLock};
-use utoipa::{OpenApi, ToSchema};
 
 pub mod discovery;
 pub mod store;
@@ -26,17 +25,6 @@ pub struct VllmArchitecturesFile {
 }
 
 // ---------------------------------------------------------------------------
-// OpenAPI
-// ---------------------------------------------------------------------------
-
-#[derive(OpenApi)]
-#[openapi(
-    paths(handle, delete_model, refresh_models, list_running_models),
-    tags((name = "models", description = "Models endpoints"))
-)]
-pub struct ModelsApiDoc;
-
-// ---------------------------------------------------------------------------
 // Scope
 // ---------------------------------------------------------------------------
 
@@ -53,18 +41,18 @@ pub fn scope(engine: Arc<dyn VllmEngine>) -> impl HttpServiceFactory {
 // Request type
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
 pub struct DeleteModelRequest {
     pub path: String,
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize, ToSchema, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum ModelType {
     HF,
     GGUF,
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize, ToSchema, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum Quant {
     #[serde(alias = "ALL", alias = "all")]
     ALL,
@@ -147,7 +135,7 @@ impl Quant {
     }
 }
 
-#[derive(Copy, Clone, Debug, ToSchema, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Context {
     ALL,
 
@@ -241,7 +229,7 @@ impl Context {
     }
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
 pub struct SearchQuery {
     pub r#type: ModelType,
     pub name: String,
@@ -253,7 +241,7 @@ pub struct SearchQuery {
 // Response type
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelEstimate {
     pub quant: Quant,
     pub context: Context,
@@ -262,7 +250,7 @@ pub struct ModelEstimate {
     pub total_gb: f64,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Model {
     pub source: String,
     pub name: String,
@@ -277,7 +265,7 @@ pub struct Model {
     pub estimates: Vec<ModelEstimate>,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RunningModel {
     pub id: String,
     pub model: String,
@@ -288,37 +276,11 @@ pub struct RunningModel {
 // ---------------------------------------------------------------------------
 // Fetch endpoint
 // ---------------------------------------------------------------------------
-
-#[utoipa::path(
-    post,
-    path = "/list",
-    operation_id = "fetch_available_models",
-    tags = ["models"],
-    request_body(
-        content = SearchQuery,
-        description = "Model search filters",
-        content_type = "application/json"
-    ),
-    responses(
-        (status = 200, description = "List of available models", body = Vec<Model>, content_type = "application/json"),
-    )
-)]
 #[post("/list")]
 async fn handle(body: Json<SearchQuery>) -> impl Responder {
     HttpResponse::Ok().json(fetch_models(body.r#type, &body.name, body.quant, body.context).await)
 }
 
-#[utoipa::path(
-    get,
-    path = "/running",
-    operation_id = "list_running_models",
-    tags = ["models"],
-    responses(
-        (status = 200, description = "List of running models", body = Vec<RunningModel>, content_type = "application/json"),
-        (status = 401, description = "Unauthorized"),
-        (status = 403, description = "Forbidden - Admin or System role required"),
-    )
-)]
 #[get("/running")]
 async fn list_running_models(
     req: actix_web::HttpRequest,
@@ -349,17 +311,6 @@ async fn list_running_models(
     }
 }
 
-#[utoipa::path(
-    post,
-    path = "/refresh",
-    operation_id = "refresh_models",
-    tags = ["models"],
-    responses(
-        (status = 200, description = "Model cache refreshed successfully"),
-        (status = 401, description = "Unauthorized"),
-        (status = 403, description = "Forbidden - Admin or System role required"),
-    )
-)]
 #[post("/refresh")]
 async fn refresh_models(
     req: actix_web::HttpRequest,
@@ -392,23 +343,6 @@ async fn refresh_models(
     HttpResponse::Ok().finish()
 }
 
-#[utoipa::path(
-    post,
-    path = "/delete",
-    operation_id = "delete_model",
-    tags = ["models"],
-    request_body(
-        content = DeleteModelRequest,
-        description = "Model deletion request",
-        content_type = "application/json"
-    ),
-    responses(
-        (status = 200, description = "Model deleted successfully"),
-        (status = 401, description = "Unauthorized"),
-        (status = 403, description = "Forbidden - Admin or System role required"),
-        (status = 500, description = "Failed to delete model"),
-    )
-)]
 #[post("/delete")]
 async fn delete_model(
     req: actix_web::HttpRequest,

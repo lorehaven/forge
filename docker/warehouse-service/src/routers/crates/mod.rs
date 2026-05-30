@@ -4,7 +4,6 @@ use actix_web::middleware::NormalizePath;
 use actix_web::web;
 use ops::{download, publish, unyank, yank};
 use std::path::PathBuf;
-use utoipa::OpenApi;
 
 pub mod index;
 pub mod ops;
@@ -80,42 +79,6 @@ pub(super) fn validate_version(version: &str) -> bool {
         .bytes()
         .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'+'))
 }
-
-// ---------------------------------------------------------------------------
-// OpenAPI
-// ---------------------------------------------------------------------------
-
-#[derive(OpenApi)]
-#[openapi(
-    paths(
-        publish::handle,
-        download::handle,
-        yank::handle,
-        unyank::handle,
-        search::handle,
-        owners::list,
-        owners::add,
-        owners::remove,
-    ),
-    tags(
-        (name = "crates", description = "Crate publish, yank, and download endpoints"),
-        (name = "crates - search", description = "Search endpoint"),
-        (name = "crates - owners", description = "Crate ownership management"),
-    )
-)]
-pub struct CratesApiDoc;
-
-#[derive(OpenApi)]
-#[openapi(
-    paths(
-        index::get_index_config,
-        index::get_crate_index,
-    ),
-    tags(
-        (name = "crates - index",  description = "Sparse registry index (cargo sparse protocol)"),
-    )
-)]
-pub struct CratesIndexApiDoc;
 
 // ---------------------------------------------------------------------------
 // Actix scope

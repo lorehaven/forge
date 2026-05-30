@@ -37,5 +37,5 @@ async fn main() -> std::io::Result<()> {
     tracing_subscriber::fmt().init();
     dotenvy::dotenv().ok();
 
-    serve(root_scope, base_path_scope, routers::openapi(), None).await
+    serve(root_scope, base_path_scope, None).await
 }

@@ -20,13 +20,12 @@ use actix_web::{HttpResponse, Responder, post};
 use serde::Serialize;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use utoipa::ToSchema;
 
 // ---------------------------------------------------------------------------
 // Response type
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Default, Serialize, ToSchema)]
+#[derive(Debug, Default, Serialize)]
 pub struct CratesGcReport {
     /// Number of `.crate` tarballs deleted (yanked or orphaned)
     pub deleted_crates: usize,
@@ -44,16 +43,6 @@ pub struct CratesGcReport {
 // Handler
 // ---------------------------------------------------------------------------
 
-#[utoipa::path(
-    post,
-    path = "/crates/gc",
-    operation_id = "run_crates_garbage_collection",
-    tags = ["admin"],
-    responses(
-        (status = 200, description = "Garbage collection completed", body = CratesGcReport, content_type = "application/json"),
-        (status = 500, description = "GC failure"),
-    )
-)]
 #[post("/crates/gc")]
 pub async fn handle() -> impl Responder {
     match garbage_collect().await {

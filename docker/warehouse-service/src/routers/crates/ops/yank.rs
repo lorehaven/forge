@@ -3,31 +3,12 @@ use crate::routers::crates::{
 };
 use actix_web::{HttpResponse, Responder, delete, web};
 use serde::Serialize;
-use utoipa::ToSchema;
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
 pub struct OkResponse {
     ok: bool,
 }
 
-#[utoipa::path(
-    delete,
-    operation_id = "yank_crate",
-    tags = ["crates"],
-    path = "/{name}/{version}/yank",
-    params(
-        ("name"    = String, Path, description = "Crate name"),
-        ("version" = String, Path, description = "Crate version"),
-    ),
-    responses(
-        (status = 200,  description = "Crate version yanked", body = OkResponse, content_type = "application/json"),
-        (status = 401,  description = "Authentication required"),
-        (status = 403,  description = "Access denied"),
-        (status = 404,  description = "Crate or version not found"),
-        (status = 429,  description = "Too many requests"),
-    ),
-    security(("bearerAuth" = []))
-)]
 #[delete("/{name}/{version}/yank")]
 pub async fn handle(path: web::Path<(String, String)>) -> impl Responder {
     let (name, version) = path.into_inner();

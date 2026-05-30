@@ -10,24 +10,12 @@ use actix_web::{HttpResponse, Responder, delete, get, post, web};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use utoipa::{OpenApi, ToSchema};
-
-// ---------------------------------------------------------------------------
-// OpenAPI
-// ---------------------------------------------------------------------------
-
-#[derive(OpenApi)]
-#[openapi(
-    paths(list_instances, launch_instance, stop_instance, handle_ws),
-    components(schemas(VllmInstance, LaunchRequest))
-)]
-pub struct VllmApiDoc;
 
 // ---------------------------------------------------------------------------
 // Models
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Serialize, Deserialize, ToSchema, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct VllmInstance {
     pub id: String,
     pub namespace: String,
@@ -39,7 +27,6 @@ pub struct VllmInstance {
     pub gpu_memory_utilization: Option<f32>,
     pub enable_prefix_caching: bool,
 
-    #[schema(value_type = String, format = DateTime)]
     pub started_at: DateTime<Utc>,
 
     pub status: String,
@@ -47,7 +34,7 @@ pub struct VllmInstance {
     pub last_error: Option<String>,
 }
 
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
 pub struct LaunchRequest {
     pub model: String,
     pub host: String,
@@ -99,11 +86,6 @@ pub fn scope(engine: Arc<dyn VllmEngine>) -> impl HttpServiceFactory {
 // Handlers
 // ---------------------------------------------------------------------------
 
-#[utoipa::path(
-    get,
-    path = "/instances",
-    responses((status = 200, body = [VllmInstance]))
-)]
 #[get("/instances")]
 async fn list_instances(engine: web::Data<Arc<dyn VllmEngine>>) -> impl Responder {
     match engine.list_instances().await {
@@ -115,12 +97,6 @@ async fn list_instances(engine: web::Data<Arc<dyn VllmEngine>>) -> impl Responde
     }
 }
 
-#[utoipa::path(
-    post,
-    path = "/instances",
-    request_body = LaunchRequest,
-    responses((status = 202, body = VllmInstance))
-)]
 #[post("/instances")]
 async fn launch_instance(
     req: web::Json<LaunchRequest>,
@@ -135,11 +111,6 @@ async fn launch_instance(
     }
 }
 
-#[utoipa::path(
-    delete,
-    path = "/instances/{id}",
-    responses((status = 204))
-)]
 #[delete("/instances/{id}")]
 async fn stop_instance(
     id: web::Path<String>,
@@ -158,13 +129,6 @@ async fn stop_instance(
 // WebSocket
 // ---------------------------------------------------------------------------
 
-#[utoipa::path(
-    get,
-    path = "/instances/ws",
-    responses(
-        (status = 101, description = "WebSocket upgraded"),
-    )
-)]
 #[get("/instances/ws")]
 async fn handle_ws(
     req: actix_web::HttpRequest,

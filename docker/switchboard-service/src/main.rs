@@ -33,7 +33,6 @@ async fn main() -> std::io::Result<()> {
     serve(
         root_scope,
         move || base_path_scope(vllm_engine.clone()),
-        routers::openapi(),
         Some(db_wrapper),
     )
     .await

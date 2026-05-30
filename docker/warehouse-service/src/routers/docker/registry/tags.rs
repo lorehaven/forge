@@ -3,9 +3,8 @@ use crate::routers::docker::registry::storage::{TagListError, list_tags_for_repo
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
 use quench_srv::prelude::error;
 use serde::{Deserialize, Serialize};
-use utoipa::ToSchema;
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
 struct TagsResponse {
     name: String,
     tags: Vec<String>,
@@ -17,25 +16,6 @@ struct TagsQuery {
     last: Option<String>,
 }
 
-#[utoipa::path(
-    get,
-    operation_id = "get_tags",
-    path = "/{name}/tags/list",
-    tag = "docker - registry",
-    params(
-        ("name" = String, Path, description = "Repository name"),
-        ("n" = Option<usize>, Query, description = "Maximum number of repositories to return"),
-        ("last" = Option<String>, Query, description = "Last repository from previous page"),
-    ),
-    responses(
-        (
-            status = 200,
-            description = "List of tags",
-            body = TagsResponse
-        ),
-        (status = 404, description = "Repository not found")
-    )
-)]
 #[get("/{name:.+}/tags/list")]
 pub async fn handle(req: HttpRequest, path: web::Path<String>) -> impl Responder {
     let name = path.into_inner();

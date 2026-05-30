@@ -3,23 +3,6 @@ use crate::routers::docker::upload_path;
 use actix_web::{HttpResponse, Responder, delete, web};
 use quench_srv::prelude::error;
 
-#[utoipa::path(
-    delete,
-    operation_id = "cancel_upload",
-    tags = ["docker - blob"],
-    path = "/{name}/blobs/uploads/{uuid}",
-    params(
-        ("name" = String, Path, description = "Repository name (may contain slashes)"),
-        ("uuid" = String, Path, description = "Upload UUID"),
-    ),
-    responses(
-        (status = 204, description = "Upload session cancelled successfully. No body is returned."),
-        (status = 401, description = "Authentication required"),
-        (status = 403, description = "Access denied"),
-        (status = 404, description = "Upload session not found"),
-        (status = 429, description = "Too many requests"),
-    )
-)]
 #[delete("/{name:.+}/blobs/uploads/{uuid}")]
 pub async fn handle(path: web::Path<(String, String)>) -> impl Responder {
     let (name, uuid) = path.into_inner();

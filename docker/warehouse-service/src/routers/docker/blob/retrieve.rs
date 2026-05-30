@@ -6,56 +6,6 @@ use std::{io::SeekFrom, path::PathBuf};
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
-#[utoipa::path(
-    get,
-    operation_id = "retrieve",
-    tags = ["docker - blob"],
-    path = "/{name}/blobs/{digest}",
-    params(
-        ("name" = String, Path, description = "Repository name (may contain slashes)"),
-        ("digest" = String, Path, description = "sha256 digest"),
-        ("Range" = Option<String>, Header, description = "Optional HTTP range header, e.g. bytes=0-1023")
-    ),
-    responses(
-        (
-            status = 200,
-            description = "Full blob content returned",
-            content(
-                ("application/octet-stream")
-            ),
-            headers(
-                ("Docker-Content-Digest" = String, description = "Digest of the blob"),
-                ("Content-Length" = u64, description = "Total blob size in bytes"),
-                ("Accept-Ranges" = String, description = "Indicates support for byte ranges")
-            )
-        ),
-        (
-            status = 206,
-            description = "Partial blob content returned",
-            content(
-                ("application/octet-stream")
-            ),
-            headers(
-                ("Docker-Content-Digest" = String, description = "Digest of the blob"),
-                ("Content-Length" = u64, description = "Size of returned range"),
-                ("Content-Range" = String, description = "Returned byte range, e.g. bytes 0-1023/2048"),
-                ("Accept-Ranges" = String, description = "Indicates support for byte ranges")
-            )
-        ),
-        (
-            status = 307,
-            description = "Temporary redirect to external blob storage",
-            headers(
-                ("Location" = String, description = "Redirect target URL")
-            )
-        ),
-        (status = 401, description = "Authentication required"),
-        (status = 403, description = "Access denied"),
-        (status = 404, description = "Blob not found"),
-        (status = 416, description = "Requested range not satisfiable"),
-        (status = 429, description = "Too many requests"),
-    )
-)]
 #[get("/{name:.+}/blobs/{digest}")]
 pub async fn handle(req: HttpRequest, path: web::Path<(String, String)>) -> impl Responder {
     let (_, digest) = path.into_inner();

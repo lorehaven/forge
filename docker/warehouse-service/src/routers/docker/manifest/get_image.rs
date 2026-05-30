@@ -5,38 +5,6 @@ use crate::routers::docker::{
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
 use quench_srv::prelude::error;
 
-#[utoipa::path(
-    get,
-    operation_id = "get_image",
-    tags = ["docker - manifest"],
-    path = "/{name}/manifests/{reference}",
-    params(
-        ("Accept" = Option<String>, Header, description = "Manifest media types supported by client"),
-        ("name" = String, Path, description = "Repository name (may contain slashes)"),
-        ("reference" = String, Path, description = "Tag or digest of the target manifest"),
-    ),
-    responses(
-        (
-            status = 200,
-            description = "Manifest fetched successfully",
-            content(
-                ("application/vnd.docker.distribution.manifest.v2+json"),
-                ("application/vnd.oci.image.manifest.v1+json"),
-                ("application/vnd.docker.distribution.manifest.list.v2+json"),
-                ("application/vnd.oci.image.index.v1+json")
-            ),
-            headers(
-                ("Docker-Content-Digest" = String),
-                ("Content-Length" = u64),
-            )
-        ),
-        (status = 400, description = "Invalid name or reference"),
-        (status = 401, description = "Authentication required"),
-        (status = 403, description = "Access denied"),
-        (status = 404, description = "Repository or manifest not found"),
-        (status = 429, description = "Too many requests"),
-    )
-)]
 #[get("/{name:.+}/manifests/{reference}")]
 pub async fn handle(req: HttpRequest, path: web::Path<(String, String)>) -> impl Responder {
     let (name, reference) = path.into_inner();

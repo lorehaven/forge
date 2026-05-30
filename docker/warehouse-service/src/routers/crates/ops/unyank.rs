@@ -1,31 +1,12 @@
 use crate::routers::crates::{crate_file_path, validate_crate_name, validate_version};
 use actix_web::{HttpResponse, Responder, put, web};
 use serde::Serialize;
-use utoipa::ToSchema;
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
 pub struct OkResponse {
     ok: bool,
 }
 
-#[utoipa::path(
-    put,
-    operation_id = "unyank_crate",
-    tags = ["crates"],
-    path = "/{name}/{version}/unyank",
-    params(
-        ("name"    = String, Path, description = "Crate name"),
-        ("version" = String, Path, description = "Crate version"),
-    ),
-    responses(
-        (status = 200,  description = "Crate version unyanked", body = OkResponse, content_type = "application/json"),
-        (status = 401,  description = "Authentication required"),
-        (status = 403,  description = "Access denied"),
-        (status = 404,  description = "Crate or version not found"),
-        (status = 429,  description = "Too many requests"),
-    ),
-    security(("bearerAuth" = []))
-)]
 #[put("/{name}/{version}/unyank")]
 pub async fn handle(path: web::Path<(String, String)>) -> impl Responder {
     let (name, version) = path.into_inner();

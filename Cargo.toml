@@ -41,6 +41,8 @@ hex = { version = "0.4" }
 html5ever = { version = "0.39" }
 hmac = { version = "0.13" }
 jsonwebtoken = { version = "10.4", features = ["rust_crypto"] }
+kube = { version = "3.1", features = ["runtime", "derive"] }
+k8s-openapi = { version = "0.27", features = ["latest"] }
 markup5ever_rcdom = { version = "0.39" }
 minijinja = { version = "2.20", features = ["loader", "serde"] }
 moka = { version = "0.12", features = ["sync"] }
@@ -78,8 +80,6 @@ toml_edit = { version = "0.25" }
 tower-http = { version = "0.6", features = ["fs"] }
 tracing = { version = "0.1" }
 tracing-subscriber = { version = "0.3" }
-utoipa = { version = "5.5", features = ["macros"] }
-utoipa-swagger-ui = { version = "9.0", features = ["actix-web"] }
 uuid = { version = "1.23", features = ["v4"] }
 walkdir = { version = "2.5" }
 which = { version = "8.0" }

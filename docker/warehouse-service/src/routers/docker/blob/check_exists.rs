@@ -3,30 +3,6 @@ use crate::routers::docker::{blob_path, validate_digest};
 use actix_web::{HttpResponse, Responder, head, web};
 use quench_srv::prelude::error;
 
-#[utoipa::path(
-    head,
-    operation_id = "check_exists",
-    tags = ["docker - blob"],
-    path = "/{name}/blobs/{digest}",
-    params(
-        ("name" = String, Path, description = "Repository name (may contain slashes)"),
-        ("digest" = String, Path, description = "sha256 digest"),
-    ),
-    responses(
-        (
-            status = 200,
-            description = "Blob exists",
-            headers(
-                ("Docker-Content-Digest" = String),
-                ("Content-Length" = u64),
-            )
-        ),
-        (status = 401, description = "Authentication required"),
-        (status = 403, description = "Access denied"),
-        (status = 404, description = "Blob not found"),
-        (status = 429, description = "Too many requests"),
-    )
-)]
 #[head("/{repo:.*}/blobs/{digest}")]
 pub async fn handle(path: web::Path<(String, String)>) -> impl Responder {
     let (_, digest) = path.into_inner();

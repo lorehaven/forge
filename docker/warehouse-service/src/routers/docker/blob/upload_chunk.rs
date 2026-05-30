@@ -4,30 +4,6 @@ use actix_web::{HttpResponse, Responder, patch, web};
 use quench_srv::prelude::error;
 use tokio::io::AsyncWriteExt;
 
-#[utoipa::path(
-    patch,
-    operation_id = "upload_chunk",
-    tags = ["docker - blob"],
-    path = "/{name}/blobs/uploads/{uuid}",
-    params(
-        ("name" = String, Path, description = "Repository name (may contain slashes)"),
-        ("uuid" = String, Path, description = "Upload UUID"),
-    ),
-    request_body(
-        content = String,
-        content_type = "application/octet-stream",
-        description = "Binary blob chunk",
-    ),
-    responses(
-        (status = 202, description = "Chunk accepted and stored"),
-        (status = 400, description = "Malformed content or range"),
-        (status = 401, description = "Authentication required"),
-        (status = 403, description = "Access denied"),
-        (status = 404, description = "Upload session not found"),
-        (status = 416, description = "Range error"),
-        (status = 429, description = "Too many requests"),
-    )
-)]
 #[patch("/{name:.*}/blobs/uploads/{uuid}")]
 pub async fn handle(path: web::Path<(String, String)>, body: web::Bytes) -> impl Responder {
     let (name, uuid) = path.into_inner();

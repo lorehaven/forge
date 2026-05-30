@@ -3,51 +3,14 @@ use crate::routers::docker::{blob_exists, repository_path, validate_digest};
 use actix_web::{HttpResponse, Responder, post, web};
 use quench_srv::prelude::error;
 use serde::Deserialize;
-use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
 pub struct MountQuery {
     pub mount: Option<String>,
     pub from: Option<String>,
 }
 
-#[utoipa::path(
-    post,
-    operation_id = "start_upload",
-    tags = ["docker - blob"],
-    path = "/{name}/blobs/uploads/",
-    params(
-        ("name" = String, Path, description = "Repository name (may contain slashes)"),
-        ("mount" = Option<String>, Query, description = "Digest to mount"),
-        ("from" = Option<String>, Query, description = "Source repository"),
-    ),
-    responses(
-        (
-            status = 201,
-            description = "Upload completed",
-            headers(
-                ("Location" = String),
-                ("Docker-Content-Digest" = String),
-            )
-        ),
-        (
-            status = 202,
-            description = "Upload accepted",
-            headers(
-                ("Location" = String),
-                ("Docker-Upload-UUID" = String),
-                ("Range" = String),
-            )
-        ),
-        (status = 400, description = "Bad request"),
-        (status = 401, description = "Authentication required"),
-        (status = 403, description = "Access denied"),
-        (status = 404, description = "Upload session not found"),
-        (status = 416, description = "Requested range not satisfiable"),
-        (status = 429, description = "Too many requests"),
-    )
-)]
 #[post("/{name:.*}/blobs/uploads/")]
 pub async fn handle(path: web::Path<String>, query: web::Query<MountQuery>) -> impl Responder {
     let name = path.into_inner();
