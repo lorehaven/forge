@@ -77,31 +77,6 @@ async fn crates_root(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) 
         .finish()
 }
 
-// Files redirects
-
-#[get("/files")]
-async fn files_root(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
-    if !common::is_ui_authenticated(&req, &config) {
-        return common::ui_login_redirect();
-    }
-    HttpResponse::PermanentRedirect()
-        .append_header(("Location", with_base_path("/ui/files/catalog")))
-        .finish()
-}
-
-#[get("/files/")]
-async fn files_root_slash(
-    req: actix_web::HttpRequest,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
-    if !common::is_ui_authenticated(&req, &config) {
-        return common::ui_login_redirect();
-    }
-    HttpResponse::PermanentRedirect()
-        .append_header(("Location", with_base_path("/ui/files/catalog")))
-        .finish()
-}
-
 #[get("/crates/")]
 async fn crates_root_slash(
     req: actix_web::HttpRequest,
@@ -131,9 +106,6 @@ pub fn scope() -> impl HttpServiceFactory {
         // Crates redirects
         .service(crates_root)
         .service(crates_root_slash)
-        // Files redirects
-        .service(files_root)
-        .service(files_root_slash)
         // Auth
         .service(pages::auth::login)
         .service(pages::auth::login_slash)
@@ -149,7 +121,4 @@ pub fn scope() -> impl HttpServiceFactory {
         // Crates pages
         .service(pages::crates::catalog::crates_index)
         .service(pages::crates::catalog::crates_index_slash)
-        // Files pages
-        .service(pages::files::catalog::files_catalog)
-        .service(pages::files::catalog::files_catalog_slash)
 }

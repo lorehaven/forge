@@ -31,14 +31,6 @@ pub(super) async fn crates_index_slash(
     render_crates_page(query.repo.clone(), query.tag.clone())
 }
 
-// ---------------------------------------------------------------------------
-// Page renderer
-// ---------------------------------------------------------------------------
-
-// We reuse the `PageQuery` struct already defined in ui/mod.rs:
-//   repo  → selected crate name
-//   tag   → selected version string
-
 fn render_crates_page(
     selected_crate: Option<String>,
     selected_version: Option<String>,
@@ -55,7 +47,6 @@ fn render_crates_page(
         None => Vec::new(),
     };
 
-    // Default to latest non-yanked version, then any version
     let active_version = selected_version
         .as_ref()
         .filter(|v| versions.iter().any(|r| &r.vers == *v))
@@ -76,24 +67,16 @@ fn render_crates_page(
     let left = div()
         .class("split-left panel")
         .child(div().class("panel-title").attr("data-i18n", "ui_crates"))
-        .child(
-            div()
-                .class("tree-scroll")
-                .child(render_crate_list(&all_crates, krate.as_deref())),
-        );
-
-    let right = div()
-        .class("split-right")
-        .child(div().class("right-top").child(render_versions_panel(
+        .child(div().class("tree-scroll").child(render_crate_tree(
+            &all_crates,
             krate.as_deref(),
             &versions,
             active_version.as_deref(),
-        )))
-        .child(
-            div()
-                .class("right-bottom")
-                .child(render_details_panel(krate.as_deref(), selected_record)),
-        );
+        )));
+
+    let right = div()
+        .class("split-right panel")
+        .child(render_metadata_panel(krate.as_deref(), selected_record));
 
     render_page(
         HttpResponse::Ok(),
@@ -104,148 +87,126 @@ fn render_crates_page(
     )
 }
 
-// ---------------------------------------------------------------------------
-// Left panel – crate list
-// ---------------------------------------------------------------------------
-
-fn render_crate_list(crates: &[String], selected: Option<&str>) -> Element {
+fn render_crate_tree(
+    crates: &[String],
+    selected_crate: Option<&str>,
+    versions: &[IndexRecord],
+    active_version: Option<&str>,
+) -> Element {
     if crates.is_empty() {
         return div().class("empty").attr("data-i18n", "ui_crates_empty");
     }
 
-    let mut list = ul().class("repo-tree"); // reuse repo-tree styles for identical look
+    let mut tree = ul().class("repo-tree");
     for name in crates {
-        let href = format!("{}?repo={name}", ui_path("/crates/catalog"));
-        let class = if Some(name.as_str()) == selected {
-            "repo-link active"
-        } else {
-            "repo-link"
-        };
-        list = list.child(li().child(a().attr("href", &href).class(class).text(name)));
+        tree = tree.child(render_crate_node(
+            name,
+            selected_crate,
+            versions,
+            active_version,
+        ));
     }
-    list
+    tree
 }
 
-// ---------------------------------------------------------------------------
-// Right-top panel – versions table
-// ---------------------------------------------------------------------------
-
-fn render_versions_panel(
-    krate: Option<&str>,
+fn render_crate_node(
+    name: &str,
+    selected_crate: Option<&str>,
     versions: &[IndexRecord],
     active_version: Option<&str>,
 ) -> Element {
-    let title = match krate {
-        Some(n) => div()
-            .class("panel-title")
-            .child(span().attr("data-i18n", "ui_versions_for"))
-            .child(span().text(&format!(" {n}"))),
-        None => div().class("panel-title").attr("data-i18n", "ui_versions"),
-    };
+    let item = li();
+    let is_selected = Some(name) == selected_crate;
+    let has_versions = is_selected && !versions.is_empty();
 
-    let header = div()
-        .class("header")
-        .child(div().class("cell").attr("data-i18n", "ui_col_version"))
-        .child(div().class("cell").attr("data-i18n", "ui_col_status"))
-        .child(div().class("cell").attr("data-i18n", "ui_col_checksum"))
-        .child(div().class("cell").attr("data-i18n", "ui_col_actions"));
+    let needs_details = is_selected;
 
-    let mut body = div().class("body");
-
-    if krate.is_none() {
-        body = body.child(
+    if !needs_details {
+        return item.child(
             div()
-                .class("empty")
-                .attr("data-i18n", "ui_empty_select_crate"),
-        );
-    } else if versions.is_empty() {
-        body = body.child(
-            div()
-                .class("empty")
-                .attr("data-i18n", "ui_empty_no_versions"),
-        );
-    } else {
-        // Show newest first
-        for record in versions.iter().rev() {
-            let Some(crate_name) = krate else { break };
-            let href = format!(
-                "{}?repo={crate_name}&tag={}",
-                ui_path("/crates/catalog"),
-                record.vers
-            );
-            let row_class = if Some(record.vers.as_str()) == active_version {
-                "row active"
-            } else {
-                "row"
-            };
-            let status_key = if record.yanked {
-                "ui_status_yanked"
-            } else {
-                "ui_status_active"
-            };
-
-            let mut row = div()
-                .class(row_class)
+                .class("tree-folder")
+                .child(i().class("fas fa-box mr-2"))
                 .child(
-                    div()
-                        .class("cell")
-                        .child(a().attr("href", &href).class("tag-link").text(&record.vers)),
-                )
-                .child(
-                    div()
-                        .class("cell")
-                        .child(span().attr("data-i18n", status_key)),
-                )
-                .child(div().class("cell mono").text(&short_hex(&record.cksum)));
-
-            // Add yank/unyank buttons for yankable versions
-            if record.yanked {
-                // Add unyank button with Font Awesome icon
-                row = row.child(
-                    div().class("cell").class("actions").child(
-                        i().class("fas fa-undo")
-                            .attr("aria-hidden", "true")
-                            .attr("data-action", "unyank")
-                            .attr("data-crate", crate_name)
-                            .attr("data-version", &record.vers)
-                            .attr("title", "Unyank version")
-                            .attr("role", "button")
-                            .attr("aria-label", "Unyank version")
-                            .on_click("handleUnyankClick(event)"),
-                    ),
-                );
-            } else {
-                // Add yank button with Font Awesome icon
-                row = row.child(
-                    div().class("cell").class("actions").child(
-                        i().class("fas fa-ban")
-                            .attr("aria-hidden", "true")
-                            .attr("data-action", "yank")
-                            .attr("data-crate", crate_name)
-                            .attr("data-version", &record.vers)
-                            .attr("title", "Yank version")
-                            .attr("role", "button")
-                            .attr("aria-label", "Yank version")
-                            .on_click("handleYankClick(event)"),
-                    ),
-                );
-            }
-
-            body = body.child(row);
-        }
+                    a().attr(
+                        "href",
+                        &format!("{}?repo={name}", ui_path("/crates/catalog")),
+                    )
+                    .class("repo-link")
+                    .text(name),
+                ),
+        );
     }
 
-    div()
-        .class("panel table versions-grid")
-        .child(title)
-        .child(div().class("table-scroll").child(header).child(body))
+    let mut details = element("details").attr("data-path", name);
+
+    if is_selected {
+        details = details.attr("open", "open");
+    }
+
+    let summary = element("summary")
+        .class("tree-folder")
+        .child(i().class("fas fa-box mr-2"))
+        .child(
+            a().attr(
+                "href",
+                &format!("{}?repo={name}", ui_path("/crates/catalog")),
+            )
+            .class("repo-link active")
+            .text(name),
+        );
+
+    details = details.child(summary);
+
+    if has_versions {
+        let mut tags_list = ul().class("tag-list");
+        for record in versions.iter().rev() {
+            let tag_class = if Some(record.vers.as_str()) == active_version {
+                "tag-link active"
+            } else {
+                "tag-link"
+            };
+
+            let status_icon = if record.yanked {
+                i().class("fas fa-ban mr-2")
+                    .attr("style", "color: var(--bs-warning);")
+            } else {
+                i().class("fas fa-tag mr-2")
+            };
+
+            tags_list = tags_list.child(
+                li().child(
+                    a().attr(
+                        "href",
+                        &format!(
+                            "{}?repo={name}&tag={}",
+                            ui_path("/crates/catalog"),
+                            record.vers
+                        ),
+                    )
+                    .class(tag_class)
+                    .child(status_icon)
+                    .child(span().text(&record.vers)),
+                ),
+            );
+        }
+        details = details.child(tags_list);
+    } else if is_selected {
+        let mut tags_list = ul().class("tag-list");
+        tags_list = tags_list.child(
+            li().child(
+                span()
+                    .class("tag-link")
+                    .attr("style", "color: var(--bs-gray-500); cursor: default;")
+                    .text("No versions found"),
+            ),
+        );
+        details = details.child(tags_list);
+    }
+
+    item.child(details)
 }
 
-// ---------------------------------------------------------------------------
-// Right-bottom panel – version details
-// ---------------------------------------------------------------------------
-
-fn render_details_panel(krate: Option<&str>, record: Option<&IndexRecord>) -> Element {
+fn render_metadata_panel(krate: Option<&str>, record: Option<&IndexRecord>) -> Element {
     let title = match (krate, record) {
         (Some(_), Some(r)) => div()
             .class("panel-title")
@@ -276,10 +237,8 @@ fn render_details_panel(krate: Option<&str>, record: Option<&IndexRecord>) -> El
                 list = list.child(meta_row("ui_meta_links", links));
             }
 
-            // Features
             if !r.features.is_empty() {
                 let mut all_features: Vec<&str> = r.features.keys().map(String::as_str).collect();
-                // Merge features2 keys if present
                 if let Some(f2) = &r.features2 {
                     for k in f2.keys() {
                         if !all_features.contains(&k.as_str()) {
@@ -291,16 +250,53 @@ fn render_details_panel(krate: Option<&str>, record: Option<&IndexRecord>) -> El
                 list = list.child(meta_row("ui_meta_features", &all_features.join(", ")));
             }
 
-            // Dependencies — grouped by kind
             if !r.deps.is_empty() {
                 list = list.child(render_deps_section(r));
             }
+
+            let crate_name = krate.unwrap_or("");
+            let action_button = if r.yanked {
+                button()
+                    .class("button-danger-sm")
+                    .attr(
+                        "style",
+                        "color: var(--bs-warning); border-color: var(--bs-warning);",
+                    )
+                    .attr("data-action", "unyank")
+                    .attr("data-crate", crate_name)
+                    .attr("data-version", &r.vers)
+                    .on_click("handleUnyankClick(event)")
+                    .child(i().class("fas fa-undo mr-2"))
+                    .child(
+                        span()
+                            .attr("data-i18n", "ui_unyank_version")
+                            .text("Unyank Version"),
+                    )
+            } else {
+                button()
+                    .class("button-danger-sm")
+                    .attr("data-action", "yank")
+                    .attr("data-crate", crate_name)
+                    .attr("data-version", &r.vers)
+                    .on_click("handleYankClick(event)")
+                    .child(i().class("fas fa-ban mr-2"))
+                    .child(
+                        span()
+                            .attr("data-i18n", "ui_yank_version")
+                            .text("Yank Version"),
+                    )
+            };
+
+            list = list.child(div().class("mt-4").child(action_button));
 
             list
         }
     };
 
-    div().class("panel").child(title).child(body)
+    div()
+        .class("h-100 d-flex flex-column")
+        .child(title)
+        .child(body)
 }
 
 fn render_deps_section(record: &IndexRecord) -> Element {
@@ -357,20 +353,9 @@ fn deps_group(label_key: &str, deps: &[&IndexDep]) -> Element {
     rows
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 fn meta_row(label_key: &str, value: &str) -> Element {
     div()
         .class("meta-row")
         .child(div().class("meta-label").attr("data-i18n", label_key))
         .child(div().class("meta-value mono").text(value))
-}
-
-fn short_hex(hex: &str) -> String {
-    if hex.len() <= 16 {
-        return hex.to_string();
-    }
-    format!("{}…{}", &hex[..8], &hex[hex.len() - 8..])
 }

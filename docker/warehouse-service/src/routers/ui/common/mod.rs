@@ -3,14 +3,11 @@ pub use quench_srv::actix::routers::ui::{is_ui_authenticated, ui_asset_path, ui_
 use quench_web::prelude::*;
 use std::sync::LazyLock;
 
-mod crates_js;
-mod docker_js;
-mod files_js;
-mod warehouse_css;
+mod css;
+mod scripts;
 
 static UI_SHELL_DOCKER: LazyLock<AppShell> = LazyLock::new(|| {
-    warehouse_css::ensure_warehouse_css();
-    docker_js::ensure_docker_js();
+    css::ensure_warehouse_css();
 
     AppShellBuilder::new()
         .title("Warehouse")
@@ -22,15 +19,14 @@ static UI_SHELL_DOCKER: LazyLock<AppShell> = LazyLock::new(|| {
             "stylesheet",
             &ui_asset_path("/css/warehouse.css"),
         )])
-        .scripts(vec![Script::new(&ui_asset_path("/js/docker.js"))])
+        .scripts(vec![scripts::docker_script()])
         .with_nav(false)
         .resources_prefix(ui_path(""))
         .build()
 });
 
 static UI_SHELL_CRATES: LazyLock<AppShell> = LazyLock::new(|| {
-    warehouse_css::ensure_warehouse_css();
-    crates_js::ensure_crates_js();
+    css::ensure_warehouse_css();
 
     AppShellBuilder::new()
         .title("Warehouse — Crates")
@@ -42,34 +38,14 @@ static UI_SHELL_CRATES: LazyLock<AppShell> = LazyLock::new(|| {
             "stylesheet",
             &ui_asset_path("/css/warehouse.css"),
         )])
-        .scripts(vec![Script::new(&ui_asset_path("/js/crates.js"))])
-        .with_nav(false)
-        .resources_prefix(ui_path(""))
-        .build()
-});
-
-static UI_SHELL_FILES: LazyLock<AppShell> = LazyLock::new(|| {
-    warehouse_css::ensure_warehouse_css();
-    files_js::ensure_files_js();
-
-    AppShellBuilder::new()
-        .title("Warehouse — Files")
-        .supported_locales(vec!["en-US".to_string()])
-        .default_theme(Theme::DefaultDark)
-        .supported_themes(vec![Theme::DefaultDark])
-        .header(ui_header(Some("ui_header_files"), true, true))
-        .links(vec![Link::new(
-            "stylesheet",
-            &ui_asset_path("/css/warehouse.css"),
-        )])
-        .scripts(vec![Script::new(&ui_asset_path("/js/files.js"))])
+        .scripts(vec![scripts::crates_script()])
         .with_nav(false)
         .resources_prefix(ui_path(""))
         .build()
 });
 
 static UI_SHELL_HOME: LazyLock<AppShell> = LazyLock::new(|| {
-    warehouse_css::ensure_warehouse_css();
+    css::ensure_warehouse_css();
 
     AppShellBuilder::new()
         .title("Warehouse")
@@ -87,7 +63,7 @@ static UI_SHELL_HOME: LazyLock<AppShell> = LazyLock::new(|| {
 });
 
 static UI_SHELL_AUTH: LazyLock<AppShell> = LazyLock::new(|| {
-    warehouse_css::ensure_warehouse_css();
+    css::ensure_warehouse_css();
 
     AppShellBuilder::new()
         .title("Warehouse")
@@ -142,7 +118,6 @@ pub(super) fn render_page(
         UiPageKind::Home => &*UI_SHELL_HOME,
         UiPageKind::Docker => &*UI_SHELL_DOCKER,
         UiPageKind::Crates => &*UI_SHELL_CRATES,
-        UiPageKind::Files => &*UI_SHELL_FILES,
         UiPageKind::Auth => &*UI_SHELL_AUTH,
     };
     builder
@@ -154,7 +129,6 @@ pub(super) enum UiPageKind {
     Home,
     Docker,
     Crates,
-    Files,
     Auth,
 }
 

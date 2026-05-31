@@ -28,7 +28,6 @@ pub fn base_path_scope() -> impl HttpServiceFactory {
         .service(routers::admin::scope())
         .service(routers::crates::scope())
         .service(routers::crates::scope_index())
-        .service(routers::files::scope())
         .service(routers::ui::scope())
 }
 

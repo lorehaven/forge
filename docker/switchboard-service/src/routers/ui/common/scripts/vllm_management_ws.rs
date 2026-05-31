@@ -1,16 +1,10 @@
 use quench_srv::prelude::with_base_path;
+use quench_web::prelude::{Script, js};
 
-pub fn ensure_vllm_ws_js() {
-    let js = vllm_management_ws_js();
-
-    let _ = std::fs::create_dir_all("dist/assets/js");
-    let _ = std::fs::write("dist/assets/js/vllm_management_ws.js", js);
-}
-
-fn vllm_management_ws_js() -> String {
+pub fn vllm_management_ws_script() -> Script {
     let vllm_api_base = with_base_path("/api/v1/vllm");
 
-    let js = r#"
+    let js_code = r#"
 const vllmSocketUrl =
     `${location.protocol === "https:" ? "wss" : "ws"}://` +
     `${location.host}__VLLM_API_BASE__/instances/ws`;
@@ -50,9 +44,11 @@ window.addEventListener("beforeunload", () => {
     }
 });
 
-connectVllmSocket();
+window.addEventListener("DOMContentLoaded", () => {
+    connectVllmSocket();
+});
     "#
     .to_string();
 
-    js.replace("__VLLM_API_BASE__", &vllm_api_base)
+    js!(js_code.replace("__VLLM_API_BASE__", &vllm_api_base))
 }

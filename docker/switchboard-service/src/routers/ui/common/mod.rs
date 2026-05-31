@@ -3,14 +3,11 @@ pub use quench_srv::actix::routers::ui::{is_ui_authenticated, ui_asset_path, ui_
 use quench_web::prelude::*;
 use std::sync::LazyLock;
 
-mod models_dashboard_filters_js;
-mod models_dashboard_ws_js;
-mod switchboard_css;
-mod vllm_management_js;
-mod vllm_management_ws_js;
+mod css;
+mod scripts;
 
 static UI_SHELL_HOME: LazyLock<AppShell> = LazyLock::new(|| {
-    switchboard_css::ensure_switchboard_css();
+    css::ensure_switchboard_css();
 
     AppShellBuilder::new()
         .title("Switchboard")
@@ -28,9 +25,7 @@ static UI_SHELL_HOME: LazyLock<AppShell> = LazyLock::new(|| {
 });
 
 static UI_SHELL_MODELS_DASHBOARD: LazyLock<AppShell> = LazyLock::new(|| {
-    switchboard_css::ensure_switchboard_css();
-    models_dashboard_ws_js::ensure_ws_js();
-    models_dashboard_filters_js::ensure_filters_js();
+    css::ensure_switchboard_css();
 
     AppShellBuilder::new()
         .title("Switchboard")
@@ -48,8 +43,8 @@ static UI_SHELL_MODELS_DASHBOARD: LazyLock<AppShell> = LazyLock::new(|| {
             &ui_asset_path("/css/switchboard.css"),
         )])
         .scripts(vec![
-            Script::new(&ui_asset_path("/js/models_dashboard_filters.js")),
-            Script::new(&ui_asset_path("/js/models_dashboard_ws.js")),
+            scripts::models_dashboard_filters_script(),
+            scripts::models_dashboard_ws_script(),
         ])
         .with_nav(false)
         .resources_prefix(ui_path(""))
@@ -57,10 +52,7 @@ static UI_SHELL_MODELS_DASHBOARD: LazyLock<AppShell> = LazyLock::new(|| {
 });
 
 static UI_SHELL_VLLM_MANAGEMENT: LazyLock<AppShell> = LazyLock::new(|| {
-    switchboard_css::ensure_switchboard_css();
-    models_dashboard_ws_js::ensure_ws_js();
-    vllm_management_js::ensure_vllm_js();
-    vllm_management_ws_js::ensure_vllm_ws_js();
+    css::ensure_switchboard_css();
 
     AppShellBuilder::new()
         .title("Switchboard")
@@ -78,9 +70,9 @@ static UI_SHELL_VLLM_MANAGEMENT: LazyLock<AppShell> = LazyLock::new(|| {
             &ui_asset_path("/css/switchboard.css"),
         )])
         .scripts(vec![
-            Script::new(&ui_asset_path("/js/models_dashboard_ws.js")),
-            Script::new(&ui_asset_path("/js/vllm_management.js")),
-            Script::new(&ui_asset_path("/js/vllm_management_ws.js")),
+            scripts::models_dashboard_ws_script(),
+            scripts::vllm_management_script(),
+            scripts::vllm_management_ws_script(),
         ])
         .with_nav(false)
         .resources_prefix(ui_path(""))
@@ -88,7 +80,7 @@ static UI_SHELL_VLLM_MANAGEMENT: LazyLock<AppShell> = LazyLock::new(|| {
 });
 
 static UI_SHELL_AUTH: LazyLock<AppShell> = LazyLock::new(|| {
-    switchboard_css::ensure_switchboard_css();
+    css::ensure_switchboard_css();
 
     AppShellBuilder::new()
         .title("Switchboard")

@@ -1,14 +1,8 @@
-pub fn ensure_docker_js() {
-    let js = docker_js();
+use quench_web::prelude::{Script, js};
 
-    let _ = std::fs::create_dir_all("dist/assets/js");
-    let _ = std::fs::write("dist/assets/js/docker.js", js);
-}
-
-fn docker_js() -> String {
+pub fn docker_script() -> Script {
     let service = envmnt::get_or("REGISTRY_SERVICE", "warehouse");
-
-    format!(
+    let js_code = format!(
         r#"
 document.addEventListener('DOMContentLoaded', () => {{
     restoreTreeState();
@@ -97,5 +91,7 @@ async function handleDeleteImageClick(event) {{
     }}
 }}
 "#
-    )
+    );
+
+    js!(js_code)
 }

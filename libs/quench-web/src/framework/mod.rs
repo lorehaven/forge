@@ -2,7 +2,6 @@ pub mod app;
 
 pub mod components;
 pub mod dom;
-pub mod js;
 pub mod styles;
 pub mod theme;
 

@@ -1,28 +1,23 @@
 use quench_srv::prelude::with_base_path;
+use quench_web::prelude::{Script, js};
 
-pub fn ensure_vllm_js() {
-    let js = vllm_management_js();
-
-    let _ = std::fs::create_dir_all("dist/assets/js");
-    let _ = std::fs::write("dist/assets/js/vllm_management.js", js);
-}
-
-fn vllm_management_js() -> String {
+pub fn vllm_management_script() -> Script {
     let vllm_api_base = with_base_path("/api/v1/vllm");
     let models_api_base = with_base_path("/api/v1/models");
     let gpu_api_base = with_base_path("/api/v1/gpu");
     let ui_base = with_base_path("/ui");
 
-    let js = r#"
+    let js_code = r#"
 const VLLM_API_BASE = "__VLLM_API_BASE__";
 const MODELS_API_BASE = "__MODELS_API_BASE__";
 const GPU_API_BASE = "__GPU_API_BASE__";
 const UI_BASE = "__UI_BASE__";
 
 function t(key) {
-    if (typeof TRANSLATIONS === 'undefined') return key;
-    const locale = getLocale();
-    const dict = TRANSLATIONS[locale];
+    const translations = window.qTranslations || {};
+    const locale = typeof getLocale === 'function' ? getLocale() : null;
+    if (!locale) return key;
+    const dict = translations[locale];
     return dict ? (dict[key] || key) : key;
 }
 
@@ -561,8 +556,11 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 "#.to_string();
 
-    js.replace("__VLLM_API_BASE__", &vllm_api_base)
+    let replaced = js_code
+        .replace("__VLLM_API_BASE__", &vllm_api_base)
         .replace("__MODELS_API_BASE__", &models_api_base)
         .replace("__GPU_API_BASE__", &gpu_api_base)
-        .replace("__UI_BASE__", &ui_base)
+        .replace("__UI_BASE__", &ui_base);
+
+    js!(replaced)
 }

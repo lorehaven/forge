@@ -1,22 +1,17 @@
 use quench_srv::prelude::with_base_path;
+use quench_web::prelude::{Script, js};
 
-pub fn ensure_filters_js() {
-    let js = models_dashboard_filters_js();
-
-    let _ = std::fs::create_dir_all("dist/assets/js");
-    let _ = std::fs::write("dist/assets/js/models_dashboard_filters.js", js);
-}
-
-fn models_dashboard_filters_js() -> String {
+pub fn models_dashboard_filters_script() -> Script {
     let models_api_base = with_base_path("/api/v1/models");
     let ui_base = with_base_path("/ui");
 
-    let js = format!(
+    let js_code = format!(
         r#"
 function t(key) {{
-    if (typeof TRANSLATIONS === 'undefined') return key;
-    const locale = getLocale();
-    const dict = TRANSLATIONS[locale];
+    const translations = window.qTranslations || {{}};
+    const locale = typeof getLocale === 'function' ? getLocale() : null;
+    if (!locale) return key;
+    const dict = translations[locale];
     return dict ? (dict[key] || key) : key;
 }}
 
@@ -59,8 +54,10 @@ let isAdmin = false;
 {find_best}
 {find_min}
 
-applySourceDefaults();
-checkAuth().then(() => listModels());
+window.addEventListener("DOMContentLoaded", () => {{
+    applySourceDefaults();
+    checkAuth().then(() => listModels());
+}});
     "#,
         dom_loaded = dom_loaded(),
         check_auth = check_auth(),
@@ -90,8 +87,11 @@ checkAuth().then(() => listModels());
         find_min = find_minimum_estimate(),
     );
 
-    js.replace("__MODELS_API_BASE__", &models_api_base)
-        .replace("__UI_BASE__", &ui_base)
+    let replaced = js_code
+        .replace("__MODELS_API_BASE__", &models_api_base)
+        .replace("__UI_BASE__", &ui_base);
+
+    js!(replaced)
 }
 
 fn dom_loaded() -> String {
@@ -285,23 +285,16 @@ fn refresh_models_cache() -> String {
 async function refreshModelsCache() {
     const button = document.querySelector(".refresh-models");
     if (button) {
-        button.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i>`;
+        button.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
     }
 
-    const response = await fetch("__MODELS_API_BASE__/refresh", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-    });
-
-    if (response.ok) {
-        listModels();
-    } else {
-        const err = await response.text();
-        alert("Failed to refresh models: " + err);
-    }
-    
-    if (button) {
-        button.innerHTML = `<i class="fa-solid fa-arrows-rotate"></i>`;
+    try {
+        await fetch("__MODELS_API_BASE__/sync", { method: "POST" });
+        await listModels();
+    } finally {
+        if (button) {
+            button.innerHTML = '<i class="fa-solid fa-arrows-rotate"></i>';
+        }
     }
 }
 "#
@@ -311,53 +304,56 @@ async function refreshModelsCache() {
 fn create_model_card() -> String {
     r#"
 function createModelCard(model) {
-    const card = cloneTemplateNode("models-card-template");
-    if (!card) return document.createElement("div");
-    card.dataset.model = JSON.stringify(model);
+    const template = document.getElementById("models-card-template");
+    const clone = template.firstElementChild.cloneNode(true);
 
-    const badge = card.querySelector(".vllm-badge");
-    if (badge) {
-        badge.style.display = model.vllm_supported ? "" : "none";
+    const title = clone.querySelector(".card-title");
+    title.innerHTML = "";
+    if (model.vllm_supported) {
+        title.innerHTML += `<span class="vllm-badge">vLLM</span>`;
+    }
+    title.innerHTML += model.name;
+
+    clone.querySelector(".card-path").textContent = model.path;
+
+    if (model.params_billion) {
+        clone.querySelector(".card-meta-params-val").textContent = `${model.params_billion}B`;
+    } else {
+        clone.querySelector(".card-meta-params").style.display = "none";
     }
 
-    const title = card.querySelector(".card-title-text");
-    if (title) title.textContent = model.name;
-
-    const params = card.querySelector(".card-params");
-    if (params) params.textContent = `${model.params_billion}B`;
-
-    const quant = card.querySelector(".card-quant");
-    if (quant) quant.textContent = model.quant;
-
-    const context = card.querySelector(".card-context");
-    if (context) context.textContent = model.context;
-
-    const layers = card.querySelector(".card-layers");
-    if (layers) layers.textContent = model.layers;
-
-    const hiddenSize = card.querySelector(".card-hidden-size");
-    if (hiddenSize) hiddenSize.textContent = model.hidden_size;
-
-    const path = card.querySelector(".card-path");
-    if (path) path.textContent = model.path;
-
-    const fit = card.querySelector(".card-fit");
-    if (fit) {
-        fit.addEventListener("click", () => openEstimatesModal(model));
+    if (model.model_type) {
+        clone.querySelector(".card-meta-type-val").textContent = model.model_type;
+    } else {
+        clone.querySelector(".card-meta-type").style.display = "none";
     }
 
-    const del = card.querySelector(".card-delete");
-    if (del) {
-        del.style.display = isAdmin ? "" : "none";
-        del.title = t("ui_models_card_delete_tooltip");
-        del.addEventListener("click", (e) => {
-            e.stopPropagation();
-            openConfirmDeleteModal(model);
-        });
+    if (model.quant) {
+        clone.querySelector(".card-meta-quant-val").textContent = model.quant;
+    } else {
+        clone.querySelector(".card-meta-quant").style.display = "none";
     }
 
-    updateCardFit(card);
-    return card;
+    if (model.context) {
+        clone.querySelector(".card-meta-context-val").textContent = model.context;
+    } else {
+        clone.querySelector(".card-meta-context").style.display = "none";
+    }
+
+    const availableVram = currentGpuInfo?.free_gb || 0;
+    clone.querySelector(".card-fit").innerHTML = renderFitSummary(model, availableVram);
+    clone.querySelector(".card-fit").addEventListener("click", () => openEstimatesModal(model));
+
+    clone.dataset.model = JSON.stringify(model);
+
+    const deleteBtn = clone.querySelector(".card-delete");
+    if (isAdmin) {
+        deleteBtn.addEventListener("click", () => openConfirmDeleteModal(model));
+    } else {
+        deleteBtn.style.display = "none";
+    }
+
+    return clone;
 }
 "#
     .to_string()

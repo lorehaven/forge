@@ -1,16 +1,10 @@
 use quench_srv::prelude::with_base_path;
+use quench_web::prelude::{Script, js};
 
-pub fn ensure_ws_js() {
-    let js = models_dashboard_ws_js();
-
-    let _ = std::fs::create_dir_all("dist/assets/js");
-    let _ = std::fs::write("dist/assets/js/models_dashboard_ws.js", js);
-}
-
-fn models_dashboard_ws_js() -> String {
+pub fn models_dashboard_ws_script() -> Script {
     let gpu_api_base = with_base_path("/api/v1/gpu");
 
-    let js = format!(
+    let js_code = format!(
         r#"
 const socketUrl =
     `${{location.protocol === "https:" ? "wss" : "ws"}}://` +
@@ -22,13 +16,15 @@ let reconnectTimer = null;
 {connect_gpu_socket}
 {before_unload}
 
-connectGpuSocket();
+window.addEventListener("DOMContentLoaded", () => {{
+    connectGpuSocket();
+}});
     "#,
         connect_gpu_socket = connect_gpu_socket(),
         before_unload = before_unload(),
     );
 
-    js.replace("__GPU_API_BASE__", &gpu_api_base)
+    js!(js_code.replace("__GPU_API_BASE__", &gpu_api_base))
 }
 
 fn connect_gpu_socket() -> String {

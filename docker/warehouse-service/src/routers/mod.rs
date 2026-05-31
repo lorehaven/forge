@@ -1,7 +1,6 @@
 pub mod admin;
 pub mod crates;
 pub mod docker;
-pub mod files;
 pub mod ui;
 
 static CRATES_STORAGE_ROOT: std::sync::LazyLock<String> =
@@ -13,14 +12,12 @@ static DOCKER_STORAGE_ROOT: std::sync::LazyLock<String> =
 struct FeatureFlags {
     docker: bool,
     crates: bool,
-    files: bool,
 }
 
 static FEATURE_FLAGS: std::sync::LazyLock<FeatureFlags> =
     std::sync::LazyLock::new(|| FeatureFlags {
         docker: feature_enabled("FEATURE_DOCKER_ENABLED", false),
         crates: feature_enabled("FEATURE_CRATES_ENABLED", false),
-        files: feature_enabled("FEATURE_FILES_ENABLED", false),
     });
 
 fn feature_enabled(name: &str, default: bool) -> bool {
@@ -41,8 +38,4 @@ pub fn docker_enabled() -> bool {
 
 pub fn crates_enabled() -> bool {
     FEATURE_FLAGS.crates
-}
-
-pub fn files_enabled() -> bool {
-    FEATURE_FLAGS.files
 }

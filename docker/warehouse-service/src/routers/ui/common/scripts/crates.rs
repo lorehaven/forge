@@ -1,15 +1,9 @@
 use quench_srv::prelude::with_base_path;
+use quench_web::prelude::{Script, js};
 
-pub fn ensure_crates_js() {
-    let js = crates_js();
-
-    let _ = std::fs::create_dir_all("dist/assets/js");
-    let _ = std::fs::write("dist/assets/js/crates.js", js);
-}
-
-fn crates_js() -> String {
+pub fn crates_script() -> Script {
     let yank_base = with_base_path("/api/v1/crates");
-    r#"
+    let js_code = r#"
 // ---- yank ----
 function handleYankClick(event) {
     const button = event.currentTarget;
@@ -29,7 +23,6 @@ function handleYankClick(event) {
     })
     .then(response => {
         if (response.ok) {
-            // Reload the page to show updated status
             location.reload();
         } else {
             console.error('Failed to yank crate version');
@@ -59,7 +52,6 @@ function handleUnyankClick(event) {
     })
     .then(response => {
         if (response.ok) {
-            // Reload the page to show updated status
             location.reload();
         } else {
             console.error('Failed to unyank crate version');
@@ -70,5 +62,7 @@ function handleUnyankClick(event) {
     });
 }
     "#
-    .replace("__CRATES_API_BASE__", &yank_base)
+    .replace("__CRATES_API_BASE__", &yank_base);
+
+    js!(js_code)
 }

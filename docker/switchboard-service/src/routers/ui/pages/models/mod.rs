@@ -296,56 +296,72 @@ fn models_card_template() -> Element {
                             div()
                                 .child(
                                     div()
+                                        .class("card-meta-params")
                                         .child(
                                             span()
                                                 .attr("data-i18n", "ui_models_card_params")
                                                 .text("Params"),
                                         )
                                         .child(span().text(": "))
-                                        .child(span().class("card-params")),
+                                        .child(span().class("card-meta-params-val")),
                                 )
                                 .child(
                                     div()
+                                        .class("card-meta-quant")
                                         .child(
                                             span()
                                                 .attr("data-i18n", "ui_models_card_quant")
                                                 .text("Quant"),
                                         )
                                         .child(span().text(": "))
-                                        .child(span().class("card-quant")),
+                                        .child(span().class("card-meta-quant-val")),
                                 )
                                 .child(
                                     div()
+                                        .class("card-meta-context")
                                         .child(
                                             span()
                                                 .attr("data-i18n", "ui_models_card_context")
                                                 .text("Context"),
                                         )
                                         .child(span().text(": "))
-                                        .child(span().class("card-context")),
+                                        .child(span().class("card-meta-context-val")),
                                 ),
                         )
                         .child(
                             div()
                                 .child(
                                     div()
+                                        .class("card-meta-type")
+                                        .child(
+                                            span()
+                                                .attr("data-i18n", "ui_models_card_type")
+                                                .text("Type"),
+                                        )
+                                        .child(span().text(": "))
+                                        .child(span().class("card-meta-type-val")),
+                                )
+                                .child(
+                                    div()
+                                        .class("card-meta-layers")
                                         .child(
                                             span()
                                                 .attr("data-i18n", "ui_models_card_layers")
                                                 .text("Layers"),
                                         )
                                         .child(span().text(": "))
-                                        .child(span().class("card-layers")),
+                                        .child(span().class("card-meta-layers-val")),
                                 )
                                 .child(
                                     div()
+                                        .class("card-meta-hidden")
                                         .child(
                                             span()
                                                 .attr("data-i18n", "ui_models_card_hidden")
                                                 .text("Hidden"),
                                         )
                                         .child(span().text(": "))
-                                        .child(span().class("card-hidden-size")),
+                                        .child(span().class("card-meta-hidden-val")),
                                 ),
                         ),
                 )

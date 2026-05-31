@@ -29,13 +29,79 @@ impl Link {
 #[derive(Clone, Debug, Default)]
 pub struct Script {
     pub src: String,
+    pub content: Option<String>,
+    pub defer: bool,
 }
 
 impl Script {
     pub fn new(src: &str) -> Self {
         Self {
             src: src.to_string(),
+            content: None,
+            defer: true,
         }
+    }
+
+    pub fn inline(content: impl Into<String>) -> Self {
+        Self {
+            src: String::new(),
+            content: Some(content.into()),
+            defer: false,
+        }
+    }
+
+    pub fn defer(mut self) -> Self {
+        self.defer = true;
+        self
+    }
+
+    pub fn immediate(mut self) -> Self {
+        self.defer = false;
+        self
+    }
+
+    pub fn is_inline(&self) -> bool {
+        self.content.is_some()
+    }
+
+    pub fn render(&self) -> String {
+        if let Some(content) = &self.content {
+            let defer = if self.defer { " defer" } else { "" };
+            return format!("<script{defer}>{content}</script>");
+        }
+
+        let defer = if self.defer { " defer" } else { "" };
+        format!("<script src=\"{}\"{defer}></script>", self.src)
+    }
+}
+
+#[macro_export]
+macro_rules! js {
+    ($source:literal $(, $($arg:tt)+)?) => {
+        $crate::Script::inline(format!($source $(, $($arg)+)?))
+    };
+    ($source:expr) => {
+        $crate::Script::inline($source)
+    };
+}
+
+pub use js;
+
+impl From<String> for Script {
+    fn from(content: String) -> Self {
+        Self::inline(content)
+    }
+}
+
+impl From<&str> for Script {
+    fn from(content: &str) -> Self {
+        Self::inline(content)
+    }
+}
+
+impl From<&String> for Script {
+    fn from(content: &String) -> Self {
+        Self::inline(content.clone())
     }
 }
 
@@ -85,18 +151,18 @@ impl PageBuilder {
     }
 
     pub fn build(self) -> String {
-        let mut head_links = vec![Link::new("icon", "assets/favicon.ico")];
-        head_links.extend(self.links);
         let links = self.head_link_static_attrs;
-        let links = head_links
+        let links = self
+            .links
             .into_iter()
             .map(|link| render_head_link(link, &links))
             .collect::<Vec<_>>()
             .join("\n");
+
         let scripts = self
             .scripts
             .into_iter()
-            .map(|script| format!("<script src=\"{}\" defer></script>", script.src))
+            .map(|script| script.render())
             .collect::<Vec<_>>()
             .join("\n");
 
