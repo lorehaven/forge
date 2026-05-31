@@ -28,6 +28,11 @@ pub fn scope(engine: Arc<dyn VllmEngine>) -> impl HttpServiceFactory {
         .app_data(web::Data::new(engine))
         .service(list::handle_list)
         .service(list::handle_grid)
+        .service(list::estimates_modal)
+        .service(list::empty_estimates_modal_endpoint)
+        .service(list::delete_modal)
+        .service(list::empty_delete_modal_endpoint)
         .service(delete::delete_model)
+        .service(delete::delete_model_form)
         .service(running::list_running_models)
 }

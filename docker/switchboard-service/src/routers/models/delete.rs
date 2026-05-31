@@ -2,7 +2,7 @@ use super::mod_impl::{GGUF_ROOTS, HF_ROOTS, is_admin};
 use super::store::get_store;
 use super::types::DeleteModelRequest;
 use actix_web::web::Json;
-use actix_web::{HttpResponse, Responder, post, web};
+use actix_web::{HttpResponse, Responder, http::header::ContentType, post, web};
 use quench_srv::prelude::JwtConfig;
 use std::path::Path;
 
@@ -16,7 +16,30 @@ pub async fn delete_model(
         return HttpResponse::Forbidden().finish();
     }
 
-    let path = Path::new(&body.path);
+    delete_model_path(&body.path).await
+}
+
+#[post("/delete-form")]
+pub async fn delete_model_form(
+    req: actix_web::HttpRequest,
+    config: web::Data<JwtConfig>,
+    form: web::Form<DeleteModelRequest>,
+) -> impl Responder {
+    if !is_admin(&req, &config) {
+        return HttpResponse::Forbidden().finish();
+    }
+
+    match delete_model_path(&form.path).await {
+        response if response.status().is_success() => HttpResponse::Ok()
+            .content_type(ContentType::html())
+            .append_header(("HX-Trigger", "models-refresh"))
+            .body(r#"<div id="confirm-delete-modal" class="estimates-modal"></div>"#),
+        response => response,
+    }
+}
+
+async fn delete_model_path(model_path: &str) -> HttpResponse {
+    let path = Path::new(model_path);
 
     // Security check: ensure the path is within HF_ROOTS or GGUF_ROOTS
     let is_valid_hf = HF_ROOTS.iter().any(|root| path.starts_with(root));
@@ -38,7 +61,7 @@ pub async fn delete_model(
 
     match res {
         Ok(_) => {
-            get_store().remove_model(&body.path).await;
+            get_store().remove_model(model_path).await;
             HttpResponse::Ok().finish()
         }
         Err(e) => HttpResponse::InternalServerError().body(e.to_string()),

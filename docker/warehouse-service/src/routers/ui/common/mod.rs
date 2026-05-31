@@ -4,7 +4,6 @@ use quench_web::prelude::*;
 use std::sync::LazyLock;
 
 mod css;
-mod scripts;
 
 static UI_SHELL_DOCKER: LazyLock<AppShell> = LazyLock::new(|| {
     css::ensure_warehouse_css();
@@ -19,7 +18,6 @@ static UI_SHELL_DOCKER: LazyLock<AppShell> = LazyLock::new(|| {
             "stylesheet",
             &ui_asset_path("/css/warehouse.css"),
         )])
-        .scripts(vec![scripts::docker_script()])
         .with_nav(false)
         .resources_prefix(ui_path(""))
         .build()
@@ -38,7 +36,6 @@ static UI_SHELL_CRATES: LazyLock<AppShell> = LazyLock::new(|| {
             "stylesheet",
             &ui_asset_path("/css/warehouse.css"),
         )])
-        .scripts(vec![scripts::crates_script()])
         .with_nav(false)
         .resources_prefix(ui_path(""))
         .build()

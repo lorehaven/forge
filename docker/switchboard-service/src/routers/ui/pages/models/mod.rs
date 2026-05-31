@@ -61,20 +61,28 @@ fn render_models_dashboard_page() -> HttpResponse {
                     .child(
                         form()
                             .attr("id", "model-filters")
-                            .attr("onsubmit", "return false;")
                             .attr("hx-get", with_base_path("/api/v1/models/grid"))
                             .attr("hx-target", "#models-grid")
                             .attr("hx-swap", "outerHTML")
                             .attr(
                                 "hx-trigger",
-                                "change, keyup changed delay:300ms from:#search",
+                                "change, keyup changed delay:300ms from:#search, models-refresh from:body",
                             )
                             .child(
-                                input()
-                                    .attr("type", "hidden")
+                                select()
                                     .attr("name", "source")
                                     .attr("id", "source")
-                                    .attr("value", "hf"),
+                                    .child(
+                                        option()
+                                            .attr("value", "hf")
+                                            .attr("selected", "selected")
+                                            .attr("data-i18n", "ui_models_tab_hf"),
+                                    )
+                                    .child(
+                                        option()
+                                            .attr("value", "gguf")
+                                            .attr("data-i18n", "ui_models_tab_gguf"),
+                                    ),
                             )
                             .child(
                                 select()
@@ -109,24 +117,6 @@ fn render_models_dashboard_page() -> HttpResponse {
                                         option()
                                             .attr("value", "vram_desc")
                                             .attr("data-i18n", "ui_models_sort_vram_desc"),
-                                    ),
-                            )
-                            .child(
-                                div()
-                                    .class("model-tabs")
-                                    .child(
-                                        div()
-                                            .attr("id", "model-tab-hf")
-                                            .class("tab active")
-                                            .attr("data-i18n", "ui_models_tab_hf")
-                                            .attr("hx-on:click", "model_tab_click('hf')"),
-                                    )
-                                    .child(
-                                        div()
-                                            .attr("id", "model-tab-gguf")
-                                            .class("tab")
-                                            .attr("data-i18n", "ui_models_tab_gguf")
-                                            .attr("hx-on:click", "model_tab_click('gguf')"),
                                     ),
                             )
                             .child(
@@ -286,6 +276,7 @@ fn render_models_dashboard_page() -> HttpResponse {
                     .attr("name", "models-grid")
                     .attr("hx-get", with_base_path("/api/v1/models/grid"))
                     .attr("hx-trigger", "load")
+                    .attr("hx-swap", "outerHTML")
                     .attr("hx-include", "#model-filters"),
             )
             .child(estimates_modal())
@@ -295,141 +286,11 @@ fn render_models_dashboard_page() -> HttpResponse {
 }
 
 fn estimates_modal() -> Element {
-    div()
-        .attr("id", "estimates-modal")
-        .class("estimates-modal")
-        .child(
-            div()
-                .class("estimates-modal-backdrop")
-                .attr("onclick", "closeEstimatesModal()"),
-        )
-        .child(
-            div()
-                .class("estimates-modal-content")
-                .child(
-                    div()
-                        .class("estimates-modal-header")
-                        .child(
-                            div()
-                                .attr("id", "estimates-modal-title")
-                                .class("estimates-modal-title")
-                                .text("Estimates"),
-                        )
-                        .child(
-                            button()
-                                .class("estimates-modal-close")
-                                .attr("type", "button")
-                                .on_click("closeEstimatesModal()")
-                                .child(i().class("fa-solid fa-xmark")),
-                        ),
-                )
-                .child(
-                    div()
-                        .class("estimates-modal-body")
-                        .attr("id", "estimates-modal-body")
-                        .child(
-                            div()
-                                .class("estimate-filters")
-                                .child(
-                                    select()
-                                        .attr("id", "estimate-fit-filter")
-                                        .child(
-                                            option()
-                                                .attr("value", "all")
-                                                .attr(
-                                                    "data-i18n",
-                                                    "ui_models_modal_estimates_filter_all",
-                                                )
-                                                .text("All"),
-                                        )
-                                        .child(
-                                            option()
-                                                .attr("value", "fit")
-                                                .attr(
-                                                    "data-i18n",
-                                                    "ui_models_modal_estimates_filter_fits",
-                                                )
-                                                .text("Fits"),
-                                        )
-                                        .child(
-                                            option()
-                                                .attr("value", "nofit")
-                                                .attr(
-                                                    "data-i18n",
-                                                    "ui_models_modal_estimates_filter_nofit",
-                                                )
-                                                .text("Does not fit"),
-                                        ),
-                                )
-                                .child(select().attr("id", "estimate-context-filter"))
-                                .child(select().attr("id", "estimate-quant-filter")),
-                        )
-                        .child(div().class("estimate-grid").attr("id", "estimate-grid")),
-                ),
-        )
+    div().attr("id", "estimates-modal").class("estimates-modal")
 }
 
 fn confirm_delete_modal() -> Element {
     div()
         .attr("id", "confirm-delete-modal")
         .class("estimates-modal")
-        .child(
-            div()
-                .class("estimates-modal-backdrop")
-                .attr("onclick", "closeConfirmDeleteModal()"),
-        )
-        .child(
-            div()
-                .class("estimates-modal-content small")
-                .child(
-                    div()
-                        .class("estimates-modal-header")
-                        .child(
-                            div()
-                                .attr("id", "confirm-delete-modal-title")
-                                .class("estimates-modal-title")
-                                .text("Delete Model"),
-                        )
-                        .child(
-                            button()
-                                .class("estimates-modal-close")
-                                .attr("type", "button")
-                                .on_click("closeConfirmDeleteModal()")
-                                .child(i().class("fa-solid fa-xmark")),
-                        ),
-                )
-                .child(
-                    div()
-                        .class("estimates-modal-body")
-                        .child(
-                            p().attr("data-i18n", "ui_models_modal_delete_text")
-                                .text("Are you sure you want to delete this model?"),
-                        )
-                        .child(
-                            div()
-                                .class("model-to-delete-name")
-                                .attr("id", "model-to-delete-name"),
-                        )
-                        .child(
-                            div()
-                                .class("confirm-actions")
-                                .child(
-                                    button()
-                                        .class("button cancel")
-                                        .attr("type", "button")
-                                        .attr("data-i18n", "ui_common_cancel")
-                                        .text("Cancel")
-                                        .on_click("closeConfirmDeleteModal()"),
-                                )
-                                .child(
-                                    button()
-                                        .class("button delete")
-                                        .attr("type", "button")
-                                        .attr("data-i18n", "ui_models_modal_delete_confirm")
-                                        .text("Delete")
-                                        .on_click("confirmDelete()"),
-                                ),
-                        ),
-                ),
-        )
 }

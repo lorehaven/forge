@@ -15,6 +15,15 @@ use std::time::Duration;
 #[derive(Debug, Clone)]
 struct LaunchRecord {
     pid: u32,
+    model: String,
+    host: String,
+    port: u16,
+    quantization: Option<String>,
+    max_model_len: Option<u32>,
+    gpu_memory_utilization: Option<f32>,
+    enable_prefix_caching: bool,
+    started_at: DateTime<Utc>,
+    terminating_at: Option<DateTime<Utc>>,
     log_path: Option<String>,
     last_error: Option<String>,
 }
@@ -29,6 +38,7 @@ impl VllmEngine for NativeVllmEngine {
     async fn list_instances(&self) -> Result<Vec<VllmInstance>, String> {
         let mut instances = Vec::new();
         let records = LAUNCH_RECORDS.read().unwrap().clone();
+        let mut seen_pids = std::collections::HashSet::new();
 
         let proc_entries = match fs::read_dir("/proc") {
             Ok(entries) => entries,
@@ -89,6 +99,7 @@ impl VllmEngine for NativeVllmEngine {
 
             let record_key = instance_key(&model, port);
             let record = records.get(&record_key);
+            seen_pids.insert(pid);
             let status = match record {
                 Some(r) if r.pid == pid => {
                     if r.last_error.as_deref() == Some("terminating") {
@@ -127,6 +138,40 @@ impl VllmEngine for NativeVllmEngine {
                 }),
             });
         }
+
+        for record in records.values() {
+            if record.last_error.as_deref() == Some("terminating")
+                && !seen_pids.contains(&record.pid)
+                && record
+                    .terminating_at
+                    .map(|at| Utc::now().signed_duration_since(at).num_seconds() < 15)
+                    .unwrap_or(false)
+            {
+                instances.push(VllmInstance {
+                    id: format!("pid-{}", record.pid),
+                    namespace: "native".to_string(),
+                    model: record.model.clone(),
+                    host: record.host.clone(),
+                    port: record.port,
+                    quantization: record.quantization.clone(),
+                    max_model_len: record.max_model_len,
+                    gpu_memory_utilization: record.gpu_memory_utilization,
+                    enable_prefix_caching: record.enable_prefix_caching,
+                    started_at: record.started_at,
+                    status: "terminating".to_string(),
+                    log_path: record.log_path.clone(),
+                    last_error: None,
+                });
+            }
+        }
+
+        LAUNCH_RECORDS.write().unwrap().retain(|_, record| {
+            record.last_error.as_deref() != Some("terminating")
+                || record
+                    .terminating_at
+                    .map(|at| Utc::now().signed_duration_since(at).num_seconds() < 15)
+                    .unwrap_or(true)
+        });
 
         Ok(instances)
     }
@@ -205,6 +250,15 @@ impl VllmEngine for NativeVllmEngine {
                     id.clone(),
                     LaunchRecord {
                         pid,
+                        model: req.model.clone(),
+                        host: req.host.clone(),
+                        port,
+                        quantization: req.quantization.clone(),
+                        max_model_len: req.max_model_len,
+                        gpu_memory_utilization: req.gpu_memory_utilization,
+                        enable_prefix_caching: req.enable_prefix_caching,
+                        started_at,
+                        terminating_at: None,
                         log_path: Some(log_path.clone()),
                         last_error: None,
                     },
@@ -218,6 +272,15 @@ impl VllmEngine for NativeVllmEngine {
                         id.clone(),
                         LaunchRecord {
                             pid,
+                            model: req.model.clone(),
+                            host: req.host.clone(),
+                            port,
+                            quantization: req.quantization.clone(),
+                            max_model_len: req.max_model_len,
+                            gpu_memory_utilization: req.gpu_memory_utilization,
+                            enable_prefix_caching: req.enable_prefix_caching,
+                            started_at,
+                            terminating_at: None,
                             log_path: Some(log_path.clone()),
                             last_error: log_tail.clone(),
                         },
@@ -240,6 +303,15 @@ impl VllmEngine for NativeVllmEngine {
                     id.clone(),
                     LaunchRecord {
                         pid,
+                        model: req.model.clone(),
+                        host: req.host.clone(),
+                        port,
+                        quantization: req.quantization.clone(),
+                        max_model_len: req.max_model_len,
+                        gpu_memory_utilization: req.gpu_memory_utilization,
+                        enable_prefix_caching: req.enable_prefix_caching,
+                        started_at,
+                        terminating_at: None,
                         log_path: Some(log_path.clone()),
                         last_error: None,
                     },
@@ -281,6 +353,7 @@ impl VllmEngine for NativeVllmEngine {
             for record in records.values_mut() {
                 if record.pid == pid as u32 {
                     record.last_error = Some("terminating".to_string());
+                    record.terminating_at = Some(Utc::now());
                 }
             }
         }

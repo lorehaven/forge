@@ -5,7 +5,7 @@ use crate::routers::gpu::get_gpu_info;
 use crate::routers::gpu::monitor::GpuInfo;
 use actix_web::web::Json;
 use actix_web::{HttpResponse, Responder, get, post, web};
-use quench_srv::prelude::JwtConfig;
+use quench_srv::prelude::{JwtConfig, with_base_path};
 use quench_web::prelude::*;
 
 #[post("/list")]
@@ -33,6 +33,38 @@ pub async fn handle_grid(
     let html = render_model_grid(models, &gpu, admin);
 
     HttpResponse::Ok().content_type("text/html").body(html)
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct EstimatesModalQuery {
+    path: Option<String>,
+    fit: Option<String>,
+    context: Option<String>,
+    quant: Option<String>,
+}
+
+#[get("/estimates-modal")]
+pub async fn estimates_modal(query: web::Query<EstimatesModalQuery>) -> impl Responder {
+    let models = get_store().get_all_models().await;
+    let gpu = get_gpu_info().unwrap_or_default();
+    let model = query
+        .path
+        .as_deref()
+        .and_then(|path| models.into_iter().find(|model| model.path == path));
+
+    let html = match model {
+        Some(model) => render_estimates_modal(&model, &gpu, &query),
+        None => empty_estimates_modal(),
+    };
+
+    HttpResponse::Ok().content_type("text/html").body(html)
+}
+
+#[get("/estimates-modal/empty")]
+pub async fn empty_estimates_modal_endpoint() -> impl Responder {
+    HttpResponse::Ok()
+        .content_type("text/html")
+        .body(empty_estimates_modal())
 }
 
 pub fn apply_filters(models: &mut Vec<Model>, filters: &ModelFilters, gpu: &GpuInfo) {
@@ -237,20 +269,27 @@ fn render_model_grid(models: Vec<Model>, gpu: &GpuInfo, is_admin: bool) -> Strin
 
         if is_admin {
             header = header.child(
-                div()
+                button()
                     .class("card-delete")
+                    .attr("type", "button")
+                    .attr("title", "Delete model")
                     .attr(
-                        "onclick",
-                        "event.stopPropagation(); openConfirmDeleteModal(this.closest('.card'))",
+                        "hx-get",
+                        format!(
+                            "{}?path={}&name={}",
+                            with_base_path("/api/v1/models/delete-modal"),
+                            encode_query_component(&model.path),
+                            encode_query_component(&model.name)
+                        ),
                     )
+                    .attr("hx-target", "#confirm-delete-modal")
+                    .attr("hx-swap", "outerHTML")
                     .child(i().class("fa-solid fa-trash")),
             );
         }
 
         let card = div()
             .class("card")
-            .attr("data-model", serde_json::to_string(&model).unwrap())
-            .attr("onclick", "openEstimatesModal(this.closest('.card'))")
             .child(header)
             .child(
                 div()
@@ -295,12 +334,365 @@ fn render_model_grid(models: Vec<Model>, gpu: &GpuInfo, is_admin: bool) -> Strin
             .child(
                 div()
                     .class("card-fit")
-                    .child(div().class(fit_class).child(fit_content)),
+                    .attr(
+                        "hx-get",
+                        format!(
+                            "{}?path={}",
+                            with_base_path("/api/v1/models/estimates-modal"),
+                            encode_query_component(&model.path)
+                        ),
+                    )
+                    .attr("hx-target", "#estimates-modal")
+                    .attr("hx-swap", "outerHTML")
+                    .child(
+                        div().class(fit_class).child(fit_content).child(
+                            span()
+                                .class("fit-details-icon")
+                                .child(i().class("fa-solid fa-chart-simple")),
+                        ),
+                    ),
             )
-            .child(div().class("card-path").text(&model.path));
+            .child(
+                div()
+                    .class("card-path")
+                    .attr("title", &model.path)
+                    .text(&model.path),
+            );
 
         grid = grid.child(card);
     }
 
     grid.render()
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct DeleteModalQuery {
+    path: String,
+    name: Option<String>,
+}
+
+#[get("/delete-modal")]
+pub async fn delete_modal(query: web::Query<DeleteModalQuery>) -> impl Responder {
+    HttpResponse::Ok()
+        .content_type("text/html")
+        .body(render_delete_modal(&query.path, query.name.as_deref()))
+}
+
+#[get("/delete-modal/empty")]
+pub async fn empty_delete_modal_endpoint() -> impl Responder {
+    HttpResponse::Ok()
+        .content_type("text/html")
+        .body(empty_delete_modal())
+}
+
+fn render_estimates_modal(model: &Model, gpu: &GpuInfo, query: &EstimatesModalQuery) -> String {
+    let fit_filter = query.fit.as_deref().unwrap_or("all");
+    let context_filter = query.context.as_deref().unwrap_or("all");
+    let quant_filter = query.quant.as_deref().unwrap_or("all");
+
+    let mut contexts = model
+        .estimates
+        .iter()
+        .map(|estimate| estimate.context.to_string())
+        .collect::<Vec<_>>();
+    contexts.sort_by_key(|value| value.parse::<usize>().unwrap_or_default());
+    contexts.dedup();
+
+    let mut quants = model
+        .estimates
+        .iter()
+        .map(|estimate| estimate.quant.to_string())
+        .collect::<Vec<_>>();
+    quants.sort();
+    quants.dedup();
+
+    let mut grid = div().class("estimate-grid").attr("id", "estimate-grid");
+    for estimate in model.estimates.iter().filter(|estimate| {
+        let fits = estimate.total_gb <= gpu.free_gb;
+        (fit_filter != "fit" || fits)
+            && (fit_filter != "nofit" || !fits)
+            && (context_filter == "all" || estimate.context.to_string() == context_filter)
+            && (quant_filter == "all" || estimate.quant.to_string() == quant_filter)
+    }) {
+        let margin = gpu.free_gb - estimate.total_gb;
+        let fit_class = if estimate.total_gb > gpu.free_gb {
+            "fit-line fit-no"
+        } else if margin <= 2.0 {
+            "fit-line fit-warn"
+        } else {
+            "fit-line fit-ok"
+        };
+        grid = grid.child(
+            div()
+                .class(fit_class)
+                .child(div().child(render_fit_item(
+                    "ui_models_card_context",
+                    "Context",
+                    Some(estimate.context.to_string()),
+                )))
+                .child(div().child(render_fit_item(
+                    "ui_models_card_quant",
+                    "Quant",
+                    Some(estimate.quant.to_string()),
+                )))
+                .child(div().child(render_fit_item(
+                    "ui_models_card_vram",
+                    "VRAM",
+                    Some(format!("{:.1} GB", estimate.total_gb)),
+                )))
+                .child(div().child(render_fit_item(
+                    "ui_models_card_margin",
+                    "Margin",
+                    Some(format!("{:.2} GB", margin)),
+                ))),
+        );
+    }
+
+    div()
+        .attr("id", "estimates-modal")
+        .class("estimates-modal open")
+        .child(modal_close_backdrop(
+            &with_base_path("/api/v1/models/estimates-modal/empty"),
+            "#estimates-modal",
+        ))
+        .child(
+            div()
+                .class("estimates-modal-content")
+                .child(
+                    div()
+                        .class("estimates-modal-header")
+                        .child(
+                            div()
+                                .class("estimates-modal-title")
+                                .child(
+                                    span()
+                                        .attr("data-i18n", "ui_models_modal_estimates_title")
+                                        .text("Estimations"),
+                                )
+                                .child(span().text(format!(" - {}", model.name))),
+                        )
+                        .child(modal_close_button(
+                            &with_base_path("/api/v1/models/estimates-modal/empty"),
+                            "#estimates-modal",
+                        )),
+                )
+                .child(
+                    div()
+                        .class("estimates-modal-body")
+                        .child(
+                            form()
+                                .class("estimate-filters")
+                                .attr("hx-get", with_base_path("/api/v1/models/estimates-modal"))
+                                .attr("hx-target", "#estimates-modal")
+                                .attr("hx-swap", "outerHTML")
+                                .attr("hx-trigger", "change")
+                                .child(
+                                    input()
+                                        .attr("type", "hidden")
+                                        .attr("name", "path")
+                                        .attr("value", &model.path),
+                                )
+                                .child(select_with_options(
+                                    "fit",
+                                    fit_filter,
+                                    &[
+                                        (
+                                            "all",
+                                            "All",
+                                            Some("ui_models_modal_estimates_filter_all"),
+                                        ),
+                                        (
+                                            "fit",
+                                            "Fits",
+                                            Some("ui_models_modal_estimates_filter_fits"),
+                                        ),
+                                        (
+                                            "nofit",
+                                            "Does not fit",
+                                            Some("ui_models_modal_estimates_filter_nofit"),
+                                        ),
+                                    ],
+                                ))
+                                .child(select_from_values(
+                                    "context",
+                                    context_filter,
+                                    "all",
+                                    "All Contexts",
+                                    &contexts,
+                                ))
+                                .child(select_from_values(
+                                    "quant",
+                                    quant_filter,
+                                    "all",
+                                    "All Quants",
+                                    &quants,
+                                )),
+                        )
+                        .child(grid),
+                ),
+        )
+        .render()
+}
+
+fn render_delete_modal(path: &str, name: Option<&str>) -> String {
+    div()
+        .attr("id", "confirm-delete-modal")
+        .class("estimates-modal open")
+        .child(modal_close_backdrop(
+            &with_base_path("/api/v1/models/delete-modal/empty"),
+            "#confirm-delete-modal",
+        ))
+        .child(
+            div()
+                .class("estimates-modal-content small")
+                .child(
+                    div()
+                        .class("estimates-modal-header")
+                        .child(
+                            div()
+                                .class("estimates-modal-title")
+                                .attr("data-i18n", "ui_models_modal_delete_title")
+                                .text("Confirm Delete"),
+                        )
+                        .child(modal_close_button(
+                            &with_base_path("/api/v1/models/delete-modal/empty"),
+                            "#confirm-delete-modal",
+                        )),
+                )
+                .child(
+                    div()
+                        .class("estimates-modal-body")
+                        .child(
+                            p().attr("data-i18n", "ui_models_modal_delete_text")
+                                .text("Are you sure you want to delete this model?"),
+                        )
+                        .child(
+                            div()
+                                .class("model-to-delete-name")
+                                .text(name.unwrap_or(path)),
+                        )
+                        .child(
+                            form()
+                                .class("confirm-actions")
+                                .attr("hx-post", with_base_path("/api/v1/models/delete-form"))
+                                .attr("hx-target", "#confirm-delete-modal")
+                                .attr("hx-swap", "outerHTML")
+                                .child(
+                                    input()
+                                        .attr("type", "hidden")
+                                        .attr("name", "path")
+                                        .attr("value", path),
+                                )
+                                .child(
+                                    button()
+                                        .class("button cancel")
+                                        .attr("type", "button")
+                                        .attr("data-i18n", "ui_common_cancel")
+                                        .attr(
+                                            "hx-get",
+                                            with_base_path("/api/v1/models/delete-modal/empty"),
+                                        )
+                                        .attr("hx-target", "#confirm-delete-modal")
+                                        .attr("hx-swap", "outerHTML")
+                                        .text("Cancel"),
+                                )
+                                .child(
+                                    button()
+                                        .class("button delete")
+                                        .attr("type", "submit")
+                                        .attr("data-i18n", "ui_models_modal_delete_confirm")
+                                        .text("Delete"),
+                                ),
+                        ),
+                ),
+        )
+        .render()
+}
+
+fn modal_close_backdrop(endpoint: &str, target: &str) -> Element {
+    button()
+        .class("estimates-modal-backdrop")
+        .attr("type", "button")
+        .attr("hx-get", endpoint)
+        .attr("hx-target", target)
+        .attr("hx-swap", "outerHTML")
+}
+
+fn modal_close_button(endpoint: &str, target: &str) -> Element {
+    button()
+        .class("estimates-modal-close")
+        .attr("type", "button")
+        .attr("hx-get", endpoint)
+        .attr("hx-target", target)
+        .attr("hx-swap", "outerHTML")
+        .child(i().class("fa-solid fa-xmark"))
+}
+
+fn empty_estimates_modal() -> String {
+    div()
+        .attr("id", "estimates-modal")
+        .class("estimates-modal")
+        .render()
+}
+
+fn empty_delete_modal() -> String {
+    div()
+        .attr("id", "confirm-delete-modal")
+        .class("estimates-modal")
+        .render()
+}
+
+fn select_with_options(
+    name: &str,
+    selected: &str,
+    options: &[(&str, &str, Option<&str>)],
+) -> Element {
+    let mut select = select().attr("name", name);
+    for (value, label_text, i18n) in options {
+        let mut option = option().attr("value", value).text(label_text);
+        if selected == *value {
+            option = option.attr("selected", "selected");
+        }
+        if let Some(key) = i18n {
+            option = option.attr("data-i18n", key);
+        }
+        select = select.child(option);
+    }
+    select
+}
+
+fn select_from_values(
+    name: &str,
+    selected: &str,
+    all_value: &str,
+    all_label: &str,
+    values: &[String],
+) -> Element {
+    let mut select = select().attr("name", name);
+    let mut all = option().attr("value", all_value).text(all_label);
+    if selected == all_value {
+        all = all.attr("selected", "selected");
+    }
+    select = select.child(all);
+    for value in values {
+        let mut opt = option().attr("value", value).text(value);
+        if selected == value {
+            opt = opt.attr("selected", "selected");
+        }
+        select = select.child(opt);
+    }
+    select
+}
+
+fn encode_query_component(value: &str) -> String {
+    let mut encoded = String::new();
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(byte as char);
+            }
+            _ => encoded.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    encoded
 }

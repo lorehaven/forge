@@ -1,11 +1,19 @@
 use super::storage::{IndexDep, IndexRecord, list_crates, list_versions};
+use crate::routers::crates::ops::yank::set_yanked;
 use crate::routers::ui::PageQuery;
 use crate::routers::ui::common::{
     UiPageKind, is_ui_authenticated, render_page, ui_login_redirect, ui_path,
 };
-use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
+use actix_web::{HttpRequest, HttpResponse, Responder, get, post, web};
 use quench_srv::prelude::JwtConfig;
+use quench_srv::prelude::with_base_path;
 use quench_web::prelude::*;
+
+#[derive(serde::Deserialize)]
+pub(in crate::routers::ui::pages) struct CrateActionForm {
+    name: String,
+    version: String,
+}
 
 #[get("/crates/catalog")]
 pub(super) async fn crates_index(
@@ -29,6 +37,49 @@ pub(super) async fn crates_index_slash(
         return ui_login_redirect();
     }
     render_crates_page(query.repo.clone(), query.tag.clone())
+}
+
+#[post("/crates/yank")]
+pub(in crate::routers::ui::pages) async fn yank_version(
+    req: HttpRequest,
+    form: web::Form<CrateActionForm>,
+    config: web::Data<JwtConfig>,
+) -> impl Responder {
+    set_yank_state(req, form, config, true).await
+}
+
+#[post("/crates/unyank")]
+pub(in crate::routers::ui::pages) async fn unyank_version(
+    req: HttpRequest,
+    form: web::Form<CrateActionForm>,
+    config: web::Data<JwtConfig>,
+) -> impl Responder {
+    set_yank_state(req, form, config, false).await
+}
+
+async fn set_yank_state(
+    req: HttpRequest,
+    form: web::Form<CrateActionForm>,
+    config: web::Data<JwtConfig>,
+    yanked: bool,
+) -> HttpResponse {
+    if !is_ui_authenticated(&req, &config) {
+        return ui_login_redirect();
+    }
+
+    match set_yanked(&form.name, &form.version, yanked).await {
+        Ok(true) => HttpResponse::NoContent()
+            .append_header((
+                "HX-Redirect",
+                with_base_path(&format!(
+                    "/ui/crates/catalog?repo={}&tag={}",
+                    form.name, form.version
+                )),
+            ))
+            .finish(),
+        Ok(false) => HttpResponse::NotFound().body("crate version not found"),
+        Err(msg) => HttpResponse::InternalServerError().body(msg),
+    }
 }
 
 fn render_crates_page(
@@ -256,34 +307,64 @@ fn render_metadata_panel(krate: Option<&str>, record: Option<&IndexRecord>) -> E
 
             let crate_name = krate.unwrap_or("");
             let action_button = if r.yanked {
-                button()
-                    .class("button-danger-sm")
-                    .attr(
-                        "style",
-                        "color: var(--bs-warning); border-color: var(--bs-warning);",
-                    )
-                    .attr("data-action", "unyank")
-                    .attr("data-crate", crate_name)
-                    .attr("data-version", &r.vers)
-                    .on_click("handleUnyankClick(event)")
-                    .child(i().class("fas fa-undo mr-2"))
+                form()
+                    .class("inline-action-form")
+                    .attr("hx-post", ui_path("/crates/unyank"))
+                    .attr("hx-swap", "none")
                     .child(
-                        span()
-                            .attr("data-i18n", "ui_unyank_version")
-                            .text("Unyank Version"),
+                        input()
+                            .attr("type", "hidden")
+                            .attr("name", "name")
+                            .attr("value", crate_name),
+                    )
+                    .child(
+                        input()
+                            .attr("type", "hidden")
+                            .attr("name", "version")
+                            .attr("value", &r.vers),
+                    )
+                    .child(
+                        button()
+                            .class("button-danger-sm")
+                            .attr("type", "submit")
+                            .attr(
+                                "style",
+                                "color: var(--bs-warning); border-color: var(--bs-warning);",
+                            )
+                            .child(i().class("fas fa-undo mr-2"))
+                            .child(
+                                span()
+                                    .attr("data-i18n", "ui_unyank_version")
+                                    .text("Unyank Version"),
+                            ),
                     )
             } else {
-                button()
-                    .class("button-danger-sm")
-                    .attr("data-action", "yank")
-                    .attr("data-crate", crate_name)
-                    .attr("data-version", &r.vers)
-                    .on_click("handleYankClick(event)")
-                    .child(i().class("fas fa-ban mr-2"))
+                form()
+                    .class("inline-action-form")
+                    .attr("hx-post", ui_path("/crates/yank"))
+                    .attr("hx-swap", "none")
                     .child(
-                        span()
-                            .attr("data-i18n", "ui_yank_version")
-                            .text("Yank Version"),
+                        input()
+                            .attr("type", "hidden")
+                            .attr("name", "name")
+                            .attr("value", crate_name),
+                    )
+                    .child(
+                        input()
+                            .attr("type", "hidden")
+                            .attr("name", "version")
+                            .attr("value", &r.vers),
+                    )
+                    .child(
+                        button()
+                            .class("button-danger-sm")
+                            .attr("type", "submit")
+                            .child(i().class("fas fa-ban mr-2"))
+                            .child(
+                                span()
+                                    .attr("data-i18n", "ui_yank_version")
+                                    .text("Yank Version"),
+                            ),
                     )
             };
 

@@ -47,7 +47,8 @@ pub fn shared_dashboard_rules() -> Vec<CssRule> {
                     .property("align-items", "center")
                     .property("gap", "0.5rem")
                     .property("cursor", "pointer")
-                    .property("font-weight", "500")),
+                    .property("font-weight", "500")
+                    .property("text-decoration", "none")),
         CssRule::new(".grid")
             .property("padding", "1rem 0.5rem")
             .property("display", "grid")
@@ -127,6 +128,12 @@ pub fn shared_dashboard_rules() -> Vec<CssRule> {
                     .property("line-height", "1")
                     .property("overflow-x", "auto")
                     .property("white-space", "nowrap"),
+            )
+            .child(
+                CssRule::new(".fit-details-icon")
+                    .property("margin-left", "auto")
+                    .property("opacity", "0.75")
+                    .property("flex-shrink", "0"),
             )
             .child(CssRule::new(".fit-separator").property("opacity", "0.5")),
         CssRule::new(".fit-ok")

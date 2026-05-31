@@ -81,9 +81,20 @@ pub fn estimates_modal_rules() -> Vec<CssRule> {
                     .child(
                         CssRule::new(".confirm-actions")
                             .property("display", "flex")
+                            .property("flex-direction", "row")
+                            .property("flex-wrap", "nowrap")
                             .property("gap", "1rem")
                             .property("justify-content", "center")
-                            .property("width", "100%"),
+                            .property("align-items", "center")
+                            .property("width", "100%")
+                            .child(
+                                CssRule::new(".button")
+                                    .property("min-width", "5.5rem")
+                                    .property("width", "auto")
+                                    .property("padding", "0.4rem 0.75rem")
+                                    .property("font-size", "0.85rem")
+                                    .property("line-height", "1.1"),
+                            ),
                     ),
             )
             .child(
@@ -111,7 +122,16 @@ pub fn estimates_modal_rules() -> Vec<CssRule> {
                     .property("display", "flex")
                     .property("gap", "0.75rem")
                     .property("margin-bottom", "1rem")
-                    .property("flex-wrap", "wrap")
+                    .property("flex-direction", "row")
+                    .property("flex-wrap", "nowrap")
+                    .property("align-items", "center")
+                    .property("justify-content", "center")
+                    .property("position", "sticky")
+                    .property("top", "0")
+                    .property("z-index", "1")
+                    .property("width", "100%")
+                    .property("padding", "0.5rem 0")
+                    .property("background", "var(--bs-gray-900)")
                     .child(
                         CssRule::new("select")
                             .property("background", "var(--bs-gray-800)")

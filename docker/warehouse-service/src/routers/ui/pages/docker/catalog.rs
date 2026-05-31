@@ -1,14 +1,29 @@
 use crate::routers::docker::registry::storage::{
     TagListError, TagMetadata, list_repositories, list_tag_metadata_for_repository,
 };
+use crate::routers::docker::{manifest_path, repository_path, validate_digest};
 use crate::routers::ui::PageQuery;
 use crate::routers::ui::common::{
     UiPageKind, is_ui_authenticated, render_page, ui_login_redirect, ui_path,
 };
-use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
+use actix_web::{HttpRequest, HttpResponse, Responder, get, post, web};
 use quench_srv::prelude::JwtConfig;
+use quench_srv::prelude::with_base_path;
 use quench_web::prelude::*;
 use std::collections::BTreeMap;
+
+#[derive(serde::Deserialize)]
+pub(in crate::routers::ui::pages) struct DeleteImageForm {
+    repository: String,
+    digest: String,
+}
+
+#[derive(serde::Deserialize)]
+pub(in crate::routers::ui::pages) struct DeleteImageModalQuery {
+    repository: String,
+    tag: Option<String>,
+    digest: String,
+}
 
 #[derive(Default)]
 struct RepoTreeNode {
@@ -38,6 +53,170 @@ pub(in crate::routers::ui::pages) async fn docker_catalog_slash(
         return ui_login_redirect();
     }
     render_catalog_page(query.repo.clone(), query.tag.clone())
+}
+
+#[get("/docker/delete-image-modal")]
+pub(in crate::routers::ui::pages) async fn delete_image_modal(
+    req: HttpRequest,
+    query: web::Query<DeleteImageModalQuery>,
+    config: web::Data<JwtConfig>,
+) -> impl Responder {
+    if !is_ui_authenticated(&req, &config) {
+        return ui_login_redirect();
+    }
+
+    HttpResponse::Ok()
+        .content_type(actix_web::http::header::ContentType::html())
+        .body(render_delete_image_modal(&query))
+}
+
+#[get("/docker/delete-image-modal/empty")]
+pub(in crate::routers::ui::pages) async fn empty_delete_image_modal(
+    req: HttpRequest,
+    config: web::Data<JwtConfig>,
+) -> impl Responder {
+    if !is_ui_authenticated(&req, &config) {
+        return ui_login_redirect();
+    }
+
+    HttpResponse::Ok()
+        .content_type(actix_web::http::header::ContentType::html())
+        .body(empty_delete_image_modal_html())
+}
+
+#[post("/docker/delete-image")]
+pub(in crate::routers::ui::pages) async fn delete_image(
+    req: HttpRequest,
+    form: web::Form<DeleteImageForm>,
+    config: web::Data<JwtConfig>,
+) -> impl Responder {
+    if !is_ui_authenticated(&req, &config) {
+        return ui_login_redirect();
+    }
+
+    if !validate_digest(&form.digest) {
+        return HttpResponse::BadRequest().body("manifest deletion requires a digest reference");
+    }
+
+    let Some(repo_path) = repository_path(&form.repository) else {
+        return HttpResponse::BadRequest().body("invalid repository name");
+    };
+    let Some(manifest_path) = manifest_path(&form.digest) else {
+        return HttpResponse::BadRequest().body("invalid digest");
+    };
+
+    if !manifest_path.exists() {
+        return HttpResponse::NotFound().body("manifest unknown");
+    }
+
+    if let Err(err) = tokio::fs::remove_file(&manifest_path).await {
+        return HttpResponse::InternalServerError().body(err.to_string());
+    }
+
+    let tags_dir = repo_path.join("tags");
+    if let Ok(mut entries) = tokio::fs::read_dir(&tags_dir).await {
+        while let Ok(Some(entry)) = entries.next_entry().await
+            && let Ok(content) = tokio::fs::read_to_string(entry.path()).await
+            && content.trim() == form.digest
+        {
+            let _ = tokio::fs::remove_file(entry.path()).await;
+        }
+    }
+
+    HttpResponse::NoContent()
+        .append_header((
+            "HX-Redirect",
+            with_base_path(&format!("/ui/docker/catalog?repo={}", form.repository)),
+        ))
+        .finish()
+}
+
+fn render_delete_image_modal(query: &DeleteImageModalQuery) -> String {
+    let target = query
+        .tag
+        .as_deref()
+        .filter(|tag| !tag.is_empty())
+        .map(|tag| format!("{}:{tag}", query.repository))
+        .unwrap_or_else(|| query.repository.clone());
+
+    div()
+        .attr("id", "confirm-delete-image-modal")
+        .class("open")
+        .child(
+            button()
+                .class("confirm-modal-backdrop")
+                .attr("type", "button")
+                .attr("hx-get", ui_path("/docker/delete-image-modal/empty"))
+                .attr("hx-target", "#confirm-delete-image-modal")
+                .attr("hx-swap", "outerHTML"),
+        )
+        .child(
+            div()
+                .class("confirm-modal-content")
+                .child(
+                    div()
+                        .class("confirm-modal-header")
+                        .child(div().class("confirm-modal-title").text("Confirm Delete"))
+                        .child(
+                            button()
+                                .class("confirm-modal-close")
+                                .attr("type", "button")
+                                .attr("hx-get", ui_path("/docker/delete-image-modal/empty"))
+                                .attr("hx-target", "#confirm-delete-image-modal")
+                                .attr("hx-swap", "outerHTML")
+                                .child(i().class("fa-solid fa-xmark")),
+                        ),
+                )
+                .child(
+                    div()
+                        .class("confirm-modal-body")
+                        .child(p().text("Are you sure you want to delete this image?"))
+                        .child(div().class("confirm-delete-target").text(target))
+                        .child(
+                            form()
+                                .class("confirm-actions")
+                                .attr("hx-post", ui_path("/docker/delete-image"))
+                                .attr("hx-target", "#confirm-delete-image-modal")
+                                .attr("hx-swap", "outerHTML")
+                                .child(
+                                    input()
+                                        .attr("type", "hidden")
+                                        .attr("name", "repository")
+                                        .attr("value", &query.repository),
+                                )
+                                .child(
+                                    input()
+                                        .attr("type", "hidden")
+                                        .attr("name", "digest")
+                                        .attr("value", &query.digest),
+                                )
+                                .child(
+                                    button()
+                                        .class("button cancel")
+                                        .attr("type", "button")
+                                        .attr("hx-get", ui_path("/docker/delete-image-modal/empty"))
+                                        .attr("hx-target", "#confirm-delete-image-modal")
+                                        .attr("hx-swap", "outerHTML")
+                                        .text("Cancel"),
+                                )
+                                .child(
+                                    button()
+                                        .class("button delete")
+                                        .attr("type", "submit")
+                                        .text("Delete"),
+                                ),
+                        ),
+                ),
+        )
+        .render()
+}
+
+fn empty_delete_image_modal_html() -> String {
+    empty_delete_image_modal_element().render()
+}
+
+fn empty_delete_image_modal_element() -> Element {
+    div().attr("id", "confirm-delete-image-modal")
 }
 
 fn render_catalog_page(
@@ -91,7 +270,8 @@ fn render_catalog_page(
         HttpResponse::Ok(),
         content()
             .class("container-fluid py-4")
-            .child(div().class("split-view").child(left).child(right)),
+            .child(div().class("split-view").child(left).child(right))
+            .child(empty_delete_image_modal_element()),
         UiPageKind::Docker,
     )
 }
@@ -125,10 +305,19 @@ fn render_metadata_panel(repo: Option<&str>, selected_meta: Option<&TagMetadata>
                 div().class("mt-4").child(
                     button()
                         .class("button-danger-sm")
-                        .attr("data-action", "delete-image")
-                        .attr("data-repository", repo.unwrap_or(""))
-                        .attr("data-digest", &meta.digest)
-                        .on_click("handleDeleteImageClick(event)")
+                        .attr("type", "button")
+                        .attr(
+                            "hx-get",
+                            format!(
+                                "{}?repository={}&tag={}&digest={}",
+                                ui_path("/docker/delete-image-modal"),
+                                encode_query_component(repo.unwrap_or("")),
+                                encode_query_component(&meta.tag),
+                                encode_query_component(&meta.digest),
+                            ),
+                        )
+                        .attr("hx-target", "#confirm-delete-image-modal")
+                        .attr("hx-swap", "outerHTML")
                         .child(i().class("fas fa-trash mr-2"))
                         .child(
                             span()
@@ -314,4 +503,17 @@ fn node_has_selected(node: &RepoTreeNode, selected: &str) -> bool {
     node.children
         .values()
         .any(|child| node_has_selected(child, selected))
+}
+
+fn encode_query_component(value: &str) -> String {
+    let mut encoded = String::new();
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(byte as char);
+            }
+            _ => encoded.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    encoded
 }

@@ -2,7 +2,7 @@ use super::types::VllmInstance;
 use crate::routers::models::mod_impl::is_admin;
 use crate::routers::vllm::engine::VllmEngine;
 use actix_web::{HttpResponse, Responder, get, web};
-use quench_srv::prelude::JwtConfig;
+use quench_srv::prelude::{JwtConfig, with_base_path};
 use quench_web::prelude::*;
 use std::sync::Arc;
 
@@ -38,13 +38,12 @@ pub async fn handle_grid(
 
 pub fn render_instances_grid(instances: Vec<VllmInstance>, is_admin: bool) -> String {
     if instances.is_empty() {
-        return div().class("empty").text("No running instances").render();
+        return instances_grid_shell()
+            .child(div().class("empty").text("No running instances"))
+            .render();
     }
 
-    let mut grid = div()
-        .attr("id", "vllm-instances-grid")
-        .attr("name", "vllm-instances-grid")
-        .class("vllm-instances-grid grid");
+    let mut grid = instances_grid_shell();
 
     for instance in instances {
         let status_class = match instance.status.as_str() {
@@ -72,12 +71,16 @@ pub fn render_instances_grid(instances: Vec<VllmInstance>, is_admin: bool) -> St
                     .attr("type", "button")
                     .attr("title", "Stop instance")
                     .attr(
-                        "onclick",
+                        "hx-get",
                         format!(
-                            "openStopInstanceModal('{}', '{}')",
-                            instance.id, instance.model
+                            "{}?id={}&model={}",
+                            with_base_path("/api/v1/vllm/stop-modal"),
+                            encode_query_component(&instance.id),
+                            encode_query_component(&instance.model)
                         ),
                     )
+                    .attr("hx-target", "#confirm-stop-instance-modal")
+                    .attr("hx-swap", "outerHTML")
                     .child(i().class("fa-solid fa-power-off")),
             );
         }
@@ -167,6 +170,7 @@ pub fn render_instances_grid(instances: Vec<VllmInstance>, is_admin: bool) -> St
                     diag = diag.child(
                         div()
                             .class("instance-log-path")
+                            .attr("title", format!("log: {}", log))
                             .text(format!("log: {}", log)),
                     );
                 }
@@ -182,4 +186,26 @@ pub fn render_instances_grid(instances: Vec<VllmInstance>, is_admin: bool) -> St
     }
 
     grid.render()
+}
+
+fn instances_grid_shell() -> Element {
+    div()
+        .attr("id", "vllm-instances-grid")
+        .attr("name", "vllm-instances-grid")
+        .attr("sse-swap", "vllm-instances")
+        .attr("hx-swap", "outerHTML")
+        .class("vllm-instances-grid grid")
+}
+
+fn encode_query_component(value: &str) -> String {
+    let mut encoded = String::new();
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(byte as char);
+            }
+            _ => encoded.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    encoded
 }

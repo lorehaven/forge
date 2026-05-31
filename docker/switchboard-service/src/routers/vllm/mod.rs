@@ -2,6 +2,7 @@ pub mod engine;
 pub mod kubernetes;
 pub mod launch;
 pub mod list;
+pub mod modals;
 pub mod native;
 pub mod sse;
 pub mod stop;
@@ -49,7 +50,12 @@ pub fn scope(engine: Arc<dyn VllmEngine>) -> impl HttpServiceFactory {
         .app_data(web::Data::new(engine))
         .service(list::list_instances)
         .service(list::handle_grid)
+        .service(modals::handle_launch_modal)
+        .service(modals::empty_launch_modal)
+        .service(modals::handle_stop_modal)
+        .service(modals::empty_stop_modal)
         .service(launch::launch_instance)
+        .service(launch::launch_instance_form)
         .service(stop::stop_instance)
         .service(sse::handle_sse)
 }

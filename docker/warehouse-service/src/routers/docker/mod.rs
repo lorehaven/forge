@@ -24,7 +24,7 @@ fn blob_path(digest: &str) -> Option<PathBuf> {
     )
 }
 
-fn manifest_path(digest: &str) -> Option<PathBuf> {
+pub(crate) fn manifest_path(digest: &str) -> Option<PathBuf> {
     let hex = digest_hex(digest)?;
     Some(
         PathBuf::from(DOCKER_STORAGE_ROOT.as_str())
@@ -41,7 +41,7 @@ async fn blob_exists(digest: &str) -> bool {
     tokio::fs::metadata(path).await.is_ok()
 }
 
-fn validate_digest(digest: &str) -> bool {
+pub(crate) fn validate_digest(digest: &str) -> bool {
     let Some(hex) = digest.strip_prefix("sha256:") else {
         return false;
     };
@@ -55,7 +55,7 @@ fn digest_hex(digest: &str) -> Option<&str> {
     digest.strip_prefix("sha256:")
 }
 
-fn repository_path(name: &str) -> Option<PathBuf> {
+pub(crate) fn repository_path(name: &str) -> Option<PathBuf> {
     if !validate_repository_name(name) {
         return None;
     }

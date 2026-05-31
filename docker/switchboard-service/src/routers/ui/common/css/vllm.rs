@@ -35,7 +35,8 @@ pub fn vllm_rules() -> Vec<CssRule> {
             .property("background", "rgba(0, 0, 0, 0.7)")
             .property("z-index", "1000")
             .property("justify-content", "center")
-            .property("align-items", "center"),
+            .property("align-items", "center")
+            .child(CssRule::new("&.open").property("display", "flex")),
         CssRule::new(".modal-content")
             .property("background", "var(--bs-gray-900)")
             .property("border", "0.0625rem solid var(--bs-gray-700)")
@@ -80,6 +81,14 @@ pub fn vllm_rules() -> Vec<CssRule> {
         CssRule::new(".form-row")
             .property("display", "flex")
             .property("gap", "1rem"),
+        CssRule::new(".form-row.compact").child(
+            CssRule::new(".form-group")
+                .property("flex", "0 0 auto")
+                .property("max-width", "18rem"),
+        ),
+        CssRule::new(".launch-host-field").property("width", "16rem"),
+        CssRule::new(".launch-port-field").property("width", "8rem"),
+        CssRule::new(".launch-namespace-field").property("width", "18rem"),
         CssRule::new(".form-group-checkbox")
             .property("flex", "1")
             .child(CssRule::new("input").property("width", "unset")),
@@ -107,7 +116,10 @@ pub fn vllm_rules() -> Vec<CssRule> {
             .child(
                 CssRule::new(".instance-log-path")
                     .property("color", "var(--bs-gray-400)")
-                    .property("word-break", "break-all"),
+                    .property("overflow", "hidden")
+                    .property("text-overflow", "ellipsis")
+                    .property("white-space", "nowrap")
+                    .property("max-width", "100%"),
             ),
         CssRule::new(".launch-modal-content")
             .property("max-width", "48rem")

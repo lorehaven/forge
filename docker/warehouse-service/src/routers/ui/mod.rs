@@ -117,8 +117,13 @@ pub fn scope() -> impl HttpServiceFactory {
         // Docker pages
         .service(pages::docker::catalog::docker_catalog)
         .service(pages::docker::catalog::docker_catalog_slash)
+        .service(pages::docker::catalog::delete_image)
+        .service(pages::docker::catalog::delete_image_modal)
+        .service(pages::docker::catalog::empty_delete_image_modal)
         .service(pages::docker::tags::docker_tags)
         // Crates pages
         .service(pages::crates::catalog::crates_index)
         .service(pages::crates::catalog::crates_index_slash)
+        .service(pages::crates::catalog::yank_version)
+        .service(pages::crates::catalog::unyank_version)
 }

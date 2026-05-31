@@ -4,7 +4,6 @@ use quench_web::prelude::*;
 use std::sync::LazyLock;
 
 mod css;
-mod scripts;
 
 static UI_SHELL_HOME: LazyLock<AppShell> = LazyLock::new(|| {
     css::ensure_switchboard_css();
@@ -42,7 +41,6 @@ static UI_SHELL_MODELS_DASHBOARD: LazyLock<AppShell> = LazyLock::new(|| {
             "stylesheet",
             &ui_asset_path("/css/switchboard.css"),
         )])
-        .scripts(vec![scripts::models_dashboard_script()])
         .with_nav(false)
         .resources_prefix(ui_path(""))
         .build()
@@ -66,7 +64,6 @@ static UI_SHELL_VLLM_MANAGEMENT: LazyLock<AppShell> = LazyLock::new(|| {
             "stylesheet",
             &ui_asset_path("/css/switchboard.css"),
         )])
-        .scripts(vec![scripts::vllm_management_script()])
         .with_nav(false)
         .resources_prefix(ui_path(""))
         .build()

@@ -100,7 +100,10 @@ pub fn models_rules() -> Vec<CssRule> {
                                 .property("font-family", "monospace")
                                 .property("font-size", "0.7rem")
                                 .property("opacity", "0.7")
-                                .property("word-break", "break-all"),
+                                .property("overflow", "hidden")
+                                .property("text-overflow", "ellipsis")
+                                .property("white-space", "nowrap")
+                                .property("max-width", "100%"),
                         ),
                 ),
             ),

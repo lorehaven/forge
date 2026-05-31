@@ -96,7 +96,9 @@ impl AppBuilder {
             self.supported_locales.clone()
         };
         let mut scripts = vec![
-            Script::inline("if (typeof global === 'undefined') { window.global = window; }"),
+            Script::inline(
+                "window.global = window.global || window; window.global.global = window.global;",
+            ),
             Script::new(HTMX_SCRIPT).immediate(),
             Script::new(HTMX_SSE_SCRIPT).immediate(),
             Script::new(&format!(
