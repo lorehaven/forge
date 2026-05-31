@@ -92,12 +92,12 @@ fn ui_header(title_key: Option<&str>, show_home: bool, show_logout: bool) -> Ele
             div()
                 .class("right-panel")
                 .child_opt(show_home.then(|| {
-                    a().attr("href", &ui_path("/home"))
+                    a().attr("href", ui_path("/home"))
                         .class("button")
                         .attr("data-i18n", "ui_home_button")
                 }))
                 .child_opt(show_logout.then(|| {
-                    a().attr("href", &ui_path("/logout"))
+                    a().attr("href", ui_path("/logout"))
                         .class("button")
                         .attr("data-i18n", "ui_logout")
                 })),

@@ -1,99 +1,91 @@
 use std::time::Duration;
 
 use actix_web::dev::HttpServiceFactory;
-use actix_web::{Error, HttpRequest, HttpResponse, get, web};
-use actix_ws::{Message, MessageStream, Session};
-
+use actix_web::{Error, HttpResponse, Responder, get, web};
+use bytes::Bytes;
 use futures_util::StreamExt;
+use quench_web::prelude::*;
+use tokio::sync::broadcast::Sender;
+use tokio_stream::wrappers::BroadcastStream;
 
 pub mod monitor;
 
-pub use monitor::{GpuInfo, get_gpu_info};
+pub use monitor::get_gpu_info;
+
+pub struct GpuBroadcaster(pub Sender<String>);
 
 // ---------------------------------------------------------------------------
 // Scope
 // ---------------------------------------------------------------------------
 
 pub fn scope() -> impl HttpServiceFactory {
-    web::scope("/api/v1/gpu").service(handle_ws)
+    web::scope("/api/v1/gpu")
+        .service(handle_sse)
+        .service(get_status)
 }
 
 // ---------------------------------------------------------------------------
-// WebSocket endpoint
+// REST endpoint
 // ---------------------------------------------------------------------------
 
-#[get("/status/ws")]
-pub async fn handle_ws(req: HttpRequest, body: web::Payload) -> Result<HttpResponse, Error> {
-    let (response, session, stream) = actix_ws::handle(&req, body)?;
+#[get("/status")]
+pub async fn get_status() -> impl Responder {
+    let gpu = get_gpu_info().unwrap_or_default();
+    HttpResponse::Ok().json(gpu)
+}
 
-    let session_clone = session.clone();
+// ---------------------------------------------------------------------------
+// SSE endpoint
+// ---------------------------------------------------------------------------
 
-    actix_web::rt::spawn(async move {
-        websocket_sender(session).await;
+#[get("/status/sse")]
+pub async fn handle_sse(broadcaster: web::Data<GpuBroadcaster>) -> Result<HttpResponse, Error> {
+    let rx = broadcaster.0.subscribe();
+
+    let stream = BroadcastStream::new(rx).filter_map(|msg| async move {
+        match msg {
+            Ok(html) => Some(Ok::<Bytes, Error>(Bytes::from(format!(
+                "event: gpu-status\ndata: {}\n\n",
+                html.replace('\n', "")
+            )))),
+            Err(_) => None,
+        }
     });
 
-    actix_web::rt::spawn(async move {
-        websocket_receiver(stream, session_clone).await;
+    Ok(HttpResponse::Ok()
+        .insert_header(("Content-Type", "text/event-stream"))
+        .insert_header(("Cache-Control", "no-cache"))
+        .streaming(stream))
+}
+
+pub fn init_gpu_status_publisher(broadcaster: Sender<String>) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(1));
+
+        loop {
+            interval.tick().await;
+
+            let gpu = get_gpu_info().unwrap_or_default();
+
+            let html = div()
+                .class("gpu")
+                .attr("id", "gpu-status")
+                .child(div().class("gpu-name").text(format!("GPU: {}", gpu.name)))
+                .child(
+                    div()
+                        .class("gpu-total")
+                        .child(span().attr("data-i18n", "ui_models_gpu_total"))
+                        .child(span().text(format!(" {} GB", gpu.total_gb))),
+                )
+                .child(
+                    div()
+                        .class("gpu-free")
+                        .child(span().attr("data-i18n", "ui_models_gpu_free"))
+                        .child(span().text(format!(" {} GB", gpu.free_gb))),
+                )
+                .render();
+
+            let _ = broadcaster.send(html);
+        }
     });
-
-    Ok(response)
-}
-
-// ---------------------------------------------------------------------------
-// WebSocket tasks
-// ---------------------------------------------------------------------------
-
-async fn websocket_sender(mut session: Session) {
-    let mut interval = actix_web::rt::time::interval(Duration::from_secs(1));
-
-    loop {
-        interval.tick().await;
-
-        match get_gpu_info() {
-            Ok(gpu) => match serde_json::to_string(&gpu) {
-                Ok(json) => {
-                    if session.text(json).await.is_err() {
-                        break;
-                    }
-                }
-
-                Err(e) => {
-                    tracing::error!("serialize gpu status failed: {e}");
-                }
-            },
-
-            Err(e) => {
-                tracing::error!("fetch GPU status failed: {e}");
-            }
-        }
-    }
-}
-
-async fn websocket_receiver(mut stream: MessageStream, mut session: Session) {
-    while let Some(item) = stream.next().await {
-        match item {
-            Ok(Message::Ping(bytes)) => {
-                if session.pong(&bytes).await.is_err() {
-                    break;
-                }
-            }
-
-            Ok(Message::Close(reason)) => {
-                let _ = session.close(reason).await;
-                break;
-            }
-
-            Ok(Message::Text(_))
-            | Ok(Message::Binary(_))
-            | Ok(Message::Continuation(_))
-            | Ok(Message::Nop)
-            | Ok(Message::Pong(_)) => {}
-
-            Err(e) => {
-                tracing::error!("websocket protocol error: {e}");
-
-                break;
-            }
-        }
-    }
 }

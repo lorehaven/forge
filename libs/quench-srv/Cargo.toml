@@ -1,6 +1,6 @@
 [package]
 name = "quench-srv"
-version = "0.1.10"
+version = "0.1.11"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Quench - simple server framework"

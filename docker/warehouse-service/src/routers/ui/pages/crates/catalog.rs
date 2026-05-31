@@ -129,7 +129,7 @@ fn render_crate_node(
                 .child(
                     a().attr(
                         "href",
-                        &format!("{}?repo={name}", ui_path("/crates/catalog")),
+                        format!("{}?repo={name}", ui_path("/crates/catalog")),
                     )
                     .class("repo-link")
                     .text(name),
@@ -149,7 +149,7 @@ fn render_crate_node(
         .child(
             a().attr(
                 "href",
-                &format!("{}?repo={name}", ui_path("/crates/catalog")),
+                format!("{}?repo={name}", ui_path("/crates/catalog")),
             )
             .class("repo-link active")
             .text(name),
@@ -177,7 +177,7 @@ fn render_crate_node(
                 li().child(
                     a().attr(
                         "href",
-                        &format!(
+                        format!(
                             "{}?repo={name}&tag={}",
                             ui_path("/crates/catalog"),
                             record.vers
@@ -211,7 +211,7 @@ fn render_metadata_panel(krate: Option<&str>, record: Option<&IndexRecord>) -> E
         (Some(_), Some(r)) => div()
             .class("panel-title")
             .child(span().attr("data-i18n", "ui_metadata_for"))
-            .child(span().text(&format!(" {}", r.vers))),
+            .child(span().text(format!(" {}", r.vers))),
         _ => div().class("panel-title").attr("data-i18n", "ui_metadata"),
     };
 

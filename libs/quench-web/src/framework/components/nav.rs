@@ -6,7 +6,7 @@ use strum::IntoEnumIterator;
 pub fn nav_button() -> Element {
     nav()
         .class("q-shell-nav-trigger")
-        .on_click(&toggle_modal("modal-overlay", "modal-side", "show"))
+        .on_click(toggle_modal("modal-overlay", "modal-side", "show"))
         .child(i().class("fas").class("fa-grip"))
 }
 
@@ -82,7 +82,7 @@ impl NavPanelBuilder {
         let mut element = select()
             .attr("id", "locale-select")
             .attr("value", &default_locale)
-            .on_change(&update_from_select("locale-select", "updateLocale"));
+            .on_change(update_from_select("locale-select", "updateLocale"));
 
         for locale in locales {
             let label = format!("{} {}", locale_flag(&locale), locale)
@@ -105,9 +105,9 @@ impl NavPanelBuilder {
             .attr("id", "theme-select")
             .attr(
                 "value",
-                &self.default_theme.unwrap_or(Theme::DefaultDark).to_string(),
+                self.default_theme.unwrap_or(Theme::DefaultDark).to_string(),
             )
-            .on_change(&update_from_select("theme-select", "updateTheme"));
+            .on_change(update_from_select("theme-select", "updateTheme"));
         themes.into_iter().for_each(|theme| {
             let theme_str = theme.to_string();
             element = element

@@ -3427,7 +3427,7 @@ dependencies = [
 
 [[package]]
 name = "quench-srv"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "actix-service",
  "actix-web",
@@ -3450,7 +3450,7 @@ dependencies = [
 
 [[package]]
 name = "quench-web"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "anyhow",
  "fluent-syntax",
@@ -4615,6 +4615,7 @@ dependencies = [
  "actix-web",
  "actix-ws",
  "async-trait",
+ "bytes",
  "chrono",
  "dotenvy",
  "envmnt",
@@ -4630,6 +4631,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "tokio",
+ "tokio-stream",
  "tracing",
  "tracing-subscriber",
  "walkdir",
@@ -4902,6 +4904,7 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]

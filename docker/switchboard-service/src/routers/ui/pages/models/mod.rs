@@ -1,6 +1,6 @@
 use crate::routers::ui::common::{self, UiPageKind, render_page};
 use actix_web::{HttpResponse, Responder, get, web};
-use quench_srv::prelude::JwtConfig;
+use quench_srv::prelude::{JwtConfig, with_base_path};
 use quench_web::prelude::*;
 
 #[get("/models/dashboard")]
@@ -35,344 +35,269 @@ fn render_models_dashboard_page() -> HttpResponse {
                     .class("top-bar")
                     .child(
                         div()
-                            .class("gpu")
-                            .attr("id", "gpu-status")
-                            .child(div().class("gpu-name").text("GPU: n/a"))
+                            .attr("hx-ext", "sse")
+                            .attr("sse-connect", with_base_path("/api/v1/gpu/status/sse"))
                             .child(
                                 div()
-                                    .class("gpu-total")
-                                    .child(span().attr("data-i18n", "ui_models_gpu_total"))
-                                    .child(span().text(" n/a GB")),
-                            )
-                            .child(
-                                div()
-                                    .class("gpu-free")
-                                    .child(span().attr("data-i18n", "ui_models_gpu_free"))
-                                    .child(span().text(" n/a GB")),
+                                    .class("gpu")
+                                    .attr("id", "gpu-status")
+                                    .attr("sse-swap", "gpu-status")
+                                    .child(div().class("gpu-name").text("GPU: n/a"))
+                                    .child(
+                                        div()
+                                            .class("gpu-total")
+                                            .child(span().attr("data-i18n", "ui_models_gpu_total"))
+                                            .child(span().text(" n/a GB")),
+                                    )
+                                    .child(
+                                        div()
+                                            .class("gpu-free")
+                                            .child(span().attr("data-i18n", "ui_models_gpu_free"))
+                                            .child(span().text(" n/a GB")),
+                                    ),
                             ),
                     )
                     .child(div().class("flex-1"))
                     .child(
-                        select()
-                            .attr("id", "sort")
-                            .child(
-                                option()
-                                    .attr("value", "name_asc")
-                                    .attr("data-i18n", "ui_models_sort_name_asc"),
+                        form()
+                            .attr("id", "model-filters")
+                            .attr("onsubmit", "return false;")
+                            .attr("hx-get", with_base_path("/api/v1/models/grid"))
+                            .attr("hx-target", "#models-grid")
+                            .attr("hx-swap", "outerHTML")
+                            .attr(
+                                "hx-trigger",
+                                "change, keyup changed delay:300ms from:#search",
                             )
-                            .child(
-                                option()
-                                    .attr("value", "name_desc")
-                                    .attr("data-i18n", "ui_models_sort_name_desc"),
-                            )
-                            .child(
-                                option()
-                                    .attr("value", "params_asc")
-                                    .attr("data-i18n", "ui_models_sort_params_asc"),
-                            )
-                            .child(
-                                option()
-                                    .attr("value", "params_desc")
-                                    .attr("data-i18n", "ui_models_sort_params_desc"),
-                            )
-                            .child(
-                                option()
-                                    .attr("value", "vram_asc")
-                                    .attr("data-i18n", "ui_models_sort_vram_asc"),
-                            )
-                            .child(
-                                option()
-                                    .attr("value", "vram_desc")
-                                    .attr("data-i18n", "ui_models_sort_vram_desc"),
-                            )
-                            .on_change("onChangeSort()"),
-                    )
-                    .child(
-                        div()
-                            .class("model-tabs")
-                            .child(
-                                div()
-                                    .attr("id", "model-tab-hf")
-                                    .class("tab active")
-                                    .attr("data-i18n", "ui_models_tab_hf")
-                                    .on_click("toggleModelSource(event)"),
-                            )
-                            .child(
-                                div()
-                                    .attr("id", "model-tab-gguf")
-                                    .class("tab")
-                                    .attr("data-i18n", "ui_models_tab_gguf")
-                                    .on_click("toggleModelSource(event)"),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .class("tab refresh-models")
-                            .attr("title", "Refresh models")
-                            .on_click("refreshModelsCache()")
-                            .child(i().class("fa-solid fa-arrows-rotate")),
-                    )
-                    .child(
-                        div()
-                            .class("model-filters")
                             .child(
                                 input()
-                                    .attr("id", "search")
-                                    .attr("placeholder", "search")
-                                    .attr("data-i18n-placeholder", "ui_models_search_placeholder"),
+                                    .attr("type", "hidden")
+                                    .attr("name", "source")
+                                    .attr("id", "source")
+                                    .attr("value", "hf"),
                             )
                             .child(
                                 select()
-                                    .attr("id", "quant")
+                                    .attr("id", "sort")
+                                    .attr("name", "sort")
                                     .child(
                                         option()
-                                            .attr("value", "ALL")
-                                            .attr("data-i18n", "ui_models_filter_all_quants"),
-                                    )
-                                    // HF
-                                    .child(
-                                        option()
-                                            .class("quant-hf")
-                                            .attr("value", "FP16")
-                                            .attr("data-i18n", "ui_models_quant_fp16"),
+                                            .attr("value", "name_asc")
+                                            .attr("data-i18n", "ui_models_sort_name_asc"),
                                     )
                                     .child(
                                         option()
-                                            .class("quant-hf")
-                                            .attr("value", "BF16")
-                                            .attr("data-i18n", "ui_models_quant_bf16"),
+                                            .attr("value", "name_desc")
+                                            .attr("data-i18n", "ui_models_sort_name_desc"),
                                     )
                                     .child(
                                         option()
-                                            .class("quant-hf")
-                                            .attr("value", "FP8")
-                                            .attr("data-i18n", "ui_models_quant_fp8"),
+                                            .attr("value", "params_asc")
+                                            .attr("data-i18n", "ui_models_sort_params_asc"),
                                     )
                                     .child(
                                         option()
-                                            .class("quant-hf")
-                                            .attr("value", "INT8")
-                                            .attr("data-i18n", "ui_models_quant_int8"),
+                                            .attr("value", "params_desc")
+                                            .attr("data-i18n", "ui_models_sort_params_desc"),
                                     )
                                     .child(
                                         option()
-                                            .class("quant-hf")
-                                            .attr("value", "AWQ")
-                                            .attr("data-i18n", "ui_models_quant_awq"),
+                                            .attr("value", "vram_asc")
+                                            .attr("data-i18n", "ui_models_sort_vram_asc"),
                                     )
                                     .child(
                                         option()
-                                            .class("quant-hf")
-                                            .attr("value", "GPTQ")
-                                            .attr("data-i18n", "ui_models_quant_gptq"),
-                                    )
-                                    // GGUF
-                                    .child(
-                                        option()
-                                            .class("quant-gguf hidden")
-                                            .attr("value", "Q8_0")
-                                            .attr("data-i18n", "ui_models_quant_q8_0"),
-                                    )
-                                    .child(
-                                        option()
-                                            .class("quant-gguf hidden")
-                                            .attr("value", "Q6_K")
-                                            .attr("data-i18n", "ui_models_quant_q6_k"),
-                                    )
-                                    .child(
-                                        option()
-                                            .class("quant-gguf hidden")
-                                            .attr("value", "Q5_K_M")
-                                            .attr("data-i18n", "ui_models_quant_q5_k_m"),
-                                    )
-                                    .child(
-                                        option()
-                                            .class("quant-gguf hidden")
-                                            .attr("value", "Q5_0")
-                                            .attr("data-i18n", "ui_models_quant_q5_0"),
-                                    )
-                                    .child(
-                                        option()
-                                            .class("quant-gguf hidden")
-                                            .attr("value", "Q4_K_M")
-                                            .attr("data-i18n", "ui_models_quant_q4_k_m"),
-                                    )
-                                    .child(
-                                        option()
-                                            .class("quant-gguf hidden")
-                                            .attr("value", "Q4_0")
-                                            .attr("data-i18n", "ui_models_quant_q4_0"),
-                                    )
-                                    .child(
-                                        option()
-                                            .class("quant-gguf hidden")
-                                            .attr("value", "Q3_K_M")
-                                            .attr("data-i18n", "ui_models_quant_q3_k_m"),
-                                    )
-                                    .child(
-                                        option()
-                                            .class("quant-gguf hidden")
-                                            .attr("value", "Q2_K")
-                                            .attr("data-i18n", "ui_models_quant_q2_k"),
-                                    )
-                                    .on_change("onChangeQuant()"),
+                                            .attr("value", "vram_desc")
+                                            .attr("data-i18n", "ui_models_sort_vram_desc"),
+                                    ),
                             )
                             .child(
-                                select()
-                                    .attr("id", "context")
+                                div()
+                                    .class("model-tabs")
                                     .child(
-                                        option()
-                                            .attr("value", "0")
-                                            .attr("data-i18n", "ui_models_filter_all_contexts"),
+                                        div()
+                                            .attr("id", "model-tab-hf")
+                                            .class("tab active")
+                                            .attr("data-i18n", "ui_models_tab_hf")
+                                            .attr("hx-on:click", "model_tab_click('hf')"),
                                     )
-                                    .child(option().attr("value", "512").text("512"))
-                                    .child(option().attr("value", "1024").text("1024"))
-                                    .child(option().attr("value", "2048").text("2048"))
-                                    .child(option().attr("value", "4096").text("4096"))
-                                    .child(option().attr("value", "8192").text("8192"))
-                                    .child(option().attr("value", "16384").text("16384"))
-                                    .child(option().attr("value", "32768").text("32768"))
-                                    .child(option().attr("value", "65536").text("65536"))
-                                    .child(option().attr("value", "131072").text("131072"))
-                                    .on_change("onChangeContext()"),
+                                    .child(
+                                        div()
+                                            .attr("id", "model-tab-gguf")
+                                            .class("tab")
+                                            .attr("data-i18n", "ui_models_tab_gguf")
+                                            .attr("hx-on:click", "model_tab_click('gguf')"),
+                                    ),
                             )
                             .child(
-                                label()
-                                    .class("vllm-filter")
+                                div()
+                                    .class("model-filters")
                                     .child(
                                         input()
-                                            .attr("type", "checkbox")
-                                            .attr("id", "vllm-only")
-                                            .on_change("onChangeVllmOnly()"),
+                                            .attr("id", "search")
+                                            .attr("name", "search")
+                                            .attr("placeholder", "search")
+                                            .attr(
+                                                "data-i18n-placeholder",
+                                                "ui_models_search_placeholder",
+                                            ),
                                     )
-                                    .child(span().attr("data-i18n", "ui_models_filter_vllm_only")),
+                                    .child(
+                                        select()
+                                            .attr("id", "quant")
+                                            .attr("name", "quant")
+                                            .child(
+                                                option().attr("value", "ALL").attr(
+                                                    "data-i18n",
+                                                    "ui_models_filter_all_quants",
+                                                ),
+                                            )
+                                            // HF
+                                            .child(
+                                                option()
+                                                    .class("quant-hf")
+                                                    .attr("value", "FP16")
+                                                    .attr("data-i18n", "ui_models_quant_fp16"),
+                                            )
+                                            .child(
+                                                option()
+                                                    .class("quant-hf")
+                                                    .attr("value", "BF16")
+                                                    .attr("data-i18n", "ui_models_quant_bf16"),
+                                            )
+                                            .child(
+                                                option()
+                                                    .class("quant-hf")
+                                                    .attr("value", "FP8")
+                                                    .attr("data-i18n", "ui_models_quant_fp8"),
+                                            )
+                                            .child(
+                                                option()
+                                                    .class("quant-hf")
+                                                    .attr("value", "INT8")
+                                                    .attr("data-i18n", "ui_models_quant_int8"),
+                                            )
+                                            .child(
+                                                option()
+                                                    .class("quant-hf")
+                                                    .attr("value", "AWQ")
+                                                    .attr("data-i18n", "ui_models_quant_awq"),
+                                            )
+                                            .child(
+                                                option()
+                                                    .class("quant-hf")
+                                                    .attr("value", "GPTQ")
+                                                    .attr("data-i18n", "ui_models_quant_gptq"),
+                                            )
+                                            // GGUF
+                                            .child(
+                                                option()
+                                                    .class("quant-gguf hidden")
+                                                    .attr("value", "Q8_0")
+                                                    .attr("data-i18n", "ui_models_quant_q8_0"),
+                                            )
+                                            .child(
+                                                option()
+                                                    .class("quant-gguf hidden")
+                                                    .attr("value", "Q6_K")
+                                                    .attr("data-i18n", "ui_models_quant_q6_k"),
+                                            )
+                                            .child(
+                                                option()
+                                                    .class("quant-gguf hidden")
+                                                    .attr("value", "Q5_K_M")
+                                                    .attr("data-i18n", "ui_models_quant_q5_k_m"),
+                                            )
+                                            .child(
+                                                option()
+                                                    .class("quant-gguf hidden")
+                                                    .attr("value", "Q5_0")
+                                                    .attr("data-i18n", "ui_models_quant_q5_0"),
+                                            )
+                                            .child(
+                                                option()
+                                                    .class("quant-gguf hidden")
+                                                    .attr("value", "Q4_K_M")
+                                                    .attr("data-i18n", "ui_models_quant_q4_k_m"),
+                                            )
+                                            .child(
+                                                option()
+                                                    .class("quant-gguf hidden")
+                                                    .attr("value", "Q4_0")
+                                                    .attr("data-i18n", "ui_models_quant_q4_0"),
+                                            )
+                                            .child(
+                                                option()
+                                                    .class("quant-gguf hidden")
+                                                    .attr("value", "Q3_K_M")
+                                                    .attr("data-i18n", "ui_models_quant_q3_k_m"),
+                                            )
+                                            .child(
+                                                option()
+                                                    .class("quant-gguf hidden")
+                                                    .attr("value", "Q2_K")
+                                                    .attr("data-i18n", "ui_models_quant_q2_k"),
+                                            ),
+                                    )
+                                    .child(
+                                        select()
+                                            .attr("id", "context")
+                                            .attr("name", "context")
+                                            .child(
+                                                option().attr("value", "0").attr(
+                                                    "data-i18n",
+                                                    "ui_models_filter_all_contexts",
+                                                ),
+                                            )
+                                            .child(option().attr("value", "512").text("512"))
+                                            .child(option().attr("value", "1024").text("1024"))
+                                            .child(option().attr("value", "2048").text("2048"))
+                                            .child(option().attr("value", "4096").text("4096"))
+                                            .child(option().attr("value", "8192").text("8192"))
+                                            .child(option().attr("value", "16384").text("16384"))
+                                            .child(option().attr("value", "32768").text("32768"))
+                                            .child(option().attr("value", "65536").text("65536"))
+                                            .child(option().attr("value", "131072").text("131072")),
+                                    )
+                                    .child(
+                                        label()
+                                            .class("vllm-filter")
+                                            .child(
+                                                input()
+                                                    .attr("type", "checkbox")
+                                                    .attr("id", "vllm-only")
+                                                    .attr("name", "vllm_only")
+                                                    .attr("value", "true"),
+                                            )
+                                            .child(
+                                                span().attr(
+                                                    "data-i18n",
+                                                    "ui_models_filter_vllm_only",
+                                                ),
+                                            ),
+                                    ),
                             ),
                     ),
             )
-            .child(div().class("grid").attr("id", "models-grid"))
-            .child(models_card_template())
+            .child(
+                div()
+                    .class("grid")
+                    .attr("id", "models-grid")
+                    .attr("name", "models-grid")
+                    .attr("hx-get", with_base_path("/api/v1/models/grid"))
+                    .attr("hx-trigger", "load")
+                    .attr("hx-include", "#model-filters"),
+            )
             .child(estimates_modal())
             .child(confirm_delete_modal()),
         UiPageKind::ModelsDashboard,
     )
 }
 
-fn models_card_template() -> Element {
-    div()
-        .attr("id", "models-card-template")
-        .attr("style", "display: none;")
-        .attr("aria-hidden", "true")
-        .child(
-            div()
-                .class("card")
-                .child(
-                    div()
-                        .class("card-header")
-                        .child(
-                            div()
-                                .class("card-title")
-                                .child(
-                                    span()
-                                        .class("vllm-badge")
-                                        .attr("style", "display: none;")
-                                        .attr("title", "Supported by vLLM")
-                                        .text("vLLM"),
-                                )
-                                .child(span().class("card-title-text")),
-                        )
-                        .child(
-                            button()
-                                .class("card-delete")
-                                .attr("type", "button")
-                                .attr("style", "display: none;")
-                                .attr("data-i18n-title", "ui_models_card_delete_tooltip")
-                                .child(i().class("fa-solid fa-trash")),
-                        ),
-                )
-                .child(
-                    div()
-                        .class("card-meta")
-                        .child(
-                            div()
-                                .child(
-                                    div()
-                                        .class("card-meta-params")
-                                        .child(
-                                            span()
-                                                .attr("data-i18n", "ui_models_card_params")
-                                                .text("Params"),
-                                        )
-                                        .child(span().text(": "))
-                                        .child(span().class("card-meta-params-val")),
-                                )
-                                .child(
-                                    div()
-                                        .class("card-meta-quant")
-                                        .child(
-                                            span()
-                                                .attr("data-i18n", "ui_models_card_quant")
-                                                .text("Quant"),
-                                        )
-                                        .child(span().text(": "))
-                                        .child(span().class("card-meta-quant-val")),
-                                )
-                                .child(
-                                    div()
-                                        .class("card-meta-context")
-                                        .child(
-                                            span()
-                                                .attr("data-i18n", "ui_models_card_context")
-                                                .text("Context"),
-                                        )
-                                        .child(span().text(": "))
-                                        .child(span().class("card-meta-context-val")),
-                                ),
-                        )
-                        .child(
-                            div()
-                                .child(
-                                    div()
-                                        .class("card-meta-type")
-                                        .child(
-                                            span()
-                                                .attr("data-i18n", "ui_models_card_type")
-                                                .text("Type"),
-                                        )
-                                        .child(span().text(": "))
-                                        .child(span().class("card-meta-type-val")),
-                                )
-                                .child(
-                                    div()
-                                        .class("card-meta-layers")
-                                        .child(
-                                            span()
-                                                .attr("data-i18n", "ui_models_card_layers")
-                                                .text("Layers"),
-                                        )
-                                        .child(span().text(": "))
-                                        .child(span().class("card-meta-layers-val")),
-                                )
-                                .child(
-                                    div()
-                                        .class("card-meta-hidden")
-                                        .child(
-                                            span()
-                                                .attr("data-i18n", "ui_models_card_hidden")
-                                                .text("Hidden"),
-                                        )
-                                        .child(span().text(": "))
-                                        .child(span().class("card-meta-hidden-val")),
-                                ),
-                        ),
-                )
-                .child(div().class("card-fit"))
-                .child(div().class("card-path")),
-        )
-}
-
 fn estimates_modal() -> Element {
     div()
         .attr("id", "estimates-modal")
+        .class("estimates-modal")
         .child(
             div()
                 .class("estimates-modal-backdrop")
@@ -386,8 +311,8 @@ fn estimates_modal() -> Element {
                         .class("estimates-modal-header")
                         .child(
                             div()
+                                .attr("id", "estimates-modal-title")
                                 .class("estimates-modal-title")
-                                .attr("data-i18n", "ui_models_modal_estimates_title")
                                 .text("Estimates"),
                         )
                         .child(
@@ -461,8 +386,8 @@ fn confirm_delete_modal() -> Element {
                         .class("estimates-modal-header")
                         .child(
                             div()
+                                .attr("id", "confirm-delete-modal-title")
                                 .class("estimates-modal-title")
-                                .attr("data-i18n", "ui_models_modal_delete_title")
                                 .text("Delete Model"),
                         )
                         .child(

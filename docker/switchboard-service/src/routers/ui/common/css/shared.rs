@@ -34,6 +34,14 @@ pub fn shared_dashboard_rules() -> Vec<CssRule> {
                 CssRule::new(".flex-1")
                     .property("flex", "1"))
             .child(
+                CssRule::new("form")
+                    .property("display", "flex")
+                    .property("flex-direction", "row")
+                    .property("gap", "2rem")
+                    .property("width", "unset")
+                    .property("margin", "auto")
+            )
+            .child(
                 CssRule::new(".toolbar-action")
                     .property("display", "flex")
                     .property("align-items", "center")

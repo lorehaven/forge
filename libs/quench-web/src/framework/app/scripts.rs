@@ -88,7 +88,14 @@ document.addEventListener("DOMContentLoaded", () => {{
     watchLocaleChanges();
 }});
 
+document.addEventListener("htmx:afterSwap", () => {{
+    currentLocale = getLocale();
+    applyTranslations(currentLocale);
+}});
+
+window.qUpdateI18n = () => applyTranslations(getLocale());
 window.setLocale = updateLocale;
+window.getLocale = getLocale;
         "#,
         resolved_default_locale = resolved_default_locale
     )

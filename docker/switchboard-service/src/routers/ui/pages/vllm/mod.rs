@@ -1,7 +1,7 @@
 use crate::routers::ui::common;
 use crate::routers::ui::common::{UiPageKind, render_page};
 use actix_web::{HttpResponse, Responder, get, web};
-use quench_srv::prelude::JwtConfig;
+use quench_srv::prelude::{JwtConfig, with_base_path};
 use quench_web::prelude::*;
 
 #[get("/vllm/manage")]
@@ -53,20 +53,26 @@ fn render_vllm_manage_page() -> HttpResponse {
                     .class("top-bar")
                     .child(
                         div()
-                            .class("gpu")
-                            .attr("id", "gpu-status")
-                            .child(div().class("gpu-name").text("GPU: n/a"))
+                            .attr("hx-ext", "sse")
+                            .attr("sse-connect", with_base_path("/api/v1/gpu/status/sse"))
                             .child(
                                 div()
-                                    .class("gpu-total")
-                                    .child(span().attr("data-i18n", "ui_models_gpu_total"))
-                                    .child(span().text(" n/a GB")),
-                            )
-                            .child(
-                                div()
-                                    .class("gpu-free")
-                                    .child(span().attr("data-i18n", "ui_models_gpu_free"))
-                                    .child(span().text(" n/a GB")),
+                                    .class("gpu")
+                                    .attr("id", "gpu-status")
+                                    .attr("sse-swap", "gpu-status")
+                                    .child(div().class("gpu-name").text("GPU: n/a"))
+                                    .child(
+                                        div()
+                                            .class("gpu-total")
+                                            .child(span().attr("data-i18n", "ui_models_gpu_total"))
+                                            .child(span().text(" n/a GB")),
+                                    )
+                                    .child(
+                                        div()
+                                            .class("gpu-free")
+                                            .child(span().attr("data-i18n", "ui_models_gpu_free"))
+                                            .child(span().text(" n/a GB")),
+                                    ),
                             ),
                     )
                     .child(div().class("flex-1"))
@@ -83,9 +89,17 @@ fn render_vllm_manage_page() -> HttpResponse {
                             .on_click("openLaunchModal()"),
                     ),
             )
-            .child(div().class("grid").attr("id", "vllm-instances-grid"))
-            .child(vllm_empty_state_template())
-            .child(vllm_instance_card_template())
+            .child(
+                div()
+                    .attr("hx-ext", "sse")
+                    .attr("sse-connect", with_base_path("/api/v1/vllm/instances/sse"))
+                    .child(
+                        div()
+                            .class("grid")
+                            .attr("id", "vllm-instances-grid")
+                            .attr("sse-swap", "vllm-instances")
+                    )
+            )
             .child(
                 div().attr("id", "launch-modal").class("modal launch-modal").child(
                     div()
@@ -177,8 +191,6 @@ fn render_vllm_manage_page() -> HttpResponse {
                                                 ),
                                         );
                                     } else {
-                                        // Hidden field to maintain JS compatibility if needed, 
-                                        // though JS handles empty/null namespace.
                                         row = row.child(
                                             input()
                                                 .attr("type", "hidden")
@@ -318,86 +330,6 @@ fn render_vllm_manage_page() -> HttpResponse {
             .child(confirm_stop_instance_modal()),
         UiPageKind::VllmManagement,
     )
-}
-
-fn vllm_empty_state_template() -> Element {
-    div()
-        .attr("id", "vllm-empty-state-template")
-        .attr("style", "display: none;")
-        .attr("aria-hidden", "true")
-        .child(div().class("empty").text("No running instances"))
-}
-
-fn vllm_instance_card_template() -> Element {
-    div()
-        .attr("id", "vllm-instance-card-template")
-        .attr("style", "display: none;")
-        .attr("aria-hidden", "true")
-        .child(
-            div()
-                .class("card")
-                .child(
-                    div()
-                        .class("card-header")
-                        .child(div().class("card-title"))
-                        .child(
-                            button()
-                                .class("card-delete")
-                                .attr("type", "button")
-                                .attr("title", "Stop instance")
-                                .child(i().class("fa-solid fa-power-off")),
-                        ),
-                )
-                .child(
-                    div()
-                        .class("card-meta")
-                        .child(
-                            div()
-                                .class("meta-item")
-                                .child(span().text("ID"))
-                                .text(" ")
-                                .child(span().class("instance-id")),
-                        )
-                        .child(
-                            div()
-                                .class("meta-item")
-                                .child(span().text("Namespace"))
-                                .text(" ")
-                                .child(span().class("instance-namespace")),
-                        )
-                        .child(
-                            div()
-                                .class("meta-item")
-                                .child(span().text("Endpoint"))
-                                .text(" ")
-                                .child(span().class("instance-endpoint")),
-                        )
-                        .child(
-                            div()
-                                .class("meta-item")
-                                .child(span().text("Status"))
-                                .text(" ")
-                                .child(span().class("instance-status")),
-                        )
-                        .child(
-                            div()
-                                .class("meta-item")
-                                .child(span().text("Started"))
-                                .text(" ")
-                                .child(span().class("instance-started")),
-                        ),
-                )
-                .child(
-                    div()
-                        .class("card-fit")
-                        .child(div().class("fit-line fit-ok")),
-                )
-                .child(
-                    div()
-                        .class("instance-diagnostics")
-                        .attr("style", "display: none;"),
-                ),
-        )
 }
 
 fn confirm_stop_instance_modal() -> Element {

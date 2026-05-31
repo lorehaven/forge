@@ -6,6 +6,9 @@ use strum::IntoEnumIterator;
 const FONTAWESOME_CSS: &str =
     "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css";
 
+const HTMX_SCRIPT: &str = "https://cdn.jsdelivr.net/npm/htmx.org@2.0.10/dist/htmx.min.js";
+const HTMX_SSE_SCRIPT: &str = "https://cdn.jsdelivr.net/npm/htmx-ext-sse@2.2.4/dist/sse.min.js";
+
 #[derive(Clone, Debug)]
 pub struct AppBuilder {
     pub(crate) title: String,
@@ -93,10 +96,14 @@ impl AppBuilder {
             self.supported_locales.clone()
         };
         let mut scripts = vec![
+            Script::inline("if (typeof global === 'undefined') { window.global = window; }"),
+            Script::new(HTMX_SCRIPT).immediate(),
+            Script::new(HTMX_SSE_SCRIPT).immediate(),
             Script::new(&format!(
                 "{}/assets/js/translations.js",
                 self.resources_prefix
-            )),
+            ))
+            .immediate(),
             locale_script(&supported_locales, self.default_locale.as_deref()),
             theme_script(
                 &active_theme,

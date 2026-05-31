@@ -19,7 +19,7 @@ where
 
 pub fn service_card(href: &str, title_key: &str, desc_key: &str, extra_class: &str) -> Element {
     a().attr("href", href)
-        .class(&format!("home-card {extra_class}"))
+        .class(format!("home-card {extra_class}"))
         .child(
             div()
                 .class("home-card-body")

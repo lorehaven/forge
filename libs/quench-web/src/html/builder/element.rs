@@ -13,7 +13,7 @@ pub struct Element {
 }
 
 impl Element {
-    pub(crate) fn new(tag: &str) -> Self {
+    pub(crate) fn new(tag: impl ToString) -> Self {
         Self {
             tag: tag.to_string(),
             attributes: HashMap::new(),
@@ -26,12 +26,12 @@ impl Element {
         }
     }
 
-    pub fn attr(mut self, key: &str, value: &str) -> Self {
+    pub fn attr(mut self, key: impl ToString, value: impl ToString) -> Self {
         self.attributes.insert(key.to_string(), value.to_string());
         self
     }
 
-    pub fn class(mut self, class: &str) -> Self {
+    pub fn class(mut self, class: impl ToString) -> Self {
         let mut classes = self
             .attributes
             .get("class")
@@ -40,12 +40,12 @@ impl Element {
         if !classes.is_empty() {
             classes.push(' ');
         }
-        classes.push_str(class);
+        classes.push_str(class.to_string().as_str());
         self.attributes.insert("class".to_string(), classes);
         self
     }
 
-    pub fn text(mut self, text: &str) -> Self {
+    pub fn text(mut self, text: impl ToString) -> Self {
         self.text_content = Some(text.to_string());
         self
     }
@@ -62,12 +62,12 @@ impl Element {
         self
     }
 
-    pub fn on_click(mut self, js_code: &str) -> Self {
+    pub fn on_click(mut self, js_code: impl ToString) -> Self {
         self.onclick = Some(js_code.to_string());
         self
     }
 
-    pub fn on_change(mut self, js_code: &str) -> Self {
+    pub fn on_change(mut self, js_code: impl ToString) -> Self {
         self.onchange = Some(js_code.to_string());
         self
     }
@@ -86,15 +86,15 @@ impl Element {
         let mut html = format!("<{}", self.tag);
 
         for (key, value) in &self.attributes {
-            html.push_str(&format!(" {}=\"{}\"", key, value));
+            html.push_str(&format!(" {}=\"{}\"", key, html_escape(value)));
         }
 
         if let Some(onclick) = &self.onclick {
-            html.push_str(&format!(" onclick=\"{onclick}\""));
+            html.push_str(&format!(" onclick=\"{}\"", html_escape(onclick)));
         }
 
         if let Some(onchange) = &self.onchange {
-            html.push_str(&format!(" onchange=\"{onchange}\""));
+            html.push_str(&format!(" onchange=\"{}\"", html_escape(onchange)));
         }
 
         if self.defer {
@@ -121,7 +121,7 @@ impl Element {
 }
 
 // Helper function to escape HTML
-fn html_escape(s: &str) -> String {
+pub(crate) fn html_escape(s: &str) -> String {
     s.replace("&", "&amp;")
         .replace("<", "&lt;")
         .replace(">", "&gt;")

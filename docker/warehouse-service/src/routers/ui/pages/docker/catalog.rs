@@ -101,7 +101,7 @@ fn render_metadata_panel(repo: Option<&str>, selected_meta: Option<&TagMetadata>
         (Some(_), Some(meta)) => div()
             .class("panel-title")
             .child(span().attr("data-i18n", "ui_metadata_for"))
-            .child(span().text(&format!(" {}", meta.tag))),
+            .child(span().text(format!(" {}", meta.tag))),
         _ => div().class("panel-title").attr("data-i18n", "ui_metadata"),
     };
 
@@ -221,7 +221,7 @@ fn render_repo_node(
                     .child(
                         a().attr(
                             "href",
-                            &format!("{}?repo={repo}", ui_path("/docker/catalog")),
+                            format!("{}?repo={repo}", ui_path("/docker/catalog")),
                         )
                         .class("repo-link")
                         .text(name),
@@ -250,7 +250,7 @@ fn render_repo_node(
         summary = summary.child(i().class("fas fa-archive mr-2")).child(
             a().attr(
                 "href",
-                &format!("{}?repo={repo}", ui_path("/docker/catalog")),
+                format!("{}?repo={repo}", ui_path("/docker/catalog")),
             )
             .class(class)
             .text(name),
@@ -288,7 +288,7 @@ fn render_repo_node(
                 li().child(
                     a().attr(
                         "href",
-                        &format!(
+                        format!(
                             "{}?repo={repo}&tag={}",
                             ui_path("/docker/catalog"),
                             meta.tag

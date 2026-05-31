@@ -1,4 +1,5 @@
 use crate::Element;
+use crate::html::builder::element::html_escape;
 use html5ever::parse_document;
 use html5ever::tendril::TendrilSink;
 use markup5ever_rcdom::{Handle, RcDom};
@@ -30,6 +31,7 @@ impl Link {
 pub struct Script {
     pub src: String,
     pub content: Option<String>,
+    pub crossorigin: Option<String>,
     pub defer: bool,
 }
 
@@ -38,14 +40,16 @@ impl Script {
         Self {
             src: src.to_string(),
             content: None,
+            crossorigin: None,
             defer: true,
         }
     }
 
-    pub fn inline(content: impl Into<String>) -> Self {
+    pub fn inline(content: impl ToString) -> Self {
         Self {
             src: String::new(),
-            content: Some(content.into()),
+            content: Some(content.to_string()),
+            crossorigin: None,
             defer: false,
         }
     }
@@ -60,18 +64,35 @@ impl Script {
         self
     }
 
+    pub fn crossorigin(mut self, crossorigin: impl ToString) -> Self {
+        self.crossorigin = Some(crossorigin.to_string());
+        self
+    }
+
     pub fn is_inline(&self) -> bool {
         self.content.is_some()
     }
 
     pub fn render(&self) -> String {
-        if let Some(content) = &self.content {
-            let defer = if self.defer { " defer" } else { "" };
-            return format!("<script{defer}>{content}</script>");
+        let mut attrs = Vec::new();
+        if !self.src.is_empty() {
+            attrs.push(format!("src=\"{}\"", self.src));
+        }
+        if self.defer {
+            attrs.push("defer".to_string());
+        }
+        if let Some(co) = &self.crossorigin {
+            attrs.push(format!("crossorigin=\"{}\"", co));
         }
 
-        let defer = if self.defer { " defer" } else { "" };
-        format!("<script src=\"{}\"{defer}></script>", self.src)
+        let attrs_str = if attrs.is_empty() {
+            String::new()
+        } else {
+            format!(" {}", attrs.join(" "))
+        };
+
+        let content = self.content.clone().unwrap_or_default();
+        format!("<script{attrs_str}>{content}</script>")
     }
 }
 
@@ -200,35 +221,42 @@ fn render_head_link(link: Link, static_attrs: &BTreeMap<String, String>) -> Stri
     format!("<link {attrs}></link>")
 }
 
-fn pretty_html_string(node: &Handle, indent: usize) -> String {
+fn pretty_html_string(node: &Handle, indent: usize, is_preformatted: bool) -> String {
     match &node.data {
         markup5ever_rcdom::NodeData::Document => node
             .children
             .borrow()
             .iter()
-            .map(|child| pretty_html_string(child, indent))
+            .map(|child| pretty_html_string(child, indent, false))
             .collect(),
         markup5ever_rcdom::NodeData::Text { contents } => {
             let contents_ref = contents.borrow();
-            let text = contents_ref.trim();
-            if text.is_empty() {
-                "".to_string()
+            if is_preformatted {
+                contents_ref.to_string()
             } else {
-                format!("{}{}\n", " ".repeat(indent), text)
+                let text = contents_ref.trim();
+                if text.is_empty() {
+                    "".to_string()
+                } else {
+                    format!("{}{}\n", " ".repeat(indent), text)
+                }
             }
         }
         markup5ever_rcdom::NodeData::Element { name, attrs, .. } => {
             let attrs_string: String = attrs
                 .borrow()
                 .iter()
-                .map(|attr| format!(" {}=\"{}\"", attr.name.local, attr.value))
+                .map(|attr| format!(" {}=\"{}\"", attr.name.local, html_escape(&attr.value)))
                 .collect();
+
+            let tag = name.local.as_ref();
+            let pre = tag == "script" || tag == "style" || tag == "pre" || tag == "code";
 
             let mut s = format!("{}<{}{}>\n", " ".repeat(indent), name.local, attrs_string);
 
             // Recurse into children
             for child in node.children.borrow().iter() {
-                s.push_str(&pretty_html_string(child, indent + 4));
+                s.push_str(&pretty_html_string(child, indent + 4, pre));
             }
 
             s.push_str(&format!("{}{}</{}>\n", " ".repeat(indent), "", name.local));
@@ -244,5 +272,5 @@ pub fn pretty_print_html(html_string: &str) -> String {
         .read_from(&mut html_string.as_bytes())
         .unwrap();
 
-    pretty_html_string(&dom.document, 0)
+    pretty_html_string(&dom.document, 0, false)
 }

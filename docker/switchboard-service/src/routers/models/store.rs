@@ -1,4 +1,5 @@
-use super::{Model, VllmArchitecturesFile, fetch_gguf_models, fetch_hf_models};
+use super::discovery::{fetch_gguf_models, fetch_hf_models};
+use super::{Model, VllmArchitecturesFile};
 use quench_db::Db;
 use quench_db::prelude::{Crud, Model as OrmModel, Repository};
 use serde::{Deserialize, Serialize};
@@ -67,7 +68,7 @@ impl ModelStore {
         };
 
         // Sync architectures: load from DB first, then merge with file
-        if let quench_db::Db::Postgres(pg_db) = &db {
+        if let Db::Postgres(pg_db) = &db {
             let pool = pg_db.pool();
             let query = format!("SELECT id FROM {}", VllmArchitecture::table_name());
             if let Ok(rows) = sqlx::query_as::<_, (String,)>(sqlx::AssertSqlSafe(query.as_str()))
@@ -97,13 +98,14 @@ impl ModelStore {
     }
 
     pub async fn get_all_models(&self) -> Vec<Model> {
-        let query = format!("SELECT data FROM {}", CachedModel::table_name());
-
         let pool = match &self.db {
             Db::Postgres(db) => db.pool(),
-            Db::InMemory(_) => return Vec::new(),
+            Db::InMemory(_) => {
+                return self.cache.read().unwrap().values().cloned().collect();
+            }
         };
 
+        let query = format!("SELECT data FROM {}", CachedModel::table_name());
         let result = sqlx::query_as::<_, (serde_json::Value,)>(sqlx::AssertSqlSafe(query.as_str()))
             .fetch_all(pool)
             .await;
@@ -118,13 +120,14 @@ impl ModelStore {
     }
 
     pub async fn get_all_paths(&self) -> Vec<String> {
-        let query = format!("SELECT path FROM {}", CachedModel::table_name());
-
         let pool = match &self.db {
             Db::Postgres(db) => db.pool(),
-            Db::InMemory(_) => return Vec::new(),
+            Db::InMemory(_) => {
+                return self.cache.read().unwrap().keys().cloned().collect();
+            }
         };
 
+        let query = format!("SELECT path FROM {}", CachedModel::table_name());
         let result = sqlx::query_as::<_, (String,)>(sqlx::AssertSqlSafe(query.as_str()))
             .fetch_all(pool)
             .await;

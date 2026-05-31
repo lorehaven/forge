@@ -90,11 +90,17 @@ impl VllmEngine for NativeVllmEngine {
             let record_key = instance_key(&model, port);
             let record = records.get(&record_key);
             let status = match record {
-                Some(r) if r.pid == pid => match r.log_path.as_deref() {
-                    Some(path) if log_indicates_started(path, r.pid) => "running",
-                    Some(_) => "starting",
-                    None => "starting",
-                },
+                Some(r) if r.pid == pid => {
+                    if r.last_error.as_deref() == Some("terminating") {
+                        "terminating"
+                    } else {
+                        match r.log_path.as_deref() {
+                            Some(path) if log_indicates_started(path, r.pid) => "running",
+                            Some(_) => "starting",
+                            None => "starting",
+                        }
+                    }
+                }
                 Some(_) => "running",
                 None => "running",
             };
@@ -112,7 +118,13 @@ impl VllmEngine for NativeVllmEngine {
                 started_at,
                 status: status.to_string(),
                 log_path: record.and_then(|r| r.log_path.clone()),
-                last_error: record.and_then(|r| r.last_error.clone()),
+                last_error: record.and_then(|r| {
+                    if r.last_error.as_deref() == Some("terminating") {
+                        None
+                    } else {
+                        r.last_error.clone()
+                    }
+                }),
             });
         }
 
@@ -262,6 +274,16 @@ impl VllmEngine for NativeVllmEngine {
             Some(pid) => pid,
             None => return Err(format!("Invalid instance id: {id}")),
         };
+
+        // Mark as terminating in records
+        {
+            let mut records = LAUNCH_RECORDS.write().unwrap();
+            for record in records.values_mut() {
+                if record.pid == pid as u32 {
+                    record.last_error = Some("terminating".to_string());
+                }
+            }
+        }
 
         let status = Command::new("kill")
             .arg("-TERM")

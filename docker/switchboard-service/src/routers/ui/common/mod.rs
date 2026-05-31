@@ -42,10 +42,7 @@ static UI_SHELL_MODELS_DASHBOARD: LazyLock<AppShell> = LazyLock::new(|| {
             "stylesheet",
             &ui_asset_path("/css/switchboard.css"),
         )])
-        .scripts(vec![
-            scripts::models_dashboard_filters_script(),
-            scripts::models_dashboard_ws_script(),
-        ])
+        .scripts(vec![scripts::models_dashboard_script()])
         .with_nav(false)
         .resources_prefix(ui_path(""))
         .build()
@@ -69,11 +66,7 @@ static UI_SHELL_VLLM_MANAGEMENT: LazyLock<AppShell> = LazyLock::new(|| {
             "stylesheet",
             &ui_asset_path("/css/switchboard.css"),
         )])
-        .scripts(vec![
-            scripts::models_dashboard_ws_script(),
-            scripts::vllm_management_script(),
-            scripts::vllm_management_ws_script(),
-        ])
+        .scripts(vec![scripts::vllm_management_script()])
         .with_nav(false)
         .resources_prefix(ui_path(""))
         .build()
@@ -109,12 +102,12 @@ fn ui_header(title_key: Option<&str>, show_home: bool, show_logout: bool) -> Ele
             div()
                 .class("right-panel")
                 .child_opt(show_home.then(|| {
-                    a().attr("href", &ui_path("/home"))
+                    a().attr("href", ui_path("/home"))
                         .class("button")
                         .attr("data-i18n", "ui_home_button")
                 }))
                 .child_opt(show_logout.then(|| {
-                    a().attr("href", &ui_path("/logout"))
+                    a().attr("href", ui_path("/logout"))
                         .class("button")
                         .attr("data-i18n", "ui_logout")
                 })),
@@ -139,12 +132,12 @@ fn ui_header_split(
             div()
                 .class("right-panel")
                 .child_opt(show_home.then(|| {
-                    a().attr("href", &ui_path("/home"))
+                    a().attr("href", ui_path("/home"))
                         .class("button")
                         .attr("data-i18n", "ui_home_button")
                 }))
                 .child_opt(show_logout.then(|| {
-                    a().attr("href", &ui_path("/logout"))
+                    a().attr("href", ui_path("/logout"))
                         .class("button")
                         .attr("data-i18n", "ui_logout")
                 })),

@@ -16,6 +16,9 @@ pub fn vllm_rules() -> Vec<CssRule> {
         CssRule::new(".status-failed")
             .property("color", "var(--bs-danger)")
             .property("font-weight", "bold"),
+        CssRule::new(".status-terminating")
+            .property("color", "var(--bs-warning-500)")
+            .property("font-weight", "bold"),
         CssRule::new(".badge")
             .property("background", "var(--bs-gray-800)")
             .property("border", "0.0625rem solid var(--bs-gray-700)")

@@ -65,12 +65,16 @@ impl VllmEngine for KubernetesVllmEngine {
                 .and_then(|p| p.parse::<u16>().ok())
                 .unwrap_or(8000);
 
-            let status = match pod.status.as_ref().and_then(|s| s.phase.as_deref()) {
+            let mut status = match pod.status.as_ref().and_then(|s| s.phase.as_deref()) {
                 Some("Running") => "running",
                 Some("Pending") => "starting",
                 Some(p) => p,
                 None => "unknown",
             };
+
+            if pod.metadata.deletion_timestamp.is_some() {
+                status = "terminating";
+            }
 
             let started_at = pod
                 .metadata

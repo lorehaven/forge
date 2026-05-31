@@ -24,7 +24,7 @@ pub struct LoginForm {
 pub fn login_form_element(error: bool) -> Element {
     let mut login_form = form()
         .attr("method", "post")
-        .attr("action", &ui_path("/login"))
+        .attr("action", ui_path("/login"))
         .child(
             label()
                 .attr("for", "username")

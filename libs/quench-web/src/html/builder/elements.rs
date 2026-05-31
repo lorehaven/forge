@@ -13,6 +13,10 @@ pub fn div() -> Element {
     Element::new("div")
 }
 
+pub fn strong() -> Element {
+    Element::new("strong")
+}
+
 pub fn header() -> Element {
     Element::new("header")
 }
