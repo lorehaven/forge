@@ -1,10 +1,14 @@
 use crate::routers::crates::{
     crate_file_path, index_file_path, validate_crate_name, validate_version,
 };
-use crate::utils::sha256::sha256_hex;
 use actix_web::{HttpResponse, Responder, put, web};
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::fmt::Write;
+use tokio::io::AsyncWriteExt;
+
 // ---------------------------------------------------------------------------
 // Wire-format structs (cargo publish binary payload → metadata JSON)
 // ---------------------------------------------------------------------------
@@ -21,8 +25,6 @@ struct PublishMetadata {
     links: Option<String>,
     #[serde(default)]
     rust_version: Option<String>,
-    // Extra fields cargo may send, but we don't need to store in the index
-    // description, homepage, etc. – we simply ignore them here.
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -97,17 +99,68 @@ pub struct PublishResponse {
 // ---------------------------------------------------------------------------
 
 #[put("/new")]
-pub async fn handle(body: web::Bytes) -> impl Responder {
+#[tracing::instrument(skip(body))]
+pub async fn handle(req: actix_web::HttpRequest, mut body: web::Payload) -> impl Responder {
+    if req.headers().get("Authorization").is_none() {
+        while body.next().await.is_some() {}
+        return error_response(
+            actix_web::http::StatusCode::UNAUTHORIZED,
+            "missing authorization token",
+        );
+    }
+
     // ------------------------------------------------------------------
-    // 1. Parse the cargo binary wire format
-    //    [ u32LE json_len ][ json bytes ][ u32LE crate_len ][ crate bytes ]
+    // 1. Collect initial bytes to parse JSON length
     // ------------------------------------------------------------------
-    let (meta, crate_bytes) = match parse_publish_body(&body) {
-        Ok(v) => v,
-        Err(msg) => {
-            return error_response(actix_web::http::StatusCode::BAD_REQUEST, &msg);
+    let mut buffer = Vec::new();
+    while buffer.len() < 4 {
+        match body.next().await {
+            Some(Ok(chunk)) => buffer.extend_from_slice(&chunk),
+            Some(Err(e)) => {
+                return error_response(actix_web::http::StatusCode::BAD_REQUEST, &e.to_string());
+            }
+            None => {
+                return error_response(
+                    actix_web::http::StatusCode::BAD_REQUEST,
+                    "payload too short",
+                );
+            }
+        }
+    }
+
+    let json_len = u32::from_le_bytes(buffer[..4].try_into().unwrap()) as usize;
+    while buffer.len() < 4 + json_len + 4 {
+        match body.next().await {
+            Some(Ok(chunk)) => buffer.extend_from_slice(&chunk),
+            Some(Err(e)) => {
+                return error_response(actix_web::http::StatusCode::BAD_REQUEST, &e.to_string());
+            }
+            None => {
+                return error_response(
+                    actix_web::http::StatusCode::BAD_REQUEST,
+                    "payload truncated (metadata)",
+                );
+            }
+        }
+    }
+
+    let json_bytes = &buffer[4..4 + json_len];
+    let meta: PublishMetadata = match serde_json::from_slice(json_bytes) {
+        Ok(m) => m,
+        Err(e) => {
+            return error_response(
+                actix_web::http::StatusCode::BAD_REQUEST,
+                &format!("invalid metadata JSON: {e}"),
+            );
         }
     };
+
+    let crate_len_offset = 4 + json_len;
+    let crate_len = u32::from_le_bytes(
+        buffer[crate_len_offset..crate_len_offset + 4]
+            .try_into()
+            .unwrap(),
+    ) as usize;
 
     // ------------------------------------------------------------------
     // 2. Validate name & version
@@ -125,9 +178,6 @@ pub async fn handle(body: web::Bytes) -> impl Responder {
         );
     }
 
-    // ------------------------------------------------------------------
-    // 3. Reject if already published
-    // ------------------------------------------------------------------
     let Some(crate_path) = crate_file_path(&meta.name, &meta.vers) else {
         return error_response(
             actix_web::http::StatusCode::UNPROCESSABLE_ENTITY,
@@ -143,7 +193,7 @@ pub async fn handle(body: web::Bytes) -> impl Responder {
     }
 
     // ------------------------------------------------------------------
-    // 4. Persist .crate tarball
+    // 3. Persist .crate tarball and compute SHA-256 incrementally
     // ------------------------------------------------------------------
     if let Some(parent) = crate_path.parent()
         && tokio::fs::create_dir_all(parent).await.is_err()
@@ -154,21 +204,86 @@ pub async fn handle(body: web::Bytes) -> impl Responder {
         );
     }
 
-    if tokio::fs::write(&crate_path, &crate_bytes).await.is_err() {
+    let mut file = match tokio::fs::File::create(&crate_path).await {
+        Ok(f) => f,
+        Err(e) => {
+            tracing::error!("Failed to create crate file {:?}: {}", crate_path, e);
+            return error_response(
+                actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to create crate file",
+            );
+        }
+    };
+
+    let mut hasher = Sha256::new();
+    let mut written_len = 0;
+
+    // Write any leftover bytes from buffer after the metadata
+    let initial_crate_data = &buffer[crate_len_offset + 4..];
+    if !initial_crate_data.is_empty() {
+        hasher.update(initial_crate_data);
+        if let Err(e) = file.write_all(initial_crate_data).await {
+            tracing::error!("Failed to write initial crate data: {}", e);
+            return error_response(
+                actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to write crate data",
+            );
+        }
+        written_len += initial_crate_data.len();
+    }
+
+    // Stream the rest of the body
+    while let Some(chunk) = body.next().await {
+        let chunk = match chunk {
+            Ok(c) => c,
+            Err(e) => {
+                return error_response(actix_web::http::StatusCode::BAD_REQUEST, &e.to_string());
+            }
+        };
+
+        let to_write = if written_len + chunk.len() > crate_len {
+            &chunk[..crate_len - written_len]
+        } else {
+            &chunk
+        };
+
+        if !to_write.is_empty() {
+            hasher.update(to_write);
+            if let Err(e) = file.write_all(to_write).await {
+                tracing::error!("Failed to write crate chunk: {}", e);
+                return error_response(
+                    actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to write crate chunk",
+                );
+            }
+            written_len += to_write.len();
+        }
+
+        if written_len >= crate_len {
+            break;
+        }
+    }
+
+    if written_len < crate_len {
         return error_response(
-            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-            "failed to write crate file",
+            actix_web::http::StatusCode::BAD_REQUEST,
+            "payload truncated (crate tarball)",
         );
     }
 
-    // ------------------------------------------------------------------
-    // 5. Compute SHA-256 checksum
-    // ------------------------------------------------------------------
-    let cksum = sha256_hex(crate_bytes);
+    if let Err(e) = file.flush().await {
+        tracing::error!("Failed to flush crate file: {}", e);
+    }
 
     // ------------------------------------------------------------------
-    // 6. Build index record
+    // 4. Finalize checksum and build index record
     // ------------------------------------------------------------------
+    let digest = hasher.finalize();
+    let mut cksum = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        write!(&mut cksum, "{:02x}", byte).unwrap();
+    }
+
     let index_deps: Vec<IndexDep> = meta
         .deps
         .into_iter()
@@ -212,7 +327,7 @@ pub async fn handle(body: web::Bytes) -> impl Responder {
     };
 
     // ------------------------------------------------------------------
-    // 7. Append to sparse index file
+    // 5. Append to sparse index file
     // ------------------------------------------------------------------
     let Some(index_path) = index_file_path(&meta.name) else {
         return error_response(
@@ -230,31 +345,32 @@ pub async fn handle(body: web::Bytes) -> impl Responder {
         );
     }
 
-    use tokio::io::AsyncWriteExt;
-    match tokio::fs::OpenOptions::new()
+    let mut index_file = match tokio::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(&index_path)
         .await
     {
-        Ok(mut file) => {
-            if file.write_all(record_line.as_bytes()).await.is_err() {
-                return error_response(
-                    actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-                    "failed to write index entry",
-                );
-            }
-        }
-        Err(_) => {
+        Ok(f) => f,
+        Err(e) => {
+            tracing::error!("Failed to open index file {:?}: {}", index_path, e);
             return error_response(
                 actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to open index file",
             );
         }
+    };
+
+    if let Err(e) = index_file.write_all(record_line.as_bytes()).await {
+        tracing::error!("Failed to write to index file {:?}: {}", index_path, e);
+        return error_response(
+            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to write index entry",
+        );
     }
 
     // ------------------------------------------------------------------
-    // 8. Respond
+    // 6. Respond
     // ------------------------------------------------------------------
     HttpResponse::Ok().json(PublishResponse {
         warnings: PublishWarnings {
@@ -265,36 +381,8 @@ pub async fn handle(body: web::Bytes) -> impl Responder {
     })
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-fn parse_publish_body(body: &[u8]) -> Result<(PublishMetadata, &[u8]), String> {
-    if body.len() < 4 {
-        return Err("payload too short".into());
-    }
-    let json_len = u32::from_le_bytes(body[..4].try_into().unwrap()) as usize;
-    if body.len() < 4 + json_len + 4 {
-        return Err("payload truncated (metadata)".into());
-    }
-    let json_bytes = &body[4..4 + json_len];
-    let meta: PublishMetadata =
-        serde_json::from_slice(json_bytes).map_err(|e| format!("invalid metadata JSON: {e}"))?;
-
-    let crate_offset = 4 + json_len;
-    let crate_len =
-        u32::from_le_bytes(body[crate_offset..crate_offset + 4].try_into().unwrap()) as usize;
-    let crate_start = crate_offset + 4;
-
-    if body.len() < crate_start + crate_len {
-        return Err("payload truncated (crate tarball)".into());
-    }
-    let crate_bytes = &body[crate_start..crate_start + crate_len];
-
-    Ok((meta, crate_bytes))
-}
-
 fn error_response(status: actix_web::http::StatusCode, detail: &str) -> HttpResponse {
+    tracing::warn!("Crate publish error ({}): {}", status, detail);
     HttpResponse::build(status).json(serde_json::json!({
         "errors": [{ "detail": detail }]
     }))

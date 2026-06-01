@@ -8,7 +8,12 @@ pub async fn launch_instance(
     req: web::Json<LaunchRequest>,
     engine: web::Data<Arc<dyn VllmEngine>>,
 ) -> impl Responder {
-    match engine.launch_instance(req.into_inner()).await {
+    let req = req.into_inner();
+    if req.model.trim().is_empty() {
+        return HttpResponse::BadRequest().body("Model name cannot be empty");
+    }
+
+    match engine.launch_instance(req).await {
         Ok(instance) => HttpResponse::Accepted().json(instance),
         Err(err) => {
             tracing::error!("Failed to launch vLLM instance: {}", err);

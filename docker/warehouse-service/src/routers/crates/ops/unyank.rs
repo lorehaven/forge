@@ -8,6 +8,7 @@ pub struct OkResponse {
 }
 
 #[put("/{name}/{version}/unyank")]
+#[tracing::instrument]
 pub async fn handle(path: web::Path<(String, String)>) -> impl Responder {
     let (name, version) = path.into_inner();
 

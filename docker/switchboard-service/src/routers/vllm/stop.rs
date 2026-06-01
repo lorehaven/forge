@@ -12,6 +12,9 @@ pub async fn stop_instance(
             .content_type(ContentType::html())
             .body(r#"<div id="confirm-stop-instance-modal" class="estimates-modal"></div>"#),
         Err(err) => {
+            if err.to_lowercase().contains("not found") {
+                return HttpResponse::NotFound().body(err);
+            }
             tracing::error!("Failed to stop vLLM instance: {}", err);
             HttpResponse::InternalServerError().body(err)
         }

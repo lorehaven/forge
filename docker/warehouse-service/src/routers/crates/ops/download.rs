@@ -2,6 +2,7 @@ use crate::routers::crates::{crate_file_path, validate_crate_name, validate_vers
 use actix_web::{HttpResponse, Responder, get, web};
 
 #[get("/{name}/{version}/download")]
+#[tracing::instrument]
 pub async fn handle(path: web::Path<(String, String)>) -> impl Responder {
     let (name, version) = path.into_inner();
 

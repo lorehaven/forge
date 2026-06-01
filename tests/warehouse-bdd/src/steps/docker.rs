@@ -61,6 +61,42 @@ async fn send_put_request_with_token_valid_manifest(world: &mut WarehouseWorld, 
     world.record_response(res).await;
 }
 
+#[cucumber::when(expr = "PUT request is sent to {string} without token but valid manifest")]
+async fn send_put_request_without_token_valid_manifest(world: &mut WarehouseWorld, path: String) {
+    let url = format!("{}{}", world.base_url, path);
+    let rb = world.client.put(&url);
+
+    let manifest = serde_json::json!({
+        "schemaVersion": 2,
+        "mediaType": "application/vnd.docker.distribution.manifest.v2+json",
+        "config": {
+            "mediaType": "application/vnd.docker.container.image.v1+json",
+            "size": 7023,
+            "digest": "sha256:b5b15c175f3b61014e7a83d726b132808e00192e4a42b101340b0f44383a1529"
+        },
+        "layers": [
+            {
+                "mediaType": "application/vnd.docker.image.rootfs.diff.tar.gzip",
+                "size": 32654,
+                "digest": "sha256:e692418e4cbaf90ca69d05a66403747cf33ee0e7ae92482c815259981a33758b"
+            }
+        ]
+    });
+
+    let res = rb
+        .body(serde_json::to_vec(&manifest).unwrap())
+        .header(
+            "Content-Type",
+            "application/vnd.docker.distribution.manifest.v2+json",
+        )
+        .send()
+        .await
+        .expect("Failed to send PUT request");
+
+    world.last_response_headers = res.headers().clone();
+    world.record_response(res).await;
+}
+
 #[cucumber::when(expr = "DELETE request is sent to {string} with token")]
 async fn send_delete_request_with_token(world: &mut WarehouseWorld, path: String) {
     let url = format!("{}{}", world.base_url, path);

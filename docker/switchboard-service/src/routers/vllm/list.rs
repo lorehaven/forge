@@ -6,8 +6,17 @@ use quench_srv::prelude::{JwtConfig, with_base_path};
 use quench_web::prelude::*;
 use std::sync::Arc;
 
+#[get("/list")]
+pub async fn list_instances_canonical(engine: web::Data<Arc<dyn VllmEngine>>) -> impl Responder {
+    list_instances_impl(engine).await
+}
+
 #[get("/instances")]
-pub async fn list_instances(engine: web::Data<Arc<dyn VllmEngine>>) -> impl Responder {
+pub async fn list_instances_alias(engine: web::Data<Arc<dyn VllmEngine>>) -> impl Responder {
+    list_instances_impl(engine).await
+}
+
+async fn list_instances_impl(engine: web::Data<Arc<dyn VllmEngine>>) -> impl Responder {
     match engine.list_instances().await {
         Ok(list) => HttpResponse::Ok().json(list),
         Err(err) => {

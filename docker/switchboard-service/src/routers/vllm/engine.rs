@@ -5,6 +5,7 @@ use async_trait::async_trait;
 pub enum VllmManagementMode {
     Native,
     Kubernetes,
+    Mock,
 }
 
 impl VllmManagementMode {
@@ -14,6 +15,7 @@ impl VllmManagementMode {
             .as_str()
         {
             "kubernetes" | "k8s" => Self::Kubernetes,
+            "mock" => Self::Mock,
             _ => Self::Native,
         }
     }

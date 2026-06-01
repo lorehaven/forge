@@ -31,3 +31,22 @@ Feature: Docker Registry API
     And response should contain tag "latest"
     When DELETE request is sent to repository "test-repo-final" with digest from header "Docker-Content-Digest" and token
     Then response status should be 202
+
+  Scenario: Get non-existent manifest
+    Given valid token for scope "repository:non-existent:pull" is obtained
+    When GET request is sent to "/v2/non-existent/manifests/latest" with token
+    Then response status should be 404
+
+  Scenario: Get non-existent blob
+    Given valid token for scope "repository:non-existent:pull" is obtained
+    When GET request is sent to "/v2/non-existent/blobs/sha256:1234567890123456789012345678901234567890123456789012345678901234" with token
+    Then response status should be 404
+
+  Scenario: Push manifest without token
+    When PUT request is sent to "/v2/test-unauth-push/manifests/latest" without token but valid manifest
+    Then response status should be 401
+
+  Scenario: Delete non-existent manifest
+    Given valid token for scope "repository:test-delete-repo:push,pull" is obtained
+    When DELETE request is sent to "/v2/test-delete-repo/manifests/sha256:0000000000000000000000000000000000000000000000000000000000000000" with token
+    Then response status should be 404

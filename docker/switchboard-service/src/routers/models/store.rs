@@ -4,7 +4,8 @@ use quench_db::Db;
 use quench_db::prelude::{Crud, Model as OrmModel, Repository};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, LazyLock, RwLock};
+use std::sync::{Arc, RwLock};
+use tokio::sync::OnceCell;
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct VllmArchitecture {
@@ -56,6 +57,7 @@ pub struct ModelStore {
 }
 
 impl ModelStore {
+    #[tracing::instrument(skip(db))]
     pub async fn init(db: Db) -> Self {
         let arch_file = Self::load_architectures_file();
 
@@ -68,17 +70,10 @@ impl ModelStore {
         };
 
         // Sync architectures: load from DB first, then merge with file
-        if let Db::Postgres(pg_db) = &db {
-            let pool = pg_db.pool();
-            let query = format!("SELECT id FROM {}", VllmArchitecture::table_name());
-            if let Ok(rows) = sqlx::query_as::<_, (String,)>(sqlx::AssertSqlSafe(query.as_str()))
-                .fetch_all(pool)
-                .await
-            {
-                let mut archs = store.architectures.write().unwrap();
-                for (id,) in rows {
-                    archs.insert(id);
-                }
+        if let Ok(existing_archs) = store.arch_repo.list().await {
+            let mut archs = store.architectures.write().unwrap();
+            for arch in existing_archs {
+                archs.insert(arch.id);
             }
         }
 
@@ -97,44 +92,28 @@ impl ModelStore {
         store
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn get_all_models(&self) -> Vec<Model> {
-        let pool = match &self.db {
-            Db::Postgres(db) => db.pool(),
-            Db::InMemory(_) => {
-                return self.cache.read().unwrap().values().cloned().collect();
-            }
-        };
-
-        let query = format!("SELECT data FROM {}", CachedModel::table_name());
-        let result = sqlx::query_as::<_, (serde_json::Value,)>(sqlx::AssertSqlSafe(query.as_str()))
-            .fetch_all(pool)
-            .await;
-
-        match result {
-            Ok(rows) => rows
+        match self.model_repo.list().await {
+            Ok(cached_models) => cached_models
                 .into_iter()
-                .filter_map(|(data,)| serde_json::from_value::<Model>(data).ok())
+                .filter_map(|m| serde_json::from_value::<Model>(m.data).ok())
                 .collect(),
-            Err(_) => Vec::new(),
+            Err(e) => {
+                tracing::error!("Failed to list models from DB: {}", e);
+                self.cache.read().unwrap().values().cloned().collect()
+            }
         }
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn get_all_paths(&self) -> Vec<String> {
-        let pool = match &self.db {
-            Db::Postgres(db) => db.pool(),
-            Db::InMemory(_) => {
-                return self.cache.read().unwrap().keys().cloned().collect();
+        match self.model_repo.list().await {
+            Ok(cached_models) => cached_models.into_iter().map(|m| m.path).collect(),
+            Err(e) => {
+                tracing::error!("Failed to list model paths from DB: {}", e);
+                self.cache.read().unwrap().keys().cloned().collect()
             }
-        };
-
-        let query = format!("SELECT path FROM {}", CachedModel::table_name());
-        let result = sqlx::query_as::<_, (String,)>(sqlx::AssertSqlSafe(query.as_str()))
-            .fetch_all(pool)
-            .await;
-
-        match result {
-            Ok(rows) => rows.into_iter().map(|(path,)| path).collect(),
-            Err(_) => Vec::new(),
         }
     }
 
@@ -190,6 +169,7 @@ impl ModelStore {
         self.architectures.read().unwrap().contains(architecture)
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn get_model(&self, path: &str) -> Option<Model> {
         // Try in-memory cache first
         if let Some(cached) = self.cache.read().unwrap().get(path).cloned() {
@@ -210,6 +190,7 @@ impl ModelStore {
         None
     }
 
+    #[tracing::instrument(skip(self, model), fields(path = %model.path))]
     pub async fn insert_model(&self, model: &Model) {
         self.cache
             .write()
@@ -222,45 +203,43 @@ impl ModelStore {
             updated_at: chrono::Utc::now(),
         };
 
-        if self
-            .model_repo
-            .read(&model.path)
-            .await
-            .unwrap_or(None)
-            .is_some()
-        {
-            self.model_repo.update(&cached_model).await.ok();
+        if let Ok(Some(_)) = self.model_repo.read(&model.path).await {
+            if let Err(e) = self.model_repo.update(&cached_model).await {
+                tracing::error!("Failed to update model {}: {}", model.path, e);
+            }
         } else {
-            self.model_repo.create(&cached_model).await.ok();
+            if let Err(e) = self.model_repo.create(&cached_model).await {
+                tracing::error!("Failed to create model {}: {}", model.path, e);
+            }
         }
     }
 
+    #[tracing::instrument(skip(self))]
     pub async fn remove_model(&self, path: &str) {
         self.cache.write().unwrap().remove(path);
-        self.model_repo.delete(path).await.ok();
+        if let Err(e) = self.model_repo.delete(path).await {
+            tracing::error!("Failed to remove model {} from DB: {}", path, e);
+        }
     }
 }
 
-pub static MODEL_STORE: LazyLock<RwLock<Option<Arc<ModelStore>>>> =
-    LazyLock::new(|| RwLock::new(None));
+pub static MODEL_STORE: OnceCell<Arc<ModelStore>> = OnceCell::const_new();
 
 pub async fn init_model_store(db: Db) {
     let store = Arc::new(ModelStore::init(db).await);
-    *MODEL_STORE.write().unwrap() = Some(store);
+    if MODEL_STORE.set(store).is_err() {
+        tracing::warn!("Model store already initialized");
+    }
 }
 
 pub fn get_store() -> Arc<ModelStore> {
     MODEL_STORE
-        .read()
-        .unwrap()
-        .as_ref()
+        .get()
         .expect("Model store not initialized")
         .clone()
 }
 
-pub static VLLM_SUPPORTED_ARCHITECTURES: LazyLock<HashSet<String>> =
-    LazyLock::new(ModelStore::load_architectures_file);
-
+#[tracing::instrument]
 pub async fn warm_model_cache() {
     fetch_hf_models().await;
     fetch_gguf_models().await;

@@ -65,9 +65,10 @@ async fn get_crate_index(req: HttpRequest, path: web::Path<String>) -> impl Resp
         return HttpResponse::NotFound().finish();
     };
 
-    let data = tokio::fs::read(&index_path)
-        .await
-        .unwrap_or_else(|_| b"[]".to_vec());
+    let data = match tokio::fs::read(&index_path).await {
+        Ok(d) => d,
+        Err(_) => return HttpResponse::NotFound().finish(),
+    };
 
     // ETag based on SHA-256 of the file contents
     let etag = format!("sha256:{}", sha256_hex(&data));

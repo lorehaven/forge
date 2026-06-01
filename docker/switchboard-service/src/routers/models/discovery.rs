@@ -6,8 +6,37 @@ use std::collections::HashSet;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
+use std::sync::LazyLock;
 use walkdir::WalkDir;
 
+static SHARD_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"-\d+-of-\d+").expect("Invalid shard regex"));
+static PARAMS_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)(\d+(?:\.\d+)?)b").expect("Invalid params regex"));
+
+static QUANT_PATTERNS: LazyLock<Vec<(Regex, Quant)>> = LazyLock::new(|| {
+    [
+        (r"(?:^|[-_.])q8_0(?:[-_.]|$)", Quant::Q80),
+        (r"(?:^|[-_.])q6_k(?:[-_.]|$)", Quant::Q6K),
+        (r"(?:^|[-_.])q5_k_m(?:[-_.]|$)", Quant::Q5KM),
+        (r"(?:^|[-_.])q5_0(?:[-_.]|$)", Quant::Q50),
+        (r"(?:^|[-_.])q4_k_m(?:[-_.]|$)", Quant::Q4KM),
+        (r"(?:^|[-_.])q4_0(?:[-_.]|$)", Quant::Q40),
+        (r"(?:^|[-_.])q3_k_m(?:[-_.]|$)", Quant::Q3KM),
+        (r"(?:^|[-_.])q2_k(?:[-_.]|$)", Quant::Q2K),
+        (r"(?:^|[-_.])fp16(?:[-_.]|$)", Quant::FP16),
+        (r"(?:^|[-_.])f16(?:[-_.]|$)", Quant::FP16),
+        (r"(?:^|[-_.])bf16(?:[-_.]|$)", Quant::BF16),
+        (r"(?:^|[-_.])fp8(?:[-_.]|$)", Quant::FP8),
+        (r"(?:^|[-_.])awq(?:[-_.]|$)", Quant::AWQ),
+        (r"(?:^|[-_.])gptq(?:[-_.]|$)", Quant::GPTQ),
+    ]
+    .iter()
+    .map(|(p, q)| (Regex::new(p).expect("Invalid quant regex"), *q))
+    .collect()
+});
+
+#[tracing::instrument(skip(name, quant, context))]
 pub async fn fetch_models(
     model_type: ModelType,
     name: &str,
@@ -27,6 +56,7 @@ pub async fn fetch_models(
         .collect()
 }
 
+#[tracing::instrument]
 pub async fn fetch_hf_models() -> Vec<Model> {
     let store = get_store();
     let mut models = store.get_all_models().await;
@@ -39,75 +69,102 @@ pub async fn fetch_hf_models() -> Vec<Model> {
         }
     }
 
-    let mut seen: HashSet<String> = models.iter().map(|m| m.path.clone()).collect();
-    let mut new_models = 0;
+    let seen: HashSet<String> = models.iter().map(|m| m.path.clone()).collect();
+
+    let mut discovered_models = Vec::new();
 
     for root in HF_ROOTS.iter() {
-        if !Path::new(root).exists() {
+        let root = root.to_string();
+        if !Path::new(&root).exists() {
             continue;
         }
 
-        for entry in WalkDir::new(root).into_iter().filter_map(Result::ok) {
-            if entry.file_name() != "config.json" {
-                continue;
+        let seen_clone = seen.clone();
+        let models_batch = tokio::task::spawn_blocking(move || {
+            let mut batch = Vec::new();
+            for entry in WalkDir::new(&root).into_iter().filter_map(Result::ok) {
+                if entry.file_name() != "config.json" {
+                    continue;
+                }
+
+                let config_path = entry.path();
+                let model_dir = match config_path.ancestors().nth(3) {
+                    Some(p) => p,
+                    None => continue,
+                };
+
+                let path_str = model_dir.to_string_lossy().to_string();
+                if seen_clone.contains(&path_str) {
+                    continue;
+                }
+
+                let name = normalize_hf_name(model_dir);
+
+                let content = match std::fs::read_to_string(config_path) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        tracing::warn!("Failed to read config.json at {:?}: {}", config_path, e);
+                        continue;
+                    }
+                };
+
+                let json: serde_json::Value = match serde_json::from_str(&content) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        tracing::warn!("Failed to parse config.json at {:?}: {}", config_path, e);
+                        continue;
+                    }
+                };
+
+                let hidden_size = json["hidden_size"].as_u64().unwrap_or(4096) as usize;
+                let layers = json["num_hidden_layers"].as_u64().unwrap_or(32) as usize;
+                let vocab_size = json["vocab_size"].as_u64().unwrap_or(32000) as f64;
+                let max_position_embeddings =
+                    json["max_position_embeddings"].as_u64().unwrap_or(4096);
+                let torch_dtype = json["torch_dtype"].as_str().unwrap_or("float16");
+                let architecture = json["architectures"]
+                    .as_array()
+                    .and_then(|a| a.first())
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+
+                let quant = infer_hf_quant(torch_dtype);
+                let context = infer_context(max_position_embeddings);
+                let params = infer_params_from_name(&name).unwrap_or_else(|| {
+                    estimate_dense_transformer_params(hidden_size, layers, vocab_size)
+                });
+
+                batch.push((
+                    name,
+                    path_str,
+                    architecture,
+                    quant,
+                    context,
+                    layers,
+                    hidden_size,
+                    params,
+                ));
             }
+            batch
+        })
+        .await
+        .unwrap_or_default();
 
-            let config_path = entry.path();
-            let model_dir = match config_path.ancestors().nth(3) {
-                Some(p) => p,
-                None => continue,
-            };
-
-            let path_str = model_dir.to_string_lossy().to_string();
-            if seen.contains(&path_str) {
-                continue;
-            }
-
-            new_models += 1;
-            let name = normalize_hf_name(model_dir);
-            seen.insert(path_str.clone());
-
-            let content = match std::fs::read_to_string(config_path) {
-                Ok(v) => v,
-                Err(_) => continue,
-            };
-
-            let json: serde_json::Value = match serde_json::from_str(&content) {
-                Ok(v) => v,
-                Err(_) => continue,
-            };
-
-            let hidden_size = json["hidden_size"].as_u64().unwrap_or(4096) as usize;
-            let layers = json["num_hidden_layers"].as_u64().unwrap_or(32) as usize;
-            let vocab_size = json["vocab_size"].as_u64().unwrap_or(32000) as f64;
-            let max_position_embeddings = json["max_position_embeddings"].as_u64().unwrap_or(4096);
-            let torch_dtype = json["torch_dtype"].as_str().unwrap_or("float16");
-            let architecture = json["architectures"]
-                .as_array()
-                .and_then(|a| a.first())
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-
+        for (name, path, architecture, quant, context, layers, hidden_size, params) in models_batch
+        {
             let vllm_supported = architecture
                 .as_ref()
                 .map(|arch| store.is_vllm_supported(arch))
                 .unwrap_or(false);
 
-            let quant = infer_hf_quant(torch_dtype);
-            let context = infer_context(max_position_embeddings);
-            let params = infer_params_from_name(&name).unwrap_or_else(|| {
-                estimate_dense_transformer_params(hidden_size, layers, vocab_size)
-            });
-
             let mut model = Model {
                 source: format!("{:?}", ModelType::HF),
                 name,
-                path: path_str.clone(),
+                path,
                 architecture,
                 vllm_supported,
                 quant,
                 context,
-
                 layers,
                 hidden_size,
                 params_billion: round2(params),
@@ -115,68 +172,78 @@ pub async fn fetch_hf_models() -> Vec<Model> {
             };
 
             model.estimates = build_hf_estimates(&model);
-
             store.insert_model(&model).await;
-            models.push(model);
+            discovered_models.push(model);
         }
     }
 
-    if new_models > 0 {
-        tracing::info!("Discovered {} new HF models.", new_models);
+    if !discovered_models.is_empty() {
+        tracing::info!("Discovered {} new HF models.", discovered_models.len());
     }
+
+    models.extend(discovered_models);
     models
 }
 
+#[tracing::instrument]
 pub async fn fetch_gguf_models() -> Vec<Model> {
     let store = get_store();
     let mut models = store.get_all_models().await;
     models.retain(|m| m.source == format!("{:?}", ModelType::GGUF));
 
-    let mut seen: HashSet<String> = models.iter().map(|m| m.path.clone()).collect();
-    let mut new_models = 0;
-
-    let shard_regex = Regex::new(r"-\d+-of-\d+").unwrap();
+    let seen: HashSet<String> = models.iter().map(|m| m.path.clone()).collect();
+    let mut discovered_models = Vec::new();
 
     for root in GGUF_ROOTS.iter() {
-        if !Path::new(root).exists() {
+        let root = root.to_string();
+        if !Path::new(&root).exists() {
             continue;
         }
 
-        for entry in WalkDir::new(root).into_iter().filter_map(Result::ok) {
-            let path = entry.path();
-            let path_str = path.to_string_lossy().into_owned();
+        let seen_clone = seen.clone();
+        let models_batch = tokio::task::spawn_blocking(move || {
+            let mut batch = Vec::new();
+            for entry in WalkDir::new(&root).into_iter().filter_map(Result::ok) {
+                let path = entry.path();
+                let path_str = path.to_string_lossy().into_owned();
 
-            if seen.contains(&path_str) {
-                continue;
+                if seen_clone.contains(&path_str) {
+                    continue;
+                }
+
+                if path.extension().and_then(|s| s.to_str()) != Some("gguf") {
+                    continue;
+                }
+
+                let filename = entry.file_name().to_string_lossy().to_string();
+                if SHARD_REGEX.is_match(&filename) {
+                    continue;
+                }
+
+                let quant = infer_quant_from_name(&filename).unwrap_or(Quant::ALL);
+                let params = infer_params_from_name(&filename).unwrap_or(7.0);
+
+                let arch_info = infer_architecture(&path_str);
+
+                batch.push((filename, path_str, quant, params, arch_info));
             }
+            batch
+        })
+        .await
+        .unwrap_or_default();
 
-            if path.extension().and_then(|s| s.to_str()) != Some("gguf") {
-                continue;
-            }
-
-            let filename = entry.file_name().to_string_lossy().to_string();
-            if shard_regex.is_match(&filename) {
-                continue;
-            }
-
-            new_models += 1;
-            seen.insert(path_str.clone());
-
-            let quant = infer_quant_from_name(&filename).unwrap_or(Quant::ALL);
-            let params = infer_params_from_name(&filename).unwrap_or(7.0);
-            let (layers, hidden_size, context_size) =
-                infer_architecture(&path_str).unwrap_or((32, 4096, 32768));
+        for (filename, path_str, quant, params, arch_info) in models_batch {
+            let (layers, hidden_size, context_size) = arch_info.unwrap_or((32, 4096, 32768));
             let context = infer_context(context_size as u64);
 
             let mut model = Model {
                 source: format!("{:?}", ModelType::GGUF),
-                name: filename.clone(),
-                path: path_str.clone(),
+                name: filename,
+                path: path_str,
                 architecture: None,
                 vllm_supported: false,
                 quant,
                 context,
-
                 layers,
                 hidden_size,
                 params_billion: params,
@@ -184,15 +251,16 @@ pub async fn fetch_gguf_models() -> Vec<Model> {
             };
 
             model.estimates = build_gguf_estimates(&model);
-
             store.insert_model(&model).await;
-            models.push(model);
+            discovered_models.push(model);
         }
     }
 
-    if new_models > 0 {
-        tracing::info!("Discovered {} new GGUF models.", new_models);
+    if !discovered_models.is_empty() {
+        tracing::info!("Discovered {} new GGUF models.", discovered_models.len());
     }
+
+    models.extend(discovered_models);
     models
 }
 
@@ -211,13 +279,12 @@ pub fn get_on_disk_model_paths() -> HashSet<String> {
     }
 
     // GGUF models
-    let shard_regex = Regex::new(r"-\d+-of-\d+").unwrap();
     for root in GGUF_ROOTS.iter() {
         for entry in WalkDir::new(root).into_iter().filter_map(Result::ok) {
             let path = entry.path();
             if path.extension().and_then(|s| s.to_str()) == Some("gguf") {
                 let filename = entry.file_name().to_string_lossy().to_string();
-                if !shard_regex.is_match(&filename) {
+                if !SHARD_REGEX.is_match(&filename) {
                     on_disk_paths.insert(path.to_string_lossy().to_string());
                 }
             }
@@ -281,28 +348,9 @@ pub fn infer_context(ctx: u64) -> Context {
 pub fn infer_quant_from_name(name: &str) -> Option<Quant> {
     let lower = name.to_lowercase();
 
-    let patterns = [
-        (r"(?:^|[-_.])q8_0(?:[-_.]|$)", Quant::Q80),
-        (r"(?:^|[-_.])q6_k(?:[-_.]|$)", Quant::Q6K),
-        (r"(?:^|[-_.])q5_k_m(?:[-_.]|$)", Quant::Q5KM),
-        (r"(?:^|[-_.])q5_0(?:[-_.]|$)", Quant::Q50),
-        (r"(?:^|[-_.])q4_k_m(?:[-_.]|$)", Quant::Q4KM),
-        (r"(?:^|[-_.])q4_0(?:[-_.]|$)", Quant::Q40),
-        (r"(?:^|[-_.])q3_k_m(?:[-_.]|$)", Quant::Q3KM),
-        (r"(?:^|[-_.])q2_k(?:[-_.]|$)", Quant::Q2K),
-        (r"(?:^|[-_.])fp16(?:[-_.]|$)", Quant::FP16),
-        (r"(?:^|[-_.])f16(?:[-_.]|$)", Quant::FP16),
-        (r"(?:^|[-_.])bf16(?:[-_.]|$)", Quant::BF16),
-        (r"(?:^|[-_.])fp8(?:[-_.]|$)", Quant::FP8),
-        (r"(?:^|[-_.])awq(?:[-_.]|$)", Quant::AWQ),
-        (r"(?:^|[-_.])gptq(?:[-_.]|$)", Quant::GPTQ),
-    ];
-
-    for (pattern, quant) in patterns {
-        let re = Regex::new(pattern).ok()?;
-
+    for (re, quant) in QUANT_PATTERNS.iter() {
         if re.is_match(&lower) {
-            return Some(quant);
+            return Some(*quant);
         }
     }
 
@@ -310,8 +358,7 @@ pub fn infer_quant_from_name(name: &str) -> Option<Quant> {
 }
 
 pub fn infer_params_from_name(name: &str) -> Option<f64> {
-    Regex::new(r"(?i)(\d+(?:\.\d+)?)b")
-        .ok()?
+    PARAMS_REGEX
         .captures(name)?
         .get(1)?
         .as_str()
@@ -323,7 +370,8 @@ pub fn infer_architecture(path: &str) -> Option<(usize, usize, usize)> {
     let mut file = File::open(path).ok()?;
 
     // Read only GGUF header + metadata region.
-    let mut bytes = vec![0u8; 16 * 1024 * 1024];
+    // Reduced from 16MB to 1MB as suggested in the plan.
+    let mut bytes = vec![0u8; 1024 * 1024];
 
     let read = file.read(&mut bytes).ok()?;
     bytes.truncate(read);
@@ -363,7 +411,7 @@ pub fn infer_architecture(path: &str) -> Option<(usize, usize, usize)> {
         })?;
 
     // ---------------------------------------------------------------------
-    // Hidden size
+    // Context length
     // ---------------------------------------------------------------------
 
     let context = metadata

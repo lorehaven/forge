@@ -77,7 +77,7 @@ fn render_vllm_manage_page(is_admin: bool) -> HttpResponse {
             .child(
                 div()
                     .attr("hx-ext", "sse")
-                    .attr("sse-connect", with_base_path("/api/v1/vllm/instances/sse"))
+                    .attr("sse-connect", with_base_path("/api/v1/vllm/sse"))
                     .child(
                         div()
                             .class("grid")

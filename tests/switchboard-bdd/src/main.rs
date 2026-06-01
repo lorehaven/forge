@@ -36,7 +36,7 @@ async fn main() {
 
     // Wait for service to be ready
     println!("Waiting for service to start...");
-    sleep(Duration::from_secs(10)).await;
+    sleep(Duration::from_secs(15)).await;
 
     // 2. Run tests
     let features_path = std::path::Path::new(manifest_dir).join("features");

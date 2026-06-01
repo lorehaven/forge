@@ -2,6 +2,7 @@ pub mod engine;
 pub mod kubernetes;
 pub mod launch;
 pub mod list;
+pub mod mock;
 pub mod modals;
 pub mod native;
 pub mod sse;
@@ -10,6 +11,7 @@ pub mod types;
 
 use crate::routers::vllm::engine::{VllmEngine, VllmManagementMode};
 use crate::routers::vllm::kubernetes::KubernetesVllmEngine;
+use crate::routers::vllm::mock::MockVllmEngine;
 use crate::routers::vllm::native::NativeVllmEngine;
 use actix_web::dev::HttpServiceFactory;
 use actix_web::web;
@@ -28,6 +30,7 @@ pub async fn init_engine() -> Arc<dyn VllmEngine> {
 
     match mode {
         VllmManagementMode::Native => Arc::new(NativeVllmEngine),
+        VllmManagementMode::Mock => Arc::new(MockVllmEngine),
         VllmManagementMode::Kubernetes => match KubernetesVllmEngine::new().await {
             Ok(e) => Arc::new(e),
             Err(err) => {
@@ -48,7 +51,8 @@ pub async fn init_engine() -> Arc<dyn VllmEngine> {
 pub fn scope(engine: Arc<dyn VllmEngine>) -> impl HttpServiceFactory {
     web::scope("/api/v1/vllm")
         .app_data(web::Data::new(engine))
-        .service(list::list_instances)
+        .service(list::list_instances_canonical)
+        .service(list::list_instances_alias)
         .service(list::handle_grid)
         .service(modals::handle_launch_modal)
         .service(modals::empty_launch_modal)
@@ -57,5 +61,6 @@ pub fn scope(engine: Arc<dyn VllmEngine>) -> impl HttpServiceFactory {
         .service(launch::launch_instance)
         .service(launch::launch_instance_form)
         .service(stop::stop_instance)
-        .service(sse::handle_sse)
+        .service(sse::handle_sse_canonical)
+        .service(sse::handle_sse_alias)
 }

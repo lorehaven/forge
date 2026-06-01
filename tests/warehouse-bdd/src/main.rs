@@ -46,9 +46,9 @@ async fn main() {
         .spawn()
         .expect("Failed to start warehouse-service");
 
-    // Wait for service to be ready (simple sleep for now, could be improved with health check)
+    // Wait for service to be ready
     println!("Waiting for service to start...");
-    sleep(Duration::from_secs(10)).await;
+    sleep(Duration::from_secs(15)).await;
 
     // 3. Run tests
     let features_path = std::path::Path::new(manifest_dir).join("features");

@@ -3,6 +3,7 @@ use super::store::{get_store, warm_model_cache};
 use std::time::Duration;
 use tokio::time::sleep;
 
+#[tracing::instrument]
 pub async fn sync_models() {
     let store = get_store();
 
