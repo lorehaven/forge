@@ -20,7 +20,6 @@ readme = "README.md"
 [workspace.dependencies]
 actix-service = { version = "2.0" }
 actix-web = { version = "4.13", features = ["rustls-0_23"] }
-actix-ws = { version = "0.4" }
 anyhow = { version = "1.0" }
 assert_cmd = { version = "2.2" }
 async-trait = { version = "0.1" }
@@ -80,4 +79,3 @@ tracing-subscriber = { version = "0.3" }
 uuid = { version = "1.23", features = ["v4"] }
 walkdir = { version = "2.5" }
 which = { version = "8.0" }
-zip = { version = "8.6" }
