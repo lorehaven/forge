@@ -8,5 +8,5 @@
 .claude/
 .warehouse/
 .welder/
-vllm/
+/vllm/
 plans/
