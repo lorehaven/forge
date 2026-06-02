@@ -7,6 +7,20 @@ metadata:
     app.kubernetes.io/managed-by: custom-tool
     env: {{ env }}
 spec:
+{% if res.redirect_scheme is defined %}
   redirectScheme:
     scheme: {{ res.redirect_scheme.scheme }}
     permanent: {{ res.redirect_scheme.permanent | default(true) }}
+
+{% elif res.strip_prefix is defined %}
+  stripPrefix:
+    prefixes:
+{% for prefix in res.strip_prefix.prefixes %}
+      - {{ prefix }}
+{% endfor %}
+
+{% elif res.replace_path is defined %}
+  replacePath:
+    path: {{ res.replace_path.path }}
+
+{% endif %}
