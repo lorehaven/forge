@@ -14,6 +14,9 @@ spec:
   ports:
     - port: {{ res.port }}
       targetPort: {{ res.target_port | default(res.port) }}
+{% if res.node_port is defined %}
+      nodePort: {{ res.node_port }}
+{% endif %}
       name: {{ res.port_name | default("http") }}
       protocol: TCP
   type: {{ res.type | default("ClusterIP") }}
