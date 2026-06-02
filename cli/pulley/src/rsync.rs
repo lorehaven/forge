@@ -27,11 +27,18 @@ pub fn dry_run(job: &Job) -> Result<bool, Box<dyn std::error::Error>> {
         if line.starts_with("*deleting") {
             println!("DELETE  {}", line.replace("*deleting ", ""));
             count += 1;
-        } else if line.starts_with(">f+++++++++") || line.starts_with("cd+++++++++") {
-            println!("CREATE  {}", &line[12..]);
+        } else if line.starts_with(">f+++++++++")
+            || line.starts_with("<f+++++++++")
+            || line.starts_with("cd+")
+        {
+            if let Some(path) = line.split_once(' ').map(|(_, p)| p) {
+                println!("CREATE {}", path);
+            }
             count += 1;
         } else if line.starts_with(">f") {
-            println!("MODIFY  {}", &line[12..]);
+            if let Some(path) = line.split_once(' ').map(|(_, p)| p) {
+                println!("MODIFY {}", path);
+            }
             count += 1;
         }
     }
