@@ -158,7 +158,7 @@ impl Repl {
                     }
                 }
             } else {
-                println!("*Nothing to do*");
+                println!("**Nothing to do**");
             }
             println!("Done job: `{}`\n", job.desc);
         }
