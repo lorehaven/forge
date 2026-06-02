@@ -8,8 +8,12 @@ metadata:
     env: {{ env }}
   annotations:
     # cert-manager annotation for automatic certificate
+{% if res.issuer_name is defined and res.issuer_name %}
     cert-manager.io/cluster-issuer: {{ res.issuer_name }}
+{% endif %}
+{% if res.force_ssl_redirect is defined %}
     nginx.ingress.kubernetes.io/force-ssl-redirect: "{{ res.force_ssl_redirect }}"
+{% endif %}
 {% if res.annotations is defined %}
 {% for k, v in res.annotations | dictsort %}
     {{ k }}: "{{ v }}"
