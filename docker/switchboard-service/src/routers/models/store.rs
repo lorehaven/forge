@@ -97,7 +97,13 @@ impl ModelStore {
         match self.model_repo.list().await {
             Ok(cached_models) => cached_models
                 .into_iter()
-                .filter_map(|m| serde_json::from_value::<Model>(m.data).ok())
+                .filter_map(|m| match serde_json::from_value::<Model>(m.data) {
+                    Ok(model) => Some(model),
+                    Err(e) => {
+                        tracing::error!("Failed to deserialize model at {}: {}", m.path, e);
+                        None
+                    }
+                })
                 .collect(),
             Err(e) => {
                 tracing::error!("Failed to list models from DB: {}", e);
