@@ -1,6 +1,6 @@
 [package]
 name = "riveter"
-version = "0.1.13"
+version = "0.1.14"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Riveter – k8s support tool, powered by Rust and minijinja."

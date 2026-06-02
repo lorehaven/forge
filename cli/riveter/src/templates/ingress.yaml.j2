@@ -21,12 +21,14 @@ metadata:
 {% endif %}
 spec:
   ingressClassName: nginx
+{% if res.secret_name is defined and res.secret_name %}
   tls:
     - hosts:
 {% for route in res.routes %}
         - {{ route.host }}
 {% endfor %}
       secretName: {{ res.secret_name }}-tls
+{% endif %}
   rules:
 {% for route in res.routes %}
     - host: {{ route.host }}
