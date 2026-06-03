@@ -43,7 +43,7 @@ async fn main() -> std::io::Result<()> {
     let vllm_engine = routers::vllm::init_engine().await;
 
     let (vllm_tx, _) = tokio::sync::broadcast::channel::<String>(100);
-    crate::routers::vllm::init_vllm_status_publisher(vllm_tx.clone(), vllm_engine.clone());
+    routers::vllm::init_vllm_status_publisher(vllm_tx.clone(), vllm_engine.clone());
 
     serve(
         root_scope,
