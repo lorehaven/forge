@@ -1,0 +1,6 @@
+[[migrations]]
+id = "0002-install-pgvector"
+author = "quench-srv"
+
+[[migrations.changes]]
+createExtension = { name = "vector" }

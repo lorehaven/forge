@@ -53,6 +53,10 @@ pub fn p() -> Element {
     Element::new("p")
 }
 
+pub fn pre() -> Element {
+    Element::new("pre")
+}
+
 pub fn span() -> Element {
     Element::new("span")
 }
@@ -79,6 +83,10 @@ pub fn i() -> Element {
 
 pub fn input() -> Element {
     Element::new("input")
+}
+
+pub fn textarea() -> Element {
+    Element::new("textarea")
 }
 
 pub fn select() -> Element {

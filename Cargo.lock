@@ -3280,7 +3280,7 @@ dependencies = [
 
 [[package]]
 name = "quench-db"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3318,10 +3318,11 @@ dependencies = [
 
 [[package]]
 name = "quench-srv"
-version = "0.1.11"
+version = "0.1.12"
 dependencies = [
  "actix-service",
  "actix-web",
+ "base64",
  "chrono",
  "envmnt",
  "futures-util",
@@ -3330,6 +3331,7 @@ dependencies = [
  "quench-cli",
  "quench-db",
  "quench-web",
+ "reqwest",
  "rustls",
  "serde",
  "serde_json",
@@ -3341,7 +3343,7 @@ dependencies = [
 
 [[package]]
 name = "quench-web"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "anyhow",
  "fluent-syntax",
@@ -3820,6 +3822,26 @@ name = "ryu"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
+
+[[package]]
+name = "sage-service"
+version = "0.1.0"
+dependencies = [
+ "actix-web",
+ "anyhow",
+ "async-stream",
+ "chrono",
+ "dotenvy",
+ "envmnt",
+ "futures-util",
+ "quench-srv",
+ "quench-web",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tracing",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "same-file"

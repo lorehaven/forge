@@ -59,6 +59,13 @@ function applyTranslations(locale) {{
             el.textContent = dict[key];
         }}
     }});
+
+    document.querySelectorAll("[data-i18n-placeholder]").forEach(el => {{
+        const key = el.getAttribute("data-i18n-placeholder");
+        if (dict[key]) {{
+            el.placeholder = dict[key];
+        }}
+    }});
 }}
 
 function updateLocale(newLocale) {{

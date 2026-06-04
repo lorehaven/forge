@@ -48,7 +48,7 @@ where
 
     let db_wrapper = match db {
         Some(d) => d,
-        None => DbWrapper::init().await,
+        None => DbWrapper::init_env().await,
     };
     let jwt_config = JwtConfig::init();
     let user_db = UserDb::init(db_wrapper.db.clone()).await;

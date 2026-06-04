@@ -9,6 +9,7 @@ use std::sync::Arc;
 pub enum Role {
     Admin,
     User,
+    Service,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
@@ -73,7 +74,6 @@ impl UserDb {
 
             if let Some(user) = arc_db.get_user(&admin_user).await {
                 if user.password != hashed_admin_pass {
-                    // Update password if it changed in env
                     arc_db
                         .add_user(User::new(admin_user, admin_pass, vec![Role::Admin]))
                         .await;
@@ -82,6 +82,31 @@ impl UserDb {
                 arc_db
                     .add_user(User::new(admin_user, admin_pass, vec![Role::Admin]))
                     .await;
+            }
+
+            // Technical service user
+            let tech_user = envmnt::get_or(
+                "SERVICE_TECH_USERNAME",
+                &envmnt::get_or("TECH_USERNAME", ""),
+            );
+            let tech_pass = envmnt::get_or(
+                "SERVICE_TECH_PASSWORD",
+                &envmnt::get_or("TECH_PASSWORD", ""),
+            );
+
+            if !tech_user.is_empty() && !tech_pass.is_empty() {
+                let hashed_tech_pass = User::hash_password(&tech_pass);
+                if let Some(user) = arc_db.get_user(&tech_user).await {
+                    if user.password != hashed_tech_pass {
+                        arc_db
+                            .add_user(User::new(tech_user, tech_pass, vec![Role::Service]))
+                            .await;
+                    }
+                } else {
+                    arc_db
+                        .add_user(User::new(tech_user, tech_pass, vec![Role::Service]))
+                        .await;
+                }
             }
         }
 

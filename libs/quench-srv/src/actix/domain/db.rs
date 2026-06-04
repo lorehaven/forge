@@ -7,8 +7,13 @@ pub struct DbWrapper {
 }
 
 impl DbWrapper {
-    pub async fn init() -> Arc<Self> {
+    pub async fn init_env() -> Arc<Self> {
         let db_url = envmnt::get_any(&vec!["DATABASE_URL", "POSTGRES_URL"], "");
+        Self::init(db_url).await
+    }
+
+    pub async fn init(url: impl ToString) -> Arc<Self> {
+        let db_url = url.to_string();
 
         let db = match Db::connect(&db_url).await {
             Ok(db) => {

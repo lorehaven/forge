@@ -21,6 +21,7 @@ readme = "README.md"
 actix-service = { version = "2.0" }
 actix-web = { version = "4.13", features = ["rustls-0_23"] }
 anyhow = { version = "1.0" }
+async-stream = { version = "0.3" }
 assert_cmd = { version = "2.2" }
 async-trait = { version = "0.1" }
 axum = { version = "0.8", features = ["json"] }
@@ -44,9 +45,9 @@ markup5ever_rcdom = { version = "0.39" }
 minijinja = { version = "2.20", features = ["loader", "serde"] }
 predicates = { version = "3.1" }
 quench-cli = { path = "libs/quench-cli", registry = "ennor", version = "0.1.1" }
-quench-db = { path = "libs/quench-db", registry = "ennor", version = "0.1.0" }
-quench-srv = { path = "libs/quench-srv", registry = "ennor", version = "0.1.11" }
-quench-web = { path = "libs/quench-web", registry = "ennor", version = "0.1.5" }
+quench-db = { path = "libs/quench-db", registry = "ennor", version = "0.1.1" }
+quench-srv = { path = "libs/quench-srv", registry = "ennor", version = "0.1.12" }
+quench-web = { path = "libs/quench-web", registry = "ennor", version = "0.1.6" }
 regex = { version = "1.12" }
 reqwest = { version = "0.13", default-features = false, features = [
   "json",

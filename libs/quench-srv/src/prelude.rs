@@ -10,5 +10,6 @@ pub mod routers {
 }
 pub use crate::actix::serve;
 pub use crate::common::routes::{normalize_base_path, with_base_path};
+pub use crate::common::wait::wait_for_services;
 
 pub use actix_web::dev::HttpServiceFactory;

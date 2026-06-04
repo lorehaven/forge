@@ -1,4 +1,4 @@
-use quench_srv::prelude::{HttpServiceFactory, JwtConfig, serve};
+use quench_srv::prelude::{DbWrapper, HttpServiceFactory, JwtConfig, serve};
 
 pub mod domain;
 pub mod middleware;
@@ -36,5 +36,7 @@ async fn main() -> std::io::Result<()> {
     tracing_subscriber::fmt().init();
     dotenvy::dotenv().ok();
 
-    serve(root_scope, base_path_scope, None).await
+    let db_wrapper = DbWrapper::init_env().await;
+
+    serve(root_scope, base_path_scope, Some(db_wrapper)).await
 }

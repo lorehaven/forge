@@ -62,8 +62,13 @@ impl MigrationLoader {
 pub enum ChangeSet {
     #[serde(rename = "sql")]
     Sql(String),
+
     #[serde(rename = "createSchema")]
     CreateSchema { name: String },
+
+    #[serde(rename = "createExtension")]
+    CreateExtension { name: String },
+
     #[serde(rename = "createTable")]
     CreateTable {
         schema: Option<String>,
@@ -84,9 +89,15 @@ impl ChangeSet {
     pub fn to_sql(&self) -> String {
         match self {
             ChangeSet::Sql(sql) => sql.clone(),
+
             ChangeSet::CreateSchema { name } => {
                 format!("CREATE SCHEMA IF NOT EXISTS {}", name)
             }
+
+            ChangeSet::CreateExtension { name } => {
+                format!("CREATE EXTENSION IF NOT EXISTS {}", name)
+            }
+
             ChangeSet::CreateTable {
                 schema,
                 name,

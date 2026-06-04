@@ -250,17 +250,34 @@ fn pretty_html_string(node: &Handle, indent: usize, is_preformatted: bool) -> St
                 .collect();
 
             let tag = name.local.as_ref();
-            let pre = tag == "script" || tag == "style" || tag == "pre" || tag == "code";
+            let pre = tag == "script"
+                || tag == "style"
+                || tag == "pre"
+                || tag == "code"
+                || tag == "textarea";
 
-            let mut s = format!("{}<{}{}>\n", " ".repeat(indent), name.local, attrs_string);
+            if pre {
+                let mut s = format!("<{}{}>", name.local, attrs_string);
+                for child in node.children.borrow().iter() {
+                    s.push_str(&pretty_html_string(child, 0, true));
+                }
+                s.push_str(&format!("</{}>", name.local));
+                if is_preformatted {
+                    s
+                } else {
+                    format!("{}{}\n", " ".repeat(indent), s)
+                }
+            } else {
+                let mut s = format!("{}<{}{}>\n", " ".repeat(indent), name.local, attrs_string);
 
-            // Recurse into children
-            for child in node.children.borrow().iter() {
-                s.push_str(&pretty_html_string(child, indent + 4, pre));
+                // Recurse into children
+                for child in node.children.borrow().iter() {
+                    s.push_str(&pretty_html_string(child, indent + 4, false));
+                }
+
+                s.push_str(&format!("{}{}</{}>\n", " ".repeat(indent), "", name.local));
+                s
             }
-
-            s.push_str(&format!("{}{}</{}>\n", " ".repeat(indent), "", name.local));
-            s
         }
         _ => "".to_string(),
     }
