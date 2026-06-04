@@ -39,7 +39,13 @@ pub async fn chat(
     ];
 
     let stream = match vllm
-        .chat_stream(&instance.host, instance.port, &instance.model, messages)
+        .chat_stream(
+            &instance.host,
+            instance.port,
+            &instance.model,
+            messages,
+            instance.max_model_len,
+        )
         .await
     {
         Ok(s) => s,
@@ -49,11 +55,11 @@ pub async fn chat(
     let sse_stream = stream.map(|res| match res {
         Ok(content) => {
             let data = serde_json::json!({ "content": content });
-            Ok::<_, actix_web::Error>(actix_web::web::Bytes::from(format!("data: {}\n\n", data)))
+            Ok::<_, actix_web::Error>(web::Bytes::from(format!("data: {}\n\n", data)))
         }
         Err(err) => {
             let data = serde_json::json!({ "error": err.to_string() });
-            Ok::<_, actix_web::Error>(actix_web::web::Bytes::from(format!("data: {}\n\n", data)))
+            Ok::<_, actix_web::Error>(web::Bytes::from(format!("data: {}\n\n", data)))
         }
     });
 

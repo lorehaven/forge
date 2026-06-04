@@ -62,7 +62,8 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("white-space", "pre-wrap")
             .property("overflow-wrap", "anywhere")
             .property("max-width", "100%")
-            .property("width", "100%"),
+            .property("width", "100%")
+            .property("user-select", "text"),
         CssRule::new(".message-content pre")
             .property("margin", "0.5rem 0")
             .property("white-space", "pre-wrap")
@@ -71,8 +72,7 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("font-family", "inherit")
             .property("font-size", "inherit")
             .property("color", "inherit")
-            .property("max-width", "100%")
-            .property("user-select", "text"),
+            .property("max-width", "100%"),
         CssRule::new(".code-block")
             .property("background", "rgba(0, 0, 0, 0.3)")
             .property("border", "1px solid var(--bs-gray-700)")
@@ -230,13 +230,18 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("z-index", "1000"),
         CssRule::new(".nav-dot.active::before")
             .property("background", "var(--bs-gray-100)")
+            .property("width", "0.4rem")
             .property("height", "1.25rem")
-            .property("border-radius", "0.25rem"),
+            .property("border-radius", "0.25rem")
+            .property("content", "''"),
         CssRule::new(".chat-input-wrapper")
             .property("flex", "0 0 auto")
             .property("width", "100%")
             .property("display", "flex")
+            .property("flex-direction", "column")
+            .property("align-items", "center")
             .property("justify-content", "center")
+            .property("margin", "0")
             .property("padding", "2rem 0")
             .property("background", "transparent"),
         CssRule::new(".chat-input-area-container")
@@ -244,6 +249,7 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("width", "95%")
             .property("display", "flex")
             .property("flex-direction", "column")
+            .property("margin", "0 auto")
             .property("gap", "0.5rem"),
         CssRule::new(".chat-input-area")
             .property("background", "var(--bs-gray-800)")

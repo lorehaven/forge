@@ -21,6 +21,9 @@ envmnt = { workspace = true }
 futures-util = { workspace = true }
 quench-srv = { workspace = true }
 quench-web = { workspace = true }
+regex = { workspace = true }
+dashmap = { version = "6.1" }
+uuid = { workspace = true, features = ["v4"] }
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }
 serde_json = { workspace = true }

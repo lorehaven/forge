@@ -2,7 +2,7 @@ use crate::clients::switchboard::{SwitchboardClient, VllmInstance};
 use crate::routers::ui::common::{UiPageKind, render_page};
 use actix_web::{HttpResponse, Responder, get, web};
 use quench_srv::actix::routers::ui::pages::home::handle_home;
-use quench_srv::prelude::JwtConfig;
+use quench_srv::prelude::{JwtConfig, with_base_path};
 use quench_web::prelude::*;
 
 #[get("/home")]
@@ -86,7 +86,6 @@ fn render_home_page(instances_res: anyhow::Result<Vec<VllmInstance>>) -> HttpRes
                             div()
                                 .class("nav-dot active")
                                 .attr("data-msg-id", "msg-0")
-                                .attr("onclick", "document.getElementById('msg-0').scrollIntoView({behavior: 'smooth'})")
                                 .child(
                                     div()
                                         .class("nav-tooltip")
@@ -95,7 +94,11 @@ fn render_home_page(instances_res: anyhow::Result<Vec<VllmInstance>>) -> HttpRes
                         )
                 )
                 .child(
-                    div()
+                    form()
+                        .attr("hx-post", with_base_path("/ui/chat/send"))
+                        .attr("hx-target", ".chat-history")
+                        .attr("hx-swap", "beforeend")
+                        .attr("hx-on::after-request", "if(event.detail.successful) { document.getElementById('chat-input').value = ''; document.getElementById('chat-input').style.height = 'auto'; const history = document.querySelector('.chat-history'); history.scrollTop = history.scrollHeight; }")
                         .class("chat-input-wrapper")
                         .child(
                             div().class("chat-input-area-container")
@@ -104,12 +107,15 @@ fn render_home_page(instances_res: anyhow::Result<Vec<VllmInstance>>) -> HttpRes
                                         .child(
                                             textarea()
                                                 .attr("id", "chat-input")
+                                                .attr("name", "message")
                                                 .class("chat-input")
                                                 .attr("rows", "1")
-                                                .attr("data-i18n-placeholder", "ui_chat_input_placeholder"),
+                                                .attr("data-i18n-placeholder", "ui_chat_input_placeholder")
+                                                .attr("onkeydown", "if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.form.dispatchEvent(new Event('submit', {cancelable: true, bubbles: true})); }"),
                                         )
                                         .child(
                                             button()
+                                                .attr("type", "submit")
                                                 .class("chat-send-btn")
                                                 .child(i().class("fas fa-arrow-up")),
                                         )
@@ -117,7 +123,7 @@ fn render_home_page(instances_res: anyhow::Result<Vec<VllmInstance>>) -> HttpRes
                                 .child(
                                     div().class("chat-input-extras")
                                         .child(div().attr("style", "flex: 1;"))
-                                        .child(model_select)
+                                        .child(model_select.attr("name", "instance_id"))
                                 )
                         )
                 ),

@@ -3,6 +3,7 @@ use actix_web::{HttpResponse, Responder, get, web};
 pub use common::assets;
 use quench_srv::prelude::{JwtConfig, with_base_path};
 
+pub mod chat;
 pub mod common;
 pub mod pages;
 
@@ -40,6 +41,8 @@ pub fn scope() -> impl HttpServiceFactory {
         .service(root)
         .service(root_slash)
         .service(assets)
+        // Chat
+        .service(chat::scope())
         // Auth
         .service(pages::auth::login)
         .service(pages::auth::login_slash)

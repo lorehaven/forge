@@ -15,6 +15,16 @@ pub struct ChatCompletionRequest {
     pub model: String,
     pub messages: Vec<ChatMessage>,
     pub stream: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_p: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub presence_penalty: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frequency_penalty: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -57,14 +67,29 @@ impl VllmClient {
         port: u16,
         model: &str,
         messages: Vec<ChatMessage>,
+        max_tokens: Option<u32>,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<String>> + Send>>> {
+        let host = host
+            .trim_start_matches("http://")
+            .trim_start_matches("https://");
         let url = format!("http://{}:{}/v1/chat/completions", host, port);
 
         let request = ChatCompletionRequest {
             model: model.to_string(),
             messages,
             stream: true,
+            temperature: Some(0.1), // LOW TEMPERATURE FOR PRECISION
+            top_p: Some(0.9),
+            presence_penalty: Some(0.0),
+            frequency_penalty: Some(0.0),
+            max_tokens,
         };
+
+        tracing::info!(
+            "Connecting to vLLM at {} (max_tokens: {:?})",
+            url,
+            max_tokens
+        );
 
         let res = self
             .http
@@ -72,35 +97,45 @@ impl VllmClient {
             .json(&request)
             .send()
             .await
-            .context("Failed to connect to vLLM instance")?;
+            .with_context(|| format!("Failed to connect to vLLM instance at {}", url))?;
 
         if !res.status().is_success() {
             let status = res.status();
-            let err_text = res.text().await.unwrap_or_default();
+            let err_text = res
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            tracing::error!("vLLM returned error {}: {}", status, err_text);
             anyhow::bail!("vLLM returned error {}: {}", status, err_text);
         }
 
         let mut stream = res.bytes_stream();
 
         let output_stream = async_stream::try_stream! {
-            let mut buffer = String::new();
+            let mut buffer = Vec::new();
 
-            while let Some(chunk) = stream.next().await {
-                let chunk = chunk.context("Error reading from vLLM stream")?;
-                let text = String::from_utf8_lossy(&chunk);
-                buffer.push_str(&text);
+            while let Some(chunk_res) = stream.next().await {
+                let chunk = chunk_res.context("Error reading from vLLM stream")?;
+                buffer.extend_from_slice(&chunk);
 
-                while let Some(pos) = buffer.find('\n') {
-                    let line = buffer.drain(..=pos).collect::<String>();
-                    let line = line.trim();
+                while let Some(pos) = buffer.iter().position(|&b| b == b'\n') {
+                    let line_bytes = buffer.drain(..=pos).collect::<Vec<u8>>();
+                    let line_str = String::from_utf8_lossy(&line_bytes);
+                    let line = line_str.trim();
 
                     if line.is_empty() { continue; }
-                    if line == "data: [DONE]" { break; }
+                    if line == "data: [DONE]" {
+                        return;
+                    }
 
-                    if let Some(data) = line.strip_prefix("data: ")
-                        && let Ok(chunk) = serde_json::from_str::<ChatCompletionChunk>(data)
-                        && let Some(content) = &chunk.choices[0].delta.content {
-                        yield content.clone();
+                    if let Some(data) = line.strip_prefix("data: ") {
+                        if let Ok(chunk) = serde_json::from_str::<ChatCompletionChunk>(data) {
+                            if let Some(content) = &chunk.choices[0].delta.content {
+                                yield content.clone();
+                            }
+                        } else {
+                            tracing::warn!("Failed to parse SSE data: {}", data);
+                        }
                     }
                 }
             }
