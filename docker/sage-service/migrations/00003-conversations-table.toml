@@ -1,0 +1,11 @@
+[[migrations]]
+id = "0003-conversations-table"
+author = "quench-srv"
+
+[[migrations.changes]]
+createTable = { schema = "sage", name = "conversations", columns = [
+    { name = "id", data_type = "TEXT", primary_key = true, nullable = false },
+    { name = "title", data_type = "TEXT", nullable = false },
+    { name = "messages", data_type = "TEXT", nullable = false },
+    { name = "updated_at", data_type = "TEXT", nullable = false }
+] }

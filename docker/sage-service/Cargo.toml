@@ -30,3 +30,5 @@ serde_json = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tokio = { workspace = true }
+sqlx = { workspace = true }
+quench-db = { workspace = true }

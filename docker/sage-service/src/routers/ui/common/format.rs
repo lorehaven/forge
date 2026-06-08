@@ -1,8 +1,72 @@
 use quench_web::prelude::*;
-use regex::Regex;
-use std::sync::LazyLock;
+enum BlockState {
+    None,
+    Paragraph(Vec<String>),
+    Table(Vec<String>),
+    UnorderedList(Vec<String>),
+    OrderedList(Vec<String>),
+}
 
-static INLINE_CODE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"`([^`]+)`").unwrap());
+fn parse_header(line: &str) -> Option<(usize, String)> {
+    let trimmed = line.trim();
+    if !trimmed.starts_with('#') {
+        return None;
+    }
+    let mut chars = trimmed.chars().peekable();
+    let mut level = 0;
+    while chars.peek() == Some(&'#') {
+        level += 1;
+        chars.next();
+    }
+    if level > 0 && level <= 6 && chars.peek() == Some(&' ') {
+        chars.next(); // Consume space
+        let content: String = chars.collect();
+        Some((level, content.trim().to_string()))
+    } else {
+        None
+    }
+}
+
+fn parse_unordered_list_item(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    trimmed
+        .strip_prefix("- ")
+        .or_else(|| trimmed.strip_prefix("* "))
+        .or_else(|| trimmed.strip_prefix("+ "))
+        .map(|rest| rest.trim().to_string())
+}
+
+fn parse_ordered_list_item(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    let mut chars = trimmed.chars().peekable();
+    if chars.peek().is_some_and(|c| c.is_ascii_digit()) {
+        let mut num_str = String::new();
+        while chars.peek().is_some_and(|c| c.is_ascii_digit()) {
+            num_str.push(chars.next().unwrap());
+        }
+        if chars.peek() == Some(&'.') {
+            chars.next(); // Consume '.'
+            if chars.peek() == Some(&' ') {
+                chars.next(); // Consume ' '
+                let content: String = chars.collect();
+                return Some(content.trim().to_string());
+            }
+        }
+    }
+    None
+}
+
+fn is_horizontal_rule(line: &str) -> bool {
+    let trimmed = line.trim();
+    if trimmed.len() < 3 {
+        return false;
+    }
+    let first_char = trimmed.chars().next().unwrap();
+    if first_char != '-' && first_char != '*' && first_char != '_' {
+        return false;
+    }
+    trimmed.chars().all(|c| c == first_char)
+}
 
 pub fn format_message(text: &str) -> String {
     let parts: Vec<&str> = text.split("```").collect();
@@ -10,8 +74,14 @@ pub fn format_message(text: &str) -> String {
 
     for (i, part) in parts.iter().enumerate() {
         if i % 2 == 0 {
-            // Text part (might contain tables)
-            html.push_str(&format_text_part(part));
+            // Text part
+            let formatted = format_text_part(part);
+            if !formatted.trim().is_empty() {
+                html.push_str(&format!(
+                    "<div class=\"message-content\">{}</div>",
+                    formatted
+                ));
+            }
         } else {
             // Code part
             html.push_str(&format_code_part(part));
@@ -21,44 +91,224 @@ pub fn format_message(text: &str) -> String {
 }
 
 fn format_text_part(text: &str) -> String {
-    let mut result = Vec::new();
-    let mut table_rows = Vec::new();
-    let mut in_table = false;
+    let mut html = String::new();
+    let mut state = BlockState::None;
 
-    let lines: Vec<&str> = text.split('\n').collect();
-
-    for line in lines {
-        let trimmed = line.trim();
-        if trimmed.starts_with('|') && trimmed.ends_with('|') {
-            in_table = true;
-            table_rows.push(line);
-        } else {
-            if in_table {
-                result.push(render_table(table_rows.clone()));
-                table_rows.clear();
-                in_table = false;
+    let emit = |state: &mut BlockState, html: &mut String| {
+        match state {
+            BlockState::None => {}
+            BlockState::Paragraph(lines) => {
+                if !lines.is_empty() {
+                    let content = lines.join(" ");
+                    html.push_str(&format!("<p>{}</p>", format_inline(&html_escape(&content))));
+                }
             }
-            result.push(format_inline(&html_escape(line)));
+            BlockState::Table(rows) => {
+                if !rows.is_empty() {
+                    let row_strs: Vec<&str> = rows.iter().map(|s| s.as_str()).collect();
+                    html.push_str(&render_table(row_strs));
+                }
+            }
+            BlockState::UnorderedList(items) => {
+                if !items.is_empty() {
+                    html.push_str("<ul>");
+                    for item in items {
+                        html.push_str(&format!("<li>{}</li>", format_inline(&html_escape(item))));
+                    }
+                    html.push_str("</ul>");
+                }
+            }
+            BlockState::OrderedList(items) => {
+                if !items.is_empty() {
+                    html.push_str("<ol>");
+                    for item in items {
+                        html.push_str(&format!("<li>{}</li>", format_inline(&html_escape(item))));
+                    }
+                    html.push_str("</ol>");
+                }
+            }
+        }
+        *state = BlockState::None;
+    };
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+
+        if trimmed.is_empty() {
+            // Empty line: close Paragraph/Table.
+            // We keep list active so consecutive list items separated by blank lines group together.
+            match state {
+                BlockState::Paragraph(_) | BlockState::Table(_) => {
+                    emit(&mut state, &mut html);
+                }
+                _ => {}
+            }
+            continue;
+        }
+
+        // 1. Horizontal rule check
+        if is_horizontal_rule(line) {
+            emit(&mut state, &mut html);
+            html.push_str("<hr>");
+            continue;
+        }
+
+        // 2. Table check
+        if trimmed.starts_with('|') && trimmed.ends_with('|') {
+            match state {
+                BlockState::Table(ref mut rows) => {
+                    rows.push(line.to_string());
+                }
+                _ => {
+                    emit(&mut state, &mut html);
+                    state = BlockState::Table(vec![line.to_string()]);
+                }
+            }
+            continue;
+        }
+
+        // 3. Header check
+        if let Some((level, content)) = parse_header(line) {
+            emit(&mut state, &mut html);
+            html.push_str(&format!(
+                "<h{}>{}</h{}>",
+                level,
+                format_inline(&html_escape(&content)),
+                level
+            ));
+            continue;
+        }
+
+        // 4. Unordered list item check
+        if let Some(content) = parse_unordered_list_item(line) {
+            match state {
+                BlockState::UnorderedList(ref mut items) => {
+                    items.push(content);
+                }
+                _ => {
+                    emit(&mut state, &mut html);
+                    state = BlockState::UnorderedList(vec![content]);
+                }
+            }
+            continue;
+        }
+
+        // 5. Ordered list item check
+        if let Some(content) = parse_ordered_list_item(line) {
+            match state {
+                BlockState::OrderedList(ref mut items) => {
+                    items.push(content);
+                }
+                _ => {
+                    emit(&mut state, &mut html);
+                    state = BlockState::OrderedList(vec![content]);
+                }
+            }
+            continue;
+        }
+
+        // 6. Otherwise, it is a paragraph line
+        match state {
+            BlockState::Paragraph(ref mut lines) => {
+                lines.push(line.to_string());
+            }
+            _ => {
+                emit(&mut state, &mut html);
+                state = BlockState::Paragraph(vec![line.to_string()]);
+            }
         }
     }
 
-    if in_table {
-        result.push(render_table(table_rows));
-    }
-
-    result.join("\n")
+    emit(&mut state, &mut html);
+    html
 }
 
 fn format_inline(text: &str) -> String {
     let mut result = String::new();
-    let mut last_pos = 0;
-    for cap in INLINE_CODE_RE.captures_iter(text) {
-        let m = cap.get(0).unwrap();
-        result.push_str(&text[last_pos..m.start()]);
-        result.push_str(&format!("<code class=\"inline-code\">{}</code>", &cap[1]));
-        last_pos = m.end();
+    let chars: Vec<char> = text.chars().collect();
+    let mut i = 0;
+
+    while i < chars.len() {
+        // 1. Inline code
+        if chars[i] == '`' {
+            let mut j = i + 1;
+            while j < chars.len() && chars[j] != '`' {
+                j += 1;
+            }
+            if j < chars.len() {
+                let code_content: String = chars[i + 1..j].iter().collect();
+                result.push_str(&format!(
+                    "<code class=\"inline-code\">{}</code>",
+                    code_content
+                ));
+                i = j + 1;
+                continue;
+            }
+        }
+
+        // 2. Bold (double asterisk / double underscore)
+        if i + 1 < chars.len() && chars[i] == '*' && chars[i + 1] == '*' {
+            let mut j = i + 2;
+            while j + 1 < chars.len() && !(chars[j] == '*' && chars[j + 1] == '*') {
+                j += 1;
+            }
+            if j + 1 < chars.len() {
+                let bold_content: String = chars[i + 2..j].iter().collect();
+                result.push_str(&format!(
+                    "<strong>{}</strong>",
+                    format_inline(&bold_content)
+                ));
+                i = j + 2;
+                continue;
+            }
+        }
+        if i + 1 < chars.len() && chars[i] == '_' && chars[i + 1] == '_' {
+            let mut j = i + 2;
+            while j + 1 < chars.len() && !(chars[j] == '_' && chars[j + 1] == '_') {
+                j += 1;
+            }
+            if j + 1 < chars.len() {
+                let bold_content: String = chars[i + 2..j].iter().collect();
+                result.push_str(&format!(
+                    "<strong>{}</strong>",
+                    format_inline(&bold_content)
+                ));
+                i = j + 2;
+                continue;
+            }
+        }
+
+        // 3. Italic (single asterisk / single underscore)
+        if chars[i] == '*' {
+            let mut j = i + 1;
+            while j < chars.len() && chars[j] != '*' {
+                j += 1;
+            }
+            if j < chars.len() {
+                let italic_content: String = chars[i + 1..j].iter().collect();
+                result.push_str(&format!("<em>{}</em>", format_inline(&italic_content)));
+                i = j + 1;
+                continue;
+            }
+        }
+        if chars[i] == '_' {
+            let mut j = i + 1;
+            while j < chars.len() && chars[j] != '_' {
+                j += 1;
+            }
+            if j < chars.len() {
+                let italic_content: String = chars[i + 1..j].iter().collect();
+                result.push_str(&format!("<em>{}</em>", format_inline(&italic_content)));
+                i = j + 1;
+                continue;
+            }
+        }
+
+        // Default: normal char
+        result.push(chars[i]);
+        i += 1;
     }
-    result.push_str(&text[last_pos..]);
+
     result
 }
 
@@ -143,4 +393,47 @@ fn html_escape(s: &str) -> String {
         .replace(">", "&gt;")
         .replace("\"", "&quot;")
         .replace("'", "&#39;")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_message_headers() {
+        let input = "### Conclusion\nChoose the appropriate loop.";
+        let output = format_message(input);
+        assert!(output.contains("<h3>Conclusion</h3>"));
+        assert!(output.contains("<p>Choose the appropriate loop.</p>"));
+    }
+
+    #[test]
+    fn test_format_message_lists() {
+        let input = "- **Readability**: for loop\n- **Consistency**: codebase";
+        let output = format_message(input);
+        assert!(output.contains("<ul><li><strong>Readability</strong>: for loop</li><li><strong>Consistency</strong>: codebase</li></ul>"));
+    }
+
+    #[test]
+    fn test_format_message_lists_with_double_newlines() {
+        let input = "- **Readability**: for loop\n\n- **Consistency**: codebase";
+        let output = format_message(input);
+        assert!(output.contains("<ul><li><strong>Readability</strong>: for loop</li><li><strong>Consistency</strong>: codebase</li></ul>"));
+    }
+
+    #[test]
+    fn test_format_message_inline_code() {
+        let input = "Use `for` loops where possible.";
+        let output = format_message(input);
+        assert!(output.contains("<code class=\"inline-code\">for</code>"));
+    }
+
+    #[test]
+    fn test_format_message_bold_italic() {
+        let input = "This is **bold** and _italic_ and `code` text.";
+        let output = format_message(input);
+        assert!(output.contains("<strong>bold</strong>"));
+        assert!(output.contains("<em>italic</em>"));
+        assert!(output.contains("<code class=\"inline-code\">code</code>"));
+    }
 }

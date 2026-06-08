@@ -4,6 +4,7 @@ use quench_srv::prelude::{DbWrapper, serve, wait_for_services};
 
 mod clients;
 mod config;
+pub mod models;
 mod routers;
 
 pub fn root_scope() -> impl HttpServiceFactory {

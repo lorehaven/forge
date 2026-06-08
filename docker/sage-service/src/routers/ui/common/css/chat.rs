@@ -49,9 +49,10 @@ pub fn chat_rules() -> Vec<CssRule> {
         CssRule::new(".message-inner")
             .property("max-width", "50rem")
             .property("width", "95%")
-            .property("display", "flex"),
-        CssRule::new(".message-ai .message-inner").property("justify-content", "flex-start"),
-        CssRule::new(".message-user .message-inner").property("justify-content", "flex-end"),
+            .property("display", "flex")
+            .property("flex-direction", "column"),
+        CssRule::new(".message-ai .message-inner").property("align-items", "flex-start"),
+        CssRule::new(".message-user .message-inner").property("align-items", "flex-end"),
         CssRule::new(".message-content")
             .property("font-size", "1.1rem")
             .property("line-height", "1.6")
@@ -59,11 +60,12 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("border-radius", "1rem")
             .property("word-break", "break-word")
             .property("text-align", "left")
-            .property("white-space", "pre-wrap")
             .property("overflow-wrap", "anywhere")
             .property("max-width", "100%")
             .property("width", "100%")
             .property("user-select", "text"),
+        CssRule::new(".message-content p").property("margin", "0 0 1rem 0"),
+        CssRule::new(".message-content p:last-child").property("margin-bottom", "0"),
         CssRule::new(".message-content pre")
             .property("margin", "0.5rem 0")
             .property("white-space", "pre-wrap")
@@ -80,7 +82,8 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("margin", "1rem 0")
             .property("overflow", "hidden")
             .property("display", "flex")
-            .property("flex-direction", "column"),
+            .property("flex-direction", "column")
+            .property("width", "100%"),
         CssRule::new(".code-header")
             .property("display", "flex")
             .property("justify-content", "space-between")
@@ -173,6 +176,31 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("background", "rgba(255, 255, 255, 0.05)")
             .property("color", "white")
             .property("max-width", "85%"),
+        CssRule::new(".message-content h1")
+            .property("font-size", "1.8rem")
+            .property("margin", "1.2rem 0 0.6rem 0")
+            .property("font-weight", "600"),
+        CssRule::new(".message-content h2")
+            .property("font-size", "1.5rem")
+            .property("margin", "1.1rem 0 0.5rem 0")
+            .property("font-weight", "600"),
+        CssRule::new(".message-content h3")
+            .property("font-size", "1.3rem")
+            .property("margin", "1rem 0 0.5rem 0")
+            .property("font-weight", "600"),
+        CssRule::new(".message-content h4, .message-content h5, .message-content h6")
+            .property("font-size", "1.1rem")
+            .property("margin", "0.9rem 0 0.4rem 0")
+            .property("font-weight", "600"),
+        CssRule::new(".message-content ul, .message-content ol")
+            .property("margin", "0 0 1rem 0")
+            .property("padding-left", "1.5rem"),
+        CssRule::new(".message-content li").property("margin-bottom", "0.25rem"),
+        CssRule::new(".message-content li::marker").property("color", "var(--bs-primary)"),
+        CssRule::new(".message-content hr")
+            .property("margin", "1.5rem 0")
+            .property("border", "none")
+            .property("border-top", "1px solid var(--bs-gray-700)"),
         CssRule::new(".chat-navigation")
             .property("position", "absolute")
             .property("right", "0.75rem")
@@ -325,5 +353,192 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("color", "var(--bs-gray-600) !important")
             .property("cursor", "not-allowed")
             .property("transform", "none !important"),
+        CssRule::new(".history-sidebar")
+            .property("width", "16rem")
+            .property("background", "var(--bs-gray-900)")
+            .property("border-right", "1px solid var(--bs-gray-800)")
+            .property("display", "flex")
+            .property("flex-direction", "column")
+            .property("height", "100%"),
+        CssRule::new(".sidebar-header")
+            .property("padding", "1rem")
+            .property("border-bottom", "1px solid var(--bs-gray-800)")
+            .property("display", "flex")
+            .property("justify-content", "space-between")
+            .property("align-items", "center"),
+        CssRule::new(".new-chat-btn")
+            .property("background", "var(--bs-gray-800)")
+            .property("color", "white")
+            .property("border", "1px solid var(--bs-gray-700)")
+            .property("border-radius", "0.5rem")
+            .property("padding", "0.5rem 1rem")
+            .property("font-size", "0.9rem")
+            .property("cursor", "pointer")
+            .property("display", "flex")
+            .property("align-items", "center")
+            .property("gap", "0.5rem")
+            .property("width", "100%")
+            .property("justify-content", "center")
+            .child(CssRule::new(":hover").property("background", "var(--bs-gray-700)")),
+        CssRule::new(".history-list")
+            .property("flex", "1")
+            .property("overflow-y", "auto")
+            .property("padding", "0.5rem 0")
+            .property("display", "flex")
+            .property("flex-direction", "column")
+            .property("gap", "0.25rem"),
+        CssRule::new(".history-item")
+            .property("display", "flex")
+            .property("align-items", "center")
+            .property("justify-content", "space-between")
+            .property("padding", "0.4rem 0.75rem")
+            .property("color", "var(--bs-gray-300)")
+            .property("text-decoration", "none")
+            .property("font-size", "0.95rem")
+            .property("cursor", "pointer")
+            .property("border-radius", "0.5rem")
+            .property("margin", "0 0.5rem")
+            .child(
+                CssRule::new(":hover")
+                    .property("background", "var(--bs-gray-800)")
+                    .property("color", "white"),
+            )
+            .child(
+                CssRule::new(".active")
+                    .property("background", "var(--bs-gray-800)")
+                    .property("color", "white")
+                    .property("font-weight", "bold"),
+            ),
+        CssRule::new(".history-item-link")
+            .property("flex", "1")
+            .property("overflow", "hidden")
+            .property("text-overflow", "ellipsis")
+            .property("white-space", "nowrap")
+            .property("color", "inherit")
+            .property("text-decoration", "none"),
+        CssRule::new(".menu-container")
+            .property("position", "relative")
+            .property("display", "inline-block"),
+        CssRule::new(".menu-trigger-btn")
+            .property("background", "transparent")
+            .property("border", "none")
+            .property("color", "var(--bs-gray-500)")
+            .property("cursor", "pointer")
+            .property("padding", "0.25rem")
+            .property("opacity", "0")
+            .property("transition", "opacity 0.2s, color 0.2s")
+            .child(CssRule::new(":hover").property("color", "white")),
+        CssRule::new(".history-item:hover .menu-trigger-btn").property("opacity", "1"),
+        CssRule::new(".menu-container:focus-within .menu-trigger-btn")
+            .property("opacity", "1")
+            .property("color", "white"),
+        CssRule::new(".dropdown-menu")
+            .property("display", "none")
+            .property("position", "absolute")
+            .property("right", "0")
+            .property("top", "100%")
+            .property("background", "var(--bs-gray-800)")
+            .property("border", "1px solid var(--bs-gray-700)")
+            .property("border-radius", "0.375rem")
+            .property("padding", "0.25rem 0")
+            .property("min-width", "7rem")
+            .property("box-shadow", "0 0.5rem 1rem rgba(0,0,0,0.5)")
+            .property("z-index", "1000"),
+        CssRule::new(".menu-container:focus-within .dropdown-menu").property("display", "block"),
+        CssRule::new(".dropdown-item")
+            .property("display", "flex")
+            .property("align-items", "center")
+            .property("gap", "0.5rem")
+            .property("width", "100%")
+            .property("padding", "0.375rem 0.75rem")
+            .property("background", "transparent")
+            .property("border", "none")
+            .property("color", "var(--bs-gray-300)")
+            .property("text-align", "left")
+            .property("font-size", "0.85rem")
+            .property("cursor", "pointer")
+            .child(
+                CssRule::new(":hover")
+                    .property("background", "var(--bs-gray-700)")
+                    .property("color", "white"),
+            ),
+        CssRule::new(".dropdown-item.delete-item")
+            .child(CssRule::new(":hover").property("color", "#ea868f")),
+        CssRule::new(".estimates-modal")
+            .property("position", "fixed")
+            .property("inset", "0")
+            .property("display", "none")
+            .property("z-index", "9999"),
+        CssRule::new(".estimates-modal.open").property("display", "flex"),
+        CssRule::new(".estimates-modal-backdrop")
+            .property("position", "absolute")
+            .property("inset", "0")
+            .property("background-color", "rgba(0,0,0,0.7) !important")
+            .property("border", "none"),
+        CssRule::new(".estimates-modal-content")
+            .property("position", "relative")
+            .property("margin", "auto")
+            .property("width", "30rem")
+            .property("height", "auto")
+            .property("max-height", "80vh")
+            .property("overflow", "hidden")
+            .property("display", "flex")
+            .property("flex-direction", "column")
+            .property("background", "var(--bs-gray-900)")
+            .property("border-radius", "0.5rem")
+            .property("border", "1px solid var(--bs-gray-700)"),
+        CssRule::new(".estimates-modal-content.small")
+            .property("width", "30rem")
+            .property("height", "auto")
+            .property("max-height", "80vh"),
+        CssRule::new(".estimates-modal-header")
+            .property("display", "flex")
+            .property("justify-content", "space-between")
+            .property("align-items", "center")
+            .property("padding", "1rem 1.25rem")
+            .property("border-bottom", "0.0625rem solid var(--bs-gray-700)"),
+        CssRule::new(".estimates-modal-title")
+            .property("font-size", "1.4rem")
+            .property("font-weight", "bold")
+            .property("font-family", "monospace"),
+        CssRule::new(".estimates-modal-close")
+            .property("border", "none")
+            .property("background-color", "transparent !important")
+            .property("color", "var(--bs-gray-100)")
+            .property("font-size", "1.4rem")
+            .property("cursor", "pointer")
+            .property("padding", "0.5rem")
+            .property("line-height", "1"),
+        CssRule::new(".estimates-modal-close:hover").property("color", "var(--bs-gray-400)"),
+        CssRule::new(".estimates-modal-body")
+            .property("display", "flex")
+            .property("flex-direction", "column")
+            .property("align-items", "center")
+            .property("padding", "1.5rem")
+            .property("overflow", "auto"),
+        CssRule::new(".estimates-modal-body p")
+            .property("text-align", "center")
+            .property("margin-bottom", "1rem"),
+        CssRule::new(".estimates-modal-body .model-to-delete-name")
+            .property("font-family", "monospace")
+            .property("font-weight", "bold")
+            .property("color", "var(--bs-warning)")
+            .property("margin-bottom", "2rem")
+            .property("word-break", "break-all")
+            .property("text-align", "center"),
+        CssRule::new(".estimates-modal-body .confirm-actions")
+            .property("display", "flex")
+            .property("flex-direction", "row")
+            .property("flex-wrap", "nowrap")
+            .property("gap", "1rem")
+            .property("justify-content", "center")
+            .property("align-items", "center")
+            .property("width", "100%"),
+        CssRule::new(".estimates-modal-body .confirm-actions .button")
+            .property("min-width", "5.5rem")
+            .property("width", "auto")
+            .property("padding", "0.4rem 0.75rem")
+            .property("font-size", "0.85rem")
+            .property("line-height", "1.1"),
     ]
 }
