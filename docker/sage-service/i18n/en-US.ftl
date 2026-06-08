@@ -17,6 +17,7 @@ ui_home_group_services = Available Services
 ui_chat_input_placeholder = Ask Sage anything...
 ui_chat_send_button = Send
 ui_chat_welcome_message = Hello! I am Sage, your AI assistant. How can I help you today?
+ui_chat_no_model_available = No model is currently selected or available.
 ui_chat_user_label = You
 ui_chat_ai_label = Sage
 

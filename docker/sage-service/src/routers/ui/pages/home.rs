@@ -28,7 +28,12 @@ pub(super) async fn home_slash(
 fn render_home_page(instances_res: anyhow::Result<Vec<VllmInstance>>) -> HttpResponse {
     let mut model_select = select().class("model-selector").attr("id", "model-select");
 
-    match instances_res {
+    let has_model = match &instances_res {
+        Ok(instances) => !instances.is_empty(),
+        Err(_) => false,
+    };
+
+    match &instances_res {
         Ok(instances) => {
             if instances.is_empty() {
                 model_select = model_select.child(
@@ -41,7 +46,7 @@ fn render_home_page(instances_res: anyhow::Result<Vec<VllmInstance>>) -> HttpRes
             } else {
                 for instance in instances {
                     model_select = model_select
-                        .child(option().attr("value", &instance.id).text(instance.model));
+                        .child(option().attr("value", &instance.id).text(&instance.model));
                 }
             }
         }
@@ -56,6 +61,53 @@ fn render_home_page(instances_res: anyhow::Result<Vec<VllmInstance>>) -> HttpRes
             );
         }
     }
+
+    let mut chat_textarea = textarea()
+        .attr("id", "chat-input")
+        .attr("name", "message")
+        .class("chat-input")
+        .attr("rows", "1")
+        .attr("data-i18n-placeholder", "ui_chat_input_placeholder")
+        .attr("onkeydown", "if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.form.dispatchEvent(new Event('submit', {cancelable: true, bubbles: true})); }");
+
+    let mut send_btn = button()
+        .attr("type", "submit")
+        .class("chat-send-btn")
+        .child(i().class("fas fa-arrow-up"));
+
+    if !has_model {
+        chat_textarea = chat_textarea.attr("disabled", "disabled");
+        send_btn = send_btn.attr("disabled", "disabled");
+    }
+
+    let mut input_area_container = div().class("chat-input-area-container");
+    if !has_model {
+        input_area_container = input_area_container.class("disabled");
+    }
+
+    input_area_container = input_area_container
+        .child_opt((!has_model).then(|| {
+            div()
+                .class("no-model-warning")
+                .child(i().class("fas fa-exclamation-triangle"))
+                .child(
+                    span()
+                        .attr("data-i18n", "ui_chat_no_model_available")
+                        .text("No model is currently selected or available."),
+                )
+        }))
+        .child(
+            div()
+                .class("chat-input-area")
+                .child(chat_textarea)
+                .child(send_btn),
+        )
+        .child(
+            div()
+                .class("chat-input-extras")
+                .child(div().attr("style", "flex: 1;"))
+                .child(model_select.attr("name", "instance_id")),
+        );
 
     render_page(
         HttpResponse::Ok(),
@@ -100,32 +152,7 @@ fn render_home_page(instances_res: anyhow::Result<Vec<VllmInstance>>) -> HttpRes
                         .attr("hx-swap", "beforeend")
                         .attr("hx-on::after-request", "if(event.detail.successful) { document.getElementById('chat-input').value = ''; document.getElementById('chat-input').style.height = 'auto'; const history = document.querySelector('.chat-history'); history.scrollTop = history.scrollHeight; }")
                         .class("chat-input-wrapper")
-                        .child(
-                            div().class("chat-input-area-container")
-                                .child(
-                                    div().class("chat-input-area")
-                                        .child(
-                                            textarea()
-                                                .attr("id", "chat-input")
-                                                .attr("name", "message")
-                                                .class("chat-input")
-                                                .attr("rows", "1")
-                                                .attr("data-i18n-placeholder", "ui_chat_input_placeholder")
-                                                .attr("onkeydown", "if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.form.dispatchEvent(new Event('submit', {cancelable: true, bubbles: true})); }"),
-                                        )
-                                        .child(
-                                            button()
-                                                .attr("type", "submit")
-                                                .class("chat-send-btn")
-                                                .child(i().class("fas fa-arrow-up")),
-                                        )
-                                )
-                                .child(
-                                    div().class("chat-input-extras")
-                                        .child(div().attr("style", "flex: 1;"))
-                                        .child(model_select.attr("name", "instance_id"))
-                                )
-                        )
+                        .child(input_area_container)
                 ),
         ),
         UiPageKind::Home,

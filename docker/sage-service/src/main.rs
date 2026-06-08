@@ -41,6 +41,74 @@ async fn main() -> std::io::Result<()> {
         pending_messages: DashMap::new(),
     });
 
+    // Spawn background task to monitor if the default models are available.
+    // If not, send a request to switchboard to launch them.
+    let switchboard_clone = switchboard.clone();
+    let config_clone = config.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
+        loop {
+            interval.tick().await;
+            tracing::debug!("Checking active instances for default models...");
+            match switchboard_clone.get_vllm_instances().await {
+                Ok(instances) => {
+                    for model in &config_clone.default_models {
+                        if !config_clone.is_model_supported(&model.name) {
+                            tracing::warn!(
+                                "Model '{}' is in default_models but does not match any pattern in supported_models.",
+                                model.name
+                            );
+                            continue;
+                        }
+
+                        let is_active = instances.iter().any(|inst| {
+                            inst.model == model.name
+                                && (inst.status == "running"
+                                    || inst.status == "starting"
+                                    || inst.status == "pending")
+                        });
+
+                        if !is_active {
+                            tracing::info!(
+                                "Default model '{}' is not available. Requesting switchboard to launch it.",
+                                model.name
+                            );
+                            match switchboard_clone
+                                .launch_instance(
+                                    &model.name,
+                                    model.gpu_memory_utilization,
+                                    model.max_model_len,
+                                )
+                                .await
+                            {
+                                Ok(inst) => {
+                                    tracing::info!(
+                                        "Successfully requested launch of model '{}'. Instance ID: {}",
+                                        model.name,
+                                        inst.id
+                                    );
+                                }
+                                Err(err) => {
+                                    tracing::error!(
+                                        "Failed to request launch of model '{}': {}",
+                                        model.name,
+                                        err
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(err) => {
+                    tracing::error!(
+                        "Failed to check running instances for default models: {}",
+                        err
+                    );
+                }
+            }
+        }
+    });
+
     serve(
         root_scope,
         move || {

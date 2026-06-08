@@ -303,5 +303,27 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("cursor", "pointer")
             .child(CssRule::new(":hover").property("border-color", "var(--bs-gray-500)"))
             .child(CssRule::new(":focus").property("border-color", "var(--bs-primary)")),
+        CssRule::new(".no-model-warning")
+            .property("display", "flex")
+            .property("align-items", "center")
+            .property("gap", "0.5rem")
+            .property("background", "rgba(220, 53, 69, 0.1)")
+            .property("border", "1px solid rgba(220, 53, 69, 0.3)")
+            .property("color", "#ea868f")
+            .property("padding", "0.75rem 1.25rem")
+            .property("border-radius", "1rem")
+            .property("font-size", "0.9rem")
+            .property("margin-bottom", "0.25rem")
+            .property("box-shadow", "0 0.25rem 1rem rgba(0,0,0,0.3)"),
+        CssRule::new(".chat-input-area-container.disabled .chat-input-area")
+            .property("opacity", "0.6")
+            .property("border-color", "rgba(220, 53, 69, 0.2)"),
+        CssRule::new(".chat-input:disabled")
+            .property("color", "var(--bs-gray-600) !important")
+            .property("cursor", "not-allowed"),
+        CssRule::new(".chat-send-btn:disabled")
+            .property("color", "var(--bs-gray-600) !important")
+            .property("cursor", "not-allowed")
+            .property("transform", "none !important"),
     ]
 }

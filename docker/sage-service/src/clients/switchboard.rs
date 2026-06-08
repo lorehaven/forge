@@ -65,4 +65,42 @@ impl SwitchboardClient {
             .await
             .context("Failed to parse vLLM instances")
     }
+
+    pub async fn launch_instance(
+        &self,
+        model: &str,
+        gpu_memory_utilization: Option<f32>,
+        max_model_len: Option<u32>,
+    ) -> Result<VllmInstance> {
+        let url = format!("{}/api/v1/vllm/instances", self.base_url);
+        let req = serde_json::json!({
+            "model": model,
+            "host": "0.0.0.0",
+            "port": 8000,
+            "namespace": null,
+            "quantization": null,
+            "max_model_len": max_model_len,
+            "gpu_memory_utilization": gpu_memory_utilization,
+            "enable_prefix_caching": false
+        });
+
+        let res = self
+            .http
+            .post(&url)
+            .basic_auth(&self.username, Some(&self.password))
+            .json(&req)
+            .send()
+            .await
+            .context("Failed to connect to switchboard-service to launch instance")?;
+
+        if !res.status().is_success() {
+            let status = res.status();
+            let body = res.text().await.unwrap_or_default();
+            anyhow::bail!("Switchboard returned error {}: {}", status, body);
+        }
+
+        res.json::<VllmInstance>()
+            .await
+            .context("Failed to parse launched vLLM instance response")
+    }
 }
