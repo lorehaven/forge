@@ -1,3 +1,4 @@
+use quench_web::prelude::*;
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -113,20 +114,27 @@ fn format_code_part(part: &str) -> String {
         code = part[lines[0].len()..].trim_start();
     }
 
-    format!(
-        r#"<div class="code-block">
-                <div class="code-header">
-                    <span class="code-lang">{}</span>
-                    <button class="copy-btn">
-                        <i class="far fa-copy"></i>
-                        <span>Copy</span>
-                    </button>
-                </div>
-                <pre><code>{}</code></pre>
-             </div>"#,
-        html_escape(lang),
-        html_escape(code.trim())
-    )
+    div()
+        .class("code-block")
+        .child(
+            div()
+                .class("code-header")
+                .child(span().class("code-lang").text(lang))
+                .child(
+                    button()
+                        .class("copy-btn")
+                        .attr("onclick", "const btn = this; const code = btn.closest('.code-block').querySelector('code').textContent; navigator.clipboard.writeText(code).then(() => { const orig = btn.innerHTML; btn.innerHTML = '<i class=&quot;fas fa-check&quot;></i> Copied!'; btn.classList.add('success'); setTimeout(() => { btn.innerHTML = orig; btn.classList.remove('success'); }, 2000); }).catch(err => { console.error(err); btn.textContent = 'Error'; setTimeout(() => btn.textContent = 'Copy', 2000); });")
+                        .child(i().class("far fa-copy"))
+                        .child(span().text("Copy"))
+                )
+        )
+        .child(
+            pre().child(
+                element("code")
+                    .text(code.trim())
+            )
+        )
+        .render()
 }
 
 fn html_escape(s: &str) -> String {

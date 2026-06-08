@@ -71,6 +71,7 @@ pub async fn send_message(
             div()
                 .class("nav-dot")
                 .attr("data-msg-id", format!("user-{}", message_id))
+                .attr("onclick", "const target = document.getElementById(this.dataset.msgId); if (target) { target.scrollIntoView({behavior: 'smooth', block: 'start'}); }")
                 .child(div().class("nav-tooltip").text(user_preview)),
         );
 
@@ -81,6 +82,7 @@ pub async fn send_message(
                 .class("nav-dot")
                 .attr("id", format!("dot-ai-{}", message_id))
                 .attr("data-msg-id", format!("ai-{}", message_id))
+                .attr("onclick", "const target = document.getElementById(this.dataset.msgId); if (target) { target.scrollIntoView({behavior: 'smooth', block: 'start'}); }")
                 .child(
                     div()
                         .class("nav-tooltip")

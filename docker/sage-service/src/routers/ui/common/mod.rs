@@ -7,11 +7,9 @@ use std::sync::LazyLock;
 
 mod css;
 pub mod format;
-mod js;
 
 static UI_SHELL_HOME: LazyLock<AppShell> = LazyLock::new(|| {
     css::ensure_sage_css();
-    js::ensure_sage_js("");
 
     AppShellBuilder::new()
         .title("Sage")
@@ -23,7 +21,6 @@ static UI_SHELL_HOME: LazyLock<AppShell> = LazyLock::new(|| {
             "stylesheet",
             &ui_asset_path("/css/sage.css"),
         )])
-        .scripts(vec![Script::new(&ui_asset_path("/js/sage.js"))])
         .with_nav(false)
         .resources_prefix(ui_path(""))
         .build()

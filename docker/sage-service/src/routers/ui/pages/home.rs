@@ -68,7 +68,8 @@ fn render_home_page(instances_res: anyhow::Result<Vec<VllmInstance>>) -> HttpRes
         .class("chat-input")
         .attr("rows", "1")
         .attr("data-i18n-placeholder", "ui_chat_input_placeholder")
-        .attr("onkeydown", "if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.form.dispatchEvent(new Event('submit', {cancelable: true, bubbles: true})); }");
+        .attr("onkeydown", "if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.form.dispatchEvent(new Event('submit', {cancelable: true, bubbles: true})); }")
+        .attr("hx-on:input", "this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px';");
 
     let mut send_btn = button()
         .attr("type", "submit")
@@ -117,6 +118,7 @@ fn render_home_page(instances_res: anyhow::Result<Vec<VllmInstance>>) -> HttpRes
                 .child(
                     div()
                         .class("chat-history")
+                        .attr("hx-on:htmx:sse-message", "this.scrollTop = this.scrollHeight;")
                         .child(div().class("chat-history-spacer"))
                         .child(
                             div()
@@ -138,6 +140,7 @@ fn render_home_page(instances_res: anyhow::Result<Vec<VllmInstance>>) -> HttpRes
                             div()
                                 .class("nav-dot active")
                                 .attr("data-msg-id", "msg-0")
+                                .attr("onclick", "const target = document.getElementById(this.dataset.msgId); if (target) { target.scrollIntoView({behavior: 'smooth', block: 'start'}); }")
                                 .child(
                                     div()
                                         .class("nav-tooltip")
@@ -154,6 +157,59 @@ fn render_home_page(instances_res: anyhow::Result<Vec<VllmInstance>>) -> HttpRes
                         .class("chat-input-wrapper")
                         .child(input_area_container)
                 ),
+        )
+        .child(
+            script(r#"
+                (function() {
+                    function updateActiveDot() {
+                        const historyContainer = document.querySelector('.chat-history');
+                        if (!historyContainer) return;
+
+                        const messages = document.querySelectorAll('.chat-message');
+                        const dots = document.querySelectorAll('.nav-dot');
+                        if (messages.length === 0 || dots.length === 0) return;
+
+                        let activeIndex = 0;
+                        const containerRect = historyContainer.getBoundingClientRect();
+                        const threshold = containerRect.top + (containerRect.height / 3);
+
+                        const atBottom = Math.abs(historyContainer.scrollHeight - historyContainer.scrollTop - historyContainer.clientHeight) < 50;
+                        
+                        if (atBottom) {
+                            activeIndex = messages.length - 1;
+                        } else {
+                            for (let i = 0; i < messages.length; i++) {
+                                const rect = messages[i].getBoundingClientRect();
+                                if (rect.top < threshold) {
+                                    activeIndex = i;
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+
+                        dots.forEach((dot, i) => {
+                            if (i === activeIndex) {
+                                dot.classList.add('active');
+                            } else {
+                                dot.classList.remove('active');
+                            }
+                        });
+                    }
+
+                    document.addEventListener('scroll', (e) => {
+                        if (e.target.classList && e.target.classList.contains('chat-history')) {
+                            updateActiveDot();
+                        }
+                    }, true);
+
+                    document.addEventListener('htmx:afterSwap', (e) => {
+                        updateActiveDot();
+                    });
+
+                    setTimeout(updateActiveDot, 100);
+                })();
+            "#.to_string()).raw()
         ),
         UiPageKind::Home,
     )
