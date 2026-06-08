@@ -1,0 +1,21 @@
+[[migrations]]
+id = "0004-conversation-tree-schema"
+author = "quench-srv"
+
+[[migrations.changes]]
+sql = "ALTER TABLE sage.conversations DROP COLUMN IF EXISTS messages;"
+
+[[migrations.changes]]
+sql = "ALTER TABLE sage.conversations ADD COLUMN IF NOT EXISTS active_message_id TEXT;"
+
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS sage.messages (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL REFERENCES sage.conversations(id) ON DELETE CASCADE,
+    parent_id TEXT REFERENCES sage.messages(id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+"""

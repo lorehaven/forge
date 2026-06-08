@@ -31,15 +31,20 @@ async fn handle_home_page(
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
     let mut active_messages = Vec::new();
-    let conv_opt = if let Some(ref cid) = query.conversation_id {
-        repo.read(cid).await.ok().flatten()
-    } else {
-        None
-    };
-    if let Some(msgs) = conv_opt.and_then(|conv| {
-        serde_json::from_str::<Vec<crate::clients::vllm::ChatMessage>>(&conv.messages).ok()
-    }) {
-        active_messages = msgs;
+    let mut active_message_id = None;
+    if let Some(ref cid) = query.conversation_id {
+        if let Ok(Some(conv)) = repo.read(cid).await {
+            active_message_id = conv.active_message_id;
+        }
+    }
+
+    if let Some(ref amid) = active_message_id {
+        if let Ok(nodes) = crate::routers::ui::chat::get_conversation_message_nodes(&db, Some(amid)).await {
+            for node in nodes {
+                let siblings = crate::routers::ui::chat::get_siblings(&db, &node.conversation_id, node.parent_id.as_deref()).await.unwrap_or_default();
+                active_messages.push((node, siblings));
+            }
+        }
     }
 
     handle_home(req, config, move || {
@@ -74,7 +79,7 @@ fn render_home_page(
     instances_res: anyhow::Result<Vec<VllmInstance>>,
     conversations: Vec<Conversation>,
     active_id: String,
-    active_messages: Vec<crate::clients::vllm::ChatMessage>,
+    active_messages: Vec<(crate::models::Message, Vec<crate::models::Message>)>,
 ) -> HttpResponse {
     let mut model_select = select().class("model-selector").attr("id", "model-select");
 
@@ -267,14 +272,85 @@ fn render_home_page(
         );
     } else {
         use crate::routers::ui::common::format::format_message;
-        for (i, msg) in active_messages.iter().enumerate() {
+        for (idx, (msg, siblings)) in active_messages.iter().enumerate() {
             let role_class = if msg.role == "user" {
                 "message-user"
             } else {
                 "message-ai"
             };
-            let element_id = format!("{}-{}", msg.role, i);
+            let element_id = if msg.role == "user" {
+                format!("user-{}", msg.id)
+            } else {
+                format!("ai-{}", msg.id)
+            };
             let trimmed_content = msg.content.trim();
+
+            let total_siblings = siblings.len();
+            let sibling_index = siblings.iter().position(|s| s.id == msg.id).unwrap_or(0);
+            
+            let is_last = idx == active_messages.len() - 1;
+            let regenerate_btn_opt = (msg.role == "assistant" && is_last).then(|| {
+                button()
+                    .class("branch-btn regenerate-btn")
+                    .attr("hx-post", with_base_path("/ui/chat/regenerate"))
+                    .attr("hx-vals", format!(r#"{{"message_id": "{}"}}"#, msg.id))
+                    .attr("hx-target", ".chat-history")
+                    .attr("hx-swap", "beforeend")
+                    .child(i().class("fas fa-sync-alt"))
+                    .child(span().text(" Regenerate"))
+            });
+
+            let branch_widget_opt = (total_siblings > 1 || regenerate_btn_opt.is_some()).then(|| {
+                let mut controls = div().class("branch-controls");
+                
+                if total_siblings > 1 {
+                    let prev_index = if sibling_index == 0 { total_siblings - 1 } else { sibling_index - 1 };
+                    let next_index = if sibling_index == total_siblings - 1 { 0 } else { sibling_index + 1 };
+                    let prev_sibling = &siblings[prev_index];
+                    let next_sibling = &siblings[next_index];
+
+                    let nav = div()
+                        .class("branch-nav")
+                        .child(
+                            form()
+                                .attr("hx-post", with_base_path("/ui/chat/conversations/switch"))
+                                .attr("style", "display: inline;")
+                                .child(input().attr("type", "hidden").attr("name", "conversation_id").attr("value", &msg.conversation_id))
+                                .child(input().attr("type", "hidden").attr("name", "target_message_id").attr("value", &prev_sibling.id))
+                                .child(
+                                    button()
+                                        .class("branch-btn")
+                                        .attr("type", "submit")
+                                        .child(i().class("fas fa-chevron-left"))
+                                )
+                        )
+                        .child(
+                            span()
+                                .class("branch-info")
+                                .text(format!("{}/{}", sibling_index + 1, total_siblings))
+                        )
+                        .child(
+                            form()
+                                .attr("hx-post", with_base_path("/ui/chat/conversations/switch"))
+                                .attr("style", "display: inline;")
+                                .child(input().attr("type", "hidden").attr("name", "conversation_id").attr("value", &msg.conversation_id))
+                                .child(input().attr("type", "hidden").attr("name", "target_message_id").attr("value", &next_sibling.id))
+                                .child(
+                                    button()
+                                        .class("branch-btn")
+                                        .attr("type", "submit")
+                                        .child(i().class("fas fa-chevron-right"))
+                                )
+                        );
+                    controls = controls.child(nav);
+                }
+
+                if let Some(btn) = regenerate_btn_opt {
+                    controls = controls.child(btn);
+                }
+                
+                controls
+            });
 
             let chat_msg = div()
                 .class(format!("chat-message {}", role_class))
@@ -283,7 +359,8 @@ fn render_home_page(
                     div()
                         .class("message-inner")
                         .raw()
-                        .text(format_message(trimmed_content)),
+                        .text(format_message(trimmed_content))
+                        .child_opt(branch_widget_opt),
                 );
             history_div = history_div.child(chat_msg);
 
@@ -334,6 +411,15 @@ fn render_home_page(
         .child(
             script(r#"
                 (function() {
+                    function scrollToBottom() {
+                        const history = document.querySelector('.chat-history');
+                        if (history) {
+                            requestAnimationFrame(() => {
+                                history.scrollTop = history.scrollHeight;
+                            });
+                        }
+                    }
+
                     function updateActiveDot() {
                         const historyContainer = document.querySelector('.chat-history');
                         if (!historyContainer) return;
@@ -346,7 +432,7 @@ fn render_home_page(
                         const containerRect = historyContainer.getBoundingClientRect();
                         const threshold = containerRect.top + (containerRect.height / 3);
 
-                        const atBottom = Math.abs(historyContainer.scrollHeight - historyContainer.scrollTop - historyContainer.clientHeight) < 50;
+                        const atBottom = Math.abs(historyContainer.scrollHeight - historyContainer.scrollTop - historyContainer.clientHeight) < 100;
                         
                         if (atBottom) {
                             activeIndex = messages.length - 1;
@@ -378,13 +464,23 @@ fn render_home_page(
 
                     document.addEventListener('htmx:afterSwap', (e) => {
                         updateActiveDot();
+                        if (e.detail.target.classList.contains('chat-history')) {
+                            scrollToBottom();
+                        }
+                    });
+
+                    document.addEventListener('htmx:oobAfterSwap', (e) => {
+                        scrollToBottom();
+                        updateActiveDot();
+                    });
+
+                    // Update on SSE messages too
+                    document.addEventListener('htmx:sseMessage', (e) => {
+                        scrollToBottom();
                     });
 
                     setTimeout(() => {
-                        const history = document.querySelector('.chat-history');
-                        if (history) {
-                            history.scrollTop = history.scrollHeight;
-                        }
+                        scrollToBottom();
                         updateActiveDot();
                     }, 100);
                 })();

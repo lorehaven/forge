@@ -540,5 +540,57 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("padding", "0.4rem 0.75rem")
             .property("font-size", "0.85rem")
             .property("line-height", "1.1"),
+        CssRule::new(".branch-controls")
+            .property("display", "flex")
+            .property("flex-direction", "row")
+            .property("align-items", "center")
+            .property("justify-content", "flex-end")
+            .property("gap", "0.75rem")
+            .property("margin-top", "0.5rem")
+            .property("margin-bottom", "0.25rem")
+            .property("font-size", "0.75rem")
+            .property("color", "var(--bs-gray-500)")
+            .property("user-select", "none")
+            .property("width", "100%"),
+        CssRule::new(".branch-nav")
+            .property("display", "flex")
+            .property("flex-direction", "row")
+            .property("align-items", "center")
+            .property("gap", "0.4rem")
+            .property("background", "rgba(0, 0, 0, 0.2)")
+            .property("padding", "0.15rem 0.25rem")
+            .property("border-radius", "0.5rem")
+            .property("border", "1px solid var(--bs-gray-800)"),
+        CssRule::new(".branch-btn")
+            .property("border", "1px solid transparent")
+            .property("background-color", "transparent")
+            .property("color", "var(--bs-gray-400)")
+            .property("border-radius", "0.375rem")
+            .property("padding", "0.15rem 0.35rem")
+            .property("cursor", "pointer")
+            .property("font-size", "0.7rem")
+            .property("display", "inline-flex")
+            .property("align-items", "center")
+            .property("justify-content", "center")
+            .property("gap", "0.3rem")
+            .property("transition", "all 0.15s ease"),
+        CssRule::new(".branch-btn:hover")
+            .property("background-color", "rgba(255, 255, 255, 0.05)")
+            .property("color", "var(--bs-gray-200)")
+            .property("border-color", "var(--bs-gray-700)"),
+        CssRule::new(".branch-info")
+            .property("font-family", "monospace")
+            .property("font-weight", "500")
+            .property("font-size", "0.65rem")
+            .property("color", "var(--bs-gray-500)")
+            .property("min-width", "2.5rem")
+            .property("text-align", "center"),
+        CssRule::new(".regenerate-btn")
+            .property("display", "none !important") // Hidden by default
+            .property("border", "1px solid var(--bs-gray-700)")
+            .property("background-color", "rgba(255, 255, 255, 0.03)")
+            .property("padding", "0.2rem 0.6rem"),
+        CssRule::new(".chat-message:last-of-type .regenerate-btn")
+            .property("display", "inline-flex !important"),
     ]
 }

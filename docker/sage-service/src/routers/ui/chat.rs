@@ -19,6 +19,9 @@ pub struct ChatRequest {
     pub instance_id: String,
     pub message: String,
     pub conversation_id: String,
+    pub parent_id: Option<String>,
+    #[serde(default)]
+    pub skip_user_message: bool,
 }
 
 #[post("/send")]
@@ -41,6 +44,25 @@ pub async fn send_message(
         .pending_messages
         .insert(message_id.clone(), req.clone());
 
+    let stream_url = with_base_path(&format!("/ui/chat/stream/{}", message_id));
+
+    if req.skip_user_message {
+        // For regeneration, we don't show the user message again, just the thinking block
+        let ai_msg = div()
+            .class("chat-message message-ai")
+            .attr("id", format!("ai-{}", message_id))
+            .attr("hx-ext", "sse")
+            .attr("sse-connect", stream_url)
+            .attr("sse-swap", "message")
+            .child(
+                div()
+                    .class("message-inner")
+                    .child(div().class("message-content").text("Sage is regenerating...")),
+            );
+
+        return HttpResponse::Ok().content_type("text/html").body(ai_msg.render());
+    }
+
     let user_msg = div()
         .class("chat-message message-user")
         .attr("id", format!("user-{}", message_id))
@@ -50,8 +72,6 @@ pub async fn send_message(
                 .raw()
                 .text(format_message(&req.message)),
         );
-
-    let stream_url = with_base_path(&format!("/ui/chat/stream/{}", message_id));
 
     let ai_msg = div()
         .class("chat-message message-ai")
@@ -129,7 +149,10 @@ pub async fn stream_message(
 
     let instances = match switchboard.get_vllm_instances().await {
         Ok(i) => i,
-        Err(err) => return HttpResponse::InternalServerError().body(err.to_string()),
+        Err(err) => {
+            tracing::error!("Failed to get vLLM instances: {}", err);
+            return HttpResponse::InternalServerError().body(err.to_string());
+        }
     };
 
     let Some(instance) = instances.into_iter().find(|i| i.id == req.instance_id) else {
@@ -166,20 +189,29 @@ pub async fn stream_message(
 
     use quench_db::prelude::Crud;
     let repo = db.repository::<crate::models::Conversation>();
+    let mut active_message_id = None;
+    let mut existing_title = None;
+    if let Ok(Some(conv)) = repo.read(&req.conversation_id).await {
+        active_message_id = conv.active_message_id;
+        existing_title = Some(conv.title);
+    }
+
+    // Determine the base for history. If skip_user_message is true, we use req.parent_id as the base.
+    let history_base_id = if req.skip_user_message {
+        req.parent_id.as_deref()
+    } else {
+        active_message_id.as_deref()
+    };
 
     let mut history_messages = Vec::new();
-    if let Some(existing_msgs) = repo
-        .read(&req.conversation_id)
-        .await
-        .ok()
-        .flatten()
-        .and_then(|conv| serde_json::from_str::<Vec<ChatMessage>>(&conv.messages).ok())
-    {
-        history_messages = existing_msgs;
+    if let Some(amid) = history_base_id {
+        if let Ok(msgs) = get_conversation_messages(&db, Some(amid)).await {
+            history_messages = msgs;
+        }
     }
 
     let mut selected_history = std::collections::VecDeque::new();
-    let mut current_budget_used = system_tokens + current_user_tokens;
+    let mut current_budget_used = system_tokens + if req.skip_user_message { 0 } else { current_user_tokens };
 
     for msg in history_messages.into_iter().rev() {
         let msg_tokens = estimate_tokens(&msg);
@@ -193,7 +225,9 @@ pub async fn stream_message(
 
     let mut messages = vec![system_message];
     messages.extend(selected_history);
-    messages.push(current_user_message);
+    if !req.skip_user_message {
+        messages.push(current_user_message);
+    }
 
     let max_tokens = reserved_for_generation as u32;
 
@@ -208,7 +242,10 @@ pub async fn stream_message(
         .await
     {
         Ok(s) => s,
-        Err(err) => return HttpResponse::InternalServerError().body(err.to_string()),
+        Err(err) => {
+            tracing::error!("Failed to start chat stream: {}", err);
+            return HttpResponse::InternalServerError().body(err.to_string());
+        }
     };
 
     let mut full_content = String::new();
@@ -257,124 +294,244 @@ pub async fn stream_message(
             }
         }
 
+        // Update/create Conversation FIRST
+        let conv_repo = db_clone.repository::<crate::models::Conversation>();
+        let updated_at = chrono::Utc::now().to_rfc3339();
+        let title = if let Some(t) = existing_title {
+            t
+        } else {
+            if req.message.chars().count() > 30 {
+                format!("{}...", req.message.chars().take(30).collect::<String>())
+            } else {
+                req.message.clone()
+            }
+        };
+
+        let mut conv = crate::models::Conversation {
+            id: req.conversation_id.clone(),
+            title,
+            active_message_id: active_message_id.clone(), // Use previous tip for now
+            updated_at,
+        };
+
+        let exists = conv_repo.read(&req.conversation_id).await.map(|o| o.is_some()).unwrap_or(false);
+        if exists {
+            if let Err(err) = conv_repo.update(&conv).await {
+                tracing::error!("Failed to update conversation: {}", err);
+            }
+        } else {
+            if let Err(err) = conv_repo.create(&conv).await {
+                tracing::error!("Failed to create conversation: {}", err);
+            }
+        }
+
+        let ai_parent_id;
+        if !req.skip_user_message {
+            // Create user message in DB
+            let msg_repo = db_clone.repository::<crate::models::Message>();
+            let user_msg_id = uuid::Uuid::new_v4().to_string();
+            let user_msg = crate::models::Message {
+                id: user_msg_id.clone(),
+                conversation_id: req.conversation_id.clone(),
+                parent_id: active_message_id.clone(),
+                role: "user".to_string(),
+                content: req.message.trim().to_string(),
+                created_at: chrono::Utc::now().to_rfc3339(),
+            };
+            if let Err(err) = msg_repo.create(&user_msg).await {
+                tracing::error!("Failed to create user message: {}", err);
+            }
+            ai_parent_id = Some(user_msg_id);
+        } else {
+            ai_parent_id = req.parent_id.clone();
+        }
+
+        // Create AI message in DB
+        let msg_repo = db_clone.repository::<crate::models::Message>();
+        let ai_msg_id = uuid::Uuid::new_v4().to_string();
+        let ai_msg = crate::models::Message {
+            id: ai_msg_id.clone(),
+            conversation_id: req.conversation_id.clone(),
+            parent_id: ai_parent_id.clone(),
+            role: "assistant".to_string(),
+            content: full_content.trim().to_string(),
+            created_at: chrono::Utc::now().to_rfc3339(),
+        };
+        if let Err(err) = msg_repo.create(&ai_msg).await {
+            tracing::error!("Failed to create AI message: {}", err);
+        }
+
+        // Update Conversation to point to the new tip
+        conv.active_message_id = Some(ai_msg_id.clone());
+        conv.updated_at = chrono::Utc::now().to_rfc3339();
+        if let Err(err) = conv_repo.update(&conv).await {
+            tracing::error!("Failed to update conversation tip: {}", err);
+        }
+
         // Final swap to static element to close connection
         let final_rendered = format_message(full_content.trim());
-        let final_msg = div()
+        
+        // Fetch siblings for the new AI message to show branch controls if needed
+        let mut controls = div().class("branch-controls");
+        if let Ok(siblings) = get_siblings(&db_clone, &req.conversation_id, ai_parent_id.as_deref()).await {
+            let total_siblings = siblings.len();
+            let sibling_index = siblings.iter().position(|s| s.id == ai_msg_id).unwrap_or(0);
+
+            if total_siblings > 1 {
+                let prev_index = if sibling_index == 0 { total_siblings - 1 } else { sibling_index - 1 };
+                let next_index = if sibling_index == total_siblings - 1 { 0 } else { sibling_index + 1 };
+                let prev_sibling = &siblings[prev_index];
+                let next_sibling = &siblings[next_index];
+                
+                let nav = div()
+                    .class("branch-nav")
+                    .child(
+                        form()
+                            .attr("hx-post", with_base_path("/ui/chat/conversations/switch"))
+                            .attr("style", "display: inline;")
+                            .child(input().attr("type", "hidden").attr("name", "conversation_id").attr("value", &req.conversation_id))
+                            .child(input().attr("type", "hidden").attr("name", "target_message_id").attr("value", &prev_sibling.id))
+                            .child(
+                                button()
+                                    .class("branch-btn")
+                                    .attr("type", "submit")
+                                    .child(i().class("fas fa-chevron-left"))
+                            )
+                    )
+                    .child(
+                        span()
+                            .class("branch-info")
+                            .text(format!("{}/{}", sibling_index + 1, total_siblings))
+                    )
+                    .child(
+                        form()
+                            .attr("hx-post", with_base_path("/ui/chat/conversations/switch"))
+                            .attr("style", "display: inline;")
+                            .child(input().attr("type", "hidden").attr("name", "conversation_id").attr("value", &req.conversation_id))
+                            .child(input().attr("type", "hidden").attr("name", "target_message_id").attr("value", &next_sibling.id))
+                            .child(
+                                button()
+                                    .class("branch-btn")
+                                    .attr("type", "submit")
+                                    .child(i().class("fas fa-chevron-right"))
+                            )
+                    );
+                controls = controls.child(nav);
+            }
+        }
+
+        let regenerate_btn = button()
+            .class("branch-btn regenerate-btn")
+            .attr("hx-post", with_base_path("/ui/chat/regenerate"))
+            .attr("hx-vals", format!(r#"{{"message_id": "{}"}}"#, ai_msg_id))
+            .attr("hx-target", ".chat-history")
+            .attr("hx-swap", "beforeend")
+            .child(i().class("fas fa-sync-alt"))
+            .child(span().text(" Regenerate"));
+
+        controls = controls.child(regenerate_btn);
+
+        // 1. Transition the message block itself
+        let oob_transition = div()
             .class("chat-message message-ai")
-            .attr("id", format!("ai-{}", message_id_clone))
-            .attr("hx-swap-oob", "true")
+            .attr("id", format!("ai-{}", ai_msg_id))
+            .attr("hx-swap-oob", format!("outerHTML:#ai-{}", message_id_clone))
             .child(
                 div()
                     .class("message-inner")
                     .raw()
-                    .text(final_rendered)
+                    .text(&final_rendered)
+                    .child(div()
+                        .class("branch-controls")
+                        .raw()
+                        .text(controls.render())
+                    )
             );
 
-        // Update database conversation history
-        let repo = db_clone.repository::<crate::models::Conversation>();
-        let mut conv_messages = Vec::new();
+        // 2. Transition the navigation dot and tooltip IDs to the permanent message ID
+        // This ensures the NEXT regeneration correctly targets the new IDs.
+        let ai_preview_raw: String = full_content.trim().chars().take(30).collect();
+        let ai_preview = if full_content.trim().chars().count() > 30 {
+            format!("{}...", ai_preview_raw)
+        } else {
+            ai_preview_raw
+        };
 
-        if let Some(existing_msgs) = repo.read(&req.conversation_id).await.ok().flatten().and_then(|conv| {
-            serde_json::from_str::<Vec<ChatMessage>>(&conv.messages).ok()
-        }) {
-            conv_messages = existing_msgs;
-        }
+        let nav_dot_transition = div()
+            .attr("hx-swap-oob", format!("outerHTML:#dot-ai-{}", message_id_clone))
+            .child(
+                div()
+                    .class("nav-dot")
+                    .attr("id", format!("dot-ai-{}", ai_msg_id))
+                    .attr("data-msg-id", format!("ai-{}", ai_msg_id))
+                    .attr("onclick", "const target = document.getElementById(this.dataset.msgId); if (target) { target.scrollIntoView({behavior: 'smooth', block: 'start'}); }")
+                    .child(
+                        div()
+                            .class("nav-tooltip")
+                            .attr("id", format!("tooltip-ai-{}", ai_msg_id))
+                            .text(ai_preview),
+                    ),
+            );
 
-        conv_messages.push(ChatMessage {
-            role: "user".to_string(),
-            content: req.message.trim().to_string(),
-        });
-        conv_messages.push(ChatMessage {
-            role: "assistant".to_string(),
-            content: full_content.trim().to_string(),
-        });
+        // We send all OOB transitions. This replaces the entire elements and stops the SSE connection.
+        yield Ok::<_, actix_web::Error>(encode_sse("message", &format!("{}{}", oob_transition.render(), nav_dot_transition.render())));
+
 
         let mut oob_history_list = String::new();
-        if let Ok(msgs_str) = serde_json::to_string(&conv_messages) {
-            let updated_at = chrono::Utc::now().to_rfc3339();
+        // Generate updated history list for OOB swap
+        if let Ok(mut conversations) = conv_repo.list().await {
+            conversations.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
 
-            let mut title = if conv_messages.len() <= 2 {
-                if req.message.chars().count() > 30 {
-                    format!("{}...", req.message.chars().take(30).collect::<String>())
-                } else {
-                    req.message.clone()
-                }
-            } else {
-                "New Conversation".to_string()
-            };
+            let mut history_list = div()
+                .class("history-list")
+                .attr("id", "history-list")
+                .attr("hx-swap-oob", "true");
 
-            if let Ok(Some(existing_conv)) = repo.read(&req.conversation_id).await {
-                title = existing_conv.title;
+            for conv_item in &conversations {
+                let is_active = conv_item.id == req.conversation_id;
+                let item_class = if is_active { "history-item active" } else { "history-item" };
+                let link_class = if is_active { "history-item-link active" } else { "history-item-link" };
+                let item_id = format!("history-item-{}", conv_item.id);
+
+                let item = div()
+                    .class(item_class)
+                    .attr("id", &item_id)
+                    .child(
+                        a()
+                            .class(link_class)
+                            .attr("href", with_base_path(&format!("/ui/home?conversation_id={}", conv_item.id)))
+                            .text(&conv_item.title)
+                    )
+                    .child(
+                        div()
+                            .class("menu-container")
+                            .child(
+                                button()
+                                    .class("menu-trigger-btn")
+                                    .child(i().class("fas fa-ellipsis-v"))
+                            )
+                            .child(
+                                div()
+                                    .class("dropdown-menu")
+                                    .child(
+                                        button()
+                                            .class("dropdown-item delete-item")
+                                            .attr("hx-get", with_base_path(&format!("/ui/chat/conversations/delete-modal/{}?active_id={}", conv_item.id, req.conversation_id)))
+                                            .attr("hx-target", "#confirm-delete-modal")
+                                            .attr("hx-swap", "outerHTML")
+                                            .child(i().class("fas fa-trash"))
+                                            .child(span().text("Delete"))
+                                    )
+                            )
+                    );
+                history_list = history_list.child(item);
             }
-
-            let conv = crate::models::Conversation {
-                id: req.conversation_id.clone(),
-                title,
-                messages: msgs_str,
-                updated_at,
-            };
-
-            let exists = repo.read(&req.conversation_id).await.map(|o| o.is_some()).unwrap_or(false);
-            if exists {
-                let _ = repo.update(&conv).await;
-            } else {
-                let _ = repo.create(&conv).await;
-            }
-
-            // Generate updated history list for OOB swap
-            if let Ok(mut conversations) = repo.list().await {
-                conversations.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
-
-                let mut history_list = div()
-                    .class("history-list")
-                    .attr("id", "history-list")
-                    .attr("hx-swap-oob", "true");
-
-                for conv_item in &conversations {
-                    let is_active = conv_item.id == req.conversation_id;
-                    let item_class = if is_active { "history-item active" } else { "history-item" };
-                    let link_class = if is_active { "history-item-link active" } else { "history-item-link" };
-                    let item_id = format!("history-item-{}", conv_item.id);
-
-                    let item = div()
-                        .class(item_class)
-                        .attr("id", &item_id)
-                        .child(
-                            a()
-                                .class(link_class)
-                                .attr("href", with_base_path(&format!("/ui/home?conversation_id={}", conv_item.id)))
-                                .text(&conv_item.title)
-                        )
-                        .child(
-                            div()
-                                .class("menu-container")
-                                .child(
-                                    button()
-                                        .class("menu-trigger-btn")
-                                        .child(i().class("fas fa-ellipsis-v"))
-                                )
-                                .child(
-                                    div()
-                                        .class("dropdown-menu")
-                                        .child(
-                                            button()
-                                                .class("dropdown-item delete-item")
-                                                .attr("hx-get", with_base_path(&format!("/ui/chat/conversations/delete-modal/{}?active_id={}", conv_item.id, req.conversation_id)))
-                                                .attr("hx-target", "#confirm-delete-modal")
-                                                .attr("hx-swap", "outerHTML")
-                                                .child(i().class("fas fa-trash"))
-                                                .child(span().text("Delete"))
-                                        )
-                                )
-                        );
-                    history_list = history_list.child(item);
-                }
-                oob_history_list = history_list.render();
-            }
+            oob_history_list = history_list.render();
         }
 
-        let combined_msg = format!("{}{}", final_msg.render(), oob_history_list);
-        yield Ok::<_, actix_web::Error>(encode_sse("message", &combined_msg));
+        if !oob_history_list.is_empty() {
+            yield Ok::<_, actix_web::Error>(encode_sse("message", &oob_history_list));
+        }
         state.pending_messages.remove(&message_id_clone);
     };
 
@@ -531,6 +688,374 @@ pub async fn delete_conversation(
         .body(format!("{}{}", close_modal, oob_delete))
 }
 
+#[derive(serde::Deserialize)]
+pub struct SwitchBranchRequest {
+    pub conversation_id: String,
+    pub target_message_id: String,
+}
+
+#[post("/conversations/switch")]
+pub async fn switch_branch(
+    form: web::Form<SwitchBranchRequest>,
+    db: web::Data<quench_db::prelude::Db>,
+) -> impl Responder {
+    if let Err(err) = switch_active_message(&db, &form.conversation_id, &form.target_message_id).await {
+        tracing::error!("Failed to switch active branch: {}", err);
+        return HttpResponse::InternalServerError().body(err.to_string());
+    }
+
+    HttpResponse::Ok()
+        .append_header((
+            "HX-Redirect",
+            with_base_path(&format!("/ui/home?conversation_id={}", form.conversation_id)),
+        ))
+        .body("")
+}
+
+pub async fn get_conversation_messages(
+    db: &quench_db::prelude::Db,
+    active_message_id: Option<&str>,
+) -> Result<Vec<ChatMessage>, anyhow::Error> {
+    let mut chat_messages = Vec::new();
+    let Some(mut current_id) = active_message_id.map(|s| s.to_string()) else {
+        return Ok(chat_messages);
+    };
+
+    match db {
+        quench_db::prelude::Db::Postgres(pg_db) => {
+            let schema = envmnt::get_or("DB_SCHEMA", "public");
+            let table = format!("{}.messages", schema);
+            let query = format!(
+                "WITH RECURSIVE thread AS (
+                    SELECT id, parent_id, role, content, created_at, 0 as depth
+                    FROM {}
+                    WHERE id = $1
+                    UNION ALL
+                    SELECT m.id, m.parent_id, m.role, m.content, m.created_at, t.depth + 1
+                    FROM {} m
+                    INNER JOIN thread t ON t.parent_id = m.id
+                )
+                SELECT role, content FROM thread ORDER BY depth DESC",
+                table, table
+            );
+
+            let rows = sqlx::query_as::<_, (String, String)>(sqlx::AssertSqlSafe(query.as_str()))
+                .bind(current_id)
+                .fetch_all(pg_db.pool())
+                .await?;
+
+            for (role, content) in rows {
+                chat_messages.push(ChatMessage { role, content });
+            }
+        }
+        quench_db::prelude::Db::InMemory(_mem_db) => {
+            use quench_db::prelude::Crud;
+            let repo = db.repository::<crate::models::Message>();
+            let mut visited = std::collections::HashSet::new();
+            let mut message_list = Vec::new();
+            while !current_id.is_empty() && visited.insert(current_id.clone()) {
+                if let Ok(Some(msg)) = repo.read(&current_id).await {
+                    message_list.push(msg.clone());
+                    if let Some(pid) = msg.parent_id {
+                        current_id = pid;
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+            message_list.reverse();
+            for msg in message_list {
+                chat_messages.push(ChatMessage {
+                    role: msg.role,
+                    content: msg.content,
+                });
+            }
+        }
+    }
+
+    Ok(chat_messages)
+}
+
+pub async fn get_conversation_message_nodes(
+    db: &quench_db::prelude::Db,
+    active_message_id: Option<&str>,
+) -> Result<Vec<crate::models::Message>, anyhow::Error> {
+    let mut message_nodes = Vec::new();
+    let Some(mut current_id) = active_message_id.map(|s| s.to_string()) else {
+        return Ok(message_nodes);
+    };
+
+    match db {
+        quench_db::prelude::Db::Postgres(pg_db) => {
+            let schema = envmnt::get_or("DB_SCHEMA", "public");
+            let table = format!("{}.messages", schema);
+            let query = format!(
+                "WITH RECURSIVE thread AS (
+                    SELECT id, conversation_id, parent_id, role, content, created_at, 0 as depth
+                    FROM {}
+                    WHERE id = $1
+                    UNION ALL
+                    SELECT m.id, m.conversation_id, m.parent_id, m.role, m.content, m.created_at, t.depth + 1
+                    FROM {} m
+                    INNER JOIN thread t ON t.parent_id = m.id
+                )
+                SELECT id, conversation_id, parent_id, role, content, created_at FROM thread ORDER BY depth DESC",
+                table, table
+            );
+
+            let rows = sqlx::query_as::<_, (String, String, Option<String>, String, String, String)>(sqlx::AssertSqlSafe(query.as_str()))
+                .bind(current_id)
+                .fetch_all(pg_db.pool())
+                .await?;
+
+            for (id, conversation_id, parent_id, role, content, created_at) in rows {
+                message_nodes.push(crate::models::Message {
+                    id,
+                    conversation_id,
+                    parent_id,
+                    role,
+                    content,
+                    created_at,
+                });
+            }
+        }
+        quench_db::prelude::Db::InMemory(_mem_db) => {
+            use quench_db::prelude::Crud;
+            let repo = db.repository::<crate::models::Message>();
+            let mut visited = std::collections::HashSet::new();
+            let mut list = Vec::new();
+            while !current_id.is_empty() && visited.insert(current_id.clone()) {
+                if let Ok(Some(msg)) = repo.read(&current_id).await {
+                    list.push(msg.clone());
+                    if let Some(pid) = msg.parent_id {
+                        current_id = pid;
+                    } else {
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+            list.reverse();
+            message_nodes = list;
+        }
+    }
+
+    Ok(message_nodes)
+}
+
+pub async fn get_siblings(
+    db: &quench_db::prelude::Db,
+    conversation_id: &str,
+    parent_id: Option<&str>,
+) -> Result<Vec<crate::models::Message>, anyhow::Error> {
+    match db {
+        quench_db::prelude::Db::Postgres(pg_db) => {
+            let schema = envmnt::get_or("DB_SCHEMA", "public");
+            let table = format!("{}.messages", schema);
+            let query = if let Some(_pid) = parent_id {
+                format!(
+                    "SELECT id, conversation_id, parent_id, role, content, created_at 
+                     FROM {} 
+                     WHERE conversation_id = $1 AND parent_id = $2 
+                     ORDER BY created_at ASC",
+                    table
+                )
+            } else {
+                format!(
+                    "SELECT id, conversation_id, parent_id, role, content, created_at 
+                     FROM {} 
+                     WHERE conversation_id = $1 AND parent_id IS NULL 
+                     ORDER BY created_at ASC",
+                    table
+                )
+            };
+
+            let mut q = sqlx::query_as::<_, (String, String, Option<String>, String, String, String)>(sqlx::AssertSqlSafe(query.as_str()))
+                .bind(conversation_id);
+            if let Some(pid) = parent_id {
+                q = q.bind(pid);
+            }
+            let rows = q.fetch_all(pg_db.pool()).await?;
+            let mut siblings = Vec::new();
+            for (id, conversation_id, parent_id, role, content, created_at) in rows {
+                siblings.push(crate::models::Message {
+                    id,
+                    conversation_id,
+                    parent_id,
+                    role,
+                    content,
+                    created_at,
+                });
+            }
+            Ok(siblings)
+        }
+        quench_db::prelude::Db::InMemory(_mem_db) => {
+            use quench_db::prelude::Crud;
+            let repo = db.repository::<crate::models::Message>();
+            let all = repo.list().await?;
+            let mut siblings: Vec<_> = all
+                .into_iter()
+                .filter(|m| m.conversation_id == conversation_id && m.parent_id.as_deref() == parent_id)
+                .collect();
+            siblings.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+            Ok(siblings)
+        }
+    }
+}
+
+pub async fn switch_active_message(
+    db: &quench_db::prelude::Db,
+    conversation_id: &str,
+    target_message_id: &str,
+) -> Result<(), anyhow::Error> {
+    let mut current_id = target_message_id.to_string();
+
+    match db {
+        quench_db::prelude::Db::Postgres(pg_db) => {
+            let schema = envmnt::get_or("DB_SCHEMA", "public");
+            let table = format!("{}.messages", schema);
+
+            loop {
+                let query = format!(
+                    "SELECT id FROM {} WHERE conversation_id = $1 AND parent_id = $2 ORDER BY created_at DESC LIMIT 1",
+                    table
+                );
+                let child_opt: Option<(String,)> = sqlx::query_as(sqlx::AssertSqlSafe(query.as_str()))
+                    .bind(conversation_id)
+                    .bind(&current_id)
+                    .fetch_optional(pg_db.pool())
+                    .await?;
+
+                if let Some((child_id,)) = child_opt {
+                    current_id = child_id;
+                } else {
+                    break;
+                }
+            }
+        }
+        quench_db::prelude::Db::InMemory(_mem_db) => {
+            use quench_db::prelude::Crud;
+            let repo = db.repository::<crate::models::Message>();
+            loop {
+                let all = repo.list().await?;
+                let mut children: Vec<_> = all
+                    .into_iter()
+                    .filter(|m| {
+                        m.conversation_id == conversation_id
+                            && m.parent_id.as_deref() == Some(&current_id)
+                    })
+                    .collect();
+                children.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+                if let Some(child) = children.first() {
+                    current_id = child.id.clone();
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
+    use quench_db::prelude::Crud;
+    let conv_repo = db.repository::<crate::models::Conversation>();
+    if let Some(mut conv) = conv_repo.read(conversation_id).await? {
+        conv.active_message_id = Some(current_id);
+        conv.updated_at = chrono::Utc::now().to_rfc3339();
+        conv_repo.update(&conv).await?;
+    }
+
+    Ok(())
+}
+
+#[derive(serde::Deserialize)]
+pub struct RegenerateRequest {
+    pub message_id: String,
+}
+
+#[post("/regenerate")]
+pub async fn regenerate(
+    form: web::Form<RegenerateRequest>,
+    state: web::Data<ChatState>,
+    db: web::Data<quench_db::prelude::Db>,
+    switchboard: web::Data<SwitchboardClient>,
+) -> impl Responder {
+    use quench_db::prelude::Crud;
+    let repo = db.repository::<crate::models::Message>();
+    let Ok(Some(msg)) = repo.read(&form.message_id).await else {
+        return HttpResponse::NotFound().finish();
+    };
+
+    if msg.role != "assistant" {
+        return HttpResponse::BadRequest().body("Can only regenerate assistant messages");
+    }
+
+    let Some(parent_id) = msg.parent_id else {
+        return HttpResponse::BadRequest().body("Message has no parent to regenerate from");
+    };
+
+    let Ok(Some(parent_msg)) = repo.read(&parent_id).await else {
+        return HttpResponse::NotFound().body("Parent message not found");
+    };
+
+    // Use current models from switchboard
+    let instances = switchboard.get_vllm_instances().await.unwrap_or_default();
+    let Some(instance) = instances.first() else {
+        return HttpResponse::ServiceUnavailable().body("No AI models available for regeneration");
+    };
+
+    let message_id = Uuid::new_v4().to_string();
+    let req = ChatRequest {
+        instance_id: instance.id.clone(),
+        message: parent_msg.content,
+        conversation_id: msg.conversation_id,
+        parent_id: Some(parent_id),
+        skip_user_message: true,
+    };
+
+    state.pending_messages.insert(message_id.clone(), req);
+
+    let stream_url = with_base_path(&format!("/ui/chat/stream/{}", message_id));
+
+    // 1. The thinking block for the message itself (now with the NEW ID)
+    let ai_msg = div()
+        .class("chat-message message-ai")
+        .attr("id", format!("ai-{}", message_id)) // NEW ID
+        .attr("hx-ext", "sse")
+        .attr("sse-connect", stream_url)
+        .attr("sse-swap", "message")
+        .child(
+            div()
+                .class("message-inner")
+                .child(div().class("message-content").text("Sage is regenerating...")),
+        );
+
+    // 2. An OOB swap to update the navigation dot and tooltip IDs to match the NEW message ID
+    let nav_update_oob = div()
+        .attr("hx-swap-oob", format!("outerHTML:#dot-ai-{}", form.message_id))
+        .child(
+            div()
+                .class("nav-dot")
+                .attr("id", format!("dot-ai-{}", message_id))
+                .attr("data-msg-id", format!("ai-{}", message_id))
+                .attr("onclick", "const target = document.getElementById(this.dataset.msgId); if (target) { target.scrollIntoView({behavior: 'smooth', block: 'start'}); }")
+                .child(
+                    div()
+                        .class("nav-tooltip")
+                        .attr("id", format!("tooltip-ai-{}", message_id))
+                        .text("Sage is regenerating..."),
+                ),
+        );
+
+    // We use HX-Target to tell HTMX to replace the specific element
+    HttpResponse::Ok()
+        .content_type("text/html")
+        .append_header(("HX-Retarget", format!("#ai-{}", form.message_id)))
+        .append_header(("HX-Reswap", "outerHTML"))
+        .body(format!("{}{}", ai_msg.render(), nav_update_oob.render()))
+}
+
 pub fn scope() -> actix_web::Scope {
     web::scope("/chat")
         .service(send_message)
@@ -538,4 +1063,6 @@ pub fn scope() -> actix_web::Scope {
         .service(delete_conversation)
         .service(delete_modal)
         .service(delete_modal_empty)
+        .service(switch_branch)
+        .service(regenerate)
 }

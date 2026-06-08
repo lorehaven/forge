@@ -59,7 +59,7 @@ where
             .app_data(web::Data::new(db_wrapper.db.clone()))
             .app_data(web::Data::new(jwt_config.clone()))
             .app_data(web::Data::from(user_db.clone()))
-            .wrap(middleware::logger::FilteredLogger)
+            .wrap(middleware::logger::FilteredLogger::default())
             .service(
                 web::scope(&base_path)
                     .service(routers::health::scope())
