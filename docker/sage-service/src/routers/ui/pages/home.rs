@@ -17,6 +17,7 @@ async fn handle_home_page(
     config: web::Data<JwtConfig>,
     switchboard: web::Data<SwitchboardClient>,
     db: web::Data<Db>,
+    chat_state: web::Data<crate::routers::ui::chat::ChatState>,
     query: web::Query<HomeQuery>,
 ) -> impl Responder {
     let instances = switchboard.get_vllm_instances().await;
@@ -47,8 +48,31 @@ async fn handle_home_page(
         }
     }
 
+    // AUTO-TRIGGER LOGIC:
+    // If the last message is from a user, we need to auto-trigger an AI response.
+    let mut auto_trigger_ai = None;
+    if let Some((last_msg, _)) = active_messages.last() {
+        if last_msg.role == "user" {
+            // Find an available model instance
+            if let Ok(ref insts) = instances {
+                if let Some(instance) = insts.first() {
+                    let pending_id = uuid::Uuid::new_v4().to_string();
+                    let chat_req = crate::routers::ui::chat::ChatRequest {
+                        instance_id: instance.id.clone(),
+                        message: last_msg.content.clone(),
+                        conversation_id: last_msg.conversation_id.clone(),
+                        parent_id: Some(last_msg.id.clone()),
+                        skip_user_message: true, // DB message already exists
+                    };
+                    chat_state.pending_messages.insert(pending_id.clone(), chat_req);
+                    auto_trigger_ai = Some(pending_id);
+                }
+            }
+        }
+    }
+
     handle_home(req, config, move || {
-        render_home_page(instances, conversations, active_id, active_messages)
+        render_home_page(instances, conversations, active_id, active_messages, auto_trigger_ai)
     })
     .await
 }
@@ -59,9 +83,10 @@ pub(super) async fn home(
     config: web::Data<JwtConfig>,
     switchboard: web::Data<SwitchboardClient>,
     db: web::Data<Db>,
+    chat_state: web::Data<crate::routers::ui::chat::ChatState>,
     query: web::Query<HomeQuery>,
 ) -> impl Responder {
-    handle_home_page(req, config, switchboard, db, query).await
+    handle_home_page(req, config, switchboard, db, chat_state, query).await
 }
 
 #[get("/home/")]
@@ -70,9 +95,10 @@ pub(super) async fn home_slash(
     config: web::Data<JwtConfig>,
     switchboard: web::Data<SwitchboardClient>,
     db: web::Data<Db>,
+    chat_state: web::Data<crate::routers::ui::chat::ChatState>,
     query: web::Query<HomeQuery>,
 ) -> impl Responder {
-    handle_home_page(req, config, switchboard, db, query).await
+    handle_home_page(req, config, switchboard, db, chat_state, query).await
 }
 
 fn render_home_page(
@@ -80,6 +106,7 @@ fn render_home_page(
     conversations: Vec<Conversation>,
     active_id: String,
     active_messages: Vec<(crate::models::Message, Vec<crate::models::Message>)>,
+    auto_trigger_ai: Option<String>,
 ) -> HttpResponse {
     let mut model_select = select().class("model-selector").attr("id", "model-select");
 
@@ -272,6 +299,8 @@ fn render_home_page(
         );
     } else {
         use crate::routers::ui::common::format::format_message;
+        let last_user_idx = active_messages.iter().rposition(|(m, _)| m.role == "user");
+
         for (idx, (msg, siblings)) in active_messages.iter().enumerate() {
             let role_class = if msg.role == "user" {
                 "message-user"
@@ -289,6 +318,8 @@ fn render_home_page(
             let sibling_index = siblings.iter().position(|s| s.id == msg.id).unwrap_or(0);
             
             let is_last = idx == active_messages.len() - 1;
+            let is_last_user = Some(idx) == last_user_idx;
+
             let regenerate_btn_opt = (msg.role == "assistant" && is_last).then(|| {
                 button()
                     .class("branch-btn regenerate-btn")
@@ -300,10 +331,21 @@ fn render_home_page(
                     .child(span().text(" Regenerate"))
             });
 
-            let branch_widget_opt = (total_siblings > 1 || regenerate_btn_opt.is_some()).then(|| {
+            let edit_btn_opt = (msg.role == "user" && is_last_user).then(|| {
+                button()
+                    .class("branch-btn edit-btn")
+                    .attr("hx-get", with_base_path(&format!("/ui/chat/edit-form/{}", msg.id)))
+                    .attr("hx-target", format!("#user-{}", msg.id))
+                    .attr("hx-swap", "innerHTML")
+                    .child(i().class("fas fa-edit"))
+                    .child(span().text(" Edit"))
+            });
+
+            let branch_widget_opt = (total_siblings > 1 || regenerate_btn_opt.is_some() || edit_btn_opt.is_some()).then(|| {
                 let mut controls = div().class("branch-controls");
                 
-                if total_siblings > 1 {
+                // ONLY SHOW NAVIGATION FOR ASSISTANT MESSAGES
+                if total_siblings > 1 && msg.role == "assistant" {
                     let prev_index = if sibling_index == 0 { total_siblings - 1 } else { sibling_index - 1 };
                     let next_index = if sibling_index == total_siblings - 1 { 0 } else { sibling_index + 1 };
                     let prev_sibling = &siblings[prev_index];
@@ -348,6 +390,10 @@ fn render_home_page(
                 if let Some(btn) = regenerate_btn_opt {
                     controls = controls.child(btn);
                 }
+
+                if let Some(btn) = edit_btn_opt {
+                    controls = controls.child(btn);
+                }
                 
                 controls
             });
@@ -381,6 +427,36 @@ fn render_home_page(
                         .text(preview)
                 );
             nav_div = nav_div.child(dot);
+        }
+
+        // If we are auto-triggering AI (e.g. after an edit or branching)
+        if let Some(pending_id) = auto_trigger_ai {
+            let stream_url = with_base_path(&format!("/ui/chat/stream/{}", pending_id));
+            let ai_thinking_msg = div()
+                .class("chat-message message-ai")
+                .attr("id", format!("ai-{}", pending_id))
+                .attr("hx-ext", "sse")
+                .attr("sse-connect", stream_url)
+                .attr("sse-swap", "message")
+                .child(
+                    div()
+                        .class("message-inner")
+                        .child(div().class("message-content").text("Sage is thinking...")),
+                );
+            history_div = history_div.child(ai_thinking_msg);
+
+            let ai_dot = div()
+                .class("nav-dot active")
+                .attr("id", format!("dot-ai-{}", pending_id))
+                .attr("data-msg-id", format!("ai-{}", pending_id))
+                .attr("onclick", "const target = document.getElementById(this.dataset.msgId); if (target) { target.scrollIntoView({behavior: 'smooth', block: 'start'}); }")
+                .child(
+                    div()
+                        .class("nav-tooltip")
+                        .attr("id", format!("tooltip-ai-{}", pending_id))
+                        .text("Sage is thinking..."),
+                );
+            nav_div = nav_div.child(ai_dot);
         }
     }
 
@@ -464,7 +540,7 @@ fn render_home_page(
 
                     document.addEventListener('htmx:afterSwap', (e) => {
                         updateActiveDot();
-                        if (e.detail.target.classList.contains('chat-history')) {
+                        if (e.detail && e.detail.target && e.detail.target.classList && e.detail.target.classList.contains('chat-history')) {
                             scrollToBottom();
                         }
                     });

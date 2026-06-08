@@ -592,5 +592,37 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("padding", "0.2rem 0.6rem"),
         CssRule::new(".chat-message:last-of-type .regenerate-btn")
             .property("display", "inline-flex !important"),
+        CssRule::new(".edit-btn")
+            .property("display", "inline-flex !important"),
+        CssRule::new(".chat-message:has(~ .message-user) .edit-btn")
+            .property("display", "none !important"),
+        CssRule::new(".edit-textarea")
+            .property("width", "100%")
+            .property("background", "transparent")
+            .property("border", "none")
+            .property("color", "white")
+            .property("padding", "0")
+            .property("font-family", "inherit")
+            .property("font-size", "1.1rem")
+            .property("line-height", "1.6")
+            .property("resize", "none")
+            .property("outline", "none")
+            .property("min-height", "5rem"),
+        CssRule::new(".edit-actions")
+            .property("display", "flex")
+            .property("justify-content", "flex-end")
+            .property("gap", "0.5rem")
+            .property("margin-top", "0.5rem")
+            .property("border-top", "1px solid rgba(255, 255, 255, 0.1)")
+            .property("padding-top", "0.5rem"),
+        CssRule::new(".save-btn")
+            .property("background-color", "var(--bs-primary) !important")
+            .property("color", "white !important")
+            .property("border", "none !important")
+            .property("padding", "0.25rem 0.75rem !important")
+            .property("font-size", "0.8rem !important"),
+        CssRule::new(".cancel-btn")
+            .property("padding", "0.25rem 0.75rem !important")
+            .property("font-size", "0.8rem !important"),
     ]
 }

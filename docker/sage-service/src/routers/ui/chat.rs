@@ -63,6 +63,14 @@ pub async fn send_message(
         return HttpResponse::Ok().content_type("text/html").body(ai_msg.render());
     }
 
+    let edit_btn = button()
+        .class("branch-btn edit-btn")
+        .attr("hx-get", with_base_path(&format!("/ui/chat/edit-form/{}", message_id))) // Use pending ID, will be transitioned
+        .attr("hx-target", format!("#user-{}", message_id))
+        .attr("hx-swap", "innerHTML")
+        .child(i().class("fas fa-edit"))
+        .child(span().text(" Edit"));
+
     let user_msg = div()
         .class("chat-message message-user")
         .attr("id", format!("user-{}", message_id))
@@ -70,7 +78,8 @@ pub async fn send_message(
             div()
                 .class("message-inner")
                 .raw()
-                .text(format_message(&req.message)),
+                .text(format_message(&req.message))
+                .child(div().class("branch-controls").child(edit_btn))
         );
 
     let ai_msg = div()
@@ -431,7 +440,7 @@ pub async fn stream_message(
 
         controls = controls.child(regenerate_btn);
 
-        // 1. Transition the message block itself
+        // 1. Transition the AI message block itself
         let oob_transition = div()
             .class("chat-message message-ai")
             .attr("id", format!("ai-{}", ai_msg_id))
@@ -448,8 +457,7 @@ pub async fn stream_message(
                     )
             );
 
-        // 2. Transition the navigation dot and tooltip IDs to the permanent message ID
-        // This ensures the NEXT regeneration correctly targets the new IDs.
+        // 2. Transition the navigation dot and tooltip IDs for the AI message
         let ai_preview_raw: String = full_content.trim().chars().take(30).collect();
         let ai_preview = if full_content.trim().chars().count() > 30 {
             format!("{}...", ai_preview_raw)
@@ -457,7 +465,7 @@ pub async fn stream_message(
             ai_preview_raw
         };
 
-        let nav_dot_transition = div()
+        let ai_nav_dot_transition = div()
             .attr("hx-swap-oob", format!("outerHTML:#dot-ai-{}", message_id_clone))
             .child(
                 div()
@@ -473,8 +481,62 @@ pub async fn stream_message(
                     ),
             );
 
-        // We send all OOB transitions. This replaces the entire elements and stops the SSE connection.
-        yield Ok::<_, actix_web::Error>(encode_sse("message", &format!("{}{}", oob_transition.render(), nav_dot_transition.render())));
+        // 3. Transition the USER message block to its permanent ID and add the Edit button
+        let mut user_oob_transition = String::new();
+        let mut user_nav_dot_transition = String::new();
+        
+        if let Some(ref uid) = ai_parent_id {
+            if !req.skip_user_message {
+                let edit_btn = button()
+                    .class("branch-btn edit-btn")
+                    .attr("hx-get", with_base_path(&format!("/ui/chat/edit-form/{}", uid)))
+                    .attr("hx-target", format!("#user-{}", uid))
+                    .attr("hx-swap", "innerHTML")
+                    .child(i().class("fas fa-edit"))
+                    .child(span().text(" Edit"));
+
+                let user_controls = div()
+                    .class("branch-controls")
+                    .child(edit_btn);
+
+                user_oob_transition = div()
+                    .class("chat-message message-user")
+                    .attr("id", format!("user-{}", uid))
+                    .attr("hx-swap-oob", format!("outerHTML:#user-{}", message_id_clone))
+                    .child(
+                        div()
+                            .class("message-inner")
+                            .raw()
+                            .text(format_message(&req.message))
+                            .child(user_controls)
+                    )
+                    .render();
+
+                user_nav_dot_transition = div()
+                    .attr("hx-swap-oob", format!("outerHTML:[data-msg-id='user-{}']", message_id_clone))
+                    .child(
+                        div()
+                            .class("nav-dot")
+                            .attr("data-msg-id", format!("user-{}", uid))
+                            .attr("onclick", "const target = document.getElementById(this.dataset.msgId); if (target) { target.scrollIntoView({behavior: 'smooth', block: 'start'}); }")
+                            .child(
+                                div()
+                                    .class("nav-tooltip")
+                                    .text(req.message.chars().take(30).collect::<String>())
+                            ),
+                    )
+                    .render();
+            }
+        }
+
+        // We send all OOB transitions.
+        yield Ok::<_, actix_web::Error>(encode_sse("message", &format!(
+            "{}{}{}{}", 
+            oob_transition.render(), 
+            ai_nav_dot_transition.render(),
+            user_oob_transition,
+            user_nav_dot_transition
+        )));
 
 
         let mut oob_history_list = String::new();
@@ -1056,6 +1118,106 @@ pub async fn regenerate(
         .body(format!("{}{}", ai_msg.render(), nav_update_oob.render()))
 }
 
+#[get("/edit-form/{id}")]
+pub async fn edit_form(
+    id: web::Path<String>,
+    db: web::Data<quench_db::prelude::Db>,
+) -> impl Responder {
+    use quench_db::prelude::Crud;
+    let repo = db.repository::<crate::models::Message>();
+    let Ok(Some(msg)) = repo.read(&id).await else {
+        return HttpResponse::NotFound().finish();
+    };
+
+    let form = div()
+        .class("message-inner edit-mode")
+        .child(
+            div()
+                .class("message-content")
+                .child(
+                    form()
+                        .attr("hx-post", with_base_path("/ui/chat/handle-edit"))
+                        .child(input().attr("type", "hidden").attr("name", "message_id").attr("value", &msg.id))
+                        .child(
+                            textarea()
+                                .class("edit-textarea")
+                                .attr("name", "new_content")
+                                .attr("onkeydown", "if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); this.form.dispatchEvent(new Event('submit', {bubbles: true, cancelable: true})); }")
+                                .text(&msg.content)
+                        )
+                        .child(
+                            div()
+                                .class("edit-actions")
+                                .child(
+                                    button()
+                                        .attr("type", "button")
+                                        .class("branch-btn cancel-btn")
+                                        .attr("onclick", "window.location.reload();")
+                                        .text("Cancel")
+                                )
+                                .child(
+                                    button()
+                                        .attr("type", "submit")
+                                        .class("branch-btn save-btn")
+                                        .text("Save & Submit")
+                                )
+                        )
+                )
+        );
+
+    HttpResponse::Ok()
+        .content_type("text/html")
+        .body(form.render())
+}
+
+#[derive(serde::Deserialize)]
+pub struct HandleEditRequest {
+    pub message_id: String,
+    pub new_content: String,
+}
+
+#[post("/handle-edit")]
+pub async fn handle_edit(
+    form: web::Form<HandleEditRequest>,
+    db: web::Data<quench_db::prelude::Db>,
+) -> impl Responder {
+    use quench_db::prelude::Crud;
+    let repo = db.repository::<crate::models::Message>();
+    let Ok(Some(msg)) = repo.read(&form.message_id).await else {
+        return HttpResponse::NotFound().finish();
+    };
+
+    let user_msg_id = Uuid::new_v4().to_string();
+    let user_msg = crate::models::Message {
+        id: user_msg_id.clone(),
+        conversation_id: msg.conversation_id.clone(),
+        parent_id: msg.parent_id, // Branch from the same parent
+        role: "user".to_string(),
+        content: form.new_content.trim().to_string(),
+        created_at: chrono::Utc::now().to_rfc3339(),
+    };
+
+    if let Err(err) = repo.create(&user_msg).await {
+        tracing::error!("Failed to create edited user message: {}", err);
+        return HttpResponse::InternalServerError().body(err.to_string());
+    }
+
+    // Update conversation tip to the new user message
+    let conv_repo = db.repository::<crate::models::Conversation>();
+    if let Ok(Some(mut conv)) = conv_repo.read(&msg.conversation_id).await {
+        conv.active_message_id = Some(user_msg_id);
+        conv.updated_at = chrono::Utc::now().to_rfc3339();
+        let _ = conv_repo.update(&conv).await;
+    }
+
+    // Redirect to home page which will now detect the user message at tip and auto-respond
+    // We use HX-Redirect to tell HTMX to do a full page transition
+    let target_url = with_base_path(&format!("/ui/home?conversation_id={}", msg.conversation_id));
+    HttpResponse::Ok()
+        .append_header(("HX-Redirect", target_url))
+        .finish()
+}
+
 pub fn scope() -> actix_web::Scope {
     web::scope("/chat")
         .service(send_message)
@@ -1065,4 +1227,6 @@ pub fn scope() -> actix_web::Scope {
         .service(delete_modal_empty)
         .service(switch_branch)
         .service(regenerate)
+        .service(edit_form)
+        .service(handle_edit)
 }
