@@ -168,6 +168,11 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("border-radius", "0.3rem")
             .property("font-family", "'Fira Code', monospace")
             .property("font-size", "0.9em"),
+        CssRule::new(".message-content a")
+            .property("color", "var(--bs-primary)")
+            .property("text-decoration", "none"),
+        CssRule::new(".message-content a:hover")
+            .property("text-decoration", "underline"),
         CssRule::new(".message-ai .message-content")
             .property("background", "transparent")
             .property("color", "var(--bs-gray-200)")

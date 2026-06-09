@@ -329,7 +329,7 @@ fn render_home_page(
     history_list = history_list.child(
         div()
             .class("history-section-header collapsible open")
-            .attr("style", "margin-top: 1.5rem;")
+            .attr("style", "margin-top: 0.75rem;")
             .attr("onclick", "this.classList.toggle('open'); const content = this.nextElementSibling; if(content) { content.classList.toggle('hidden'); }")
             .child(
                 div()

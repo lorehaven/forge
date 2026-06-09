@@ -278,7 +278,31 @@ fn format_inline(text: &str) -> String {
             }
         }
 
-        // 3. Italic (single asterisk / single underscore)
+        // 3. Links [text](url)
+        if chars[i] == '[' {
+            let mut j = i + 1;
+            while j < chars.len() && chars[j] != ']' {
+                j += 1;
+            }
+            if j < chars.len() && j + 1 < chars.len() && chars[j + 1] == '(' {
+                let mut k = j + 2;
+                while k < chars.len() && chars[k] != ')' {
+                    k += 1;
+                }
+                if k < chars.len() {
+                    let text_content: String = chars[i + 1..j].iter().collect();
+                    let url_content: String = chars[j + 2..k].iter().collect();
+                    result.push_str(&format!(
+                        "<a href=\"{}\" target=\"_blank\" rel=\"noopener noreferrer\">{}</a>",
+                        url_content, format_inline(&text_content)
+                    ));
+                    i = k + 1;
+                    continue;
+                }
+            }
+        }
+
+        // 4. Italic (single asterisk / single underscore)
         if chars[i] == '*' {
             let mut j = i + 1;
             while j < chars.len() && chars[j] != '*' {
