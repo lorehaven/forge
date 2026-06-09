@@ -43,10 +43,6 @@ fn form() -> CssRule {
         .property("gap", "1rem")
         .property("width", "100%")
         .child(
-            CssRule::new("@media screen and (max-width: 768px)")
-                .child(CssRule::new("&").property("width", "90%")),
-        )
-        .child(
             CssRule::new(".error")
                 .property("color", "var(--bs-danger)")
                 .property("margin-top", "-0.8rem")

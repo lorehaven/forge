@@ -129,6 +129,7 @@ where
         }
 
         let Some(token_str) = token else {
+            tracing::warn!("AuthMiddleware: No token found in header or cookie");
             return Box::pin(async move {
                 let res = actix_web::HttpResponse::Unauthorized()
                     .finish()
@@ -140,6 +141,7 @@ where
         match self.config.decode_claims(&token_str) {
             Ok(claims) => {
                 if claims.service != self.config.service_name {
+                    tracing::warn!("AuthMiddleware: Token service mismatch. Expected {}, got {}", self.config.service_name, claims.service);
                     return Box::pin(async move {
                         let res = actix_web::HttpResponse::Unauthorized()
                             .finish()
@@ -159,9 +161,13 @@ where
                                 .is_active(session_id, &claims.sub)
                                 .await
                                 .unwrap_or(false),
-                            None => false,
+                            None => {
+                                tracing::warn!("AuthMiddleware: SessionDb not found in app_data");
+                                false
+                            }
                         };
                         if !active {
+                            tracing::warn!("AuthMiddleware: Session {} is not active for user {}", session_id, claims.sub);
                             let res = actix_web::HttpResponse::Unauthorized()
                                 .finish()
                                 .map_into_right_body();
@@ -174,12 +180,15 @@ where
                     Ok(res.map_into_left_body())
                 })
             }
-            Err(_) => Box::pin(async move {
-                let res = actix_web::HttpResponse::Unauthorized()
-                    .finish()
-                    .map_into_right_body();
-                Ok(req.into_response(res))
-            }),
+            Err(e) => {
+                tracing::warn!("AuthMiddleware: Failed to decode claims: {:?}", e);
+                Box::pin(async move {
+                    let res = actix_web::HttpResponse::Unauthorized()
+                        .finish()
+                        .map_into_right_body();
+                    Ok(req.into_response(res))
+                })
+            }
         }
     }
 }

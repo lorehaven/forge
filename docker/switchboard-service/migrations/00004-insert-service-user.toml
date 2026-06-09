@@ -1,0 +1,10 @@
+[[migrations]]
+id = "0004-insert-service-user"
+author = "quench-srv"
+
+[[migrations.changes]]
+sql = """
+INSERT INTO switchboard.users (username, password, roles)
+VALUES ('service', '$argon2id$v=19$m=19456,t=2,p=1$WfOedXKCs5tHMY6JDVXMyw$zul6e59+HxSzDDO+A74CsaC4mQkWPaWGI+yCPjNq/p0', '["service"]'::jsonb)
+ON CONFLICT (username) DO NOTHING;
+"""

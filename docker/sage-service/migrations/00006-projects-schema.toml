@@ -1,0 +1,26 @@
+[[migrations]]
+id = "0006-projects-schema"
+author = "quench-srv"
+
+[[migrations.changes]]
+sql = "ALTER TABLE sage.conversations ADD COLUMN IF NOT EXISTS owner TEXT;"
+
+[[migrations.changes]]
+sql = "UPDATE sage.conversations SET owner = 'admin' WHERE owner IS NULL;"
+
+[[migrations.changes]]
+sql = "ALTER TABLE sage.conversations ALTER COLUMN owner SET NOT NULL;"
+
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS sage.projects (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    owner TEXT NOT NULL REFERENCES sage.users(username) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"""
+
+[[migrations.changes]]
+sql = "ALTER TABLE sage.conversations ADD COLUMN IF NOT EXISTS project_id TEXT REFERENCES sage.projects(id) ON DELETE CASCADE;"

@@ -5,7 +5,7 @@ use crate::routers::ui::common::format::format_message;
 use actix_web::{HttpResponse, Responder, get, post, web};
 use dashmap::DashMap;
 use futures_util::StreamExt;
-use quench_srv::prelude::with_base_path;
+use quench_srv::prelude::{JwtConfig, with_base_path};
 use quench_web::prelude::*;
 use serde::Deserialize;
 use uuid::Uuid;
@@ -19,6 +19,7 @@ pub struct ChatRequest {
     pub instance_id: String,
     pub message: String,
     pub conversation_id: String,
+    pub project_id: Option<String>,
     pub parent_id: Option<String>,
     #[serde(default)]
     pub skip_user_message: bool,
@@ -26,27 +27,37 @@ pub struct ChatRequest {
 
 #[post("/send")]
 pub async fn send_message(
+    req: actix_web::HttpRequest,
+    config: web::Data<JwtConfig>,
     form: web::Form<ChatRequest>,
     state: web::Data<ChatState>,
 ) -> impl Responder {
-    let message_id = Uuid::new_v4().to_string();
-    let mut req = form.into_inner();
-    req.message = req.message.trim().to_string();
+    let _username = match quench_srv::actix::routers::ui::get_user_from_req(&req, &config).await {
+        Some(claims) => claims.sub,
+        None => return HttpResponse::Unauthorized().finish(),
+    };
 
-    let user_preview: String = req.message.chars().take(30).collect();
-    let user_preview = if req.message.chars().count() > 30 {
+    let message_id = Uuid::new_v4().to_string();
+    let mut chat_req = form.into_inner();
+    chat_req.message = chat_req.message.trim().to_string();
+
+    state
+        .pending_messages
+        .insert(message_id.clone(), chat_req.clone());
+
+    let mut stream_url = with_base_path(&format!("/ui/chat/stream/{}", message_id));
+    if let Some(ref pid) = chat_req.project_id {
+        stream_url = format!("{}?project_id={}", stream_url, pid);
+    }
+
+    let user_preview: String = chat_req.message.chars().take(30).collect();
+    let user_preview = if chat_req.message.chars().count() > 30 {
         format!("{}...", user_preview)
     } else {
         user_preview
     };
 
-    state
-        .pending_messages
-        .insert(message_id.clone(), req.clone());
-
-    let stream_url = with_base_path(&format!("/ui/chat/stream/{}", message_id));
-
-    if req.skip_user_message {
+    if chat_req.skip_user_message {
         // For regeneration, we don't show the user message again, just the thinking block
         let ai_msg = div()
             .class("chat-message message-ai")
@@ -85,7 +96,7 @@ pub async fn send_message(
             div()
                 .class("message-inner")
                 .raw()
-                .text(format_message(&req.message))
+                .text(format_message(&chat_req.message))
                 .child(div().class("branch-controls").child(edit_btn)),
         );
 
@@ -150,12 +161,19 @@ fn encode_sse(event: &str, data: &str) -> actix_web::web::Bytes {
 #[get("/stream/{id}")]
 pub async fn stream_message(
     id: web::Path<String>,
+    req_http: actix_web::HttpRequest,
+    jwt_config: web::Data<JwtConfig>,
     state: web::Data<ChatState>,
     switchboard: web::Data<SwitchboardClient>,
     vllm: web::Data<VllmClient>,
     config: web::Data<SageConfig>,
     db: web::Data<quench_db::prelude::Db>,
 ) -> impl Responder {
+    let username = match quench_srv::actix::routers::ui::get_user_from_req(&req_http, &jwt_config).await {
+        Some(claims) => claims.sub,
+        None => return HttpResponse::Unauthorized().finish(),
+    };
+
     let message_id = id.into_inner();
 
     let req = match state.pending_messages.get(&message_id) {
@@ -272,8 +290,10 @@ pub async fn stream_message(
     let mut full_content = String::new();
     let message_id_clone = message_id.clone();
     let db_clone = db.clone();
+    let username_clone = username.clone();
 
     let sse_stream = async_stream::stream! {
+        let username = username_clone;
         let mut stream = stream;
         while let Some(res) = stream.next().await {
             match res {
@@ -332,6 +352,8 @@ pub async fn stream_message(
             id: req.conversation_id.clone(),
             title,
             active_message_id: active_message_id.clone(), // Use previous tip for now
+            owner: username.clone(),
+            project_id: req.project_id.clone(),
             updated_at,
         };
 
@@ -541,19 +563,17 @@ pub async fn stream_message(
 
         }
 
-        // We send all OOB transitions.
-        yield Ok::<_, actix_web::Error>(encode_sse("message", &format!(
+        let mut final_payload = format!(
             "{}{}{}{}",
             oob_transition.render(),
             ai_nav_dot_transition.render(),
             user_oob_transition,
             user_nav_dot_transition
-        )));
+        );
 
-
-        let mut oob_history_list = String::new();
         // Generate updated history list for OOB swap
         if let Ok(mut conversations) = conv_repo.list().await {
+            conversations.retain(|c| c.owner == username);
             conversations.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
 
             let mut history_list = div()
@@ -561,11 +581,109 @@ pub async fn stream_message(
                 .attr("id", "history-list")
                 .attr("hx-swap-oob", "true");
 
-            for conv_item in &conversations {
+            // Projects Section
+            let project_repo = db_clone.repository::<crate::models::Project>();
+            if let Ok(mut projects) = project_repo.list().await {
+                projects.retain(|p| p.owner == username);
+                projects.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+
+                let has_projects = !projects.is_empty();
+                let projects_open_class = if has_projects { "open" } else { "" };
+                
+                history_list = history_list.child(
+                    div()
+                        .class(format!("history-section-header collapsible {}", projects_open_class))
+                        .attr("onclick", "this.classList.toggle('open'); const content = this.nextElementSibling; if(content) { content.classList.toggle('hidden'); }")
+                        .child(
+                            div()
+                                .attr("style", "display: flex; align-items: center; gap: 0.5rem;")
+                                .child(i().class("fas fa-chevron-right chevron"))
+                                .child(span().text("Projects"))
+                        )
+                        .child(
+                            button()
+                                .class("branch-btn")
+                                .attr("onclick", "event.stopPropagation();")
+                                .attr("hx-get", with_base_path("/ui/projects/new-modal"))
+                                .attr("hx-target", "body")
+                                .attr("hx-swap", "beforeend")
+                                .child(i().class("fas fa-plus"))
+                                .child(span().text("New")),
+                        ),
+                );
+
+                let mut projects_content = div().class("history-section-content");
+                if !has_projects {
+                    projects_content = projects_content.class("hidden");
+                }
+
+                for project in &projects {
+                    let is_active = Some(project.id.clone()) == req.project_id;
+                    let item_class = if is_active { "history-item active project-item" } else { "history-item project-item" };
+                    let link_class = if is_active { "history-item-link active" } else { "history-item-link" };
+                    let icon_class = if is_active { "fas fa-folder-open" } else { "fas fa-folder" };
+
+                    let item = div().class(item_class).child(
+                        a().class(link_class)
+                            .attr("href", with_base_path(&format!("/ui/home?project_id={}", project.id)))
+                            .child(i().class(icon_class).attr("style", "margin-right: 8px;"))
+                            .child(span().text(&project.name)),
+                    );
+                    projects_content = projects_content.child(item);
+
+                    let project_convs: Vec<_> = conversations.iter().filter(|c| c.project_id.as_deref() == Some(&project.id)).collect();
+                    for conv_item in project_convs {
+                        let is_conv_active = conv_item.id == req.conversation_id;
+                        let conv_item_class = if is_conv_active { "history-item active project-conv-item" } else { "history-item project-conv-item" };
+                        let conv_link_class = if is_conv_active { "history-item-link active" } else { "history-item-link" };
+                        let item_id = format!("history-item-{}", conv_item.id);
+                        let conv_url = format!("/ui/home?conversation_id={}&project_id={}", conv_item.id, project.id);
+
+                        let item = div().class(conv_item_class).attr("id", &item_id).child(
+                            a().class(conv_link_class).attr("href", with_base_path(&conv_url)).text(&conv_item.title)
+                        ).child(
+                            div().class("menu-container").child(
+                                button().class("menu-trigger-btn").child(i().class("fas fa-ellipsis-v"))
+                            ).child(
+                                div().class("dropdown-menu").child(
+                                    button().class("dropdown-item delete-item")
+                                    .attr("hx-get", with_base_path(&format!("/ui/chat/conversations/delete-modal/{}?active_id={}", conv_item.id, req.conversation_id)))
+                                    .attr("hx-target", "#confirm-delete-modal")
+                                    .attr("hx-swap", "outerHTML")
+                                    .child(i().class("fas fa-trash")).child(span().text("Delete"))
+                                )
+                            )
+                        );
+                        projects_content = projects_content.child(item);
+                    }
+                }
+                history_list = history_list.child(projects_content);
+            }
+
+            // Conversations Section
+            let conv_header_text = "History";
+            history_list = history_list.child(
+                div()
+                    .class("history-section-header collapsible open")
+                    .attr("style", "margin-top: 1.5rem;")
+                    .attr("onclick", "this.classList.toggle('open'); const content = this.nextElementSibling; if(content) { content.classList.toggle('hidden'); }")
+                    .child(
+                        div()
+                            .attr("style", "display: flex; align-items: center; gap: 0.5rem;")
+                            .child(i().class("fas fa-chevron-right chevron"))
+                            .child(span().text(conv_header_text))
+                    )
+            );
+
+            let mut global_content = div().class("history-section-content");
+
+            let global_convs: Vec<_> = conversations.iter().filter(|c| c.project_id.is_none()).collect();
+            for conv_item in global_convs {
                 let is_active = conv_item.id == req.conversation_id;
                 let item_class = if is_active { "history-item active" } else { "history-item" };
                 let link_class = if is_active { "history-item-link active" } else { "history-item-link" };
                 let item_id = format!("history-item-{}", conv_item.id);
+                let conv_url = format!("/ui/home?conversation_id={}", conv_item.id);
 
                 let item = div()
                     .class(item_class)
@@ -573,7 +691,7 @@ pub async fn stream_message(
                     .child(
                         a()
                             .class(link_class)
-                            .attr("href", with_base_path(&format!("/ui/home?conversation_id={}", conv_item.id)))
+                            .attr("href", with_base_path(&conv_url))
                             .text(&conv_item.title)
                     )
                     .child(
@@ -598,14 +716,13 @@ pub async fn stream_message(
                                     )
                             )
                     );
-                history_list = history_list.child(item);
+                global_content = global_content.child(item);
             }
-            oob_history_list = history_list.render();
+            history_list = history_list.child(global_content);
+            final_payload.push_str(&history_list.render());
         }
 
-        if !oob_history_list.is_empty() {
-            yield Ok::<_, actix_web::Error>(encode_sse("message", &oob_history_list));
-        }
+        yield Ok::<_, actix_web::Error>(encode_sse("message", &final_payload));
         state.pending_messages.remove(&message_id_clone);
     };
 
@@ -1083,6 +1200,12 @@ pub async fn regenerate(
         return HttpResponse::BadRequest().body("Message has no parent to regenerate from");
     };
 
+    let conv_repo = db.repository::<crate::models::Conversation>();
+    let project_id = match conv_repo.read(&msg.conversation_id).await {
+        Ok(Some(conv)) => conv.project_id,
+        _ => None,
+    };
+
     let Ok(Some(parent_msg)) = repo.read(&parent_id).await else {
         return HttpResponse::NotFound().body("Parent message not found");
     };
@@ -1098,6 +1221,7 @@ pub async fn regenerate(
         instance_id: instance.id.clone(),
         message: parent_msg.content,
         conversation_id: msg.conversation_id,
+        project_id,
         parent_id: Some(parent_id),
         skip_user_message: true,
     };

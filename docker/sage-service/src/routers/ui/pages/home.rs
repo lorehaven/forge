@@ -4,6 +4,7 @@ use crate::routers::ui::chat::{
     ChatRequest, ChatState, get_conversation_message_nodes, get_siblings,
 };
 use crate::routers::ui::common::{UiPageKind, render_page};
+use crate::routers::ui::common;
 use actix_web::{HttpResponse, Responder, get, web};
 use quench_db::prelude::{Crud, Db};
 use quench_srv::actix::routers::ui::pages::home::handle_home;
@@ -13,6 +14,7 @@ use quench_web::prelude::*;
 #[derive(serde::Deserialize)]
 pub struct HomeQuery {
     pub conversation_id: Option<String>,
+    pub project_id: Option<String>,
 }
 
 async fn handle_home_page(
@@ -23,10 +25,22 @@ async fn handle_home_page(
     chat_state: web::Data<ChatState>,
     query: web::Query<HomeQuery>,
 ) -> impl Responder {
+    let username = match quench_srv::actix::routers::ui::get_user_from_req(&req, &config).await {
+        Some(claims) => claims.sub,
+        None => return common::ui_login_redirect().map_into_right_body(),
+    };
+
     let instances = switchboard.get_vllm_instances().await;
 
-    let repo = db.repository::<Conversation>();
-    let mut conversations = repo.list().await.unwrap_or_default();
+    // Fetch user's projects
+    let project_repo = db.repository::<crate::models::Project>();
+    let mut projects = project_repo.list().await.unwrap_or_default();
+    projects.retain(|p| p.owner == username);
+    projects.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+
+    let conv_repo = db.repository::<Conversation>();
+    let mut conversations = conv_repo.list().await.unwrap_or_default();
+    conversations.retain(|c| c.owner == username);
     conversations.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
 
     let active_id = query
@@ -35,9 +49,9 @@ async fn handle_home_page(
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
     let mut active_messages = Vec::new();
-    let mut active_message_id = None;
+    let mut active_message_id: Option<String> = None;
     if let Some(ref cid) = query.conversation_id
-        && let Ok(Some(conv)) = repo.read(cid).await
+        && let Ok(Some(conv)) = conv_repo.read(cid).await
     {
         active_message_id = conv.active_message_id;
     }
@@ -67,6 +81,7 @@ async fn handle_home_page(
             instance_id: instance.id.clone(),
             message: last_msg.content.clone(),
             conversation_id: last_msg.conversation_id.clone(),
+            project_id: query.project_id.clone(),
             parent_id: Some(last_msg.id.clone()),
             skip_user_message: true, // DB message already exists
         };
@@ -79,13 +94,16 @@ async fn handle_home_page(
     handle_home(req, config, move || {
         render_home_page(
             instances,
+            projects,
             conversations,
             active_id,
             active_messages,
             auto_trigger_ai,
+            query.project_id.clone(),
         )
     })
     .await
+    .map_into_left_body()
 }
 
 #[get("/home")]
@@ -114,10 +132,12 @@ pub(super) async fn home_slash(
 
 fn render_home_page(
     instances_res: anyhow::Result<Vec<VllmInstance>>,
+    projects: Vec<crate::models::Project>,
     conversations: Vec<Conversation>,
     active_id: String,
     active_messages: Vec<(crate::models::Message, Vec<crate::models::Message>)>,
     auto_trigger_ai: Option<String>,
+    project_id: Option<String>,
 ) -> HttpResponse {
     let mut model_select = select().class("model-selector").attr("id", "model-select");
 
@@ -204,16 +224,125 @@ fn render_home_page(
         );
 
     // Sidebar
-    let sidebar_header = div().class("sidebar-header").child(
+    let mut sidebar_header = div().class("sidebar-header");
+
+    let mut new_chat_url = with_base_path("/ui/home");
+    if let Some(ref pid) = project_id {
+        new_chat_url = format!("{}?project_id={}", new_chat_url, pid);
+    }
+
+    sidebar_header = sidebar_header.child(
         a().class("new-chat-btn")
-            .attr("href", with_base_path("/ui/home"))
+            .attr("href", new_chat_url)
             .child(i().class("fas fa-plus"))
             .child(span().text("New Chat")),
     );
 
     let mut history_list = div().class("history-list").attr("id", "history-list");
 
-    for conv in &conversations {
+    // Projects Section
+    let has_projects = !projects.is_empty();
+    let projects_open_class = if has_projects { "open" } else { "" };
+    
+    let projects_header = div()
+        .class(format!("history-section-header collapsible {}", projects_open_class))
+        .attr("onclick", "this.classList.toggle('open'); const content = this.nextElementSibling; if(content) { content.classList.toggle('hidden'); }")
+        .child(
+            div()
+                .attr("style", "display: flex; align-items: center; gap: 0.5rem;")
+                .child(i().class("fas fa-chevron-right chevron"))
+                .child(span().text("Projects"))
+        )
+        .child(
+            button()
+                .class("branch-btn")
+                .attr("onclick", "event.stopPropagation();") // Prevent toggling when clicking New
+                .attr("hx-get", with_base_path("/ui/projects/new-modal"))
+                .attr("hx-target", "body")
+                .attr("hx-swap", "beforeend")
+                .child(i().class("fas fa-plus"))
+                .child(span().text("New")),
+        );
+
+    history_list = history_list.child(projects_header);
+
+    let mut projects_content = div().class("history-section-content");
+    if !has_projects {
+        projects_content = projects_content.class("hidden");
+    }
+
+    for project in &projects {
+        let is_active = Some(project.id.clone()) == project_id;
+        let item_class = if is_active {
+            "history-item active project-item"
+        } else {
+            "history-item project-item"
+        };
+        let link_class = if is_active {
+            "history-item-link active"
+        } else {
+            "history-item-link"
+        };
+
+        let icon_class = if is_active { "fas fa-folder-open" } else { "fas fa-folder" };
+
+        let item = div().class(item_class).child(
+            a().class(link_class)
+                .attr("href", with_base_path(&format!("/ui/home?project_id={}", project.id)))
+                .child(i().class(icon_class).attr("style", "margin-right: 8px;"))
+                .child(span().text(&project.name)),
+        );
+        projects_content = projects_content.child(item);
+
+        let project_convs: Vec<_> = conversations.iter().filter(|c| c.project_id.as_deref() == Some(&project.id)).collect();
+        for conv in project_convs {
+            let is_conv_active = conv.id == active_id;
+            let conv_item_class = if is_conv_active { "history-item active project-conv-item" } else { "history-item project-conv-item" };
+            let conv_link_class = if is_conv_active { "history-item-link active" } else { "history-item-link" };
+            let item_id = format!("history-item-{}", conv.id);
+            let conv_url = format!("/ui/home?conversation_id={}&project_id={}", conv.id, project.id);
+            
+            let conv_item = div().class(conv_item_class).attr("id", &item_id).child(
+                a().class(conv_link_class).attr("href", with_base_path(&conv_url)).text(&conv.title)
+            ).child(
+                div().class("menu-container").child(
+                    button().class("menu-trigger-btn").child(i().class("fas fa-ellipsis-v"))
+                ).child(
+                    div().class("dropdown-menu").child(
+                        button().class("dropdown-item delete-item")
+                        .attr("hx-get", with_base_path(&format!("/ui/chat/conversations/delete-modal/{}?active_id={}", conv.id, active_id)))
+                        .attr("hx-target", "#confirm-delete-modal")
+                        .attr("hx-swap", "outerHTML")
+                        .child(i().class("fas fa-trash")).child(span().text("Delete"))
+                    )
+                )
+            );
+            projects_content = projects_content.child(conv_item);
+        }
+    }
+    
+    history_list = history_list.child(projects_content);
+
+    // Conversations Section
+    let conv_header_text = "History";
+
+    history_list = history_list.child(
+        div()
+            .class("history-section-header collapsible open")
+            .attr("style", "margin-top: 1.5rem;")
+            .attr("onclick", "this.classList.toggle('open'); const content = this.nextElementSibling; if(content) { content.classList.toggle('hidden'); }")
+            .child(
+                div()
+                    .attr("style", "display: flex; align-items: center; gap: 0.5rem;")
+                    .child(i().class("fas fa-chevron-right chevron"))
+                    .child(span().text(conv_header_text))
+            )
+    );
+
+    let mut global_content = div().class("history-section-content");
+
+    let global_convs: Vec<_> = conversations.iter().filter(|c| c.project_id.is_none()).collect();
+    for conv in global_convs {
         let is_active = conv.id == active_id;
         let item_class = if is_active {
             "history-item active"
@@ -227,6 +356,8 @@ fn render_home_page(
         };
         let item_id = format!("history-item-{}", conv.id);
 
+        let conv_url = format!("/ui/home?conversation_id={}", conv.id);
+
         let item = div()
             .class(item_class)
             .attr("id", &item_id)
@@ -234,7 +365,7 @@ fn render_home_page(
                 a().class(link_class)
                     .attr(
                         "href",
-                        with_base_path(&format!("/ui/home?conversation_id={}", conv.id)),
+                        with_base_path(&conv_url),
                     )
                     .text(&conv.title),
             )
@@ -264,8 +395,10 @@ fn render_home_page(
                         ),
                     ),
             );
-        history_list = history_list.child(item);
+        global_content = global_content.child(item);
     }
+    
+    history_list = history_list.child(global_content);
 
     let sidebar = div()
         .class("history-sidebar")
@@ -517,14 +650,21 @@ fn render_home_page(
                         .child(history_div)
                         .child(nav_div)
                         .child(
-                            form()
-                                .attr("hx-post", with_base_path("/ui/chat/send"))
-                                .attr("hx-target", ".chat-history")
-                                .attr("hx-swap", "beforeend")
-                                .attr("hx-on::after-request", "if(event.detail.successful) { document.getElementById('chat-input').value = ''; document.getElementById('chat-input').style.height = 'auto'; const history = document.querySelector('.chat-history'); history.scrollTop = history.scrollHeight; }")
-                                .class("chat-input-wrapper")
-                                .child(input().attr("type", "hidden").attr("name", "conversation_id").attr("value", &active_id))
-                                .child(input_area_container)
+                            {
+                                let mut f = form()
+                                    .attr("hx-post", with_base_path("/ui/chat/send"))
+                                    .attr("hx-target", ".chat-history")
+                                    .attr("hx-swap", "beforeend")
+                                    .attr("hx-on::after-request", "if(event.detail.successful) { document.getElementById('chat-input').value = ''; document.getElementById('chat-input').style.height = 'auto'; const history = document.querySelector('.chat-history'); history.scrollTop = history.scrollHeight; }")
+                                    .class("chat-input-wrapper")
+                                    .child(input().attr("type", "hidden").attr("name", "conversation_id").attr("value", &active_id));
+                                
+                                if let Some(ref pid) = project_id {
+                                    f = f.child(input().attr("type", "hidden").attr("name", "project_id").attr("value", pid));
+                                }
+                                
+                                f.child(input_area_container)
+                            }
                         )
                 )
         )
