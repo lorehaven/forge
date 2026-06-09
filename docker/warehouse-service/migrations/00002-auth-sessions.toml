@@ -1,0 +1,18 @@
+[[migrations]]
+id = "0002-auth-sessions"
+author = "quench-srv"
+
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS warehouse.sessions (
+    id TEXT PRIMARY KEY,
+    username TEXT NOT NULL REFERENCES warehouse.users(username) ON DELETE CASCADE,
+    refresh_token_hash TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    revoked_at TEXT
+);
+"""
+
+[[migrations.changes]]
+sql = "CREATE INDEX IF NOT EXISTS warehouse_sessions_username_idx ON warehouse.sessions(username);"

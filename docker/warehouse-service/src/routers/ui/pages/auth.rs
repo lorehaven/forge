@@ -4,6 +4,7 @@ use quench_srv::actix::routers::ui::pages::auth::{
     LoginForm, LoginQuery, handle_login_submit, handle_logout, login_form_element,
 };
 use quench_srv::prelude::JwtConfig;
+use quench_srv::prelude::SessionDb;
 use quench_srv::prelude::UserDb;
 use quench_web::prelude::*;
 
@@ -22,13 +23,18 @@ pub(super) async fn login_submit(
     form: web::Form<LoginForm>,
     config: web::Data<JwtConfig>,
     user_db: web::Data<UserDb>,
+    session_db: web::Data<SessionDb>,
 ) -> impl Responder {
-    handle_login_submit(form, config, user_db).await
+    handle_login_submit(form, config, user_db, session_db).await
 }
 
 #[get("/logout")]
-pub(super) async fn logout(config: web::Data<JwtConfig>) -> impl Responder {
-    handle_logout(config).await
+pub(super) async fn logout(
+    req: actix_web::HttpRequest,
+    config: web::Data<JwtConfig>,
+    session_db: web::Data<SessionDb>,
+) -> impl Responder {
+    handle_logout(req, config, session_db).await
 }
 
 fn render_login_page(error: bool) -> HttpResponse {

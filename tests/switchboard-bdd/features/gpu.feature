@@ -5,6 +5,7 @@ Feature: GPU API
 
   Background:
     Given switchboard API is available
+    And I am authenticated
 
   Scenario: Get GPU status JSON
     When GET request is sent to "/api/v1/gpu/status"

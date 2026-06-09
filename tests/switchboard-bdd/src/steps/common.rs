@@ -14,6 +14,7 @@ pub struct SwitchboardWorld {
     pub last_headers: reqwest::header::HeaderMap,
     pub last_response_headers: reqwest::header::HeaderMap,
     pub last_id: Option<String>,
+    pub credentials: Option<(String, String)>,
 }
 
 impl SwitchboardWorld {
@@ -38,7 +39,15 @@ impl SwitchboardWorld {
             last_headers: reqwest::header::HeaderMap::new(),
             last_response_headers: reqwest::header::HeaderMap::new(),
             last_id: None,
+            credentials: None,
         }
+    }
+
+    pub fn apply_auth(&self, mut rb: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        if let Some((username, password)) = &self.credentials {
+            rb = rb.basic_auth(username, Some(password));
+        }
+        rb
     }
 
     pub async fn record_response(&mut self, res: Response) {
@@ -100,6 +109,11 @@ async fn api_available(world: &mut SwitchboardWorld) {
     );
 }
 
+#[cucumber::given("I am authenticated")]
+async fn authenticated(world: &mut SwitchboardWorld) {
+    world.credentials = Some(("admin".to_string(), "password".to_string()));
+}
+
 #[cucumber::then(expr = "response status should be {int}")]
 async fn check_status(world: &mut SwitchboardWorld, status: u16) {
     assert_eq!(world.last_status.expect("No response available"), status);
@@ -108,12 +122,9 @@ async fn check_status(world: &mut SwitchboardWorld, status: u16) {
 #[cucumber::when(expr = "GET request is sent to {string}")]
 async fn send_get_request(world: &mut SwitchboardWorld, path: String) {
     let url = format!("{}{}", world.api_url, path);
-    let res = world
-        .client
-        .get(&url)
-        .send()
-        .await
-        .expect("Failed to send GET request");
+    let mut rb = world.client.get(&url);
+    rb = world.apply_auth(rb);
+    let res = rb.send().await.expect("Failed to send GET request");
     world.last_response_headers = res.headers().clone();
     world.record_response(res).await;
 }
@@ -151,12 +162,9 @@ async fn send_delete_request(world: &mut SwitchboardWorld, path: String) {
         resolved_path = resolved_path.replace("{last_id}", id);
     }
     let url = format!("{}{}", world.api_url, resolved_path);
-    let res = world
-        .client
-        .delete(&url)
-        .send()
-        .await
-        .expect("Failed to send DELETE request");
+    let mut rb = world.client.delete(&url);
+    rb = world.apply_auth(rb);
+    let res = rb.send().await.expect("Failed to send DELETE request");
     world.last_response_headers = res.headers().clone();
     world.record_response(res).await;
 }

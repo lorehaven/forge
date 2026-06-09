@@ -1,6 +1,7 @@
 use crate::actix::domain::auth::UserDb;
 use crate::actix::domain::db::DbWrapper;
 use crate::actix::domain::jwt::JwtConfig;
+use crate::actix::domain::session::SessionDb;
 use crate::prelude::normalize_base_path;
 use actix_service::ServiceFactory;
 use actix_web::dev::{HttpServiceFactory, ServiceRequest, ServiceResponse};
@@ -55,6 +56,7 @@ where
     };
     let jwt_config = JwtConfig::init();
     let user_db = UserDb::init(db_wrapper.db.clone()).await;
+    let session_db = SessionDb::init(db_wrapper.db.clone());
     let health_state = routers::health::HealthState::live();
     let (https_addr, http_addr) = get_server_addr();
 
@@ -70,11 +72,13 @@ where
             .app_data(web::Data::new(db_wrapper.db.clone()))
             .app_data(web::Data::new(jwt_config.clone()))
             .app_data(web::Data::from(user_db.clone()))
+            .app_data(web::Data::from(session_db.clone()))
             .app_data(web::Data::new(health_state.clone()))
             .wrap(middleware::logger::FilteredLogger::default())
             .service(
                 web::scope(&base_path)
                     .service(routers::health::scope())
+                    .service(routers::auth::scope())
                     .service(routers::swagger::swagger_redirect)
                     .service(routers::swagger::swagger_index_redirect)
                     .service(scoped_module()),

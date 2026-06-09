@@ -35,14 +35,14 @@ async fn root_slash(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -
 // Scope
 // ---------------------------------------------------------------------------
 
-pub fn scope() -> impl HttpServiceFactory {
+pub fn scope(jwt_config: JwtConfig) -> impl HttpServiceFactory {
     web::scope("/ui")
         // Root
         .service(root)
         .service(root_slash)
         .service(assets)
         // Chat
-        .service(chat::scope())
+        .service(chat::scope().wrap(quench_srv::actix::middleware::auth::Auth::new(jwt_config)))
         // Auth
         .service(pages::auth::login)
         .service(pages::auth::login_slash)

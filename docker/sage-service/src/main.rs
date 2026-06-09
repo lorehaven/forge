@@ -1,5 +1,6 @@
 use actix_web::dev::HttpServiceFactory;
 use dashmap::DashMap;
+use quench_srv::prelude::JwtConfig;
 use quench_srv::prelude::{DbWrapper, serve, wait_for_services};
 
 mod clients;
@@ -16,13 +17,14 @@ pub fn base_path_scope(
     vllm: clients::vllm::VllmClient,
     config: config::SageConfig,
     chat_state: actix_web::web::Data<routers::ui::chat::ChatState>,
+    jwt_config: JwtConfig,
 ) -> impl HttpServiceFactory {
     actix_web::web::scope("")
         .app_data(actix_web::web::Data::new(switchboard))
         .app_data(actix_web::web::Data::new(vllm))
         .app_data(actix_web::web::Data::new(config))
         .app_data(chat_state)
-        .service(routers::base_path_scope())
+        .service(routers::base_path_scope(jwt_config))
 }
 
 #[actix_web::main]
@@ -38,6 +40,7 @@ async fn main() -> std::io::Result<()> {
     let switchboard = clients::switchboard::SwitchboardClient::new();
     let vllm = clients::vllm::VllmClient::new();
     let config = config::SageConfig::load();
+    let jwt_config = JwtConfig::init();
     let chat_state = actix_web::web::Data::new(routers::ui::chat::ChatState {
         pending_messages: DashMap::new(),
     });
@@ -118,6 +121,7 @@ async fn main() -> std::io::Result<()> {
                 vllm.clone(),
                 config.clone(),
                 chat_state.clone(),
+                jwt_config.clone(),
             )
         },
         Some(db_wrapper),

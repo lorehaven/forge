@@ -102,6 +102,7 @@ where
                                     user.username.clone(),
                                     config.service_name.clone(),
                                     roles,
+                                    None,
                                     3600,
                                 );
                                 req.extensions_mut().insert(claims);
@@ -146,10 +147,30 @@ where
                         Ok(req.into_response(res))
                     });
                 }
-                req.extensions_mut().insert(claims);
-                let fut = self.service.call(req);
+
+                let session_db = req
+                    .app_data::<web::Data<crate::actix::domain::session::SessionDb>>()
+                    .cloned();
+                let service = self.service.clone();
                 Box::pin(async move {
-                    let res = fut.await?;
+                    if let Some(session_id) = claims.sid.as_deref() {
+                        let active = match session_db {
+                            Some(session_db) => session_db
+                                .is_active(session_id, &claims.sub)
+                                .await
+                                .unwrap_or(false),
+                            None => false,
+                        };
+                        if !active {
+                            let res = actix_web::HttpResponse::Unauthorized()
+                                .finish()
+                                .map_into_right_body();
+                            return Ok(req.into_response(res));
+                        }
+                    }
+
+                    req.extensions_mut().insert(claims);
+                    let res = service.call(req).await?;
                     Ok(res.map_into_left_body())
                 })
             }

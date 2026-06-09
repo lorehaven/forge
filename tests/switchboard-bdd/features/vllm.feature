@@ -5,6 +5,7 @@ Feature: vLLM Management API
 
   Background:
     Given switchboard API is available
+    And I am authenticated
 
   Scenario: List vLLM instances
     When GET request is sent to "/api/v1/vllm/list"

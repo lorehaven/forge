@@ -53,6 +53,7 @@ pub async fn handle(
         scope: query.scope.clone().unwrap_or("docker".to_string()),
         iat: now.timestamp() as usize,
         exp: exp.timestamp() as usize,
+        sid: None,
     };
 
     let token = encode(

@@ -1,5 +1,7 @@
 use crate::actix::domain::auth::UserDb;
-use crate::actix::domain::jwt::{Claims, JwtConfig};
+use crate::actix::domain::jwt::JwtConfig;
+use crate::actix::domain::session::SessionDb;
+use crate::actix::routers::auth::{access_cookie, issue_token_pair, refresh_cookie};
 use crate::actix::routers::ui::ui_path;
 use crate::prelude::with_base_path;
 use actix_web::{
@@ -71,6 +73,7 @@ pub async fn handle_login_submit(
     form: web::Form<LoginForm>,
     config: web::Data<JwtConfig>,
     user_db: web::Data<UserDb>,
+    session_db: web::Data<SessionDb>,
 ) -> HttpResponse {
     if !config.auth_enabled {
         return HttpResponse::Found()
@@ -84,51 +87,49 @@ pub async fn handle_login_submit(
             .finish();
     };
 
-    let roles = user
-        .get_roles()
-        .iter()
-        .map(|r| format!("{:?}", r).to_lowercase())
-        .collect::<Vec<_>>()
-        .join(" ");
-
-    let claims = Claims::new(
-        user.username.clone(),
-        config.service_name.clone(),
-        roles,
-        3600 * 24, // 24 hours
-    );
-
-    let Ok(token) = config.encode_claims(&claims) else {
+    let Ok(tokens) = issue_token_pair(&config, &session_db, &user).await else {
         return HttpResponse::Found()
             .append_header(("Location", with_base_path("/ui/login?err=1")))
             .finish();
     };
 
-    let cookie_name = format!("{}_ui_session", config.service_name);
-    let cookie = Cookie::build(cookie_name, token)
-        .path("/")
-        .http_only(true)
-        .same_site(SameSite::Lax)
-        .secure(true)
-        .finish();
+    let access_cookie = access_cookie(&config, tokens.access_token);
+    let refresh_cookie = refresh_cookie(&config, tokens.refresh_token);
 
     HttpResponse::Found()
-        .cookie(cookie)
+        .cookie(access_cookie)
+        .cookie(refresh_cookie)
         .append_header(("Location", with_base_path("/ui/home")))
         .finish()
 }
 
-pub async fn handle_logout(config: web::Data<JwtConfig>) -> HttpResponse {
+pub async fn handle_logout(
+    request: actix_web::HttpRequest,
+    config: web::Data<JwtConfig>,
+    session_db: web::Data<SessionDb>,
+) -> HttpResponse {
+    let refresh_cookie_name = format!("{}_refresh_token", config.service_name);
+    if let Some(cookie) = request.cookie(&refresh_cookie_name) {
+        let _ = session_db.revoke_by_refresh_token(cookie.value()).await;
+    }
+
     let cookie_name = format!("{}_ui_session", config.service_name);
-    let cookie = Cookie::build(cookie_name, "")
+    let access_cookie = Cookie::build(cookie_name, "")
         .path("/")
         .http_only(true)
-        .same_site(SameSite::Lax)
+        .same_site(SameSite::Strict)
+        .max_age(actix_web::cookie::time::Duration::seconds(0))
+        .finish();
+    let refresh_cookie = Cookie::build(refresh_cookie_name, "")
+        .path("/")
+        .http_only(true)
+        .same_site(SameSite::Strict)
         .max_age(actix_web::cookie::time::Duration::seconds(0))
         .finish();
 
     HttpResponse::Found()
-        .cookie(cookie)
+        .cookie(access_cookie)
+        .cookie(refresh_cookie)
         .append_header(("Location", with_base_path("/ui/login")))
         .finish()
 }

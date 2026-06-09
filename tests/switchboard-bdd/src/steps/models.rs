@@ -9,9 +9,9 @@ async fn send_post_request_with_body(
 ) {
     let body = step.docstring().expect("Step must have a docstring");
     let url = format!("{}{}", world.api_url, path);
-    let res = world
-        .client
-        .post(&url)
+    let mut rb = world.client.post(&url);
+    rb = world.apply_auth(rb);
+    let res = rb
         .header("Content-Type", "application/json")
         .body(body.to_string())
         .send()

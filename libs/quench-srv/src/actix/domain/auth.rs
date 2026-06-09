@@ -1,6 +1,9 @@
+use argon2::{
+    Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
+    password_hash::{SaltString, rand_core::OsRng},
+};
 use quench_db::prelude::{Crud, Db, Model, Repository};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha512};
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, sqlx::Type)]
@@ -20,18 +23,29 @@ pub struct User {
 }
 
 impl User {
-    pub fn new(username: String, password: String, roles: Vec<Role>) -> Self {
-        Self {
+    pub fn new(username: String, password: String, roles: Vec<Role>) -> anyhow::Result<Self> {
+        Ok(Self {
             username,
-            password: Self::hash_password(&password),
+            password: Self::hash_password(&password)?,
             roles: serde_json::to_value(roles).unwrap(),
-        }
+        })
     }
 
-    pub fn hash_password(password: &str) -> String {
-        let mut hasher = Sha512::new();
-        hasher.update(password.as_bytes());
-        hex::encode(hasher.finalize())
+    pub fn hash_password(password: &str) -> anyhow::Result<String> {
+        let salt = SaltString::generate(&mut OsRng);
+        Ok(Argon2::default()
+            .hash_password(password.as_bytes(), &salt)
+            .map_err(|err| anyhow::anyhow!("failed to hash password: {err}"))?
+            .to_string())
+    }
+
+    pub fn verify_password(&self, password: &str) -> bool {
+        let Ok(hash) = PasswordHash::new(&self.password) else {
+            return false;
+        };
+        Argon2::default()
+            .verify_password(password.as_bytes(), &hash)
+            .is_ok()
     }
 
     pub fn get_roles(&self) -> Vec<Role> {
@@ -70,17 +84,12 @@ impl UserDb {
         if auth_enabled {
             let admin_user = envmnt::get_or_panic("SERVICE_USERNAME");
             let admin_pass = envmnt::get_or_panic("SERVICE_PASSWORD");
-            let hashed_admin_pass = User::hash_password(&admin_pass);
-
-            if let Some(user) = arc_db.get_user(&admin_user).await {
-                if user.password != hashed_admin_pass {
-                    arc_db
-                        .add_user(User::new(admin_user, admin_pass, vec![Role::Admin]))
-                        .await;
-                }
-            } else {
+            if arc_db.get_user(&admin_user).await.is_none() {
                 arc_db
-                    .add_user(User::new(admin_user, admin_pass, vec![Role::Admin]))
+                    .add_user(
+                        User::new(admin_user, admin_pass, vec![Role::Admin])
+                            .expect("failed to hash admin password"),
+                    )
                     .await;
             }
 
@@ -94,19 +103,16 @@ impl UserDb {
                 &envmnt::get_or("TECH_PASSWORD", ""),
             );
 
-            if !tech_user.is_empty() && !tech_pass.is_empty() {
-                let hashed_tech_pass = User::hash_password(&tech_pass);
-                if let Some(user) = arc_db.get_user(&tech_user).await {
-                    if user.password != hashed_tech_pass {
-                        arc_db
-                            .add_user(User::new(tech_user, tech_pass, vec![Role::Service]))
-                            .await;
-                    }
-                } else {
-                    arc_db
-                        .add_user(User::new(tech_user, tech_pass, vec![Role::Service]))
-                        .await;
-                }
+            if !tech_user.is_empty()
+                && !tech_pass.is_empty()
+                && arc_db.get_user(&tech_user).await.is_none()
+            {
+                arc_db
+                    .add_user(
+                        User::new(tech_user, tech_pass, vec![Role::Service])
+                            .expect("failed to hash service password"),
+                    )
+                    .await;
             }
         }
 
@@ -130,11 +136,27 @@ impl UserDb {
 
     pub async fn validate(&self, username: &str, password: &str) -> Option<User> {
         let user = self.get_user(username).await?;
-        let hashed_password = User::hash_password(password);
-        if user.password == hashed_password {
-            Some(user)
-        } else {
-            None
-        }
+        let verify_user = user.clone();
+        let password = password.to_string();
+        let verified = tokio::task::spawn_blocking(move || verify_user.verify_password(&password))
+            .await
+            .ok()?;
+        if verified { Some(user) } else { None }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn passwords_use_argon2id_with_unique_salts() {
+        let first = User::new("first".into(), "password".into(), vec![Role::User]).unwrap();
+        let second = User::new("second".into(), "password".into(), vec![Role::User]).unwrap();
+
+        assert!(first.password.starts_with("$argon2id$"));
+        assert_ne!(first.password, second.password);
+        assert!(first.verify_password("password"));
+        assert!(!first.verify_password("wrong"));
     }
 }

@@ -5,6 +5,7 @@ Feature: Models API and UI
 
   Background:
     Given switchboard API is available
+    And I am authenticated
 
   Scenario: List all models as JSON
     When POST request is sent to "/api/v1/models/list" with body:

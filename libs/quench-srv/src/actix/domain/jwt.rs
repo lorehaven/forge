@@ -9,6 +9,8 @@ pub struct JwtConfig {
     pub service_name: String,
     pub realm: String,
     pub auth_enabled: bool,
+    pub access_token_ttl_secs: i64,
+    pub refresh_token_ttl_secs: i64,
 }
 
 impl JwtConfig {
@@ -20,12 +22,20 @@ impl JwtConfig {
         let auth_enabled = envmnt::get_or("SERVICE_AUTH_ENABLED", "false")
             .parse()
             .unwrap_or(false);
+        let access_token_ttl_secs = envmnt::get_or("ACCESS_TOKEN_TTL_SECS", "900")
+            .parse()
+            .unwrap_or(900);
+        let refresh_token_ttl_secs = envmnt::get_or("REFRESH_TOKEN_TTL_SECS", "604800")
+            .parse()
+            .unwrap_or(604800);
 
         Self {
             jwt_secret,
             service_name,
             realm,
             auth_enabled,
+            access_token_ttl_secs,
+            refresh_token_ttl_secs,
         }
     }
 
@@ -55,6 +65,21 @@ impl JwtConfig {
 
         Ok(token_data.claims)
     }
+
+    pub fn issue_access_token(
+        &self,
+        username: String,
+        scope: String,
+        session_id: Option<String>,
+    ) -> Result<String, jsonwebtoken::errors::Error> {
+        self.encode_claims(&Claims::new(
+            username,
+            self.service_name.clone(),
+            scope,
+            session_id,
+            self.access_token_ttl_secs,
+        ))
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -64,10 +89,18 @@ pub struct Claims {
     pub scope: String,
     pub exp: usize,
     pub iat: usize,
+    #[serde(default)]
+    pub sid: Option<String>,
 }
 
 impl Claims {
-    pub fn new(sub: String, service: String, scope: String, duration_secs: i64) -> Self {
+    pub fn new(
+        sub: String,
+        service: String,
+        scope: String,
+        sid: Option<String>,
+        duration_secs: i64,
+    ) -> Self {
         let now = chrono::Utc::now();
         let iat = now.timestamp() as usize;
         let exp = (now + chrono::Duration::seconds(duration_secs)).timestamp() as usize;
@@ -78,6 +111,7 @@ impl Claims {
             scope,
             exp,
             iat,
+            sid,
         }
     }
 }
@@ -96,6 +130,7 @@ mod tests {
             "user".to_string(),
             "service".to_string(),
             "scope".to_string(),
+            None,
             -300,
         ); // Expired 5 minutes ago
         let token = config.encode_claims(&claims).unwrap();
@@ -123,6 +158,7 @@ mod tests {
             scope: "scope".to_string(),
             exp,
             iat,
+            sid: None,
         };
 
         let token = config.encode_claims(&claims).unwrap();
