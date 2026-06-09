@@ -38,5 +38,5 @@ async fn main() -> std::io::Result<()> {
 
     let db_wrapper = DbWrapper::init_env().await;
 
-    serve(root_scope, base_path_scope, Some(db_wrapper)).await
+    serve(root_scope, base_path_scope, Some(db_wrapper), async {}).await
 }

@@ -82,7 +82,8 @@ where
                     let mut should_log = !status.is_success();
 
                     if !should_log {
-                        let is_skipped = skip_prefixes.iter().any(|prefix| path.starts_with(prefix));
+                        let is_skipped =
+                            skip_prefixes.iter().any(|prefix| path.starts_with(prefix));
                         should_log = !is_skipped;
                     }
 

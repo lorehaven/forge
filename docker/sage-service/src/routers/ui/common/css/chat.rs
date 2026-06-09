@@ -592,8 +592,7 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("padding", "0.2rem 0.6rem"),
         CssRule::new(".chat-message:last-of-type .regenerate-btn")
             .property("display", "inline-flex !important"),
-        CssRule::new(".edit-btn")
-            .property("display", "inline-flex !important"),
+        CssRule::new(".edit-btn").property("display", "inline-flex !important"),
         CssRule::new(".chat-message:has(~ .message-user) .edit-btn")
             .property("display", "none !important"),
         CssRule::new(".edit-textarea")

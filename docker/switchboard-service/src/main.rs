@@ -44,16 +44,20 @@ async fn main() -> std::io::Result<()> {
     let jwt_config = web::Data::new(JwtConfig::init());
 
     init_model_store(db_wrapper.db.clone()).await;
-    warm_model_cache().await;
-    start_sync_job();
 
     let (gpu_tx, _) = tokio::sync::broadcast::channel::<String>(100);
-    init_gpu_status_publisher(gpu_tx.clone());
-
     let vllm_engine = routers::vllm::init_engine().await;
-
     let (vllm_tx, _) = tokio::sync::broadcast::channel::<String>(100);
-    routers::vllm::init_vllm_status_publisher(vllm_tx.clone(), vllm_engine.clone());
+
+    let init_gpu_tx = gpu_tx.clone();
+    let init_vllm_tx = vllm_tx.clone();
+    let init_vllm_engine = vllm_engine.clone();
+    let init = async move {
+        warm_model_cache().await;
+        start_sync_job();
+        init_gpu_status_publisher(init_gpu_tx);
+        routers::vllm::init_vllm_status_publisher(init_vllm_tx, init_vllm_engine);
+    };
 
     serve(
         root_scope,
@@ -66,6 +70,7 @@ async fn main() -> std::io::Result<()> {
             )
         },
         Some(db_wrapper),
+        init,
     )
     .await
 }

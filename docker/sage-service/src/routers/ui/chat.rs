@@ -55,17 +55,24 @@ pub async fn send_message(
             .attr("sse-connect", stream_url)
             .attr("sse-swap", "message")
             .child(
-                div()
-                    .class("message-inner")
-                    .child(div().class("message-content").text("Sage is regenerating...")),
+                div().class("message-inner").child(
+                    div()
+                        .class("message-content")
+                        .text("Sage is regenerating..."),
+                ),
             );
 
-        return HttpResponse::Ok().content_type("text/html").body(ai_msg.render());
+        return HttpResponse::Ok()
+            .content_type("text/html")
+            .body(ai_msg.render());
     }
 
     let edit_btn = button()
         .class("branch-btn edit-btn")
-        .attr("hx-get", with_base_path(&format!("/ui/chat/edit-form/{}", message_id))) // Use pending ID, will be transitioned
+        .attr(
+            "hx-get",
+            with_base_path(&format!("/ui/chat/edit-form/{}", message_id)),
+        ) // Use pending ID, will be transitioned
         .attr("hx-target", format!("#user-{}", message_id))
         .attr("hx-swap", "innerHTML")
         .child(i().class("fas fa-edit"))
@@ -79,7 +86,7 @@ pub async fn send_message(
                 .class("message-inner")
                 .raw()
                 .text(format_message(&req.message))
-                .child(div().class("branch-controls").child(edit_btn))
+                .child(div().class("branch-controls").child(edit_btn)),
         );
 
     let ai_msg = div()
@@ -213,14 +220,19 @@ pub async fn stream_message(
     };
 
     let mut history_messages = Vec::new();
-    if let Some(amid) = history_base_id {
-        if let Ok(msgs) = get_conversation_messages(&db, Some(amid)).await {
-            history_messages = msgs;
-        }
+    if let Some(amid) = history_base_id
+        && let Ok(msgs) = get_conversation_messages(&db, Some(amid)).await
+    {
+        history_messages = msgs;
     }
 
     let mut selected_history = std::collections::VecDeque::new();
-    let mut current_budget_used = system_tokens + if req.skip_user_message { 0 } else { current_user_tokens };
+    let mut current_budget_used = system_tokens
+        + if req.skip_user_message {
+            0
+        } else {
+            current_user_tokens
+        };
 
     for msg in history_messages.into_iter().rev() {
         let msg_tokens = estimate_tokens(&msg);
@@ -379,7 +391,7 @@ pub async fn stream_message(
 
         // Final swap to static element to close connection
         let final_rendered = format_message(full_content.trim());
-        
+
         // Fetch siblings for the new AI message to show branch controls if needed
         let mut controls = div().class("branch-controls");
         if let Ok(siblings) = get_siblings(&db_clone, &req.conversation_id, ai_parent_id.as_deref()).await {
@@ -391,7 +403,7 @@ pub async fn stream_message(
                 let next_index = if sibling_index == total_siblings - 1 { 0 } else { sibling_index + 1 };
                 let prev_sibling = &siblings[prev_index];
                 let next_sibling = &siblings[next_index];
-                
+
                 let nav = div()
                     .class("branch-nav")
                     .child(
@@ -484,9 +496,9 @@ pub async fn stream_message(
         // 3. Transition the USER message block to its permanent ID and add the Edit button
         let mut user_oob_transition = String::new();
         let mut user_nav_dot_transition = String::new();
-        
-        if let Some(ref uid) = ai_parent_id {
-            if !req.skip_user_message {
+
+        if let Some(ref uid) = ai_parent_id
+            && !req.skip_user_message {
                 let edit_btn = button()
                     .class("branch-btn edit-btn")
                     .attr("hx-get", with_base_path(&format!("/ui/chat/edit-form/{}", uid)))
@@ -526,13 +538,13 @@ pub async fn stream_message(
                             ),
                     )
                     .render();
-            }
+
         }
 
         // We send all OOB transitions.
         yield Ok::<_, actix_web::Error>(encode_sse("message", &format!(
-            "{}{}{}{}", 
-            oob_transition.render(), 
+            "{}{}{}{}",
+            oob_transition.render(),
             ai_nav_dot_transition.render(),
             user_oob_transition,
             user_nav_dot_transition
@@ -761,7 +773,9 @@ pub async fn switch_branch(
     form: web::Form<SwitchBranchRequest>,
     db: web::Data<quench_db::prelude::Db>,
 ) -> impl Responder {
-    if let Err(err) = switch_active_message(&db, &form.conversation_id, &form.target_message_id).await {
+    if let Err(err) =
+        switch_active_message(&db, &form.conversation_id, &form.target_message_id).await
+    {
         tracing::error!("Failed to switch active branch: {}", err);
         return HttpResponse::InternalServerError().body(err.to_string());
     }
@@ -769,7 +783,10 @@ pub async fn switch_branch(
     HttpResponse::Ok()
         .append_header((
             "HX-Redirect",
-            with_base_path(&format!("/ui/home?conversation_id={}", form.conversation_id)),
+            with_base_path(&format!(
+                "/ui/home?conversation_id={}",
+                form.conversation_id
+            )),
         ))
         .body("")
 }
@@ -785,7 +802,7 @@ pub async fn get_conversation_messages(
 
     match db {
         quench_db::prelude::Db::Postgres(pg_db) => {
-            let schema = envmnt::get_or("DB_SCHEMA", "public");
+            let schema = envmnt::get_or("DB_SCHEMA", "sage");
             let table = format!("{}.messages", schema);
             let query = format!(
                 "WITH RECURSIVE thread AS (
@@ -851,7 +868,7 @@ pub async fn get_conversation_message_nodes(
 
     match db {
         quench_db::prelude::Db::Postgres(pg_db) => {
-            let schema = envmnt::get_or("DB_SCHEMA", "public");
+            let schema = envmnt::get_or("DB_SCHEMA", "sage");
             let table = format!("{}.messages", schema);
             let query = format!(
                 "WITH RECURSIVE thread AS (
@@ -867,7 +884,10 @@ pub async fn get_conversation_message_nodes(
                 table, table
             );
 
-            let rows = sqlx::query_as::<_, (String, String, Option<String>, String, String, String)>(sqlx::AssertSqlSafe(query.as_str()))
+            let rows =
+                sqlx::query_as::<_, (String, String, Option<String>, String, String, String)>(
+                    sqlx::AssertSqlSafe(query.as_str()),
+                )
                 .bind(current_id)
                 .fetch_all(pg_db.pool())
                 .await?;
@@ -915,7 +935,7 @@ pub async fn get_siblings(
 ) -> Result<Vec<crate::models::Message>, anyhow::Error> {
     match db {
         quench_db::prelude::Db::Postgres(pg_db) => {
-            let schema = envmnt::get_or("DB_SCHEMA", "public");
+            let schema = envmnt::get_or("DB_SCHEMA", "sage");
             let table = format!("{}.messages", schema);
             let query = if let Some(_pid) = parent_id {
                 format!(
@@ -935,7 +955,10 @@ pub async fn get_siblings(
                 )
             };
 
-            let mut q = sqlx::query_as::<_, (String, String, Option<String>, String, String, String)>(sqlx::AssertSqlSafe(query.as_str()))
+            let mut q =
+                sqlx::query_as::<_, (String, String, Option<String>, String, String, String)>(
+                    sqlx::AssertSqlSafe(query.as_str()),
+                )
                 .bind(conversation_id);
             if let Some(pid) = parent_id {
                 q = q.bind(pid);
@@ -960,7 +983,9 @@ pub async fn get_siblings(
             let all = repo.list().await?;
             let mut siblings: Vec<_> = all
                 .into_iter()
-                .filter(|m| m.conversation_id == conversation_id && m.parent_id.as_deref() == parent_id)
+                .filter(|m| {
+                    m.conversation_id == conversation_id && m.parent_id.as_deref() == parent_id
+                })
                 .collect();
             siblings.sort_by(|a, b| a.created_at.cmp(&b.created_at));
             Ok(siblings)
@@ -977,7 +1002,7 @@ pub async fn switch_active_message(
 
     match db {
         quench_db::prelude::Db::Postgres(pg_db) => {
-            let schema = envmnt::get_or("DB_SCHEMA", "public");
+            let schema = envmnt::get_or("DB_SCHEMA", "sage");
             let table = format!("{}.messages", schema);
 
             loop {
@@ -985,11 +1010,12 @@ pub async fn switch_active_message(
                     "SELECT id FROM {} WHERE conversation_id = $1 AND parent_id = $2 ORDER BY created_at DESC LIMIT 1",
                     table
                 );
-                let child_opt: Option<(String,)> = sqlx::query_as(sqlx::AssertSqlSafe(query.as_str()))
-                    .bind(conversation_id)
-                    .bind(&current_id)
-                    .fetch_optional(pg_db.pool())
-                    .await?;
+                let child_opt: Option<(String,)> =
+                    sqlx::query_as(sqlx::AssertSqlSafe(query.as_str()))
+                        .bind(conversation_id)
+                        .bind(&current_id)
+                        .fetch_optional(pg_db.pool())
+                        .await?;
 
                 if let Some((child_id,)) = child_opt {
                     current_id = child_id;
@@ -1088,9 +1114,11 @@ pub async fn regenerate(
         .attr("sse-connect", stream_url)
         .attr("sse-swap", "message")
         .child(
-            div()
-                .class("message-inner")
-                .child(div().class("message-content").text("Sage is regenerating...")),
+            div().class("message-inner").child(
+                div()
+                    .class("message-content")
+                    .text("Sage is regenerating..."),
+            ),
         );
 
     // 2. An OOB swap to update the navigation dot and tooltip IDs to match the NEW message ID
@@ -1229,4 +1257,67 @@ pub fn scope() -> actix_web::Scope {
         .service(regenerate)
         .service(edit_form)
         .service(handle_edit)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use quench_db::prelude::{Crud, Db};
+
+    #[actix_web::test]
+    async fn retrieves_only_the_selected_conversation_branch() {
+        let db = Db::InMemory(quench_db::InMemoryDb::new());
+        let repo = db.repository::<crate::models::Message>();
+
+        for message in [
+            crate::models::Message {
+                id: "root".to_string(),
+                conversation_id: "conversation".to_string(),
+                parent_id: None,
+                role: "user".to_string(),
+                content: "question".to_string(),
+                created_at: "2026-01-01T00:00:00Z".to_string(),
+            },
+            crate::models::Message {
+                id: "answer-a".to_string(),
+                conversation_id: "conversation".to_string(),
+                parent_id: Some("root".to_string()),
+                role: "assistant".to_string(),
+                content: "answer a".to_string(),
+                created_at: "2026-01-01T00:00:01Z".to_string(),
+            },
+            crate::models::Message {
+                id: "answer-b".to_string(),
+                conversation_id: "conversation".to_string(),
+                parent_id: Some("root".to_string()),
+                role: "assistant".to_string(),
+                content: "answer b".to_string(),
+                created_at: "2026-01-01T00:00:02Z".to_string(),
+            },
+        ] {
+            repo.create(&message).await.unwrap();
+        }
+
+        let branch = get_conversation_messages(&db, Some("answer-b"))
+            .await
+            .unwrap();
+        let siblings = get_siblings(&db, "conversation", Some("root"))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            branch
+                .iter()
+                .map(|message| message.content.as_str())
+                .collect::<Vec<_>>(),
+            vec!["question", "answer b"]
+        );
+        assert_eq!(
+            siblings
+                .iter()
+                .map(|message| message.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["answer-a", "answer-b"]
+        );
+    }
 }

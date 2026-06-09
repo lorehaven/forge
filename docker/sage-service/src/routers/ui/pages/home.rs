@@ -1,5 +1,8 @@
 use crate::clients::switchboard::{SwitchboardClient, VllmInstance};
 use crate::models::Conversation;
+use crate::routers::ui::chat::{
+    ChatRequest, ChatState, get_conversation_message_nodes, get_siblings,
+};
 use crate::routers::ui::common::{UiPageKind, render_page};
 use actix_web::{HttpResponse, Responder, get, web};
 use quench_db::prelude::{Crud, Db};
@@ -17,7 +20,7 @@ async fn handle_home_page(
     config: web::Data<JwtConfig>,
     switchboard: web::Data<SwitchboardClient>,
     db: web::Data<Db>,
-    chat_state: web::Data<crate::routers::ui::chat::ChatState>,
+    chat_state: web::Data<ChatState>,
     query: web::Query<HomeQuery>,
 ) -> impl Responder {
     let instances = switchboard.get_vllm_instances().await;
@@ -33,46 +36,54 @@ async fn handle_home_page(
 
     let mut active_messages = Vec::new();
     let mut active_message_id = None;
-    if let Some(ref cid) = query.conversation_id {
-        if let Ok(Some(conv)) = repo.read(cid).await {
-            active_message_id = conv.active_message_id;
-        }
+    if let Some(ref cid) = query.conversation_id
+        && let Ok(Some(conv)) = repo.read(cid).await
+    {
+        active_message_id = conv.active_message_id;
     }
 
-    if let Some(ref amid) = active_message_id {
-        if let Ok(nodes) = crate::routers::ui::chat::get_conversation_message_nodes(&db, Some(amid)).await {
-            for node in nodes {
-                let siblings = crate::routers::ui::chat::get_siblings(&db, &node.conversation_id, node.parent_id.as_deref()).await.unwrap_or_default();
-                active_messages.push((node, siblings));
-            }
+    if let Some(ref amid) = active_message_id
+        && let Ok(nodes) = get_conversation_message_nodes(&db, Some(amid)).await
+    {
+        for node in nodes {
+            let siblings = get_siblings(&db, &node.conversation_id, node.parent_id.as_deref())
+                .await
+                .unwrap_or_default();
+            active_messages.push((node, siblings));
         }
     }
 
     // AUTO-TRIGGER LOGIC:
     // If the last message is from a user, we need to auto-trigger an AI response.
     let mut auto_trigger_ai = None;
-    if let Some((last_msg, _)) = active_messages.last() {
-        if last_msg.role == "user" {
-            // Find an available model instance
-            if let Ok(ref insts) = instances {
-                if let Some(instance) = insts.first() {
-                    let pending_id = uuid::Uuid::new_v4().to_string();
-                    let chat_req = crate::routers::ui::chat::ChatRequest {
-                        instance_id: instance.id.clone(),
-                        message: last_msg.content.clone(),
-                        conversation_id: last_msg.conversation_id.clone(),
-                        parent_id: Some(last_msg.id.clone()),
-                        skip_user_message: true, // DB message already exists
-                    };
-                    chat_state.pending_messages.insert(pending_id.clone(), chat_req);
-                    auto_trigger_ai = Some(pending_id);
-                }
-            }
-        }
+    if let Some((last_msg, _)) = active_messages.last()
+        && last_msg.role == "user"
+        // Find an available model instance
+        && let Ok(ref insts) = instances
+        && let Some(instance) = insts.first()
+    {
+        let pending_id = uuid::Uuid::new_v4().to_string();
+        let chat_req = ChatRequest {
+            instance_id: instance.id.clone(),
+            message: last_msg.content.clone(),
+            conversation_id: last_msg.conversation_id.clone(),
+            parent_id: Some(last_msg.id.clone()),
+            skip_user_message: true, // DB message already exists
+        };
+        chat_state
+            .pending_messages
+            .insert(pending_id.clone(), chat_req);
+        auto_trigger_ai = Some(pending_id);
     }
 
     handle_home(req, config, move || {
-        render_home_page(instances, conversations, active_id, active_messages, auto_trigger_ai)
+        render_home_page(
+            instances,
+            conversations,
+            active_id,
+            active_messages,
+            auto_trigger_ai,
+        )
     })
     .await
 }
@@ -83,7 +94,7 @@ pub(super) async fn home(
     config: web::Data<JwtConfig>,
     switchboard: web::Data<SwitchboardClient>,
     db: web::Data<Db>,
-    chat_state: web::Data<crate::routers::ui::chat::ChatState>,
+    chat_state: web::Data<ChatState>,
     query: web::Query<HomeQuery>,
 ) -> impl Responder {
     handle_home_page(req, config, switchboard, db, chat_state, query).await
@@ -95,7 +106,7 @@ pub(super) async fn home_slash(
     config: web::Data<JwtConfig>,
     switchboard: web::Data<SwitchboardClient>,
     db: web::Data<Db>,
-    chat_state: web::Data<crate::routers::ui::chat::ChatState>,
+    chat_state: web::Data<ChatState>,
     query: web::Query<HomeQuery>,
 ) -> impl Responder {
     handle_home_page(req, config, switchboard, db, chat_state, query).await
@@ -316,7 +327,7 @@ fn render_home_page(
 
             let total_siblings = siblings.len();
             let sibling_index = siblings.iter().position(|s| s.id == msg.id).unwrap_or(0);
-            
+
             let is_last = idx == active_messages.len() - 1;
             let is_last_user = Some(idx) == last_user_idx;
 
@@ -334,20 +345,34 @@ fn render_home_page(
             let edit_btn_opt = (msg.role == "user" && is_last_user).then(|| {
                 button()
                     .class("branch-btn edit-btn")
-                    .attr("hx-get", with_base_path(&format!("/ui/chat/edit-form/{}", msg.id)))
+                    .attr(
+                        "hx-get",
+                        with_base_path(&format!("/ui/chat/edit-form/{}", msg.id)),
+                    )
                     .attr("hx-target", format!("#user-{}", msg.id))
                     .attr("hx-swap", "innerHTML")
                     .child(i().class("fas fa-edit"))
                     .child(span().text(" Edit"))
             });
 
-            let branch_widget_opt = (total_siblings > 1 || regenerate_btn_opt.is_some() || edit_btn_opt.is_some()).then(|| {
+            let branch_widget_opt = (total_siblings > 1
+                || regenerate_btn_opt.is_some()
+                || edit_btn_opt.is_some())
+            .then(|| {
                 let mut controls = div().class("branch-controls");
-                
+
                 // ONLY SHOW NAVIGATION FOR ASSISTANT MESSAGES
                 if total_siblings > 1 && msg.role == "assistant" {
-                    let prev_index = if sibling_index == 0 { total_siblings - 1 } else { sibling_index - 1 };
-                    let next_index = if sibling_index == total_siblings - 1 { 0 } else { sibling_index + 1 };
+                    let prev_index = if sibling_index == 0 {
+                        total_siblings - 1
+                    } else {
+                        sibling_index - 1
+                    };
+                    let next_index = if sibling_index == total_siblings - 1 {
+                        0
+                    } else {
+                        sibling_index + 1
+                    };
                     let prev_sibling = &siblings[prev_index];
                     let next_sibling = &siblings[next_index];
 
@@ -357,32 +382,52 @@ fn render_home_page(
                             form()
                                 .attr("hx-post", with_base_path("/ui/chat/conversations/switch"))
                                 .attr("style", "display: inline;")
-                                .child(input().attr("type", "hidden").attr("name", "conversation_id").attr("value", &msg.conversation_id))
-                                .child(input().attr("type", "hidden").attr("name", "target_message_id").attr("value", &prev_sibling.id))
+                                .child(
+                                    input()
+                                        .attr("type", "hidden")
+                                        .attr("name", "conversation_id")
+                                        .attr("value", &msg.conversation_id),
+                                )
+                                .child(
+                                    input()
+                                        .attr("type", "hidden")
+                                        .attr("name", "target_message_id")
+                                        .attr("value", &prev_sibling.id),
+                                )
                                 .child(
                                     button()
                                         .class("branch-btn")
                                         .attr("type", "submit")
-                                        .child(i().class("fas fa-chevron-left"))
-                                )
+                                        .child(i().class("fas fa-chevron-left")),
+                                ),
                         )
-                        .child(
-                            span()
-                                .class("branch-info")
-                                .text(format!("{}/{}", sibling_index + 1, total_siblings))
-                        )
+                        .child(span().class("branch-info").text(format!(
+                            "{}/{}",
+                            sibling_index + 1,
+                            total_siblings
+                        )))
                         .child(
                             form()
                                 .attr("hx-post", with_base_path("/ui/chat/conversations/switch"))
                                 .attr("style", "display: inline;")
-                                .child(input().attr("type", "hidden").attr("name", "conversation_id").attr("value", &msg.conversation_id))
-                                .child(input().attr("type", "hidden").attr("name", "target_message_id").attr("value", &next_sibling.id))
+                                .child(
+                                    input()
+                                        .attr("type", "hidden")
+                                        .attr("name", "conversation_id")
+                                        .attr("value", &msg.conversation_id),
+                                )
+                                .child(
+                                    input()
+                                        .attr("type", "hidden")
+                                        .attr("name", "target_message_id")
+                                        .attr("value", &next_sibling.id),
+                                )
                                 .child(
                                     button()
                                         .class("branch-btn")
                                         .attr("type", "submit")
-                                        .child(i().class("fas fa-chevron-right"))
-                                )
+                                        .child(i().class("fas fa-chevron-right")),
+                                ),
                         );
                     controls = controls.child(nav);
                 }
@@ -394,7 +439,7 @@ fn render_home_page(
                 if let Some(btn) = edit_btn_opt {
                     controls = controls.child(btn);
                 }
-                
+
                 controls
             });
 

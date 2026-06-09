@@ -11,7 +11,7 @@ pub struct Conversation {
 
 impl Model for Conversation {
     fn table_name() -> String {
-        let schema = envmnt::get_or("DB_SCHEMA", "public");
+        let schema = envmnt::get_or("DB_SCHEMA", "sage");
         format!("{}.conversations", schema)
     }
 
@@ -36,7 +36,7 @@ pub struct Message {
 
 impl Model for Message {
     fn table_name() -> String {
-        let schema = envmnt::get_or("DB_SCHEMA", "public");
+        let schema = envmnt::get_or("DB_SCHEMA", "sage");
         format!("{}.messages", schema)
     }
 
@@ -55,4 +55,3 @@ impl Model for Message {
         "id".to_string()
     }
 }
-

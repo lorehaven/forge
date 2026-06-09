@@ -57,15 +57,11 @@ impl DbWrapper {
                     match MigrationLoader::load_from_dir(&migrations_dir) {
                         Ok(migrations) => {
                             if let Err(e) = db.migrate(migrations).await {
-                                print_status(Tone::Warn, "db", &format!("migration failed: {e}"));
+                                panic!("database migration failed: {e}");
                             }
                         }
                         Err(e) => {
-                            print_status(
-                                Tone::Warn,
-                                "db",
-                                &format!("failed to load migrations from {migrations_dir}: {e}"),
-                            );
+                            panic!("failed to load migrations from {migrations_dir}: {e}");
                         }
                     }
                 }
@@ -73,12 +69,7 @@ impl DbWrapper {
                 db
             }
             Err(e) => {
-                print_status(
-                    Tone::Warn,
-                    "db",
-                    &format!("database connection failed: {e}, falling back to in-memory"),
-                );
-                Db::InMemory(quench_db::InMemoryDb::new())
+                panic!("configured database connection failed: {e}");
             }
         };
 

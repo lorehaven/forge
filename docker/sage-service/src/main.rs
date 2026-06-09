@@ -29,10 +29,10 @@ pub fn base_path_scope(
 async fn main() -> std::io::Result<()> {
     tracing_subscriber::fmt().init();
     dotenvy::dotenv().ok();
+    envmnt::set("DB_SCHEMA", envmnt::get_or("DB_SCHEMA", "sage"));
 
     let switchboard_url = envmnt::get_or("SWITCHBOARD_URL", "http://switchboard-service:8080");
-    let health_url = format!("{}/health", switchboard_url.trim_end_matches('/'));
-    wait_for_services("sage-service", vec![&health_url]).await;
+    let health_url = format!("{}/health/ready", switchboard_url.trim_end_matches('/'));
 
     let db_wrapper = DbWrapper::init_env().await;
     let switchboard = clients::switchboard::SwitchboardClient::new();
@@ -121,6 +121,9 @@ async fn main() -> std::io::Result<()> {
             )
         },
         Some(db_wrapper),
+        async move {
+            wait_for_services("sage-service", vec![health_url.as_str()]).await;
+        },
     )
     .await
 }

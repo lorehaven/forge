@@ -9,6 +9,7 @@ use quench_cli::prelude::{Tone, print_status};
 use rustls::ServerConfig;
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use std::future::Future;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -30,16 +31,18 @@ pub trait ScopedModule: Send + Sync + 'static {
     fn register(&self, scope: Scope) -> Scope<Self::ScopeType>;
 }
 
-pub async fn serve<R, S, RF, SF>(
+pub async fn serve<R, S, RF, SF, I>(
     root_module: R,
     scoped_module: S,
     db: Option<Arc<DbWrapper>>,
+    init: I,
 ) -> std::io::Result<()>
 where
     R: Fn() -> RF + Send + Clone + 'static,
     S: Fn() -> SF + Send + Clone + 'static,
     RF: HttpServiceFactory + 'static,
     SF: HttpServiceFactory + 'static,
+    I: Future<Output = ()> + Send + 'static,
 {
     // Install default crypto provider for rustls 0.23+
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -52,13 +55,22 @@ where
     };
     let jwt_config = JwtConfig::init();
     let user_db = UserDb::init(db_wrapper.db.clone()).await;
+    let health_state = routers::health::HealthState::live();
     let (https_addr, http_addr) = get_server_addr();
+
+    let init_health_state = health_state.clone();
+    tokio::spawn(async move {
+        init.await;
+        init_health_state.mark_ready();
+        tracing::info!("Service initialization complete");
+    });
 
     let server = HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(db_wrapper.db.clone()))
             .app_data(web::Data::new(jwt_config.clone()))
             .app_data(web::Data::from(user_db.clone()))
+            .app_data(web::Data::new(health_state.clone()))
             .wrap(middleware::logger::FilteredLogger::default())
             .service(
                 web::scope(&base_path)
