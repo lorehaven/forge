@@ -5,6 +5,7 @@ use quench_srv::prelude::{DbWrapper, serve, wait_for_services};
 
 mod clients;
 mod config;
+pub mod conversation;
 pub mod models;
 mod routers;
 pub mod tools;
@@ -119,6 +120,26 @@ fn init_tool_registry(
         Box::new(tools::web_search::WebSearchExecutor::new(
             search_provider_registry.clone(),
         )),
+    );
+
+    registry.register(
+        "calculator".to_string(),
+        Box::new(tools::calculator::CalculatorExecutor),
+    );
+
+    registry.register(
+        "web_fetch".to_string(),
+        Box::new(tools::web_fetch::WebFetchExecutor::new()),
+    );
+
+    registry.register(
+        "file_ops".to_string(),
+        Box::new(tools::file_ops::FileOpsExecutor::from_env()),
+    );
+
+    registry.register(
+        "command".to_string(),
+        Box::new(tools::command::CommandExecutor::new()),
     );
 
     actix_web::web::Data::new(registry)

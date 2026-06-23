@@ -5,6 +5,7 @@ use quench_srv::prelude::{JwtConfig, with_base_path};
 
 pub mod chat;
 pub mod common;
+pub mod context_builder;
 pub mod pages;
 
 // ---------------------------------------------------------------------------

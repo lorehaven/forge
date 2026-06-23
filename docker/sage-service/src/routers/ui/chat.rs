@@ -325,6 +325,9 @@ pub async fn stream_message(
         let tool_registry = tool_registry_clone;
         let mut tool_results_html = String::new();
         let mut stream = stream;
+        let mut last_send = std::time::Instant::now();
+        let send_interval = std::time::Duration::from_millis(200); // Send updates every 200ms max
+
         while let Some(res) = stream.next().await {
             match res {
                 Ok(content) => {
@@ -348,30 +351,34 @@ pub async fn stream_message(
                         full_content.trim().to_string()
                     };
 
-                    let trimmed_content = display_content.trim();
-                    let rendered = format_message(trimmed_content);
+                    // Only send updates every 200ms to avoid message replacement spam
+                    if last_send.elapsed() > send_interval {
+                        let trimmed_content = display_content.trim();
+                        let rendered = format_message(trimmed_content);
 
-                    let ai_preview_raw: String = trimmed_content.chars().take(30).collect();
-                    let ai_preview = if trimmed_content.chars().count() > 30 {
-                        format!("{}...", ai_preview_raw)
-                    } else {
-                        ai_preview_raw
-                    };
+                        let ai_preview_raw: String = trimmed_content.chars().take(30).collect();
+                        let ai_preview = if trimmed_content.chars().count() > 30 {
+                            format!("{}...", ai_preview_raw)
+                        } else {
+                            ai_preview_raw
+                        };
 
-                    let html = div()
-                        .class("message-inner")
-                        .raw()
-                        .text(rendered)
-                        .render();
+                        let html = div()
+                            .class("message-inner")
+                            .raw()
+                            .text(rendered)
+                            .render();
 
-                    let tooltip_oob = div()
-                        .class("nav-tooltip")
-                        .attr("id", format!("tooltip-ai-{}", message_id_clone))
-                        .attr("hx-swap-oob", "true")
-                        .text(ai_preview)
-                        .render();
+                        let tooltip_oob = div()
+                            .class("nav-tooltip")
+                            .attr("id", format!("tooltip-ai-{}", message_id_clone))
+                            .attr("hx-swap-oob", "true")
+                            .text(ai_preview)
+                            .render();
 
-                    yield Ok::<_, actix_web::Error>(encode_sse("message", &format!("{}{}", html, tooltip_oob)));
+                        yield Ok::<_, actix_web::Error>(encode_sse("message", &format!("{}{}", html, tooltip_oob)));
+                        last_send = std::time::Instant::now();
+                    }
                 }
                 Err(err) => {
                     let html = div()
@@ -481,6 +488,9 @@ pub async fn stream_message(
                                 let parser = Parser::new(&parsed_content);
                                 let mut html_output = String::new();
                                 html::push_html(&mut html_output, parser);
+
+                                // Convert h1 to h3
+                                html_output = html_output.replace("<h1>", "<h3>").replace("</h1>", "</h3>");
 
                                 let streamed_html = format!(
                                     r#"<div class="message-inner"><div class="tool-result tool-success"><div class="tool-header"><span class="tool-icon">🔍</span><span class="tool-name">web_search "{}"</span></div><div class="tool-content">{}</div></div></div>"#,
@@ -1559,10 +1569,57 @@ pub async fn handle_edit(
         .finish()
 }
 
+#[get("/stats/{conversation_id}")]
+pub async fn token_stats(
+    conversation_id: web::Path<String>,
+    req: actix_web::HttpRequest,
+    config: web::Data<JwtConfig>,
+    db: web::Data<quench_db::prelude::Db>,
+    sage_config: web::Data<crate::config::SageConfig>,
+) -> impl Responder {
+    // Check auth
+    if quench_srv::actix::routers::ui::get_user_from_req(&req, &config)
+        .await
+        .is_none()
+    {
+        return HttpResponse::Unauthorized().finish();
+    }
+
+    let conv_id = conversation_id.into_inner();
+
+    // Build conversation context
+    match crate::routers::ui::context_builder::build_conversation_context(
+        &db,
+        &conv_id,
+        4096, // Default context window
+    )
+    .await
+    {
+        Ok(ctx) => {
+            let (_messages, usage) = crate::routers::ui::context_builder::get_context_for_llm(
+                &ctx,
+                &sage_config.system_prompt,
+            );
+
+            HttpResponse::Ok().json(serde_json::json!({
+                "success": true,
+                "stats": usage.to_json(),
+                "display": usage.format_display(),
+                "warning": usage.warning_message(),
+            }))
+        }
+        Err(err) => HttpResponse::InternalServerError().json(serde_json::json!({
+            "success": false,
+            "error": err,
+        })),
+    }
+}
+
 pub fn scope() -> actix_web::Scope {
     web::scope("/chat")
         .service(send_message)
         .service(stream_message)
+        .service(token_stats)
         .service(delete_conversation)
         .service(delete_modal)
         .service(delete_modal_empty)
@@ -1613,11 +1670,15 @@ fn render_tool_result(
         html_output
     };
 
+    // Don't capitalize tool name in header
     let header_text = if tool_name == "web_search" {
         format!("{} \"{}\"", tool_name, html_escape(query))
     } else {
-        html_escape(tool_name)
+        tool_name.to_string()
     };
+
+    // Convert h1 to h3 in tool content
+    let content_html = content_html.replace("<h1>", "<h3>").replace("</h1>", "</h3>");
 
     // Tool results are appended inside the message content area
     format!(

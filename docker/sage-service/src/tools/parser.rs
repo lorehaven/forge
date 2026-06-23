@@ -65,12 +65,7 @@ fn parse_tool_json_format2(json_str: &str) -> Option<ToolCall> {
             .or_else(|| json["function"]["arguments"].as_object());
 
         if let (Some(name), Some(args_obj)) = (tool_name, args) {
-            // Map "websearch" -> "web_search" for consistency
-            let normalized_name = if name == "websearch" {
-                "web_search".to_string()
-            } else {
-                name.to_string()
-            };
+            let normalized_name = normalize_tool_name(name);
 
             return Some(ToolCall {
                 id: uuid::Uuid::new_v4().to_string(),
@@ -80,6 +75,24 @@ fn parse_tool_json_format2(json_str: &str) -> Option<ToolCall> {
         }
     }
     None
+}
+
+/// Normalize tool names to handle variations
+fn normalize_tool_name(name: &str) -> String {
+    match name {
+        // Web search variations
+        "websearch" | "web_search" | "search" => "web_search".to_string(),
+        // Web fetch variations
+        "webfetch" | "web_fetch" | "fetch" => "web_fetch".to_string(),
+        // Calculator variations
+        "calc" | "calculator" | "math" => "calculator".to_string(),
+        // File ops variations
+        "file_ops" | "fileops" | "files" => "file_ops".to_string(),
+        // Command variations
+        "cmd" | "command" | "shell" | "bash" => "command".to_string(),
+        // Default: keep as-is
+        other => other.to_string(),
+    }
 }
 
 /// Remove tool call XML tags from content to get clean text

@@ -72,7 +72,11 @@ impl SageConfig {
             system_prompt.push_str("\n\n### AVAILABLE TOOLS\n");
             system_prompt.push_str("You have access to the following tools. When you need to use a tool, format your response with tool_call XML tags:\n\n");
             system_prompt.push_str(&tools_def);
-            system_prompt.push_str("\n\nWhen calling a tool, use this format:\n<toolcall>{\"type\": \"search\", \"name\": \"websearch\", \"arguments\": {\"query\": \"your search query\"}}</toolcall>\n");
+            system_prompt.push_str("\n\nWhen calling tools, use this format:\n");
+            system_prompt.push_str("<toolcall>{\"type\": \"function\", \"function\": {\"name\": \"web_search\", \"arguments\": {\"query\": \"your search query\"}}}</toolcall>\n");
+            system_prompt.push_str("or\n");
+            system_prompt.push_str("<toolcall>{\"type\": \"search\", \"name\": \"calculator\", \"arguments\": {\"expression\": \"2 + 2\"}}</toolcall>\n");
+            system_prompt.push_str("\nAlways use the exact tool names from the definitions above.\n");
             tracing::info!(
                 "Loaded {} tool definitions into system prompt",
                 crate::tools::get_tool_definitions().len()

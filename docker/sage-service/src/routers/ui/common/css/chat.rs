@@ -650,7 +650,6 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("color", "var(--bs-success)"),
         CssRule::new(".tool-result.tool-error .tool-header").property("color", "var(--bs-danger)"),
         CssRule::new(".tool-icon").property("font-size", "1.1rem"),
-        CssRule::new(".tool-name").property("text-transform", "capitalize"),
         CssRule::new(".tool-content")
             .property("color", "var(--bs-gray-300)")
             .property("word-break", "rbreak-word")

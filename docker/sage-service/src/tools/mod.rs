@@ -1,8 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+pub mod calculator;
+pub mod command;
+pub mod file_ops;
 pub mod parser;
 pub mod search_providers;
+pub mod web_fetch;
 pub mod web_search;
 
 pub use search_providers::{SearchProvider, SearchProviderRegistry};
@@ -45,7 +49,13 @@ impl fmt::Display for ToolResult {
 }
 
 pub fn get_tool_definitions() -> Vec<ToolDefinition> {
-    vec![web_search::get_definition()]
+    vec![
+        web_search::get_definition(),
+        calculator::get_definition(),
+        web_fetch::get_definition(),
+        file_ops::get_definition(),
+        command::get_definition(),
+    ]
 }
 
 pub fn get_tool_definitions_for_prompt() -> String {
