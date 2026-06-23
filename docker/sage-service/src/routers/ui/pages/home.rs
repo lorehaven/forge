@@ -259,9 +259,7 @@ fn render_home_page(
                     "serpapi" => "SerpAPI",
                     _ => provider,
                 };
-                let mut opt = option()
-                    .attr("value", provider)
-                    .text(label);
+                let mut opt = option().attr("value", provider).text(label);
                 if is_default {
                     opt = opt.attr("selected", "selected");
                 }
@@ -836,6 +834,25 @@ fn render_home_page(
                         scrollToBottom();
                         updateActiveDot();
                     }, 100);
+
+
+                    // Handle favorite/archive button clicks - update locally without reload
+                    document.addEventListener('htmx:afterSwap', function(event) {
+                        // Only refresh for conversation action endpoints (favorite/archive)
+                        if (event.detail.xhr && event.detail.xhr.responseURL &&
+                            (event.detail.xhr.responseURL.includes('/favorite') ||
+                             event.detail.xhr.responseURL.includes('/archive'))) {
+                            // Update the icon without full page reload
+                            const button = event.detail.target;
+                            if (button && button.classList.contains('conv-action-btn')) {
+                                const icon = button.querySelector('i');
+                                if (icon) {
+                                    icon.classList.toggle('fas');
+                                    icon.classList.toggle('far');
+                                }
+                            }
+                        }
+                    });
                 })();
             "#.to_string()).raw()
         ),

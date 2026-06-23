@@ -95,7 +95,7 @@ impl VllmEngine for NativeVllmEngine {
                 extract_arg(&parts, "--gpu-memory-utilization").and_then(|v| v.parse::<f32>().ok());
 
             let enable_prefix_caching = parts.iter().any(|p| p == "--enable-prefix-caching");
-            let enable_tool_calling = parts.iter().any(|p| p == "--enable-chat-template");
+            let enable_tool_calling = parts.iter().any(|p| p == "--enable-auto-tool-choice");
 
             let started_at = process_started_at(pid).unwrap_or_else(Utc::now);
 
@@ -217,9 +217,11 @@ impl VllmEngine for NativeVllmEngine {
         }
 
         if req.enable_tool_calling {
-            args.push("--enable-chat-template".to_string());
+            args.push("--enable-auto-tool-choice".to_string());
+            args.push("--tool-call-parser".to_string());
+            args.push("hermes".to_string());
             tracing::info!(
-                "Enabled tool calling (chat template) for model {}",
+                "Enabled native tool calling for model {} (--enable-auto-tool-choice --tool-call-parser hermes)",
                 req.model
             );
         }

@@ -28,9 +28,8 @@ impl SearxngProvider {
     }
 
     pub fn from_env() -> Result<Self, String> {
-        let instance_url = std::env::var("SEARXNG_INSTANCE_URL").unwrap_or_else(|_| {
-            "https://searxng.be".to_string()
-        });
+        let instance_url = std::env::var("SEARXNG_INSTANCE_URL")
+            .unwrap_or_else(|_| "https://searxng.be".to_string());
         Ok(Self::new(instance_url))
     }
 }
@@ -86,26 +85,15 @@ impl SearchProvider for SearxngProvider {
 
         if let Some(search_results) = data.results {
             for result in search_results.iter().take(MAX_RESULTS) {
-                let snippet = result
-                    .content
-                    .as_deref()
-                    .unwrap_or(&result.title)
-                    .trim();
+                let snippet = result.content.as_deref().unwrap_or(&result.title).trim();
 
-                let formatted = format!(
-                    "{}\nSource: {}",
-                    snippet,
-                    result.url
-                );
+                let formatted = format!("{}\nSource: {}", snippet, result.url);
                 results.push(formatted);
             }
         }
 
         if results.is_empty() {
-            tracing::warn!(
-                "SearXNG: No results found for '{}'",
-                query
-            );
+            tracing::warn!("SearXNG: No results found for '{}'", query);
 
             return Err(format!(
                 "Web search for '{}' could not find results at this time.",

@@ -56,7 +56,7 @@ impl ConversationContext {
         let mut messages_to_include = Vec::new();
         for msg in self.messages.iter().rev() {
             let msg_tokens = Self::estimate_tokens(&msg.content);
-            if total_tokens + msg_tokens > self.max_context_tokens as u32 {
+            if total_tokens + msg_tokens > self.max_context_tokens {
                 // Context window exceeded, stop adding messages
                 break;
             }
@@ -84,7 +84,7 @@ impl ConversationContext {
         if let Some(id) = message_id {
             // Collect message and all its children
             let mut result = Vec::new();
-            self.collect_branch(&id, &mut result);
+            self.collect_branch(id, &mut result);
             result
         } else {
             // Return all messages in a linear path (following parent relationships)
@@ -92,11 +92,7 @@ impl ConversationContext {
         }
     }
 
-    fn collect_branch<'a>(
-        &'a self,
-        message_id: &str,
-        result: &mut Vec<&'a ConversationMessage>,
-    ) {
+    fn collect_branch<'a>(&'a self, message_id: &str, result: &mut Vec<&'a ConversationMessage>) {
         // Find the message
         if let Some(msg) = self.messages.iter().find(|m| m.id == message_id) {
             result.push(msg);
@@ -129,14 +125,25 @@ impl ConversationContext {
         result.push(msg);
 
         // Find the first child (could have multiple branches)
-        if let Some(child) = self.messages.iter().find(|m| m.parent_id.as_deref() == Some(&msg.id)) {
+        if let Some(child) = self
+            .messages
+            .iter()
+            .find(|m| m.parent_id.as_deref() == Some(&msg.id))
+        {
             self.follow_branch(child, result);
         }
     }
 
     /// Get token usage stats
     pub fn get_token_stats(&self) -> TokenStats {
-        let total_tokens = Self::estimate_tokens(&self.messages.iter().map(|m| &m.content[..]).collect::<Vec<_>>().join(""));
+        let total_tokens = Self::estimate_tokens(
+            &self
+                .messages
+                .iter()
+                .map(|m| &m.content[..])
+                .collect::<Vec<_>>()
+                .join(""),
+        );
 
         TokenStats {
             total_messages: self.messages.len(),

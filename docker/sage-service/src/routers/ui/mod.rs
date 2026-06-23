@@ -42,25 +42,25 @@ pub fn scope(jwt_config: JwtConfig) -> impl HttpServiceFactory {
         .service(root)
         .service(root_slash)
         .service(assets)
-        // Chat
-        .service(
-            chat::scope().wrap(quench_srv::actix::middleware::auth::Auth::new(
-                jwt_config.clone(),
-            )),
-        )
-        // Projects
-        .service(
-            pages::projects::scope().wrap(quench_srv::actix::middleware::auth::Auth::new(
-                jwt_config.clone(),
-            )),
-        )
-        // Auth
+        // Auth (public - no auth required)
         .service(pages::auth::login)
         .service(pages::auth::login_slash)
         .service(pages::auth::login_submit)
         .service(pages::auth::logout)
         .service(pages::auth::auth_status)
-        // Home
+        // Chat (with auth)
+        .service(
+            chat::scope().wrap(quench_srv::actix::middleware::auth::Auth::new(
+                jwt_config.clone(),
+            )),
+        )
+        // Projects (with auth)
+        .service(
+            pages::projects::scope().wrap(quench_srv::actix::middleware::auth::Auth::new(
+                jwt_config.clone(),
+            )),
+        )
+        // Home (with auth)
         .service(pages::home::home)
         .service(pages::home::home_slash)
 }

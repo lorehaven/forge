@@ -93,30 +93,23 @@ impl SearchProvider for BraveProvider {
         let mut results = Vec::new();
         const MAX_RESULTS: usize = 5;
 
-        if let Some(web) = data.web {
-            if let Some(search_results) = web.results {
-                for result in search_results.iter().take(MAX_RESULTS) {
-                    let snippet = result
-                        .description
-                        .as_deref()
-                        .unwrap_or(&result.title)
-                        .trim();
+        if let Some(web) = data.web
+            && let Some(search_results) = web.results
+        {
+            for result in search_results.iter().take(MAX_RESULTS) {
+                let snippet = result
+                    .description
+                    .as_deref()
+                    .unwrap_or(&result.title)
+                    .trim();
 
-                    let formatted = format!(
-                        "{}\nSource: {}",
-                        snippet,
-                        result.url
-                    );
-                    results.push(formatted);
-                }
+                let formatted = format!("{}\nSource: {}", snippet, result.url);
+                results.push(formatted);
             }
         }
 
         if results.is_empty() {
-            tracing::warn!(
-                "Brave Search: No results found for '{}'",
-                query
-            );
+            tracing::warn!("Brave Search: No results found for '{}'", query);
 
             return Err(format!(
                 "Web search for '{}' could not find results at this time.",
@@ -125,7 +118,11 @@ impl SearchProvider for BraveProvider {
         }
 
         let result_count = results.len();
-        tracing::info!("Brave Search: Found {} results for '{}'", result_count, query);
+        tracing::info!(
+            "Brave Search: Found {} results for '{}'",
+            result_count,
+            query
+        );
         Ok(format!(
             "Search results for '{}' (via Brave Search)\n\n{}",
             query,

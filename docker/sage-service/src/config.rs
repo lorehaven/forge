@@ -8,6 +8,8 @@ pub struct DefaultModel {
     pub gpu_memory_utilization: Option<f32>,
     #[serde(rename = "context_len")]
     pub max_model_len: Option<u32>,
+    #[serde(default)]
+    pub enable_tool_calling: bool,
 }
 
 impl DefaultModel {
@@ -33,6 +35,7 @@ impl DefaultModel {
                 name: trimmed.to_string(),
                 gpu_memory_utilization: None,
                 max_model_len: None,
+                enable_tool_calling: false,
             }];
         }
 
@@ -76,7 +79,8 @@ impl SageConfig {
             system_prompt.push_str("<toolcall>{\"type\": \"function\", \"function\": {\"name\": \"web_search\", \"arguments\": {\"query\": \"your search query\"}}}</toolcall>\n");
             system_prompt.push_str("or\n");
             system_prompt.push_str("<toolcall>{\"type\": \"search\", \"name\": \"calculator\", \"arguments\": {\"expression\": \"2 + 2\"}}</toolcall>\n");
-            system_prompt.push_str("\nAlways use the exact tool names from the definitions above.\n");
+            system_prompt
+                .push_str("\nAlways use the exact tool names from the definitions above.\n");
             tracing::info!(
                 "Loaded {} tool definitions into system prompt",
                 crate::tools::get_tool_definitions().len()
@@ -165,5 +169,6 @@ mod tests {
         assert_eq!(list3[0].name, "qwen2.5-coder:7b");
         assert_eq!(list3[0].gpu_memory_utilization, None);
         assert_eq!(list3[0].max_model_len, None);
+        assert!(!list3[0].enable_tool_calling);
     }
 }

@@ -160,6 +160,22 @@ fn encode_sse(event: &str, data: &str) -> actix_web::web::Bytes {
     actix_web::web::Bytes::from(sse)
 }
 
+/// Embed tool results into the response by replacing tool call markers
+fn embed_tool_results_into_response(
+    response: &str,
+    tool_results_with_markers: Vec<(String, String)>, // (marker_text, result_html)
+) -> String {
+    let mut result = response.to_string();
+
+    // Replace each tool call marker with its formatted result
+    for (marker, html) in tool_results_with_markers {
+        // Replace the marker with the formatted result
+        result = result.replace(&marker, &format!("\n\n{}\n\n", html));
+    }
+
+    result
+}
+
 #[get("/stream/{id}")]
 #[allow(clippy::too_many_arguments)]
 pub async fn stream_message(
@@ -173,6 +189,7 @@ pub async fn stream_message(
     db: web::Data<quench_db::prelude::Db>,
     tool_registry: web::Data<crate::tools::ToolRegistry>,
     search_provider_registry: web::Data<std::sync::Arc<crate::tools::SearchProviderRegistry>>,
+    response_cache: web::Data<crate::response_cache::ResponseCache>,
 ) -> impl Responder {
     let username =
         match quench_srv::actix::routers::ui::get_user_from_req(&req_http, &jwt_config).await {
@@ -204,6 +221,36 @@ pub async fn stream_message(
     let Some(instance) = instances.into_iter().find(|i| i.id == req.instance_id) else {
         return HttpResponse::NotFound().body("Model instance not found");
     };
+
+    // Check response cache
+    let cache_key = crate::response_cache::ResponseCache::generate_key(
+        &req.conversation_id,
+        &req.message,
+        &instance.model,
+        req.search_provider
+            .as_deref()
+            .unwrap_or(&config.default_search_provider),
+    );
+
+    if let Some((cached, _)) = response_cache.get(&cache_key) {
+        tracing::info!("Cache hit for message: {}", cache_key);
+        let cached_html = div()
+            .class("message-inner")
+            .raw()
+            .text(format_message(&cached.content))
+            .render();
+        let cached_response = format!(
+            "data: {}\n\n",
+            serde_json::json!({
+                "type": "message",
+                "content": cached_html,
+                "cached": true
+            })
+        );
+        return HttpResponse::Ok()
+            .content_type("text/event-stream")
+            .body(cached_response);
+    }
 
     let max_model_len = instance.max_model_len.unwrap_or(2048) as usize;
     let reserved_for_generation = if max_model_len > 4096 {
@@ -297,13 +344,40 @@ pub async fn stream_message(
 
     let max_tokens = reserved_for_generation as u32;
 
+    // Convert tool definitions to OpenAI format for vLLM
+    // OpenAI format requires: {"type": "function", "function": {name, description, parameters}}
+    let tool_definitions = tool_registry.get_definitions();
+    let tools_json: Option<Vec<serde_json::Value>> = if !tool_definitions.is_empty() {
+        let mut openai_tools = Vec::new();
+        for tool_def in tool_definitions {
+            // Nest the tool definition inside a "function" field
+            let openai_tool = serde_json::json!({
+                "type": "function",
+                "function": {
+                    "name": tool_def.name,
+                    "description": tool_def.description,
+                    "parameters": tool_def.parameters
+                }
+            });
+            openai_tools.push(openai_tool);
+        }
+        tracing::info!(
+            "[VLLM_REQUEST] Sending {} tools to vLLM in OpenAI format",
+            openai_tools.len()
+        );
+        Some(openai_tools)
+    } else {
+        None
+    };
+
     let stream = match vllm
-        .chat_stream(
+        .chat_stream_with_tools(
             &instance.host,
             instance.port,
             &instance.model,
             messages,
             Some(max_tokens),
+            tools_json,
         )
         .await
     {
@@ -323,62 +397,16 @@ pub async fn stream_message(
     let sse_stream = async_stream::stream! {
         let username = username_clone;
         let tool_registry = tool_registry_clone;
-        let mut tool_results_html = String::new();
         let mut stream = stream;
-        let mut last_send = std::time::Instant::now();
-        let send_interval = std::time::Duration::from_millis(200); // Send updates every 200ms max
 
+        // =============================================================================
+        // PHASE 1: Collect full response from vLLM without streaming
+        // =============================================================================
+        tracing::info!("[STREAM_REFACTOR] Phase 1: Collecting response");
         while let Some(res) = stream.next().await {
             match res {
                 Ok(content) => {
                     full_content.push_str(&content);
-
-                    // Check if we have detected tool calls - if so, don't render the thinking text
-                    let has_tool_calls = full_content.contains("<toolcall>") || full_content.contains("<tool_call>");
-
-                    let display_content = if has_tool_calls {
-                        // Strip tool calls and the thinking text that precedes them
-                        let cleaned = crate::tools::parser::strip_tool_calls(&full_content);
-                        // Remove common phrases about using tools
-                        cleaned
-                            .replace("I will search for", "")
-                            .replace("I need to search for", "")
-                            .replace("Let me search for", "")
-                            .replace("I'll search for", "")
-                            .trim()
-                            .to_string()
-                    } else {
-                        full_content.trim().to_string()
-                    };
-
-                    // Only send updates every 200ms to avoid message replacement spam
-                    if last_send.elapsed() > send_interval {
-                        let trimmed_content = display_content.trim();
-                        let rendered = format_message(trimmed_content);
-
-                        let ai_preview_raw: String = trimmed_content.chars().take(30).collect();
-                        let ai_preview = if trimmed_content.chars().count() > 30 {
-                            format!("{}...", ai_preview_raw)
-                        } else {
-                            ai_preview_raw
-                        };
-
-                        let html = div()
-                            .class("message-inner")
-                            .raw()
-                            .text(rendered)
-                            .render();
-
-                        let tooltip_oob = div()
-                            .class("nav-tooltip")
-                            .attr("id", format!("tooltip-ai-{}", message_id_clone))
-                            .attr("hx-swap-oob", "true")
-                            .text(ai_preview)
-                            .render();
-
-                        yield Ok::<_, actix_web::Error>(encode_sse("message", &format!("{}{}", html, tooltip_oob)));
-                        last_send = std::time::Instant::now();
-                    }
                 }
                 Err(err) => {
                     let html = div()
@@ -391,65 +419,66 @@ pub async fn stream_message(
             }
         }
 
-        tracing::info!(
-            "Full response received: {} chars, contains '<toolcall>': {}, contains '<tool_call>': {}",
-            full_content.len(),
-            full_content.contains("<toolcall>"),
-            full_content.contains("<tool_call>")
-        );
+        tracing::info!("[STREAM_REFACTOR] Phase 1 complete: {} chars collected", full_content.len());
 
-        // Parse and execute tool calls from the accumulated response
-        let tool_calls = crate::tools::parser::parse_tool_calls(&full_content);
-        tracing::info!("Parsed {} tool calls from response", tool_calls.len());
+        // =============================================================================
+        // PHASE 2: Parse tool calls and check for meta-questions
+        // =============================================================================
+        tracing::info!("[STREAM_REFACTOR] Phase 2: Parsing tool calls");
+        let mut tool_calls = crate::tools::parser::parse_tool_calls(&full_content);
+        tracing::info!("[STREAM_REFACTOR] Found {} tool calls", tool_calls.len());
 
-        // Determine which search provider to use
+        // Suppress if meta-question
+        // Check if the user is asking meta-questions about tools
+        let user_question_lower = req.message.to_lowercase();
+        let is_meta_question = user_question_lower.contains("what tools")
+            || user_question_lower.contains("what capabilities")
+            || user_question_lower.contains("how do i use")
+            || user_question_lower.contains("how do you use")
+            || user_question_lower.contains("available tools")
+            || user_question_lower.contains("can you do");
+
+        if is_meta_question && !tool_calls.is_empty() {
+            tracing::warn!("[STREAM_REFACTOR] Suppressing {} tool calls for meta-question", tool_calls.len());
+            tool_calls.clear();
+        }
+
+        // =============================================================================
+        // PHASE 3: Execute all tools and collect results with markers
+        // =============================================================================
+        tracing::info!("[STREAM_REFACTOR] Phase 3: Executing {} tools", tool_calls.len());
         let search_provider = req.search_provider.as_deref()
             .unwrap_or(&config.default_search_provider);
-        tracing::info!("Using search provider: {}", search_provider);
 
-        for tool_call in tool_calls {
-            // Extract query from arguments
+        // Map of marker string → formatted HTML result
+        let mut tool_results_with_markers: Vec<(String, String)> = Vec::new();
+
+        // Compile regex once outside the loop
+        let tool_result_re = regex::Regex::new(r"<toolcall>.*?</toolcall>").ok();
+
+        for tool_call in &tool_calls {
             let query = tool_call.arguments
                 .get("query")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown");
 
-            // Send searching indicator
-            let search_header = format!("\n🔍 **{}** \"{}\"", tool_call.name, query);
-            let header_html = div()
-                .class("message-inner")
-                .raw()
-                .text(format_message(&search_header))
-                .render();
-            yield Ok::<_, actix_web::Error>(encode_sse("message", &header_html));
+            tracing::info!("[STREAM_REFACTOR] Executing tool: {}", tool_call.name);
 
-            tracing::info!(
-                "Executing tool: {} with query: {}",
-                tool_call.name,
-                query
-            );
-
+            // Execute the tool
             let result = if tool_call.name == "web_search" {
-                // Create a web search executor with the selected provider
-                let web_search_executor = crate::tools::web_search::WebSearchExecutor::new(
+                let executor = crate::tools::web_search::WebSearchExecutor::new(
                     search_provider_registry.as_ref().clone()
                 )
                 .with_default_provider(search_provider.to_string());
-                web_search_executor.execute(&tool_call).await
+                executor.execute(tool_call).await
             } else {
-                // Use the default registry for other tools
-                tool_registry.execute(&tool_call).await
+                tool_registry.execute(tool_call).await
             };
-            tracing::info!(
-                "Tool '{}' executed: is_error={}",
-                tool_call.name,
-                result.is_error
-            );
 
-            // If successful, parse results through the model and stream them
-            if !result.is_error {
+            // Format the result through vLLM
+            let formatted_result = if !result.is_error {
                 let parse_prompt = format!(
-                    "The user asked about: {}\n\nYou received these search results:\n{}\n\nPlease provide a clear, concise summary of the key findings. Format your response using markdown with:\n- Headings (###, ####)\n- Bullet points for lists\n- Bold for emphasis (**text**)\n- Proper paragraph breaks\n\nMake it well-structured and easy to read.",
+                    "Results for: {}\n\n{}\n\nProvide the information clearly and concisely. No headers or title needed—just the useful content.",
                     query,
                     result.content
                 );
@@ -457,7 +486,7 @@ pub async fn stream_message(
                 let parse_messages = vec![
                     ChatMessage {
                         role: "system".to_string(),
-                        content: "You are a helpful assistant. Summarize and format search results clearly using markdown formatting. Always use proper markdown syntax.".to_string(),
+                        content: "You are a helpful assistant. Present information clearly and concisely. Do not add titles, headers, or summaries—just the essential content.".to_string(),
                         tool_calls: None,
                     },
                     ChatMessage {
@@ -467,61 +496,93 @@ pub async fn stream_message(
                     },
                 ];
 
-                match vllm
-                    .chat_stream(
-                        &instance.host,
-                        instance.port,
-                        &instance.model,
-                        parse_messages,
-                        Some(512),
-                    )
-                    .await
-                {
-                    Ok(mut parse_stream) => {
-                        let mut parsed_content = String::new();
-                        while let Some(res) = parse_stream.next().await {
-                            if let Ok(content) = res {
-                                parsed_content.push_str(&content);
-
-                                // Stream the parsed content with tool-result styling
-                                use pulldown_cmark::{Parser, html};
-                                let parser = Parser::new(&parsed_content);
-                                let mut html_output = String::new();
-                                html::push_html(&mut html_output, parser);
-
-                                // Convert h1 to h3
-                                html_output = html_output.replace("<h1>", "<h3>").replace("</h1>", "</h3>");
-
-                                let streamed_html = format!(
-                                    r#"<div class="message-inner"><div class="tool-result tool-success"><div class="tool-header"><span class="tool-icon">🔍</span><span class="tool-name">web_search "{}"</span></div><div class="tool-content">{}</div></div></div>"#,
-                                    html_escape(query),
-                                    html_output
-                                );
-                                yield Ok::<_, actix_web::Error>(encode_sse("message", &streamed_html));
-                            }
-                        }
-                        // Collect final parsed result for final message
-                        let mut result_clone = result.clone();
-                        result_clone.content = parsed_content;
-                        let tool_html = render_tool_result(&tool_call, &result_clone);
-                        tool_results_html.push_str(&tool_html);
-                    }
-                    Err(err) => {
-                        tracing::warn!("Failed to parse results: {}", err);
-                        let tool_html = render_tool_result(&tool_call, &result);
-                        tool_results_html.push_str(&tool_html);
+            let mut parsed = String::new();
+            if let Ok(mut parse_stream) = vllm
+                .chat_stream(
+                    &instance.host,
+                    instance.port,
+                    &instance.model,
+                    parse_messages,
+                    Some(512),
+                )
+                .await
+            {
+                while let Some(res) = parse_stream.next().await {
+                    if let Ok(content) = res {
+                        parsed.push_str(&content);
                     }
                 }
+            }
+
+            let mut result_clone = result.clone();
+            result_clone.content = parsed;
+            render_tool_result(tool_call, &result_clone)
             } else {
-                let tool_html = render_tool_result(&tool_call, &result);
-                tool_results_html.push_str(&tool_html);
+                render_tool_result(tool_call, &result)
+            };
+
+            // Find the tool call marker in the response
+            // We need to locate the exact <toolcall>...</toolcall> string
+            if let Some(re) = &tool_result_re {
+                // Find ALL tool call markers in the response
+                for marker_match in re.find_iter(&full_content) {
+                    let marker_text = marker_match.as_str();
+                    // Check if this marker matches our current tool call
+                    // Match by tool name first, then by any content that appears in the arguments
+                    let mut matches = marker_text.contains(&tool_call.name);
+
+                    // Also try to match by the query/parameter value if available
+                    if !matches && query != "unknown" {
+                        matches = marker_text.contains(query);
+                    }
+
+                    // As fallback, check if any argument value appears in the marker
+                    if !matches {
+                        // Try to find any common values between arguments and marker
+                        for (_, val) in tool_call.arguments.as_object().unwrap_or(&serde_json::Map::new()) {
+                            if let Some(s) = val.as_str() && marker_text.contains(s) {
+                                matches = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if matches {
+                        tool_results_with_markers.push((marker_text.to_string(), formatted_result.clone()));
+                        tracing::info!("[STREAM_REFACTOR] Registered result for marker: {}", &marker_text[..marker_text.len().min(50)]);
+                        break;
+                    }
+                }
             }
         }
 
-        // Clean tool_call XML tags from content before storing
+        tracing::info!("[STREAM_REFACTOR] Phase 3 complete: {} tool results collected", tool_results_with_markers.len());
+
+        // =============================================================================
+        // PHASE 4: Embed tool results into response
+        // =============================================================================
+        tracing::info!("[STREAM_REFACTOR] Phase 4: Embedding results into response");
+
+        // First, strip tool call markers from the raw response for storage
         let clean_content = crate::tools::parser::strip_tool_calls(&full_content);
 
-        // Update/create Conversation FIRST
+        // Check if we have tool results before consuming tool_results_with_markers
+        let has_tool_results = !tool_results_with_markers.is_empty();
+
+        // Keep the tool results separately - we'll apply them after formatting
+        let response_for_display = if has_tool_results {
+            // Embed tool results into the full response (before formatting)
+            embed_tool_results_into_response(&full_content, tool_results_with_markers)
+        } else {
+            full_content.clone()
+        };
+
+        tracing::info!("[STREAM_REFACTOR] Phase 4 complete: Response ready for database");
+
+        // =============================================================================
+        // PHASE 5: Database operations (unchanged from original)
+        // =============================================================================
+        use quench_db::prelude::Crud;
         let conv_repo = db_clone.repository::<crate::models::Conversation>();
         let updated_at = chrono::Utc::now().to_rfc3339();
         let title = if let Some(t) = existing_title {
@@ -537,7 +598,7 @@ pub async fn stream_message(
         let mut conv = crate::models::Conversation {
             id: req.conversation_id.clone(),
             title,
-            active_message_id: active_message_id.clone(), // Use previous tip for now
+            active_message_id: active_message_id.clone(),
             owner: username.clone(),
             project_id: req.project_id.clone(),
             updated_at,
@@ -575,7 +636,7 @@ pub async fn stream_message(
             ai_parent_id = req.parent_id.clone();
         }
 
-        // Create AI message in DB with clean content (tool calls removed)
+        // Create AI message in DB with full response (including embedded tool results)
         let msg_repo = db_clone.repository::<crate::models::Message>();
         let ai_msg_id = uuid::Uuid::new_v4().to_string();
         let ai_msg = crate::models::Message {
@@ -583,12 +644,25 @@ pub async fn stream_message(
             conversation_id: req.conversation_id.clone(),
             parent_id: ai_parent_id.clone(),
             role: "assistant".to_string(),
-            content: clean_content.trim().to_string(),
+            content: response_for_display.trim().to_string(),
             created_at: chrono::Utc::now().to_rfc3339(),
         };
         if let Err(err) = msg_repo.create(&ai_msg).await {
             tracing::error!("Failed to create AI message: {}", err);
         }
+
+        // Cache the response for future queries
+        let cached_response = crate::response_cache::CachedResponse {
+            content: response_for_display.trim().to_string(),
+            model: instance.model.clone(),
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            tokens_used: Some((full_content.len() / 3) as u32),
+        };
+        response_cache.set(cache_key, cached_response);
+        tracing::info!("Cached response for future queries");
 
         // Update Conversation to point to the new tip
         conv.active_message_id = Some(ai_msg_id.clone());
@@ -597,8 +671,35 @@ pub async fn stream_message(
             tracing::error!("Failed to update conversation tip: {}", err);
         }
 
-        // Final swap to static element to close connection
-        let final_rendered = format_message(full_content.trim());
+        // =============================================================================
+        // PHASE 6: Prepare and stream final SSE response (single yield)
+        // =============================================================================
+        tracing::info!("[STREAM_REFACTOR] Phase 6: Preparing final SSE response");
+
+        // Format the text content, but preserve embedded tool results as raw HTML
+        let final_rendered = if has_tool_results {
+            // Apply simple markdown formatting (backticks, bold, italic) to text while preserving tool result HTML
+            let mut formatted_response = response_for_display.clone();
+
+            // Format backticks as inline code (but not inside tool-result divs)
+            if let Ok(backtick_re) = regex::Regex::new(r"`([^`]+)`") {
+                formatted_response = backtick_re.replace_all(&formatted_response, "<code>$1</code>").to_string();
+            }
+
+            // Format **bold**
+            if let Ok(bold_re) = regex::Regex::new(r"\*\*([^\*]+)\*\*") {
+                formatted_response = bold_re.replace_all(&formatted_response, "<strong>$1</strong>").to_string();
+            }
+
+            // Format *italic*
+            if let Ok(italic_re) = regex::Regex::new(r"\*([^\*]+)\*") {
+                formatted_response = italic_re.replace_all(&formatted_response, "<em>$1</em>").to_string();
+            }
+
+            format!("<div class=\"message-content\">{}</div>", formatted_response.trim())
+        } else {
+            format_message(clean_content.trim())
+        };
 
         // Fetch siblings for the new AI message to show branch controls if needed
         let mut controls = div().class("branch-controls");
@@ -660,17 +761,10 @@ pub async fn stream_message(
 
         controls = controls.child(regenerate_btn);
 
-        // 1. Transition the AI message block itself
         let message_inner = div()
             .class("message-inner")
             .raw()
             .text(&final_rendered);
-
-        let message_inner = if !tool_results_html.is_empty() {
-            message_inner.raw().text(&tool_results_html)
-        } else {
-            message_inner
-        };
 
         let oob_transition = div()
             .class("chat-message message-ai")
@@ -915,6 +1009,7 @@ pub async fn stream_message(
             final_payload.push_str(&history_list.render());
         }
 
+        tracing::info!("[STREAM_REFACTOR] Phase 6 complete: Yielding final response");
         yield Ok::<_, actix_web::Error>(encode_sse("message", &final_payload));
         state.pending_messages.remove(&message_id_clone);
     };
@@ -1589,9 +1684,7 @@ pub async fn token_stats(
 
     // Build conversation context
     match crate::routers::ui::context_builder::build_conversation_context(
-        &db,
-        &conv_id,
-        4096, // Default context window
+        &db, &conv_id, 4096, // Default context window
     )
     .await
     {
@@ -1678,7 +1771,9 @@ fn render_tool_result(
     };
 
     // Convert h1 to h3 in tool content
-    let content_html = content_html.replace("<h1>", "<h3>").replace("</h1>", "</h3>");
+    let content_html = content_html
+        .replace("<h1>", "<h3>")
+        .replace("</h1>", "</h3>");
 
     // Tool results are appended inside the message content area
     format!(

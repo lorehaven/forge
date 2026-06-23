@@ -34,6 +34,10 @@ pub struct ChatCompletionRequest {
     pub frequency_penalty: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_choice: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -41,14 +45,17 @@ pub struct ChatCompletionChunk {
     pub choices: Vec<ChatCompletionChoice>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct ChatCompletionChoice {
     pub delta: ChatCompletionDelta,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct ChatCompletionDelta {
     pub content: Option<String>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub tool_calls: Option<Vec<ToolCall>>,
 }
 
 #[derive(Clone)]
@@ -78,6 +85,19 @@ impl VllmClient {
         messages: Vec<ChatMessage>,
         max_tokens: Option<u32>,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<String>> + Send>>> {
+        self.chat_stream_with_tools(host, port, model, messages, max_tokens, None)
+            .await
+    }
+
+    pub async fn chat_stream_with_tools(
+        &self,
+        host: &str,
+        port: u16,
+        model: &str,
+        messages: Vec<ChatMessage>,
+        max_tokens: Option<u32>,
+        tools: Option<Vec<serde_json::Value>>,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<String>> + Send>>> {
         let host = host
             .trim_start_matches("http://")
             .trim_start_matches("https://");
@@ -92,6 +112,8 @@ impl VllmClient {
             presence_penalty: Some(0.0),
             frequency_penalty: Some(0.0),
             max_tokens,
+            tools,
+            tool_choice: None,
         };
 
         tracing::info!(

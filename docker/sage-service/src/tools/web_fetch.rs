@@ -38,10 +38,10 @@ impl WebFetchExecutor {
 
         if let Some(entry) = self.cache.get(url) {
             let (content, cached_at) = entry.value();
-            if let Ok(elapsed) = cached_at.elapsed() {
-                if elapsed < CACHE_DURATION {
-                    return Some(content.clone());
-                }
+            if let Ok(elapsed) = cached_at.elapsed()
+                && elapsed < CACHE_DURATION
+            {
+                return Some(content.clone());
             }
             drop(entry);
             // Remove expired cache
@@ -51,7 +51,8 @@ impl WebFetchExecutor {
     }
 
     fn cache_result(&self, url: String, content: String) {
-        self.cache.insert(url, (content, std::time::SystemTime::now()));
+        self.cache
+            .insert(url, (content, std::time::SystemTime::now()));
     }
 }
 
@@ -72,7 +73,7 @@ impl ToolExecutor for WebFetchExecutor {
                         tool_use_id: tool_call.id.clone(),
                         content: "Invalid URL: must be a string".to_string(),
                         is_error: true,
-                    }
+                    };
                 }
             },
             None => {
@@ -80,7 +81,7 @@ impl ToolExecutor for WebFetchExecutor {
                     tool_use_id: tool_call.id.clone(),
                     content: "Missing 'url' argument".to_string(),
                     is_error: true,
-                }
+                };
             }
         };
 
@@ -120,10 +121,7 @@ impl ToolExecutor for WebFetchExecutor {
     }
 }
 
-async fn fetch_and_extract(
-    client: &reqwest::Client,
-    url: &str,
-) -> Result<String, String> {
+async fn fetch_and_extract(client: &reqwest::Client, url: &str) -> Result<String, String> {
     let response = client
         .get(url)
         .header(
@@ -137,10 +135,17 @@ async fn fetch_and_extract(
 
     let status = response.status();
     if !status.is_success() {
-        return Err(format!("HTTP {}: {}", status.as_u16(), status.canonical_reason().unwrap_or("Unknown")));
+        return Err(format!(
+            "HTTP {}: {}",
+            status.as_u16(),
+            status.canonical_reason().unwrap_or("Unknown")
+        ));
     }
 
-    let html = response.text().await.map_err(|e| format!("Failed to read response: {}", e))?;
+    let html = response
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read response: {}", e))?;
 
     extract_text(&html)
 }
@@ -161,12 +166,11 @@ fn extract_text(html: &str) -> Result<String, String> {
 
     // Extract title
     let mut text = String::new();
-    if let Ok(selector) = Selector::parse("title") {
-        if let Some(title) = document.select(&selector).next() {
-            if let Some(title_text) = title.text().next() {
-                text.push_str(&format!("# {}\n\n", title_text.trim()));
-            }
-        }
+    if let Ok(selector) = Selector::parse("title")
+        && let Some(title) = document.select(&selector).next()
+        && let Some(title_text) = title.text().next()
+    {
+        text.push_str(&format!("# {}\n\n", title_text.trim()));
     }
 
     // Extract headings and paragraphs

@@ -6,7 +6,9 @@ use quench_srv::prelude::{DbWrapper, serve, wait_for_services};
 mod clients;
 mod config;
 pub mod conversation;
+pub mod error_handling;
 pub mod models;
+pub mod response_cache;
 mod routers;
 pub mod tools;
 
@@ -23,6 +25,8 @@ pub fn base_path_scope(
     tool_registry: actix_web::web::Data<tools::ToolRegistry>,
     search_provider_registry: actix_web::web::Data<std::sync::Arc<tools::SearchProviderRegistry>>,
 ) -> impl HttpServiceFactory {
+    let response_cache = actix_web::web::Data::new(response_cache::ResponseCache::new());
+
     actix_web::web::scope("")
         .app_data(actix_web::web::Data::new(switchboard))
         .app_data(actix_web::web::Data::new(vllm))
@@ -30,6 +34,7 @@ pub fn base_path_scope(
         .app_data(chat_state)
         .app_data(tool_registry)
         .app_data(search_provider_registry)
+        .app_data(response_cache)
         .service(routers::base_path_scope(jwt_config))
 }
 
@@ -142,6 +147,11 @@ fn init_tool_registry(
         Box::new(tools::command::CommandExecutor::new()),
     );
 
+    registry.register(
+        "code_executor".to_string(),
+        Box::new(tools::code_executor::CodeExecutor),
+    );
+
     actix_web::web::Data::new(registry)
 }
 
@@ -214,6 +224,7 @@ async fn request_model_launch(
             &model.name,
             model.gpu_memory_utilization,
             model.max_model_len,
+            model.enable_tool_calling,
         )
         .await
     {

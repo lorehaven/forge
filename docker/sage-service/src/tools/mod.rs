@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 pub mod calculator;
+pub mod code_executor;
 pub mod command;
 pub mod file_ops;
 pub mod parser;
@@ -55,6 +56,7 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
         web_fetch::get_definition(),
         file_ops::get_definition(),
         command::get_definition(),
+        code_executor::get_definition(),
     ]
 }
 

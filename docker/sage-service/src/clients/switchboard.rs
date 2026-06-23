@@ -71,6 +71,7 @@ impl SwitchboardClient {
         model: &str,
         gpu_memory_utilization: Option<f32>,
         max_model_len: Option<u32>,
+        enable_tool_calling: bool,
     ) -> Result<VllmInstance> {
         let url = format!("{}/api/v1/vllm/instances", self.base_url);
         let req = serde_json::json!({
@@ -81,7 +82,8 @@ impl SwitchboardClient {
             "quantization": null,
             "max_model_len": max_model_len,
             "gpu_memory_utilization": gpu_memory_utilization,
-            "enable_prefix_caching": false
+            "enable_prefix_caching": false,
+            "enable_tool_calling": enable_tool_calling
         });
 
         let res = self

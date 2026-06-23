@@ -7,31 +7,51 @@ use regex::Regex;
 pub fn parse_tool_calls(content: &str) -> Vec<ToolCall> {
     let mut calls = Vec::new();
 
+    tracing::debug!(
+        "[PARSER] Attempting to parse tool calls from {} chars of content",
+        content.len()
+    );
+
     // Try multiple regex patterns to catch different tool call formats
-    // Pattern 1: <tool_call>...</tool_call>
+    // Note: using (?s) flag for DOTALL to match newlines with .
     let patterns = [
-        r"<tool_call>\s*(\{.*?\})\s*</tool_call>",
+        r"(?s)<tool_call>\s*(\{.*?\})\s*</tool_call>",
         // Pattern 2: <toolcall>...</toolcall>
-        r"<toolcall>\s*(\{.*?\})\s*</toolcall>",
+        r"(?s)<toolcall>\s*(\{.*?\})\s*</toolcall>",
         // Pattern 3: <toolcall>...</tool_call> (mismatched tags - Qwen sometimes does this)
-        r"<toolcall>\s*(\{.*?\})\s*</tool_call>",
+        r"(?s)<toolcall>\s*(\{.*?\})\s*</tool_call>",
         // Pattern 4: <tool_call>...</toolcall> (reverse mismatch)
-        r"<tool_call>\s*(\{.*?\})\s*</toolcall>",
+        r"(?s)<tool_call>\s*(\{.*?\})\s*</toolcall>",
+        // Pattern 5: <toolcall>{...} (unclosed - model sometimes forgets closing tag)
+        r"(?s)<toolcall>\s*(\{[^<]*?\})\s*(?:</toolcall>|(?=\n|$))",
+        // Pattern 6: <tool_call>{...} (unclosed variant)
+        r"(?s)<tool_call>\s*(\{[^<]*?\})\s*(?:</tool_call>|(?=\n|$))",
     ];
 
-    for pattern in &patterns {
+    for (idx, pattern) in patterns.iter().enumerate() {
         if let Ok(re) = Regex::new(pattern) {
-            for cap in re.captures_iter(content) {
-                // Try both parsing formats since we don't know which one it is
-                if let Some(call) = parse_tool_json_format1(&cap[1]) {
-                    calls.push(call);
-                } else if let Some(call) = parse_tool_json_format2(&cap[1]) {
-                    calls.push(call);
+            let matches: Vec<_> = re.captures_iter(content).collect();
+            if !matches.is_empty() {
+                tracing::debug!("[PARSER] Pattern {} matched {} times", idx, matches.len());
+                for cap in matches {
+                    let json_str = &cap[1];
+                    tracing::debug!("[PARSER] Pattern {} JSON: {}", idx, json_str);
+                    // Try both parsing formats since we don't know which one it is
+                    if let Some(call) = parse_tool_json_format1(json_str) {
+                        tracing::debug!("[PARSER] Successfully parsed as format1: {}", call.name);
+                        calls.push(call);
+                    } else if let Some(call) = parse_tool_json_format2(json_str) {
+                        tracing::debug!("[PARSER] Successfully parsed as format2: {}", call.name);
+                        calls.push(call);
+                    } else {
+                        tracing::warn!("[PARSER] Failed to parse JSON: {}", json_str);
+                    }
                 }
             }
         }
     }
 
+    tracing::info!("[PARSER] Total tool calls parsed: {}", calls.len());
     calls
 }
 

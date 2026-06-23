@@ -33,7 +33,7 @@ impl ToolExecutor for CalculatorExecutor {
                         tool_use_id: tool_call.id.clone(),
                         content: "Invalid expression: must be a string".to_string(),
                         is_error: true,
-                    }
+                    };
                 }
             },
             None => {
@@ -41,7 +41,7 @@ impl ToolExecutor for CalculatorExecutor {
                     tool_use_id: tool_call.id.clone(),
                     content: "Missing 'expression' argument".to_string(),
                     is_error: true,
-                }
+                };
             }
         };
 
@@ -59,8 +59,7 @@ impl ToolExecutor for CalculatorExecutor {
                      Expression: `{}`\n\n\
                      Result: **{}**\n\n\
                      (Use this result in further calculations or show to the user)",
-                    expression,
-                    formatted_result
+                    expression, formatted_result
                 );
 
                 ToolResult {
@@ -273,7 +272,9 @@ fn eval_number(expr: &str, pos: &mut usize) -> Result<f64, String> {
         return Err("Expected number".to_string());
     }
 
-    expr[start..*pos].parse().map_err(|_| "Invalid number".to_string())
+    expr[start..*pos]
+        .parse()
+        .map_err(|_| "Invalid number".to_string())
 }
 
 #[cfg(test)]

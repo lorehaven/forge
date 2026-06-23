@@ -5,7 +5,8 @@ use serde_json::json;
 pub fn get_definition() -> ToolDefinition {
     ToolDefinition {
         name: "file_ops".to_string(),
-        description: "Read, write, and list files. Available operations: read, write, list, exists".to_string(),
+        description: "Read, write, and list files. Available operations: read, write, list, exists"
+            .to_string(),
         tool_type: "function".to_string(),
         parameters: ToolParameters {
             param_type: "object".to_string(),
@@ -97,7 +98,7 @@ impl ToolExecutor for FileOpsExecutor {
                         tool_use_id: tool_call.id.clone(),
                         content: "Invalid operation: must be a string".to_string(),
                         is_error: true,
-                    }
+                    };
                 }
             },
             None => {
@@ -105,7 +106,7 @@ impl ToolExecutor for FileOpsExecutor {
                     tool_use_id: tool_call.id.clone(),
                     content: "Missing 'operation' argument".to_string(),
                     is_error: true,
-                }
+                };
             }
         };
 
@@ -117,7 +118,7 @@ impl ToolExecutor for FileOpsExecutor {
                         tool_use_id: tool_call.id.clone(),
                         content: "Invalid path: must be a string".to_string(),
                         is_error: true,
-                    }
+                    };
                 }
             },
             None => {
@@ -125,7 +126,7 @@ impl ToolExecutor for FileOpsExecutor {
                     tool_use_id: tool_call.id.clone(),
                     content: "Missing 'path' argument".to_string(),
                     is_error: true,
-                }
+                };
             }
         };
 
@@ -141,20 +142,18 @@ impl ToolExecutor for FileOpsExecutor {
         let full_path = self.base_path.join(path);
 
         match operation {
-            "read" => {
-                match std::fs::read_to_string(&full_path) {
-                    Ok(content) => ToolResult {
-                        tool_use_id: tool_call.id.clone(),
-                        content,
-                        is_error: false,
-                    },
-                    Err(e) => ToolResult {
-                        tool_use_id: tool_call.id.clone(),
-                        content: format!("Failed to read file: {}", e),
-                        is_error: true,
-                    },
-                }
-            }
+            "read" => match std::fs::read_to_string(&full_path) {
+                Ok(content) => ToolResult {
+                    tool_use_id: tool_call.id.clone(),
+                    content,
+                    is_error: false,
+                },
+                Err(e) => ToolResult {
+                    tool_use_id: tool_call.id.clone(),
+                    content: format!("Failed to read file: {}", e),
+                    is_error: true,
+                },
+            },
             "write" => {
                 let content = match tool_call.arguments.get("content") {
                     Some(val) => match val.as_str() {
@@ -164,7 +163,7 @@ impl ToolExecutor for FileOpsExecutor {
                                 tool_use_id: tool_call.id.clone(),
                                 content: "Invalid content: must be a string".to_string(),
                                 is_error: true,
-                            }
+                            };
                         }
                     },
                     None => {
@@ -172,7 +171,7 @@ impl ToolExecutor for FileOpsExecutor {
                             tool_use_id: tool_call.id.clone(),
                             content: "Missing 'content' argument for write operation".to_string(),
                             is_error: true,
-                        }
+                        };
                     }
                 };
 
@@ -189,58 +188,57 @@ impl ToolExecutor for FileOpsExecutor {
                     },
                 }
             }
-            "list" => {
-                match std::fs::read_dir(&full_path) {
-                    Ok(entries) => {
-                        let mut files = Vec::new();
-                        for entry in entries.take(50) {
-                            if let Ok(entry) = entry {
-                                if let Ok(metadata) = entry.metadata() {
-                                    let is_dir = metadata.is_dir();
-                                    let name = entry.file_name();
-                                    let name_str = name.to_string_lossy();
-                                    files.push(format!(
-                                        "{}{} ({})",
-                                        name_str,
-                                        if is_dir { "/" } else { "" },
-                                        if is_dir {
-                                            "dir".to_string()
-                                        } else {
-                                            format!("{} bytes", metadata.len())
-                                        }
-                                    ));
+            "list" => match std::fs::read_dir(&full_path) {
+                Ok(entries) => {
+                    let mut files = Vec::new();
+                    for entry in entries.take(50).flatten() {
+                        if let Ok(metadata) = entry.metadata() {
+                            let is_dir = metadata.is_dir();
+                            let name = entry.file_name();
+                            let name_str = name.to_string_lossy();
+                            files.push(format!(
+                                "{}{} ({})",
+                                name_str,
+                                if is_dir { "/" } else { "" },
+                                if is_dir {
+                                    "dir".to_string()
+                                } else {
+                                    format!("{} bytes", metadata.len())
                                 }
-                            }
-                        }
-
-                        ToolResult {
-                            tool_use_id: tool_call.id.clone(),
-                            content: format!(
-                                "Files in {}:\n{}",
-                                path,
-                                files.join("\n")
-                            ),
-                            is_error: false,
+                            ));
                         }
                     }
-                    Err(e) => ToolResult {
+
+                    ToolResult {
                         tool_use_id: tool_call.id.clone(),
-                        content: format!("Failed to list directory: {}", e),
-                        is_error: true,
-                    },
+                        content: format!("Files in {}:\n{}", path, files.join("\n")),
+                        is_error: false,
+                    }
                 }
-            }
+                Err(e) => ToolResult {
+                    tool_use_id: tool_call.id.clone(),
+                    content: format!("Failed to list directory: {}", e),
+                    is_error: true,
+                },
+            },
             "exists" => {
                 let exists = full_path.exists();
                 ToolResult {
                     tool_use_id: tool_call.id.clone(),
-                    content: format!("{}: {}", path, if exists { "exists" } else { "does not exist" }),
+                    content: format!(
+                        "{}: {}",
+                        path,
+                        if exists { "exists" } else { "does not exist" }
+                    ),
                     is_error: false,
                 }
             }
             _ => ToolResult {
                 tool_use_id: tool_call.id.clone(),
-                content: format!("Unknown operation: {}. Must be one of: read, write, list, exists", operation),
+                content: format!(
+                    "Unknown operation: {}. Must be one of: read, write, list, exists",
+                    operation
+                ),
                 is_error: true,
             },
         }

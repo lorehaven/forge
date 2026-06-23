@@ -33,7 +33,7 @@ pub async fn build_conversation_context(
         let created_at = chrono::DateTime::parse_from_rfc3339(&msg.created_at)
             .ok()
             .map(|dt| dt.with_timezone(&chrono::Utc))
-            .unwrap_or_else(|| chrono::Utc::now());
+            .unwrap_or_else(chrono::Utc::now);
 
         let conv_msg = ConversationMessage {
             id: msg.id,
@@ -150,10 +150,7 @@ mod tests {
         };
 
         assert!(usage.warning_message().is_some());
-        assert!(usage
-            .warning_message()
-            .unwrap()
-            .contains("at capacity"));
+        assert!(usage.warning_message().unwrap().contains("at capacity"));
     }
 
     #[test]

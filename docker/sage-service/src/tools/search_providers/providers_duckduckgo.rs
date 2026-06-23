@@ -67,42 +67,36 @@ impl SearchProvider for DuckDuckGoProvider {
 
         // Parse search results from HTML
         // DuckDuckGo HTML response uses <div class="result"> for each result
-        let result_selector = Selector::parse(".result").map_err(|e| {
-            format!("Failed to parse HTML selector: {:?}", e)
-        })?;
+        let result_selector = Selector::parse(".result")
+            .map_err(|e| format!("Failed to parse HTML selector: {:?}", e))?;
 
-        let title_selector = Selector::parse("a.result__a").map_err(|e| {
-            format!("Failed to parse title selector: {:?}", e)
-        })?;
+        let title_selector = Selector::parse("a.result__a")
+            .map_err(|e| format!("Failed to parse title selector: {:?}", e))?;
 
-        let snippet_selector = Selector::parse("a.result__snippet").map_err(|e| {
-            format!("Failed to parse snippet selector: {:?}", e)
-        })?;
+        let snippet_selector = Selector::parse("a.result__snippet")
+            .map_err(|e| format!("Failed to parse snippet selector: {:?}", e))?;
 
         for result_elem in document.select(&result_selector).take(MAX_RESULTS) {
             // Get title and URL
-            if let Some(title_elem) = result_elem.select(&title_selector).next() {
-                if let Some(href) = title_elem.value().attr("href") {
-                    // Get snippet
-                    let snippet_text = if let Some(snippet_elem) = result_elem.select(&snippet_selector).next() {
+            if let Some(title_elem) = result_elem.select(&title_selector).next()
+                && let Some(href) = title_elem.value().attr("href")
+            {
+                // Get snippet
+                let snippet_text =
+                    if let Some(snippet_elem) = result_elem.select(&snippet_selector).next() {
                         snippet_elem.inner_html()
                     } else {
                         title_elem.inner_html()
                     };
 
-                    let clean_snippet = snippet_text
-                        .replace("<b>", "")
-                        .replace("</b>", "")
-                        .trim()
-                        .to_string();
+                let clean_snippet = snippet_text
+                    .replace("<b>", "")
+                    .replace("</b>", "")
+                    .trim()
+                    .to_string();
 
-                    let formatted = format!(
-                        "{}\nSource: {}",
-                        clean_snippet,
-                        href
-                    );
-                    results.push(formatted);
-                }
+                let formatted = format!("{}\nSource: {}", clean_snippet, href);
+                results.push(formatted);
             }
         }
 

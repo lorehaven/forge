@@ -34,19 +34,20 @@ impl CommandExecutor {
     }
 
     fn check_rate_limit(&self) -> Result<(), String> {
-        let count = self.execution_count.load(std::sync::atomic::Ordering::Relaxed);
+        let count = self
+            .execution_count
+            .load(std::sync::atomic::Ordering::Relaxed);
         if count >= 10 {
             // Max 10 commands per execution session
             return Err("Command rate limit exceeded (max 10 commands per session)".to_string());
         }
 
-        if let Ok(last) = self.last_execution.lock() {
-            if let Ok(elapsed) = last.elapsed() {
-                // Max 5 commands per second
-                if elapsed.as_millis() < 200 {
-                    return Err("Command rate limit exceeded (max 5/sec)".to_string());
-                }
-            }
+        if let Ok(last) = self.last_execution.lock()
+            && let Ok(elapsed) = last.elapsed()
+            && elapsed.as_millis() < 200
+        {
+            // Max 5 commands per second
+            return Err("Command rate limit exceeded (max 5/sec)".to_string());
         }
 
         Ok(())
@@ -72,7 +73,8 @@ impl ToolExecutor for CommandExecutor {
         }
 
         // Update execution tracking
-        self.execution_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.execution_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         if let Ok(mut last) = self.last_execution.lock() {
             *last = std::time::SystemTime::now();
         }
@@ -84,7 +86,7 @@ impl ToolExecutor for CommandExecutor {
                         tool_use_id: tool_call.id.clone(),
                         content: "Invalid command: must be a string".to_string(),
                         is_error: true,
-                    }
+                    };
                 }
             },
             None => {
@@ -92,7 +94,7 @@ impl ToolExecutor for CommandExecutor {
                     tool_use_id: tool_call.id.clone(),
                     content: "Missing 'cmd' argument".to_string(),
                     is_error: true,
-                }
+                };
             }
         };
 
@@ -125,9 +127,9 @@ fn is_safe_command(cmd: &str) -> bool {
 
     // Whitelist of safe commands
     let safe_commands = [
-        "cat", "grep", "ls", "find", "pwd", "date", "echo", "wc", "head", "tail",
-        "sort", "uniq", "cut", "tr", "sed", "awk", "stat", "file", "which", "type",
-        "du", "df", "ps", "env", "whoami", "id", "uname", "uptime", "free",
+        "cat", "grep", "ls", "find", "pwd", "date", "echo", "wc", "head", "tail", "sort", "uniq",
+        "cut", "tr", "sed", "awk", "stat", "file", "which", "type", "du", "df", "ps", "env",
+        "whoami", "id", "uname", "uptime", "free",
     ];
 
     // Get the first word of the command
@@ -135,8 +137,8 @@ fn is_safe_command(cmd: &str) -> bool {
 
     // Blacklist dangerous patterns
     let dangerous_patterns = [
-        "rm ", "mv ", "cp ", ">", ">>", "|", "&", ";", "sudo", "su ",
-        "chmod", "chown", "mkfs", "dd", "shutdown", "reboot", "kill", "pkill",
+        "rm ", "mv ", "cp ", ">", ">>", "|", "&", ";", "sudo", "su ", "chmod", "chown", "mkfs",
+        "dd", "shutdown", "reboot", "kill", "pkill",
     ];
 
     // Check for dangerous patterns
@@ -153,7 +155,7 @@ fn is_safe_command(cmd: &str) -> bool {
 async fn execute_command(cmd: &str) -> Result<String, String> {
     let output = if cfg!(target_os = "windows") {
         tokio::process::Command::new("cmd")
-            .args(&["/C", cmd])
+            .args(["/C", cmd])
             .output()
             .await
     } else {
@@ -179,7 +181,10 @@ async fn execute_command(cmd: &str) -> Result<String, String> {
                 Ok(result)
             } else {
                 let error_msg = if stderr.is_empty() {
-                    format!("Command failed with exit code: {}", output.status.code().unwrap_or(-1))
+                    format!(
+                        "Command failed with exit code: {}",
+                        output.status.code().unwrap_or(-1)
+                    )
                 } else {
                     stderr.to_string()
                 };

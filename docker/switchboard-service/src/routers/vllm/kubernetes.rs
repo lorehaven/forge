@@ -167,6 +167,16 @@ impl VllmEngine for KubernetesVllmEngine {
             args.push("--enable-prefix-caching".to_string());
         }
 
+        if req.enable_tool_calling {
+            args.push("--enable-auto-tool-choice".to_string());
+            args.push("--tool-call-parser".to_string());
+            args.push("hermes".to_string());
+            tracing::info!(
+                "Enabled native tool calling for model {} (--enable-auto-tool-choice --tool-call-parser hermes)",
+                req.model
+            );
+        }
+
         let mut volume_mounts = vec![
             json!({
                 "mountPath": "/dev/kfd",
@@ -338,6 +348,7 @@ impl VllmEngine for KubernetesVllmEngine {
                     "vllm-max-model-len": req.max_model_len.map(|v| v.to_string()).unwrap_or_default(),
                     "vllm-gpu-memory-utilization": req.gpu_memory_utilization.map(|v| v.to_string()).unwrap_or_default(),
                     "vllm-enable-prefix-caching": req.enable_prefix_caching.to_string(),
+                    "vllm-enable-tool-calling": req.enable_tool_calling.to_string(),
                 }
             },
             "spec": {
