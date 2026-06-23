@@ -1,5 +1,6 @@
 use super::search_provider::SearchProvider;
 use async_trait::async_trait;
+use scraper::{Html, Selector};
 
 pub struct DuckDuckGoProvider {
     client: reqwest::Client,
@@ -19,26 +20,6 @@ impl Default for DuckDuckGoProvider {
     }
 }
 
-#[derive(serde::Deserialize, Debug)]
-struct DuckDuckGoResponse {
-    #[serde(rename = "Abstract")]
-    abstract_text: Option<String>,
-    #[serde(rename = "AbstractURL")]
-    abstract_url: Option<String>,
-    #[serde(rename = "RelatedTopics")]
-    related_topics: Option<Vec<serde_json::Value>>,
-    #[serde(rename = "Results")]
-    results: Option<Vec<DuckDuckGoResult>>,
-}
-
-#[derive(serde::Deserialize, Debug)]
-struct DuckDuckGoResult {
-    #[serde(rename = "FirstURL")]
-    first_url: String,
-    #[serde(rename = "Text")]
-    text: String,
-}
-
 #[async_trait]
 impl SearchProvider for DuckDuckGoProvider {
     fn name(&self) -> &str {
@@ -51,7 +32,7 @@ impl SearchProvider for DuckDuckGoProvider {
 
     async fn search(&self, query: &str) -> Result<String, String> {
         let url = format!(
-            "https://api.duckduckgo.com/?q={}&format=json&no_redirect=1&no_html=1&t=sage",
+            "https://html.duckduckgo.com/html/?q={}",
             urlencoding::encode(query)
         );
 
@@ -61,7 +42,6 @@ impl SearchProvider for DuckDuckGoProvider {
             .client
             .get(&url)
             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            .header("Accept", "application/json")
             .timeout(std::time::Duration::from_secs(10))
             .send()
             .await
@@ -80,69 +60,55 @@ impl SearchProvider for DuckDuckGoProvider {
         })?;
 
         tracing::info!("DuckDuckGo response length: {} bytes", body.len());
-        tracing::warn!("DuckDuckGo raw response (FULL): {}", body);
 
-        let data: DuckDuckGoResponse = serde_json::from_str(&body).map_err(|e| {
-            tracing::warn!("Failed to parse JSON: {}", e);
-            format!("Invalid JSON: {}", e)
-        })?;
-
+        let document = Html::parse_document(&body);
         let mut results = Vec::new();
         const MAX_RESULTS: usize = 5;
 
-        // Add abstract answer if available (primary result)
-        if let Some(abstract_text) = &data.abstract_text
-            && !abstract_text.is_empty()
-        {
-            let mut result = abstract_text.clone();
-            if let Some(url) = &data.abstract_url {
-                result.push_str(&format!("\nSource: {}", url));
-            }
-            results.push(result);
-        }
+        // Parse search results from HTML
+        // DuckDuckGo HTML response uses <div class="result"> for each result
+        let result_selector = Selector::parse(".result").map_err(|e| {
+            format!("Failed to parse HTML selector: {:?}", e)
+        })?;
 
-        // Extract from RelatedTopics (this is where DuckDuckGo puts actual results)
-        if let Some(related) = &data.related_topics {
-            for topic in related {
-                if results.len() >= MAX_RESULTS {
-                    break;
+        let title_selector = Selector::parse("a.result__a").map_err(|e| {
+            format!("Failed to parse title selector: {:?}", e)
+        })?;
+
+        let snippet_selector = Selector::parse("a.result__snippet").map_err(|e| {
+            format!("Failed to parse snippet selector: {:?}", e)
+        })?;
+
+        for result_elem in document.select(&result_selector).take(MAX_RESULTS) {
+            // Get title and URL
+            if let Some(title_elem) = result_elem.select(&title_selector).next() {
+                if let Some(href) = title_elem.value().attr("href") {
+                    // Get snippet
+                    let snippet_text = if let Some(snippet_elem) = result_elem.select(&snippet_selector).next() {
+                        snippet_elem.inner_html()
+                    } else {
+                        title_elem.inner_html()
+                    };
+
+                    let clean_snippet = snippet_text
+                        .replace("<b>", "")
+                        .replace("</b>", "")
+                        .trim()
+                        .to_string();
+
+                    let formatted = format!(
+                        "{}\nSource: {}",
+                        clean_snippet,
+                        href
+                    );
+                    results.push(formatted);
                 }
-
-                if let Some(obj) = topic.as_object() {
-                    // Handle grouped topics (they have a "Topics" subarray like "Snakes", "Media", etc)
-                    if let Some(subtopics) = obj.get("Topics").and_then(|v| v.as_array()) {
-                        for subtopic in subtopics {
-                            if results.len() >= MAX_RESULTS {
-                                break;
-                            }
-                            if let Some(sub_obj) = subtopic.as_object()
-                                && let Some(text) = sub_obj.get("Text").and_then(|v| v.as_str())
-                                && !text.is_empty()
-                            {
-                                results.push(text.to_string());
-                            }
-                        }
-                    } else if let Some(text) = obj.get("Text").and_then(|v| v.as_str()) {
-                        // Handle regular non-grouped topics
-                        if !text.is_empty() {
-                            results.push(text.to_string());
-                        }
-                    }
-                }
-            }
-        }
-
-        // Add search results (from direct Results field if any)
-        if let Some(search_results) = &data.results {
-            for result in search_results.iter().take(MAX_RESULTS - results.len()) {
-                let snippet = format!("{}\nSource: {}", result.text, result.first_url);
-                results.push(snippet);
             }
         }
 
         if results.is_empty() {
             tracing::warn!(
-                "DuckDuckGo: No results found for '{}' - API may be unavailable or rate-limited",
+                "DuckDuckGo: No results found for '{}' - may need to adjust selectors",
                 query
             );
 
