@@ -2,6 +2,7 @@ use crate::clients::switchboard::SwitchboardClient;
 use crate::clients::vllm::{ChatMessage, VllmClient};
 use crate::config::SageConfig;
 use crate::routers::ui::common::format::format_message;
+use crate::tools::ToolExecutor;
 use actix_web::{HttpResponse, Responder, get, post, web};
 use dashmap::DashMap;
 use futures_util::StreamExt;
@@ -20,6 +21,7 @@ pub struct ChatRequest {
     pub message: String,
     pub conversation_id: String,
     pub project_id: Option<String>,
+    pub search_provider: Option<String>,
     pub parent_id: Option<String>,
     #[serde(default)]
     pub skip_user_message: bool,
@@ -159,6 +161,7 @@ fn encode_sse(event: &str, data: &str) -> actix_web::web::Bytes {
 }
 
 #[get("/stream/{id}")]
+#[allow(clippy::too_many_arguments)]
 pub async fn stream_message(
     id: web::Path<String>,
     req_http: actix_web::HttpRequest,
@@ -168,11 +171,14 @@ pub async fn stream_message(
     vllm: web::Data<VllmClient>,
     config: web::Data<SageConfig>,
     db: web::Data<quench_db::prelude::Db>,
+    tool_registry: web::Data<crate::tools::ToolRegistry>,
+    search_provider_registry: web::Data<std::sync::Arc<crate::tools::SearchProviderRegistry>>,
 ) -> impl Responder {
-    let username = match quench_srv::actix::routers::ui::get_user_from_req(&req_http, &jwt_config).await {
-        Some(claims) => claims.sub,
-        None => return HttpResponse::Unauthorized().finish(),
-    };
+    let username =
+        match quench_srv::actix::routers::ui::get_user_from_req(&req_http, &jwt_config).await {
+            Some(claims) => claims.sub,
+            None => return HttpResponse::Unauthorized().finish(),
+        };
 
     let message_id = id.into_inner();
 
@@ -180,6 +186,12 @@ pub async fn stream_message(
         Some(r) => r.clone(),
         None => return HttpResponse::NotFound().finish(),
     };
+
+    tracing::info!(
+        "Chat request: search_provider={:?}, instance_id={}",
+        req.search_provider,
+        req.instance_id
+    );
 
     let instances = match switchboard.get_vllm_instances().await {
         Ok(i) => i,
@@ -211,12 +223,27 @@ pub async fn stream_message(
     let system_message = ChatMessage {
         role: "system".to_string(),
         content: config.system_prompt.clone(),
+        tool_calls: None,
     };
+
+    tracing::info!(
+        "System prompt length: {} chars, contains AVAILABLE TOOLS: {}",
+        system_message.content.len(),
+        system_message.content.contains("AVAILABLE TOOLS")
+    );
+    if system_message.content.contains("websearch") {
+        tracing::info!("✓ System prompt includes websearch tool definition");
+    } else {
+        tracing::warn!("✗ System prompt does NOT include websearch tool definition");
+    }
 
     let current_user_message = ChatMessage {
         role: "user".to_string(),
         content: req.message.clone(),
+        tool_calls: None,
     };
+
+    tracing::info!("User message: {}", current_user_message.content);
 
     let system_tokens = estimate_tokens(&system_message);
     let current_user_tokens = estimate_tokens(&current_user_message);
@@ -291,15 +318,37 @@ pub async fn stream_message(
     let message_id_clone = message_id.clone();
     let db_clone = db.clone();
     let username_clone = username.clone();
+    let tool_registry_clone = tool_registry.clone();
 
     let sse_stream = async_stream::stream! {
         let username = username_clone;
+        let tool_registry = tool_registry_clone;
+        let mut tool_results_html = String::new();
         let mut stream = stream;
         while let Some(res) = stream.next().await {
             match res {
                 Ok(content) => {
                     full_content.push_str(&content);
-                    let trimmed_content = full_content.trim();
+
+                    // Check if we have detected tool calls - if so, don't render the thinking text
+                    let has_tool_calls = full_content.contains("<toolcall>") || full_content.contains("<tool_call>");
+
+                    let display_content = if has_tool_calls {
+                        // Strip tool calls and the thinking text that precedes them
+                        let cleaned = crate::tools::parser::strip_tool_calls(&full_content);
+                        // Remove common phrases about using tools
+                        cleaned
+                            .replace("I will search for", "")
+                            .replace("I need to search for", "")
+                            .replace("Let me search for", "")
+                            .replace("I'll search for", "")
+                            .trim()
+                            .to_string()
+                    } else {
+                        full_content.trim().to_string()
+                    };
+
+                    let trimmed_content = display_content.trim();
                     let rendered = format_message(trimmed_content);
 
                     let ai_preview_raw: String = trimmed_content.chars().take(30).collect();
@@ -334,6 +383,133 @@ pub async fn stream_message(
                 }
             }
         }
+
+        tracing::info!(
+            "Full response received: {} chars, contains '<toolcall>': {}, contains '<tool_call>': {}",
+            full_content.len(),
+            full_content.contains("<toolcall>"),
+            full_content.contains("<tool_call>")
+        );
+
+        // Parse and execute tool calls from the accumulated response
+        let tool_calls = crate::tools::parser::parse_tool_calls(&full_content);
+        tracing::info!("Parsed {} tool calls from response", tool_calls.len());
+
+        // Determine which search provider to use
+        let search_provider = req.search_provider.as_deref()
+            .unwrap_or(&config.default_search_provider);
+        tracing::info!("Using search provider: {}", search_provider);
+
+        for tool_call in tool_calls {
+            // Extract query from arguments
+            let query = tool_call.arguments
+                .get("query")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+
+            // Send searching indicator
+            let search_header = format!("\n🔍 **{}** \"{}\"", tool_call.name, query);
+            let header_html = div()
+                .class("message-inner")
+                .raw()
+                .text(format_message(&search_header))
+                .render();
+            yield Ok::<_, actix_web::Error>(encode_sse("message", &header_html));
+
+            tracing::info!(
+                "Executing tool: {} with query: {}",
+                tool_call.name,
+                query
+            );
+
+            let result = if tool_call.name == "web_search" {
+                // Create a web search executor with the selected provider
+                let web_search_executor = crate::tools::web_search::WebSearchExecutor::new(
+                    search_provider_registry.as_ref().clone()
+                )
+                .with_default_provider(search_provider.to_string());
+                web_search_executor.execute(&tool_call).await
+            } else {
+                // Use the default registry for other tools
+                tool_registry.execute(&tool_call).await
+            };
+            tracing::info!(
+                "Tool '{}' executed: is_error={}",
+                tool_call.name,
+                result.is_error
+            );
+
+            // If successful, parse results through the model and stream them
+            if !result.is_error {
+                let parse_prompt = format!(
+                    "The user asked about: {}\n\nYou received these search results:\n{}\n\nPlease provide a clear, concise summary of the key findings. Format your response using markdown with:\n- Headings (###, ####)\n- Bullet points for lists\n- Bold for emphasis (**text**)\n- Proper paragraph breaks\n\nMake it well-structured and easy to read.",
+                    query,
+                    result.content
+                );
+
+                let parse_messages = vec![
+                    ChatMessage {
+                        role: "system".to_string(),
+                        content: "You are a helpful assistant. Summarize and format search results clearly using markdown formatting. Always use proper markdown syntax.".to_string(),
+                        tool_calls: None,
+                    },
+                    ChatMessage {
+                        role: "user".to_string(),
+                        content: parse_prompt,
+                        tool_calls: None,
+                    },
+                ];
+
+                match vllm
+                    .chat_stream(
+                        &instance.host,
+                        instance.port,
+                        &instance.model,
+                        parse_messages,
+                        Some(512),
+                    )
+                    .await
+                {
+                    Ok(mut parse_stream) => {
+                        let mut parsed_content = String::new();
+                        while let Some(res) = parse_stream.next().await {
+                            if let Ok(content) = res {
+                                parsed_content.push_str(&content);
+
+                                // Stream the parsed content with tool-result styling
+                                use pulldown_cmark::{Parser, html};
+                                let parser = Parser::new(&parsed_content);
+                                let mut html_output = String::new();
+                                html::push_html(&mut html_output, parser);
+
+                                let streamed_html = format!(
+                                    r#"<div class="message-inner"><div class="tool-result tool-success"><div class="tool-header"><span class="tool-icon">🔍</span><span class="tool-name">web_search "{}"</span></div><div class="tool-content">{}</div></div></div>"#,
+                                    html_escape(query),
+                                    html_output
+                                );
+                                yield Ok::<_, actix_web::Error>(encode_sse("message", &streamed_html));
+                            }
+                        }
+                        // Collect final parsed result for final message
+                        let mut result_clone = result.clone();
+                        result_clone.content = parsed_content;
+                        let tool_html = render_tool_result(&tool_call, &result_clone);
+                        tool_results_html.push_str(&tool_html);
+                    }
+                    Err(err) => {
+                        tracing::warn!("Failed to parse results: {}", err);
+                        let tool_html = render_tool_result(&tool_call, &result);
+                        tool_results_html.push_str(&tool_html);
+                    }
+                }
+            } else {
+                let tool_html = render_tool_result(&tool_call, &result);
+                tool_results_html.push_str(&tool_html);
+            }
+        }
+
+        // Clean tool_call XML tags from content before storing
+        let clean_content = crate::tools::parser::strip_tool_calls(&full_content);
 
         // Update/create Conversation FIRST
         let conv_repo = db_clone.repository::<crate::models::Conversation>();
@@ -389,7 +565,7 @@ pub async fn stream_message(
             ai_parent_id = req.parent_id.clone();
         }
 
-        // Create AI message in DB
+        // Create AI message in DB with clean content (tool calls removed)
         let msg_repo = db_clone.repository::<crate::models::Message>();
         let ai_msg_id = uuid::Uuid::new_v4().to_string();
         let ai_msg = crate::models::Message {
@@ -397,7 +573,7 @@ pub async fn stream_message(
             conversation_id: req.conversation_id.clone(),
             parent_id: ai_parent_id.clone(),
             role: "assistant".to_string(),
-            content: full_content.trim().to_string(),
+            content: clean_content.trim().to_string(),
             created_at: chrono::Utc::now().to_rfc3339(),
         };
         if let Err(err) = msg_repo.create(&ai_msg).await {
@@ -475,20 +651,27 @@ pub async fn stream_message(
         controls = controls.child(regenerate_btn);
 
         // 1. Transition the AI message block itself
+        let message_inner = div()
+            .class("message-inner")
+            .raw()
+            .text(&final_rendered);
+
+        let message_inner = if !tool_results_html.is_empty() {
+            message_inner.raw().text(&tool_results_html)
+        } else {
+            message_inner
+        };
+
         let oob_transition = div()
             .class("chat-message message-ai")
             .attr("id", format!("ai-{}", ai_msg_id))
             .attr("hx-swap-oob", format!("outerHTML:#ai-{}", message_id_clone))
             .child(
-                div()
-                    .class("message-inner")
+                message_inner.child(div()
+                    .class("branch-controls")
                     .raw()
-                    .text(&final_rendered)
-                    .child(div()
-                        .class("branch-controls")
-                        .raw()
-                        .text(controls.render())
-                    )
+                    .text(controls.render())
+                )
             );
 
         // 2. Transition the navigation dot and tooltip IDs for the AI message
@@ -589,7 +772,7 @@ pub async fn stream_message(
 
                 let has_projects = !projects.is_empty();
                 let projects_open_class = if has_projects { "open" } else { "" };
-                
+
                 history_list = history_list.child(
                     div()
                         .class(format!("history-section-header collapsible {}", projects_open_class))
@@ -941,7 +1124,11 @@ pub async fn get_conversation_messages(
                 .await?;
 
             for (role, content) in rows {
-                chat_messages.push(ChatMessage { role, content });
+                chat_messages.push(ChatMessage {
+                    role,
+                    content,
+                    tool_calls: None,
+                });
             }
         }
         quench_db::prelude::Db::InMemory(_mem_db) => {
@@ -966,6 +1153,7 @@ pub async fn get_conversation_messages(
                 chat_messages.push(ChatMessage {
                     role: msg.role,
                     content: msg.content,
+                    tool_calls: None,
                 });
             }
         }
@@ -1224,6 +1412,7 @@ pub async fn regenerate(
         project_id,
         parent_id: Some(parent_id),
         skip_user_message: true,
+        search_provider: None,
     };
 
     state.pending_messages.insert(message_id.clone(), req);
@@ -1381,6 +1570,60 @@ pub fn scope() -> actix_web::Scope {
         .service(regenerate)
         .service(edit_form)
         .service(handle_edit)
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
+fn render_tool_result(
+    tool_call: &crate::tools::ToolCall,
+    result: &crate::tools::ToolResult,
+) -> String {
+    let tool_name = &tool_call.name;
+    let query = tool_call
+        .arguments
+        .get("query")
+        .and_then(|v| v.as_str())
+        .unwrap_or("search");
+
+    let icon = match tool_name.as_str() {
+        "web_search" => "🔍",
+        _ => "⚙️",
+    };
+
+    let css_class = if result.is_error {
+        "tool-result tool-error"
+    } else {
+        "tool-result tool-success"
+    };
+
+    let content_html = if result.is_error {
+        format!("<p>{}</p>", html_escape(&result.content))
+    } else {
+        // Parse markdown content to HTML
+        use pulldown_cmark::{Parser, html};
+        let parser = Parser::new(&result.content);
+        let mut html_output = String::new();
+        html::push_html(&mut html_output, parser);
+        html_output
+    };
+
+    let header_text = if tool_name == "web_search" {
+        format!("{} \"{}\"", tool_name, html_escape(query))
+    } else {
+        html_escape(tool_name)
+    };
+
+    // Tool results are appended inside the message content area
+    format!(
+        r#"<div class="{}"><div class="tool-header"><span class="tool-icon">{}</span><span class="tool-name">{}</span></div><div class="tool-content">{}</div></div>"#,
+        css_class, icon, header_text, content_html
+    )
 }
 
 #[cfg(test)]

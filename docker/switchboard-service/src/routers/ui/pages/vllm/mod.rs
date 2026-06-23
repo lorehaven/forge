@@ -9,7 +9,7 @@ pub(super) async fn vllm_manage(
     req: actix_web::HttpRequest,
     config: web::Data<JwtConfig>,
 ) -> impl Responder {
-    if !common::is_ui_authenticated(&req, &config) {
+    if quench_srv::actix::routers::ui::get_user_from_req(&req, &config).await.is_none() {
         return common::ui_login_redirect();
     }
     render_vllm_manage_page(crate::routers::models::mod_impl::is_admin(&req, &config))
@@ -20,7 +20,7 @@ pub(super) async fn vllm_manage_slash(
     req: actix_web::HttpRequest,
     config: web::Data<JwtConfig>,
 ) -> impl Responder {
-    if !common::is_ui_authenticated(&req, &config) {
+    if quench_srv::actix::routers::ui::get_user_from_req(&req, &config).await.is_none() {
         return common::ui_login_redirect();
     }
     render_vllm_manage_page(crate::routers::models::mod_impl::is_admin(&req, &config))

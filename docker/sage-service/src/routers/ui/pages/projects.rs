@@ -1,9 +1,9 @@
 use actix_web::{HttpResponse, Responder, get, post, web};
+use chrono::Utc;
 use quench_db::prelude::{Crud, Db};
 use quench_srv::prelude::{JwtConfig, with_base_path};
 use quench_web::prelude::*;
 use uuid::Uuid;
-use chrono::Utc;
 
 #[get("/new-modal")]
 pub async fn new_modal() -> impl Responder {
@@ -39,15 +39,25 @@ pub async fn new_modal() -> impl Responder {
                                     button()
                                         .attr("type", "button")
                                         .class("btn-secondary")
-                                        .attr("onclick", "document.getElementById('new-project-modal').remove()")
+                                        .attr(
+                                            "onclick",
+                                            "document.getElementById('new-project-modal').remove()",
+                                        )
                                         .text("Cancel"),
                                 )
-                                .child(button().attr("type", "submit").class("btn-primary").text("Create")),
+                                .child(
+                                    button()
+                                        .attr("type", "submit")
+                                        .class("btn-primary")
+                                        .text("Create"),
+                                ),
                         ),
                 ),
         );
 
-    HttpResponse::Ok().content_type("text/html").body(modal.render())
+    HttpResponse::Ok()
+        .content_type("text/html")
+        .body(modal.render())
 }
 
 #[derive(serde::Deserialize)]
@@ -81,7 +91,10 @@ pub async fn create_project(
     }
 
     HttpResponse::Ok()
-        .append_header(("HX-Redirect", with_base_path(&format!("/ui/home?project_id={}", project.id))))
+        .append_header((
+            "HX-Redirect",
+            with_base_path(&format!("/ui/home?project_id={}", project.id)),
+        ))
         .finish()
 }
 

@@ -3,8 +3,8 @@ use crate::models::Conversation;
 use crate::routers::ui::chat::{
     ChatRequest, ChatState, get_conversation_message_nodes, get_siblings,
 };
-use crate::routers::ui::common::{UiPageKind, render_page};
 use crate::routers::ui::common;
+use crate::routers::ui::common::{UiPageKind, render_page};
 use actix_web::{HttpResponse, Responder, get, web};
 use quench_db::prelude::{Crud, Db};
 use quench_srv::actix::routers::ui::pages::home::handle_home;
@@ -19,13 +19,15 @@ pub struct HomeQuery {
 
 async fn handle_home_page(
     req: actix_web::HttpRequest,
-    config: web::Data<JwtConfig>,
+    jwt_config: web::Data<JwtConfig>,
     switchboard: web::Data<SwitchboardClient>,
     db: web::Data<Db>,
     chat_state: web::Data<ChatState>,
+    sage_config: web::Data<crate::config::SageConfig>,
     query: web::Query<HomeQuery>,
 ) -> impl Responder {
-    let username = match quench_srv::actix::routers::ui::get_user_from_req(&req, &config).await {
+    let username = match quench_srv::actix::routers::ui::get_user_from_req(&req, &jwt_config).await
+    {
         Some(claims) => claims.sub,
         None => return common::ui_login_redirect().map_into_right_body(),
     };
@@ -84,6 +86,7 @@ async fn handle_home_page(
             project_id: query.project_id.clone(),
             parent_id: Some(last_msg.id.clone()),
             skip_user_message: true, // DB message already exists
+            search_provider: None,
         };
         chat_state
             .pending_messages
@@ -91,7 +94,7 @@ async fn handle_home_page(
         auto_trigger_ai = Some(pending_id);
     }
 
-    handle_home(req, config, move || {
+    handle_home(req, jwt_config, move || {
         render_home_page(
             instances,
             projects,
@@ -100,6 +103,7 @@ async fn handle_home_page(
             active_messages,
             auto_trigger_ai,
             query.project_id.clone(),
+            sage_config.clone(),
         )
     })
     .await
@@ -109,27 +113,48 @@ async fn handle_home_page(
 #[get("/home")]
 pub(super) async fn home(
     req: actix_web::HttpRequest,
-    config: web::Data<JwtConfig>,
+    jwt_config: web::Data<JwtConfig>,
     switchboard: web::Data<SwitchboardClient>,
     db: web::Data<Db>,
     chat_state: web::Data<ChatState>,
+    sage_config: web::Data<crate::config::SageConfig>,
     query: web::Query<HomeQuery>,
 ) -> impl Responder {
-    handle_home_page(req, config, switchboard, db, chat_state, query).await
+    handle_home_page(
+        req,
+        jwt_config,
+        switchboard,
+        db,
+        chat_state,
+        sage_config,
+        query,
+    )
+    .await
 }
 
 #[get("/home/")]
 pub(super) async fn home_slash(
     req: actix_web::HttpRequest,
-    config: web::Data<JwtConfig>,
+    jwt_config: web::Data<JwtConfig>,
     switchboard: web::Data<SwitchboardClient>,
     db: web::Data<Db>,
     chat_state: web::Data<ChatState>,
+    sage_config: web::Data<crate::config::SageConfig>,
     query: web::Query<HomeQuery>,
 ) -> impl Responder {
-    handle_home_page(req, config, switchboard, db, chat_state, query).await
+    handle_home_page(
+        req,
+        jwt_config,
+        switchboard,
+        db,
+        chat_state,
+        sage_config,
+        query,
+    )
+    .await
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_home_page(
     instances_res: anyhow::Result<Vec<VllmInstance>>,
     projects: Vec<crate::models::Project>,
@@ -138,6 +163,7 @@ fn render_home_page(
     active_messages: Vec<(crate::models::Message, Vec<crate::models::Message>)>,
     auto_trigger_ai: Option<String>,
     project_id: Option<String>,
+    sage_config: web::Data<crate::config::SageConfig>,
 ) -> HttpResponse {
     let mut model_select = select().class("model-selector").attr("id", "model-select");
 
@@ -216,12 +242,35 @@ fn render_home_page(
                 .child(chat_textarea)
                 .child(send_btn),
         )
-        .child(
+        .child({
+            // Create provider selector
+            let mut provider_select = select()
+                .class("provider-selector")
+                .attr("id", "provider-select")
+                .attr("name", "search_provider")
+                .attr("class", "provider-selector");
+
+            for provider in &sage_config.available_search_providers {
+                let is_default = provider == &sage_config.default_search_provider;
+                let mut opt = option()
+                    .attr("value", provider)
+                    .text(match provider.as_str() {
+                        "duckduckgo" => "DuckDuckGo",
+                        "serpapi" => "SerpAPI",
+                        _ => provider,
+                    });
+                if is_default {
+                    opt = opt.attr("selected", "selected");
+                }
+                provider_select = provider_select.child(opt);
+            }
+
             div()
                 .class("chat-input-extras")
                 .child(div().attr("style", "flex: 1;"))
-                .child(model_select.attr("name", "instance_id")),
-        );
+                .child(provider_select)
+                .child(model_select.attr("name", "instance_id"))
+        });
 
     // Sidebar
     let mut sidebar_header = div().class("sidebar-header");
@@ -243,7 +292,7 @@ fn render_home_page(
     // Projects Section
     let has_projects = !projects.is_empty();
     let projects_open_class = if has_projects { "open" } else { "" };
-    
+
     let projects_header = div()
         .class(format!("history-section-header collapsible {}", projects_open_class))
         .attr("onclick", "this.classList.toggle('open'); const content = this.nextElementSibling; if(content) { content.classList.toggle('hidden'); }")
@@ -284,43 +333,83 @@ fn render_home_page(
             "history-item-link"
         };
 
-        let icon_class = if is_active { "fas fa-folder-open" } else { "fas fa-folder" };
+        let icon_class = if is_active {
+            "fas fa-folder-open"
+        } else {
+            "fas fa-folder"
+        };
 
         let item = div().class(item_class).child(
             a().class(link_class)
-                .attr("href", with_base_path(&format!("/ui/home?project_id={}", project.id)))
+                .attr(
+                    "href",
+                    with_base_path(&format!("/ui/home?project_id={}", project.id)),
+                )
                 .child(i().class(icon_class).attr("style", "margin-right: 8px;"))
                 .child(span().text(&project.name)),
         );
         projects_content = projects_content.child(item);
 
-        let project_convs: Vec<_> = conversations.iter().filter(|c| c.project_id.as_deref() == Some(&project.id)).collect();
+        let project_convs: Vec<_> = conversations
+            .iter()
+            .filter(|c| c.project_id.as_deref() == Some(&project.id))
+            .collect();
         for conv in project_convs {
             let is_conv_active = conv.id == active_id;
-            let conv_item_class = if is_conv_active { "history-item active project-conv-item" } else { "history-item project-conv-item" };
-            let conv_link_class = if is_conv_active { "history-item-link active" } else { "history-item-link" };
+            let conv_item_class = if is_conv_active {
+                "history-item active project-conv-item"
+            } else {
+                "history-item project-conv-item"
+            };
+            let conv_link_class = if is_conv_active {
+                "history-item-link active"
+            } else {
+                "history-item-link"
+            };
             let item_id = format!("history-item-{}", conv.id);
-            let conv_url = format!("/ui/home?conversation_id={}&project_id={}", conv.id, project.id);
-            
-            let conv_item = div().class(conv_item_class).attr("id", &item_id).child(
-                a().class(conv_link_class).attr("href", with_base_path(&conv_url)).text(&conv.title)
-            ).child(
-                div().class("menu-container").child(
-                    button().class("menu-trigger-btn").child(i().class("fas fa-ellipsis-v"))
-                ).child(
-                    div().class("dropdown-menu").child(
-                        button().class("dropdown-item delete-item")
-                        .attr("hx-get", with_base_path(&format!("/ui/chat/conversations/delete-modal/{}?active_id={}", conv.id, active_id)))
-                        .attr("hx-target", "#confirm-delete-modal")
-                        .attr("hx-swap", "outerHTML")
-                        .child(i().class("fas fa-trash")).child(span().text("Delete"))
-                    )
-                )
+            let conv_url = format!(
+                "/ui/home?conversation_id={}&project_id={}",
+                conv.id, project.id
             );
+
+            let conv_item = div()
+                .class(conv_item_class)
+                .attr("id", &item_id)
+                .child(
+                    a().class(conv_link_class)
+                        .attr("href", with_base_path(&conv_url))
+                        .text(&conv.title),
+                )
+                .child(
+                    div()
+                        .class("menu-container")
+                        .child(
+                            button()
+                                .class("menu-trigger-btn")
+                                .child(i().class("fas fa-ellipsis-v")),
+                        )
+                        .child(
+                            div().class("dropdown-menu").child(
+                                button()
+                                    .class("dropdown-item delete-item")
+                                    .attr(
+                                        "hx-get",
+                                        with_base_path(&format!(
+                                            "/ui/chat/conversations/delete-modal/{}?active_id={}",
+                                            conv.id, active_id
+                                        )),
+                                    )
+                                    .attr("hx-target", "#confirm-delete-modal")
+                                    .attr("hx-swap", "outerHTML")
+                                    .child(i().class("fas fa-trash"))
+                                    .child(span().text("Delete")),
+                            ),
+                        ),
+                );
             projects_content = projects_content.child(conv_item);
         }
     }
-    
+
     history_list = history_list.child(projects_content);
 
     // Conversations Section
@@ -341,7 +430,10 @@ fn render_home_page(
 
     let mut global_content = div().class("history-section-content");
 
-    let global_convs: Vec<_> = conversations.iter().filter(|c| c.project_id.is_none()).collect();
+    let global_convs: Vec<_> = conversations
+        .iter()
+        .filter(|c| c.project_id.is_none())
+        .collect();
     for conv in global_convs {
         let is_active = conv.id == active_id;
         let item_class = if is_active {
@@ -363,10 +455,7 @@ fn render_home_page(
             .attr("id", &item_id)
             .child(
                 a().class(link_class)
-                    .attr(
-                        "href",
-                        with_base_path(&conv_url),
-                    )
+                    .attr("href", with_base_path(&conv_url))
                     .text(&conv.title),
             )
             .child(
@@ -397,7 +486,7 @@ fn render_home_page(
             );
         global_content = global_content.child(item);
     }
-    
+
     history_list = history_list.child(global_content);
 
     let sidebar = div()
@@ -658,11 +747,11 @@ fn render_home_page(
                                     .attr("hx-on::after-request", "if(event.detail.successful) { document.getElementById('chat-input').value = ''; document.getElementById('chat-input').style.height = 'auto'; const history = document.querySelector('.chat-history'); history.scrollTop = history.scrollHeight; }")
                                     .class("chat-input-wrapper")
                                     .child(input().attr("type", "hidden").attr("name", "conversation_id").attr("value", &active_id));
-                                
+
                                 if let Some(ref pid) = project_id {
                                     f = f.child(input().attr("type", "hidden").attr("name", "project_id").attr("value", pid));
                                 }
-                                
+
                                 f.child(input_area_container)
                             }
                         )

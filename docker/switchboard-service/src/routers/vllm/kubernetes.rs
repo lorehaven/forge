@@ -100,6 +100,10 @@ impl VllmEngine for KubernetesVllmEngine {
                     .get("vllm-enable-prefix-caching")
                     .map(|v| v == "true")
                     .unwrap_or(false),
+                enable_tool_calling: annotations
+                    .get("vllm-enable-tool-calling")
+                    .map(|v| v == "true")
+                    .unwrap_or(false),
                 started_at: chrono::DateTime::<Utc>::from_timestamp(
                     started_at.as_second(),
                     started_at.subsec_nanosecond() as u32,
@@ -434,6 +438,7 @@ impl VllmEngine for KubernetesVllmEngine {
             max_model_len: req.max_model_len,
             gpu_memory_utilization: req.gpu_memory_utilization,
             enable_prefix_caching: req.enable_prefix_caching,
+            enable_tool_calling: req.enable_tool_calling,
             started_at: Utc::now(),
             status: "starting".to_string(),
             log_path: None,

@@ -33,6 +33,7 @@ pub struct LaunchRequestForm {
     gpu_memory_utilization: Option<String>,
     enable_prefix_caching: Option<bool>,
     prefix_caching: Option<bool>,
+    enable_tool_calling: Option<bool>,
 }
 
 #[post("/instances/form")]
@@ -60,6 +61,7 @@ pub async fn launch_instance_form(
             .enable_prefix_caching
             .or(form.prefix_caching)
             .unwrap_or(false),
+        enable_tool_calling: form.enable_tool_calling.unwrap_or(false),
     };
 
     match engine.launch_instance(req).await {

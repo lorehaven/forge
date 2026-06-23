@@ -46,13 +46,15 @@ pub struct SageConfig {
     pub system_prompt: String,
     pub default_models: Vec<DefaultModel>,
     pub supported_models: Vec<String>,
+    pub default_search_provider: String,
+    pub available_search_providers: Vec<String>,
 }
 
 impl SageConfig {
     pub fn load() -> Self {
         let prompt_path = envmnt::get_or("SAGE_SYSTEM_PROMPT_PATH", "config/system_prompt.txt");
 
-        let system_prompt = match fs::read_to_string(&prompt_path) {
+        let mut system_prompt = match fs::read_to_string(&prompt_path) {
             Ok(content) => content.trim().to_string(),
             Err(err) => {
                 tracing::warn!(
@@ -63,6 +65,21 @@ impl SageConfig {
                 "You are Sage, a wise and helpful AI assistant.".to_string()
             }
         };
+
+        // Append tool definitions to system prompt
+        let tools_def = crate::tools::get_tool_definitions_for_prompt();
+        if !tools_def.is_empty() {
+            system_prompt.push_str("\n\n### AVAILABLE TOOLS\n");
+            system_prompt.push_str("You have access to the following tools. When you need to use a tool, format your response with tool_call XML tags:\n\n");
+            system_prompt.push_str(&tools_def);
+            system_prompt.push_str("\n\nWhen calling a tool, use this format:\n<toolcall>{\"type\": \"search\", \"name\": \"websearch\", \"arguments\": {\"query\": \"your search query\"}}</toolcall>\n");
+            tracing::info!(
+                "Loaded {} tool definitions into system prompt",
+                crate::tools::get_tool_definitions().len()
+            );
+        } else {
+            tracing::warn!("No tool definitions loaded into system prompt");
+        }
 
         let default_models_str =
             envmnt::get_or("SAGE_DEFAULT_MODELS", r#"[{"name": "qwen2.5-coder:7b"}]"#);
@@ -76,10 +93,20 @@ impl SageConfig {
             .filter(|s| !s.is_empty())
             .collect();
 
+        let default_search_provider = envmnt::get_or("SEARCH_PROVIDER", "duckduckgo");
+
+        // Build list of available search providers
+        let mut available_search_providers = vec!["duckduckgo".to_string()];
+        if std::env::var("SERPAPI_API_KEY").is_ok() {
+            available_search_providers.push("serpapi".to_string());
+        }
+
         Self {
             system_prompt,
             default_models,
             supported_models,
+            default_search_provider,
+            available_search_providers,
         }
     }
 

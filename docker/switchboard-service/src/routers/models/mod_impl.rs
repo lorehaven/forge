@@ -14,8 +14,13 @@ pub fn is_admin(req: &actix_web::HttpRequest, config: &web::Data<JwtConfig>) -> 
     }
 
     use actix_web::HttpMessage;
-    if let Some(claims) = req.extensions().get::<quench_srv::actix::domain::jwt::Claims>() {
-        return claims.scope.contains("admin") || claims.scope.contains("system") || claims.scope.contains("service");
+    if let Some(claims) = req
+        .extensions()
+        .get::<quench_srv::actix::domain::jwt::Claims>()
+    {
+        return claims.scope.contains("admin")
+            || claims.scope.contains("system")
+            || claims.scope.contains("service");
     }
 
     // Fallback for UI if extensions wasn't populated somehow (though Auth middleware should)
@@ -25,7 +30,11 @@ pub fn is_admin(req: &actix_web::HttpRequest, config: &web::Data<JwtConfig>) -> 
     };
 
     match config.decode_claims(cookie.value()) {
-        Ok(claims) => claims.scope.contains("admin") || claims.scope.contains("system") || claims.scope.contains("service"),
+        Ok(claims) => {
+            claims.scope.contains("admin")
+                || claims.scope.contains("system")
+                || claims.scope.contains("service")
+        }
         Err(_) => false,
     }
 }

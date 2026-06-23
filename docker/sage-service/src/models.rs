@@ -42,7 +42,14 @@ impl Model for Conversation {
     }
 
     fn columns() -> Vec<&'static str> {
-        vec!["id", "title", "active_message_id", "owner", "project_id", "updated_at"]
+        vec![
+            "id",
+            "title",
+            "active_message_id",
+            "owner",
+            "project_id",
+            "updated_at",
+        ]
     }
 
     fn primary_key_name() -> String {

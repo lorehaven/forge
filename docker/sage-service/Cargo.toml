@@ -15,6 +15,7 @@ readme = { workspace = true }
 actix-web = { workspace = true }
 anyhow = { workspace = true }
 async-stream = { workspace = true }
+async-trait = { workspace = true }
 chrono = { workspace = true }
 dotenvy = { workspace = true }
 envmnt = { workspace = true }
@@ -32,3 +33,5 @@ tracing-subscriber = { workspace = true }
 tokio = { workspace = true }
 sqlx = { workspace = true }
 quench-db = { workspace = true }
+urlencoding = { version = "2.1" }
+pulldown-cmark = { version = "0.9" }

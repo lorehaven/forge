@@ -31,23 +31,18 @@ pub fn projects_rules() -> Vec<CssRule> {
             .property("background-color", "rgba(255, 255, 255, 0.05)")
             .property("color", "var(--bs-gray-200)")
             .property("border-color", "var(--bs-gray-700)"),
-        CssRule::new(".project-item")
-            .property("margin-bottom", "2px"),
+        CssRule::new(".project-item").property("margin-bottom", "2px"),
         CssRule::new(".collapsible")
             .property("cursor", "pointer")
             .property("user-select", "none"),
-        CssRule::new(".collapsible:hover")
-            .property("color", "white"),
+        CssRule::new(".collapsible:hover").property("color", "white"),
         CssRule::new(".collapsible .chevron")
             .property("transition", "transform 0.2s ease")
             .property("font-size", "0.6rem")
             .property("color", "rgba(255, 255, 255, 0.4)"),
-        CssRule::new(".collapsible.open .chevron")
-            .property("transform", "rotate(90deg)"),
-        CssRule::new(".history-section-content")
-            .property("display", "block"),
-        CssRule::new(".history-section-content.hidden")
-            .property("display", "none"),
+        CssRule::new(".collapsible.open .chevron").property("transform", "rotate(90deg)"),
+        CssRule::new(".history-section-content").property("display", "block"),
+        CssRule::new(".history-section-content.hidden").property("display", "none"),
         CssRule::new(".project-conv-item")
             .property("margin-left", "1.5rem")
             .property("position", "relative"),
@@ -61,7 +56,6 @@ pub fn projects_rules() -> Vec<CssRule> {
             .property("border-left", "1px solid rgba(255, 255, 255, 0.1)")
             .property("border-bottom", "1px solid rgba(255, 255, 255, 0.1)")
             .property("border-bottom-left-radius", "4px"),
-            
         // Modals
         CssRule::new(".modal-backdrop")
             .property("position", "fixed")
@@ -86,8 +80,7 @@ pub fn projects_rules() -> Vec<CssRule> {
             .property("margin-top", "0")
             .property("margin-bottom", "1.5rem")
             .property("font-size", "1.25rem"),
-        CssRule::new(".form-group")
-            .property("margin-bottom", "1.5rem"),
+        CssRule::new(".form-group").property("margin-bottom", "1.5rem"),
         CssRule::new(".form-group label")
             .property("display", "block")
             .property("margin-bottom", "0.5rem")
@@ -101,8 +94,7 @@ pub fn projects_rules() -> Vec<CssRule> {
             .property("padding", "0.75rem")
             .property("border-radius", "4px")
             .property("outline", "none"),
-        CssRule::new(".form-group input:focus")
-            .property("border-color", "var(--bs-primary)"),
+        CssRule::new(".form-group input:focus").property("border-color", "var(--bs-primary)"),
         CssRule::new(".modal-actions")
             .property("display", "flex")
             .property("justify-content", "flex-end")

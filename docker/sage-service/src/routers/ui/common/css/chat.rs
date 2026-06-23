@@ -171,8 +171,7 @@ pub fn chat_rules() -> Vec<CssRule> {
         CssRule::new(".message-content a")
             .property("color", "var(--bs-primary)")
             .property("text-decoration", "none"),
-        CssRule::new(".message-content a:hover")
-            .property("text-decoration", "underline"),
+        CssRule::new(".message-content a:hover").property("text-decoration", "underline"),
         CssRule::new(".message-ai .message-content")
             .property("background", "transparent")
             .property("color", "var(--bs-gray-200)")
@@ -325,7 +324,7 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("display", "flex")
             .property("justify-content", "flex-start")
             .property("padding", "0 1rem"),
-        CssRule::new(".model-selector")
+        CssRule::new(".model-selector, .provider-selector")
             .property("background", "var(--bs-gray-800)")
             .property("border", "1px solid var(--bs-gray-700)")
             .property("color", "var(--bs-gray-400)")
@@ -628,5 +627,38 @@ pub fn chat_rules() -> Vec<CssRule> {
         CssRule::new(".cancel-btn")
             .property("padding", "0.25rem 0.75rem !important")
             .property("font-size", "0.8rem !important"),
+        // Tool Results
+        CssRule::new(".tool-result")
+            .property("margin", "0.75rem 0")
+            .property("padding", "0.75rem")
+            .property("background-color", "var(--bs-gray-800)")
+            .property("border-left", "3px solid var(--bs-info)")
+            .property("border-radius", "0.25rem")
+            .property("font-size", "0.9rem")
+            .property("user-select", "text"),
+        CssRule::new(".tool-result.tool-success")
+            .property("border-left-color", "var(--bs-success)"),
+        CssRule::new(".tool-result.tool-error").property("border-left-color", "var(--bs-danger)"),
+        CssRule::new(".tool-header")
+            .property("display", "flex")
+            .property("align-items", "center")
+            .property("gap", "0.5rem")
+            .property("margin-bottom", "0.5rem")
+            .property("font-weight", "500")
+            .property("color", "var(--bs-info)"),
+        CssRule::new(".tool-result.tool-success .tool-header")
+            .property("color", "var(--bs-success)"),
+        CssRule::new(".tool-result.tool-error .tool-header").property("color", "var(--bs-danger)"),
+        CssRule::new(".tool-icon").property("font-size", "1.1rem"),
+        CssRule::new(".tool-name").property("text-transform", "capitalize"),
+        CssRule::new(".tool-content")
+            .property("color", "var(--bs-gray-300)")
+            .property("word-break", "rbreak-word")
+            .property("line-height", "1.5"),
+        CssRule::new(".tool-content p")
+            .property("margin", "0.5rem 0")
+            .property("padding", "0"),
+        CssRule::new(".tool-content p:first-child").property("margin-top", "0"),
+        CssRule::new(".tool-content p:last-child").property("margin-bottom", "0"),
     ]
 }

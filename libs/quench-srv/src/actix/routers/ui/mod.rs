@@ -66,12 +66,15 @@ pub async fn get_user_from_req(
         _ => return None,
     };
 
-    if let Some(session_id) = claims.sid.as_deref() {
-        if let Some(session_db) = req.app_data::<web::Data<crate::actix::domain::session::SessionDb>>() {
-            if !session_db.is_active(session_id, &claims.sub).await.unwrap_or(false) {
-                return None;
-            }
-        }
+    if let Some(session_id) = claims.sid.as_deref()
+        && let Some(session_db) =
+            req.app_data::<web::Data<crate::actix::domain::session::SessionDb>>()
+        && !session_db
+            .is_active(session_id, &claims.sub)
+            .await
+            .unwrap_or(false)
+    {
+        return None;
     }
 
     Some(claims)

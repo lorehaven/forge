@@ -7,6 +7,7 @@ mod clients;
 mod config;
 pub mod models;
 mod routers;
+pub mod tools;
 
 pub fn root_scope() -> impl HttpServiceFactory {
     routers::root_scope()
@@ -18,100 +19,192 @@ pub fn base_path_scope(
     config: config::SageConfig,
     chat_state: actix_web::web::Data<routers::ui::chat::ChatState>,
     jwt_config: JwtConfig,
+    tool_registry: actix_web::web::Data<tools::ToolRegistry>,
+    search_provider_registry: actix_web::web::Data<std::sync::Arc<tools::SearchProviderRegistry>>,
 ) -> impl HttpServiceFactory {
     actix_web::web::scope("")
         .app_data(actix_web::web::Data::new(switchboard))
         .app_data(actix_web::web::Data::new(vllm))
         .app_data(actix_web::web::Data::new(config))
         .app_data(chat_state)
+        .app_data(tool_registry)
+        .app_data(search_provider_registry)
         .service(routers::base_path_scope(jwt_config))
 }
 
-#[actix_web::main]
-async fn main() -> std::io::Result<()> {
+fn init_tracing() {
     tracing_subscriber::fmt().init();
     dotenvy::dotenv().ok();
     envmnt::set("DB_SCHEMA", envmnt::get_or("DB_SCHEMA", "sage"));
+}
 
+fn get_health_check_url() -> String {
     let switchboard_url = envmnt::get_or("SWITCHBOARD_URL", "http://switchboard-service:8080");
-    let health_url = format!("{}/health/ready", switchboard_url.trim_end_matches('/'));
+    format!("{}/health/ready", switchboard_url.trim_end_matches('/'))
+}
 
-    let db_wrapper = DbWrapper::init_env().await;
-    let switchboard = clients::switchboard::SwitchboardClient::new();
-    let vllm = clients::vllm::VllmClient::new();
-    let config = config::SageConfig::load();
-    let jwt_config = JwtConfig::init();
-    let chat_state = actix_web::web::Data::new(routers::ui::chat::ChatState {
+async fn init_database() -> std::sync::Arc<DbWrapper> {
+    DbWrapper::init_env().await
+}
+
+fn init_clients() -> (
+    clients::switchboard::SwitchboardClient,
+    clients::vllm::VllmClient,
+) {
+    (
+        clients::switchboard::SwitchboardClient::new(),
+        clients::vllm::VllmClient::new(),
+    )
+}
+
+fn init_config() -> (config::SageConfig, JwtConfig) {
+    (config::SageConfig::load(), JwtConfig::init())
+}
+
+fn init_chat_state() -> actix_web::web::Data<routers::ui::chat::ChatState> {
+    actix_web::web::Data::new(routers::ui::chat::ChatState {
         pending_messages: DashMap::new(),
-    });
+    })
+}
 
-    // Spawn background task to monitor if the default models are available.
-    // If not, send a request to switchboard to launch them.
+fn init_search_provider_registry() -> std::sync::Arc<tools::SearchProviderRegistry> {
+    let mut registry = tools::SearchProviderRegistry::new();
+
+    registry.register(
+        "duckduckgo".to_string(),
+        Box::new(tools::providers_duckduckgo::DuckDuckGoProvider::new()),
+    );
+
+    if let Ok(serpapi_provider) = tools::providers_serpapi::SerpapiProvider::from_env() {
+        registry.register("serpapi".to_string(), Box::new(serpapi_provider));
+        tracing::info!("SerpAPI provider registered");
+    } else {
+        tracing::info!("SerpAPI API key not set, provider not available");
+    }
+
+    let default_provider = envmnt::get_or("SEARCH_PROVIDER", "duckduckgo");
+    registry.set_default(default_provider);
+
+    std::sync::Arc::new(registry)
+}
+
+fn init_tool_registry(
+    search_provider_registry: &std::sync::Arc<tools::SearchProviderRegistry>,
+) -> actix_web::web::Data<tools::ToolRegistry> {
+    let mut registry = tools::ToolRegistry::new();
+
+    registry.register(
+        "web_search".to_string(),
+        Box::new(tools::web_search::WebSearchExecutor::new(
+            search_provider_registry.clone(),
+        )),
+    );
+
+    actix_web::web::Data::new(registry)
+}
+
+fn spawn_model_monitor_task(
+    switchboard: clients::switchboard::SwitchboardClient,
+    config: config::SageConfig,
+) {
     let switchboard_clone = switchboard.clone();
     let config_clone = config.clone();
+
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
         loop {
             interval.tick().await;
-            tracing::debug!("Checking active instances for default models...");
-            match switchboard_clone.get_vllm_instances().await {
-                Ok(instances) => {
-                    for model in &config_clone.default_models {
-                        if !config_clone.is_model_supported(&model.name) {
-                            tracing::warn!(
-                                "Model '{}' is in default_models but does not match any pattern in supported_models.",
-                                model.name
-                            );
-                            continue;
-                        }
-
-                        let is_active = instances.iter().any(|inst| {
-                            inst.model == model.name
-                                && (inst.status == "running"
-                                    || inst.status == "starting"
-                                    || inst.status == "pending")
-                        });
-
-                        if !is_active {
-                            tracing::info!(
-                                "Default model '{}' is not available. Requesting switchboard to launch it.",
-                                model.name
-                            );
-                            match switchboard_clone
-                                .launch_instance(
-                                    &model.name,
-                                    model.gpu_memory_utilization,
-                                    model.max_model_len,
-                                )
-                                .await
-                            {
-                                Ok(inst) => {
-                                    tracing::info!(
-                                        "Successfully requested launch of model '{}'. Instance ID: {}",
-                                        model.name,
-                                        inst.id
-                                    );
-                                }
-                                Err(err) => {
-                                    tracing::error!(
-                                        "Failed to request launch of model '{}': {}",
-                                        model.name,
-                                        err
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
-                Err(err) => {
-                    tracing::error!(
-                        "Failed to check running instances for default models: {}",
-                        err
-                    );
-                }
-            }
+            monitor_default_models(&switchboard_clone, &config_clone).await;
         }
     });
+}
+
+async fn monitor_default_models(
+    switchboard: &clients::switchboard::SwitchboardClient,
+    config: &config::SageConfig,
+) {
+    tracing::debug!("Checking active instances for default models...");
+
+    let instances = match switchboard.get_vllm_instances().await {
+        Ok(inst) => inst,
+        Err(err) => {
+            tracing::error!(
+                "Failed to check running instances for default models: {}",
+                err
+            );
+            return;
+        }
+    };
+
+    for model in &config.default_models {
+        if !config.is_model_supported(&model.name) {
+            tracing::warn!(
+                "Model '{}' is in default_models but does not match any pattern in supported_models.",
+                model.name
+            );
+            continue;
+        }
+
+        let is_active = instances.iter().any(|inst| {
+            inst.model == model.name
+                && (inst.status == "running"
+                    || inst.status == "starting"
+                    || inst.status == "pending")
+        });
+
+        if !is_active {
+            request_model_launch(switchboard, model).await;
+        }
+    }
+}
+
+async fn request_model_launch(
+    switchboard: &clients::switchboard::SwitchboardClient,
+    model: &config::DefaultModel,
+) {
+    tracing::info!(
+        "Default model '{}' is not available. Requesting switchboard to launch it.",
+        model.name
+    );
+
+    match switchboard
+        .launch_instance(
+            &model.name,
+            model.gpu_memory_utilization,
+            model.max_model_len,
+        )
+        .await
+    {
+        Ok(inst) => {
+            tracing::info!(
+                "Successfully requested launch of model '{}'. Instance ID: {}",
+                model.name,
+                inst.id
+            );
+        }
+        Err(err) => {
+            tracing::error!(
+                "Failed to request launch of model '{}': {}",
+                model.name,
+                err
+            );
+        }
+    }
+}
+
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    init_tracing();
+
+    let health_url = get_health_check_url();
+    let db_wrapper = init_database().await;
+    let (switchboard, vllm) = init_clients();
+    let (sage_config, jwt_config) = init_config();
+    let chat_state = init_chat_state();
+    let search_provider_registry = init_search_provider_registry();
+    let tool_registry = init_tool_registry(&search_provider_registry);
+
+    spawn_model_monitor_task(switchboard.clone(), sage_config.clone());
 
     serve(
         root_scope,
@@ -119,9 +212,11 @@ async fn main() -> std::io::Result<()> {
             base_path_scope(
                 switchboard.clone(),
                 vllm.clone(),
-                config.clone(),
+                sage_config.clone(),
                 chat_state.clone(),
                 jwt_config.clone(),
+                tool_registry.clone(),
+                actix_web::web::Data::new(search_provider_registry.clone()),
             )
         },
         Some(db_wrapper),

@@ -22,6 +22,7 @@ struct LaunchRecord {
     max_model_len: Option<u32>,
     gpu_memory_utilization: Option<f32>,
     enable_prefix_caching: bool,
+    enable_tool_calling: bool,
     started_at: DateTime<Utc>,
     terminating_at: Option<DateTime<Utc>>,
     log_path: Option<String>,
@@ -94,6 +95,7 @@ impl VllmEngine for NativeVllmEngine {
                 extract_arg(&parts, "--gpu-memory-utilization").and_then(|v| v.parse::<f32>().ok());
 
             let enable_prefix_caching = parts.iter().any(|p| p == "--enable-prefix-caching");
+            let enable_tool_calling = parts.iter().any(|p| p == "--enable-chat-template");
 
             let started_at = process_started_at(pid).unwrap_or_else(Utc::now);
 
@@ -126,6 +128,7 @@ impl VllmEngine for NativeVllmEngine {
                 max_model_len,
                 gpu_memory_utilization,
                 enable_prefix_caching,
+                enable_tool_calling,
                 started_at,
                 status: status.to_string(),
                 log_path: record.and_then(|r| r.log_path.clone()),
@@ -157,6 +160,7 @@ impl VllmEngine for NativeVllmEngine {
                     max_model_len: record.max_model_len,
                     gpu_memory_utilization: record.gpu_memory_utilization,
                     enable_prefix_caching: record.enable_prefix_caching,
+                    enable_tool_calling: record.enable_tool_calling,
                     started_at: record.started_at,
                     status: "terminating".to_string(),
                     log_path: record.log_path.clone(),
@@ -212,6 +216,14 @@ impl VllmEngine for NativeVllmEngine {
             args.push("--enable-prefix-caching".to_string());
         }
 
+        if req.enable_tool_calling {
+            args.push("--enable-chat-template".to_string());
+            tracing::info!(
+                "Enabled tool calling (chat template) for model {}",
+                req.model
+            );
+        }
+
         let stdout_file = match OpenOptions::new().create(true).append(true).open(&log_path) {
             Ok(file) => file,
             Err(e) => {
@@ -257,6 +269,7 @@ impl VllmEngine for NativeVllmEngine {
                         max_model_len: req.max_model_len,
                         gpu_memory_utilization: req.gpu_memory_utilization,
                         enable_prefix_caching: req.enable_prefix_caching,
+                        enable_tool_calling: req.enable_tool_calling,
                         started_at,
                         terminating_at: None,
                         log_path: Some(log_path.clone()),
@@ -279,6 +292,7 @@ impl VllmEngine for NativeVllmEngine {
                             max_model_len: req.max_model_len,
                             gpu_memory_utilization: req.gpu_memory_utilization,
                             enable_prefix_caching: req.enable_prefix_caching,
+                            enable_tool_calling: req.enable_tool_calling,
                             started_at,
                             terminating_at: None,
                             log_path: Some(log_path.clone()),
@@ -310,6 +324,7 @@ impl VllmEngine for NativeVllmEngine {
                         max_model_len: req.max_model_len,
                         gpu_memory_utilization: req.gpu_memory_utilization,
                         enable_prefix_caching: req.enable_prefix_caching,
+                        enable_tool_calling: req.enable_tool_calling,
                         started_at,
                         terminating_at: None,
                         log_path: Some(log_path.clone()),
@@ -327,6 +342,7 @@ impl VllmEngine for NativeVllmEngine {
                     max_model_len: req.max_model_len,
                     gpu_memory_utilization: req.gpu_memory_utilization,
                     enable_prefix_caching: req.enable_prefix_caching,
+                    enable_tool_calling: req.enable_tool_calling,
                     started_at,
                     status: "starting".to_string(),
                     log_path: Some(log_path),

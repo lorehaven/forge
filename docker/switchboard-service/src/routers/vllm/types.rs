@@ -12,6 +12,7 @@ pub struct VllmInstance {
     pub max_model_len: Option<u32>,
     pub gpu_memory_utilization: Option<f32>,
     pub enable_prefix_caching: bool,
+    pub enable_tool_calling: bool,
 
     pub started_at: DateTime<Utc>,
 
@@ -30,4 +31,6 @@ pub struct LaunchRequest {
     pub max_model_len: Option<u32>,
     pub gpu_memory_utilization: Option<f32>,
     pub enable_prefix_caching: bool,
+    #[serde(default)]
+    pub enable_tool_calling: bool,
 }

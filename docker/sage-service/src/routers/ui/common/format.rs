@@ -294,7 +294,8 @@ fn format_inline(text: &str) -> String {
                     let url_content: String = chars[j + 2..k].iter().collect();
                     result.push_str(&format!(
                         "<a href=\"{}\" target=\"_blank\" rel=\"noopener noreferrer\">{}</a>",
-                        url_content, format_inline(&text_content)
+                        url_content,
+                        format_inline(&text_content)
                     ));
                     i = k + 1;
                     continue;

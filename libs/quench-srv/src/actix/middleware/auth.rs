@@ -141,7 +141,11 @@ where
         match self.config.decode_claims(&token_str) {
             Ok(claims) => {
                 if claims.service != self.config.service_name {
-                    tracing::warn!("AuthMiddleware: Token service mismatch. Expected {}, got {}", self.config.service_name, claims.service);
+                    tracing::warn!(
+                        "AuthMiddleware: Token service mismatch. Expected {}, got {}",
+                        self.config.service_name,
+                        claims.service
+                    );
                     return Box::pin(async move {
                         let res = actix_web::HttpResponse::Unauthorized()
                             .finish()
@@ -167,7 +171,11 @@ where
                             }
                         };
                         if !active {
-                            tracing::warn!("AuthMiddleware: Session {} is not active for user {}", session_id, claims.sub);
+                            tracing::warn!(
+                                "AuthMiddleware: Session {} is not active for user {}",
+                                session_id,
+                                claims.sub
+                            );
                             let res = actix_web::HttpResponse::Unauthorized()
                                 .finish()
                                 .map_into_right_body();
