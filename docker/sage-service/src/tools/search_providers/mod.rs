@@ -1,5 +1,15 @@
 use async_trait::async_trait;
 
+pub mod providers_brave;
+pub mod providers_duckduckgo;
+pub mod providers_searxng;
+pub mod providers_serpapi;
+
+pub use providers_brave::BraveProvider;
+pub use providers_duckduckgo::DuckDuckGoProvider;
+pub use providers_searxng::SearxngProvider;
+pub use providers_serpapi::SerpapiProvider;
+
 #[async_trait]
 pub trait SearchProvider: Send + Sync {
     fn name(&self) -> &str;

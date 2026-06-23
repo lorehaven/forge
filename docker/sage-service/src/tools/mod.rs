@@ -2,12 +2,10 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 pub mod parser;
-pub mod providers_duckduckgo;
-pub mod providers_serpapi;
-pub mod search_provider;
+pub mod search_providers;
 pub mod web_search;
 
-pub use search_provider::{SearchProvider, SearchProviderRegistry};
+pub use search_providers::{SearchProvider, SearchProviderRegistry};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolDefinition {

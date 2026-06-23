@@ -1,4 +1,4 @@
-use super::search_provider::SearchProvider;
+use super::SearchProvider;
 use async_trait::async_trait;
 
 pub struct SerpapiProvider {

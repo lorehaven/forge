@@ -96,10 +96,14 @@ impl SageConfig {
         let default_search_provider = envmnt::get_or("SEARCH_PROVIDER", "duckduckgo");
 
         // Build list of available search providers
-        let mut available_search_providers = vec!["duckduckgo".to_string()];
+        let mut available_search_providers = vec!["duckduckgo".to_string(), "searxng".to_string()];
+        if std::env::var("BRAVE_SEARCH_API_KEY").is_ok() {
+            available_search_providers.push("brave".to_string());
+        }
         if std::env::var("SERPAPI_API_KEY").is_ok() {
             available_search_providers.push("serpapi".to_string());
         }
+        available_search_providers.sort();
 
         Self {
             system_prompt,

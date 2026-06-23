@@ -252,13 +252,16 @@ fn render_home_page(
 
             for provider in &sage_config.available_search_providers {
                 let is_default = provider == &sage_config.default_search_provider;
+                let label = match provider.as_str() {
+                    "brave" => "Brave Search",
+                    "duckduckgo" => "DuckDuckGo",
+                    "searxng" => "SearXNG",
+                    "serpapi" => "SerpAPI",
+                    _ => provider,
+                };
                 let mut opt = option()
                     .attr("value", provider)
-                    .text(match provider.as_str() {
-                        "duckduckgo" => "DuckDuckGo",
-                        "serpapi" => "SerpAPI",
-                        _ => provider,
-                    });
+                    .text(label);
                 if is_default {
                     opt = opt.attr("selected", "selected");
                 }

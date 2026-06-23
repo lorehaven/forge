@@ -72,10 +72,31 @@ fn init_search_provider_registry() -> std::sync::Arc<tools::SearchProviderRegist
 
     registry.register(
         "duckduckgo".to_string(),
-        Box::new(tools::providers_duckduckgo::DuckDuckGoProvider::new()),
+        Box::new(tools::search_providers::DuckDuckGoProvider::new()),
     );
 
-    if let Ok(serpapi_provider) = tools::providers_serpapi::SerpapiProvider::from_env() {
+    if let Ok(brave_provider) = tools::search_providers::BraveProvider::from_env() {
+        registry.register("brave".to_string(), Box::new(brave_provider));
+        tracing::info!("Brave Search provider registered");
+    } else {
+        tracing::info!("Brave Search API key not set, provider not available");
+    }
+
+    if let Ok(searxng_provider) = tools::search_providers::SearxngProvider::from_env() {
+        registry.register("searxng".to_string(), Box::new(searxng_provider));
+        tracing::info!("SearXNG provider registered");
+    } else {
+        tracing::info!("SearXNG instance URL not set or invalid, using default");
+        registry.register(
+            "searxng".to_string(),
+            Box::new(tools::search_providers::SearxngProvider::new(
+                "https://searxng.be".to_string(),
+            )),
+        );
+        tracing::info!("SearXNG provider registered with default instance");
+    }
+
+    if let Ok(serpapi_provider) = tools::search_providers::SerpapiProvider::from_env() {
         registry.register("serpapi".to_string(), Box::new(serpapi_provider));
         tracing::info!("SerpAPI provider registered");
     } else {
