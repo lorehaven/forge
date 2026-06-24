@@ -8,7 +8,9 @@ mod clients;
 mod config;
 pub mod conversation;
 pub mod error_handling;
+pub mod metrics;
 pub mod models;
+pub mod rate_limiter;
 pub mod response_cache;
 mod routers;
 pub mod tools;
@@ -25,6 +27,8 @@ pub fn base_path_scope(
     jwt_config: JwtConfig,
     tool_registry: actix_web::web::Data<tools::ToolRegistry>,
     search_provider_registry: actix_web::web::Data<std::sync::Arc<tools::SearchProviderRegistry>>,
+    metrics_collector: actix_web::web::Data<std::sync::Arc<metrics::MetricsCollector>>,
+    rate_limiter: actix_web::web::Data<std::sync::Arc<tokio::sync::Mutex<rate_limiter::RateLimiter>>>,
 ) -> impl HttpServiceFactory {
     let response_cache = actix_web::web::Data::new(response_cache::ResponseCache::new());
 
@@ -35,6 +39,8 @@ pub fn base_path_scope(
         .app_data(chat_state)
         .app_data(tool_registry)
         .app_data(search_provider_registry)
+        .app_data(metrics_collector)
+        .app_data(rate_limiter)
         .app_data(response_cache)
         .service(routers::base_path_scope(jwt_config))
 }
@@ -114,6 +120,14 @@ fn init_search_provider_registry() -> std::sync::Arc<tools::SearchProviderRegist
     registry.set_default(default_provider);
 
     std::sync::Arc::new(registry)
+}
+
+fn init_metrics_collector() -> std::sync::Arc<metrics::MetricsCollector> {
+    std::sync::Arc::new(metrics::MetricsCollector::new())
+}
+
+fn init_rate_limiter() -> std::sync::Arc<tokio::sync::Mutex<rate_limiter::RateLimiter>> {
+    std::sync::Arc::new(tokio::sync::Mutex::new(rate_limiter::RateLimiter::new()))
 }
 
 fn init_tool_registry(
@@ -257,6 +271,8 @@ async fn main() -> std::io::Result<()> {
     let (sage_config, jwt_config) = init_config();
     let chat_state = init_chat_state();
     let search_provider_registry = init_search_provider_registry();
+    let metrics_collector = init_metrics_collector();
+    let rate_limiter = init_rate_limiter();
     let tool_registry =
         init_tool_registry(&search_provider_registry, &sage_config.capability_profile);
 
@@ -273,6 +289,8 @@ async fn main() -> std::io::Result<()> {
                 jwt_config.clone(),
                 tool_registry.clone(),
                 actix_web::web::Data::new(search_provider_registry.clone()),
+                actix_web::web::Data::new(metrics_collector.clone()),
+                actix_web::web::Data::new(rate_limiter.clone()),
             )
         },
         Some(db_wrapper),

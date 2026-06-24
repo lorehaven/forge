@@ -19,6 +19,11 @@ pub struct CapabilitiesResponse {
     pub available_search_providers: Vec<String>,
 }
 
+#[derive(Serialize)]
+pub struct MetricsResponse {
+    pub profiles: Vec<crate::metrics::ProfileMetrics>,
+}
+
 #[post("")]
 pub async fn chat(
     req: web::Json<ChatRequest>,
@@ -94,8 +99,31 @@ pub async fn capabilities(config: web::Data<SageConfig>) -> impl Responder {
     HttpResponse::Ok().json(response)
 }
 
+#[get("/metrics")]
+pub async fn get_metrics(
+    metrics_collector: web::Data<std::sync::Arc<crate::metrics::MetricsCollector>>,
+) -> impl Responder {
+    let profiles = metrics_collector.get_all_profiles_metrics();
+    let response = MetricsResponse { profiles };
+    HttpResponse::Ok().json(response)
+}
+
+#[get("/metrics/{profile}")]
+pub async fn get_metrics_by_profile(
+    profile_name: web::Path<String>,
+    metrics_collector: web::Data<std::sync::Arc<crate::metrics::MetricsCollector>>,
+) -> impl Responder {
+    let profile = profile_name.into_inner();
+    match metrics_collector.get_profile_metrics(&profile) {
+        Some(metrics) => HttpResponse::Ok().json(metrics),
+        None => HttpResponse::NotFound().body(format!("No metrics found for profile '{}'", profile)),
+    }
+}
+
 pub fn scope() -> actix_web::Scope {
     web::scope("/api/v1/chat")
         .service(chat)
         .service(capabilities)
+        .service(get_metrics)
+        .service(get_metrics_by_profile)
 }

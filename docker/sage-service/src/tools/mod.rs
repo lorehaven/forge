@@ -107,6 +107,8 @@ pub struct ToolRegistry {
     user_id: Option<String>,
     conversation_id: Option<String>,
     confirmations: std::collections::HashSet<String>,
+    metrics_collector: Option<std::sync::Arc<crate::metrics::MetricsCollector>>,
+    rate_limiter: Option<std::sync::Arc<tokio::sync::Mutex<crate::rate_limiter::RateLimiter>>>,
 }
 
 impl ToolRegistry {
@@ -117,6 +119,8 @@ impl ToolRegistry {
             user_id: None,
             conversation_id: None,
             confirmations: std::collections::HashSet::new(),
+            metrics_collector: None,
+            rate_limiter: None,
         }
     }
 
@@ -127,6 +131,8 @@ impl ToolRegistry {
             user_id: None,
             conversation_id: None,
             confirmations: std::collections::HashSet::new(),
+            metrics_collector: None,
+            rate_limiter: None,
         }
     }
 
@@ -141,7 +147,23 @@ impl ToolRegistry {
             user_id,
             conversation_id,
             confirmations: std::collections::HashSet::new(),
+            metrics_collector: None,
+            rate_limiter: None,
         }
+    }
+
+    pub fn set_metrics_collector(
+        &mut self,
+        collector: std::sync::Arc<crate::metrics::MetricsCollector>,
+    ) {
+        self.metrics_collector = Some(collector);
+    }
+
+    pub fn set_rate_limiter(
+        &mut self,
+        limiter: std::sync::Arc<tokio::sync::Mutex<crate::rate_limiter::RateLimiter>>,
+    ) {
+        self.rate_limiter = Some(limiter);
     }
 
     pub fn register(&mut self, name: String, executor: Box<dyn ToolExecutor>) {
@@ -155,6 +177,30 @@ impl ToolRegistry {
             .as_ref()
             .map(|p| p.name.as_str())
             .unwrap_or("default");
+
+        // Check rate limiting
+        if let Some(limiter) = &self.rate_limiter {
+            let limiter_guard = limiter.lock().await;
+            if let Err(rate_limit_err) = limiter_guard.check_rate_limit(
+                profile_name,
+                self.user_id.as_deref(),
+                self.conversation_id.as_deref(),
+            ) {
+                tracing::warn!(
+                    target: "audit",
+                    user_id = ?self.user_id,
+                    conversation_id = ?self.conversation_id,
+                    error = %rate_limit_err,
+                    "Rate limit exceeded"
+                );
+
+                return ToolResult {
+                    tool_use_id: tool_call.id.clone(),
+                    content: format!("Rate limit exceeded: {}", rate_limit_err),
+                    is_error: true,
+                };
+            }
+        }
 
         if let Some(profile) = &self.profile {
             if !profile
@@ -204,6 +250,7 @@ impl ToolRegistry {
             .map(|p| p.get_timeout_for_tool(&tool_call.name))
             .unwrap_or(60);
 
+        let mut timeout_occurred = false;
         let result = match self.executors.get(&tool_call.name) {
             Some(executor) => {
                 match tokio::time::timeout(
@@ -213,14 +260,17 @@ impl ToolRegistry {
                 .await
                 {
                     Ok(exec_result) => exec_result,
-                    Err(_) => ToolResult {
-                        tool_use_id: tool_call.id.clone(),
-                        content: format!(
-                            "Tool '{}' execution timed out after {} seconds",
-                            tool_call.name, timeout_secs
-                        ),
-                        is_error: true,
-                    },
+                    Err(_) => {
+                        timeout_occurred = true;
+                        ToolResult {
+                            tool_use_id: tool_call.id.clone(),
+                            content: format!(
+                                "Tool '{}' execution timed out after {} seconds",
+                                tool_call.name, timeout_secs
+                            ),
+                            is_error: true,
+                        }
+                    }
                 }
             }
             None => ToolResult {
@@ -231,6 +281,18 @@ impl ToolRegistry {
         };
 
         let elapsed = start_time.elapsed().as_millis();
+
+        // Record metrics
+        if let Some(collector) = &self.metrics_collector {
+            collector.record_tool_execution(
+                profile_name,
+                &tool_call.name,
+                elapsed,
+                !result.is_error,
+                timeout_occurred,
+            );
+        }
+
         crate::audit::AuditLogger::log_tool_execution(
             &tool_call.name,
             profile_name,
