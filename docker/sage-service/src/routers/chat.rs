@@ -24,6 +24,12 @@ pub struct MetricsResponse {
     pub profiles: Vec<crate::metrics::ProfileMetrics>,
 }
 
+#[derive(Serialize)]
+pub struct CostsResponse {
+    pub users: Vec<crate::cost_tracking::UserCosts>,
+    pub profiles: Vec<crate::cost_tracking::ProfileCosts>,
+}
+
 #[post("")]
 pub async fn chat(
     req: web::Json<ChatRequest>,
@@ -116,8 +122,38 @@ pub async fn get_metrics_by_profile(
     let profile = profile_name.into_inner();
     match metrics_collector.get_profile_metrics(&profile) {
         Some(metrics) => HttpResponse::Ok().json(metrics),
-        None => HttpResponse::NotFound().body(format!("No metrics found for profile '{}'", profile)),
+        None => {
+            HttpResponse::NotFound().body(format!("No metrics found for profile '{}'", profile))
+        }
     }
+}
+
+#[get("/costs")]
+pub async fn get_costs(
+    cost_tracker: web::Data<std::sync::Arc<crate::cost_tracking::CostTracker>>,
+) -> impl Responder {
+    let users = cost_tracker.get_all_user_costs();
+    let profiles = cost_tracker.get_all_profile_costs();
+    let response = CostsResponse { users, profiles };
+    HttpResponse::Ok().json(response)
+}
+
+#[get("/costs/user/{user_id}")]
+pub async fn get_user_costs(
+    user_id: web::Path<String>,
+    cost_tracker: web::Data<std::sync::Arc<crate::cost_tracking::CostTracker>>,
+) -> impl Responder {
+    match cost_tracker.get_user_costs(&user_id) {
+        Some(costs) => HttpResponse::Ok().json(costs),
+        None => HttpResponse::NotFound().body(format!("No costs found for user '{}'", user_id)),
+    }
+}
+
+#[get("/context-status/{profile}")]
+pub async fn get_context_status(profile_path: web::Path<String>) -> impl Responder {
+    let profile = profile_path.into_inner();
+    let status = crate::context_manager::ContextStatus::new(&profile, 0);
+    HttpResponse::Ok().json(status)
 }
 
 pub fn scope() -> actix_web::Scope {
@@ -126,4 +162,7 @@ pub fn scope() -> actix_web::Scope {
         .service(capabilities)
         .service(get_metrics)
         .service(get_metrics_by_profile)
+        .service(get_costs)
+        .service(get_user_costs)
+        .service(get_context_status)
 }

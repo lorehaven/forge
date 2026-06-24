@@ -69,10 +69,7 @@ impl RateLimiter {
 
         // Check user rate limit
         if let Some(user_id) = user_id {
-            let mut calls = self
-                .user_calls
-                .entry(user_id.to_string())
-                .or_insert_with(VecDeque::new);
+            let mut calls = self.user_calls.entry(user_id.to_string()).or_default();
 
             // Remove old calls outside the 1-minute window
             while let Some(&call_time) = calls.front() {
@@ -99,7 +96,7 @@ impl RateLimiter {
             let mut calls = self
                 .conversation_calls
                 .entry(conversation_id.to_string())
-                .or_insert_with(VecDeque::new);
+                .or_default();
 
             // Remove old calls
             while let Some(&call_time) = calls.front() {
@@ -200,7 +197,10 @@ impl std::fmt::Display for RateLimitError {
                     user_id, limit
                 )
             }
-            RateLimitError::BurstLimitExceeded { limit, conversation_id } => {
+            RateLimitError::BurstLimitExceeded {
+                limit,
+                conversation_id,
+            } => {
                 write!(
                     f,
                     "Conversation '{}' has exceeded burst limit of {} concurrent calls",
@@ -219,8 +219,7 @@ mod tests {
     fn test_rate_limit_check() {
         let limiter = RateLimiter::new();
 
-        let result =
-            limiter.check_rate_limit("web_assistant", Some("user-1"), Some("conv-1"));
+        let result = limiter.check_rate_limit("web_assistant", Some("user-1"), Some("conv-1"));
         assert!(result.is_ok());
     }
 

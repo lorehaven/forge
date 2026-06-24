@@ -59,6 +59,12 @@ impl ToolMetrics {
     }
 }
 
+impl Default for ToolMetrics {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfileMetrics {
     pub profile: String,
@@ -127,7 +133,7 @@ impl MetricsCollector {
 
         profile_map
             .entry(tool_name.to_string())
-            .or_insert_with(ToolMetrics::new)
+            .or_default()
             .record_execution(duration_ms, success, timeout);
     }
 

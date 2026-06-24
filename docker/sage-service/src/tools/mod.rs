@@ -109,6 +109,7 @@ pub struct ToolRegistry {
     confirmations: std::collections::HashSet<String>,
     metrics_collector: Option<std::sync::Arc<crate::metrics::MetricsCollector>>,
     rate_limiter: Option<std::sync::Arc<tokio::sync::Mutex<crate::rate_limiter::RateLimiter>>>,
+    cost_tracker: Option<std::sync::Arc<crate::cost_tracking::CostTracker>>,
 }
 
 impl ToolRegistry {
@@ -121,6 +122,7 @@ impl ToolRegistry {
             confirmations: std::collections::HashSet::new(),
             metrics_collector: None,
             rate_limiter: None,
+            cost_tracker: None,
         }
     }
 
@@ -133,6 +135,7 @@ impl ToolRegistry {
             confirmations: std::collections::HashSet::new(),
             metrics_collector: None,
             rate_limiter: None,
+            cost_tracker: None,
         }
     }
 
@@ -149,6 +152,7 @@ impl ToolRegistry {
             confirmations: std::collections::HashSet::new(),
             metrics_collector: None,
             rate_limiter: None,
+            cost_tracker: None,
         }
     }
 
@@ -164,6 +168,10 @@ impl ToolRegistry {
         limiter: std::sync::Arc<tokio::sync::Mutex<crate::rate_limiter::RateLimiter>>,
     ) {
         self.rate_limiter = Some(limiter);
+    }
+
+    pub fn set_cost_tracker(&mut self, tracker: std::sync::Arc<crate::cost_tracking::CostTracker>) {
+        self.cost_tracker = Some(tracker);
     }
 
     pub fn register(&mut self, name: String, executor: Box<dyn ToolExecutor>) {
@@ -225,7 +233,9 @@ impl ToolRegistry {
             }
 
             // Check if this tool requires confirmation
-            if profile.requires_confirmation(&tool_call.name) && !self.has_confirmation(&tool_call.name) {
+            if profile.requires_confirmation(&tool_call.name)
+                && !self.has_confirmation(&tool_call.name)
+            {
                 crate::audit::AuditLogger::log_confirmation_required(
                     &tool_call.name,
                     profile_name,
@@ -250,35 +260,76 @@ impl ToolRegistry {
             .map(|p| p.get_timeout_for_tool(&tool_call.name))
             .unwrap_or(60);
 
+        let retry_policy = crate::retry_policy::get_retry_policy(&tool_call.name);
+
         let mut timeout_occurred = false;
-        let result = match self.executors.get(&tool_call.name) {
-            Some(executor) => {
-                match tokio::time::timeout(
-                    tokio::time::Duration::from_secs(timeout_secs),
-                    executor.execute(tool_call),
-                )
-                .await
-                {
-                    Ok(exec_result) => exec_result,
-                    Err(_) => {
-                        timeout_occurred = true;
-                        ToolResult {
-                            tool_use_id: tool_call.id.clone(),
-                            content: format!(
-                                "Tool '{}' execution timed out after {} seconds",
-                                tool_call.name, timeout_secs
-                            ),
-                            is_error: true,
+        let mut retry_count = 0;
+        let mut result: Option<ToolResult>;
+
+        // Retry loop with exponential backoff
+        loop {
+            result = match self.executors.get(&tool_call.name) {
+                Some(executor) => {
+                    match tokio::time::timeout(
+                        tokio::time::Duration::from_secs(timeout_secs),
+                        executor.execute(tool_call),
+                    )
+                    .await
+                    {
+                        Ok(exec_result) => Some(exec_result),
+                        Err(_) => {
+                            timeout_occurred = true;
+                            Some(ToolResult {
+                                tool_use_id: tool_call.id.clone(),
+                                content: format!(
+                                    "Tool '{}' execution timed out after {} seconds",
+                                    tool_call.name, timeout_secs
+                                ),
+                                is_error: true,
+                            })
                         }
                     }
                 }
+                None => Some(ToolResult {
+                    tool_use_id: tool_call.id.clone(),
+                    content: format!("Tool '{}' not found", tool_call.name),
+                    is_error: true,
+                }),
+            };
+
+            // Check if we should retry
+            if let Some(ref res) = result
+                && res.is_error
+                && retry_policy.should_retry(retry_count)
+            {
+                // Transient errors that can be retried
+                let is_transient = res.content.contains("timeout")
+                    || res.content.contains("connection")
+                    || res.content.contains("temporarily")
+                    || res.content.contains("unavailable");
+
+                if is_transient {
+                    let backoff = retry_policy.calculate_backoff(retry_count);
+                    tracing::info!(
+                        tool = %tool_call.name,
+                        attempt = retry_count + 1,
+                        backoff_ms = backoff.as_millis(),
+                        "Retrying tool execution after transient error"
+                    );
+                    tokio::time::sleep(backoff).await;
+                    retry_count += 1;
+                    continue;
+                }
             }
-            None => ToolResult {
-                tool_use_id: tool_call.id.clone(),
-                content: format!("Tool '{}' not found", tool_call.name),
-                is_error: true,
-            },
-        };
+
+            break;
+        }
+
+        let result = result.unwrap_or_else(|| ToolResult {
+            tool_use_id: tool_call.id.clone(),
+            content: "Unexpected error during execution".to_string(),
+            is_error: true,
+        });
 
         let elapsed = start_time.elapsed().as_millis();
 

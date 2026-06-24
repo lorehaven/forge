@@ -6,12 +6,15 @@ use quench_srv::prelude::{DbWrapper, serve, wait_for_services};
 mod audit;
 mod clients;
 mod config;
+pub mod context_manager;
 pub mod conversation;
+pub mod cost_tracking;
 pub mod error_handling;
 pub mod metrics;
 pub mod models;
 pub mod rate_limiter;
 pub mod response_cache;
+pub mod retry_policy;
 mod routers;
 pub mod tools;
 
@@ -19,6 +22,7 @@ pub fn root_scope() -> impl HttpServiceFactory {
     routers::root_scope()
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn base_path_scope(
     switchboard: clients::switchboard::SwitchboardClient,
     vllm: clients::vllm::VllmClient,
@@ -28,7 +32,10 @@ pub fn base_path_scope(
     tool_registry: actix_web::web::Data<tools::ToolRegistry>,
     search_provider_registry: actix_web::web::Data<std::sync::Arc<tools::SearchProviderRegistry>>,
     metrics_collector: actix_web::web::Data<std::sync::Arc<metrics::MetricsCollector>>,
-    rate_limiter: actix_web::web::Data<std::sync::Arc<tokio::sync::Mutex<rate_limiter::RateLimiter>>>,
+    rate_limiter: actix_web::web::Data<
+        std::sync::Arc<tokio::sync::Mutex<rate_limiter::RateLimiter>>,
+    >,
+    cost_tracker: actix_web::web::Data<std::sync::Arc<cost_tracking::CostTracker>>,
 ) -> impl HttpServiceFactory {
     let response_cache = actix_web::web::Data::new(response_cache::ResponseCache::new());
 
@@ -41,6 +48,7 @@ pub fn base_path_scope(
         .app_data(search_provider_registry)
         .app_data(metrics_collector)
         .app_data(rate_limiter)
+        .app_data(cost_tracker)
         .app_data(response_cache)
         .service(routers::base_path_scope(jwt_config))
 }
@@ -128,6 +136,10 @@ fn init_metrics_collector() -> std::sync::Arc<metrics::MetricsCollector> {
 
 fn init_rate_limiter() -> std::sync::Arc<tokio::sync::Mutex<rate_limiter::RateLimiter>> {
     std::sync::Arc::new(tokio::sync::Mutex::new(rate_limiter::RateLimiter::new()))
+}
+
+fn init_cost_tracker() -> std::sync::Arc<cost_tracking::CostTracker> {
+    std::sync::Arc::new(cost_tracking::CostTracker::new())
 }
 
 fn init_tool_registry(
@@ -273,6 +285,7 @@ async fn main() -> std::io::Result<()> {
     let search_provider_registry = init_search_provider_registry();
     let metrics_collector = init_metrics_collector();
     let rate_limiter = init_rate_limiter();
+    let cost_tracker = init_cost_tracker();
     let tool_registry =
         init_tool_registry(&search_provider_registry, &sage_config.capability_profile);
 
@@ -291,6 +304,7 @@ async fn main() -> std::io::Result<()> {
                 actix_web::web::Data::new(search_provider_registry.clone()),
                 actix_web::web::Data::new(metrics_collector.clone()),
                 actix_web::web::Data::new(rate_limiter.clone()),
+                actix_web::web::Data::new(cost_tracker.clone()),
             )
         },
         Some(db_wrapper),

@@ -98,11 +98,10 @@ pub fn get_profile(name: &str) -> Option<CapabilityProfile> {
                 "Web browsing and research capabilities only",
                 &[Tool::WebSearch, Tool::WebFetch, Tool::Calculator],
             )
-            .with_timeouts(30, &[
-                ("web_search", 30),
-                ("web_fetch", 20),
-                ("calculator", 5),
-            ]),
+            .with_timeouts(
+                30,
+                &[("web_search", 30), ("web_fetch", 20), ("calculator", 5)],
+            ),
         ),
         "code_assistant" => Some(
             CapabilityProfile::new(
@@ -116,13 +115,16 @@ pub fn get_profile(name: &str) -> Option<CapabilityProfile> {
                     Tool::FileOps,
                 ],
             )
-            .with_timeouts(60, &[
-                ("web_search", 30),
-                ("web_fetch", 20),
-                ("calculator", 5),
-                ("code_executor", 90),
-                ("file_ops", 15),
-            ]),
+            .with_timeouts(
+                60,
+                &[
+                    ("web_search", 30),
+                    ("web_fetch", 20),
+                    ("calculator", 5),
+                    ("code_executor", 90),
+                    ("file_ops", 15),
+                ],
+            ),
         ),
         "cli_agent" => Some(
             CapabilityProfile::new(
@@ -137,14 +139,17 @@ pub fn get_profile(name: &str) -> Option<CapabilityProfile> {
                     Tool::CodeExecutor,
                 ],
             )
-            .with_timeouts(120, &[
-                ("web_search", 30),
-                ("web_fetch", 20),
-                ("calculator", 5),
-                ("code_executor", 90),
-                ("file_ops", 15),
-                ("command", 120),
-            ]),
+            .with_timeouts(
+                120,
+                &[
+                    ("web_search", 30),
+                    ("web_fetch", 20),
+                    ("calculator", 5),
+                    ("code_executor", 90),
+                    ("file_ops", 15),
+                    ("command", 120),
+                ],
+            ),
         ),
         _ => None,
     }

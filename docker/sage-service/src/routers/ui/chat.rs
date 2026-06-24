@@ -193,6 +193,7 @@ pub async fn stream_message(
     search_provider_registry: web::Data<std::sync::Arc<crate::tools::SearchProviderRegistry>>,
     metrics_collector: web::Data<std::sync::Arc<crate::metrics::MetricsCollector>>,
     rate_limiter: web::Data<std::sync::Arc<tokio::sync::Mutex<crate::rate_limiter::RateLimiter>>>,
+    cost_tracker: web::Data<std::sync::Arc<crate::cost_tracking::CostTracker>>,
     response_cache: web::Data<crate::response_cache::ResponseCache>,
 ) -> impl Responder {
     let username =
@@ -218,10 +219,7 @@ pub async fn stream_message(
     let active_profile = if let Some(requested_profile) = &req.capability_profile {
         match crate::tools::capabilities::get_profile(requested_profile) {
             Some(profile) => {
-                tracing::info!(
-                    "Using requested capability profile: {}",
-                    requested_profile
-                );
+                tracing::info!("Using requested capability profile: {}", requested_profile);
                 profile
             }
             None => {
@@ -283,9 +281,10 @@ pub async fn stream_message(
         request_tool_registry.add_confirmations(&confirmations);
     }
 
-    // Set metrics collector and rate limiter
+    // Set metrics collector, rate limiter, and cost tracker
     request_tool_registry.set_metrics_collector(metrics_collector.as_ref().clone());
     request_tool_registry.set_rate_limiter(rate_limiter.as_ref().clone());
+    request_tool_registry.set_cost_tracker(cost_tracker.as_ref().clone());
 
     // Shadow the global tool_registry parameter with the request-specific one
     let tool_registry = web::Data::new(request_tool_registry);
