@@ -170,12 +170,30 @@ fn embed_tool_results_into_response(
 ) -> String {
     let mut result = response.to_string();
 
+    tracing::info!("[EMBED] Starting embedding: {} markers, response_len={}",
+        tool_results_with_markers.len(), response.len());
+
     // Replace each tool call marker with its formatted result
     for (marker, html) in tool_results_with_markers {
+        let marker_preview = if marker.len() > 100 {
+            format!("{}...", &marker[..100])
+        } else {
+            marker.clone()
+        };
+
+        let found = response.contains(&marker);
+        tracing::info!("[EMBED] Looking for marker: found={}, marker_preview: {}",
+            found, marker_preview);
+
         // Replace the marker with the formatted result
+        let before_len = result.len();
         result = result.replace(&marker, &format!("\n\n{}\n\n", html));
+        let after_len = result.len();
+
+        tracing::info!("[EMBED] After replace: content_len_change={}", after_len as i32 - before_len as i32);
     }
 
+    tracing::info!("[EMBED] Embedding complete: final_response_len={}", result.len());
     result
 }
 
@@ -194,7 +212,6 @@ pub async fn stream_message(
     metrics_collector: web::Data<std::sync::Arc<crate::metrics::MetricsCollector>>,
     rate_limiter: web::Data<std::sync::Arc<tokio::sync::Mutex<crate::rate_limiter::RateLimiter>>>,
     cost_tracker: web::Data<std::sync::Arc<crate::cost_tracking::CostTracker>>,
-    response_cache: web::Data<crate::response_cache::ResponseCache>,
 ) -> impl Responder {
     let username =
         match quench_srv::actix::routers::ui::get_user_from_req(&req_http, &jwt_config).await {
@@ -301,36 +318,6 @@ pub async fn stream_message(
         return HttpResponse::NotFound().body("Model instance not found");
     };
 
-    // Check response cache
-    let cache_key = crate::response_cache::ResponseCache::generate_key(
-        &req.conversation_id,
-        &req.message,
-        &instance.model,
-        req.search_provider
-            .as_deref()
-            .unwrap_or(&config.default_search_provider),
-    );
-
-    if let Some((cached, _)) = response_cache.get(&cache_key) {
-        tracing::info!("Cache hit for message: {}", cache_key);
-        let cached_html = div()
-            .class("message-inner")
-            .raw()
-            .text(format_message(&cached.content))
-            .render();
-        let cached_response = format!(
-            "data: {}\n\n",
-            serde_json::json!({
-                "type": "message",
-                "content": cached_html,
-                "cached": true
-            })
-        );
-        return HttpResponse::Ok()
-            .content_type("text/event-stream")
-            .body(cached_response);
-    }
-
     let max_model_len = instance.max_model_len.unwrap_or(2048) as usize;
     let reserved_for_generation = if max_model_len > 4096 {
         2048
@@ -357,10 +344,16 @@ pub async fn stream_message(
         system_message.content.len(),
         system_message.content.contains("AVAILABLE TOOLS")
     );
-    if system_message.content.contains("websearch") {
-        tracing::info!("✓ System prompt includes websearch tool definition");
+
+    let has_web_search = system_message.content.contains("web_search");
+    let has_tools_section = system_message.content.contains("AVAILABLE TOOLS");
+
+    if has_tools_section && has_web_search {
+        tracing::info!("✓ System prompt includes web_search tool definition");
+    } else if has_tools_section && !has_web_search {
+        tracing::warn!("✗ System prompt has AVAILABLE TOOLS section but missing web_search definition");
     } else {
-        tracing::warn!("✗ System prompt does NOT include websearch tool definition");
+        tracing::warn!("✗ System prompt does NOT include AVAILABLE TOOLS section");
     }
 
     let current_user_message = ChatMessage {
@@ -479,13 +472,20 @@ pub async fn stream_message(
         let mut stream = stream;
 
         // =============================================================================
-        // PHASE 1: Collect full response from vLLM without streaming
+        // PHASE 1: Stream response chunks in real-time (accumulated)
         // =============================================================================
-        tracing::info!("[STREAM_REFACTOR] Phase 1: Collecting response");
+        tracing::info!("[STREAM_REFACTOR] Phase 1: Streaming response");
         while let Some(res) = stream.next().await {
             match res {
                 Ok(content) => {
                     full_content.push_str(&content);
+                    // Format as HTML and stream progressively
+                    let formatted = format_message(&full_content);
+                    let wrapped = format!(
+                        "<div class=\"message-inner\">{}</div>",
+                        formatted
+                    );
+                    yield Ok::<_, actix_web::Error>(encode_sse("message", &wrapped));
                 }
                 Err(err) => {
                     let html = div()
@@ -503,9 +503,19 @@ pub async fn stream_message(
         // =============================================================================
         // PHASE 2: Parse tool calls and check for meta-questions
         // =============================================================================
-        tracing::info!("[STREAM_REFACTOR] Phase 2: Parsing tool calls");
+        tracing::info!("[STREAM_REFACTOR] Phase 2: Parsing tool calls from {} chars", full_content.len());
+
+        // Debug: show if tool call tags are present
+        let has_toolcall_tags = full_content.contains("<toolcall>") || full_content.contains("<tool_call>");
+        tracing::debug!("[PARSER] Response contains tool call tags: {}", has_toolcall_tags);
+
         let mut tool_calls = crate::tools::parser::parse_tool_calls(&full_content);
         tracing::info!("[STREAM_REFACTOR] Found {} tool calls", tool_calls.len());
+
+        if tool_calls.is_empty() && has_toolcall_tags {
+            tracing::warn!("[PARSER] Tool call tags found but failed to parse them. Response preview: {}",
+                &full_content[..full_content.len().min(500)]);
+        }
 
         // Suppress if meta-question
         // Check if the user is asking meta-questions about tools
@@ -532,8 +542,9 @@ pub async fn stream_message(
         // Map of marker string → formatted HTML result
         let mut tool_results_with_markers: Vec<(String, String)> = Vec::new();
 
-        // Compile regex once outside the loop
-        let tool_result_re = regex::Regex::new(r"<toolcall>.*?</toolcall>").ok();
+        // Compile regex to match all tool call formats (same as parser supports)
+        // Matches: <tool_call>...</tool_call>, <toolcall>...</toolcall>, mismatched tags, unclosed
+        let tool_result_re = regex::Regex::new(r"(?s)<(?:tool_call|toolcall)>\s*(\{.*?\})\s*</(?:tool_call|toolcall)>").ok();
 
         for tool_call in &tool_calls {
             let query = tool_call.arguments
@@ -643,7 +654,7 @@ pub async fn stream_message(
         tracing::info!("[STREAM_REFACTOR] Phase 4: Embedding results into response");
 
         // First, strip tool call markers from the raw response for storage
-        let clean_content = crate::tools::parser::strip_tool_calls(&full_content);
+        let _clean_content = crate::tools::parser::strip_tool_calls(&full_content);
 
         // Check if we have tool results before consuming tool_results_with_markers
         let has_tool_results = !tool_results_with_markers.is_empty();
@@ -730,18 +741,6 @@ pub async fn stream_message(
             tracing::error!("Failed to create AI message: {}", err);
         }
 
-        // Cache the response for future queries
-        let cached_response = crate::response_cache::CachedResponse {
-            content: response_for_display.trim().to_string(),
-            model: instance.model.clone(),
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs(),
-            tokens_used: Some((full_content.len() / 3) as u32),
-        };
-        response_cache.set(cache_key, cached_response);
-        tracing::info!("Cached response for future queries");
 
         // Update Conversation to point to the new tip
         conv.active_message_id = Some(ai_msg_id.clone());
@@ -751,34 +750,12 @@ pub async fn stream_message(
         }
 
         // =============================================================================
-        // PHASE 6: Prepare and stream final SSE response (single yield)
+        // PHASE 6: Prepare final response with tool results embedded
         // =============================================================================
-        tracing::info!("[STREAM_REFACTOR] Phase 6: Preparing final SSE response");
+        tracing::info!("[STREAM_REFACTOR] Phase 6: Finalizing response with tools");
 
-        // Format the text content, but preserve embedded tool results as raw HTML
-        let final_rendered = if has_tool_results {
-            // Apply simple markdown formatting (backticks, bold, italic) to text while preserving tool result HTML
-            let mut formatted_response = response_for_display.clone();
-
-            // Format backticks as inline code (but not inside tool-result divs)
-            if let Ok(backtick_re) = regex::Regex::new(r"`([^`]+)`") {
-                formatted_response = backtick_re.replace_all(&formatted_response, "<code>$1</code>").to_string();
-            }
-
-            // Format **bold**
-            if let Ok(bold_re) = regex::Regex::new(r"\*\*([^\*]+)\*\*") {
-                formatted_response = bold_re.replace_all(&formatted_response, "<strong>$1</strong>").to_string();
-            }
-
-            // Format *italic*
-            if let Ok(italic_re) = regex::Regex::new(r"\*([^\*]+)\*") {
-                formatted_response = italic_re.replace_all(&formatted_response, "<em>$1</em>").to_string();
-            }
-
-            format!("<div class=\"message-content\">{}</div>", formatted_response.trim())
-        } else {
-            format_message(clean_content.trim())
-        };
+        // Format everything as HTML - format_message now handles tool result blocks
+        let final_content_html = format_message(&response_for_display);
 
         // Fetch siblings for the new AI message to show branch controls if needed
         let mut controls = div().class("branch-controls");
@@ -840,22 +817,22 @@ pub async fn stream_message(
 
         controls = controls.child(regenerate_btn);
 
+        // Build the final message content with tool results and controls
         let message_inner = div()
             .class("message-inner")
             .raw()
-            .text(&final_rendered);
+            .text(&final_content_html)
+            .child(div()
+                .class("branch-controls")
+                .raw()
+                .text(controls.render())
+            );
 
         let oob_transition = div()
             .class("chat-message message-ai")
             .attr("id", format!("ai-{}", ai_msg_id))
             .attr("hx-swap-oob", format!("outerHTML:#ai-{}", message_id_clone))
-            .child(
-                message_inner.child(div()
-                    .class("branch-controls")
-                    .raw()
-                    .text(controls.render())
-                )
-            );
+            .child(message_inner);
 
         // 2. Transition the navigation dot and tooltip IDs for the AI message
         let ai_preview_raw: String = full_content.trim().chars().take(30).collect();
@@ -1088,8 +1065,14 @@ pub async fn stream_message(
             final_payload.push_str(&history_list.render());
         }
 
-        tracing::info!("[STREAM_REFACTOR] Phase 6 complete: Yielding final response");
-        yield Ok::<_, actix_web::Error>(encode_sse("message", &final_payload));
+        tracing::info!("[STREAM_REFACTOR] Phase 6 complete: Sending final response with {} tool results",
+            if has_tool_results { "some" } else { "no" });
+
+        // Build and send the final complete message
+        if !final_payload.is_empty() {
+            yield Ok::<_, actix_web::Error>(encode_sse("message", &final_payload));
+        }
+
         state.pending_messages.remove(&message_id_clone);
     };
 

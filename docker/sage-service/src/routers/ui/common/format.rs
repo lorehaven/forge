@@ -91,6 +91,92 @@ pub fn format_message(text: &str) -> String {
 }
 
 fn format_text_part(text: &str) -> String {
+    // First pass: extract tool result blocks and preserve them
+    let mut text_parts = Vec::new();
+    let mut current_pos = 0;
+
+    while let Some(start) = text[current_pos..].find(r#"<div class="tool-result"#) {
+        let abs_start = current_pos + start;
+        // Add text before this tool block
+        if abs_start > current_pos {
+            text_parts.push((text[current_pos..abs_start].to_string(), false));
+        }
+
+        // Find the matching closing div by counting nesting
+        let rest = &text[abs_start..];
+        let mut depth = 0;
+        let mut found_end = false;
+        let mut pos = 0;
+
+        // Use a safe iterator that respects char boundaries
+        let mut search_pos = 0;
+        while search_pos < rest.len() {
+            if let Some(next_open) = rest[search_pos..].find("<div") {
+                if let Some(next_close) = rest[search_pos..].find("</div>") {
+                    if next_open < next_close {
+                        // Found opening tag first
+                        depth += 1;
+                        search_pos += next_open + 4;
+                    } else {
+                        // Found closing tag first
+                        depth -= 1;
+                        search_pos += next_close + 6;
+                        if depth == 0 {
+                            pos = search_pos;
+                            found_end = true;
+                            break;
+                        }
+                    }
+                } else {
+                    // Only opening tag found
+                    depth += 1;
+                    search_pos += next_open + 4;
+                }
+            } else if let Some(next_close) = rest[search_pos..].find("</div>") {
+                // Only closing tag found
+                depth -= 1;
+                search_pos += next_close + 6;
+                if depth == 0 {
+                    pos = search_pos;
+                    found_end = true;
+                    break;
+                }
+            } else {
+                // No more tags
+                break;
+            }
+        }
+
+        if found_end {
+            let tool_end = abs_start + pos;
+            text_parts.push((text[abs_start..tool_end].to_string(), true));
+            current_pos = tool_end;
+        } else {
+            // Malformed, just include rest as text
+            text_parts.push((text[abs_start..].to_string(), false));
+            break;
+        }
+    }
+
+    // Add remaining text
+    if current_pos < text.len() {
+        text_parts.push((text[current_pos..].to_string(), false));
+    }
+
+    // Process each part
+    let mut html = String::new();
+    for (part, is_tool_block) in text_parts {
+        if is_tool_block {
+            html.push_str(&part);
+        } else {
+            html.push_str(&format_text_part_internal(&part));
+        }
+    }
+
+    html
+}
+
+fn format_text_part_internal(text: &str) -> String {
     let mut html = String::new();
     let mut state = BlockState::None;
 

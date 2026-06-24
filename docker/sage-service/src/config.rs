@@ -89,6 +89,8 @@ impl SageConfig {
 
         // Append tool definitions to system prompt (filtered by profile)
         let tools_def = crate::tools::get_tool_definitions_for_prompt_filtered(&capability_profile);
+        let tool_defs_count = crate::tools::get_tool_definitions_filtered(&capability_profile).len();
+
         if !tools_def.is_empty() {
             system_prompt.push_str("\n\n### AVAILABLE TOOLS\n");
             system_prompt.push_str("You have access to the following tools. When you need to use a tool, format your response with tool_call XML tags:\n\n");
@@ -100,11 +102,16 @@ impl SageConfig {
             system_prompt
                 .push_str("\nAlways use the exact tool names from the definitions above.\n");
             tracing::info!(
-                "Loaded {} tool definitions into system prompt",
-                crate::tools::get_tool_definitions_filtered(&capability_profile).len()
+                "[CONFIG] Loaded {} tool definitions into system prompt ({} enabled tools)",
+                tool_defs_count,
+                capability_profile.enabled_tool_names().len()
             );
+            tracing::debug!("[CONFIG] Tool definitions:\n{}", tools_def);
         } else {
-            tracing::warn!("No tool definitions loaded into system prompt");
+            tracing::warn!(
+                "[CONFIG] No tool definitions loaded! Profile has {} enabled tools but JSON serialization returned empty",
+                capability_profile.enabled_tool_names().len()
+            );
         }
 
         let default_models_str =
