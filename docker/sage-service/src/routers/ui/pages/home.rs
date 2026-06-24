@@ -88,6 +88,7 @@ async fn handle_home_page(
             skip_user_message: true, // DB message already exists
             search_provider: None,
             capability_profile: None,
+            tool_confirmations: Vec::new(),
         };
         chat_state
             .pending_messages

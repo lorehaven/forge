@@ -106,6 +106,7 @@ pub struct ToolRegistry {
     profile: Option<CapabilityProfile>,
     user_id: Option<String>,
     conversation_id: Option<String>,
+    confirmations: std::collections::HashSet<String>,
 }
 
 impl ToolRegistry {
@@ -115,6 +116,7 @@ impl ToolRegistry {
             profile: None,
             user_id: None,
             conversation_id: None,
+            confirmations: std::collections::HashSet::new(),
         }
     }
 
@@ -124,6 +126,7 @@ impl ToolRegistry {
             profile: Some(profile),
             user_id: None,
             conversation_id: None,
+            confirmations: std::collections::HashSet::new(),
         }
     }
 
@@ -137,6 +140,7 @@ impl ToolRegistry {
             profile: Some(profile),
             user_id,
             conversation_id,
+            confirmations: std::collections::HashSet::new(),
         }
     }
 
@@ -173,10 +177,52 @@ impl ToolRegistry {
                     is_error: true,
                 };
             }
+
+            // Check if this tool requires confirmation
+            if profile.requires_confirmation(&tool_call.name) && !self.has_confirmation(&tool_call.name) {
+                crate::audit::AuditLogger::log_confirmation_required(
+                    &tool_call.name,
+                    profile_name,
+                    self.user_id.clone(),
+                    self.conversation_id.clone(),
+                );
+
+                return ToolResult {
+                    tool_use_id: tool_call.id.clone(),
+                    content: format!(
+                        "Tool '{}' requires explicit confirmation before execution. Please confirm with 'confirm_{}': true in your request.",
+                        tool_call.name, tool_call.name
+                    ),
+                    is_error: true,
+                };
+            }
         }
 
+        let timeout_secs = self
+            .profile
+            .as_ref()
+            .map(|p| p.get_timeout_for_tool(&tool_call.name))
+            .unwrap_or(60);
+
         let result = match self.executors.get(&tool_call.name) {
-            Some(executor) => executor.execute(tool_call).await,
+            Some(executor) => {
+                match tokio::time::timeout(
+                    tokio::time::Duration::from_secs(timeout_secs),
+                    executor.execute(tool_call),
+                )
+                .await
+                {
+                    Ok(exec_result) => exec_result,
+                    Err(_) => ToolResult {
+                        tool_use_id: tool_call.id.clone(),
+                        content: format!(
+                            "Tool '{}' execution timed out after {} seconds",
+                            tool_call.name, timeout_secs
+                        ),
+                        is_error: true,
+                    },
+                }
+            }
             None => ToolResult {
                 tool_use_id: tool_call.id.clone(),
                 content: format!("Tool '{}' not found", tool_call.name),
@@ -217,6 +263,16 @@ impl ToolRegistry {
     pub fn set_context(&mut self, user_id: Option<String>, conversation_id: Option<String>) {
         self.user_id = user_id;
         self.conversation_id = conversation_id;
+    }
+
+    pub fn add_confirmations(&mut self, tools: &[&str]) {
+        for tool in tools {
+            self.confirmations.insert(tool.to_string());
+        }
+    }
+
+    pub fn has_confirmation(&self, tool_name: &str) -> bool {
+        self.confirmations.contains(tool_name)
     }
 }
 

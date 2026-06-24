@@ -75,4 +75,20 @@ impl AuditLogger {
             "Attempted to use tool not available in profile"
         );
     }
+
+    pub fn log_confirmation_required(
+        tool_name: &str,
+        profile_name: &str,
+        user_id: Option<String>,
+        conversation_id: Option<String>,
+    ) {
+        tracing::info!(
+            target: "audit",
+            tool = %tool_name,
+            profile = %profile_name,
+            user_id = ?user_id,
+            conversation_id = ?conversation_id,
+            "Tool execution requires user confirmation"
+        );
+    }
 }

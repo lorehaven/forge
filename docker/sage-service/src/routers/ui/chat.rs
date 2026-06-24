@@ -25,6 +25,8 @@ pub struct ChatRequest {
     pub parent_id: Option<String>,
     pub capability_profile: Option<String>,
     #[serde(default)]
+    pub tool_confirmations: Vec<String>,
+    #[serde(default)]
     pub skip_user_message: bool,
 }
 
@@ -272,6 +274,12 @@ pub async fn stream_message(
         "code_executor".to_string(),
         Box::new(crate::tools::code_executor::CodeExecutor),
     );
+
+    // Add tool confirmations from request
+    if !req.tool_confirmations.is_empty() {
+        let confirmations: Vec<&str> = req.tool_confirmations.iter().map(|s| s.as_str()).collect();
+        request_tool_registry.add_confirmations(&confirmations);
+    }
 
     // Shadow the global tool_registry parameter with the request-specific one
     let tool_registry = web::Data::new(request_tool_registry);
@@ -1585,6 +1593,7 @@ pub async fn regenerate(
         skip_user_message: true,
         search_provider: None,
         capability_profile: None,
+        tool_confirmations: Vec::new(),
     };
 
     state.pending_messages.insert(message_id.clone(), req);
