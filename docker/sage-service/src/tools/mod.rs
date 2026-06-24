@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 pub mod calculator;
+pub mod capabilities;
 pub mod code_executor;
 pub mod command;
 pub mod file_ops;
@@ -9,6 +10,8 @@ pub mod parser;
 pub mod search_providers;
 pub mod web_fetch;
 pub mod web_search;
+
+pub use capabilities::{CapabilityProfile, Tool};
 
 pub use search_providers::{SearchProvider, SearchProviderRegistry};
 
@@ -49,7 +52,7 @@ impl fmt::Display for ToolResult {
     }
 }
 
-pub fn get_tool_definitions() -> Vec<ToolDefinition> {
+pub fn get_all_tool_definitions() -> Vec<ToolDefinition> {
     vec![
         web_search::get_definition(),
         calculator::get_definition(),
@@ -60,8 +63,30 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
     ]
 }
 
+pub fn get_tool_definitions() -> Vec<ToolDefinition> {
+    get_all_tool_definitions()
+}
+
+pub fn get_tool_definitions_filtered(profile: &CapabilityProfile) -> Vec<ToolDefinition> {
+    get_all_tool_definitions()
+        .into_iter()
+        .filter(|def| profile.enabled_tool_names().contains(&def.name.as_str()))
+        .collect()
+}
+
 pub fn get_tool_definitions_for_prompt() -> String {
     let tools = get_tool_definitions();
+    match serde_json::to_string_pretty(&tools) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::error!("Failed to serialize tool definitions: {}", e);
+            String::new()
+        }
+    }
+}
+
+pub fn get_tool_definitions_for_prompt_filtered(profile: &CapabilityProfile) -> String {
+    let tools = get_tool_definitions_filtered(profile);
     match serde_json::to_string_pretty(&tools) {
         Ok(s) => s,
         Err(e) => {
@@ -78,12 +103,21 @@ pub trait ToolExecutor: Send + Sync {
 
 pub struct ToolRegistry {
     executors: std::collections::HashMap<String, Box<dyn ToolExecutor>>,
+    profile: Option<CapabilityProfile>,
 }
 
 impl ToolRegistry {
     pub fn new() -> Self {
         Self {
             executors: std::collections::HashMap::new(),
+            profile: None,
+        }
+    }
+
+    pub fn with_profile(profile: CapabilityProfile) -> Self {
+        Self {
+            executors: std::collections::HashMap::new(),
+            profile: Some(profile),
         }
     }
 
@@ -92,6 +126,21 @@ impl ToolRegistry {
     }
 
     pub async fn execute(&self, tool_call: &ToolCall) -> ToolResult {
+        if let Some(profile) = &self.profile
+            && !profile
+                .enabled_tool_names()
+                .contains(&tool_call.name.as_str())
+        {
+            return ToolResult {
+                tool_use_id: tool_call.id.clone(),
+                content: format!(
+                    "Tool '{}' is not available in the '{}' capability profile",
+                    tool_call.name, profile.name
+                ),
+                is_error: true,
+            };
+        }
+
         match self.executors.get(&tool_call.name) {
             Some(executor) => executor.execute(tool_call).await,
             None => ToolResult {
@@ -103,7 +152,15 @@ impl ToolRegistry {
     }
 
     pub fn get_definitions(&self) -> Vec<ToolDefinition> {
-        get_tool_definitions()
+        if let Some(profile) = &self.profile {
+            get_tool_definitions_filtered(profile)
+        } else {
+            get_tool_definitions()
+        }
+    }
+
+    pub fn profile(&self) -> Option<&CapabilityProfile> {
+        self.profile.as_ref()
     }
 }
 

@@ -51,11 +51,29 @@ pub struct SageConfig {
     pub supported_models: Vec<String>,
     pub default_search_provider: String,
     pub available_search_providers: Vec<String>,
+    pub capability_profile: crate::tools::CapabilityProfile,
 }
 
 impl SageConfig {
     pub fn load() -> Self {
         let prompt_path = envmnt::get_or("SAGE_SYSTEM_PROMPT_PATH", "config/system_prompt.txt");
+
+        // Load capability profile
+        let profile_name = envmnt::get_or("SAGE_CAPABILITY_PROFILE", "web_assistant");
+        let capability_profile = crate::tools::capabilities::get_profile(&profile_name)
+            .unwrap_or_else(|| {
+                tracing::warn!(
+                    "Unknown capability profile '{}', falling back to 'web_assistant'",
+                    profile_name
+                );
+                crate::tools::capabilities::get_profile("web_assistant").unwrap()
+            });
+
+        tracing::info!(
+            "Loaded capability profile '{}': {}",
+            capability_profile.name,
+            capability_profile.description
+        );
 
         let mut system_prompt = match fs::read_to_string(&prompt_path) {
             Ok(content) => content.trim().to_string(),
@@ -69,8 +87,8 @@ impl SageConfig {
             }
         };
 
-        // Append tool definitions to system prompt
-        let tools_def = crate::tools::get_tool_definitions_for_prompt();
+        // Append tool definitions to system prompt (filtered by profile)
+        let tools_def = crate::tools::get_tool_definitions_for_prompt_filtered(&capability_profile);
         if !tools_def.is_empty() {
             system_prompt.push_str("\n\n### AVAILABLE TOOLS\n");
             system_prompt.push_str("You have access to the following tools. When you need to use a tool, format your response with tool_call XML tags:\n\n");
@@ -83,7 +101,7 @@ impl SageConfig {
                 .push_str("\nAlways use the exact tool names from the definitions above.\n");
             tracing::info!(
                 "Loaded {} tool definitions into system prompt",
-                crate::tools::get_tool_definitions().len()
+                crate::tools::get_tool_definitions_filtered(&capability_profile).len()
             );
         } else {
             tracing::warn!("No tool definitions loaded into system prompt");
@@ -119,6 +137,7 @@ impl SageConfig {
             supported_models,
             default_search_provider,
             available_search_providers,
+            capability_profile,
         }
     }
 

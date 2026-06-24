@@ -117,8 +117,9 @@ fn init_search_provider_registry() -> std::sync::Arc<tools::SearchProviderRegist
 
 fn init_tool_registry(
     search_provider_registry: &std::sync::Arc<tools::SearchProviderRegistry>,
+    profile: &tools::CapabilityProfile,
 ) -> actix_web::web::Data<tools::ToolRegistry> {
-    let mut registry = tools::ToolRegistry::new();
+    let mut registry = tools::ToolRegistry::with_profile(profile.clone());
 
     registry.register(
         "web_search".to_string(),
@@ -255,7 +256,8 @@ async fn main() -> std::io::Result<()> {
     let (sage_config, jwt_config) = init_config();
     let chat_state = init_chat_state();
     let search_provider_registry = init_search_provider_registry();
-    let tool_registry = init_tool_registry(&search_provider_registry);
+    let tool_registry =
+        init_tool_registry(&search_provider_registry, &sage_config.capability_profile);
 
     spawn_model_monitor_task(switchboard.clone(), sage_config.clone());
 
