@@ -23,6 +23,7 @@ pub struct ChatRequest {
     pub project_id: Option<String>,
     pub search_provider: Option<String>,
     pub parent_id: Option<String>,
+    pub capability_profile: Option<String>,
     #[serde(default)]
     pub skip_user_message: bool,
 }
@@ -187,7 +188,6 @@ pub async fn stream_message(
     vllm: web::Data<VllmClient>,
     config: web::Data<SageConfig>,
     db: web::Data<quench_db::prelude::Db>,
-    tool_registry: web::Data<crate::tools::ToolRegistry>,
     search_provider_registry: web::Data<std::sync::Arc<crate::tools::SearchProviderRegistry>>,
     response_cache: web::Data<crate::response_cache::ResponseCache>,
 ) -> impl Responder {
@@ -209,6 +209,72 @@ pub async fn stream_message(
         req.search_provider,
         req.instance_id
     );
+
+    // Determine which capability profile to use
+    let active_profile = if let Some(requested_profile) = &req.capability_profile {
+        match crate::tools::capabilities::get_profile(requested_profile) {
+            Some(profile) => {
+                tracing::info!(
+                    "Using requested capability profile: {}",
+                    requested_profile
+                );
+                profile
+            }
+            None => {
+                tracing::warn!(
+                    "Requested profile '{}' not found, using default '{}'",
+                    requested_profile,
+                    config.capability_profile.name
+                );
+                config.capability_profile.clone()
+            }
+        }
+    } else {
+        config.capability_profile.clone()
+    };
+
+    // Create a tool registry with the active profile and request context
+    let mut request_tool_registry = crate::tools::ToolRegistry::with_context(
+        active_profile.clone(),
+        Some(username.clone()),
+        Some(req.conversation_id.clone()),
+    );
+
+    // Register all tool executors (mirroring the global registry initialization)
+    request_tool_registry.register(
+        "web_search".to_string(),
+        Box::new(crate::tools::web_search::WebSearchExecutor::new(
+            search_provider_registry.as_ref().clone(),
+        )),
+    );
+
+    request_tool_registry.register(
+        "calculator".to_string(),
+        Box::new(crate::tools::calculator::CalculatorExecutor),
+    );
+
+    request_tool_registry.register(
+        "web_fetch".to_string(),
+        Box::new(crate::tools::web_fetch::WebFetchExecutor::new()),
+    );
+
+    request_tool_registry.register(
+        "file_ops".to_string(),
+        Box::new(crate::tools::file_ops::FileOpsExecutor::from_env()),
+    );
+
+    request_tool_registry.register(
+        "command".to_string(),
+        Box::new(crate::tools::command::CommandExecutor::new()),
+    );
+
+    request_tool_registry.register(
+        "code_executor".to_string(),
+        Box::new(crate::tools::code_executor::CodeExecutor),
+    );
+
+    // Shadow the global tool_registry parameter with the request-specific one
+    let tool_registry = web::Data::new(request_tool_registry);
 
     let instances = match switchboard.get_vllm_instances().await {
         Ok(i) => i,
@@ -1518,6 +1584,7 @@ pub async fn regenerate(
         parent_id: Some(parent_id),
         skip_user_message: true,
         search_provider: None,
+        capability_profile: None,
     };
 
     state.pending_messages.insert(message_id.clone(), req);

@@ -104,6 +104,8 @@ pub trait ToolExecutor: Send + Sync {
 pub struct ToolRegistry {
     executors: std::collections::HashMap<String, Box<dyn ToolExecutor>>,
     profile: Option<CapabilityProfile>,
+    user_id: Option<String>,
+    conversation_id: Option<String>,
 }
 
 impl ToolRegistry {
@@ -111,6 +113,8 @@ impl ToolRegistry {
         Self {
             executors: std::collections::HashMap::new(),
             profile: None,
+            user_id: None,
+            conversation_id: None,
         }
     }
 
@@ -118,6 +122,21 @@ impl ToolRegistry {
         Self {
             executors: std::collections::HashMap::new(),
             profile: Some(profile),
+            user_id: None,
+            conversation_id: None,
+        }
+    }
+
+    pub fn with_context(
+        profile: CapabilityProfile,
+        user_id: Option<String>,
+        conversation_id: Option<String>,
+    ) -> Self {
+        Self {
+            executors: std::collections::HashMap::new(),
+            profile: Some(profile),
+            user_id,
+            conversation_id,
         }
     }
 
@@ -126,29 +145,61 @@ impl ToolRegistry {
     }
 
     pub async fn execute(&self, tool_call: &ToolCall) -> ToolResult {
-        if let Some(profile) = &self.profile
-            && !profile
+        let start_time = std::time::Instant::now();
+        let profile_name = self
+            .profile
+            .as_ref()
+            .map(|p| p.name.as_str())
+            .unwrap_or("default");
+
+        if let Some(profile) = &self.profile {
+            if !profile
                 .enabled_tool_names()
                 .contains(&tool_call.name.as_str())
-        {
-            return ToolResult {
-                tool_use_id: tool_call.id.clone(),
-                content: format!(
-                    "Tool '{}' is not available in the '{}' capability profile",
-                    tool_call.name, profile.name
-                ),
-                is_error: true,
-            };
+            {
+                crate::audit::AuditLogger::log_restricted_tool_attempt(
+                    &tool_call.name,
+                    profile_name,
+                    self.user_id.clone(),
+                    self.conversation_id.clone(),
+                );
+
+                return ToolResult {
+                    tool_use_id: tool_call.id.clone(),
+                    content: format!(
+                        "Tool '{}' is not available in the '{}' capability profile",
+                        tool_call.name, profile.name
+                    ),
+                    is_error: true,
+                };
+            }
         }
 
-        match self.executors.get(&tool_call.name) {
+        let result = match self.executors.get(&tool_call.name) {
             Some(executor) => executor.execute(tool_call).await,
             None => ToolResult {
                 tool_use_id: tool_call.id.clone(),
                 content: format!("Tool '{}' not found", tool_call.name),
                 is_error: true,
             },
-        }
+        };
+
+        let elapsed = start_time.elapsed().as_millis();
+        crate::audit::AuditLogger::log_tool_execution(
+            &tool_call.name,
+            profile_name,
+            self.user_id.clone(),
+            self.conversation_id.clone(),
+            !result.is_error,
+            if result.is_error {
+                Some(result.content.clone())
+            } else {
+                None
+            },
+            elapsed,
+        );
+
+        result
     }
 
     pub fn get_definitions(&self) -> Vec<ToolDefinition> {
@@ -161,6 +212,11 @@ impl ToolRegistry {
 
     pub fn profile(&self) -> Option<&CapabilityProfile> {
         self.profile.as_ref()
+    }
+
+    pub fn set_context(&mut self, user_id: Option<String>, conversation_id: Option<String>) {
+        self.user_id = user_id;
+        self.conversation_id = conversation_id;
     }
 }
 

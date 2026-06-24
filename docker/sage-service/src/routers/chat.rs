@@ -1,14 +1,22 @@
 use crate::clients::switchboard::SwitchboardClient;
 use crate::clients::vllm::{ChatMessage, VllmClient};
 use crate::config::SageConfig;
-use actix_web::{HttpResponse, Responder, post, web};
+use actix_web::{HttpResponse, Responder, get, post, web};
 use futures_util::StreamExt;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
 pub struct ChatRequest {
     pub instance_id: String,
     pub message: String,
+}
+
+#[derive(Serialize)]
+pub struct CapabilitiesResponse {
+    pub profile: String,
+    pub description: String,
+    pub available_tools: Vec<String>,
+    pub available_search_providers: Vec<String>,
 }
 
 #[post("")]
@@ -70,6 +78,24 @@ pub async fn chat(
         .streaming(sse_stream)
 }
 
+#[get("/capabilities")]
+pub async fn capabilities(config: web::Data<SageConfig>) -> impl Responder {
+    let profile = &config.capability_profile;
+    let mut tools = profile.enabled_tool_names();
+    tools.sort();
+
+    let response = CapabilitiesResponse {
+        profile: profile.name.clone(),
+        description: profile.description.clone(),
+        available_tools: tools.into_iter().map(|s| s.to_string()).collect(),
+        available_search_providers: config.available_search_providers.clone(),
+    };
+
+    HttpResponse::Ok().json(response)
+}
+
 pub fn scope() -> actix_web::Scope {
-    web::scope("/api/v1/chat").service(chat)
+    web::scope("/api/v1/chat")
+        .service(chat)
+        .service(capabilities)
 }

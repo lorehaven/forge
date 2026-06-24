@@ -87,6 +87,7 @@ async fn handle_home_page(
             parent_id: Some(last_msg.id.clone()),
             skip_user_message: true, // DB message already exists
             search_provider: None,
+            capability_profile: None,
         };
         chat_state
             .pending_messages

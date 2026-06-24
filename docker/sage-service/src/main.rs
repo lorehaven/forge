@@ -3,6 +3,7 @@ use dashmap::DashMap;
 use quench_srv::prelude::JwtConfig;
 use quench_srv::prelude::{DbWrapper, serve, wait_for_services};
 
+mod audit;
 mod clients;
 mod config;
 pub mod conversation;
