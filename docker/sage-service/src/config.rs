@@ -89,7 +89,8 @@ impl SageConfig {
 
         // Append tool definitions to system prompt (filtered by profile)
         let tools_def = crate::tools::get_tool_definitions_for_prompt_filtered(&capability_profile);
-        let tool_defs_count = crate::tools::get_tool_definitions_filtered(&capability_profile).len();
+        let tool_defs_count =
+            crate::tools::get_tool_definitions_filtered(&capability_profile).len();
 
         if !tools_def.is_empty() {
             system_prompt.push_str("\n\n### AVAILABLE TOOLS\n");

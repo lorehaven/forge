@@ -170,8 +170,11 @@ fn embed_tool_results_into_response(
 ) -> String {
     let mut result = response.to_string();
 
-    tracing::info!("[EMBED] Starting embedding: {} markers, response_len={}",
-        tool_results_with_markers.len(), response.len());
+    tracing::info!(
+        "[EMBED] Starting embedding: {} markers, response_len={}",
+        tool_results_with_markers.len(),
+        response.len()
+    );
 
     // Replace each tool call marker with its formatted result
     for (marker, html) in tool_results_with_markers {
@@ -182,18 +185,27 @@ fn embed_tool_results_into_response(
         };
 
         let found = response.contains(&marker);
-        tracing::info!("[EMBED] Looking for marker: found={}, marker_preview: {}",
-            found, marker_preview);
+        tracing::info!(
+            "[EMBED] Looking for marker: found={}, marker_preview: {}",
+            found,
+            marker_preview
+        );
 
         // Replace the marker with the formatted result
         let before_len = result.len();
         result = result.replace(&marker, &format!("\n\n{}\n\n", html));
         let after_len = result.len();
 
-        tracing::info!("[EMBED] After replace: content_len_change={}", after_len as i32 - before_len as i32);
+        tracing::info!(
+            "[EMBED] After replace: content_len_change={}",
+            after_len as i32 - before_len as i32
+        );
     }
 
-    tracing::info!("[EMBED] Embedding complete: final_response_len={}", result.len());
+    tracing::info!(
+        "[EMBED] Embedding complete: final_response_len={}",
+        result.len()
+    );
     result
 }
 
@@ -351,7 +363,9 @@ pub async fn stream_message(
     if has_tools_section && has_web_search {
         tracing::info!("✓ System prompt includes web_search tool definition");
     } else if has_tools_section && !has_web_search {
-        tracing::warn!("✗ System prompt has AVAILABLE TOOLS section but missing web_search definition");
+        tracing::warn!(
+            "✗ System prompt has AVAILABLE TOOLS section but missing web_search definition"
+        );
     } else {
         tracing::warn!("✗ System prompt does NOT include AVAILABLE TOOLS section");
     }
