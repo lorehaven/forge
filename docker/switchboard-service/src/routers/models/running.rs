@@ -2,7 +2,7 @@ use super::mod_impl::is_admin;
 use super::types::RunningModel;
 use crate::routers::vllm::engine::VllmEngine;
 use actix_web::{HttpResponse, Responder, get, web};
-use quench_srv::prelude::JwtConfig;
+use quench_auth::prelude::JwtConfig;
 use std::sync::Arc;
 
 #[get("/running")]

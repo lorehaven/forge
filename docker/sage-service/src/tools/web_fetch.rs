@@ -1,6 +1,8 @@
 use super::{ToolCall, ToolDefinition, ToolExecutor, ToolParameters, ToolResult};
 use async_trait::async_trait;
+use quench_cache::DataCache;
 use serde_json::json;
+use std::sync::Arc;
 
 pub fn get_definition() -> ToolDefinition {
     ToolDefinition {
@@ -22,37 +24,25 @@ pub fn get_definition() -> ToolDefinition {
 
 pub struct WebFetchExecutor {
     client: reqwest::Client,
-    cache: dashmap::DashMap<String, (String, std::time::SystemTime)>,
+    cache: Arc<DataCache>,
 }
 
 impl WebFetchExecutor {
     pub fn new() -> Self {
         Self {
             client: reqwest::Client::new(),
-            cache: dashmap::DashMap::new(),
+            cache: Arc::new(DataCache::new()),
         }
     }
 
     fn get_cached(&self, url: &str) -> Option<String> {
-        const CACHE_DURATION: std::time::Duration = std::time::Duration::from_secs(300); // 5 min
-
-        if let Some(entry) = self.cache.get(url) {
-            let (content, cached_at) = entry.value();
-            if let Ok(elapsed) = cached_at.elapsed()
-                && elapsed < CACHE_DURATION
-            {
-                return Some(content.clone());
-            }
-            drop(entry);
-            // Remove expired cache
-            self.cache.remove(url);
-        }
-        None
+        self.cache
+            .get(url)
+            .and_then(|val| val.as_str().map(|s| s.to_string()))
     }
 
     fn cache_result(&self, url: String, content: String) {
-        self.cache
-            .insert(url, (content, std::time::SystemTime::now()));
+        self.cache.set_with_ttl(url, json!(content), 300); // 5 min TTL
     }
 }
 

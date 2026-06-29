@@ -1,39 +1,59 @@
 use crate::routers::ui::common::{UiPageKind, render_page};
 use actix_web::{HttpResponse, Responder, get, post, web};
-use quench_srv::actix::routers::ui::pages::auth::{
+use quench_auth::actix::routers::ui::pages::auth::{
     LoginForm, LoginQuery, handle_login_submit, handle_logout, login_form_element,
 };
-use quench_srv::prelude::JwtConfig;
-use quench_srv::prelude::SessionDb;
-use quench_srv::prelude::UserDb;
+use quench_auth::prelude::{JwtConfig, SessionDb, UserDb};
 use quench_web::prelude::*;
 use serde::Serialize;
 
 #[get("/login")]
 pub(super) async fn login(query: web::Query<LoginQuery>) -> impl Responder {
-    render_login_page(query.err.as_deref() == Some("1"))
+    let error = query.err.as_deref() == Some("1");
+    tracing::debug!("switchboard: GET /login (error={})", error);
+    render_login_page(error)
 }
 
 #[get("/login/")]
 pub(super) async fn login_slash(query: web::Query<LoginQuery>) -> impl Responder {
-    render_login_page(query.err.as_deref() == Some("1"))
+    let error = query.err.as_deref() == Some("1");
+    tracing::debug!("switchboard: GET /login/ (error={})", error);
+    render_login_page(error)
 }
 
 #[post("/login")]
 pub(super) async fn login_submit(
     form: web::Form<LoginForm>,
     config: web::Data<JwtConfig>,
-    user_db: web::Data<UserDb>,
-    session_db: web::Data<SessionDb>,
+    user_db: web::Data<std::sync::Arc<UserDb>>,
+    session_db: web::Data<std::sync::Arc<SessionDb>>,
 ) -> impl Responder {
-    handle_login_submit(form, config, user_db, session_db).await
+    tracing::info!(
+        "switchboard: POST /login - Form received with username: {}",
+        form.username
+    );
+    tracing::debug!(
+        "switchboard: POST /login - Auth enabled: {}",
+        config.auth_enabled
+    );
+    tracing::debug!(
+        "switchboard: POST /login - Service name: {}",
+        config.service_name
+    );
+
+    let response = handle_login_submit(form, config, user_db, session_db).await;
+    tracing::info!(
+        "switchboard: POST /login - Response status: {}",
+        response.status()
+    );
+    response
 }
 
 #[get("/logout")]
 pub(super) async fn logout(
     req: actix_web::HttpRequest,
     config: web::Data<JwtConfig>,
-    session_db: web::Data<SessionDb>,
+    session_db: web::Data<std::sync::Arc<SessionDb>>,
 ) -> impl Responder {
     handle_logout(req, config, session_db).await
 }

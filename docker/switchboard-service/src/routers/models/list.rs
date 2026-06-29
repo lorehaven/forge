@@ -5,7 +5,8 @@ use crate::routers::gpu::get_gpu_info;
 use crate::routers::gpu::monitor::GpuInfo;
 use actix_web::web::Json;
 use actix_web::{HttpResponse, Responder, get, post, web};
-use quench_srv::prelude::{JwtConfig, with_base_path};
+use quench_auth::prelude::JwtConfig;
+use quench_starter::prelude::with_base_path;
 use quench_web::prelude::*;
 
 #[post("/list")]

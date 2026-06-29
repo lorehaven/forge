@@ -142,7 +142,6 @@ cargo run -p welder -- --workflow ./welder/samples/agent.toml
 │   └── warehouse-cli/
 ├── libs/
 │   ├── quench-cli/
-│   ├── quench-srv/
 │   └── quench-web/
 ├── pulley/
 ├── riveter/

@@ -1,8 +1,8 @@
 use crate::routers::ui::common::{UiPageKind, render_page, ui_path};
 use crate::routers::{models_dashboard_enabled, vllm_management_enabled};
 use actix_web::{HttpResponse, Responder, get, web};
-use quench_srv::actix::routers::ui::pages::home::{handle_home, service_card};
-use quench_srv::prelude::JwtConfig;
+use quench_auth::prelude::JwtConfig;
+use quench_starter::actix::routers::ui::pages::home::{handle_home, service_card};
 use quench_web::prelude::*;
 
 #[get("/home")]

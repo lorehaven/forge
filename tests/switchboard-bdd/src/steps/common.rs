@@ -116,7 +116,21 @@ async fn authenticated(world: &mut SwitchboardWorld) {
 
 #[cucumber::then(expr = "response status should be {int}")]
 async fn check_status(world: &mut SwitchboardWorld, status: u16) {
-    assert_eq!(world.last_status.expect("No response available"), status);
+    assert_eq!(
+        world.last_status.expect("No response available"),
+        status,
+        "Status code mismatch"
+    );
+}
+
+#[cucumber::then("response should be a redirect")]
+async fn check_is_redirect(world: &mut SwitchboardWorld) {
+    let status = world.last_status.expect("No response available");
+    assert!(
+        status == 301 || status == 302 || status == 303 || status == 307,
+        "Expected redirect status (301/302/303/307), got {}",
+        status
+    );
 }
 
 #[cucumber::when(expr = "GET request is sent to {string}")]

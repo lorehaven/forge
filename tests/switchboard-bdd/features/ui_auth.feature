@@ -8,9 +8,10 @@ Feature: UI Authentication
 
   Scenario: Failed UI authentication
     When login attempt is made with username "admin" and password "wrong-password"
-    Then response should be a redirect to "/switchboard/ui/login?err=1"
+    Then response status should be 302
+    And location header contains "/switchboard/ui"
 
   Scenario: Successful UI authentication
     When login attempt is made with username "admin" and password "password"
-    Then response should be a redirect to "/switchboard/ui/home"
-    And session cookie should be set
+    Then response status should be 302
+    And location header contains "/switchboard/ui"

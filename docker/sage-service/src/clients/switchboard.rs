@@ -1,5 +1,7 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::{DateTime, Utc};
+use quench_client::BasicAuthClient;
+use quench_starter::resilience::{RetryConfig, retry_with_backoff};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -19,10 +21,7 @@ pub struct VllmInstance {
 
 #[derive(Clone)]
 pub struct SwitchboardClient {
-    base_url: String,
-    username: String,
-    password: String,
-    http: reqwest::Client,
+    client: BasicAuthClient,
 }
 
 impl SwitchboardClient {
@@ -34,36 +33,34 @@ impl SwitchboardClient {
             .parse::<bool>()
             .unwrap_or(true);
 
-        let http = reqwest::Client::builder()
-            .danger_accept_invalid_certs(!tls_verify)
+        let client = BasicAuthClient::builder(&base_url)
+            .username(&username)
+            .password(&password)
+            .tls_verify(tls_verify)
             .build()
             .expect("Failed to build HTTP client");
 
-        Self {
-            base_url,
-            username,
-            password,
-            http,
-        }
+        Self { client }
     }
 
     pub async fn get_vllm_instances(&self) -> Result<Vec<VllmInstance>> {
-        let url = format!("{}/api/v1/vllm/instances", self.base_url);
-        let res = self
-            .http
-            .get(&url)
-            .basic_auth(&self.username, Some(&self.password))
-            .send()
-            .await
-            .context("Failed to connect to switchboard-service")?;
-
-        if !res.status().is_success() {
-            anyhow::bail!("Switchboard returned error: {}", res.status());
-        }
-
-        res.json::<Vec<VllmInstance>>()
-            .await
-            .context("Failed to parse vLLM instances")
+        let client = self.client.clone();
+        retry_with_backoff(
+            || async {
+                client
+                    .get("/api/v1/vllm/instances")
+                    .await
+                    .map_err(|e| format!("{}", e))
+            },
+            RetryConfig {
+                max_attempts: 3,
+                initial_delay_ms: 100,
+                max_delay_ms: 2000,
+                backoff_multiplier: 2.0,
+            },
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("{}", e))
     }
 
     pub async fn launch_instance(
@@ -73,7 +70,6 @@ impl SwitchboardClient {
         max_model_len: Option<u32>,
         enable_tool_calling: bool,
     ) -> Result<VllmInstance> {
-        let url = format!("{}/api/v1/vllm/instances", self.base_url);
         let req = serde_json::json!({
             "model": model,
             "host": "0.0.0.0",
@@ -86,23 +82,26 @@ impl SwitchboardClient {
             "enable_tool_calling": enable_tool_calling
         });
 
-        let res = self
-            .http
-            .post(&url)
-            .basic_auth(&self.username, Some(&self.password))
-            .json(&req)
-            .send()
-            .await
-            .context("Failed to connect to switchboard-service to launch instance")?;
-
-        if !res.status().is_success() {
-            let status = res.status();
-            let body = res.text().await.unwrap_or_default();
-            anyhow::bail!("Switchboard returned error {}: {}", status, body);
-        }
-
-        res.json::<VllmInstance>()
-            .await
-            .context("Failed to parse launched vLLM instance response")
+        let client = self.client.clone();
+        retry_with_backoff(
+            || {
+                let req = req.clone();
+                let client = client.clone();
+                async move {
+                    client
+                        .post("/api/v1/vllm/instances", &req)
+                        .await
+                        .map_err(|e| format!("{}", e))
+                }
+            },
+            RetryConfig {
+                max_attempts: 2,
+                initial_delay_ms: 500,
+                max_delay_ms: 3000,
+                backoff_multiplier: 2.0,
+            },
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("{}", e))
     }
 }

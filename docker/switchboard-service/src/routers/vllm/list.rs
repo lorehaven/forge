@@ -2,7 +2,8 @@ use super::types::VllmInstance;
 use crate::routers::models::mod_impl::is_admin;
 use crate::routers::vllm::engine::VllmEngine;
 use actix_web::{HttpResponse, Responder, get, web};
-use quench_srv::prelude::{JwtConfig, with_base_path};
+use quench_auth::prelude::JwtConfig;
+use quench_starter::prelude::with_base_path;
 use quench_web::prelude::*;
 use std::sync::Arc;
 

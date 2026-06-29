@@ -1,7 +1,9 @@
 use crate::routers::ui::common;
 use crate::routers::ui::common::{UiPageKind, render_page};
 use actix_web::{HttpResponse, Responder, get, web};
-use quench_srv::prelude::{JwtConfig, with_base_path};
+use quench_auth::actix::routers::ui::get_user_from_req;
+use quench_auth::prelude::JwtConfig;
+use quench_starter::prelude::with_base_path;
 use quench_web::prelude::*;
 
 #[get("/vllm/manage")]
@@ -9,10 +11,7 @@ pub(super) async fn vllm_manage(
     req: actix_web::HttpRequest,
     config: web::Data<JwtConfig>,
 ) -> impl Responder {
-    if quench_srv::actix::routers::ui::get_user_from_req(&req, &config)
-        .await
-        .is_none()
-    {
+    if get_user_from_req(&req, &config).await.is_none() {
         return common::ui_login_redirect();
     }
     render_vllm_manage_page(crate::routers::models::mod_impl::is_admin(&req, &config))
@@ -23,10 +22,7 @@ pub(super) async fn vllm_manage_slash(
     req: actix_web::HttpRequest,
     config: web::Data<JwtConfig>,
 ) -> impl Responder {
-    if quench_srv::actix::routers::ui::get_user_from_req(&req, &config)
-        .await
-        .is_none()
-    {
+    if get_user_from_req(&req, &config).await.is_none() {
         return common::ui_login_redirect();
     }
     render_vllm_manage_page(crate::routers::models::mod_impl::is_admin(&req, &config))

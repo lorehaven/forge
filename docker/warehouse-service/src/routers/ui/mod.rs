@@ -1,8 +1,8 @@
 use actix_web::dev::HttpServiceFactory;
 use actix_web::{HttpResponse, Responder, get, web};
 pub use common::assets;
-use quench_srv::prelude::JwtConfig;
-use quench_srv::prelude::with_base_path;
+use quench_auth::prelude::JwtConfig;
+use quench_starter::prelude::with_base_path;
 use serde::Deserialize;
 
 mod common;

@@ -5,8 +5,8 @@ use crate::routers::ui::common::{
     UiPageKind, is_ui_authenticated, render_page, ui_login_redirect, ui_path,
 };
 use actix_web::{HttpRequest, HttpResponse, Responder, get, post, web};
-use quench_srv::prelude::JwtConfig;
-use quench_srv::prelude::with_base_path;
+use quench_auth::prelude::JwtConfig;
+use quench_starter::prelude::with_base_path;
 use quench_web::prelude::*;
 
 #[derive(serde::Deserialize)]

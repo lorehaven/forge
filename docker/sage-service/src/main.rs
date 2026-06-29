@@ -1,7 +1,7 @@
 use actix_web::dev::HttpServiceFactory;
 use dashmap::DashMap;
-use quench_srv::prelude::JwtConfig;
-use quench_srv::prelude::{DbWrapper, serve, wait_for_services};
+use quench_auth::prelude::*;
+use quench_starter::prelude::*;
 
 mod audit;
 mod clients;
@@ -9,11 +9,9 @@ mod config;
 pub mod context_manager;
 pub mod conversation;
 pub mod cost_tracking;
-pub mod error_handling;
 pub mod metrics;
 pub mod models;
 pub mod rate_limiter;
-pub mod response_cache;
 pub mod retry_policy;
 mod routers;
 pub mod tools;
@@ -37,8 +35,6 @@ pub fn base_path_scope(
     >,
     cost_tracker: actix_web::web::Data<std::sync::Arc<cost_tracking::CostTracker>>,
 ) -> impl HttpServiceFactory {
-    let response_cache = actix_web::web::Data::new(response_cache::ResponseCache::new());
-
     actix_web::web::scope("")
         .app_data(actix_web::web::Data::new(switchboard))
         .app_data(actix_web::web::Data::new(vllm))
@@ -49,14 +45,12 @@ pub fn base_path_scope(
         .app_data(metrics_collector)
         .app_data(rate_limiter)
         .app_data(cost_tracker)
-        .app_data(response_cache)
         .service(routers::base_path_scope(jwt_config))
 }
 
 fn init_tracing() {
-    tracing_subscriber::fmt().init();
-    dotenvy::dotenv().ok();
-    envmnt::set("DB_SCHEMA", envmnt::get_or("DB_SCHEMA", "sage"));
+    quench_starter::logging::init();
+    tracing::info!("Sage service starting");
 }
 
 fn get_health_check_url() -> String {
@@ -276,6 +270,7 @@ async fn request_model_launch(
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     init_tracing();
+    envmnt::set("DB_SCHEMA", envmnt::get_or("DB_SCHEMA", "sage"));
 
     let health_url = get_health_check_url();
     let db_wrapper = init_database().await;

@@ -1,7 +1,7 @@
 use crate::domain::docker_error;
 use crate::routers::docker::{blob_path, validate_digest};
 use actix_web::{HttpResponse, Responder, head, web};
-use quench_srv::prelude::error;
+use quench_starter::prelude::error;
 
 #[head("/{repo:.*}/blobs/{digest}")]
 pub async fn handle(path: web::Path<(String, String)>) -> impl Responder {

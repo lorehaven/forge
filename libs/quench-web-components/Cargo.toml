@@ -1,0 +1,20 @@
+[package]
+name = "quench-web-components"
+version = "0.1.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "Quench - reusable UI components for quench-web"
+keywords = ["development", "tools"]
+categories = ["development-tools"]
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+readme = { workspace = true }
+
+[lib]
+name = "quench_web_components"
+path = "src/lib.rs"
+
+[dependencies]
+quench-web = { workspace = true }
+strum = { workspace = true }

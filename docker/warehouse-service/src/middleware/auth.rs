@@ -5,7 +5,8 @@ use actix_web::{
     http::header::{HeaderValue, WWW_AUTHENTICATE},
 };
 use futures_util::future::{LocalBoxFuture, Ready, ok};
-use quench_srv::prelude::{error, jwt::JwtConfig};
+use quench_auth::prelude::JwtConfig;
+use quench_starter::prelude::error;
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 use std::task::{Context, Poll};

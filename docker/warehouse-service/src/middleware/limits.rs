@@ -4,7 +4,7 @@ use actix_web::{
     dev::{Service, ServiceRequest, ServiceResponse, Transform},
 };
 use futures_util::future::{LocalBoxFuture, Ready, ok};
-use quench_srv::prelude::error;
+use quench_starter::prelude::error;
 use std::{
     sync::Arc,
     task::{Context, Poll},

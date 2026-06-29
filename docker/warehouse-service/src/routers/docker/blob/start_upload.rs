@@ -1,7 +1,7 @@
 use crate::domain::docker_error;
 use crate::routers::docker::{blob_exists, repository_path, validate_digest};
 use actix_web::{HttpResponse, Responder, post, web};
-use quench_srv::prelude::error;
+use quench_starter::prelude::error;
 use serde::Deserialize;
 use uuid::Uuid;
 

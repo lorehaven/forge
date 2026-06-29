@@ -1,5 +1,5 @@
 use actix_web::web;
-use quench_srv::prelude::JwtConfig;
+use quench_auth::prelude::JwtConfig;
 use std::sync::LazyLock;
 
 pub static HF_ROOTS: LazyLock<Vec<String>> =
@@ -16,7 +16,7 @@ pub fn is_admin(req: &actix_web::HttpRequest, config: &web::Data<JwtConfig>) -> 
     use actix_web::HttpMessage;
     if let Some(claims) = req
         .extensions()
-        .get::<quench_srv::actix::domain::jwt::Claims>()
+        .get::<quench_auth::actix::domain::jwt::Claims>()
     {
         return claims.scope.contains("admin")
             || claims.scope.contains("system")

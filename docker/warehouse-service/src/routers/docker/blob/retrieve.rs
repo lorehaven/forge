@@ -1,7 +1,7 @@
 use crate::domain::docker_error;
 use crate::routers::docker::{blob_path, validate_digest};
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
-use quench_srv::prelude::error;
+use quench_starter::prelude::error;
 use std::{io::SeekFrom, path::PathBuf};
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};

@@ -1,6 +1,7 @@
 use crate::routers::ui::common::{self, UiPageKind, render_page};
 use actix_web::{HttpResponse, Responder, get, web};
-use quench_srv::prelude::{JwtConfig, with_base_path};
+use quench_auth::prelude::JwtConfig;
+use quench_starter::prelude::with_base_path;
 use quench_web::prelude::*;
 
 #[get("/models/dashboard")]

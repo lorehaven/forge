@@ -6,7 +6,9 @@ use crate::tools::ToolExecutor;
 use actix_web::{HttpResponse, Responder, get, post, web};
 use dashmap::DashMap;
 use futures_util::StreamExt;
-use quench_srv::prelude::{JwtConfig, with_base_path};
+use quench_auth::actix::routers::ui::get_user_from_req;
+use quench_auth::prelude::JwtConfig;
+use quench_starter::prelude::with_base_path;
 use quench_web::prelude::*;
 use serde::Deserialize;
 use uuid::Uuid;
@@ -37,7 +39,7 @@ pub async fn send_message(
     form: web::Form<ChatRequest>,
     state: web::Data<ChatState>,
 ) -> impl Responder {
-    let _username = match quench_srv::actix::routers::ui::get_user_from_req(&req, &config).await {
+    let _username = match get_user_from_req(&req, &config).await {
         Some(claims) => claims.sub,
         None => return HttpResponse::Unauthorized().finish(),
     };
@@ -225,11 +227,10 @@ pub async fn stream_message(
     rate_limiter: web::Data<std::sync::Arc<tokio::sync::Mutex<crate::rate_limiter::RateLimiter>>>,
     cost_tracker: web::Data<std::sync::Arc<crate::cost_tracking::CostTracker>>,
 ) -> impl Responder {
-    let username =
-        match quench_srv::actix::routers::ui::get_user_from_req(&req_http, &jwt_config).await {
-            Some(claims) => claims.sub,
-            None => return HttpResponse::Unauthorized().finish(),
-        };
+    let username = match get_user_from_req(&req_http, &jwt_config).await {
+        Some(claims) => claims.sub,
+        None => return HttpResponse::Unauthorized().finish(),
+    };
 
     let message_id = id.into_inner();
 
@@ -1751,10 +1752,7 @@ pub async fn token_stats(
     sage_config: web::Data<crate::config::SageConfig>,
 ) -> impl Responder {
     // Check auth
-    if quench_srv::actix::routers::ui::get_user_from_req(&req, &config)
-        .await
-        .is_none()
-    {
+    if get_user_from_req(&req, &config).await.is_none() {
         return HttpResponse::Unauthorized().finish();
     }
 

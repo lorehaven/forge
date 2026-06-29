@@ -1,5 +1,5 @@
 use actix_web::{HttpResponse, Responder, get, http::header::ContentType, web};
-pub use quench_srv::actix::routers::ui::{is_ui_authenticated, ui_asset_path, ui_path};
+pub use quench_starter::actix::routers::ui::{is_ui_authenticated, ui_asset_path, ui_path};
 use quench_web::prelude::*;
 use std::sync::LazyLock;
 
@@ -143,7 +143,7 @@ fn ui_header_split(
 
 #[get("/assets/{path:.*}")]
 pub async fn assets(path: web::Path<String>) -> impl Responder {
-    quench_srv::actix::routers::ui::serve_assets(path, "dist/assets").await
+    quench_starter::actix::routers::ui::serve_assets(path, "dist/assets").await
 }
 
 pub(super) fn render_page(
@@ -170,5 +170,5 @@ pub(super) enum UiPageKind {
 }
 
 pub(super) fn ui_login_redirect() -> HttpResponse {
-    quench_srv::actix::routers::ui::ui_login_redirect()
+    quench_starter::actix::routers::ui::ui_login_redirect()
 }

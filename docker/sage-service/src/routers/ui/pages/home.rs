@@ -6,9 +6,11 @@ use crate::routers::ui::chat::{
 use crate::routers::ui::common;
 use crate::routers::ui::common::{UiPageKind, render_page};
 use actix_web::{HttpResponse, Responder, get, web};
+use quench_auth::actix::routers::ui::get_user_from_req;
+use quench_auth::prelude::JwtConfig;
 use quench_db::prelude::{Crud, Db};
-use quench_srv::actix::routers::ui::pages::home::handle_home;
-use quench_srv::prelude::{JwtConfig, with_base_path};
+use quench_starter::actix::routers::ui::pages::home::handle_home;
+use quench_starter::prelude::with_base_path;
 use quench_web::prelude::*;
 
 #[derive(serde::Deserialize)]
@@ -26,8 +28,7 @@ async fn handle_home_page(
     sage_config: web::Data<crate::config::SageConfig>,
     query: web::Query<HomeQuery>,
 ) -> impl Responder {
-    let username = match quench_srv::actix::routers::ui::get_user_from_req(&req, &jwt_config).await
-    {
+    let username = match get_user_from_req(&req, &jwt_config).await {
         Some(claims) => claims.sub,
         None => return common::ui_login_redirect().map_into_right_body(),
     };

@@ -1,7 +1,7 @@
 use crate::domain::docker_error;
 use crate::routers::docker::upload_path;
 use actix_web::{HttpResponse, Responder, get, web};
-use quench_srv::prelude::error;
+use quench_starter::prelude::error;
 
 #[get("/{name:.+}/blobs/uploads/{uuid}")]
 pub async fn handle(path: web::Path<(String, String)>) -> impl Responder {

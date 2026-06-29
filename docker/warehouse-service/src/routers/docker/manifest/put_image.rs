@@ -4,7 +4,7 @@ use crate::routers::docker::{
 };
 use crate::utils::sha256::sha256_hex;
 use actix_web::{HttpRequest, HttpResponse, Responder, put, web};
-use quench_srv::prelude::error;
+use quench_starter::prelude::error;
 use serde_json::{Number, Value};
 
 const DOCKER_MANIFEST_V2: &str = "application/vnd.docker.distribution.manifest.v2+json";

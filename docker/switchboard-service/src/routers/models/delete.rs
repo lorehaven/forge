@@ -3,7 +3,7 @@ use super::store::get_store;
 use super::types::DeleteModelRequest;
 use actix_web::web::Json;
 use actix_web::{HttpResponse, Responder, http::header::ContentType, post, web};
-use quench_srv::prelude::JwtConfig;
+use quench_auth::prelude::JwtConfig;
 use std::path::Path;
 
 #[post("/delete")]

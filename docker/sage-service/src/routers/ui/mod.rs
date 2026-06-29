@@ -1,7 +1,9 @@
 use actix_web::dev::HttpServiceFactory;
 use actix_web::{HttpResponse, Responder, get, web};
 pub use common::assets;
-use quench_srv::prelude::{JwtConfig, with_base_path};
+use quench_auth::actix::middleware::auth::Auth;
+use quench_auth::prelude::JwtConfig;
+use quench_starter::prelude::with_base_path;
 
 pub mod chat;
 pub mod common;
@@ -49,17 +51,9 @@ pub fn scope(jwt_config: JwtConfig) -> impl HttpServiceFactory {
         .service(pages::auth::logout)
         .service(pages::auth::auth_status)
         // Chat (with auth)
-        .service(
-            chat::scope().wrap(quench_srv::actix::middleware::auth::Auth::new(
-                jwt_config.clone(),
-            )),
-        )
+        .service(chat::scope().wrap(Auth::new(jwt_config.clone())))
         // Projects (with auth)
-        .service(
-            pages::projects::scope().wrap(quench_srv::actix::middleware::auth::Auth::new(
-                jwt_config.clone(),
-            )),
-        )
+        .service(pages::projects::scope().wrap(Auth::new(jwt_config.clone())))
         // Home (with auth)
         .service(pages::home::home)
         .service(pages::home::home_slash)

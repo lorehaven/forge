@@ -1,0 +1,28 @@
+[package]
+name = "sage-bdd"
+version = "0.1.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "Sage - bdd tests"
+keywords = ["bdd-tests"]
+categories = ["development-tools"]
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+readme = { workspace = true }
+publish = false
+
+[[bin]]
+name = "sage-bdd"
+path = "src/main.rs"
+
+[dependencies]
+cucumber = { workspace = true, features = ["output-json"] }
+tokio = { workspace = true }
+dotenvy = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+jsonwebtoken = { workspace = true }
+hyper = { version = "0.14", features = ["full"] }
+uuid = { version = "1.0", features = ["v4"] }

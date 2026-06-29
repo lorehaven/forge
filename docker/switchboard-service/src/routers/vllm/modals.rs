@@ -1,7 +1,7 @@
 use crate::routers::gpu::get_gpu_info;
 use crate::routers::models::store::get_store;
 use actix_web::{HttpResponse, Responder, get, web};
-use quench_srv::prelude::with_base_path;
+use quench_starter::prelude::with_base_path;
 use quench_web::prelude::*;
 
 #[derive(serde::Deserialize)]

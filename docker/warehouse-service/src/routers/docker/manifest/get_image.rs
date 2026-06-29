@@ -3,7 +3,7 @@ use crate::routers::docker::{
     manifest_path, repository_path, validate_digest, validate_tag_reference,
 };
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
-use quench_srv::prelude::error;
+use quench_starter::prelude::error;
 
 #[get("/{name:.+}/manifests/{reference}")]
 pub async fn handle(req: HttpRequest, path: web::Path<(String, String)>) -> impl Responder {

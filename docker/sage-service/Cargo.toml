@@ -18,12 +18,15 @@ async-stream = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
 dashmap = { workspace = true }
-dotenvy = { workspace = true }
 envmnt = { workspace = true }
 futures-util = { workspace = true }
 pulldown-cmark = { workspace = true }
+quench-auth = { workspace = true }
+quench-cache = { workspace = true }
+quench-client = { workspace = true }
+quench-config = { workspace = true }
 quench-db = { workspace = true }
-quench-srv = { workspace = true }
+quench-starter = { workspace = true }
 quench-web = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
@@ -33,6 +36,5 @@ serde_json = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 urlencoding = { workspace = true }

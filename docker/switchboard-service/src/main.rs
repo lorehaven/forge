@@ -4,7 +4,8 @@ use crate::routers::vllm::engine::VllmEngine;
 use crate::routers::vllm::sse::VllmBroadcaster;
 use actix_web::{dev::HttpServiceFactory, web};
 
-use quench_srv::prelude::*;
+use quench_auth::prelude::*;
+use quench_starter::prelude::*;
 use std::sync::Arc;
 use tokio::sync::broadcast::Sender;
 
@@ -19,14 +20,19 @@ pub fn base_path_scope(
     gpu_tx: Sender<String>,
     vllm_tx: Sender<String>,
     jwt_config: web::Data<JwtConfig>,
+    user_db: Arc<UserDb>,
+    session_db: Arc<SessionDb>,
 ) -> impl HttpServiceFactory {
     web::scope("")
         .app_data(web::Data::new(GpuBroadcaster(gpu_tx)))
         .app_data(web::Data::new(VllmBroadcaster(vllm_tx)))
+        .app_data(jwt_config.clone())
+        .app_data(web::Data::new(user_db))
+        .app_data(web::Data::new(session_db))
         .service(routers::ui::scope())
         .service(
             web::scope("")
-                .wrap(quench_srv::actix::middleware::auth::Auth::new(
+                .wrap(quench_auth::actix::middleware::auth::Auth::new(
                     jwt_config.get_ref().clone(),
                 ))
                 .service(routers::gpu::scope())
@@ -37,11 +43,13 @@ pub fn base_path_scope(
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    tracing_subscriber::fmt().init();
-    dotenvy::dotenv().ok();
+    quench_starter::logging::init();
+    tracing::info!("Switchboard service starting");
 
     let db_wrapper = DbWrapper::init_env().await;
     let jwt_config = web::Data::new(JwtConfig::init());
+    let user_db = UserDb::init(db_wrapper.db.clone()).await;
+    let session_db = SessionDb::init(db_wrapper.db.clone());
 
     init_model_store(db_wrapper.db.clone()).await;
 
@@ -67,6 +75,8 @@ async fn main() -> std::io::Result<()> {
                 gpu_tx.clone(),
                 vllm_tx.clone(),
                 jwt_config.clone(),
+                user_db.clone(),
+                session_db.clone(),
             )
         },
         Some(db_wrapper),

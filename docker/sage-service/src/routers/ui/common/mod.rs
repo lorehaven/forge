@@ -1,5 +1,5 @@
 use actix_web::{HttpResponse, Responder, get, http::header::ContentType, web};
-pub use quench_srv::actix::routers::ui::{
+pub use quench_starter::actix::routers::ui::{
     is_ui_authenticated, ui_asset_path, ui_login_redirect, ui_path,
 };
 use quench_web::prelude::*;
@@ -70,7 +70,7 @@ fn ui_header(title_key: Option<&str>, show_home: bool, show_logout: bool) -> Ele
 
 #[get("/assets/{path:.*}")]
 pub async fn assets(path: web::Path<String>) -> impl Responder {
-    quench_srv::actix::routers::ui::serve_assets(path, "dist/assets").await
+    quench_starter::actix::routers::ui::serve_assets(path, "dist/assets").await
 }
 
 pub(super) fn render_page(

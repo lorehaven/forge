@@ -2,7 +2,7 @@ use crate::domain::docker_error;
 use crate::routers::docker::{DigestQuery, blob_path, upload_path, validate_digest};
 use crate::utils::sha256::sha256_hex;
 use actix_web::{HttpResponse, Responder, put, web};
-use quench_srv::prelude::error;
+use quench_starter::prelude::error;
 
 #[put("/{name:.*}/blobs/uploads/{uuid}")]
 pub async fn handle(

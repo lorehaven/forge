@@ -1,7 +1,9 @@
 use actix_web::{HttpResponse, Responder, get, post, web};
 use chrono::Utc;
+use quench_auth::actix::routers::ui::get_user_from_req;
+use quench_auth::prelude::JwtConfig;
 use quench_db::prelude::{Crud, Db};
-use quench_srv::prelude::{JwtConfig, with_base_path};
+use quench_starter::prelude::with_base_path;
 use quench_web::prelude::*;
 use uuid::Uuid;
 
@@ -72,7 +74,7 @@ pub async fn create_project(
     db: web::Data<Db>,
     form: web::Form<CreateProjectRequest>,
 ) -> impl Responder {
-    let username = match quench_srv::actix::routers::ui::get_user_from_req(&req, &config).await {
+    let username = match get_user_from_req(&req, &config).await {
         Some(claims) => claims.sub,
         None => return HttpResponse::Unauthorized().finish(),
     };

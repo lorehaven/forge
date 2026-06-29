@@ -1,7 +1,7 @@
 use crate::routers::crates::{index_file_path, index_prefix, validate_crate_name};
 use crate::utils::sha256::sha256_hex;
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
-use quench_srv::prelude::with_base_path;
+use quench_starter::prelude::with_base_path;
 use serde::Serialize;
 use std::sync::LazyLock;
 // ---------------------------------------------------------------------------

@@ -1,3 +1,4 @@
+use quench_config::ConfigLoader;
 use serde::{Deserialize, Serialize};
 use std::fs;
 
@@ -56,10 +57,11 @@ pub struct SageConfig {
 
 impl SageConfig {
     pub fn load() -> Self {
-        let prompt_path = envmnt::get_or("SAGE_SYSTEM_PROMPT_PATH", "config/system_prompt.txt");
+        let loader = ConfigLoader::new("SAGE");
+        let prompt_path = loader.env_string("SYSTEM_PROMPT_PATH", "config/system_prompt.txt");
 
         // Load capability profile
-        let profile_name = envmnt::get_or("SAGE_CAPABILITY_PROFILE", "web_assistant");
+        let profile_name = loader.env_string("CAPABILITY_PROFILE", "web_assistant");
         let capability_profile = crate::tools::capabilities::get_profile(&profile_name)
             .unwrap_or_else(|| {
                 tracing::warn!(
@@ -116,18 +118,18 @@ impl SageConfig {
         }
 
         let default_models_str =
-            envmnt::get_or("SAGE_DEFAULT_MODELS", r#"[{"name": "qwen2.5-coder:7b"}]"#);
+            loader.env_string("DEFAULT_MODELS", r#"[{"name": "qwen2.5-coder:7b"}]"#);
         let default_models = DefaultModel::parse_list(&default_models_str);
 
         let supported_models_str =
-            envmnt::get_or("SAGE_SUPPORTED_MODELS", "qwen*, *-instruct, llama*");
+            loader.env_string("SUPPORTED_MODELS", "qwen*, *-instruct, llama*");
         let supported_models: Vec<String> = supported_models_str
             .split(',')
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .collect();
 
-        let default_search_provider = envmnt::get_or("SEARCH_PROVIDER", "duckduckgo");
+        let default_search_provider = loader.env_string("SEARCH_PROVIDER", "duckduckgo");
 
         // Build list of available search providers
         let mut available_search_providers = vec!["duckduckgo".to_string(), "searxng".to_string()];

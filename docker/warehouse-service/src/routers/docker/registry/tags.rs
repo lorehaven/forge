@@ -1,7 +1,7 @@
 use crate::domain::docker_error;
 use crate::routers::docker::registry::storage::{TagListError, list_tags_for_repository};
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
-use quench_srv::prelude::error;
+use quench_starter::prelude::error;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize)]

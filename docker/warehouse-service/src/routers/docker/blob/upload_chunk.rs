@@ -1,7 +1,7 @@
 use crate::domain::docker_error;
 use crate::routers::docker::upload_path;
 use actix_web::{HttpResponse, Responder, patch, web};
-use quench_srv::prelude::error;
+use quench_starter::prelude::error;
 use tokio::io::AsyncWriteExt;
 
 #[patch("/{name:.*}/blobs/uploads/{uuid}")]

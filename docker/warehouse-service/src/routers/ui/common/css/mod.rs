@@ -1,4 +1,4 @@
-use quench_srv::actix::routers::ui::common::css;
+use quench_starter::actix::routers::ui::common::css;
 use quench_web::prelude::CssRule;
 
 pub mod grid;
