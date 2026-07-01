@@ -136,6 +136,10 @@ pub fn build(config: &config::Config, package: &str) -> Result<()> {
     cmd.arg("build")
         .arg("-f")
         .arg(&dockerfile)
+        // BuildKit cache mount support
+        .arg("--progress=plain")
+        .arg("--build-arg")
+        .arg("BUILDKIT_INLINE_CACHE=1")
         .arg("--build-arg")
         .arg(format!(
             "CARGO_REGISTRIES_ENNOR_INDEX={}",
@@ -156,8 +160,9 @@ pub fn build(config: &config::Config, package: &str) -> Result<()> {
             .arg(format!("CARGO_REGISTRIES_ENNOR_TOKEN={token}"));
     }
 
-    // Enable BuildKit
+    // Enable BuildKit with all caching optimizations
     cmd.env("DOCKER_BUILDKIT", "1");
+    cmd.env("BUILDKIT_PROGRESS", "plain");
 
     run_command(cmd, &format!("docker build {package}"))
 }
