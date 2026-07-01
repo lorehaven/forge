@@ -3,8 +3,9 @@ use crate::config::Config;
 use crate::util::run_command;
 use anyhow::{Context, Result};
 use serde_json::Value;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use toml_edit::{DocumentMut, value};
@@ -22,7 +23,7 @@ enum ReleaseKind {
     Cargo,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ReleasePlanItem {
     package: String,
     from_version: String,
@@ -31,20 +32,32 @@ struct ReleasePlanItem {
     tag_to_create: String,
     bump_version: bool,
     install_after_publish: bool,
+    layer: usize,
 }
 
 pub fn release(config: &Config, package: Option<String>, all: bool, dry_run: bool) -> Result<()> {
     let metadata = cargo_metadata()?;
     let targets = resolve_release_targets(config, &metadata, package, all)?;
-    let plan = build_release_plan(config, &metadata, &targets)?;
+    let mut plan = build_release_plan(config, &metadata, &targets)?;
 
     ensure_release_plan_non_empty(all, &plan, dry_run)?;
-    if dry_run && plan.is_empty() {
+    if plan.is_empty() {
         return Ok(());
     }
 
+    // Sort plan by layer for execution order
+    plan.sort_by_key(|item| item.layer);
+
+    // Always show the dry-run first
+    print_dry_run_plan_with_layers(&plan);
+
     if dry_run {
-        print_dry_run_plan(&plan);
+        return Ok(());
+    }
+
+    // Ask for confirmation before proceeding
+    if !confirm_release()? {
+        println!("Release cancelled.");
         return Ok(());
     }
 
@@ -56,27 +69,38 @@ pub fn release(config: &Config, package: Option<String>, all: bool, dry_run: boo
         push_version_commit()?;
     }
 
-    for item in &plan {
-        match item.kind {
-            ReleaseKind::Docker => {
-                docker::release(config, &item.package)?;
-            }
-            ReleaseKind::Cargo => {
-                let mut cmd = Command::new("cargo");
-                cmd.arg("publish")
-                    .arg("--registry")
-                    .arg(&config.release.registry)
-                    .arg("--package")
-                    .arg(&item.package);
-                run_command(cmd, &format!("publish ({})", item.package))?;
-                if item.install_after_publish {
-                    install::install(config, Some(item.package.clone()), false)?;
+    // Release layer by layer
+    let max_layer = plan.iter().map(|item| item.layer).max().unwrap_or(0);
+    for current_layer in 0..=max_layer {
+        let layer_items: Vec<_> = plan.iter().filter(|item| item.layer == current_layer).collect();
+        if layer_items.is_empty() {
+            continue;
+        }
+
+        println!("\nReleasing Layer {current_layer}...");
+        for item in layer_items {
+            match item.kind {
+                ReleaseKind::Docker => {
+                    docker::release(config, &item.package)?;
+                }
+                ReleaseKind::Cargo => {
+                    let mut cmd = Command::new("cargo");
+                    cmd.arg("publish")
+                        .arg("--registry")
+                        .arg(&config.release.registry)
+                        .arg("--package")
+                        .arg(&item.package);
+                    run_command(cmd, &format!("publish ({})", item.package))?;
+                    if item.install_after_publish {
+                        install::install(config, Some(item.package.clone()), false)?;
+                    }
                 }
             }
         }
     }
 
     create_release_tags(&plan)?;
+    println!("\n✅ Release completed successfully");
     Ok(())
 }
 
@@ -153,7 +177,7 @@ fn resolve_release_targets(
 
         if targets.is_empty() {
             anyhow::bail!(
-                "No release packages configured. Set [publish].packages and/or [docker.modules.*].packages in .anvil.toml"
+                "No release packages configured. Set [release].packages and/or [docker.modules.*].packages in .anvil.toml"
             );
         }
 
@@ -209,12 +233,71 @@ fn build_release_plan(
             .as_str()
             .context("Invalid cargo metadata: missing workspace_root")?,
     );
-    let mut plan = Vec::new();
+    let dep_graph = build_dependency_graph(metadata)?;
 
-    for package_name in targets {
+    // Include transitive dependencies of targets
+    let mut all_targets: HashSet<String> = targets.iter().cloned().collect();
+    for target in targets {
+        let mut visited = HashSet::new();
+        get_transitive_dependencies(target, &dep_graph, &mut visited);
+        all_targets.extend(visited);
+    }
+    let all_targets: Vec<String> = all_targets.into_iter().collect();
+
+    // Identify which packages actually need release (have changes or dependencies changed)
+    let mut packages_to_release: HashSet<String> = HashSet::new();
+    let mut packages_with_changes: HashSet<String> = HashSet::new();
+
+    for package_name in &all_targets {
         let pkg = workspace
             .iter()
-            .find(|pkg| pkg.name == *package_name)
+            .find(|pkg| &pkg.name == package_name)
+            .with_context(|| format!("Package '{package_name}' not found in workspace metadata"))?;
+
+        if let Some(last_tag) = latest_package_tag(package_name)? {
+            if package_changed_since_tag(&workspace_root, &pkg.dir, &last_tag)? {
+                packages_to_release.insert(package_name.clone());
+                packages_with_changes.insert(package_name.clone());
+            }
+        } else {
+            // First release
+            packages_to_release.insert(package_name.clone());
+            packages_with_changes.insert(package_name.clone());
+        }
+    }
+
+    // Auto-bump packages that depend on modified packages
+    loop {
+        let mut changed = false;
+        for package_name in &all_targets {
+            if packages_to_release.contains(package_name) {
+                continue;
+            }
+            if let Some(deps) = dep_graph.get(package_name) {
+                if deps.iter().any(|dep| packages_with_changes.contains(dep)) {
+                    packages_to_release.insert(package_name.clone());
+                    packages_with_changes.insert(package_name.clone());
+                    changed = true;
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+
+    // Compute layers for all packages to release
+    let layers = compute_package_layers(
+        &packages_to_release.iter().cloned().collect::<Vec<_>>(),
+        &dep_graph,
+    )?;
+
+    // Build plan items
+    let mut plan = Vec::new();
+    for package_name in &packages_to_release {
+        let pkg = workspace
+            .iter()
+            .find(|pkg| &pkg.name == package_name)
             .with_context(|| format!("Package '{package_name}' not found in workspace metadata"))?;
         let current_version = read_manifest_version(&pkg.manifest)?;
         let kind = if is_docker_package(config, package_name) {
@@ -225,12 +308,9 @@ fn build_release_plan(
         let install_after_publish = should_install_package(config, package_name);
         let current_version_tag = package_tag_name(package_name, &current_version);
         let current_version_tag_exists = tag_exists(&current_version_tag)?;
+        let layer = layers.get(package_name).copied().unwrap_or(0);
 
-        if let Some(last_tag) = latest_package_tag(package_name)? {
-            if !package_changed_since_tag(&workspace_root, &pkg.dir, &last_tag)? {
-                continue;
-            }
-
+        if let Some(_last_tag) = latest_package_tag(package_name)? {
             if current_version_tag_exists {
                 let next_version = bump_patch(&current_version)?;
                 plan.push(ReleasePlanItem {
@@ -241,9 +321,9 @@ fn build_release_plan(
                     tag_to_create: package_tag_name(package_name, &next_version),
                     bump_version: true,
                     install_after_publish,
+                    layer,
                 });
             } else {
-                // Manual bump flow: current version has no tag yet, publish it as-is.
                 plan.push(ReleasePlanItem {
                     package: package_name.clone(),
                     from_version: current_version.clone(),
@@ -252,10 +332,10 @@ fn build_release_plan(
                     tag_to_create: current_version_tag,
                     bump_version: false,
                     install_after_publish,
+                    layer,
                 });
             }
         } else {
-            // First release for this package: tag current version and publish as-is.
             plan.push(ReleasePlanItem {
                 package: package_name.clone(),
                 from_version: current_version.clone(),
@@ -264,6 +344,7 @@ fn build_release_plan(
                 tag_to_create: package_tag_name(package_name, &current_version),
                 bump_version: false,
                 install_after_publish,
+                layer,
             });
         }
     }
@@ -331,7 +412,7 @@ fn ensure_release_plan_non_empty(all: bool, plan: &[ReleasePlanItem], dry_run: b
     }
 
     if all {
-        anyhow::bail!("No packages require release from [publish].packages");
+        anyhow::bail!("No packages require release from [release].packages");
     }
     anyhow::bail!("Target package has no changes since its last tag");
 }
@@ -348,22 +429,6 @@ fn read_manifest_version(path: &Path) -> Result<String> {
         .and_then(toml::Value::as_str)
         .map(ToOwned::to_owned)
         .context("Manifest missing package.version")
-}
-
-fn print_dry_run_plan(plan: &[ReleasePlanItem]) {
-    println!("Dry run: planned releases");
-    for item in plan {
-        let version_note = if item.bump_version {
-            format!("{} -> {}", item.from_version, item.to_version)
-        } else {
-            format!("{} (no bump; initial package tag)", item.from_version)
-        };
-        let action = release_action_label(item);
-        println!(
-            "- {}: {} ({}), tag: {}",
-            item.package, version_note, action, item.tag_to_create
-        );
-    }
 }
 
 const fn release_action_label(item: &ReleasePlanItem) -> &'static str {
@@ -541,4 +606,134 @@ fn is_docker_package(config: &Config, package: &str) -> bool {
 
 fn should_install_package(config: &Config, package: &str) -> bool {
     config.install.packages.iter().any(|p| p == package)
+}
+
+fn build_dependency_graph(metadata: &Value) -> Result<HashMap<String, Vec<String>>> {
+    let packages = workspace_packages(metadata)?;
+    let mut graph: HashMap<String, Vec<String>> = HashMap::new();
+
+    for pkg in &packages {
+        let manifest_content = fs::read_to_string(&pkg.manifest)
+            .with_context(|| format!("Failed to read manifest at {}", pkg.manifest.display()))?;
+        let manifest_value: toml::Value = toml::from_str(&manifest_content)
+            .with_context(|| format!("Failed to parse manifest at {}", pkg.manifest.display()))?;
+
+        let mut deps = Vec::new();
+        if let Some(dependencies) = manifest_value.get("dependencies").and_then(|d| d.as_table()) {
+            for dep_name in dependencies.keys() {
+                if packages.iter().any(|p| &p.name == dep_name) {
+                    deps.push(dep_name.clone());
+                }
+            }
+        }
+        if let Some(dev_dependencies) = manifest_value.get("dev-dependencies").and_then(|d| d.as_table()) {
+            for dep_name in dev_dependencies.keys() {
+                if packages.iter().any(|p| &p.name == dep_name) && !deps.contains(dep_name) {
+                    deps.push(dep_name.clone());
+                }
+            }
+        }
+        graph.insert(pkg.name.clone(), deps);
+    }
+
+    Ok(graph)
+}
+
+fn get_transitive_dependencies(
+    package: &str,
+    graph: &HashMap<String, Vec<String>>,
+    visited: &mut HashSet<String>,
+) {
+    if visited.contains(package) {
+        return;
+    }
+    visited.insert(package.to_string());
+
+    if let Some(deps) = graph.get(package) {
+        for dep in deps {
+            get_transitive_dependencies(dep, graph, visited);
+        }
+    }
+}
+
+fn compute_package_layers(
+    packages: &[String],
+    graph: &HashMap<String, Vec<String>>,
+) -> Result<HashMap<String, usize>> {
+    let packages_set: HashSet<&String> = packages.iter().collect();
+    let mut layers: HashMap<String, usize> = HashMap::new();
+
+    for pkg in packages {
+        let mut layer = 0;
+        if let Some(deps) = graph.get(pkg) {
+            for dep in deps {
+                if packages_set.contains(dep) {
+                    layer = layer.max(layers.get(dep).copied().unwrap_or(0) + 1);
+                }
+            }
+        }
+        layers.insert(pkg.clone(), layer);
+    }
+
+    // Iteratively refine layers until stable
+    for _ in 0..packages.len() {
+        let mut changed = false;
+        for pkg in packages {
+            let mut new_layer = 0;
+            if let Some(deps) = graph.get(pkg) {
+                for dep in deps {
+                    if packages_set.contains(dep) {
+                        new_layer = new_layer.max(layers.get(dep).copied().unwrap_or(0) + 1);
+                    }
+                }
+            }
+            if new_layer > layers[pkg] {
+                layers.insert(pkg.clone(), new_layer);
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+
+    Ok(layers)
+}
+
+fn print_dry_run_plan_with_layers(plan: &[ReleasePlanItem]) {
+    println!("Dry run: planned releases (organized by dependency layers)\n");
+
+    let max_layer = plan.iter().map(|item| item.layer).max().unwrap_or(0);
+
+    for current_layer in 0..=max_layer {
+        let layer_items: Vec<_> = plan.iter().filter(|item| item.layer == current_layer).collect();
+        if layer_items.is_empty() {
+            continue;
+        }
+
+        println!("Layer {current_layer}:");
+        for item in layer_items {
+            let version_note = if item.bump_version {
+                format!("{} -> {}", item.from_version, item.to_version)
+            } else {
+                format!("{} (no bump; initial package tag)", item.from_version)
+            };
+            let action = release_action_label(item);
+            println!(
+                "  - {}: {} ({}), tag: {}",
+                item.package, version_note, action, item.tag_to_create
+            );
+        }
+        println!();
+    }
+}
+
+fn confirm_release() -> Result<bool> {
+    print!("Proceed with release? (yes/no): ");
+    io::stdout().flush()?;
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+
+    Ok(input.trim().eq_ignore_ascii_case("yes") || input.trim().eq_ignore_ascii_case("y"))
 }
