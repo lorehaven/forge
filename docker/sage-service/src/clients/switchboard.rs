@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use quench_client::BasicAuthClient;
 use quench_starter::metrics::{RequestMetrics, TimedBlock};
-use quench_starter::resilience::{RetryConfig, retry_with_backoff};
+use quench_starter::resilience::{RetryConfig, retry_with_backoff, CircuitBreaker};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -25,6 +25,7 @@ pub struct VllmInstance {
 pub struct SwitchboardClient {
     client: BasicAuthClient,
     metrics: Arc<RequestMetrics>,
+    circuit_breaker: Arc<CircuitBreaker>,
 }
 
 impl SwitchboardClient {
@@ -46,6 +47,7 @@ impl SwitchboardClient {
         Self {
             client,
             metrics: Arc::new(RequestMetrics::new()),
+            circuit_breaker: Arc::new(CircuitBreaker::new(5, 3, 60)),
         }
     }
 
@@ -54,6 +56,11 @@ impl SwitchboardClient {
     }
 
     pub async fn get_vllm_instances(&self) -> Result<Vec<VllmInstance>> {
+        if !self.circuit_breaker.is_available() {
+            tracing::warn!("Switchboard circuit breaker is open");
+            return Err(anyhow::anyhow!("Circuit breaker open: Switchboard temporarily unavailable"));
+        }
+
         let client = self.client.clone();
         let metrics = self.metrics.clone();
         let timer = TimedBlock::new();
@@ -78,10 +85,12 @@ impl SwitchboardClient {
             Ok(_) => {
                 let latency_ms = timer.elapsed_ms();
                 metrics.record_success(latency_ms);
+                self.circuit_breaker.call_succeeded();
                 tracing::debug!("get_vllm_instances completed in {}ms", latency_ms);
             }
             Err(e) => {
                 metrics.record_error(&e.to_string());
+                self.circuit_breaker.call_failed();
                 tracing::error!("get_vllm_instances failed: {}", e);
             }
         }
@@ -96,6 +105,11 @@ impl SwitchboardClient {
         max_model_len: Option<u32>,
         enable_tool_calling: bool,
     ) -> Result<VllmInstance> {
+        if !self.circuit_breaker.is_available() {
+            tracing::warn!("Switchboard circuit breaker is open");
+            return Err(anyhow::anyhow!("Circuit breaker open: Switchboard temporarily unavailable"));
+        }
+
         let req = serde_json::json!({
             "model": model,
             "host": "0.0.0.0",
@@ -136,10 +150,12 @@ impl SwitchboardClient {
             Ok(_) => {
                 let latency_ms = timer.elapsed_ms();
                 metrics.record_success(latency_ms);
+                self.circuit_breaker.call_succeeded();
                 tracing::info!("launch_instance({}) completed in {}ms", model, latency_ms);
             }
             Err(e) => {
                 metrics.record_error(&e.to_string());
+                self.circuit_breaker.call_failed();
                 tracing::error!("launch_instance({}) failed: {}", model, e);
             }
         }

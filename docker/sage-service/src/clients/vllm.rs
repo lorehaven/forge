@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use futures_util::Stream;
 use futures_util::StreamExt;
 use quench_starter::metrics::RequestMetrics;
+use quench_starter::resilience::CircuitBreaker;
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 use std::sync::Arc;
@@ -64,6 +65,7 @@ pub struct ChatCompletionDelta {
 pub struct VllmClient {
     http: reqwest::Client,
     metrics: Arc<RequestMetrics>,
+    circuit_breaker: Arc<CircuitBreaker>,
 }
 
 impl VllmClient {
@@ -80,6 +82,7 @@ impl VllmClient {
         Self {
             http,
             metrics: Arc::new(RequestMetrics::new()),
+            circuit_breaker: Arc::new(CircuitBreaker::new(3, 2, 60)),
         }
     }
 
@@ -108,6 +111,11 @@ impl VllmClient {
         max_tokens: Option<u32>,
         tools: Option<Vec<serde_json::Value>>,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<String>> + Send>>> {
+        if !self.circuit_breaker.is_available() {
+            tracing::warn!("vLLM circuit breaker is open");
+            return Err(anyhow::anyhow!("Circuit breaker open: vLLM temporarily unavailable"));
+        }
+
         let host = host
             .trim_start_matches("http://")
             .trim_start_matches("https://");
@@ -147,9 +155,11 @@ impl VllmClient {
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
             tracing::error!("vLLM returned error {}: {}", status, err_text);
+            self.circuit_breaker.call_failed();
             anyhow::bail!("vLLM returned error {}: {}", status, err_text);
         }
 
+        self.circuit_breaker.call_succeeded();
         let mut stream = res.bytes_stream();
 
         let output_stream = async_stream::try_stream! {
