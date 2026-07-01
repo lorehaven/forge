@@ -1,8 +1,10 @@
 use anyhow::{Context, Result};
 use futures_util::Stream;
 use futures_util::StreamExt;
+use quench_starter::metrics::RequestMetrics;
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;
+use std::sync::Arc;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ToolCall {
@@ -19,7 +21,7 @@ pub struct ChatMessage {
     pub tool_calls: Option<Vec<ToolCall>>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ChatCompletionRequest {
     pub model: String,
     pub messages: Vec<ChatMessage>,
@@ -61,6 +63,7 @@ pub struct ChatCompletionDelta {
 #[derive(Clone)]
 pub struct VllmClient {
     http: reqwest::Client,
+    metrics: Arc<RequestMetrics>,
 }
 
 impl VllmClient {
@@ -74,7 +77,14 @@ impl VllmClient {
             .build()
             .expect("Failed to build HTTP client");
 
-        Self { http }
+        Self {
+            http,
+            metrics: Arc::new(RequestMetrics::new()),
+        }
+    }
+
+    pub fn metrics(&self) -> Arc<RequestMetrics> {
+        self.metrics.clone()
     }
 
     pub async fn chat_stream(

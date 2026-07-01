@@ -72,7 +72,10 @@ pub fn release(config: &Config, package: Option<String>, all: bool, dry_run: boo
     // Release layer by layer
     let max_layer = plan.iter().map(|item| item.layer).max().unwrap_or(0);
     for current_layer in 0..=max_layer {
-        let layer_items: Vec<_> = plan.iter().filter(|item| item.layer == current_layer).collect();
+        let layer_items: Vec<_> = plan
+            .iter()
+            .filter(|item| item.layer == current_layer)
+            .collect();
         if layer_items.is_empty() {
             continue;
         }
@@ -222,6 +225,7 @@ fn resolve_single_package(metadata: &Value) -> Result<String> {
     anyhow::bail!("Could not determine release target. Use --package <name> or --all")
 }
 
+#[allow(clippy::too_many_lines)]
 fn build_release_plan(
     config: &Config,
     metadata: &Value,
@@ -273,12 +277,12 @@ fn build_release_plan(
             if packages_to_release.contains(package_name) {
                 continue;
             }
-            if let Some(deps) = dep_graph.get(package_name) {
-                if deps.iter().any(|dep| packages_with_changes.contains(dep)) {
-                    packages_to_release.insert(package_name.clone());
-                    packages_with_changes.insert(package_name.clone());
-                    changed = true;
-                }
+            if let Some(deps) = dep_graph.get(package_name)
+                && deps.iter().any(|dep| packages_with_changes.contains(dep))
+            {
+                packages_to_release.insert(package_name.clone());
+                packages_with_changes.insert(package_name.clone());
+                changed = true;
             }
         }
         if !changed {
@@ -290,7 +294,7 @@ fn build_release_plan(
     let layers = compute_package_layers(
         &packages_to_release.iter().cloned().collect::<Vec<_>>(),
         &dep_graph,
-    )?;
+    );
 
     // Build plan items
     let mut plan = Vec::new();
@@ -619,14 +623,20 @@ fn build_dependency_graph(metadata: &Value) -> Result<HashMap<String, Vec<String
             .with_context(|| format!("Failed to parse manifest at {}", pkg.manifest.display()))?;
 
         let mut deps = Vec::new();
-        if let Some(dependencies) = manifest_value.get("dependencies").and_then(|d| d.as_table()) {
+        if let Some(dependencies) = manifest_value
+            .get("dependencies")
+            .and_then(|d| d.as_table())
+        {
             for dep_name in dependencies.keys() {
                 if packages.iter().any(|p| &p.name == dep_name) {
                     deps.push(dep_name.clone());
                 }
             }
         }
-        if let Some(dev_dependencies) = manifest_value.get("dev-dependencies").and_then(|d| d.as_table()) {
+        if let Some(dev_dependencies) = manifest_value
+            .get("dev-dependencies")
+            .and_then(|d| d.as_table())
+        {
             for dep_name in dev_dependencies.keys() {
                 if packages.iter().any(|p| &p.name == dep_name) && !deps.contains(dep_name) {
                     deps.push(dep_name.clone());
@@ -659,7 +669,7 @@ fn get_transitive_dependencies(
 fn compute_package_layers(
     packages: &[String],
     graph: &HashMap<String, Vec<String>>,
-) -> Result<HashMap<String, usize>> {
+) -> HashMap<String, usize> {
     let packages_set: HashSet<&String> = packages.iter().collect();
     let mut layers: HashMap<String, usize> = HashMap::new();
 
@@ -697,7 +707,7 @@ fn compute_package_layers(
         }
     }
 
-    Ok(layers)
+    layers
 }
 
 fn print_dry_run_plan_with_layers(plan: &[ReleasePlanItem]) {
@@ -706,7 +716,10 @@ fn print_dry_run_plan_with_layers(plan: &[ReleasePlanItem]) {
     let max_layer = plan.iter().map(|item| item.layer).max().unwrap_or(0);
 
     for current_layer in 0..=max_layer {
-        let layer_items: Vec<_> = plan.iter().filter(|item| item.layer == current_layer).collect();
+        let layer_items: Vec<_> = plan
+            .iter()
+            .filter(|item| item.layer == current_layer)
+            .collect();
         if layer_items.is_empty() {
             continue;
         }

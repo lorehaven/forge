@@ -99,7 +99,12 @@ async fn send_with_valid_token(world: &mut SageWorld) -> Result<(), String> {
         .await
     {
         Ok(resp) => {
-            world.last_status = Some(resp.status().as_u16());
+            let status = resp.status().as_u16();
+            world.last_status = Some(status);
+            let body_text = resp.text().await.unwrap_or_default();
+            if status >= 400 {
+                eprintln!("DEBUG TEST: status={}, body={}", status, body_text);
+            }
             Ok(())
         }
         Err(e) => Err(format!("Request error: {}", e)),

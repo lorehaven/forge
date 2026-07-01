@@ -1,8 +1,10 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use quench_client::BasicAuthClient;
+use quench_starter::metrics::{RequestMetrics, TimedBlock};
 use quench_starter::resilience::{RetryConfig, retry_with_backoff};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct VllmInstance {
@@ -22,6 +24,7 @@ pub struct VllmInstance {
 #[derive(Clone)]
 pub struct SwitchboardClient {
     client: BasicAuthClient,
+    metrics: Arc<RequestMetrics>,
 }
 
 impl SwitchboardClient {
@@ -40,12 +43,22 @@ impl SwitchboardClient {
             .build()
             .expect("Failed to build HTTP client");
 
-        Self { client }
+        Self {
+            client,
+            metrics: Arc::new(RequestMetrics::new()),
+        }
+    }
+
+    pub fn metrics(&self) -> Arc<RequestMetrics> {
+        self.metrics.clone()
     }
 
     pub async fn get_vllm_instances(&self) -> Result<Vec<VllmInstance>> {
         let client = self.client.clone();
-        retry_with_backoff(
+        let metrics = self.metrics.clone();
+        let timer = TimedBlock::new();
+
+        let result = retry_with_backoff(
             || async {
                 client
                     .get("/api/v1/vllm/instances")
@@ -59,8 +72,21 @@ impl SwitchboardClient {
                 backoff_multiplier: 2.0,
             },
         )
-        .await
-        .map_err(|e| anyhow::anyhow!("{}", e))
+        .await;
+
+        match &result {
+            Ok(_) => {
+                let latency_ms = timer.elapsed_ms();
+                metrics.record_success(latency_ms);
+                tracing::debug!("get_vllm_instances completed in {}ms", latency_ms);
+            }
+            Err(e) => {
+                metrics.record_error(&e.to_string());
+                tracing::error!("get_vllm_instances failed: {}", e);
+            }
+        }
+
+        result.map_err(|e| anyhow::anyhow!("{}", e))
     }
 
     pub async fn launch_instance(
@@ -83,7 +109,10 @@ impl SwitchboardClient {
         });
 
         let client = self.client.clone();
-        retry_with_backoff(
+        let metrics = self.metrics.clone();
+        let timer = TimedBlock::new();
+
+        let result = retry_with_backoff(
             || {
                 let req = req.clone();
                 let client = client.clone();
@@ -101,7 +130,20 @@ impl SwitchboardClient {
                 backoff_multiplier: 2.0,
             },
         )
-        .await
-        .map_err(|e| anyhow::anyhow!("{}", e))
+        .await;
+
+        match &result {
+            Ok(_) => {
+                let latency_ms = timer.elapsed_ms();
+                metrics.record_success(latency_ms);
+                tracing::info!("launch_instance({}) completed in {}ms", model, latency_ms);
+            }
+            Err(e) => {
+                metrics.record_error(&e.to_string());
+                tracing::error!("launch_instance({}) failed: {}", model, e);
+            }
+        }
+
+        result.map_err(|e| anyhow::anyhow!("{}", e))
     }
 }

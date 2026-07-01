@@ -9,6 +9,7 @@ mod config;
 pub mod context_manager;
 pub mod conversation;
 pub mod cost_tracking;
+mod init;
 pub mod metrics;
 pub mod models;
 pub mod rate_limiter;
@@ -285,6 +286,12 @@ async fn main() -> std::io::Result<()> {
         init_tool_registry(&search_provider_registry, &sage_config.capability_profile);
 
     spawn_model_monitor_task(switchboard.clone(), sage_config.clone());
+
+    // Validate critical dependencies at startup
+    if let Err(e) = init::validate_startup(&switchboard, &sage_config).await {
+        tracing::error!("Startup validation failed: {}", e);
+        tracing::error!("The service may not function correctly. Please check your configuration.");
+    }
 
     serve(
         root_scope,

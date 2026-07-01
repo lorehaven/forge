@@ -19,6 +19,7 @@ path = "src/lib.rs"
 actix-service = { workspace = true }
 actix-web = { workspace = true }
 dotenvy = { workspace = true }
+futures-util = { workspace = true }
 envmnt = { workspace = true }
 quench-cli = { workspace = true }
 quench-auth = { workspace = true }
@@ -31,3 +32,4 @@ serde_json = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+uuid = { workspace = true }

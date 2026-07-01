@@ -39,7 +39,11 @@ pub async fn chat(
 ) -> impl Responder {
     let instances = match switchboard.get_vllm_instances().await {
         Ok(i) => i,
-        Err(err) => return HttpResponse::InternalServerError().body(err.to_string()),
+        Err(err) => {
+            let error_msg = format!("Failed to get vLLM instances from Switchboard: {}", err);
+            tracing::error!("{}", error_msg);
+            return HttpResponse::InternalServerError().body(error_msg);
+        }
     };
 
     let Some(instance) = instances.into_iter().find(|i| i.id == req.instance_id) else {
@@ -70,7 +74,11 @@ pub async fn chat(
         .await
     {
         Ok(s) => s,
-        Err(err) => return HttpResponse::InternalServerError().body(err.to_string()),
+        Err(err) => {
+            tracing::error!("Failed to create vLLM chat stream: {}", err);
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to create vLLM chat stream: {}", err));
+        }
     };
 
     let sse_stream = stream.map(|res| match res {

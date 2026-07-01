@@ -1,4 +1,5 @@
 pub mod health;
+pub mod metrics;
 pub mod swagger;
 pub mod ui;
 
