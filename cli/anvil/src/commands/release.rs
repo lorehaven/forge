@@ -1,4 +1,4 @@
-use crate::commands::{docker, install, publish};
+use crate::commands::{docker, install};
 use crate::config::Config;
 use crate::util::run_command;
 use anyhow::{Context, Result};
@@ -62,7 +62,13 @@ pub fn release(config: &Config, package: Option<String>, all: bool, dry_run: boo
                 docker::release(config, &item.package)?;
             }
             ReleaseKind::Cargo => {
-                publish::publish(config, Some(item.package.clone()), false)?;
+                let mut cmd = Command::new("cargo");
+                cmd.arg("publish")
+                    .arg("--registry")
+                    .arg(&config.release.registry)
+                    .arg("--package")
+                    .arg(&item.package);
+                run_command(cmd, &format!("publish ({})", item.package))?;
                 if item.install_after_publish {
                     install::install(config, Some(item.package.clone()), false)?;
                 }
@@ -134,7 +140,7 @@ fn resolve_release_targets(
 
     if all {
         let mut targets = Vec::new();
-        for pkg in &config.publish.packages {
+        for pkg in &config.release.packages {
             targets.push(pkg.clone());
         }
         for module in config.docker.modules.values() {

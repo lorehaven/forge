@@ -13,7 +13,7 @@ pub struct Config {
     pub install: InstallConfig,
 
     #[serde(default)]
-    pub publish: PublishConfig,
+    pub release: ReleaseConfig,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -61,11 +61,11 @@ pub struct InstallConfig {
 }
 
 #[derive(Debug, Default, Deserialize)]
-pub struct PublishConfig {
+pub struct ReleaseConfig {
     /// Cargo registry to publish to
     #[serde(default)]
     pub registry: String,
-    /// List of publishable packages
+    /// List of releasable packages
     #[serde(default)]
     pub packages: Vec<String>,
 }

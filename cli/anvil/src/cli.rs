@@ -88,15 +88,6 @@ pub enum Commands {
         #[arg(short, long)]
         package: Option<String>,
     },
-    /// Publish workspace package(s) with cargo publish
-    Publish {
-        /// Publish all packages configured in [publish].packages
-        #[arg(long, conflicts_with = "package")]
-        all: bool,
-        /// Specific package to publish (required for multi-package workspace roots)
-        #[arg(short, long)]
-        package: Option<String>,
-    },
     /// Release package(s): bump patch version, commit, then docker release or cargo publish+install
     Release {
         /// Release all packages configured in [publish].packages

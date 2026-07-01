@@ -117,30 +117,6 @@ fn parse_install_supports_all_flag() {
 }
 
 #[test]
-fn parse_publish_supports_package_flag() {
-    let cli = Cli::parse_from(["anvil", "publish", "--package", "ferrous"]);
-    match cli.command {
-        Commands::Publish { all, package } => {
-            assert!(!all);
-            assert_eq!(package.as_deref(), Some("ferrous"));
-        }
-        _ => panic!("expected publish command"),
-    }
-}
-
-#[test]
-fn parse_publish_supports_all_flag() {
-    let cli = Cli::parse_from(["anvil", "publish", "--all"]);
-    match cli.command {
-        Commands::Publish { all, package } => {
-            assert!(all);
-            assert!(package.is_none());
-        }
-        _ => panic!("expected publish command"),
-    }
-}
-
-#[test]
 fn parse_release_supports_package_flag() {
     let cli = Cli::parse_from(["anvil", "release", "--package", "ferrous"]);
     match cli.command {

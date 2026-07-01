@@ -5,8 +5,8 @@ fn test_default_config() {
     let config = Config::default();
     assert!(config.docker.modules.is_empty());
     assert!(config.install.packages.is_empty());
-    assert!(config.publish.registry.is_empty());
-    assert!(config.publish.packages.is_empty());
+    assert!(config.release.registry.is_empty());
+    assert!(config.release.packages.is_empty());
 }
 
 #[test]
@@ -27,7 +27,7 @@ registries = ["registry.internal/override", "backup-registry.internal/override"]
 [install]
 packages = ["cli", "service"]
 
-[publish]
+[release]
 registry = "forge-registry"
 packages = ["service"]
     "#;
@@ -60,8 +60,8 @@ packages = ["service"]
         ]
     );
     assert_eq!(config.install.packages.len(), 2);
-    assert_eq!(config.publish.registry, "forge-registry");
-    assert_eq!(config.publish.packages, vec!["service"]);
+    assert_eq!(config.release.registry, "forge-registry");
+    assert_eq!(config.release.packages, vec!["service"]);
 }
 
 #[test]
