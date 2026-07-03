@@ -85,12 +85,15 @@ impl UserDb {
             let admin_user = envmnt::get_or_panic("SERVICE_USERNAME");
             let admin_pass = envmnt::get_or_panic("SERVICE_PASSWORD");
             if arc_db.get_user(&admin_user).await.is_none() {
+                tracing::info!("Creating admin user: {}", admin_user);
                 arc_db
                     .add_user(
                         User::new(admin_user, admin_pass, vec![Role::Admin])
                             .expect("failed to hash admin password"),
                     )
                     .await;
+            } else {
+                tracing::info!("Admin user {} already exists", admin_user);
             }
 
             // Technical service user
@@ -103,16 +106,26 @@ impl UserDb {
                 &envmnt::get_or("TECH_PASSWORD", ""),
             );
 
-            if !tech_user.is_empty()
-                && !tech_pass.is_empty()
-                && arc_db.get_user(&tech_user).await.is_none()
-            {
-                arc_db
-                    .add_user(
-                        User::new(tech_user, tech_pass, vec![Role::Service])
-                            .expect("failed to hash service password"),
-                    )
-                    .await;
+            if !tech_user.is_empty() && !tech_pass.is_empty() {
+                if arc_db.get_user(&tech_user).await.is_none() {
+                    tracing::info!("Creating technical service user: {}", tech_user);
+                    let tech_user_clone = tech_user.clone();
+                    arc_db
+                        .add_user(
+                            User::new(tech_user_clone.clone(), tech_pass, vec![Role::Service])
+                                .expect("failed to hash service password"),
+                        )
+                        .await;
+                    tracing::info!("Technical service user {} created successfully", tech_user_clone);
+                } else {
+                    tracing::info!("Technical service user {} already exists", tech_user);
+                }
+            } else {
+                tracing::warn!(
+                    "SERVICE_TECH_USERNAME or SERVICE_TECH_PASSWORD not set (tech_user empty: {}, tech_pass empty: {})",
+                    tech_user.is_empty(),
+                    tech_pass.is_empty()
+                );
             }
         }
 

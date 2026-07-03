@@ -77,18 +77,19 @@ where
             .service(root_module())
     });
 
+    let service_name = envmnt::get_or("SERVICE_NAME", "service");
     if let Some(config) = load_tls(
         envmnt::get_or("SERVER_CERT_PATH", "cert.pem"),
         envmnt::get_or("SERVER_KEY_PATH", "key.pem"),
     ) {
         print_status(
             Tone::Success,
-            "warehouse-service",
+            &format!("{}-service", service_name),
             &format!("starting HTTPS server on {https_addr}"),
         );
         print_status(
             Tone::Info,
-            "warehouse-service",
+            &format!("{}-service", service_name),
             &format!("starting HTTP redirect server on {http_addr}"),
         );
 
@@ -107,7 +108,7 @@ where
     } else {
         print_status(
             Tone::Warn,
-            "warehouse-service",
+            &format!("{}-service", service_name),
             "starting plain HTTP server",
         );
         server.bind(https_addr)?.run().await

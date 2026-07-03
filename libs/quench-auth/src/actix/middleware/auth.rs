@@ -67,12 +67,20 @@ where
 
         let mut token = None;
 
+        // Log all headers for debugging
+        tracing::debug!("AuthMiddleware: Received request to {}", req.path());
+        for (name, value) in req.headers().iter() {
+            tracing::debug!("AuthMiddleware: Header {} = {:?}", name, value);
+        }
+
         // Check Authorization header
         if let Some(auth_header) = req
             .headers()
             .get("Authorization")
             .and_then(|h| h.to_str().ok())
         {
+            tracing::debug!("AuthMiddleware: Found Authorization header: {}", auth_header);
+
             if let Some(bearer_token) = auth_header.strip_prefix("Bearer ") {
                 token = Some(bearer_token.to_string());
             } else if let Some(basic_auth) = auth_header.strip_prefix("Basic ")
@@ -81,8 +89,14 @@ where
             {
                 let decoded_str = String::from_utf8_lossy(&decoded);
                 if let Some((username, password)) = decoded_str.split_once(':') {
-                    let user_db = req.app_data::<web::Data<crate::actix::domain::auth::UserDb>>();
+                    tracing::debug!(
+                        "AuthMiddleware: Basic auth decoded - username: '{}', password length: {}",
+                        username,
+                        password.len()
+                    );
+                    let user_db = req.app_data::<web::Data<std::sync::Arc<crate::actix::domain::auth::UserDb>>>();
                     if let Some(user_db) = user_db {
+                        tracing::debug!("AuthMiddleware: UserDb found in app_data");
                         let user_db = user_db.clone();
                         let username = username.to_string();
                         let password = password.to_string();
@@ -90,7 +104,9 @@ where
                         let service = self.service.clone();
 
                         return Box::pin(async move {
+                            tracing::debug!("AuthMiddleware: Validating user: {}", username);
                             if let Some(user) = user_db.validate(&username, &password).await {
+                                tracing::debug!("AuthMiddleware: User {} validated successfully", username);
                                 let roles = user
                                     .get_roles()
                                     .iter()
@@ -109,12 +125,18 @@ where
                                 let res = service.call(req).await?;
                                 Ok(res.map_into_left_body())
                             } else {
+                                tracing::warn!(
+                                    "AuthMiddleware: Basic auth validation failed for user: {}",
+                                    username
+                                );
                                 let res = actix_web::HttpResponse::Unauthorized()
                                     .finish()
                                     .map_into_right_body();
                                 Ok(req.into_response(res))
                             }
                         });
+                    } else {
+                        tracing::error!("AuthMiddleware: UserDb not found in app_data!");
                     }
                 }
             }

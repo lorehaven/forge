@@ -3604,6 +3604,7 @@ dependencies = [
  "reqwest",
  "serde",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]

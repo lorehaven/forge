@@ -1,6 +1,7 @@
 use anyhow::{Context, Result, anyhow};
 use serde::{Serialize, de::DeserializeOwned};
 use thiserror::Error;
+use tracing;
 
 #[derive(Error, Debug)]
 pub enum ClientError {
@@ -151,6 +152,11 @@ impl BasicAuthClient {
 
     pub async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
         let url = format!("{}{}", self.client.base_url, path);
+        tracing::debug!(
+            "BasicAuthClient::get - Sending request to {} with username: {}",
+            url,
+            self.username
+        );
         let res = self
             .client
             .http
@@ -160,6 +166,10 @@ impl BasicAuthClient {
             .await
             .context("Failed to send GET request")?;
 
+        tracing::debug!(
+            "BasicAuthClient::get - Response status: {}",
+            res.status()
+        );
         self.client.handle_response::<T>(res).await
     }
 
