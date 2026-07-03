@@ -145,7 +145,7 @@ spec:
           env:
 {% for k, v in res.env_vars | dictsort %}
             - name: {{ k }}
-              value: "{{ v }}"
+              value: '{{ v }}'
 {% endfor %}
 {% endif %}
 {% if res.volume_mounts %}
