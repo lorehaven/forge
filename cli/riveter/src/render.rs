@@ -1,6 +1,5 @@
 use crate::env::{OUTPUT_DIR, OVERLAY_DIR, manifest_path};
 use anyhow::Context;
-use dotenvy::from_path;
 use minijinja::{Environment, Value, context};
 use regex::Regex;
 use serde_yaml::Value as YamlValue;
@@ -29,9 +28,9 @@ pub fn generate_manifests_with_scope(
     env_name: &str,
     scope: ResourceScope,
 ) -> anyhow::Result<RenderedManifest> {
-    load_env(env_name);
+    let env_vars = load_env(env_name)?;
 
-    let data = render_overlay(env_name)?;
+    let data = render_overlay(env_name, &env_vars)?;
     let rendered_resources = render_resources(env_name, &data, scope)?;
 
     fs::create_dir_all(OUTPUT_DIR)?;
@@ -51,7 +50,7 @@ pub fn generate_manifests_with_scope(
     })
 }
 
-fn render_overlay(env_name: &str) -> anyhow::Result<YamlValue> {
+fn render_overlay(env_name: &str, env_vars: &HashMap<String, String>) -> anyhow::Result<YamlValue> {
     let overlay_src = fs::read_to_string(format!("{OVERLAY_DIR}/{env_name}/overlay.yaml"))?;
 
     let mut overlay_jinja = Environment::new();
@@ -73,7 +72,7 @@ fn render_overlay(env_name: &str) -> anyhow::Result<YamlValue> {
     })?;
 
     let re = Regex::new(r"\$\{([^}]+)}")?;
-    substitute(&mut data, &std::env::vars().collect(), &re);
+    substitute(&mut data, env_vars, &re);
 
     Ok(data)
 }
@@ -144,13 +143,42 @@ fn resource_is_immutable(res: &YamlValue) -> bool {
     false
 }
 
-fn load_env(env: &str) {
+fn load_env(env: &str) -> anyhow::Result<HashMap<String, String>> {
     let env_path = format!("{OVERLAY_DIR}/{env}/.env");
-    if Path::new(&env_path).exists() {
-        from_path(&env_path).ok();
+    let path = if Path::new(&env_path).exists() {
+        env_path
     } else if Path::new(".env").exists() {
-        from_path(".env").ok();
+        ".env".to_string()
+    } else {
+        return Ok(HashMap::new());
+    };
+
+    let env_content = fs::read_to_string(&path)?;
+    let mut env_vars = HashMap::new();
+
+    for line in env_content.lines() {
+        let line = line.trim();
+        // Skip comments and empty lines
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        if let Some((key, value)) = line.split_once('=') {
+            let key = key.trim().to_string();
+            let mut value = value.trim().to_string();
+
+            // Remove surrounding quotes if present
+            if (value.starts_with('"') && value.ends_with('"'))
+                || (value.starts_with('\'') && value.ends_with('\''))
+            {
+                value = value[1..value.len() - 1].to_string();
+            }
+
+            env_vars.insert(key, value);
+        }
     }
+
+    Ok(env_vars)
 }
 
 fn load_embedded_templates(env: &mut Environment<'_>) -> anyhow::Result<()> {
