@@ -27,7 +27,9 @@ pub fn base_path_scope(
     vllm: clients::vllm::VllmClient,
     config: config::SageConfig,
     chat_state: actix_web::web::Data<routers::ui::chat::ChatState>,
-    jwt_config: JwtConfig,
+    jwt_config: actix_web::web::Data<JwtConfig>,
+    user_db: std::sync::Arc<UserDb>,
+    session_db: std::sync::Arc<SessionDb>,
     tool_registry: actix_web::web::Data<tools::ToolRegistry>,
     search_provider_registry: actix_web::web::Data<std::sync::Arc<tools::SearchProviderRegistry>>,
     metrics_collector: actix_web::web::Data<std::sync::Arc<metrics::MetricsCollector>>,
@@ -36,17 +38,21 @@ pub fn base_path_scope(
     >,
     cost_tracker: actix_web::web::Data<std::sync::Arc<cost_tracking::CostTracker>>,
 ) -> impl HttpServiceFactory {
+    let jwt_config_for_router = jwt_config.get_ref().clone();
     actix_web::web::scope("")
         .app_data(actix_web::web::Data::new(switchboard))
         .app_data(actix_web::web::Data::new(vllm))
         .app_data(actix_web::web::Data::new(config))
         .app_data(chat_state)
+        .app_data(jwt_config)
+        .app_data(actix_web::web::Data::new(user_db))
+        .app_data(actix_web::web::Data::new(session_db))
         .app_data(tool_registry)
         .app_data(search_provider_registry)
         .app_data(metrics_collector)
         .app_data(rate_limiter)
         .app_data(cost_tracker)
-        .service(routers::base_path_scope(jwt_config))
+        .service(routers::base_path_scope(jwt_config_for_router))
 }
 
 fn init_tracing() {
@@ -277,6 +283,8 @@ async fn main() -> std::io::Result<()> {
     let db_wrapper = init_database().await;
     let (switchboard, vllm) = init_clients();
     let (sage_config, jwt_config) = init_config();
+    let user_db = UserDb::init(db_wrapper.db.clone()).await;
+    let session_db = SessionDb::init(db_wrapper.db.clone());
     let chat_state = init_chat_state();
     let search_provider_registry = init_search_provider_registry();
     let metrics_collector = init_metrics_collector();
@@ -284,6 +292,7 @@ async fn main() -> std::io::Result<()> {
     let cost_tracker = init_cost_tracker();
     let tool_registry =
         init_tool_registry(&search_provider_registry, &sage_config.capability_profile);
+    let jwt_config_data = actix_web::web::Data::new(jwt_config);
 
     spawn_model_monitor_task(switchboard.clone(), sage_config.clone());
 
@@ -301,7 +310,9 @@ async fn main() -> std::io::Result<()> {
                 vllm.clone(),
                 sage_config.clone(),
                 chat_state.clone(),
-                jwt_config.clone(),
+                jwt_config_data.clone(),
+                user_db.clone(),
+                session_db.clone(),
                 tool_registry.clone(),
                 actix_web::web::Data::new(search_provider_registry.clone()),
                 actix_web::web::Data::new(metrics_collector.clone()),
