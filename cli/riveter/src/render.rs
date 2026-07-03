@@ -183,6 +183,7 @@ fn load_env(env: &str) -> anyhow::Result<HashMap<String, String>> {
 
 fn load_embedded_templates(env: &mut Environment<'_>) -> anyhow::Result<()> {
     let templates = [
+        "configmap.yaml.j2",
         "cronjob.yaml.j2",
         "deployment.yaml.j2",
         "ingress.yaml.j2",
@@ -211,6 +212,7 @@ fn load_embedded_templates(env: &mut Environment<'_>) -> anyhow::Result<()> {
 
 fn get_template_source(name: &str) -> Option<&'static str> {
     Some(match name {
+        "configmap.yaml.j2" => include_str!("templates/configmap.yaml.j2"),
         "cronjob.yaml.j2" => include_str!("templates/cronjob.yaml.j2"),
         "deployment.yaml.j2" => include_str!("templates/deployment.yaml.j2"),
         "ingress.yaml.j2" => include_str!("templates/ingress.yaml.j2"),
