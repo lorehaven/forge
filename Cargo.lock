@@ -3657,7 +3657,7 @@ dependencies = [
 
 [[package]]
 name = "quench-starter"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "actix-service",
  "actix-web",
@@ -4185,7 +4185,7 @@ dependencies = [
 
 [[package]]
 name = "sage-service"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -4989,7 +4989,7 @@ dependencies = [
 
 [[package]]
 name = "switchboard-service"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "actix-web",
  "async-trait",
@@ -5696,7 +5696,7 @@ dependencies = [
 
 [[package]]
 name = "warehouse-service"
-version = "0.1.20"
+version = "0.1.21"
 dependencies = [
  "actix-web",
  "base64",
