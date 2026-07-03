@@ -9,14 +9,21 @@ pub mod middleware;
 pub mod routers;
 pub mod utils;
 
-pub fn root_scope() -> impl HttpServiceFactory {
+pub fn root_scope(
+    jwt_config: web::Data<JwtConfig>,
+    user_db: Arc<UserDb>,
+    session_db: Arc<SessionDb>,
+) -> impl HttpServiceFactory {
     let loader = ConfigLoader::new("WAREHOUSE");
     let max_body_bytes = loader.env_u64("MAX_REQUEST_BODY_BYTES", 1024 * 1024 * 1024) as usize;
     let max_concurrent_uploads = loader.env_u64("MAX_CONCURRENT_UPLOADS", 32) as usize;
 
     web::scope("")
         .app_data(actix_web::web::PayloadConfig::new(max_body_bytes))
-        .wrap(middleware::auth::WarehouseAuth::new(JwtConfig::init()))
+        .app_data(jwt_config.clone())
+        .app_data(web::Data::new(user_db))
+        .app_data(web::Data::new(session_db))
+        .wrap(middleware::auth::WarehouseAuth::new(jwt_config.get_ref().clone()))
         .wrap(middleware::limits::WarehouseLimits::new(
             max_concurrent_uploads,
         ))
@@ -49,8 +56,12 @@ async fn main() -> std::io::Result<()> {
     let user_db = UserDb::init(db_wrapper.db.clone()).await;
     let session_db = SessionDb::init(db_wrapper.db.clone());
 
+    let root_user_db = user_db.clone();
+    let root_session_db = session_db.clone();
+    let root_jwt_config = jwt_config.clone();
+
     serve(
-        root_scope,
+        move || root_scope(root_jwt_config.clone(), root_user_db.clone(), root_session_db.clone()),
         move || {
             base_path_scope(
                 jwt_config.clone(),
