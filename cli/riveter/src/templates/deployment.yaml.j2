@@ -165,6 +165,12 @@ spec:
 {% if vol.pvc_name %}
           persistentVolumeClaim:
             claimName: {{ vol.pvc_name }}
+{% elif vol.pvc %}
+          persistentVolumeClaim:
+            claimName: {{ vol.pvc }}
+{% elif vol.config_map %}
+          configMap:
+            name: {{ vol.config_map }}
 {% elif vol.host_path %}
           hostPath:
             path: {{ vol.host_path }}
