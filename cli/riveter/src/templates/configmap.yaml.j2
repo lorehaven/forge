@@ -8,7 +8,7 @@ metadata:
     app.kubernetes.io/instance: {{ res.instance | default(res.name) }}
     env: {{ env }}
 data:
-{% for key, value in res.data.items() %}
+{% for key in res.data %}
   {{ key }}: |
-    {{ value | indent(4) }}
+    {{ res.data[key] | indent(4) }}
 {% endfor %}
