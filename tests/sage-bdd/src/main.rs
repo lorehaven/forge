@@ -23,19 +23,35 @@ async fn main() {
     sleep(Duration::from_millis(500)).await;
 
     // 3. Start sage-service
-    println!("Starting sage-service...");
-    let sage_service_dir = std::path::Path::new(manifest_dir)
+    let workspace_root = std::path::Path::new(manifest_dir)
         .parent()
         .unwrap()
         .parent()
-        .unwrap()
-        .join("docker")
-        .join("sage-service");
+        .unwrap();
+    let sage_service_dir = workspace_root.join("docker").join("sage-service");
 
-    let mut child = Command::new("cargo")
-        .arg("run")
+    // Build first, then run the binary directly (instead of `cargo run`) so the
+    // spawned PID is sage-service itself. The shutdown scenario sends it a
+    // SIGTERM, which a `cargo run` parent would not reliably forward.
+    println!("Building sage-service...");
+    let build_status = Command::new("cargo")
+        .arg("build")
         .arg("-p")
         .arg("sage-service")
+        .current_dir(&sage_service_dir)
+        .envs(env::vars())
+        .status()
+        .await
+        .expect("Failed to build sage-service");
+    assert!(build_status.success(), "sage-service build failed");
+
+    let target_dir = env::var("CARGO_TARGET_DIR")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| workspace_root.join("target"));
+    let sage_bin = target_dir.join("debug").join("sage-service");
+
+    println!("Starting sage-service...");
+    let mut child = Command::new(&sage_bin)
         .current_dir(&sage_service_dir)
         .envs(env::vars())
         .env("SERVER_ADDR", "127.0.0.1:7777")
@@ -47,8 +63,13 @@ async fn main() {
         .env("VLLM_TLS_VERIFY", "false")
         // Point to mock vLLM server
         .env("VLLM_BASE_URL", "http://127.0.0.1:8000")
+        // Exercise the graceful default-model teardown on shutdown.
+        .env("SAGE_STOP_MODELS_ON_SHUTDOWN", "true")
         .spawn()
         .expect("Failed to start sage-service");
+
+    // Record the PID so the shutdown scenario can signal this exact process.
+    steps::shutdown::set_sage_pid(child.id().expect("sage-service PID unavailable"));
 
     // Wait for service to be ready
     println!("Waiting for service to start...");
@@ -76,11 +97,24 @@ async fn main() {
         }
     }
 
-    // Run tests
+    // Run tests. The shutdown scenario terminates the service under test, and
+    // cucumber runs scenarios concurrently, so it can't share a run with the
+    // others. Run the rest of the suite first, then the shutdown scenario alone
+    // against the still-live service.
     let features_path = std::path::Path::new(manifest_dir).join("features");
-    SageWorld::run(features_path).await;
+    const SHUTDOWN_FEATURE: &str = "Graceful shutdown";
 
-    // Stop service
+    SageWorld::filter_run(features_path.clone(), |feature, _, _| {
+        feature.name != SHUTDOWN_FEATURE
+    })
+    .await;
+
+    SageWorld::filter_run(features_path, |feature, _, _| {
+        feature.name == SHUTDOWN_FEATURE
+    })
+    .await;
+
+    // Stop service (harmless if the shutdown scenario already terminated it).
     println!("Stopping sage-service...");
     let _ = child.kill().await;
 }
@@ -112,6 +146,22 @@ async fn start_mock_switchboard_server() {
             return Ok(Response::builder()
                 .status(StatusCode::UNAUTHORIZED)
                 .body(Body::from("Unauthorized"))
+                .unwrap());
+        }
+
+        // Graceful stop of an instance: DELETE /vllm/instances/{id}. The real
+        // switchboard responds with an HTML fragment; record the id so the
+        // shutdown scenario can assert sage asked for the stop.
+        if req.method() == hyper::Method::DELETE
+            && path.starts_with("/switchboard/api/v1/vllm/instances/")
+        {
+            let id = path.rsplit('/').next().unwrap_or_default().to_string();
+            crate::steps::shutdown::record_deleted_instance(id);
+
+            return Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header("content-type", "text/html")
+                .body(Body::from("<div></div>"))
                 .unwrap());
         }
 

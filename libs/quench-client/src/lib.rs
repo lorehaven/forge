@@ -212,6 +212,31 @@ impl BasicAuthClient {
 
         self.client.handle_response::<T>(res).await
     }
+
+    /// Send a DELETE request and treat any 2xx status as success, discarding
+    /// the response body. Use for endpoints that return HTML or empty bodies
+    /// that cannot be deserialized into a typed response.
+    pub async fn delete_expect_success(&self, path: &str) -> Result<()> {
+        let url = format!("{}{}", self.client.base_url, path);
+        let res = self
+            .client
+            .http
+            .delete(&url)
+            .basic_auth(&self.username, Some(&self.password))
+            .send()
+            .await
+            .context("Failed to send DELETE request")?;
+
+        let status = res.status();
+        if !status.is_success() {
+            let body = res
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(anyhow!("HTTP {}: {}", status, body));
+        }
+        Ok(())
+    }
 }
 
 pub struct BasicAuthClientBuilder {

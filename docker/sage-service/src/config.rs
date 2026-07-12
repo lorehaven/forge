@@ -63,6 +63,10 @@ pub struct SageConfig {
     pub default_search_provider: String,
     pub available_search_providers: Vec<String>,
     pub capability_profile: crate::tools::CapabilityProfile,
+    /// When true, the default models launched at startup are gracefully
+    /// stopped (SIGTERM via switchboard) when the service shuts down.
+    /// Controlled by `SAGE_STOP_MODELS_ON_SHUTDOWN` (default: false).
+    pub stop_models_on_shutdown: bool,
 }
 
 impl SageConfig {
@@ -142,6 +146,8 @@ impl SageConfig {
 
         let default_search_provider = loader.env_string("SEARCH_PROVIDER", "duckduckgo");
 
+        let stop_models_on_shutdown = loader.env_bool("STOP_MODELS_ON_SHUTDOWN", false);
+
         // Build list of available search providers
         let mut available_search_providers = vec!["duckduckgo".to_string(), "searxng".to_string()];
         if std::env::var("BRAVE_SEARCH_API_KEY").is_ok() {
@@ -159,6 +165,7 @@ impl SageConfig {
             default_search_provider,
             available_search_providers,
             capability_profile,
+            stop_models_on_shutdown,
         }
     }
 

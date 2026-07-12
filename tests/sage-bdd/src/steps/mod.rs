@@ -5,3 +5,4 @@ pub mod conversations;
 pub mod errors;
 pub mod files;
 pub mod models;
+pub mod shutdown;

@@ -144,6 +144,59 @@ impl SwitchboardClient {
         result.map_err(|e| anyhow::anyhow!("{}", e))
     }
 
+    /// Request a graceful stop of a running vLLM instance. Switchboard sends
+    /// the underlying process a SIGTERM so vLLM can drain and shut down
+    /// cleanly. The endpoint returns an HTML fragment, so the body is ignored.
+    pub async fn stop_instance(&self, id: &str) -> Result<()> {
+        if !self.circuit_breaker.is_available() {
+            tracing::warn!("Switchboard circuit breaker is open");
+            return Err(anyhow::anyhow!(
+                "Circuit breaker open: Switchboard temporarily unavailable"
+            ));
+        }
+
+        let client = self.client.clone();
+        let metrics = self.metrics.clone();
+        let timer = TimedBlock::new();
+        let path = format!("/api/v1/vllm/instances/{}", id);
+
+        let result = retry_with_backoff(
+            || {
+                let client = client.clone();
+                let path = path.clone();
+                async move {
+                    client
+                        .delete_expect_success(&path)
+                        .await
+                        .map_err(|e| format!("{}", e))
+                }
+            },
+            RetryConfig {
+                max_attempts: 2,
+                initial_delay_ms: 500,
+                max_delay_ms: 3000,
+                backoff_multiplier: 2.0,
+            },
+        )
+        .await;
+
+        match &result {
+            Ok(_) => {
+                let latency_ms = timer.elapsed_ms();
+                metrics.record_success(latency_ms);
+                self.circuit_breaker.call_succeeded();
+                tracing::info!("stop_instance({}) completed in {}ms", id, latency_ms);
+            }
+            Err(e) => {
+                metrics.record_error(&e.to_string());
+                self.circuit_breaker.call_failed();
+                tracing::error!("stop_instance({}) failed: {}", id, e);
+            }
+        }
+
+        result.map_err(|e| anyhow::anyhow!("{}", e))
+    }
+
     pub async fn launch_instance(
         &self,
         model: &str,

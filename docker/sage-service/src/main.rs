@@ -292,6 +292,48 @@ async fn request_model_launch(
     }
 }
 
+/// Gracefully stop the default models on service shutdown. Fetches the active
+/// instances and asks switchboard to SIGTERM each one that corresponds to a
+/// configured default model. Best-effort: failures are logged, not fatal.
+async fn shutdown_default_models(
+    switchboard: &clients::switchboard::SwitchboardClient,
+    config: &config::SageConfig,
+) {
+    tracing::info!("Stopping default models on shutdown...");
+
+    let instances = match switchboard.get_vllm_instances().await {
+        Ok(inst) => inst,
+        Err(err) => {
+            tracing::error!(
+                "Failed to list instances while stopping default models: {}",
+                err
+            );
+            return;
+        }
+    };
+
+    for model in &config.default_models {
+        for inst in instances.iter().filter(|inst| {
+            inst.model == model.name
+                && matches!(inst.status.as_str(), "running" | "starting" | "pending")
+        }) {
+            match switchboard.stop_instance(&inst.id).await {
+                Ok(_) => tracing::info!(
+                    "Requested graceful stop of default model '{}' (instance {})",
+                    model.name,
+                    inst.id
+                ),
+                Err(err) => tracing::error!(
+                    "Failed to stop default model '{}' (instance {}): {}",
+                    model.name,
+                    inst.id,
+                    err
+                ),
+            }
+        }
+    }
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     init_tracing();
@@ -319,13 +361,18 @@ async fn main() -> std::io::Result<()> {
 
     spawn_model_monitor_task(switchboard.clone(), sage_config.clone());
 
+    // Clones retained for graceful shutdown after the server stops; the
+    // originals below are moved into the server factory closure.
+    let shutdown_switchboard = switchboard.clone();
+    let shutdown_config = sage_config.clone();
+
     // Validate critical dependencies at startup
     if let Err(e) = init::validate_startup(&switchboard, &sage_config).await {
         tracing::error!("Startup validation failed: {}", e);
         tracing::error!("The service may not function correctly. Please check your configuration.");
     }
 
-    serve(
+    let result = serve(
         root_scope,
         move || {
             base_path_scope(
@@ -348,5 +395,16 @@ async fn main() -> std::io::Result<()> {
             wait_for_services("sage-service", vec![health_url.as_str()]).await;
         },
     )
-    .await
+    .await;
+
+    // The server future resolves once actix has completed its graceful
+    // shutdown (e.g. on SIGTERM/SIGINT). Optionally tear down the default
+    // models we asked switchboard to launch at startup.
+    if shutdown_config.stop_models_on_shutdown {
+        shutdown_default_models(&shutdown_switchboard, &shutdown_config).await;
+    } else {
+        tracing::debug!("SAGE_STOP_MODELS_ON_SHUTDOWN is disabled; leaving default models running");
+    }
+
+    result
 }
