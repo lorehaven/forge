@@ -1,7 +1,6 @@
 use anyhow::{Context, Result, anyhow};
 use serde::{Serialize, de::DeserializeOwned};
 use thiserror::Error;
-use tracing;
 
 #[derive(Error, Debug)]
 pub enum ClientError {
@@ -166,10 +165,7 @@ impl BasicAuthClient {
             .await
             .context("Failed to send GET request")?;
 
-        tracing::debug!(
-            "BasicAuthClient::get - Response status: {}",
-            res.status()
-        );
+        tracing::debug!("BasicAuthClient::get - Response status: {}", res.status());
         self.client.handle_response::<T>(res).await
     }
 

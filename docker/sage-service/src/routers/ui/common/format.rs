@@ -68,6 +68,39 @@ fn is_horizontal_rule(line: &str) -> bool {
     trimmed.chars().all(|c| c == first_char)
 }
 
+/// Render a "Sources" block listing the uploaded-file excerpts that fed an
+/// assistant answer. Returns None when there are no sources.
+pub fn render_sources(sources: &[crate::files::rag::RagSource]) -> Option<Element> {
+    if sources.is_empty() {
+        return None;
+    }
+    let mut list = div().class("message-sources");
+    list = list.child(
+        span()
+            .class("message-sources-label")
+            .child(i().class("fas fa-file-lines"))
+            .child(span().text("Sources")),
+    );
+    for source in sources {
+        let mut label = source.file_name.clone();
+        if let Some(detail) = &source.detail {
+            label.push_str(&format!(" · {}", detail));
+        } else if let Some(idx) = source.chunk_index {
+            label.push_str(&format!(" · chunk {}", idx));
+        }
+        let mut item = div().class("message-source-item").text(label);
+        if let Some(sim) = source.similarity {
+            item = item.child(
+                span()
+                    .class("message-source-score")
+                    .text(format!("{:.0}%", sim * 100.0)),
+            );
+        }
+        list = list.child(item);
+    }
+    Some(list)
+}
+
 pub fn format_message(text: &str) -> String {
     let parts: Vec<&str> = text.split("```").collect();
     let mut html = String::new();

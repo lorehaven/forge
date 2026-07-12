@@ -1,0 +1,13 @@
+[[migrations]]
+id = "0009-file-message-attachments"
+author = "quench-srv"
+
+# Link an uploaded file to the specific user message it was attached to, so the
+# composer can show attachments inline in the request bubble. Nullable: a file
+# stays unattached (message_id NULL) while staged in the composer, and is linked
+# once the message is sent. Deleting the message removes its attachments.
+[[migrations.changes]]
+sql = "ALTER TABLE sage.files ADD COLUMN IF NOT EXISTS message_id TEXT REFERENCES sage.messages(id) ON DELETE CASCADE;"
+
+[[migrations.changes]]
+sql = "CREATE INDEX IF NOT EXISTS files_message_id_idx ON sage.files (message_id);"

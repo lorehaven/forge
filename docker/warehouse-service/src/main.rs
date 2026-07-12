@@ -23,7 +23,9 @@ pub fn root_scope(
         .app_data(jwt_config.clone())
         .app_data(web::Data::new(user_db))
         .app_data(web::Data::new(session_db))
-        .wrap(middleware::auth::WarehouseAuth::new(jwt_config.get_ref().clone()))
+        .wrap(middleware::auth::WarehouseAuth::new(
+            jwt_config.get_ref().clone(),
+        ))
         .wrap(middleware::limits::WarehouseLimits::new(
             max_concurrent_uploads,
         ))
@@ -61,14 +63,14 @@ async fn main() -> std::io::Result<()> {
     let root_jwt_config = jwt_config.clone();
 
     serve(
-        move || root_scope(root_jwt_config.clone(), root_user_db.clone(), root_session_db.clone()),
         move || {
-            base_path_scope(
-                jwt_config.clone(),
-                user_db.clone(),
-                session_db.clone(),
+            root_scope(
+                root_jwt_config.clone(),
+                root_user_db.clone(),
+                root_session_db.clone(),
             )
         },
+        move || base_path_scope(jwt_config.clone(), user_db.clone(), session_db.clone()),
         Some(db_wrapper),
         async {},
     )

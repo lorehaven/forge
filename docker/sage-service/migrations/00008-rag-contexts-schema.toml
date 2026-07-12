@@ -1,0 +1,21 @@
+[[migrations]]
+id = "0008-rag-contexts-schema"
+author = "quench-srv"
+
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS sage.rag_contexts (
+    id TEXT PRIMARY KEY,
+    message_id TEXT NOT NULL REFERENCES sage.messages(id) ON DELETE CASCADE,
+    file_id TEXT REFERENCES sage.files(id) ON DELETE SET NULL,
+    file_name TEXT NOT NULL,
+    chunk_index INTEGER,
+    detail TEXT,
+    similarity DOUBLE PRECISION,
+    source TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+"""
+
+[[migrations.changes]]
+sql = "CREATE INDEX IF NOT EXISTS rag_contexts_message_id_idx ON sage.rag_contexts (message_id);"

@@ -8,7 +8,8 @@ Feature: Docker Registry API
 
   Scenario: Get authentication token
     When token for service "warehouse" and scope "repository:test-repo:pull" is requested
-    Then response status should be 500
+    Then response status should be 200
+    And response should contain a JWT token
 
   Scenario: Push manifest without token
     When PUT request is sent to "/v2/test-unauth-push/manifests/latest" without token but valid manifest

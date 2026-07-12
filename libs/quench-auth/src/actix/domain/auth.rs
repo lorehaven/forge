@@ -116,7 +116,10 @@ impl UserDb {
                                 .expect("failed to hash service password"),
                         )
                         .await;
-                    tracing::info!("Technical service user {} created successfully", tech_user_clone);
+                    tracing::info!(
+                        "Technical service user {} created successfully",
+                        tech_user_clone
+                    );
                 } else {
                     tracing::info!("Technical service user {} already exists", tech_user);
                 }

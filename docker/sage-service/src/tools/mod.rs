@@ -6,6 +6,7 @@ pub mod capabilities;
 pub mod code_executor;
 pub mod command;
 pub mod file_ops;
+pub mod file_search;
 pub mod parser;
 pub mod search_providers;
 pub mod web_fetch;
@@ -58,6 +59,7 @@ pub fn get_all_tool_definitions() -> Vec<ToolDefinition> {
         calculator::get_definition(),
         web_fetch::get_definition(),
         file_ops::get_definition(),
+        file_search::get_definition(),
         command::get_definition(),
         code_executor::get_definition(),
     ]

@@ -30,6 +30,24 @@ pub struct ChatRequest {
     pub tool_confirmations: Vec<String>,
     #[serde(default)]
     pub skip_user_message: bool,
+    /// Comma-separated ids of files staged in the composer, injected by the
+    /// chat form's htmx:config-request handler and linked to the user message
+    /// on send. A single string (not a Vec) because serde_urlencoded — the
+    /// parser behind actix `web::Form` — cannot deserialize repeated keys.
+    #[serde(default)]
+    pub file_ids: String,
+}
+
+impl ChatRequest {
+    /// The staged file ids as a list, empty entries removed.
+    pub fn file_id_list(&self) -> Vec<String> {
+        self.file_ids
+            .split(',')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .collect()
+    }
 }
 
 #[post("/send")]
@@ -38,8 +56,9 @@ pub async fn send_message(
     config: web::Data<JwtConfig>,
     form: web::Form<ChatRequest>,
     state: web::Data<ChatState>,
+    db: web::Data<quench_db::prelude::Db>,
 ) -> impl Responder {
-    let _username = match get_user_from_req(&req, &config).await {
+    let username = match get_user_from_req(&req, &config).await {
         Some(claims) => claims.sub,
         None => return HttpResponse::Unauthorized().finish(),
     };
@@ -96,6 +115,15 @@ pub async fn send_message(
         .child(i().class("fas fa-edit"))
         .child(span().text(" Edit"));
 
+    let staged_ids = chat_req.file_id_list();
+    let attachments_opt = if staged_ids.is_empty() {
+        None
+    } else {
+        let files =
+            crate::routers::ui::pages::files::load_owned_files(&db, &staged_ids, &username).await;
+        crate::routers::ui::pages::files::render_attachments_row(&files)
+    };
+
     let user_msg = div()
         .class("chat-message message-user")
         .attr("id", format!("user-{}", message_id))
@@ -104,6 +132,7 @@ pub async fn send_message(
                 .class("message-inner")
                 .raw()
                 .text(format_message(&chat_req.message))
+                .child_opt(attachments_opt)
                 .child(div().class("branch-controls").child(edit_btn)),
         );
 
@@ -296,6 +325,16 @@ pub async fn stream_message(
     );
 
     request_tool_registry.register(
+        "file_search".to_string(),
+        Box::new(crate::tools::file_search::FileSearchExecutor::new(
+            db.get_ref().clone(),
+            switchboard.get_ref().clone(),
+            vllm.get_ref().clone(),
+            Some(req.conversation_id.clone()),
+        )),
+    );
+
+    request_tool_registry.register(
         "command".to_string(),
         Box::new(crate::tools::command::CommandExecutor::new()),
     );
@@ -331,6 +370,16 @@ pub async fn stream_message(
         return HttpResponse::NotFound().body("Model instance not found");
     };
 
+    if !instance.is_chat_capable() {
+        tracing::warn!(
+            "Chat request routed to non-chat instance '{}' (task={:?}); embedding instances do not serve chat completions",
+            instance.id,
+            instance.task
+        );
+        return HttpResponse::BadRequest()
+            .body("Selected model is an embedding model and cannot be used for chat");
+    }
+
     let max_model_len = instance.max_model_len.unwrap_or(2048) as usize;
     let reserved_for_generation = if max_model_len > 4096 {
         2048
@@ -346,11 +395,26 @@ pub async fn stream_message(
         msg.content.chars().count().div_ceil(3) + 4
     }
 
-    let system_message = ChatMessage {
+    let mut system_message = ChatMessage {
         role: "system".to_string(),
         content: config.system_prompt.clone(),
         tool_calls: None,
     };
+
+    // Advertise uploaded files and inject relevant excerpts when available.
+    let mut injected_rag_hits: Vec<crate::files::rag::ChunkHit> = Vec::new();
+    if let Some((rag_augmentation, hits)) = crate::files::rag::augment_system_prompt(
+        db.get_ref(),
+        switchboard.get_ref(),
+        vllm.get_ref(),
+        &req.conversation_id,
+        &req.message,
+    )
+    .await
+    {
+        system_message.content.push_str(&rag_augmentation);
+        injected_rag_hits = hits;
+    }
 
     tracing::info!(
         "System prompt length: {} chars, contains AVAILABLE TOOLS: {}",
@@ -386,9 +450,11 @@ pub async fn stream_message(
     let repo = db.repository::<crate::models::Conversation>();
     let mut active_message_id = None;
     let mut existing_title = None;
+    let mut existing_project_id = None;
     if let Ok(Some(conv)) = repo.read(&req.conversation_id).await {
         active_message_id = conv.active_message_id;
         existing_title = Some(conv.title);
+        existing_project_id = conv.project_id;
     }
 
     // Determine the base for history. If skip_user_message is true, we use req.parent_id as the base.
@@ -690,13 +756,16 @@ pub async fn stream_message(
         use quench_db::prelude::Crud;
         let conv_repo = db_clone.repository::<crate::models::Conversation>();
         let updated_at = chrono::Utc::now().to_rfc3339();
-        let title = if let Some(t) = existing_title {
-            t
-        } else {
-            if req.message.chars().count() > 30 {
-                format!("{}...", req.message.chars().take(30).collect::<String>())
-            } else {
-                req.message.clone()
+        // A blank existing title means the conversation was created lazily (e.g.
+        // by attaching a file before sending), so derive it from the message.
+        let title = match existing_title {
+            Some(t) if !t.trim().is_empty() => t,
+            _ => {
+                if req.message.chars().count() > 30 {
+                    format!("{}...", req.message.chars().take(30).collect::<String>())
+                } else {
+                    req.message.clone()
+                }
             }
         };
 
@@ -705,7 +774,10 @@ pub async fn stream_message(
             title,
             active_message_id: active_message_id.clone(),
             owner: username.clone(),
-            project_id: req.project_id.clone(),
+            // Keep the stored project link when the request does not carry
+            // one, so a message without project_id cannot detach the
+            // conversation from its project.
+            project_id: req.project_id.clone().or(existing_project_id),
             updated_at,
         };
 
@@ -736,6 +808,20 @@ pub async fn stream_message(
             if let Err(err) = msg_repo.create(&user_msg).await {
                 tracing::error!("Failed to create user message: {}", err);
             }
+            // Link any files staged in the composer to this user message.
+            let staged_ids = req.file_id_list();
+            if !staged_ids.is_empty()
+                && let Err(err) = crate::routers::files::link_files_to_message(
+                    &db_clone,
+                    &staged_ids,
+                    &user_msg_id,
+                    &req.conversation_id,
+                    &username,
+                )
+                .await
+            {
+                tracing::error!("Failed to link attachments to message: {}", err);
+            }
             ai_parent_id = Some(user_msg_id);
         } else {
             ai_parent_id = req.parent_id.clone();
@@ -754,6 +840,19 @@ pub async fn stream_message(
         };
         if let Err(err) = msg_repo.create(&ai_msg).await {
             tracing::error!("Failed to create AI message: {}", err);
+        }
+
+        // Record auto-injected RAG sources against this message for attribution.
+        if !injected_rag_hits.is_empty()
+            && let Err(err) = crate::files::rag::record_rag_contexts(
+                &db_clone,
+                &ai_msg_id,
+                &injected_rag_hits,
+                "auto",
+            )
+            .await
+        {
+            tracing::error!("Failed to record RAG sources: {}", err);
         }
 
 
@@ -832,11 +931,26 @@ pub async fn stream_message(
 
         controls = controls.child(regenerate_btn);
 
+        // Sources block from the excerpts auto-injected into this answer.
+        let sources_opt = {
+            let sources: Vec<crate::files::rag::RagSource> = injected_rag_hits
+                .iter()
+                .map(|h| crate::files::rag::RagSource {
+                    file_name: h.file_name.clone(),
+                    chunk_index: Some(h.chunk_index),
+                    detail: h.detail.clone(),
+                    similarity: Some(h.similarity),
+                })
+                .collect();
+            crate::routers::ui::common::format::render_sources(&sources)
+        };
+
         // Build the final message content with tool results and controls
         let message_inner = div()
             .class("message-inner")
             .raw()
             .text(&final_content_html)
+            .child_opt(sources_opt)
             .child(div()
                 .class("branch-controls")
                 .raw()
@@ -891,6 +1005,19 @@ pub async fn stream_message(
                     .class("branch-controls")
                     .child(edit_btn);
 
+                // Re-render must keep the attachment chips the send echo showed;
+                // otherwise this OOB swap would wipe them mid-stream.
+                let staged_ids = req.file_id_list();
+                let user_attachments_opt = if staged_ids.is_empty() {
+                    None
+                } else {
+                    let files = crate::routers::ui::pages::files::load_owned_files(
+                        &db_clone, &staged_ids, &username,
+                    )
+                    .await;
+                    crate::routers::ui::pages::files::render_attachments_row(&files)
+                };
+
                 user_oob_transition = div()
                     .class("chat-message message-user")
                     .attr("id", format!("user-{}", uid))
@@ -900,6 +1027,7 @@ pub async fn stream_message(
                             .class("message-inner")
                             .raw()
                             .text(format_message(&req.message))
+                            .child_opt(user_attachments_opt)
                             .child(user_controls)
                     )
                     .render();
@@ -1582,7 +1710,7 @@ pub async fn regenerate(
 
     // Use current models from switchboard
     let instances = switchboard.get_vllm_instances().await.unwrap_or_default();
-    let Some(instance) = instances.first() else {
+    let Some(instance) = instances.iter().find(|i| i.is_chat_capable()) else {
         return HttpResponse::ServiceUnavailable().body("No AI models available for regeneration");
     };
 
@@ -1597,6 +1725,7 @@ pub async fn regenerate(
         search_provider: None,
         capability_profile: None,
         tool_confirmations: Vec::new(),
+        file_ids: String::new(),
     };
 
     state.pending_messages.insert(message_id.clone(), req);

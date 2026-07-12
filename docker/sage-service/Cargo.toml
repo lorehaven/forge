@@ -12,14 +12,17 @@ license = { workspace = true }
 readme = { workspace = true }
 
 [dependencies]
+actix-multipart = { workspace = true }
 actix-web = { workspace = true }
 anyhow = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }
 chrono = { workspace = true }
+csv = { workspace = true }
 dashmap = { workspace = true }
 envmnt = { workspace = true }
 futures-util = { workspace = true }
+pdf-extract = { workspace = true }
 pulldown-cmark = { workspace = true }
 quench-auth = { workspace = true }
 quench-cache = { workspace = true }

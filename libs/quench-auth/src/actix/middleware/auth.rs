@@ -79,7 +79,10 @@ where
             .get("Authorization")
             .and_then(|h| h.to_str().ok())
         {
-            tracing::debug!("AuthMiddleware: Found Authorization header: {}", auth_header);
+            tracing::debug!(
+                "AuthMiddleware: Found Authorization header: {}",
+                auth_header
+            );
 
             if let Some(bearer_token) = auth_header.strip_prefix("Bearer ") {
                 token = Some(bearer_token.to_string());
@@ -94,7 +97,9 @@ where
                         username,
                         password.len()
                     );
-                    let user_db = req.app_data::<web::Data<std::sync::Arc<crate::actix::domain::auth::UserDb>>>();
+                    let user_db = req
+                        .app_data::<web::Data<std::sync::Arc<crate::actix::domain::auth::UserDb>>>(
+                        );
                     if let Some(user_db) = user_db {
                         tracing::debug!("AuthMiddleware: UserDb found in app_data");
                         let user_db = user_db.clone();
@@ -106,7 +111,10 @@ where
                         return Box::pin(async move {
                             tracing::debug!("AuthMiddleware: Validating user: {}", username);
                             if let Some(user) = user_db.validate(&username, &password).await {
-                                tracing::debug!("AuthMiddleware: User {} validated successfully", username);
+                                tracing::debug!(
+                                    "AuthMiddleware: User {} validated successfully",
+                                    username
+                                );
                                 let roles = user
                                     .get_roles()
                                     .iter()

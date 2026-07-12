@@ -9,6 +9,7 @@ mod config;
 pub mod context_manager;
 pub mod conversation;
 pub mod cost_tracking;
+pub mod files;
 mod init;
 pub mod metrics;
 pub mod models;
@@ -146,6 +147,9 @@ fn init_cost_tracker() -> std::sync::Arc<cost_tracking::CostTracker> {
 fn init_tool_registry(
     search_provider_registry: &std::sync::Arc<tools::SearchProviderRegistry>,
     profile: &tools::CapabilityProfile,
+    db: quench_db::prelude::Db,
+    switchboard: clients::switchboard::SwitchboardClient,
+    vllm: clients::vllm::VllmClient,
 ) -> actix_web::web::Data<tools::ToolRegistry> {
     let mut registry = tools::ToolRegistry::with_profile(profile.clone());
 
@@ -169,6 +173,18 @@ fn init_tool_registry(
     registry.register(
         "file_ops".to_string(),
         Box::new(tools::file_ops::FileOpsExecutor::from_env()),
+    );
+
+    // Registered without a conversation context; the chat flow builds a
+    // request-scoped registry that carries the actual conversation id.
+    registry.register(
+        "file_search".to_string(),
+        Box::new(tools::file_search::FileSearchExecutor::new(
+            db,
+            switchboard,
+            vllm,
+            None,
+        )),
     );
 
     registry.register(
@@ -253,7 +269,9 @@ async fn request_model_launch(
             &model.name,
             model.gpu_memory_utilization,
             model.max_model_len,
+            model.quantization.as_deref(),
             model.enable_tool_calling,
+            model.task.as_deref(),
         )
         .await
     {
@@ -290,8 +308,13 @@ async fn main() -> std::io::Result<()> {
     let metrics_collector = init_metrics_collector();
     let rate_limiter = init_rate_limiter();
     let cost_tracker = init_cost_tracker();
-    let tool_registry =
-        init_tool_registry(&search_provider_registry, &sage_config.capability_profile);
+    let tool_registry = init_tool_registry(
+        &search_provider_registry,
+        &sage_config.capability_profile,
+        db_wrapper.db.clone(),
+        switchboard.clone(),
+        vllm.clone(),
+    );
     let jwt_config_data = actix_web::web::Data::new(jwt_config);
 
     spawn_model_monitor_task(switchboard.clone(), sage_config.clone());

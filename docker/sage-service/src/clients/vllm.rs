@@ -113,7 +113,9 @@ impl VllmClient {
     ) -> Result<Pin<Box<dyn Stream<Item = Result<String>> + Send>>> {
         if !self.circuit_breaker.is_available() {
             tracing::warn!("vLLM circuit breaker is open");
-            return Err(anyhow::anyhow!("Circuit breaker open: vLLM temporarily unavailable"));
+            return Err(anyhow::anyhow!(
+                "Circuit breaker open: vLLM temporarily unavailable"
+            ));
         }
 
         let host = host
@@ -194,4 +196,85 @@ impl VllmClient {
 
         Ok(Box::pin(output_stream))
     }
+
+    /// Generate embeddings for a batch of inputs. Returns one vector per
+    /// input, in input order.
+    pub async fn embeddings(
+        &self,
+        host: &str,
+        port: u16,
+        model: &str,
+        input: Vec<String>,
+    ) -> Result<Vec<Vec<f32>>> {
+        if !self.circuit_breaker.is_available() {
+            tracing::warn!("vLLM circuit breaker is open");
+            return Err(anyhow::anyhow!(
+                "Circuit breaker open: vLLM temporarily unavailable"
+            ));
+        }
+
+        let host = host
+            .trim_start_matches("http://")
+            .trim_start_matches("https://");
+        let url = format!("http://{}:{}/v1/embeddings", host, port);
+
+        let input_count = input.len();
+        let request = EmbeddingsRequest {
+            model: model.to_string(),
+            input,
+        };
+
+        let res = self
+            .http
+            .post(&url)
+            .json(&request)
+            .send()
+            .await
+            .with_context(|| format!("Failed to connect to vLLM instance at {}", url))?;
+
+        if !res.status().is_success() {
+            let status = res.status();
+            let err_text = res
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            tracing::error!("vLLM embeddings returned error {}: {}", status, err_text);
+            self.circuit_breaker.call_failed();
+            anyhow::bail!("vLLM embeddings returned error {}: {}", status, err_text);
+        }
+
+        self.circuit_breaker.call_succeeded();
+        let mut response: EmbeddingsResponse = res
+            .json()
+            .await
+            .context("Failed to parse vLLM embeddings response")?;
+
+        if response.data.len() != input_count {
+            anyhow::bail!(
+                "vLLM returned {} embeddings for {} inputs",
+                response.data.len(),
+                input_count
+            );
+        }
+
+        response.data.sort_by_key(|d| d.index);
+        Ok(response.data.into_iter().map(|d| d.embedding).collect())
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct EmbeddingsRequest {
+    model: String,
+    input: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct EmbeddingsResponse {
+    data: Vec<EmbeddingData>,
+}
+
+#[derive(Debug, Deserialize)]
+struct EmbeddingData {
+    index: usize,
+    embedding: Vec<f32>,
 }

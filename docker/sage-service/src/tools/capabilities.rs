@@ -7,6 +7,7 @@ pub enum Tool {
     WebFetch,
     Calculator,
     FileOps,
+    FileSearch,
     Command,
     CodeExecutor,
 }
@@ -18,6 +19,7 @@ impl Tool {
             Tool::WebFetch => "web_fetch",
             Tool::Calculator => "calculator",
             Tool::FileOps => "file_ops",
+            Tool::FileSearch => "file_search",
             Tool::Command => "command",
             Tool::CodeExecutor => "code_executor",
         }
@@ -96,11 +98,21 @@ pub fn get_profile(name: &str) -> Option<CapabilityProfile> {
             CapabilityProfile::new(
                 "web_assistant",
                 "Web browsing and research capabilities only",
-                &[Tool::WebSearch, Tool::WebFetch, Tool::Calculator],
+                &[
+                    Tool::WebSearch,
+                    Tool::WebFetch,
+                    Tool::Calculator,
+                    Tool::FileSearch,
+                ],
             )
             .with_timeouts(
                 30,
-                &[("web_search", 30), ("web_fetch", 20), ("calculator", 5)],
+                &[
+                    ("web_search", 30),
+                    ("web_fetch", 20),
+                    ("calculator", 5),
+                    ("file_search", 30),
+                ],
             ),
         ),
         "code_assistant" => Some(
@@ -113,6 +125,7 @@ pub fn get_profile(name: &str) -> Option<CapabilityProfile> {
                     Tool::Calculator,
                     Tool::CodeExecutor,
                     Tool::FileOps,
+                    Tool::FileSearch,
                 ],
             )
             .with_timeouts(
@@ -123,6 +136,7 @@ pub fn get_profile(name: &str) -> Option<CapabilityProfile> {
                     ("calculator", 5),
                     ("code_executor", 90),
                     ("file_ops", 15),
+                    ("file_search", 30),
                 ],
             ),
         ),
@@ -135,6 +149,7 @@ pub fn get_profile(name: &str) -> Option<CapabilityProfile> {
                     Tool::WebFetch,
                     Tool::Calculator,
                     Tool::FileOps,
+                    Tool::FileSearch,
                     Tool::Command,
                     Tool::CodeExecutor,
                 ],
@@ -147,6 +162,7 @@ pub fn get_profile(name: &str) -> Option<CapabilityProfile> {
                     ("calculator", 5),
                     ("code_executor", 90),
                     ("file_ops", 15),
+                    ("file_search", 30),
                     ("command", 120),
                 ],
             ),

@@ -54,6 +54,8 @@ pub fn scope(jwt_config: JwtConfig) -> impl HttpServiceFactory {
         .service(chat::scope().wrap(Auth::new(jwt_config.clone())))
         // Projects (with auth)
         .service(pages::projects::scope().wrap(Auth::new(jwt_config.clone())))
+        // Files (with auth)
+        .service(pages::files::scope().wrap(Auth::new(jwt_config.clone())))
         // Home (with auth)
         .service(pages::home::home)
         .service(pages::home::home_slash)

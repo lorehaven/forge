@@ -1,5 +1,5 @@
 use crate::routers::vllm::engine::VllmEngine;
-use crate::routers::vllm::{LaunchRequest, VllmInstance};
+use crate::routers::vllm::{LaunchRequest, VllmInstance, task_launch_args};
 use async_trait::async_trait;
 use chrono::Utc;
 use k8s_openapi::api::core::v1::{Pod, Service};
@@ -104,6 +104,10 @@ impl VllmEngine for KubernetesVllmEngine {
                     .get("vllm-enable-tool-calling")
                     .map(|v| v == "true")
                     .unwrap_or(false),
+                task: annotations
+                    .get("vllm-task")
+                    .filter(|v| !v.is_empty())
+                    .cloned(),
                 started_at: chrono::DateTime::<Utc>::from_timestamp(
                     started_at.as_second(),
                     started_at.subsec_nanosecond() as u32,
@@ -175,6 +179,17 @@ impl VllmEngine for KubernetesVllmEngine {
                 "Enabled native tool calling for model {} (--enable-auto-tool-choice --tool-call-parser hermes)",
                 req.model
             );
+        }
+
+        if let Some(ref task) = req.task {
+            let task_args = task_launch_args(task);
+            tracing::info!(
+                "Launching model {} for task {} ({})",
+                req.model,
+                task,
+                task_args.join(" ")
+            );
+            args.extend(task_args);
         }
 
         let mut volume_mounts = vec![
@@ -349,6 +364,7 @@ impl VllmEngine for KubernetesVllmEngine {
                     "vllm-gpu-memory-utilization": req.gpu_memory_utilization.map(|v| v.to_string()).unwrap_or_default(),
                     "vllm-enable-prefix-caching": req.enable_prefix_caching.to_string(),
                     "vllm-enable-tool-calling": req.enable_tool_calling.to_string(),
+                    "vllm-task": req.task.as_deref().unwrap_or(""),
                 }
             },
             "spec": {
@@ -450,6 +466,7 @@ impl VllmEngine for KubernetesVllmEngine {
             gpu_memory_utilization: req.gpu_memory_utilization,
             enable_prefix_caching: req.enable_prefix_caching,
             enable_tool_calling: req.enable_tool_calling,
+            task: req.task.clone(),
             started_at: Utc::now(),
             status: "starting".to_string(),
             log_path: None,

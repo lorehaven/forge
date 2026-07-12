@@ -8,8 +8,9 @@ Feature: UI Authentication
 
   Scenario: Failed UI authentication
     When a login attempt is made with username "admin" and password "wrong-password"
-    Then response status should be 500
+    Then response status should be 302
 
   Scenario: Successful UI authentication
     When a login attempt is made with username "admin" and password "password"
-    Then response status should be 500
+    Then response status should be 302
+    And a session cookie should be set

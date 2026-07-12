@@ -90,12 +90,30 @@ async fn handle_home_page(
             search_provider: None,
             capability_profile: None,
             tool_confirmations: Vec::new(),
+            file_ids: String::new(),
         };
         chat_state
             .pending_messages
             .insert(pending_id.clone(), chat_req);
         auto_trigger_ai = Some(pending_id);
     }
+
+    // Load RAG source attribution for the assistant messages on screen.
+    let assistant_ids: Vec<String> = active_messages
+        .iter()
+        .filter(|(m, _)| m.role == "assistant")
+        .map(|(m, _)| m.id.clone())
+        .collect();
+    let sources_by_message =
+        crate::files::rag::load_sources_for_messages(&db, &assistant_ids).await;
+
+    // Load file attachments for the user messages on screen.
+    let user_ids: Vec<String> = active_messages
+        .iter()
+        .filter(|(m, _)| m.role == "user")
+        .map(|(m, _)| m.id.clone())
+        .collect();
+    let attachments_by_message = crate::routers::files::files_by_message(&db, &user_ids).await;
 
     handle_home(req, jwt_config, move || {
         render_home_page(
@@ -104,6 +122,8 @@ async fn handle_home_page(
             conversations,
             active_id,
             active_messages,
+            sources_by_message,
+            attachments_by_message,
             auto_trigger_ai,
             query.project_id.clone(),
             sage_config.clone(),
@@ -157,6 +177,16 @@ pub(super) async fn home_slash(
     .await
 }
 
+/// Sidebar display title, falling back for conversations created lazily by
+/// attaching a file before the first message is sent (blank stored title).
+fn conv_display_title(title: &str) -> &str {
+    if title.trim().is_empty() {
+        "New chat"
+    } else {
+        title
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn render_home_page(
     instances_res: anyhow::Result<Vec<VllmInstance>>,
@@ -164,20 +194,26 @@ fn render_home_page(
     conversations: Vec<Conversation>,
     active_id: String,
     active_messages: Vec<(crate::models::Message, Vec<crate::models::Message>)>,
+    sources_by_message: std::collections::HashMap<String, Vec<crate::files::rag::RagSource>>,
+    attachments_by_message: std::collections::HashMap<String, Vec<crate::models::File>>,
     auto_trigger_ai: Option<String>,
     project_id: Option<String>,
     sage_config: web::Data<crate::config::SageConfig>,
 ) -> HttpResponse {
     let mut model_select = select().class("model-selector").attr("id", "model-select");
 
-    let has_model = match &instances_res {
-        Ok(instances) => !instances.is_empty(),
-        Err(_) => false,
+    // Only chat-capable instances belong in the selector; embedding instances
+    // serve /v1/embeddings only and would 404 on chat completions.
+    let chat_instances: Vec<&VllmInstance> = match &instances_res {
+        Ok(instances) => instances.iter().filter(|i| i.is_chat_capable()).collect(),
+        Err(_) => Vec::new(),
     };
 
+    let has_model = !chat_instances.is_empty();
+
     match &instances_res {
-        Ok(instances) => {
-            if instances.is_empty() {
+        Ok(_) => {
+            if chat_instances.is_empty() {
                 model_select = model_select.child(
                     option()
                         .attr("value", "")
@@ -186,7 +222,7 @@ fn render_home_page(
                         .text("No models available"),
                 );
             } else {
-                for instance in instances {
+                for instance in &chat_instances {
                     model_select = model_select
                         .child(option().attr("value", &instance.id).text(&instance.model));
                 }
@@ -229,6 +265,13 @@ fn render_home_page(
     }
 
     input_area_container = input_area_container
+        // Staging area for files attached to the next message. Chips carry
+        // hidden `file_ids` inputs that submit with the chat form.
+        .child(
+            div()
+                .attr("id", "pending-attachments")
+                .class("pending-attachments"),
+        )
         .child_opt((!has_model).then(|| {
             div()
                 .class("no-model-warning")
@@ -269,8 +312,42 @@ fn render_home_page(
                 provider_select = provider_select.child(opt);
             }
 
+            // Paperclip upload control, on the left of the search/model
+            // selectors. The hidden file input POSTs to /ui/files/attach and
+            // appends a chip to #pending-attachments; hx-include pulls the
+            // conversation/project scope from the composer's hidden inputs.
+            let attach_input = input()
+                .attr("type", "file")
+                .attr("id", "composer-file-input")
+                .attr("name", "file")
+                .attr("accept", ".pdf,.txt,.csv,.md")
+                .attr("style", "display: none;")
+                .attr("hx-post", with_base_path("/ui/files/attach"))
+                .attr("hx-encoding", "multipart/form-data")
+                .attr(
+                    "hx-include",
+                    "#composer-conversation-id, #composer-project-id",
+                )
+                .attr("hx-target", "#pending-attachments")
+                .attr("hx-swap", "beforeend")
+                .attr("hx-trigger", "change")
+                .attr("hx-on::after-request", "this.value = '';");
+
+            let attach_btn = label()
+                .class("chat-attach-btn")
+                .attr("for", "composer-file-input")
+                .attr("title", "Attach a file (pdf, txt, csv, md)")
+                .child(i().class("fas fa-paperclip"))
+                .child(attach_input);
+
+            let mut attach_area = div().class("chat-attach-area").child(attach_btn);
+            if !has_model {
+                attach_area = attach_area.class("chat-attach-area disabled");
+            }
+
             div()
                 .class("chat-input-extras")
+                .child(attach_area)
                 .child(div().attr("style", "flex: 1;"))
                 .child(provider_select)
                 .child(model_select.attr("name", "instance_id"))
@@ -382,7 +459,7 @@ fn render_home_page(
                 .child(
                     a().class(conv_link_class)
                         .attr("href", with_base_path(&conv_url))
-                        .text(&conv.title),
+                        .text(conv_display_title(&conv.title)),
                 )
                 .child(
                     div()
@@ -460,7 +537,7 @@ fn render_home_page(
             .child(
                 a().class(link_class)
                     .attr("href", with_base_path(&conv_url))
-                    .text(&conv.title),
+                    .text(conv_display_title(&conv.title)),
             )
             .child(
                 div()
@@ -497,6 +574,8 @@ fn render_home_page(
         .class("history-sidebar")
         .child(sidebar_header)
         .child(history_list);
+
+    // File uploads live in the chat composer (paperclip button), not here.
 
     // Chat History
     let mut history_div = div()
@@ -669,6 +748,14 @@ fn render_home_page(
                 controls
             });
 
+            let sources_opt = sources_by_message
+                .get(&msg.id)
+                .and_then(|s| crate::routers::ui::common::format::render_sources(s));
+
+            let attachments_opt = attachments_by_message
+                .get(&msg.id)
+                .and_then(|files| crate::routers::ui::pages::files::render_attachments_row(files));
+
             let chat_msg = div()
                 .class(format!("chat-message {}", role_class))
                 .attr("id", &element_id)
@@ -677,6 +764,8 @@ fn render_home_page(
                         .class("message-inner")
                         .raw()
                         .text(format_message(trimmed_content))
+                        .child_opt(attachments_opt)
+                        .child_opt(sources_opt)
                         .child_opt(branch_widget_opt),
                 );
             history_div = history_div.child(chat_msg);
@@ -748,12 +837,20 @@ fn render_home_page(
                                     .attr("hx-post", with_base_path("/ui/chat/send"))
                                     .attr("hx-target", ".chat-history")
                                     .attr("hx-swap", "beforeend")
-                                    .attr("hx-on::after-request", "if(event.detail.successful) { document.getElementById('chat-input').value = ''; document.getElementById('chat-input').style.height = 'auto'; const history = document.querySelector('.chat-history'); history.scrollTop = history.scrollHeight; }")
+                                    // Collect staged attachment ids into a single
+                                    // comma-separated `file_ids` param on send.
+                                    // (serde_urlencoded can't parse repeated keys
+                                    // into a Vec, so we avoid multiple inputs.)
+                                    .attr("hx-on::config-request", "if (event.detail.path && event.detail.path.indexOf('/ui/chat/send') !== -1) { event.detail.parameters['file_ids'] = Array.from(document.querySelectorAll('#pending-attachments .attachment-chip')).map(function(c){ return c.getAttribute('data-file-id'); }).filter(Boolean).join(','); }")
+                                    // Guard on the send path: htmx:afterRequest bubbles, so the
+                                    // file-input's /ui/files/attach request would otherwise trip this
+                                    // handler and wipe the freshly-added attachment chip.
+                                    .attr("hx-on::after-request", "if(event.detail.successful && event.detail.xhr && event.detail.xhr.responseURL.indexOf('/ui/chat/send') !== -1) { document.getElementById('chat-input').value = ''; document.getElementById('chat-input').style.height = 'auto'; const pending = document.getElementById('pending-attachments'); if (pending) pending.innerHTML = ''; const history = document.querySelector('.chat-history'); history.scrollTop = history.scrollHeight; }")
                                     .class("chat-input-wrapper")
-                                    .child(input().attr("type", "hidden").attr("name", "conversation_id").attr("value", &active_id));
+                                    .child(input().attr("type", "hidden").attr("id", "composer-conversation-id").attr("name", "conversation_id").attr("value", &active_id));
 
                                 if let Some(ref pid) = project_id {
-                                    f = f.child(input().attr("type", "hidden").attr("name", "project_id").attr("value", pid));
+                                    f = f.child(input().attr("type", "hidden").attr("id", "composer-project-id").attr("name", "project_id").attr("value", pid));
                                 }
 
                                 f.child(input_area_container)

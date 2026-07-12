@@ -34,6 +34,7 @@ pub struct LaunchRequestForm {
     enable_prefix_caching: Option<bool>,
     prefix_caching: Option<bool>,
     enable_tool_calling: Option<bool>,
+    task: Option<String>,
 }
 
 #[post("/instances/form")]
@@ -62,6 +63,10 @@ pub async fn launch_instance_form(
             .or(form.prefix_caching)
             .unwrap_or(false),
         enable_tool_calling: form.enable_tool_calling.unwrap_or(false),
+        task: form.task.as_deref().and_then(|value| {
+            let trimmed = value.trim();
+            (!trimmed.is_empty()).then(|| trimmed.to_string())
+        }),
     };
 
     match engine.launch_instance(req).await {

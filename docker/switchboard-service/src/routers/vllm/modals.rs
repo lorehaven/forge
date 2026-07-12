@@ -14,6 +14,8 @@ pub struct LaunchModalQuery {
     pub max_model_len: Option<String>,
     pub gpu_memory_utilization: Option<String>,
     pub prefix_caching: Option<bool>,
+    pub task: Option<String>,
+    pub enable_tool_calling: Option<bool>,
     pub recalculate_gpu_util: Option<bool>,
 }
 
@@ -123,6 +125,7 @@ fn render_launch_modal(
                             .child(namespace_field(query))
                             .child(runtime_fields(query))
                             .child(memory_fields(gpu_util, prefix_caching))
+                            .child(task_fields(query))
                             .child(
                                 div().attr("id", "launch-fit-note").class("fit-note").child(
                                     div()
@@ -367,6 +370,56 @@ fn memory_fields(gpu_util: f32, prefix_caching: bool) -> Element {
                         .class("checkbox-copy")
                         .attr("data-i18n", "ui_vllm_form_prefix_caching")
                         .text("Prefix Caching"),
+                ),
+            ),
+        )
+}
+
+fn task_fields(query: &LaunchModalQuery) -> Element {
+    let selected_task = query.task.as_deref().unwrap_or("");
+
+    let mut task_select = select()
+        .attr("id", "launch-task")
+        .attr("name", "task")
+        .attr("hx-get", with_base_path("/api/v1/vllm/launch-modal"))
+        .attr("hx-target", "#launch-modal")
+        .attr("hx-swap", "outerHTML")
+        .attr("hx-include", "#launch-form");
+    // "auto" leaves the runner flags off (vLLM infers from the model);
+    // "embed" launches with --runner pooling --convert embed so
+    // /v1/embeddings is served for embedding models.
+    for (value, text) in [("", "auto"), ("generate", "generate"), ("embed", "embed")] {
+        let mut opt = option().attr("value", value).text(text);
+        if selected_task == value {
+            opt = opt.attr("selected", "selected");
+        }
+        task_select = task_select.child(opt);
+    }
+
+    let mut tool_calling = input()
+        .attr("type", "checkbox")
+        .attr("id", "launch-enable-tool-calling")
+        .attr("name", "enable_tool_calling")
+        .attr("value", "true");
+    if query.enable_tool_calling.unwrap_or(false) {
+        tool_calling = tool_calling.attr("checked", "checked");
+    }
+
+    div()
+        .class("form-row launch-form-row")
+        .child(
+            div()
+                .class("form-group")
+                .child(label().attr("data-i18n", "ui_vllm_form_task").text("Task"))
+                .child(task_select),
+        )
+        .child(
+            div().class("form-group form-group-checkbox").child(
+                label().class("checkbox-control").child(tool_calling).child(
+                    span()
+                        .class("checkbox-copy")
+                        .attr("data-i18n", "ui_vllm_form_tool_calling")
+                        .text("Tool Calling"),
                 ),
             ),
         )

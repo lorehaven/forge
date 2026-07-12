@@ -9,8 +9,16 @@ pub struct DefaultModel {
     pub gpu_memory_utilization: Option<f32>,
     #[serde(rename = "context_len")]
     pub max_model_len: Option<u32>,
+    /// vLLM quantization method (passed as `--quantization`, e.g. "awq" for
+    /// AWQ 4-bit checkpoints). None = vLLM infers from the checkpoint config.
+    #[serde(rename = "quant", default)]
+    pub quantization: Option<String>,
     #[serde(default)]
     pub enable_tool_calling: bool,
+    /// vLLM task, e.g. "embed" for embedding models (passed to switchboard
+    /// so vLLM serves /v1/embeddings instead of chat completions).
+    #[serde(default)]
+    pub task: Option<String>,
 }
 
 impl DefaultModel {
@@ -36,7 +44,9 @@ impl DefaultModel {
                 name: trimmed.to_string(),
                 gpu_memory_utilization: None,
                 max_model_len: None,
+                quantization: None,
                 enable_tool_calling: false,
+                task: None,
             }];
         }
 
@@ -117,6 +127,7 @@ impl SageConfig {
             );
         }
 
+        // Model definitions come from SAGE_DEFAULT_MODELS (see docker/sage-service/.env).
         let default_models_str =
             loader.env_string("DEFAULT_MODELS", r#"[{"name": "qwen2.5-coder:7b"}]"#);
         let default_models = DefaultModel::parse_list(&default_models_str);
@@ -183,6 +194,8 @@ mod tests {
         assert_eq!(list[1].gpu_memory_utilization, Some(0.90));
         assert_eq!(list[1].max_model_len, None);
 
+        assert_eq!(list[0].task, None);
+
         // Single JSON object
         let json_obj = r#"{"name": "qwen2.5-coder:7b", "context_len": 4096}"#;
         let list2 = DefaultModel::parse_list(json_obj);
@@ -190,6 +203,19 @@ mod tests {
         assert_eq!(list2[0].name, "qwen2.5-coder:7b");
         assert_eq!(list2[0].gpu_memory_utilization, None);
         assert_eq!(list2[0].max_model_len, Some(4096));
+
+        // Embedding model with an explicit task
+        let embed_json = r#"{"name": "Qwen/Qwen3-Embedding-0.6B", "gpu_utilization": 0.12, "context_len": 8192, "task": "embed"}"#;
+        let list_embed = DefaultModel::parse_list(embed_json);
+        assert_eq!(list_embed.len(), 1);
+        assert_eq!(list_embed[0].task.as_deref(), Some("embed"));
+        assert_eq!(list_embed[0].quantization, None);
+
+        // Quantized chat model
+        let quant_json = r#"{"name": "Qwen/Qwen2.5-Coder-7B-Instruct-AWQ", "quant": "awq", "gpu_utilization": 0.55}"#;
+        let list_quant = DefaultModel::parse_list(quant_json);
+        assert_eq!(list_quant.len(), 1);
+        assert_eq!(list_quant[0].quantization.as_deref(), Some("awq"));
 
         // Backwards compatibility with raw string name
         let raw_str = "qwen2.5-coder:7b";

@@ -292,7 +292,7 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(jwt_config()))
-                .app_data(web::Data::from(users))
+                .app_data(web::Data::new(users))
                 .app_data(web::Data::from(sessions))
                 .service(scope()),
         )

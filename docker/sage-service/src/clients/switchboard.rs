@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use quench_client::BasicAuthClient;
 use quench_starter::metrics::{RequestMetrics, TimedBlock};
-use quench_starter::resilience::{RetryConfig, retry_with_backoff, CircuitBreaker};
+use quench_starter::resilience::{CircuitBreaker, RetryConfig, retry_with_backoff};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -17,8 +17,21 @@ pub struct VllmInstance {
     pub max_model_len: Option<u32>,
     pub gpu_memory_utilization: Option<f32>,
     pub enable_prefix_caching: bool,
+    /// vLLM task the instance was launched with (e.g. "embed" for embedding
+    /// models). Embedding instances serve /v1/embeddings only, not chat
+    /// completions, so they must be excluded from the chat model selector.
+    #[serde(default)]
+    pub task: Option<String>,
     pub started_at: DateTime<Utc>,
     pub status: String,
+}
+
+impl VllmInstance {
+    /// Whether this instance can serve chat completions. Embedding
+    /// (pooling) instances cannot — routing chat to them yields a 404.
+    pub fn is_chat_capable(&self) -> bool {
+        !matches!(self.task.as_deref(), Some("embed") | Some("embedding"))
+    }
 }
 
 #[derive(Clone)]
@@ -44,8 +57,16 @@ impl SwitchboardClient {
             panic!(
                 "Missing required environment variables: \
                  SWITCHBOARD_TECH_USERNAME={}, SWITCHBOARD_TECH_PASSWORD={}",
-                if username.is_empty() { "NOT SET" } else { "SET" },
-                if password.is_empty() { "NOT SET" } else { "SET" }
+                if username.is_empty() {
+                    "NOT SET"
+                } else {
+                    "SET"
+                },
+                if password.is_empty() {
+                    "NOT SET"
+                } else {
+                    "SET"
+                }
             );
         }
 
@@ -81,7 +102,9 @@ impl SwitchboardClient {
     pub async fn get_vllm_instances(&self) -> Result<Vec<VllmInstance>> {
         if !self.circuit_breaker.is_available() {
             tracing::warn!("Switchboard circuit breaker is open");
-            return Err(anyhow::anyhow!("Circuit breaker open: Switchboard temporarily unavailable"));
+            return Err(anyhow::anyhow!(
+                "Circuit breaker open: Switchboard temporarily unavailable"
+            ));
         }
 
         let client = self.client.clone();
@@ -126,11 +149,15 @@ impl SwitchboardClient {
         model: &str,
         gpu_memory_utilization: Option<f32>,
         max_model_len: Option<u32>,
+        quantization: Option<&str>,
         enable_tool_calling: bool,
+        task: Option<&str>,
     ) -> Result<VllmInstance> {
         if !self.circuit_breaker.is_available() {
             tracing::warn!("Switchboard circuit breaker is open");
-            return Err(anyhow::anyhow!("Circuit breaker open: Switchboard temporarily unavailable"));
+            return Err(anyhow::anyhow!(
+                "Circuit breaker open: Switchboard temporarily unavailable"
+            ));
         }
 
         let req = serde_json::json!({
@@ -138,11 +165,12 @@ impl SwitchboardClient {
             "host": "0.0.0.0",
             "port": 8000,
             "namespace": null,
-            "quantization": null,
+            "quantization": quantization,
             "max_model_len": max_model_len,
             "gpu_memory_utilization": gpu_memory_utilization,
             "enable_prefix_caching": false,
-            "enable_tool_calling": enable_tool_calling
+            "enable_tool_calling": enable_tool_calling,
+            "task": task
         });
 
         let client = self.client.clone();

@@ -1,5 +1,5 @@
 use crate::routers::vllm::engine::VllmEngine;
-use crate::routers::vllm::{LaunchRequest, VllmInstance};
+use crate::routers::vllm::{LaunchRequest, VllmInstance, task_from_args, task_launch_args};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
@@ -23,6 +23,7 @@ struct LaunchRecord {
     gpu_memory_utilization: Option<f32>,
     enable_prefix_caching: bool,
     enable_tool_calling: bool,
+    task: Option<String>,
     started_at: DateTime<Utc>,
     terminating_at: Option<DateTime<Utc>>,
     log_path: Option<String>,
@@ -96,6 +97,7 @@ impl VllmEngine for NativeVllmEngine {
 
             let enable_prefix_caching = parts.iter().any(|p| p == "--enable-prefix-caching");
             let enable_tool_calling = parts.iter().any(|p| p == "--enable-auto-tool-choice");
+            let task = task_from_args(&parts);
 
             let started_at = process_started_at(pid).unwrap_or_else(Utc::now);
 
@@ -129,6 +131,7 @@ impl VllmEngine for NativeVllmEngine {
                 gpu_memory_utilization,
                 enable_prefix_caching,
                 enable_tool_calling,
+                task,
                 started_at,
                 status: status.to_string(),
                 log_path: record.and_then(|r| r.log_path.clone()),
@@ -161,6 +164,7 @@ impl VllmEngine for NativeVllmEngine {
                     gpu_memory_utilization: record.gpu_memory_utilization,
                     enable_prefix_caching: record.enable_prefix_caching,
                     enable_tool_calling: record.enable_tool_calling,
+                    task: record.task.clone(),
                     started_at: record.started_at,
                     status: "terminating".to_string(),
                     log_path: record.log_path.clone(),
@@ -226,6 +230,17 @@ impl VllmEngine for NativeVllmEngine {
             );
         }
 
+        if let Some(ref task) = req.task {
+            let task_args = task_launch_args(task);
+            tracing::info!(
+                "Launching model {} for task {} ({})",
+                req.model,
+                task,
+                task_args.join(" ")
+            );
+            args.extend(task_args);
+        }
+
         let stdout_file = match OpenOptions::new().create(true).append(true).open(&log_path) {
             Ok(file) => file,
             Err(e) => {
@@ -272,6 +287,7 @@ impl VllmEngine for NativeVllmEngine {
                         gpu_memory_utilization: req.gpu_memory_utilization,
                         enable_prefix_caching: req.enable_prefix_caching,
                         enable_tool_calling: req.enable_tool_calling,
+                        task: req.task.clone(),
                         started_at,
                         terminating_at: None,
                         log_path: Some(log_path.clone()),
@@ -295,6 +311,7 @@ impl VllmEngine for NativeVllmEngine {
                             gpu_memory_utilization: req.gpu_memory_utilization,
                             enable_prefix_caching: req.enable_prefix_caching,
                             enable_tool_calling: req.enable_tool_calling,
+                            task: req.task.clone(),
                             started_at,
                             terminating_at: None,
                             log_path: Some(log_path.clone()),
@@ -327,6 +344,7 @@ impl VllmEngine for NativeVllmEngine {
                         gpu_memory_utilization: req.gpu_memory_utilization,
                         enable_prefix_caching: req.enable_prefix_caching,
                         enable_tool_calling: req.enable_tool_calling,
+                        task: req.task.clone(),
                         started_at,
                         terminating_at: None,
                         log_path: Some(log_path.clone()),
@@ -345,6 +363,7 @@ impl VllmEngine for NativeVllmEngine {
                     gpu_memory_utilization: req.gpu_memory_utilization,
                     enable_prefix_caching: req.enable_prefix_caching,
                     enable_tool_calling: req.enable_tool_calling,
+                    task: req.task.clone(),
                     started_at,
                     status: "starting".to_string(),
                     log_path: Some(log_path),
@@ -410,8 +429,26 @@ fn instance_key(model: &str, port: u16) -> String {
     format!("{}-{}", model.replace("/", "--"), port)
 }
 
+/// Ports already claimed by non-terminating launch records. A freshly spawned
+/// vLLM takes tens of seconds to actually bind its port, so an OS bind check
+/// alone reports it free in the meantime — which is how two instances ended up
+/// launched on the same port. Consulting the records closes that window.
+fn claimed_ports() -> std::collections::HashSet<u16> {
+    LAUNCH_RECORDS
+        .read()
+        .unwrap()
+        .values()
+        .filter(|r| r.terminating_at.is_none())
+        .map(|r| r.port)
+        .collect()
+}
+
 fn find_available_port(host: &str, requested_port: u16) -> Result<u16, String> {
+    let claimed = claimed_ports();
     for port in requested_port..=u16::MAX {
+        if claimed.contains(&port) {
+            continue;
+        }
         match TcpListener::bind((host, port)) {
             Ok(listener) => {
                 drop(listener);

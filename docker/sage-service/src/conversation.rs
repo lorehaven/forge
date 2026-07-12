@@ -82,27 +82,27 @@ impl ConversationContext {
     /// Get conversation summary (for display)
     pub fn get_messages_by_id(&self, message_id: Option<&str>) -> Vec<&ConversationMessage> {
         if let Some(id) = message_id {
-            // Collect message and all its children
+            // Collect the message and all of its ancestors, ordered root-first.
+            // This mirrors the branch semantics used when switching threads:
+            // a "branch" is the path from the root down to the selected message.
             let mut result = Vec::new();
-            self.collect_branch(id, &mut result);
+            let mut visited = std::collections::HashSet::new();
+            let mut current = Some(id);
+            while let Some(cid) = current {
+                if !visited.insert(cid) {
+                    break; // guard against cycles
+                }
+                let Some(msg) = self.messages.iter().find(|m| m.id == cid) else {
+                    break;
+                };
+                result.push(msg);
+                current = msg.parent_id.as_deref();
+            }
+            result.reverse();
             result
         } else {
             // Return all messages in a linear path (following parent relationships)
             self.get_main_branch()
-        }
-    }
-
-    fn collect_branch<'a>(&'a self, message_id: &str, result: &mut Vec<&'a ConversationMessage>) {
-        // Find the message
-        if let Some(msg) = self.messages.iter().find(|m| m.id == message_id) {
-            result.push(msg);
-
-            // Find all children
-            for child in self.messages.iter() {
-                if child.parent_id.as_deref() == Some(message_id) {
-                    self.collect_branch(&child.id, result);
-                }
-            }
         }
     }
 

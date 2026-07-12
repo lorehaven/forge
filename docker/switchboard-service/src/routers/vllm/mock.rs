@@ -29,6 +29,7 @@ impl VllmEngine for MockVllmEngine {
             gpu_memory_utilization: req.gpu_memory_utilization,
             enable_prefix_caching: req.enable_prefix_caching,
             enable_tool_calling: req.enable_tool_calling,
+            task: req.task,
             started_at: Utc::now(),
             status: "running".to_string(),
             log_path: None,

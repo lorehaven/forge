@@ -4,6 +4,7 @@ use quench_auth::actix::middleware::auth::Auth;
 use quench_auth::prelude::JwtConfig;
 
 pub mod chat;
+pub mod files;
 pub mod ui;
 
 pub fn root_scope() -> impl HttpServiceFactory {
@@ -13,5 +14,6 @@ pub fn root_scope() -> impl HttpServiceFactory {
 pub fn base_path_scope(jwt_config: JwtConfig) -> impl HttpServiceFactory {
     web::scope("")
         .service(ui::scope(jwt_config.clone()))
+        .service(files::scope().wrap(Auth::new(jwt_config.clone())))
         .service(chat::scope().wrap(Auth::new(jwt_config)))
 }
