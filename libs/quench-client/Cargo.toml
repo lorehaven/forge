@@ -1,6 +1,6 @@
 [package]
 name = "quench-client"
-version = "0.1.1"
+version = "0.1.2"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Quench - HTTP client abstraction with auth and retry support"

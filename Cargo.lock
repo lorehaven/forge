@@ -3826,7 +3826,7 @@ dependencies = [
 
 [[package]]
 name = "quench-auth"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -3867,7 +3867,7 @@ dependencies = [
 
 [[package]]
 name = "quench-client"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "reqwest",
@@ -3927,7 +3927,7 @@ dependencies = [
 
 [[package]]
 name = "quench-starter"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "actix-service",
  "actix-web",
@@ -4461,7 +4461,7 @@ dependencies = [
 
 [[package]]
 name = "sage-service"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "actix-multipart",
  "actix-web",
@@ -5277,7 +5277,7 @@ dependencies = [
 
 [[package]]
 name = "switchboard-service"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "actix-web",
  "async-trait",
@@ -5999,7 +5999,7 @@ dependencies = [
 
 [[package]]
 name = "warehouse-service"
-version = "0.1.22"
+version = "0.1.23"
 dependencies = [
  "actix-web",
  "base64",
