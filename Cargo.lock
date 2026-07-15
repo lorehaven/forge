@@ -4461,7 +4461,7 @@ dependencies = [
 
 [[package]]
 name = "sage-service"
-version = "0.1.3"
+version = "0.1.4"
 dependencies = [
  "actix-multipart",
  "actix-web",
