@@ -35,6 +35,24 @@ async fn handle_home_page(
 
     let instances = switchboard.get_vllm_instances().await;
 
+    // Every configured default model must be running before the chat UI is
+    // usable. Until then, send the user to the initializing screen which shows
+    // per-model launch progress and redirects back here once all are up.
+    let models_ready = matches!(
+        &instances,
+        Ok(insts)
+            if crate::routers::ui::pages::initializing::all_models_running(
+                &sage_config.default_models,
+                insts,
+            )
+    );
+    if !models_ready {
+        return HttpResponse::Found()
+            .append_header(("Location", with_base_path("/ui/initializing")))
+            .finish()
+            .map_into_right_body();
+    }
+
     // Fetch user's projects
     let project_repo = db.repository::<crate::models::Project>();
     let mut projects = project_repo.list().await.unwrap_or_default();

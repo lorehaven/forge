@@ -3,6 +3,7 @@ use quench_web::prelude::CssRule;
 
 pub mod chat;
 pub mod files;
+pub mod initializing;
 pub mod projects;
 
 pub fn ensure_sage_css() {
@@ -24,6 +25,7 @@ fn sage_css_rules() -> Vec<CssRule> {
     rules.extend(css::meta_rules());
     rules.extend(chat::chat_rules());
     rules.extend(files::files_rules());
+    rules.extend(initializing::initializing_rules());
     rules.extend(projects::projects_rules());
     rules
 }
