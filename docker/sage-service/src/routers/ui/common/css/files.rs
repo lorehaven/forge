@@ -118,5 +118,36 @@ pub fn files_rules() -> Vec<CssRule> {
             .property("gap", "0.5rem")
             .property("padding", "0.1rem 0"),
         CssRule::new(".message-source-score").property("color", "var(--bs-gray-600)"),
+        // Sidebar "Files" section for an open project.
+        CssRule::new(".files-section-header")
+            .property("padding-top", "0.5rem")
+            .property("padding-bottom", "0.35rem"),
+        CssRule::new(".files-section-icon")
+            .property("font-size", "0.7rem")
+            .property("color", "rgba(255, 255, 255, 0.4)"),
+        CssRule::new(".files-section-count")
+            .property("font-size", "0.65rem")
+            .property("color", "var(--bs-gray-600)"),
+        // File rows are indented under the project like its conversations.
+        CssRule::new(".project-file-item")
+            .property("margin-left", "1.5rem")
+            .property("font-size", "0.85rem"),
+        CssRule::new(".file-item-link")
+            .property("display", "flex")
+            .property("align-items", "center")
+            .property("gap", "0.4rem"),
+        CssRule::new(".file-item-icon")
+            .property("font-size", "0.75rem")
+            .property("color", "var(--bs-gray-500)"),
+        CssRule::new(".file-item-name")
+            .property("overflow", "hidden")
+            .property("text-overflow", "ellipsis")
+            .property("white-space", "nowrap"),
+        CssRule::new(".files-empty")
+            .property("margin-left", "1.5rem")
+            .property("padding", "0.4rem 0.75rem")
+            .property("font-size", "0.8rem")
+            .property("color", "var(--bs-gray-600)")
+            .property("font-style", "italic"),
     ]
 }

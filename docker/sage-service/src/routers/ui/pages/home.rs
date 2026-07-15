@@ -115,6 +115,18 @@ async fn handle_home_page(
         .collect();
     let attachments_by_message = crate::routers::files::files_by_message(&db, &user_ids).await;
 
+    // Files uploaded across the active project (attached to it or any of its
+    // conversations) power the sidebar "Files" section. Only load when an owned
+    // project is open.
+    let project_files = match &query.project_id {
+        Some(pid) if projects.iter().any(|p| &p.id == pid) => {
+            crate::routers::files::visible_files_for_project(&db, pid)
+                .await
+                .unwrap_or_default()
+        }
+        _ => Vec::new(),
+    };
+
     handle_home(req, jwt_config, move || {
         render_home_page(
             instances,
@@ -124,6 +136,7 @@ async fn handle_home_page(
             active_messages,
             sources_by_message,
             attachments_by_message,
+            project_files,
             auto_trigger_ai,
             query.project_id.clone(),
             sage_config.clone(),
@@ -196,6 +209,7 @@ fn render_home_page(
     active_messages: Vec<(crate::models::Message, Vec<crate::models::Message>)>,
     sources_by_message: std::collections::HashMap<String, Vec<crate::files::rag::RagSource>>,
     attachments_by_message: std::collections::HashMap<String, Vec<crate::models::File>>,
+    project_files: Vec<crate::models::File>,
     auto_trigger_ai: Option<String>,
     project_id: Option<String>,
     sage_config: web::Data<crate::config::SageConfig>,
@@ -430,6 +444,14 @@ fn render_home_page(
                 .child(span().text(&project.name)),
         );
         projects_content = projects_content.child(item);
+
+        // For the open project, list its uploaded files above its conversations
+        // so they can be previewed (downloaded) and deleted from the sidebar.
+        if is_active {
+            projects_content = projects_content.child(
+                crate::routers::ui::pages::files::render_project_files_section(&project_files),
+            );
+        }
 
         let project_convs: Vec<_> = conversations
             .iter()

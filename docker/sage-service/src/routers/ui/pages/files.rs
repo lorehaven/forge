@@ -139,6 +139,106 @@ pub fn render_attachment_chip(file: &File, staged: bool) -> Element {
     chip
 }
 
+/// A single file row in a project's sidebar "Files" section. The name is a
+/// download link (cookie auth works on the API scope) and the three-dot menu
+/// offers deletion, mirroring the conversation history rows.
+pub fn render_project_file_row(file: &File) -> Element {
+    let item_id = format!("file-item-{}", file.id);
+
+    let mut name_link = a()
+        .class("history-item-link file-item-link")
+        .attr(
+            "href",
+            with_base_path(&format!("/api/v1/files/{}/download", file.id)),
+        )
+        .attr(
+            "title",
+            format!(
+                "{} · {} · {}",
+                file.file_name,
+                format_size(file.file_size),
+                status_label(&file.status)
+            ),
+        )
+        .child(i().class("fas fa-file-lines file-item-icon"))
+        .child(span().class("file-item-name").text(&file.file_name));
+
+    // Surface a status badge for anything not yet searchable so the user can
+    // see processing / failed files at a glance.
+    if file.status != STATUS_READY {
+        name_link = name_link.child(
+            span()
+                .class(format!(
+                    "attachment-status attachment-status-{}",
+                    file.status
+                ))
+                .text(status_label(&file.status)),
+        );
+    }
+
+    div()
+        .class("history-item project-file-item")
+        .attr("id", &item_id)
+        .child(name_link)
+        .child(
+            div()
+                .class("menu-container")
+                .child(
+                    button()
+                        .class("menu-trigger-btn")
+                        .child(i().class("fas fa-ellipsis-v")),
+                )
+                .child(
+                    div().class("dropdown-menu").child(
+                        button()
+                            .class("dropdown-item delete-item")
+                            .attr(
+                                "hx-get",
+                                with_base_path(&format!("/ui/files/delete-modal/{}", file.id)),
+                            )
+                            .attr("hx-target", "#confirm-delete-modal")
+                            .attr("hx-swap", "outerHTML")
+                            .child(i().class("fas fa-trash"))
+                            .child(span().text("Delete")),
+                    ),
+                ),
+        )
+}
+
+/// The collapsible "Files" section for a project's sidebar, listing every file
+/// visible to the project (attached to it or to any of its conversations).
+/// Returns a container holding the header and its (collapsed) content so the
+/// header's `nextElementSibling` toggle finds the content.
+pub fn render_project_files_section(files: &[File]) -> Element {
+    let header = div()
+        .class("history-section-header collapsible files-section-header")
+        .attr("onclick", "this.classList.toggle('open'); const content = this.nextElementSibling; if(content) { content.classList.toggle('hidden'); }")
+        .child(
+            div()
+                .attr("style", "display: flex; align-items: center; gap: 0.5rem;")
+                .child(i().class("fas fa-chevron-right chevron"))
+                .child(i().class("fas fa-folder-tree files-section-icon"))
+                .child(span().text("Files"))
+        )
+        .child(span().class("files-section-count").text(files.len().to_string()));
+
+    // Collapsed by default: an unobtrusive "Files ›" the user expands.
+    let mut content = div().class("history-section-content hidden");
+    if files.is_empty() {
+        content = content.child(
+            div()
+                .class("files-empty")
+                .text("No files uploaded for this project."),
+        );
+    } else {
+        for file in files {
+            content = content.child(render_project_file_row(file));
+        }
+    }
+
+    div().child(header).child(content)
+}
+
 /// A read-only row of attachment chips shown inside a sent user message.
 /// Returns None when there are no attachments.
 pub fn render_attachments_row(files: &[File]) -> Option<Element> {
@@ -321,10 +421,151 @@ pub async fn reprocess(
     }
 }
 
+/// Confirmation modal for deleting a project file from the sidebar. Mirrors the
+/// conversation delete modal so both flows look and behave identically.
+#[get("/delete-modal/{file_id}")]
+pub async fn delete_modal(
+    req: actix_web::HttpRequest,
+    jwt_config: web::Data<JwtConfig>,
+    db: web::Data<Db>,
+    file_id: web::Path<String>,
+) -> impl Responder {
+    let username = match get_user_from_req(&req, &jwt_config).await {
+        Some(claims) => claims.sub,
+        None => return HttpResponse::Unauthorized().finish(),
+    };
+
+    let name = match db.repository::<File>().read(&file_id).await {
+        Ok(Some(f)) if f.owner == username => format!("\"{}\"", f.file_name),
+        Ok(Some(_)) => return HttpResponse::Forbidden().finish(),
+        Ok(None) => return HttpResponse::NotFound().body("File not found"),
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+
+    let modal = div()
+        .attr("id", "confirm-delete-modal")
+        .class("estimates-modal open")
+        .child(
+            button()
+                .class("estimates-modal-backdrop")
+                .attr("type", "button")
+                .attr(
+                    "hx-get",
+                    with_base_path("/ui/chat/conversations/delete-modal/empty"),
+                )
+                .attr("hx-target", "#confirm-delete-modal")
+                .attr("hx-swap", "outerHTML"),
+        )
+        .child(
+            div()
+                .class("estimates-modal-content small")
+                .child(
+                    div()
+                        .class("estimates-modal-header")
+                        .child(div().class("estimates-modal-title").text("Confirm Delete"))
+                        .child(
+                            button()
+                                .class("estimates-modal-close")
+                                .attr("type", "button")
+                                .attr(
+                                    "hx-get",
+                                    with_base_path("/ui/chat/conversations/delete-modal/empty"),
+                                )
+                                .attr("hx-target", "#confirm-delete-modal")
+                                .attr("hx-swap", "outerHTML")
+                                .child(i().class("fas fa-times")),
+                        ),
+                )
+                .child(
+                    div()
+                        .class("estimates-modal-body")
+                        .child(p().text("Are you sure you want to delete this file?"))
+                        .child(div().class("model-to-delete-name").text(name))
+                        .child(
+                            form()
+                                .class("confirm-actions")
+                                .attr(
+                                    "hx-post",
+                                    with_base_path(&format!("/ui/files/delete/{}", file_id)),
+                                )
+                                .attr("hx-target", "#confirm-delete-modal")
+                                .attr("hx-swap", "outerHTML")
+                                .child(
+                                    button()
+                                        .class("button cancel")
+                                        .attr("type", "button")
+                                        .attr(
+                                            "hx-get",
+                                            with_base_path(
+                                                "/ui/chat/conversations/delete-modal/empty",
+                                            ),
+                                        )
+                                        .attr("hx-target", "#confirm-delete-modal")
+                                        .attr("hx-swap", "outerHTML")
+                                        .text("Cancel"),
+                                )
+                                .child(
+                                    button()
+                                        .class("button danger")
+                                        .attr("type", "submit")
+                                        .text("Delete"),
+                                ),
+                        ),
+                ),
+        );
+
+    HttpResponse::Ok()
+        .content_type("text/html")
+        .body(modal.render())
+}
+
+/// Delete a project file from the sidebar. Returns a closed modal plus an
+/// out-of-band swap that removes the file's row. Blobs and chunks cascade.
+#[post("/delete/{file_id}")]
+pub async fn delete_file_ui(
+    req: actix_web::HttpRequest,
+    jwt_config: web::Data<JwtConfig>,
+    db: web::Data<Db>,
+    file_id: web::Path<String>,
+) -> impl Responder {
+    let username = match get_user_from_req(&req, &jwt_config).await {
+        Some(claims) => claims.sub,
+        None => return HttpResponse::Unauthorized().finish(),
+    };
+
+    let repo = db.repository::<File>();
+    match repo.read(&file_id).await {
+        Ok(Some(f)) if f.owner == username => {
+            if let Err(e) = repo.delete(&f.id).await {
+                tracing::error!("Failed to delete file {}: {}", f.id, e);
+                return HttpResponse::InternalServerError().body(e.to_string());
+            }
+        }
+        Ok(Some(_)) => return HttpResponse::Forbidden().finish(),
+        Ok(None) => return HttpResponse::NotFound().body("File not found"),
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    }
+
+    let close_modal = div()
+        .attr("id", "confirm-delete-modal")
+        .class("estimates-modal")
+        .render();
+    let oob_delete = div()
+        .attr("id", format!("file-item-{}", file_id))
+        .attr("hx-swap-oob", "delete")
+        .render();
+
+    HttpResponse::Ok()
+        .content_type("text/html")
+        .body(format!("{}{}", close_modal, oob_delete))
+}
+
 pub fn scope() -> actix_web::Scope {
     web::scope("/files")
         .service(attach)
         .service(detach)
         .service(chip_status)
         .service(reprocess)
+        .service(delete_modal)
+        .service(delete_file_ui)
 }

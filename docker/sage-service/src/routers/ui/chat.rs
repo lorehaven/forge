@@ -331,6 +331,16 @@ pub async fn stream_message(
             switchboard.get_ref().clone(),
             vllm.get_ref().clone(),
             Some(req.conversation_id.clone()),
+            req.project_id.clone(),
+        )),
+    );
+
+    request_tool_registry.register(
+        "file_list".to_string(),
+        Box::new(crate::tools::file_list::FileListExecutor::new(
+            db.get_ref().clone(),
+            Some(req.conversation_id.clone()),
+            req.project_id.clone(),
         )),
     );
 
@@ -400,6 +410,34 @@ pub async fn stream_message(
         content: config.system_prompt.clone(),
         tool_calls: None,
     };
+
+    // Ensure the conversation row exists before building RAG context or running
+    // tools. On the first message it is otherwise persisted only in Phase 5,
+    // leaving RAG auto-inject / file_list / file_search unable to resolve the
+    // conversation and its project scope. Mirrors the lazy creation that file
+    // attachment already performs. Regeneration reuses an existing row.
+    {
+        use quench_db::prelude::Crud;
+        let conv_repo = db.repository::<crate::models::Conversation>();
+        if matches!(conv_repo.read(&req.conversation_id).await, Ok(None)) {
+            let conv = crate::models::Conversation {
+                id: req.conversation_id.clone(),
+                // Blank until Phase 5 derives the title from the message.
+                title: String::new(),
+                active_message_id: None,
+                owner: username.clone(),
+                project_id: req.project_id.clone(),
+                updated_at: chrono::Utc::now().to_rfc3339(),
+            };
+            if let Err(e) = conv_repo.create(&conv).await {
+                tracing::error!(
+                    "Failed to pre-create conversation {}: {}",
+                    req.conversation_id,
+                    e
+                );
+            }
+        }
+    }
 
     // Advertise uploaded files and inject relevant excerpts when available.
     let mut injected_rag_hits: Vec<crate::files::rag::ChunkHit> = Vec::new();
@@ -1116,6 +1154,22 @@ pub async fn stream_message(
                             .child(span().text(&project.name)),
                     );
                     projects_content = projects_content.child(item);
+
+                    // Mirror the home page: the open project's uploaded files
+                    // live above its conversations. Without this the OOB sidebar
+                    // swap on a conversation update would drop the Files section
+                    // until a full page reload.
+                    if is_active {
+                        let files = crate::routers::files::visible_files_for_project(
+                            &db_clone,
+                            &project.id,
+                        )
+                        .await
+                        .unwrap_or_default();
+                        projects_content = projects_content.child(
+                            crate::routers::ui::pages::files::render_project_files_section(&files),
+                        );
+                    }
 
                     let project_convs: Vec<_> = conversations.iter().filter(|c| c.project_id.as_deref() == Some(&project.id)).collect();
                     for conv_item in project_convs {

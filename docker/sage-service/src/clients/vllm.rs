@@ -51,14 +51,63 @@ pub struct ChatCompletionChunk {
 #[derive(Debug, Deserialize, Clone)]
 pub struct ChatCompletionChoice {
     pub delta: ChatCompletionDelta,
+    #[serde(default)]
+    pub finish_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct ChatCompletionDelta {
+    #[serde(default)]
     pub content: Option<String>,
     #[serde(default)]
-    #[allow(dead_code)]
-    pub tool_calls: Option<Vec<ToolCall>>,
+    pub tool_calls: Option<Vec<StreamingToolCall>>,
+}
+
+/// One entry of a streamed OpenAI `tool_calls` delta. vLLM emits these
+/// incrementally: the first chunk for a call carries `function.name`, later
+/// chunks append `function.arguments` fragments, all keyed by `index`.
+#[derive(Debug, Deserialize, Clone)]
+pub struct StreamingToolCall {
+    #[serde(default)]
+    pub index: usize,
+    #[serde(default)]
+    pub function: Option<StreamingFunction>,
+}
+
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct StreamingFunction {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub arguments: Option<String>,
+}
+
+/// Convert accumulated streamed tool calls into `<tool_call>` text lines that
+/// the text-based tool parser understands, so native OpenAI function calling
+/// flows through the same downstream pipeline as tag-formatted calls. Drains
+/// the accumulator; entries without a name are skipped.
+fn flush_streamed_tool_calls(
+    accum: &mut std::collections::BTreeMap<usize, (String, String)>,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    for (_index, (name, args)) in std::mem::take(accum) {
+        if name.is_empty() {
+            continue;
+        }
+        // Arguments arrive as a JSON string (e.g. "{}" or "{\"q\":\"x\"}");
+        // embed verbatim, defaulting to an empty object when absent.
+        let args = if args.trim().is_empty() {
+            "{}".to_string()
+        } else {
+            args
+        };
+        let name_json = serde_json::to_string(&name).unwrap_or_else(|_| format!("\"{}\"", name));
+        out.push(format!(
+            "<tool_call>{{\"name\": {}, \"arguments\": {}}}</tool_call>",
+            name_json, args
+        ));
+    }
+    out
 }
 
 #[derive(Clone)]
@@ -166,6 +215,10 @@ impl VllmClient {
 
         let output_stream = async_stream::try_stream! {
             let mut buffer = Vec::new();
+            // Accumulates native (OpenAI) streamed tool calls by index until the
+            // model signals completion, then re-emits them as <tool_call> text.
+            let mut tool_accum: std::collections::BTreeMap<usize, (String, String)> =
+                std::collections::BTreeMap::new();
 
             while let Some(chunk_res) = stream.next().await {
                 let chunk = chunk_res.context("Error reading from vLLM stream")?;
@@ -178,19 +231,58 @@ impl VllmClient {
 
                     if line.is_empty() { continue; }
                     if line == "data: [DONE]" {
+                        for synth in flush_streamed_tool_calls(&mut tool_accum) {
+                            yield synth;
+                        }
                         return;
                     }
 
                     if let Some(data) = line.strip_prefix("data: ") {
-                        if let Ok(chunk) = serde_json::from_str::<ChatCompletionChunk>(data) {
-                            if let Some(content) = &chunk.choices[0].delta.content {
-                                yield content.clone();
+                        match serde_json::from_str::<ChatCompletionChunk>(data) {
+                            Ok(chunk) => {
+                                let Some(choice) = chunk.choices.first() else { continue; };
+
+                                if let Some(content) = &choice.delta.content
+                                    && !content.is_empty()
+                                {
+                                    yield content.clone();
+                                }
+
+                                if let Some(tool_calls) = &choice.delta.tool_calls {
+                                    for tc in tool_calls {
+                                        let entry = tool_accum.entry(tc.index).or_default();
+                                        if let Some(func) = &tc.function {
+                                            if let Some(name) = &func.name
+                                                && !name.is_empty()
+                                            {
+                                                entry.0 = name.clone();
+                                            }
+                                            if let Some(args) = &func.arguments {
+                                                entry.1.push_str(args);
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // A non-null finish_reason ends this turn; emit
+                                // any tool calls the model accumulated.
+                                if choice.finish_reason.is_some() {
+                                    for synth in flush_streamed_tool_calls(&mut tool_accum) {
+                                        yield synth;
+                                    }
+                                }
                             }
-                        } else {
-                            tracing::warn!("Failed to parse SSE data: {}", data);
+                            Err(e) => {
+                                tracing::warn!("Failed to parse SSE data: {} ({})", data, e);
+                            }
                         }
                     }
                 }
+            }
+
+            // Stream closed without an explicit [DONE]: flush anything pending.
+            for synth in flush_streamed_tool_calls(&mut tool_accum) {
+                yield synth;
             }
         };
 
@@ -277,4 +369,78 @@ struct EmbeddingsResponse {
 struct EmbeddingData {
     index: usize,
     embedding: Vec<f32>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The exact streamed chunks from a Qwen tool call (name in one chunk,
+    /// arguments in the next) must now deserialize; previously the strict
+    /// `ToolCall` shape rejected these partial deltas and the calls were lost.
+    #[test]
+    fn streamed_tool_call_chunks_deserialize() {
+        let name_chunk = r#"{"choices":[{"index":0,"delta":{"content":null,"tool_calls":[{"id":"chatcmpl-tool-1","type":"function","index":0,"function":{"name":"file_list"}}]},"finish_reason":null}]}"#;
+        let args_chunk = r#"{"choices":[{"index":0,"delta":{"content":null,"tool_calls":[{"index":0,"function":{"arguments":"{}"}}]},"finish_reason":null}]}"#;
+
+        let mut accum: std::collections::BTreeMap<usize, (String, String)> =
+            std::collections::BTreeMap::new();
+
+        for data in [name_chunk, args_chunk] {
+            let chunk: ChatCompletionChunk =
+                serde_json::from_str(data).expect("chunk should deserialize");
+            let choice = &chunk.choices[0];
+            assert!(choice.delta.content.is_none());
+            for tc in choice.delta.tool_calls.iter().flatten() {
+                let entry = accum.entry(tc.index).or_default();
+                if let Some(func) = &tc.function {
+                    if let Some(n) = &func.name {
+                        entry.0 = n.clone();
+                    }
+                    if let Some(a) = &func.arguments {
+                        entry.1.push_str(a);
+                    }
+                }
+            }
+        }
+
+        assert_eq!(
+            accum.get(&0),
+            Some(&("file_list".to_string(), "{}".to_string()))
+        );
+    }
+
+    /// Accumulated tool calls flush to a `<tool_call>` line that the text parser
+    /// turns back into a concrete tool call.
+    #[test]
+    fn flush_produces_parseable_tool_call() {
+        let mut accum = std::collections::BTreeMap::new();
+        accum.insert(0usize, ("file_list".to_string(), String::new()));
+        accum.insert(
+            1usize,
+            (
+                "file_search".to_string(),
+                r#"{"query": "empatia"}"#.to_string(),
+            ),
+        );
+
+        let synth = flush_streamed_tool_calls(&mut accum);
+        assert_eq!(synth.len(), 2);
+        assert!(accum.is_empty(), "flush should drain the accumulator");
+
+        let combined = synth.join("\n");
+        let calls = crate::tools::parser::parse_tool_calls(&combined);
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].name, "file_list");
+        assert!(calls[0].arguments.as_object().unwrap().is_empty());
+        assert_eq!(calls[1].name, "file_search");
+        assert_eq!(calls[1].arguments["query"], "empatia");
+    }
+
+    #[test]
+    fn flush_skips_nameless_entries() {
+        let mut accum = std::collections::BTreeMap::new();
+        accum.insert(0usize, (String::new(), "{}".to_string()));
+        assert!(flush_streamed_tool_calls(&mut accum).is_empty());
+    }
 }

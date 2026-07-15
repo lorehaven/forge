@@ -8,6 +8,7 @@ pub enum Tool {
     Calculator,
     FileOps,
     FileSearch,
+    FileList,
     Command,
     CodeExecutor,
 }
@@ -20,6 +21,7 @@ impl Tool {
             Tool::Calculator => "calculator",
             Tool::FileOps => "file_ops",
             Tool::FileSearch => "file_search",
+            Tool::FileList => "file_list",
             Tool::Command => "command",
             Tool::CodeExecutor => "code_executor",
         }
@@ -103,6 +105,7 @@ pub fn get_profile(name: &str) -> Option<CapabilityProfile> {
                     Tool::WebFetch,
                     Tool::Calculator,
                     Tool::FileSearch,
+                    Tool::FileList,
                 ],
             )
             .with_timeouts(
@@ -112,6 +115,7 @@ pub fn get_profile(name: &str) -> Option<CapabilityProfile> {
                     ("web_fetch", 20),
                     ("calculator", 5),
                     ("file_search", 30),
+                    ("file_list", 10),
                 ],
             ),
         ),
@@ -126,6 +130,7 @@ pub fn get_profile(name: &str) -> Option<CapabilityProfile> {
                     Tool::CodeExecutor,
                     Tool::FileOps,
                     Tool::FileSearch,
+                    Tool::FileList,
                 ],
             )
             .with_timeouts(
@@ -137,6 +142,7 @@ pub fn get_profile(name: &str) -> Option<CapabilityProfile> {
                     ("code_executor", 90),
                     ("file_ops", 15),
                     ("file_search", 30),
+                    ("file_list", 10),
                 ],
             ),
         ),
@@ -150,6 +156,7 @@ pub fn get_profile(name: &str) -> Option<CapabilityProfile> {
                     Tool::Calculator,
                     Tool::FileOps,
                     Tool::FileSearch,
+                    Tool::FileList,
                     Tool::Command,
                     Tool::CodeExecutor,
                 ],
@@ -163,6 +170,7 @@ pub fn get_profile(name: &str) -> Option<CapabilityProfile> {
                     ("code_executor", 90),
                     ("file_ops", 15),
                     ("file_search", 30),
+                    ("file_list", 10),
                     ("command", 120),
                 ],
             ),

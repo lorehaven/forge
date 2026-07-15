@@ -86,11 +86,16 @@ fn detail_from_metadata(metadata: &Option<serde_json::Value>) -> Option<String> 
 /// Cosine-search the embedded chunks visible to a conversation (its own
 /// files, its project's files, and files of sibling conversations in the
 /// same project).
+///
+/// `project_id_hint` scopes the search when the conversation row does not exist
+/// yet (e.g. the first message of a project chat, persisted only after tools
+/// run). When the conversation exists its own project link takes precedence.
 pub async fn search_chunks(
     db: &Db,
     switchboard: &SwitchboardClient,
     vllm: &VllmClient,
     conversation_id: &str,
+    project_id_hint: Option<&str>,
     query: &str,
     top_k: i64,
 ) -> Result<Vec<ChunkHit>, String> {
@@ -98,12 +103,17 @@ pub async fn search_chunks(
         return Err("file search requires a Postgres database".to_string());
     };
 
+    // A missing conversation is not fatal: the query then relies on the project
+    // scope (see the WHERE clause below), which the hint supplies.
     let conversation = db
         .repository::<Conversation>()
         .read(conversation_id)
         .await
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Conversation {} not found", conversation_id))?;
+        .map_err(|e| e.to_string())?;
+    let project_id = conversation
+        .as_ref()
+        .and_then(|c| c.project_id.clone())
+        .or_else(|| project_id_hint.map(str::to_string));
 
     let vectors = embedder::embed_texts(switchboard, vllm, vec![query_input(query)]).await?;
     let query_vector = vectors
@@ -129,7 +139,7 @@ pub async fn search_chunks(
     let rows: Vec<SearchChunkRow> = sqlx::query_as(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(embedder::vector_literal(&query_vector))
         .bind(conversation_id)
-        .bind(&conversation.project_id)
+        .bind(&project_id)
         .bind(top_k.max(1))
         .fetch_all(pg_db.pool())
         .await
@@ -290,6 +300,7 @@ pub async fn augment_system_prompt(
         switchboard,
         vllm,
         conversation_id,
+        conversation.project_id.as_deref(),
         user_message,
         config.top_k,
     )

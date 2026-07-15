@@ -35,6 +35,9 @@ pub struct FileSearchExecutor {
     switchboard: SwitchboardClient,
     vllm: VllmClient,
     conversation_id: Option<String>,
+    /// Request project scope, used to search project files when the
+    /// conversation row does not exist yet (first message of a project chat).
+    project_id: Option<String>,
 }
 
 impl FileSearchExecutor {
@@ -43,12 +46,14 @@ impl FileSearchExecutor {
         switchboard: SwitchboardClient,
         vllm: VllmClient,
         conversation_id: Option<String>,
+        project_id: Option<String>,
     ) -> Self {
         Self {
             db,
             switchboard,
             vllm,
             conversation_id,
+            project_id,
         }
     }
 }
@@ -89,6 +94,7 @@ impl ToolExecutor for FileSearchExecutor {
             &self.switchboard,
             &self.vllm,
             conversation_id,
+            self.project_id.as_deref(),
             query,
             top_k,
         )

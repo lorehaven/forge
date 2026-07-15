@@ -1,9 +1,58 @@
 use super::ToolCall;
 use regex::Regex;
 
+/// Matches either spelling of a tool-call opening tag (`<tool_call>` or
+/// `<toolcall>`). Reused by parsing and stripping.
+fn tool_tag_regex() -> Regex {
+    Regex::new(r"(?s)<tool_?call>").unwrap()
+}
+
+/// Find the first balanced JSON object (`{...}`) in `s`, returning its byte
+/// range. Brace counting skips braces that appear inside JSON strings and
+/// honours backslash escapes, so nested objects and braces within string
+/// values are handled correctly. Structural characters are ASCII, so byte
+/// scanning is safe even when string contents are multi-byte UTF-8.
+fn find_json_object(s: &str) -> Option<(usize, usize)> {
+    let bytes = s.as_bytes();
+    let start = s.find('{')?;
+    let mut depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (offset, &c) in bytes.iter().enumerate().skip(start) {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if c == b'\\' {
+                escaped = true;
+            } else if c == b'"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match c {
+            b'"' => in_string = true,
+            b'{' => depth += 1,
+            b'}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some((start, offset + 1));
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 /// Parse tool calls from model output following the Qwen format:
-/// Format 1: <tool_call>{"type": "function", "function": {"name": "web_search", "arguments": {"query": "..."}}</tool_call>
+/// Format 1: <tool_call>{"type": "function", "function": {"name": "web_search", "arguments": {"query": "..."}}}</tool_call>
 /// Format 2: <toolcall>{"type": "search", "name": "websearch", "arguments": {"query": "..."}}</toolcall>
+///
+/// For each opening tag we extract the first balanced JSON object that follows
+/// and parse that, rather than requiring the closing brace to sit right before
+/// the closing tag. This tolerates trailing junk the model sometimes appends
+/// (e.g. a stray `;` after the object), mismatched or missing closing tags, and
+/// braces nested inside the arguments.
 pub fn parse_tool_calls(content: &str) -> Vec<ToolCall> {
     let mut calls = Vec::new();
 
@@ -12,43 +61,29 @@ pub fn parse_tool_calls(content: &str) -> Vec<ToolCall> {
         content.len()
     );
 
-    // Try multiple regex patterns to catch different tool call formats
-    // Note: using (?s) flag for DOTALL to match newlines with .
-    let patterns = [
-        r"(?s)<tool_call>\s*(\{.*?\})\s*</tool_call>",
-        // Pattern 2: <toolcall>...</toolcall>
-        r"(?s)<toolcall>\s*(\{.*?\})\s*</toolcall>",
-        // Pattern 3: <toolcall>...</tool_call> (mismatched tags - Qwen sometimes does this)
-        r"(?s)<toolcall>\s*(\{.*?\})\s*</tool_call>",
-        // Pattern 4: <tool_call>...</toolcall> (reverse mismatch)
-        r"(?s)<tool_call>\s*(\{.*?\})\s*</toolcall>",
-        // Pattern 5: <toolcall>{...} (unclosed - model sometimes forgets closing tag)
-        r"(?s)<toolcall>\s*(\{[^<]*?\})\s*(?:</toolcall>|(?=\n|$))",
-        // Pattern 6: <tool_call>{...} (unclosed variant)
-        r"(?s)<tool_call>\s*(\{[^<]*?\})\s*(?:</tool_call>|(?=\n|$))",
-    ];
-
-    for (idx, pattern) in patterns.iter().enumerate() {
-        if let Ok(re) = Regex::new(pattern) {
-            let matches: Vec<_> = re.captures_iter(content).collect();
-            if !matches.is_empty() {
-                tracing::debug!("[PARSER] Pattern {} matched {} times", idx, matches.len());
-                for cap in matches {
-                    let json_str = &cap[1];
-                    tracing::debug!("[PARSER] Pattern {} JSON: {}", idx, json_str);
-                    // Try both parsing formats since we don't know which one it is
-                    if let Some(call) = parse_tool_json_format1(json_str) {
-                        tracing::debug!("[PARSER] Successfully parsed as format1: {}", call.name);
-                        calls.push(call);
-                    } else if let Some(call) = parse_tool_json_format2(json_str) {
-                        tracing::debug!("[PARSER] Successfully parsed as format2: {}", call.name);
-                        calls.push(call);
-                    } else {
-                        tracing::warn!("[PARSER] Failed to parse JSON: {}", json_str);
-                    }
-                }
-            }
+    // Absolute offset past the last consumed JSON object, so a tag appearing
+    // inside an already-parsed object is not treated as a new call.
+    let mut consumed_until = 0;
+    for m in tool_tag_regex().find_iter(content) {
+        if m.end() < consumed_until {
+            continue;
         }
+        let rest = &content[m.end()..];
+        let Some((s, e)) = find_json_object(rest) else {
+            continue;
+        };
+        let json_str = &rest[s..e];
+        tracing::debug!("[PARSER] Extracted JSON: {}", json_str);
+        if let Some(call) = parse_tool_json_format1(json_str) {
+            tracing::debug!("[PARSER] Successfully parsed as format1: {}", call.name);
+            calls.push(call);
+        } else if let Some(call) = parse_tool_json_format2(json_str) {
+            tracing::debug!("[PARSER] Successfully parsed as format2: {}", call.name);
+            calls.push(call);
+        } else {
+            tracing::warn!("[PARSER] Failed to parse JSON: {}", json_str);
+        }
+        consumed_until = m.end() + e;
     }
 
     tracing::info!("[PARSER] Total tool calls parsed: {}", calls.len());
@@ -115,24 +150,39 @@ fn normalize_tool_name(name: &str) -> String {
     }
 }
 
-/// Remove tool call XML tags from content to get clean text
+/// Remove tool call syntax from content to get clean display text. For each
+/// opening tag we drop the tag, the balanced JSON object that follows, any
+/// trailing punctuation/whitespace (e.g. a stray `;`), and the closing tag when
+/// present. Residual bare tags (with no JSON) are stripped last.
 pub fn strip_tool_calls(content: &str) -> String {
-    let mut result = content.to_string();
+    // Removes optional trailing junk then a closing tag right after the object.
+    let close_re = Regex::new(r"(?s)^[;,\s]*</tool_?call>").unwrap();
 
-    // Strip all possible formats
-    let patterns = [
-        r"<tool_call>\s*(\{.*?\})\s*</tool_call>",
-        r"<toolcall>\s*(\{.*?\})\s*</toolcall>",
-        r"<toolcall>\s*(\{.*?\})\s*</tool_call>", // Mismatched
-        r"<tool_call>\s*(\{.*?\})\s*</toolcall>", // Reverse mismatch
-    ];
-
-    for pattern in &patterns {
-        if let Ok(re) = Regex::new(pattern) {
-            result = re.replace_all(&result, "").to_string();
+    let mut result = String::new();
+    let mut last = 0;
+    let mut consumed_until = 0;
+    for m in tool_tag_regex().find_iter(content) {
+        if m.start() < consumed_until {
+            continue;
         }
+        let rest = &content[m.end()..];
+        let Some((_s, e)) = find_json_object(rest) else {
+            continue;
+        };
+        let mut remove_end = m.end() + e;
+        if let Some(cm) = close_re.find(&content[remove_end..]) {
+            remove_end += cm.end();
+        }
+        result.push_str(&content[last..m.start()]);
+        last = remove_end;
+        consumed_until = remove_end;
     }
+    result.push_str(&content[last..]);
 
+    // Drop any leftover bare tags that were not part of a JSON construct.
+    if let Ok(re) = Regex::new(r"</?tool_?call>") {
+        result = re.replace_all(&result, "").to_string();
+    }
     result
 }
 
@@ -180,6 +230,47 @@ Found it."#;
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].name, "web_search");
         assert_eq!(calls[0].arguments["query"], "Python 2026");
+    }
+
+    #[test]
+    fn test_parse_tool_calls_trailing_semicolon() {
+        // Regression: the model appended a stray `;` after the JSON object,
+        // which defeated the old "closing brace must abut the closing tag"
+        // regexes and broke tool calling entirely.
+        let content = r#"Sure, let me list the files.
+<toolcall>{"name": "file_list", "arguments": {}};</toolcall>
+"#;
+
+        let calls = parse_tool_calls(content);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "file_list");
+        assert!(calls[0].arguments.as_object().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_parse_tool_calls_nested_braces_and_no_closing_tag() {
+        // Nested object in arguments, no closing tag at all.
+        let content =
+            r#"<tool_call>{"name": "file_search", "arguments": {"query": "a {b} c", "opts": {}}}"#;
+
+        let calls = parse_tool_calls(content);
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "file_search");
+        assert_eq!(calls[0].arguments["query"], "a {b} c");
+    }
+
+    #[test]
+    fn test_strip_tool_calls_trailing_semicolon() {
+        let content = r#"Before.
+<toolcall>{"name": "file_list", "arguments": {}};</toolcall>
+After."#;
+        let cleaned = strip_tool_calls(content);
+        assert!(!cleaned.contains("<toolcall>"));
+        assert!(!cleaned.contains("</toolcall>"));
+        assert!(!cleaned.contains("file_list"));
+        assert!(!cleaned.contains(';'));
+        assert!(cleaned.contains("Before."));
+        assert!(cleaned.contains("After."));
     }
 
     #[test]

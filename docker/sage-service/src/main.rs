@@ -180,11 +180,19 @@ fn init_tool_registry(
     registry.register(
         "file_search".to_string(),
         Box::new(tools::file_search::FileSearchExecutor::new(
-            db,
+            db.clone(),
             switchboard,
             vllm,
             None,
+            None,
         )),
+    );
+
+    // Registered without a conversation context; the chat flow builds a
+    // request-scoped registry that carries the actual conversation id.
+    registry.register(
+        "file_list".to_string(),
+        Box::new(tools::file_list::FileListExecutor::new(db, None, None)),
     );
 
     registry.register(
