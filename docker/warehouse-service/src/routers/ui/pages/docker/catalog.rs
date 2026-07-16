@@ -310,10 +310,7 @@ fn render_metadata_panel(repo: Option<&str>, selected_meta: Option<&TagMetadata>
                     "ui_meta_manifest_size",
                     span()
                         .attr("data-i18n", "ui_meta_bytes")
-                        .attr(
-                            "data-i18n-args",
-                            format!("{{\"size\":\"{size}\"}}"),
-                        )
+                        .attr("data-i18n-args", format!("{{\"size\":\"{size}\"}}"))
                         .text(format!("{size} bytes")),
                 ),
                 None => meta_row_unknown("ui_meta_manifest_size"),

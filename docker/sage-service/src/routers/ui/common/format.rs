@@ -82,9 +82,7 @@ pub fn render_sources(sources: &[crate::files::rag::RagSource]) -> Option<Elemen
             .child(span().attr("data-i18n", "ui_chat_sources").text("Sources")),
     );
     for source in sources {
-        let mut item = div()
-            .class("message-source-item")
-            .text(&source.file_name);
+        let mut item = div().class("message-source-item").text(&source.file_name);
         if let Some(detail) = &source.detail {
             item = item.child(span().text(format!(" · {}", detail)));
         } else if let Some(idx) = source.chunk_index {

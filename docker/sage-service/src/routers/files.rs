@@ -61,8 +61,7 @@ pub async fn create_uploaded_file(
         (Some(c), None) => (Some(c.0.clone()), None),
         (None, Some(p)) => (None, Some(p.0.clone())),
         _ => {
-            return Err(HttpResponse::BadRequest()
-                .body("api_error_file_scope_required"));
+            return Err(HttpResponse::BadRequest().body("api_error_file_scope_required"));
         }
     };
 
@@ -71,9 +70,7 @@ pub async fn create_uploaded_file(
     };
 
     let Some(mime_type) = allowed_mime_type(&file_name) else {
-        return Err(
-            HttpResponse::BadRequest().body("api_error_unsupported_file_type")
-        );
+        return Err(HttpResponse::BadRequest().body("api_error_unsupported_file_type"));
     };
 
     let max_size = max_file_size_bytes();
@@ -89,7 +86,9 @@ pub async fn create_uploaded_file(
         match db.repository::<Conversation>().read(cid).await {
             Ok(Some(c)) if c.owner == username => {}
             Ok(Some(_)) => return Err(HttpResponse::Forbidden().finish()),
-            Ok(None) => return Err(HttpResponse::NotFound().body("api_error_conversation_not_found")),
+            Ok(None) => {
+                return Err(HttpResponse::NotFound().body("api_error_conversation_not_found"));
+            }
             Err(e) => return Err(internal_error(e)),
         }
     }
@@ -188,9 +187,7 @@ pub async fn create_uploaded_file(
 
             Ok(file)
         }
-        Db::InMemory(_) => {
-            Err(HttpResponse::NotImplemented().body("api_error_postgres_required"))
-        }
+        Db::InMemory(_) => Err(HttpResponse::NotImplemented().body("api_error_postgres_required")),
     }
 }
 
@@ -245,7 +242,9 @@ pub async fn list_files(
             let conversation = match db.repository::<Conversation>().read(cid).await {
                 Ok(Some(c)) if c.owner == username => c,
                 Ok(Some(_)) => return HttpResponse::Forbidden().finish(),
-                Ok(None) => return HttpResponse::NotFound().body("api_error_conversation_not_found"),
+                Ok(None) => {
+                    return HttpResponse::NotFound().body("api_error_conversation_not_found");
+                }
                 Err(e) => return internal_error(e),
             };
 
@@ -267,8 +266,7 @@ pub async fn list_files(
                 Err(e) => internal_error(e),
             }
         }
-        _ => HttpResponse::BadRequest()
-            .body("api_error_file_scope_required"),
+        _ => HttpResponse::BadRequest().body("api_error_file_scope_required"),
     }
 }
 
@@ -513,9 +511,7 @@ pub async fn download_file(
                 Err(e) => internal_error(e),
             }
         }
-        Db::InMemory(_) => {
-            HttpResponse::NotImplemented().body("api_error_postgres_required")
-        }
+        Db::InMemory(_) => HttpResponse::NotImplemented().body("api_error_postgres_required"),
     }
 }
 

@@ -130,9 +130,7 @@ pub async fn get_metrics_by_profile(
     let profile = profile_name.into_inner();
     match metrics_collector.get_profile_metrics(&profile) {
         Some(metrics) => HttpResponse::Ok().json(metrics),
-        None => {
-            HttpResponse::NotFound().body("api_error_metrics_not_found")
-        }
+        None => HttpResponse::NotFound().body("api_error_metrics_not_found"),
     }
 }
 

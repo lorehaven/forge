@@ -11,7 +11,10 @@ static UI_SHELL_DOCKER: LazyLock<AppShell> = LazyLock::new(|| {
     AppShellBuilder::new()
         .title("Warehouse")
         .supported_locales(
-            ["en-US", "pl-PL", "es-ES", "de-DE", "fr-FR"].iter().map(|s| s.to_string()).collect(),
+            ["en-US", "pl-PL", "es-ES", "de-DE", "fr-FR"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
         )
         .default_theme(Theme::DefaultDark)
         .supported_themes(vec![Theme::DefaultDark])
@@ -31,7 +34,10 @@ static UI_SHELL_CRATES: LazyLock<AppShell> = LazyLock::new(|| {
     AppShellBuilder::new()
         .title("Warehouse — Crates")
         .supported_locales(
-            ["en-US", "pl-PL", "es-ES", "de-DE", "fr-FR"].iter().map(|s| s.to_string()).collect(),
+            ["en-US", "pl-PL", "es-ES", "de-DE", "fr-FR"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
         )
         .default_theme(Theme::DefaultDark)
         .supported_themes(vec![Theme::DefaultDark])
@@ -51,7 +57,10 @@ static UI_SHELL_HOME: LazyLock<AppShell> = LazyLock::new(|| {
     AppShellBuilder::new()
         .title("Warehouse")
         .supported_locales(
-            ["en-US", "pl-PL", "es-ES", "de-DE", "fr-FR"].iter().map(|s| s.to_string()).collect(),
+            ["en-US", "pl-PL", "es-ES", "de-DE", "fr-FR"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
         )
         .default_theme(Theme::DefaultDark)
         .supported_themes(vec![Theme::DefaultDark])
@@ -71,7 +80,10 @@ static UI_SHELL_AUTH: LazyLock<AppShell> = LazyLock::new(|| {
     AppShellBuilder::new()
         .title("Warehouse")
         .supported_locales(
-            ["en-US", "pl-PL", "es-ES", "de-DE", "fr-FR"].iter().map(|s| s.to_string()).collect(),
+            ["en-US", "pl-PL", "es-ES", "de-DE", "fr-FR"]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
         )
         .default_theme(Theme::DefaultDark)
         .supported_themes(vec![Theme::DefaultDark])

@@ -71,7 +71,9 @@ fn model_label(model: &DefaultModel) -> Element {
 }
 
 /// (icon class, status text, i18n key, css modifier) for a model state.
-fn state_presentation(state: ModelState) -> (&'static str, &'static str, &'static str, &'static str) {
+fn state_presentation(
+    state: ModelState,
+) -> (&'static str, &'static str, &'static str, &'static str) {
     match state {
         ModelState::Running => (
             "fas fa-check-circle",
@@ -92,7 +94,12 @@ fn state_presentation(state: ModelState) -> (&'static str, &'static str, &'stati
             "ui_init_status_failed",
             "failed",
         ),
-        ModelState::Unknown => ("fas fa-plug", "Connecting…", "ui_init_status_unknown", "unknown"),
+        ModelState::Unknown => (
+            "fas fa-plug",
+            "Connecting…",
+            "ui_init_status_unknown",
+            "unknown",
+        ),
     }
 }
 

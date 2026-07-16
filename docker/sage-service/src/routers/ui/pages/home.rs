@@ -401,7 +401,11 @@ fn render_home_page(
         a().class("new-chat-btn")
             .attr("href", new_chat_url)
             .child(i().class("fas fa-plus"))
-            .child(span().attr("data-i18n", "ui_sidebar_new_chat").text("New Chat")),
+            .child(
+                span()
+                    .attr("data-i18n", "ui_sidebar_new_chat")
+                    .text("New Chat"),
+            ),
     );
 
     let mut history_list = div().class("history-list").attr("id", "history-list");
@@ -504,13 +508,11 @@ fn render_home_page(
             let conv_item = div()
                 .class(conv_item_class)
                 .attr("id", &item_id)
-                .child(
-                    conv_title_link(
-                        a().class(conv_link_class)
-                            .attr("href", with_base_path(&conv_url)),
-                        &conv.title,
-                    ),
-                )
+                .child(conv_title_link(
+                    a().class(conv_link_class)
+                        .attr("href", with_base_path(&conv_url)),
+                    &conv.title,
+                ))
                 .child(
                     div()
                         .class("menu-container")
@@ -534,9 +536,7 @@ fn render_home_page(
                                     .attr("hx-swap", "outerHTML")
                                     .child(i().class("fas fa-trash"))
                                     .child(
-                                        span()
-                                            .attr("data-i18n", "ui_common_delete")
-                                            .text("Delete"),
+                                        span().attr("data-i18n", "ui_common_delete").text("Delete"),
                                     ),
                             ),
                         ),
@@ -592,12 +592,11 @@ fn render_home_page(
         let item = div()
             .class(item_class)
             .attr("id", &item_id)
-            .child(
-                conv_title_link(
-                    a().class(link_class).attr("href", with_base_path(&conv_url)),
-                    &conv.title,
-                ),
-            )
+            .child(conv_title_link(
+                a().class(link_class)
+                    .attr("href", with_base_path(&conv_url)),
+                &conv.title,
+            ))
             .child(
                 div()
                     .class("menu-container")
@@ -620,11 +619,7 @@ fn render_home_page(
                                 .attr("hx-target", "#confirm-delete-modal")
                                 .attr("hx-swap", "outerHTML")
                                 .child(i().class("fas fa-trash"))
-                                .child(
-                                    span()
-                                        .attr("data-i18n", "ui_common_delete")
-                                        .text("Delete"),
-                                ),
+                                .child(span().attr("data-i18n", "ui_common_delete").text("Delete")),
                         ),
                     ),
             );
@@ -863,14 +858,12 @@ fn render_home_page(
                 .attr("sse-connect", stream_url)
                 .attr("sse-swap", "message")
                 .child(
-                    div()
-                        .class("message-inner")
-                        .child(
-                            div()
-                                .class("message-content")
-                                .attr("data-i18n", "ui_chat_thinking")
-                                .text("Sage is thinking..."),
-                        ),
+                    div().class("message-inner").child(
+                        div()
+                            .class("message-content")
+                            .attr("data-i18n", "ui_chat_thinking")
+                            .text("Sage is thinking..."),
+                    ),
                 );
             history_div = history_div.child(ai_thinking_msg);
 

@@ -205,11 +205,7 @@ pub fn render_project_file_row(file: &File) -> Element {
                             .attr("hx-target", "#confirm-delete-modal")
                             .attr("hx-swap", "outerHTML")
                             .child(i().class("fas fa-trash"))
-                            .child(
-                                span()
-                                    .attr("data-i18n", "ui_common_delete")
-                                    .text("Delete"),
-                            ),
+                            .child(span().attr("data-i18n", "ui_common_delete").text("Delete")),
                     ),
                 ),
         )
@@ -322,7 +318,8 @@ pub async fn attach(
             };
             if let Err(e) = conv_repo.create(&conv).await {
                 tracing::error!("Failed to create conversation for attachment: {}", e);
-                return HttpResponse::InternalServerError().body("api_error_conversation_create_failed");
+                return HttpResponse::InternalServerError()
+                    .body("api_error_conversation_create_failed");
             }
         }
         Err(e) => {

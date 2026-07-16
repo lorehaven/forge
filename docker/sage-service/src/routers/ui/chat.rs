@@ -144,14 +144,12 @@ pub async fn send_message(
         .attr("sse-connect", stream_url)
         .attr("sse-swap", "message")
         .child(
-            div()
-                .class("message-inner")
-                .child(
-                    div()
-                        .class("message-content")
-                        .attr("data-i18n", "ui_chat_thinking")
-                        .text("Sage is thinking..."),
-                ),
+            div().class("message-inner").child(
+                div()
+                    .class("message-content")
+                    .attr("data-i18n", "ui_chat_thinking")
+                    .text("Sage is thinking..."),
+            ),
         );
 
     let user_dot = div()
