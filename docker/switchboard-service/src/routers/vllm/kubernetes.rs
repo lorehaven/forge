@@ -65,9 +65,23 @@ impl VllmEngine for KubernetesVllmEngine {
                 .and_then(|p| p.parse::<u16>().ok())
                 .unwrap_or(8000);
 
+            // Pod phase flips to "Running" as soon as the container process starts,
+            // long before vLLM finishes loading the model. Rely on the pod's Ready
+            // condition (driven by the /health readiness probe) to tell them apart.
+            let ready = pod
+                .status
+                .as_ref()
+                .and_then(|s| s.conditions.as_ref())
+                .map(|conds| {
+                    conds
+                        .iter()
+                        .any(|c| c.type_ == "Ready" && c.status == "True")
+                })
+                .unwrap_or(false);
+
             let mut status = match pod.status.as_ref().and_then(|s| s.phase.as_deref()) {
-                Some("Running") => "running",
-                Some("Pending") => "starting",
+                Some("Running") if ready => "running",
+                Some("Running") | Some("Pending") => "starting",
                 Some(p) => p,
                 None => "unknown",
             };
@@ -401,7 +415,18 @@ impl VllmEngine for KubernetesVllmEngine {
                         ],
                         "resources": resources,
                         "env": env_vars,
-                        "volumeMounts": volume_mounts
+                        "volumeMounts": volume_mounts,
+                        // vLLM serves /health once the model is loaded; until then
+                        // the pod stays NotReady so list_instances reports "starting".
+                        "readinessProbe": {
+                            "httpGet": {
+                                "path": "/health",
+                                "port": req.port
+                            },
+                            "initialDelaySeconds": 5,
+                            "periodSeconds": 5,
+                            "timeoutSeconds": 3
+                        }
                     }
                 ],
                 "volumes": volumes,
