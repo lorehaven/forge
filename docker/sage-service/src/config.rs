@@ -99,7 +99,7 @@ impl SageConfig {
                     prompt_path,
                     err
                 );
-                "You are Sage, a wise and helpful AI assistant.".to_string()
+                "You are Sage, a wise and helpful AI assistant. Always respond in the language of the user's most recent message.".to_string()
             }
         };
 
