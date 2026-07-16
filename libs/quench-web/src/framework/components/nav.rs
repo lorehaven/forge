@@ -10,6 +10,24 @@ pub fn nav_button() -> Element {
         .child(i().class("fas").class("fa-grip"))
 }
 
+pub fn locale_switch(
+    supported_locales: Option<Vec<String>>,
+    default_locale: Option<String>,
+) -> Element {
+    div()
+        .class("locale-switch")
+        .class("q-shell-locale-switch")
+        .child(build_locale_select(supported_locales, default_locale))
+        .child(
+            script(on_dom_ready(&[set_select_value(
+                "locale-select",
+                "getLocale",
+            )]))
+            .raw()
+            .defer(),
+        )
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct NavPanelBuilder {
     pub default_theme: Option<Theme>,
@@ -67,33 +85,7 @@ impl NavPanelBuilder {
     }
 
     fn select_locale(&self) -> Element {
-        let locales = self
-            .supported_locales
-            .clone()
-            .unwrap_or_else(|| available_locales().unwrap_or_else(|_| vec!["en-US".to_string()]));
-        let default_locale = match &self.default_locale {
-            Some(value) if locales.iter().any(|l| l == value) => value.clone(),
-            _ => locales
-                .first()
-                .cloned()
-                .unwrap_or_else(|| "en-US".to_string()),
-        };
-
-        let mut element = select()
-            .attr("id", "locale-select")
-            .attr("value", &default_locale)
-            .on_change(update_from_select("locale-select", "updateLocale"));
-
-        for locale in locales {
-            let label = format!("{} {}", locale_flag(&locale), locale)
-                .trim()
-                .to_string();
-            element = element
-                .clone()
-                .child(option().attr("value", &locale).text(&label));
-        }
-
-        element
+        build_locale_select(self.supported_locales.clone(), self.default_locale.clone())
     }
 
     fn select_theme(&self) -> Element {
@@ -116,6 +108,37 @@ impl NavPanelBuilder {
         });
         element
     }
+}
+
+fn build_locale_select(
+    supported_locales: Option<Vec<String>>,
+    default_locale: Option<String>,
+) -> Element {
+    let locales = supported_locales
+        .unwrap_or_else(|| available_locales().unwrap_or_else(|_| vec!["en-US".to_string()]));
+    let default_locale = match default_locale {
+        Some(value) if locales.iter().any(|l| l == &value) => value,
+        _ => locales
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "en-US".to_string()),
+    };
+
+    let mut element = select()
+        .attr("id", "locale-select")
+        .attr("value", &default_locale)
+        .on_change(update_from_select("locale-select", "updateLocale"));
+
+    for locale in locales {
+        let label = format!("{} {}", locale_flag(&locale), locale)
+            .trim()
+            .to_string();
+        element = element
+            .clone()
+            .child(option().attr("value", &locale).text(&label));
+    }
+
+    element
 }
 
 fn locale_flag(locale: &str) -> String {

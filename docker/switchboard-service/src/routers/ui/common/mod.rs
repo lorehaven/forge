@@ -5,20 +5,21 @@ use std::sync::LazyLock;
 
 mod css;
 
+const SUPPORTED_LOCALES: [&str; 5] = ["en-US", "pl-PL", "es-ES", "de-DE", "fr-FR"];
+
+fn supported_locales() -> Vec<String> {
+    SUPPORTED_LOCALES.iter().map(|s| s.to_string()).collect()
+}
+
 static UI_SHELL_HOME: LazyLock<AppShell> = LazyLock::new(|| {
     css::ensure_switchboard_css();
 
     AppShellBuilder::new()
         .title("Switchboard")
-        .supported_locales(
-            ["en-US", "pl-PL", "es-ES", "de-DE", "fr-FR"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
-        )
+        .supported_locales(supported_locales())
         .default_theme(Theme::DefaultDark)
         .supported_themes(vec![Theme::DefaultDark])
-        .header(ui_header(Some("ui_header_home"), true, true))
+        .header(ui_header(Some("ui_header_home"), true, true, true))
         .links(vec![Link::new(
             "stylesheet",
             &ui_asset_path("/css/switchboard.css"),
@@ -33,17 +34,13 @@ static UI_SHELL_MODELS_DASHBOARD: LazyLock<AppShell> = LazyLock::new(|| {
 
     AppShellBuilder::new()
         .title("Switchboard")
-        .supported_locales(
-            ["en-US", "pl-PL", "es-ES", "de-DE", "fr-FR"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
-        )
+        .supported_locales(supported_locales())
         .default_theme(Theme::DefaultDark)
         .supported_themes(vec![Theme::DefaultDark])
         .header(ui_header_split(
             "ui_header_dashboard",
             "ui_header_models",
+            true,
             true,
             true,
         ))
@@ -61,17 +58,13 @@ static UI_SHELL_VLLM_MANAGEMENT: LazyLock<AppShell> = LazyLock::new(|| {
 
     AppShellBuilder::new()
         .title("Switchboard")
-        .supported_locales(
-            ["en-US", "pl-PL", "es-ES", "de-DE", "fr-FR"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
-        )
+        .supported_locales(supported_locales())
         .default_theme(Theme::DefaultDark)
         .supported_themes(vec![Theme::DefaultDark])
         .header(ui_header_split(
             "ui_header_dashboard",
             "ui_header_vllm",
+            true,
             true,
             true,
         ))
@@ -89,15 +82,10 @@ static UI_SHELL_AUTH: LazyLock<AppShell> = LazyLock::new(|| {
 
     AppShellBuilder::new()
         .title("Switchboard")
-        .supported_locales(
-            ["en-US", "pl-PL", "es-ES", "de-DE", "fr-FR"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
-        )
+        .supported_locales(supported_locales())
         .default_theme(Theme::DefaultDark)
         .supported_themes(vec![Theme::DefaultDark])
-        .header(ui_header(None, false, false))
+        .header(ui_header(None, true, false, false))
         .links(vec![Link::new(
             "stylesheet",
             &ui_asset_path("/css/switchboard.css"),
@@ -107,7 +95,12 @@ static UI_SHELL_AUTH: LazyLock<AppShell> = LazyLock::new(|| {
         .build()
 });
 
-fn ui_header(title_key: Option<&str>, show_home: bool, show_logout: bool) -> Element {
+fn ui_header(
+    title_key: Option<&str>,
+    show_locale_switch: bool,
+    show_home: bool,
+    show_logout: bool,
+) -> Element {
     let title = match title_key {
         Some(key) => h2().attr("data-i18n", key),
         None => h2().attr("data-i18n", "header_label"),
@@ -118,6 +111,9 @@ fn ui_header(title_key: Option<&str>, show_home: bool, show_logout: bool) -> Ele
         .child(
             div()
                 .class("right-panel")
+                .child_opt(
+                    show_locale_switch.then(|| locale_switch(Some(supported_locales()), None)),
+                )
                 .child_opt(show_home.then(|| {
                     a().attr("href", ui_path("/home"))
                         .class("button")
@@ -134,6 +130,7 @@ fn ui_header(title_key: Option<&str>, show_home: bool, show_logout: bool) -> Ele
 fn ui_header_split(
     title1_key: &str,
     title2_key: &str,
+    show_locale_switch: bool,
     show_home: bool,
     show_logout: bool,
 ) -> Element {
@@ -148,6 +145,9 @@ fn ui_header_split(
         .child(
             div()
                 .class("right-panel")
+                .child_opt(
+                    show_locale_switch.then(|| locale_switch(Some(supported_locales()), None)),
+                )
                 .child_opt(show_home.then(|| {
                     a().attr("href", ui_path("/home"))
                         .class("button")
