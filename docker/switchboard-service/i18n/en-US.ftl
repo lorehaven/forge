@@ -15,8 +15,8 @@ ui_home_group_services = Available Services
 ui_service_models_dashboard_title = AI Models Registry
 ui_service_models_dashboard_desc = Browse available models.
 
-ui_service_vllm_management_title = VLLM Management
-ui_service_vllm_management_desc = Manage VLLM instances.
+ui_service_vllm_management_title = vLLM Management
+ui_service_vllm_management_desc = Manage running vLLM instances and launch new ones.
 
 # ── Models Dashboard ─────────────────────────────────────────────────────────
 
@@ -53,8 +53,6 @@ ui_vllm_form_prefix_caching = Enable Prefix Caching
 ui_vllm_form_task = Task
 ui_vllm_form_tool_calling = Tool Calling
 ui_vllm_launch_confirm = Launch
-ui_service_vllm_management_title = vLLM Management
-ui_service_vllm_management_desc = Manage running vLLM instances and launch new ones.
 ui_models_card_delete_tooltip = Delete Model
 ui_models_card_params = Params
 ui_models_card_context = Context
@@ -91,6 +89,51 @@ ui_models_quant_q4_k_m = q4_k_m
 ui_models_quant_q4_0 = q4_0
 ui_models_quant_q3_k_m = q3_k_m
 ui_models_quant_q2_k = q2_k
+
+# ── Models (dynamic fragments) ───────────────────────────────────────────────
+
+ui_gpu_unavailable = GPU: n/a
+ui_models_card_no_estimates = No estimates
+
+# ── vLLM Management ──────────────────────────────────────────────────────────
+
+ui_vllm_launch_modal_subtitle = Configure an endpoint, memory budget, and optional runtime quantization.
+ui_vllm_form_select_model = -- select model --
+ui_vllm_no_instances = No running instances
+ui_vllm_stop_tooltip = Stop instance
+ui_vllm_stop_modal_title = Stop vLLM Instance
+ui_vllm_stop_modal_text = Are you sure you want to stop this instance?
+ui_vllm_stop_modal_confirm = Stop Instance
+ui_vllm_unknown_model = Unknown Model
+ui_vllm_meta_id = ID
+ui_vllm_meta_namespace = Namespace
+ui_vllm_meta_endpoint = Endpoint
+ui_vllm_meta_status = Status
+ui_vllm_meta_started = Started
+ui_vllm_meta_gpu_util = GPU Util
+ui_vllm_status_running = running
+ui_vllm_status_starting = starting
+ui_vllm_status_pending = pending
+ui_vllm_status_failed = failed
+ui_vllm_status_terminating = terminating
+
+ui_vllm_fit_select_model = Select a model to estimate required VRAM.
+ui_vllm_fit_no_estimate = No matching estimate available.
+ui_vllm_fit_wont_fit_budget = Won't fit: model needs ~{ $model } GB for the selected max length, but gpu memory utilization allows only { $budget } GB
+ui_vllm_fit_wont_fit_free = Won't fit right now: vLLM will reserve ~{ $required } GB, but only { $free } GB is free
+ui_vllm_fit_tight = Tight fit: model needs ~{ $model } GB and vLLM will reserve ~{ $required } GB, leaving { $remaining } GB free
+ui_vllm_fit_ok = Should fit: model needs ~{ $model } GB and vLLM will reserve ~{ $required } GB
+
+# ── API error codes ──────────────────────────────────────────────────────────
+
+api_error_model_name_empty = Model name cannot be empty
+api_error_vllm_launch_failed = Failed to launch vLLM instance
+api_error_vllm_stop_failed = Failed to stop vLLM instance
+api_error_vllm_list_failed = Failed to list vLLM instances
+api_error_instance_not_found = Instance not found
+api_error_invalid_model_path = Invalid model path
+api_error_model_not_found = Model not found on disk
+api_error_model_delete_failed = Failed to delete model
 
 # ── Auth ─────────────────────────────────────────────────────────────────────
 

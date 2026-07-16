@@ -208,13 +208,14 @@ pub(super) async fn home_slash(
     .await
 }
 
-/// Sidebar display title, falling back for conversations created lazily by
-/// attaching a file before the first message is sent (blank stored title).
-fn conv_display_title(title: &str) -> &str {
+/// Sidebar conversation link, falling back to a localized "New chat" label for
+/// conversations created lazily by attaching a file before the first message is
+/// sent (blank stored title).
+fn conv_title_link(link: Element, title: &str) -> Element {
     if title.trim().is_empty() {
-        "New chat"
+        link.attr("data-i18n", "ui_chat_untitled").text("New chat")
     } else {
-        title
+        link.text(title)
     }
 }
 
@@ -251,6 +252,7 @@ fn render_home_page(
                         .attr("value", "")
                         .attr("disabled", "disabled")
                         .attr("selected", "selected")
+                        .attr("data-i18n", "ui_chat_no_models")
                         .text("No models available"),
                 );
             } else {
@@ -267,6 +269,7 @@ fn render_home_page(
                     .attr("value", "")
                     .attr("disabled", "disabled")
                     .attr("selected", "selected")
+                    .attr("data-i18n", "ui_chat_switchboard_unavailable")
                     .text("Switchboard unavailable"),
             );
         }
@@ -369,6 +372,7 @@ fn render_home_page(
                 .class("chat-attach-btn")
                 .attr("for", "composer-file-input")
                 .attr("title", "Attach a file (pdf, txt, csv, md)")
+                .attr("data-i18n-title", "ui_chat_attach_tooltip")
                 .child(i().class("fas fa-paperclip"))
                 .child(attach_input);
 
@@ -397,7 +401,7 @@ fn render_home_page(
         a().class("new-chat-btn")
             .attr("href", new_chat_url)
             .child(i().class("fas fa-plus"))
-            .child(span().text("New Chat")),
+            .child(span().attr("data-i18n", "ui_sidebar_new_chat").text("New Chat")),
     );
 
     let mut history_list = div().class("history-list").attr("id", "history-list");
@@ -413,7 +417,11 @@ fn render_home_page(
             div()
                 .attr("style", "display: flex; align-items: center; gap: 0.5rem;")
                 .child(i().class("fas fa-chevron-right chevron"))
-                .child(span().text("Projects"))
+                .child(
+                    span()
+                        .attr("data-i18n", "ui_sidebar_projects")
+                        .text("Projects"),
+                )
         )
         .child(
             button()
@@ -423,7 +431,7 @@ fn render_home_page(
                 .attr("hx-target", "body")
                 .attr("hx-swap", "beforeend")
                 .child(i().class("fas fa-plus"))
-                .child(span().text("New")),
+                .child(span().attr("data-i18n", "ui_sidebar_new").text("New")),
         );
 
     history_list = history_list.child(projects_header);
@@ -497,9 +505,11 @@ fn render_home_page(
                 .class(conv_item_class)
                 .attr("id", &item_id)
                 .child(
-                    a().class(conv_link_class)
-                        .attr("href", with_base_path(&conv_url))
-                        .text(conv_display_title(&conv.title)),
+                    conv_title_link(
+                        a().class(conv_link_class)
+                            .attr("href", with_base_path(&conv_url)),
+                        &conv.title,
+                    ),
                 )
                 .child(
                     div()
@@ -523,7 +533,11 @@ fn render_home_page(
                                     .attr("hx-target", "#confirm-delete-modal")
                                     .attr("hx-swap", "outerHTML")
                                     .child(i().class("fas fa-trash"))
-                                    .child(span().text("Delete")),
+                                    .child(
+                                        span()
+                                            .attr("data-i18n", "ui_common_delete")
+                                            .text("Delete"),
+                                    ),
                             ),
                         ),
                 );
@@ -545,7 +559,11 @@ fn render_home_page(
                 div()
                     .attr("style", "display: flex; align-items: center; gap: 0.5rem;")
                     .child(i().class("fas fa-chevron-right chevron"))
-                    .child(span().text(conv_header_text))
+                    .child(
+                        span()
+                            .attr("data-i18n", "ui_sidebar_history")
+                            .text(conv_header_text),
+                    )
             )
     );
 
@@ -575,9 +593,10 @@ fn render_home_page(
             .class(item_class)
             .attr("id", &item_id)
             .child(
-                a().class(link_class)
-                    .attr("href", with_base_path(&conv_url))
-                    .text(conv_display_title(&conv.title)),
+                conv_title_link(
+                    a().class(link_class).attr("href", with_base_path(&conv_url)),
+                    &conv.title,
+                ),
             )
             .child(
                 div()
@@ -601,7 +620,11 @@ fn render_home_page(
                                 .attr("hx-target", "#confirm-delete-modal")
                                 .attr("hx-swap", "outerHTML")
                                 .child(i().class("fas fa-trash"))
-                                .child(span().text("Delete")),
+                                .child(
+                                    span()
+                                        .attr("data-i18n", "ui_common_delete")
+                                        .text("Delete"),
+                                ),
                         ),
                     ),
             );
@@ -650,6 +673,7 @@ fn render_home_page(
                 .child(
                     div()
                         .class("nav-tooltip")
+                        .attr("data-i18n", "ui_chat_welcome_tooltip")
                         .text("Hello! I am Sage...")
                 )
         );
@@ -841,7 +865,12 @@ fn render_home_page(
                 .child(
                     div()
                         .class("message-inner")
-                        .child(div().class("message-content").text("Sage is thinking...")),
+                        .child(
+                            div()
+                                .class("message-content")
+                                .attr("data-i18n", "ui_chat_thinking")
+                                .text("Sage is thinking..."),
+                        ),
                 );
             history_div = history_div.child(ai_thinking_msg);
 
@@ -854,6 +883,7 @@ fn render_home_page(
                     div()
                         .class("nav-tooltip")
                         .attr("id", format!("tooltip-ai-{}", pending_id))
+                        .attr("data-i18n", "ui_chat_thinking")
                         .text("Sage is thinking..."),
                 );
             nav_div = nav_div.child(ai_dot);

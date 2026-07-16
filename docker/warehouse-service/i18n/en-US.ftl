@@ -95,6 +95,32 @@ ui_deps_normal = dependencies
 ui_deps_build = build-dependencies
 ui_deps_dev = dev-dependencies
 
+# ── Common ───────────────────────────────────────────────────────────────────
+
+ui_common_cancel = Cancel
+ui_common_delete = Delete
+ui_modal_delete_title = Confirm Delete
+
+# ── Docker (dynamic) ─────────────────────────────────────────────────────────
+
+ui_docker_delete_confirm_text = Are you sure you want to delete this image?
+ui_delete_image = Delete Image
+ui_meta_bytes = {$size} bytes
+
+# ── Crates (dynamic) ─────────────────────────────────────────────────────────
+
+ui_yank_version = Yank Version
+ui_unyank_version = Unyank Version
+
+# ── API error codes ──────────────────────────────────────────────────────────
+
+api_error_internal = Something went wrong. Please try again.
+api_error_digest_required = Manifest deletion requires a digest reference
+api_error_invalid_repository = Invalid repository name
+api_error_invalid_digest = Invalid digest
+api_error_manifest_unknown = Manifest unknown
+api_error_crate_version_not_found = Crate version not found
+
 # ── Auth ─────────────────────────────────────────────────────────────────────
 
 ui_login_sign_in = Sign in

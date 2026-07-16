@@ -40,14 +40,13 @@ pub async fn chat(
     let instances = match switchboard.get_vllm_instances().await {
         Ok(i) => i,
         Err(err) => {
-            let error_msg = format!("Failed to get vLLM instances from Switchboard: {}", err);
-            tracing::error!("{}", error_msg);
-            return HttpResponse::InternalServerError().body(error_msg);
+            tracing::error!("Failed to get vLLM instances from Switchboard: {}", err);
+            return HttpResponse::InternalServerError().body("api_error_switchboard_unavailable");
         }
     };
 
     let Some(instance) = instances.into_iter().find(|i| i.id == req.instance_id) else {
-        return HttpResponse::NotFound().body("Model instance not found");
+        return HttpResponse::NotFound().body("api_error_instance_not_found");
     };
 
     let messages = vec![
@@ -76,8 +75,7 @@ pub async fn chat(
         Ok(s) => s,
         Err(err) => {
             tracing::error!("Failed to create vLLM chat stream: {}", err);
-            return HttpResponse::InternalServerError()
-                .body(format!("Failed to create vLLM chat stream: {}", err));
+            return HttpResponse::InternalServerError().body("api_error_stream_failed");
         }
     };
 
@@ -87,7 +85,9 @@ pub async fn chat(
             Ok::<_, actix_web::Error>(web::Bytes::from(format!("data: {}\n\n", data)))
         }
         Err(err) => {
-            let data = serde_json::json!({ "error": err.to_string() });
+            // Localization code plus the raw detail for diagnostics.
+            let data =
+                serde_json::json!({ "error": "api_error_stream_failed", "detail": err.to_string() });
             Ok::<_, actix_web::Error>(web::Bytes::from(format!("data: {}\n\n", data)))
         }
     });
@@ -131,7 +131,7 @@ pub async fn get_metrics_by_profile(
     match metrics_collector.get_profile_metrics(&profile) {
         Some(metrics) => HttpResponse::Ok().json(metrics),
         None => {
-            HttpResponse::NotFound().body(format!("No metrics found for profile '{}'", profile))
+            HttpResponse::NotFound().body("api_error_metrics_not_found")
         }
     }
 }
@@ -153,7 +153,7 @@ pub async fn get_user_costs(
 ) -> impl Responder {
     match cost_tracker.get_user_costs(&user_id) {
         Some(costs) => HttpResponse::Ok().json(costs),
-        None => HttpResponse::NotFound().body(format!("No costs found for user '{}'", user_id)),
+        None => HttpResponse::NotFound().body("api_error_costs_not_found"),
     }
 }
 

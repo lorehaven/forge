@@ -1,4 +1,4 @@
-use fluent_syntax::ast::{Entry, PatternElement};
+use fluent_syntax::ast::{Entry, Expression, InlineExpression, PatternElement};
 use fluent_syntax::parser::parse;
 use std::collections::HashSet;
 use std::path::Path;
@@ -71,8 +71,14 @@ pub fn parse_ftl_with_options(supported_locales: Option<&[String]>) -> anyhow::R
                         .elements
                         .iter()
                         .map(|e| match e {
-                            PatternElement::TextElement { value: t } => t,
-                            _ => "",
+                            PatternElement::TextElement { value: t } => t.to_string(),
+                            // Keep variable placeables as `{$name}` tokens so the
+                            // client can substitute them via data-i18n-args.
+                            PatternElement::Placeable {
+                                expression:
+                                    Expression::Inline(InlineExpression::VariableReference { id }),
+                            } => format!("{{${}}}", id.name),
+                            _ => String::new(),
                         })
                         .collect::<String>();
 

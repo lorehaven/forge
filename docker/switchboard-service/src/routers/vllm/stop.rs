@@ -13,10 +13,11 @@ pub async fn stop_instance(
             .body(r#"<div id="confirm-stop-instance-modal" class="estimates-modal"></div>"#),
         Err(err) => {
             if err.to_lowercase().contains("not found") {
-                return HttpResponse::NotFound().body(err);
+                tracing::warn!("vLLM instance to stop not found: {}", err);
+                return HttpResponse::NotFound().body("api_error_instance_not_found");
             }
             tracing::error!("Failed to stop vLLM instance: {}", err);
-            HttpResponse::InternalServerError().body(err)
+            HttpResponse::InternalServerError().body("api_error_vllm_stop_failed")
         }
     }
 }

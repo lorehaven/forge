@@ -48,24 +48,55 @@ function getLocale() {{
     return locale;
 }}
 
+function interpolate(value, el) {{
+    const argsAttr = el.getAttribute("data-i18n-args");
+    if (!argsAttr) return value;
+    try {{
+        const args = JSON.parse(argsAttr);
+        for (const name of Object.keys(args)) {{
+            value = value.split("{{$" + name + "}}").join(args[name]);
+        }}
+    }} catch (e) {{ /* leave value untranslated on malformed args */ }}
+    return value;
+}}
+
+function translate(key, fallback) {{
+    const dict = getTranslations()[getLocale()] || {{}};
+    return dict[key] !== undefined ? dict[key] : (fallback !== undefined ? fallback : key);
+}}
+
+let applyingTranslations = false;
+
 function applyTranslations(locale) {{
     const translations = getTranslations();
     const dict = translations[locale];
     if (!dict) return;
 
-    document.querySelectorAll("[data-i18n]").forEach(el => {{
-        const key = el.getAttribute("data-i18n");
-        if (dict[key]) {{
-            el.textContent = dict[key];
-        }}
-    }});
+    applyingTranslations = true;
+    try {{
+        document.querySelectorAll("[data-i18n]").forEach(el => {{
+            const key = el.getAttribute("data-i18n");
+            if (dict[key] !== undefined) {{
+                el.textContent = interpolate(dict[key], el);
+            }}
+        }});
 
-    document.querySelectorAll("[data-i18n-placeholder]").forEach(el => {{
-        const key = el.getAttribute("data-i18n-placeholder");
-        if (dict[key]) {{
-            el.placeholder = dict[key];
-        }}
-    }});
+        document.querySelectorAll("[data-i18n-placeholder]").forEach(el => {{
+            const key = el.getAttribute("data-i18n-placeholder");
+            if (dict[key] !== undefined) {{
+                el.placeholder = interpolate(dict[key], el);
+            }}
+        }});
+
+        document.querySelectorAll("[data-i18n-title]").forEach(el => {{
+            const key = el.getAttribute("data-i18n-title");
+            if (dict[key] !== undefined) {{
+                el.title = interpolate(dict[key], el);
+            }}
+        }});
+    }} finally {{
+        applyingTranslations = false;
+    }}
 }}
 
 function updateLocale(newLocale) {{
@@ -93,6 +124,28 @@ document.addEventListener("DOMContentLoaded", () => {{
     currentLocale = getLocale();
     applyTranslations(currentLocale);
     watchLocaleChanges();
+
+    // Translate content inserted outside of htmx swaps (e.g. SSE fragments).
+    // Only element insertions that carry data-i18n markers trigger a re-apply,
+    // so the text mutations applyTranslations makes never re-trigger it.
+    let mutationScheduled = false;
+    const observer = new MutationObserver((mutations) => {{
+        if (applyingTranslations || mutationScheduled) return;
+        const needsApply = mutations.some(m => Array.from(m.addedNodes).some(n =>
+            n.nodeType === 1 && (
+                n.hasAttribute("data-i18n") || n.hasAttribute("data-i18n-placeholder") ||
+                n.hasAttribute("data-i18n-title") ||
+                n.querySelector("[data-i18n], [data-i18n-placeholder], [data-i18n-title]")
+            )
+        ));
+        if (!needsApply) return;
+        mutationScheduled = true;
+        requestAnimationFrame(() => {{
+            mutationScheduled = false;
+            applyTranslations(getLocale());
+        }});
+    }});
+    observer.observe(document.body, {{ childList: true, subtree: true }});
 }});
 
 document.addEventListener("htmx:afterSwap", () => {{
@@ -101,6 +154,7 @@ document.addEventListener("htmx:afterSwap", () => {{
 }});
 
 window.qUpdateI18n = () => applyTranslations(getLocale());
+window.qT = translate;
 window.setLocale = updateLocale;
 window.getLocale = getLocale;
         "#,

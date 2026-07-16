@@ -79,16 +79,25 @@ pub fn render_sources(sources: &[crate::files::rag::RagSource]) -> Option<Elemen
         span()
             .class("message-sources-label")
             .child(i().class("fas fa-file-lines"))
-            .child(span().text("Sources")),
+            .child(span().attr("data-i18n", "ui_chat_sources").text("Sources")),
     );
     for source in sources {
-        let mut label = source.file_name.clone();
+        let mut item = div()
+            .class("message-source-item")
+            .text(&source.file_name);
         if let Some(detail) = &source.detail {
-            label.push_str(&format!(" · {}", detail));
+            item = item.child(span().text(format!(" · {}", detail)));
         } else if let Some(idx) = source.chunk_index {
-            label.push_str(&format!(" · chunk {}", idx));
+            item = item.child(span().text(" · ")).child(
+                span()
+                    .attr("data-i18n", "ui_chat_source_chunk")
+                    .attr(
+                        "data-i18n-args",
+                        serde_json::json!({ "index": idx }).to_string(),
+                    )
+                    .text(format!("chunk {}", idx)),
+            );
         }
-        let mut item = div().class("message-source-item").text(label);
         if let Some(sim) = source.similarity {
             item = item.child(
                 span()
@@ -517,9 +526,9 @@ fn format_code_part(part: &str) -> String {
                 .child(
                     button()
                         .class("copy-btn")
-                        .attr("onclick", "const btn = this; const code = btn.closest('.code-block').querySelector('code').textContent; navigator.clipboard.writeText(code).then(() => { const orig = btn.innerHTML; btn.innerHTML = '<i class=&quot;fas fa-check&quot;></i> Copied!'; btn.classList.add('success'); setTimeout(() => { btn.innerHTML = orig; btn.classList.remove('success'); }, 2000); }).catch(err => { console.error(err); btn.textContent = 'Error'; setTimeout(() => btn.textContent = 'Copy', 2000); });")
+                        .attr("onclick", "const btn = this; const t = (k, f) => (window.qT ? window.qT(k, f) : f); const code = btn.closest('.code-block').querySelector('code').textContent; navigator.clipboard.writeText(code).then(() => { const orig = btn.innerHTML; btn.innerHTML = '<i class=&quot;fas fa-check&quot;></i> ' + t('ui_code_copied', 'Copied!'); btn.classList.add('success'); setTimeout(() => { btn.innerHTML = orig; btn.classList.remove('success'); }, 2000); }).catch(err => { console.error(err); btn.textContent = t('ui_code_copy_error', 'Error'); setTimeout(() => btn.textContent = t('ui_code_copy', 'Copy'), 2000); });")
                         .child(i().class("far fa-copy"))
-                        .child(span().text("Copy"))
+                        .child(span().attr("data-i18n", "ui_code_copy").text("Copy"))
                 )
         )
         .child(

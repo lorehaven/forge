@@ -15,7 +15,10 @@ pub async fn new_modal() -> impl Responder {
         .child(
             div()
                 .class("modal-content")
-                .child(h2().text("Create New Project"))
+                .child(
+                    h2().attr("data-i18n", "ui_projects_new_title")
+                        .text("Create New Project"),
+                )
                 .child(
                     form()
                         .attr("hx-post", with_base_path("/ui/projects/create"))
@@ -24,7 +27,12 @@ pub async fn new_modal() -> impl Responder {
                         .child(
                             div()
                                 .class("form-group")
-                                .child(label().attr("for", "project-name").text("Project Name"))
+                                .child(
+                                    label()
+                                        .attr("for", "project-name")
+                                        .attr("data-i18n", "ui_projects_name_label")
+                                        .text("Project Name"),
+                                )
                                 .child(
                                     input()
                                         .attr("type", "text")
@@ -45,12 +53,14 @@ pub async fn new_modal() -> impl Responder {
                                             "onclick",
                                             "document.getElementById('new-project-modal').remove()",
                                         )
+                                        .attr("data-i18n", "ui_common_cancel")
                                         .text("Cancel"),
                                 )
                                 .child(
                                     button()
                                         .attr("type", "submit")
                                         .class("btn-primary")
+                                        .attr("data-i18n", "ui_projects_create")
                                         .text("Create"),
                                 ),
                         ),
@@ -89,7 +99,8 @@ pub async fn create_project(
 
     let repo = db.repository::<crate::models::Project>();
     if let Err(e) = repo.create(&project).await {
-        return HttpResponse::InternalServerError().body(e.to_string());
+        tracing::error!("Failed to create project: {}", e);
+        return HttpResponse::InternalServerError().body("api_error_internal");
     }
 
     HttpResponse::Ok()

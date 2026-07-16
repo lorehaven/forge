@@ -77,8 +77,11 @@ async fn set_yank_state(
                 )),
             ))
             .finish(),
-        Ok(false) => HttpResponse::NotFound().body("crate version not found"),
-        Err(msg) => HttpResponse::InternalServerError().body(msg),
+        Ok(false) => HttpResponse::NotFound().body("api_error_crate_version_not_found"),
+        Err(msg) => {
+            tracing::error!("Failed to change yank state: {}", msg);
+            HttpResponse::InternalServerError().body("api_error_internal")
+        }
     }
 }
 
@@ -248,6 +251,7 @@ fn render_crate_node(
                 span()
                     .class("tag-link")
                     .attr("style", "color: var(--bs-gray-500); cursor: default;")
+                    .attr("data-i18n", "ui_empty_no_versions")
                     .text("No versions found"),
             ),
         );
@@ -275,9 +279,13 @@ fn render_metadata_panel(krate: Option<&str>, record: Option<&IndexRecord>) -> E
 
             list = list
                 .child(meta_row("ui_meta_version", &r.vers))
-                .child(meta_row(
+                .child(meta_row_value(
                     "ui_meta_status",
-                    if r.yanked { "yanked" } else { "active" },
+                    if r.yanked {
+                        span().attr("data-i18n", "ui_status_yanked").text("yanked")
+                    } else {
+                        span().attr("data-i18n", "ui_status_active").text("active")
+                    },
                 ))
                 .child(meta_row("ui_meta_checksum", &r.cksum));
 
@@ -435,8 +443,12 @@ fn deps_group(label_key: &str, deps: &[&IndexDep]) -> Element {
 }
 
 fn meta_row(label_key: &str, value: &str) -> Element {
+    meta_row_value(label_key, span().text(value))
+}
+
+fn meta_row_value(label_key: &str, value: Element) -> Element {
     div()
         .class("meta-row")
         .child(div().class("meta-label").attr("data-i18n", label_key))
-        .child(div().class("meta-value mono").text(value))
+        .child(div().class("meta-value mono").child(value))
 }

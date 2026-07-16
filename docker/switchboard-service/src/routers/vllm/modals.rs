@@ -50,10 +50,9 @@ pub async fn empty_launch_modal() -> impl Responder {
 
 #[get("/stop-modal")]
 pub async fn handle_stop_modal(query: web::Query<StopModalQuery>) -> impl Responder {
-    let model = query.model.as_deref().unwrap_or("Unknown Model");
     let html = format!(
         "<!-- stop-instance-modal -->{}",
-        render_stop_modal(&query.id, model)
+        render_stop_modal(&query.id, query.model.as_deref())
     );
     HttpResponse::Ok().content_type("text/html").body(html)
 }
@@ -84,7 +83,7 @@ fn render_launch_modal(
     let gpu_util = launch_gpu_util(selected_model, quantization, max_model_len, query, gpu);
     let prefix_caching = query.prefix_caching.unwrap_or(false);
 
-    let (fit_note_class, fit_note_text, fit_note_i18n, launch_disabled) =
+    let (fit_note_class, fit_note_text, fit_note_i18n, fit_note_args, launch_disabled) =
         launch_fit_note(selected_model, quantization, max_model_len, gpu_util, gpu);
 
     div()
@@ -105,7 +104,9 @@ fn render_launch_modal(
                                         .text("Launch vLLM Instance"),
                                 )
                                 .child(
-                                    p().class("launch-modal-subtitle").text(
+                                    p().class("launch-modal-subtitle")
+                                        .attr("data-i18n", "ui_vllm_launch_modal_subtitle")
+                                        .text(
                                         "Configure an endpoint, memory budget, and optional runtime quantization.",
                                     ),
                                 ),
@@ -131,11 +132,14 @@ fn render_launch_modal(
                                     div()
                                         .class(fit_note_class)
                                         .child(i().class(fit_note_icon_class(fit_note_class)))
-                                        .child(
-                                            span()
-                                                .attr("data-i18n", fit_note_i18n)
-                                                .text(fit_note_text),
-                                        ),
+                                        .child({
+                                            let mut note =
+                                                span().attr("data-i18n", fit_note_i18n);
+                                            if let Some(args) = fit_note_args {
+                                                note = note.attr("data-i18n-args", args);
+                                            }
+                                            note.text(fit_note_text)
+                                        }),
                                 ),
                             ),
                     ),
@@ -183,7 +187,12 @@ fn model_select(models: &[crate::routers::models::Model], selected: Option<&str>
         .attr("hx-swap", "outerHTML")
         .attr("hx-include", "#launch-form")
         .attr("hx-vals", r#"{"recalculate_gpu_util": true}"#)
-        .child(option().attr("value", "").text("-- select model --"));
+        .child(
+            option()
+                .attr("value", "")
+                .attr("data-i18n", "ui_vllm_form_select_model")
+                .text("-- select model --"),
+        );
     for model in models.iter().filter(|model| model.vllm_supported) {
         let mut opt = option().attr("value", &model.name).text(&model.name);
         if selected == Some(model.name.as_str()) {
@@ -435,7 +444,7 @@ fn close_launch_button() -> Element {
         .text("x")
 }
 
-fn render_stop_modal(id: &str, model: &str) -> String {
+fn render_stop_modal(id: &str, model: Option<&str>) -> String {
     div()
         .attr("id", "confirm-stop-instance-modal")
         .attr("data-testid", "stop-instance-modal")
@@ -457,6 +466,7 @@ fn render_stop_modal(id: &str, model: &str) -> String {
                         .child(
                             div()
                                 .class("estimates-modal-title")
+                                .attr("data-i18n", "ui_vllm_stop_modal_title")
                                 .text("Stop vLLM Instance"),
                         )
                         .child(
@@ -472,8 +482,17 @@ fn render_stop_modal(id: &str, model: &str) -> String {
                 .child(
                     div()
                         .class("estimates-modal-body")
-                        .child(p().text("Are you sure you want to stop this instance?"))
-                        .child(div().class("model-to-delete-name").text(model))
+                        .child(
+                            p().attr("data-i18n", "ui_vllm_stop_modal_text")
+                                .text("Are you sure you want to stop this instance?"),
+                        )
+                        .child(match model {
+                            Some(model) => div().class("model-to-delete-name").text(model),
+                            None => div()
+                                .class("model-to-delete-name")
+                                .attr("data-i18n", "ui_vllm_unknown_model")
+                                .text("Unknown Model"),
+                        })
                         .child(
                             div()
                                 .class("confirm-actions")
@@ -487,12 +506,14 @@ fn render_stop_modal(id: &str, model: &str) -> String {
                                         )
                                         .attr("hx-target", "#confirm-stop-instance-modal")
                                         .attr("hx-swap", "outerHTML")
+                                        .attr("data-i18n", "ui_common_cancel")
                                         .text("Cancel"),
                                 )
                                 .child(
                                     button()
                                         .class("button delete")
                                         .attr("type", "button")
+                                        .attr("data-i18n", "ui_vllm_stop_modal_confirm")
                                         .text("Stop Instance")
                                         .attr(
                                             "hx-delete",
@@ -513,12 +534,13 @@ fn launch_fit_note(
     max_model_len: Option<u32>,
     gpu_util: f32,
     gpu: &crate::routers::gpu::monitor::GpuInfo,
-) -> (&'static str, String, &'static str, bool) {
+) -> (&'static str, String, &'static str, Option<String>, bool) {
     let Some(model) = model else {
         return (
             "fit-line fit-warn",
             "Select a model to estimate required VRAM.".to_string(),
             "ui_vllm_fit_select_model",
+            None,
             true,
         );
     };
@@ -528,6 +550,7 @@ fn launch_fit_note(
             "fit-line fit-warn",
             "No matching estimate available.".to_string(),
             "ui_vllm_fit_no_estimate",
+            None,
             true,
         );
     };
@@ -537,6 +560,17 @@ fn launch_fit_note(
     let required_gb = estimated_model_gb.max(total_budget_gb);
     let remaining_gb = gpu.free_gb - required_gb;
 
+    // The `data-i18n-args` values feed the `{$name}` placeholders in the
+    // localized fit-note messages.
+    let args = serde_json::json!({
+        "model": format!("{estimated_model_gb:.2}"),
+        "budget": format!("{total_budget_gb:.2}"),
+        "required": format!("{required_gb:.2}"),
+        "free": format!("{:.2}", gpu.free_gb),
+        "remaining": format!("{remaining_gb:.2}"),
+    })
+    .to_string();
+
     if estimated_model_gb > total_budget_gb {
         (
             "fit-line fit-no",
@@ -544,6 +578,7 @@ fn launch_fit_note(
                 "Won't fit: model needs ~{estimated_model_gb:.2} GB for the selected max length, but gpu memory utilization allows only {total_budget_gb:.2} GB"
             ),
             "ui_vllm_fit_wont_fit_budget",
+            Some(args),
             true,
         )
     } else if required_gb > gpu.free_gb {
@@ -554,6 +589,7 @@ fn launch_fit_note(
                 gpu.free_gb
             ),
             "ui_vllm_fit_wont_fit_free",
+            Some(args),
             true,
         )
     } else if remaining_gb < 2.0 {
@@ -563,6 +599,7 @@ fn launch_fit_note(
                 "Tight fit: model needs ~{estimated_model_gb:.2} GB and vLLM will reserve ~{required_gb:.2} GB, leaving {remaining_gb:.2} GB free"
             ),
             "ui_vllm_fit_tight",
+            Some(args),
             false,
         )
     } else {
@@ -572,6 +609,7 @@ fn launch_fit_note(
                 "Should fit: model needs ~{estimated_model_gb:.2} GB and vLLM will reserve ~{required_gb:.2} GB"
             ),
             "ui_vllm_fit_ok",
+            Some(args),
             false,
         )
     }

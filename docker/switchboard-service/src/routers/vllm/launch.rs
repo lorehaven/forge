@@ -10,14 +10,14 @@ pub async fn launch_instance(
 ) -> impl Responder {
     let req = req.into_inner();
     if req.model.trim().is_empty() {
-        return HttpResponse::BadRequest().body("Model name cannot be empty");
+        return HttpResponse::BadRequest().body("api_error_model_name_empty");
     }
 
     match engine.launch_instance(req).await {
         Ok(instance) => HttpResponse::Accepted().json(instance),
         Err(err) => {
             tracing::error!("Failed to launch vLLM instance: {}", err);
-            HttpResponse::InternalServerError().body(err)
+            HttpResponse::InternalServerError().body("api_error_vllm_launch_failed")
         }
     }
 }
@@ -75,7 +75,7 @@ pub async fn launch_instance_form(
             .body(r#"<div id="launch-modal" class="modal launch-modal"></div>"#),
         Err(err) => {
             tracing::error!("Failed to launch vLLM instance: {}", err);
-            HttpResponse::InternalServerError().body(err)
+            HttpResponse::InternalServerError().body("api_error_vllm_launch_failed")
         }
     }
 }

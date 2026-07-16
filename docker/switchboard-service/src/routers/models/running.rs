@@ -30,7 +30,7 @@ pub async fn list_running_models(
         }
         Err(err) => {
             tracing::error!("Failed to list running models: {}", err);
-            HttpResponse::InternalServerError().body(err)
+            HttpResponse::InternalServerError().body("api_error_vllm_list_failed")
         }
     }
 }

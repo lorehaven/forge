@@ -22,7 +22,7 @@ async fn list_instances_impl(engine: web::Data<Arc<dyn VllmEngine>>) -> impl Res
         Ok(list) => HttpResponse::Ok().json(list),
         Err(err) => {
             tracing::error!("Failed to list vLLM instances: {}", err);
-            HttpResponse::InternalServerError().body(err)
+            HttpResponse::InternalServerError().body("api_error_vllm_list_failed")
         }
     }
 }
@@ -41,7 +41,7 @@ pub async fn handle_grid(
         }
         Err(err) => {
             tracing::error!("Failed to list vLLM instances for grid: {}", err);
-            HttpResponse::InternalServerError().body(err)
+            HttpResponse::InternalServerError().body("api_error_vllm_list_failed")
         }
     }
 }
@@ -49,7 +49,12 @@ pub async fn handle_grid(
 pub fn render_instances_grid(instances: Vec<VllmInstance>, is_admin: bool) -> String {
     if instances.is_empty() {
         return instances_grid_shell()
-            .child(div().class("empty").text("No running instances"))
+            .child(
+                div()
+                    .class("empty")
+                    .attr("data-i18n", "ui_vllm_no_instances")
+                    .text("No running instances"),
+            )
             .render();
     }
 
@@ -80,6 +85,7 @@ pub fn render_instances_grid(instances: Vec<VllmInstance>, is_admin: bool) -> St
                     .class("card-delete")
                     .attr("type", "button")
                     .attr("title", "Stop instance")
+                    .attr("data-i18n-title", "ui_vllm_stop_tooltip")
                     .attr(
                         "hx-get",
                         format!(
@@ -104,19 +110,30 @@ pub fn render_instances_grid(instances: Vec<VllmInstance>, is_admin: bool) -> St
                     .child(
                         div()
                             .class("meta-item")
-                            .child(span().text("ID: "))
+                            .child(span().attr("data-i18n", "ui_vllm_meta_id").text("ID"))
+                            .child(span().text(": "))
                             .child(span().class("instance-id").text(&instance.id)),
                     )
                     .child(
                         div()
                             .class("meta-item")
-                            .child(span().text("Namespace: "))
+                            .child(
+                                span()
+                                    .attr("data-i18n", "ui_vllm_meta_namespace")
+                                    .text("Namespace"),
+                            )
+                            .child(span().text(": "))
                             .child(span().class("instance-namespace").text(&instance.namespace)),
                     )
                     .child(
                         div()
                             .class("meta-item")
-                            .child(span().text("Endpoint: "))
+                            .child(
+                                span()
+                                    .attr("data-i18n", "ui_vllm_meta_endpoint")
+                                    .text("Endpoint"),
+                            )
+                            .child(span().text(": "))
                             .child(
                                 span()
                                     .class("instance-endpoint")
@@ -126,17 +143,31 @@ pub fn render_instances_grid(instances: Vec<VllmInstance>, is_admin: bool) -> St
                     .child(
                         div()
                             .class("meta-item")
-                            .child(span().text("Status: "))
+                            .child(
+                                span()
+                                    .attr("data-i18n", "ui_vllm_meta_status")
+                                    .text("Status"),
+                            )
+                            .child(span().text(": "))
                             .child(
                                 span()
                                     .class(format!("instance-status {}", status_class))
+                                    .attr(
+                                        "data-i18n",
+                                        format!("ui_vllm_status_{}", instance.status),
+                                    )
                                     .text(&instance.status),
                             ),
                     )
                     .child(
                         div()
                             .class("meta-item")
-                            .child(span().text("Started: "))
+                            .child(
+                                span()
+                                    .attr("data-i18n", "ui_vllm_meta_started")
+                                    .text("Started"),
+                            )
+                            .child(span().text(": "))
                             .child(
                                 span().class("instance-started").text(
                                     instance.started_at.format("%Y-%m-%d %H:%M:%S").to_string(),
@@ -148,7 +179,12 @@ pub fn render_instances_grid(instances: Vec<VllmInstance>, is_admin: bool) -> St
                 div().class("card-fit").child(
                     div()
                         .class(format!("fit-line {}", fit_class))
-                        .child(span().text("Quant: "))
+                        .child(
+                            span()
+                                .attr("data-i18n", "ui_models_card_quant")
+                                .text("Quant"),
+                        )
+                        .child(span().text(": "))
                         .child(
                             span().text(
                                 instance
@@ -159,7 +195,12 @@ pub fn render_instances_grid(instances: Vec<VllmInstance>, is_admin: bool) -> St
                             ),
                         )
                         .child(span().text(" | "))
-                        .child(span().text("GPU Util: "))
+                        .child(
+                            span()
+                                .attr("data-i18n", "ui_vllm_meta_gpu_util")
+                                .text("GPU Util"),
+                        )
+                        .child(span().text(": "))
                         .child(span().text(format!(
                             "{:.2}",
                             instance.gpu_memory_utilization.unwrap_or(0.9)

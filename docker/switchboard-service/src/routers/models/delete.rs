@@ -46,11 +46,11 @@ async fn delete_model_path(model_path: &str) -> HttpResponse {
     let is_valid_gguf = GGUF_ROOTS.iter().any(|root| path.starts_with(root));
 
     if !is_valid_hf && !is_valid_gguf {
-        return HttpResponse::Forbidden().body("Invalid model path");
+        return HttpResponse::Forbidden().body("api_error_invalid_model_path");
     }
 
     if !path.exists() {
-        return HttpResponse::NotFound().body("Model not found on disk");
+        return HttpResponse::NotFound().body("api_error_model_not_found");
     }
 
     let res = if path.is_dir() {
@@ -64,6 +64,9 @@ async fn delete_model_path(model_path: &str) -> HttpResponse {
             get_store().remove_model(model_path).await;
             HttpResponse::Ok().finish()
         }
-        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+        Err(e) => {
+            tracing::error!("Failed to delete model {}: {}", model_path, e);
+            HttpResponse::InternalServerError().body("api_error_model_delete_failed")
+        }
     }
 }

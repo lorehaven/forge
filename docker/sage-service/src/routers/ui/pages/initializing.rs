@@ -58,21 +58,41 @@ pub fn all_models_running(defaults: &[DefaultModel], instances: &[VllmInstance])
 
 /// Human-friendly label for a model, tagging embedding models so it is obvious
 /// why a non-chat model is in the list.
-fn model_label(model: &DefaultModel) -> String {
+fn model_label(model: &DefaultModel) -> Element {
+    let name = span().text(&model.name);
     match model.task.as_deref() {
-        Some("embed") | Some("embedding") => format!("{} (embedding)", model.name),
-        _ => model.name.clone(),
+        Some("embed") | Some("embedding") => span().child(name).child(
+            span()
+                .attr("data-i18n", "ui_init_embedding_tag")
+                .text(" (embedding)"),
+        ),
+        _ => name,
     }
 }
 
-/// (icon class, status text, css modifier) for a model state.
-fn state_presentation(state: ModelState) -> (&'static str, &'static str, &'static str) {
+/// (icon class, status text, i18n key, css modifier) for a model state.
+fn state_presentation(state: ModelState) -> (&'static str, &'static str, &'static str, &'static str) {
     match state {
-        ModelState::Running => ("fas fa-check-circle", "Running", "running"),
-        ModelState::Starting => ("fas fa-circle-notch fa-spin", "Starting…", "starting"),
-        ModelState::Pending => ("fas fa-clock", "Queued", "pending"),
-        ModelState::Failed => ("fas fa-times-circle", "Failed", "failed"),
-        ModelState::Unknown => ("fas fa-plug", "Connecting…", "unknown"),
+        ModelState::Running => (
+            "fas fa-check-circle",
+            "Running",
+            "ui_init_status_running",
+            "running",
+        ),
+        ModelState::Starting => (
+            "fas fa-circle-notch fa-spin",
+            "Starting…",
+            "ui_init_status_starting",
+            "starting",
+        ),
+        ModelState::Pending => ("fas fa-clock", "Queued", "ui_init_status_queued", "pending"),
+        ModelState::Failed => (
+            "fas fa-times-circle",
+            "Failed",
+            "ui_init_status_failed",
+            "failed",
+        ),
+        ModelState::Unknown => ("fas fa-plug", "Connecting…", "ui_init_status_unknown", "unknown"),
     }
 }
 
@@ -89,7 +109,7 @@ fn render_model_rows(
             Ok(instances) => model_state(model, instances),
             Err(_) => ModelState::Unknown,
         };
-        let (icon, label_text, modifier) = state_presentation(state);
+        let (icon, label_text, label_key, modifier) = state_presentation(state);
 
         rows = rows.child(
             div()
@@ -98,13 +118,13 @@ fn render_model_rows(
                     div()
                         .class("model-row-name")
                         .child(i().class("fas fa-microchip model-row-icon"))
-                        .child(span().text(model_label(model))),
+                        .child(model_label(model)),
                 )
                 .child(
                     div()
                         .class(format!("model-status model-status--{}", modifier))
                         .child(i().class(icon))
-                        .child(span().text(label_text)),
+                        .child(span().attr("data-i18n", label_key).text(label_text)),
                 ),
         );
     }
@@ -121,10 +141,15 @@ fn render_initializing_page(
     let card = div()
         .class("init-card")
         .child(i().class("fas fa-circle-notch fa-spin init-spinner"))
-        .child(h2().class("init-title").text("Preparing Sage"))
+        .child(
+            h2().class("init-title")
+                .attr("data-i18n", "ui_init_title")
+                .text("Preparing Sage"),
+        )
         .child(
             div()
                 .class("init-subtitle")
+                .attr("data-i18n", "ui_init_subtitle")
                 .text("Launching the models Sage needs before you can start chatting."),
         )
         // Poll the status fragment; it swaps these rows and issues an
@@ -141,7 +166,11 @@ fn render_initializing_page(
             div()
                 .class("init-warning")
                 .child(i().class("fas fa-exclamation-triangle"))
-                .child(span().text("Waiting for the model service to respond…"))
+                .child(
+                    span()
+                        .attr("data-i18n", "ui_init_waiting")
+                        .text("Waiting for the model service to respond…"),
+                )
         }));
 
     render_page(

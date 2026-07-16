@@ -81,12 +81,14 @@ pub fn render_attachment_chip(file: &File, staged: bool) -> Element {
                 .text(format_size(file.file_size)),
         );
 
-    // Status badge.
+    // Status badge. The data-i18n key follows the raw status so every state
+    // resolves to a localized label; the English text stays as fallback.
     let mut badge = span()
         .class(format!(
             "attachment-status attachment-status-{}",
             file.status
         ))
+        .attr("data-i18n", format!("ui_file_status_{}", file.status))
         .text(status_label(&file.status));
     if file.status == STATUS_FAILED
         && let Some(err) = &file.error_message
@@ -102,6 +104,7 @@ pub fn render_attachment_chip(file: &File, staged: bool) -> Element {
                     .attr("type", "button")
                     .class("attachment-retry")
                     .attr("title", "Retry processing")
+                    .attr("data-i18n-title", "ui_files_retry_tooltip")
                     .attr(
                         "hx-post",
                         with_base_path(&format!("/ui/files/reprocess/{}", file.id)),
@@ -116,6 +119,7 @@ pub fn render_attachment_chip(file: &File, staged: bool) -> Element {
                 .attr("type", "button")
                 .class("attachment-remove")
                 .attr("title", "Cancel / remove")
+                .attr("data-i18n-title", "ui_files_remove_tooltip")
                 .attr(
                     "hx-post",
                     with_base_path(&format!("/ui/files/detach/{}", file.id)),
@@ -128,6 +132,7 @@ pub fn render_attachment_chip(file: &File, staged: bool) -> Element {
         chip = chip.child(
             a().class("attachment-download")
                 .attr("title", "Download")
+                .attr("data-i18n-title", "ui_files_download_tooltip")
                 .attr(
                     "href",
                     with_base_path(&format!("/api/v1/files/{}/download", file.id)),
@@ -172,6 +177,7 @@ pub fn render_project_file_row(file: &File) -> Element {
                     "attachment-status attachment-status-{}",
                     file.status
                 ))
+                .attr("data-i18n", format!("ui_file_status_{}", file.status))
                 .text(status_label(&file.status)),
         );
     }
@@ -199,7 +205,11 @@ pub fn render_project_file_row(file: &File) -> Element {
                             .attr("hx-target", "#confirm-delete-modal")
                             .attr("hx-swap", "outerHTML")
                             .child(i().class("fas fa-trash"))
-                            .child(span().text("Delete")),
+                            .child(
+                                span()
+                                    .attr("data-i18n", "ui_common_delete")
+                                    .text("Delete"),
+                            ),
                     ),
                 ),
         )
@@ -218,7 +228,7 @@ pub fn render_project_files_section(files: &[File]) -> Element {
                 .attr("style", "display: flex; align-items: center; gap: 0.5rem;")
                 .child(i().class("fas fa-chevron-right chevron"))
                 .child(i().class("fas fa-folder-tree files-section-icon"))
-                .child(span().text("Files"))
+                .child(span().attr("data-i18n", "ui_sidebar_files").text("Files"))
         )
         .child(span().class("files-section-count").text(files.len().to_string()));
 
@@ -228,6 +238,7 @@ pub fn render_project_files_section(files: &[File]) -> Element {
         content = content.child(
             div()
                 .class("files-empty")
+                .attr("data-i18n", "ui_files_empty_project")
                 .text("No files uploaded for this project."),
         );
     } else {
@@ -287,7 +298,7 @@ pub async fn attach(
 
     let mut form = form.into_inner();
     let Some(conversation_id) = form.conversation_id.as_ref().map(|t| t.0.clone()) else {
-        return HttpResponse::BadRequest().body("Missing conversation_id");
+        return HttpResponse::BadRequest().body("api_error_missing_conversation_id");
     };
     let project_id = form.project_id.as_ref().map(|t| t.0.clone());
 
@@ -311,10 +322,13 @@ pub async fn attach(
             };
             if let Err(e) = conv_repo.create(&conv).await {
                 tracing::error!("Failed to create conversation for attachment: {}", e);
-                return HttpResponse::InternalServerError().body("Could not start conversation");
+                return HttpResponse::InternalServerError().body("api_error_conversation_create_failed");
             }
         }
-        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+        Err(e) => {
+            tracing::error!("Internal error: {}", e);
+            return HttpResponse::InternalServerError().body("api_error_internal");
+        }
     }
 
     // create_uploaded_file expects exactly one scope; attach to the conversation.
@@ -380,7 +394,10 @@ pub async fn chip_status(
         Ok(Some(_)) => HttpResponse::Forbidden().finish(),
         // File no longer exists: empty body swaps the chip out.
         Ok(None) => HttpResponse::Ok().content_type("text/html").body(""),
-        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+        Err(e) => {
+            tracing::error!("Internal error: {}", e);
+            HttpResponse::InternalServerError().body("api_error_internal")
+        }
     }
 }
 
@@ -416,8 +433,11 @@ pub async fn reprocess(
                 .body(render_attachment_chip(&f, true).render())
         }
         Ok(Some(_)) => HttpResponse::Forbidden().finish(),
-        Ok(None) => HttpResponse::NotFound().body("File not found"),
-        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+        Ok(None) => HttpResponse::NotFound().body("api_error_file_not_found"),
+        Err(e) => {
+            tracing::error!("Internal error: {}", e);
+            HttpResponse::InternalServerError().body("api_error_internal")
+        }
     }
 }
 
@@ -438,8 +458,11 @@ pub async fn delete_modal(
     let name = match db.repository::<File>().read(&file_id).await {
         Ok(Some(f)) if f.owner == username => format!("\"{}\"", f.file_name),
         Ok(Some(_)) => return HttpResponse::Forbidden().finish(),
-        Ok(None) => return HttpResponse::NotFound().body("File not found"),
-        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+        Ok(None) => return HttpResponse::NotFound().body("api_error_file_not_found"),
+        Err(e) => {
+            tracing::error!("Internal error: {}", e);
+            return HttpResponse::InternalServerError().body("api_error_internal");
+        }
     };
 
     let modal = div()
@@ -462,7 +485,12 @@ pub async fn delete_modal(
                 .child(
                     div()
                         .class("estimates-modal-header")
-                        .child(div().class("estimates-modal-title").text("Confirm Delete"))
+                        .child(
+                            div()
+                                .class("estimates-modal-title")
+                                .attr("data-i18n", "ui_modal_delete_title")
+                                .text("Confirm Delete"),
+                        )
                         .child(
                             button()
                                 .class("estimates-modal-close")
@@ -479,7 +507,10 @@ pub async fn delete_modal(
                 .child(
                     div()
                         .class("estimates-modal-body")
-                        .child(p().text("Are you sure you want to delete this file?"))
+                        .child(
+                            p().attr("data-i18n", "ui_files_delete_confirm_text")
+                                .text("Are you sure you want to delete this file?"),
+                        )
                         .child(div().class("model-to-delete-name").text(name))
                         .child(
                             form()
@@ -502,12 +533,14 @@ pub async fn delete_modal(
                                         )
                                         .attr("hx-target", "#confirm-delete-modal")
                                         .attr("hx-swap", "outerHTML")
+                                        .attr("data-i18n", "ui_common_cancel")
                                         .text("Cancel"),
                                 )
                                 .child(
                                     button()
                                         .class("button danger")
                                         .attr("type", "submit")
+                                        .attr("data-i18n", "ui_common_delete")
                                         .text("Delete"),
                                 ),
                         ),
@@ -538,12 +571,15 @@ pub async fn delete_file_ui(
         Ok(Some(f)) if f.owner == username => {
             if let Err(e) = repo.delete(&f.id).await {
                 tracing::error!("Failed to delete file {}: {}", f.id, e);
-                return HttpResponse::InternalServerError().body(e.to_string());
+                return HttpResponse::InternalServerError().body("api_error_internal");
             }
         }
         Ok(Some(_)) => return HttpResponse::Forbidden().finish(),
-        Ok(None) => return HttpResponse::NotFound().body("File not found"),
-        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+        Ok(None) => return HttpResponse::NotFound().body("api_error_file_not_found"),
+        Err(e) => {
+            tracing::error!("Internal error: {}", e);
+            return HttpResponse::InternalServerError().body("api_error_internal");
+        }
     }
 
     let close_modal = div()

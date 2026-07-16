@@ -95,22 +95,23 @@ pub(in crate::routers::ui::pages) async fn delete_image(
     }
 
     if !validate_digest(&form.digest) {
-        return HttpResponse::BadRequest().body("manifest deletion requires a digest reference");
+        return HttpResponse::BadRequest().body("api_error_digest_required");
     }
 
     let Some(repo_path) = repository_path(&form.repository) else {
-        return HttpResponse::BadRequest().body("invalid repository name");
+        return HttpResponse::BadRequest().body("api_error_invalid_repository");
     };
     let Some(manifest_path) = manifest_path(&form.digest) else {
-        return HttpResponse::BadRequest().body("invalid digest");
+        return HttpResponse::BadRequest().body("api_error_invalid_digest");
     };
 
     if !manifest_path.exists() {
-        return HttpResponse::NotFound().body("manifest unknown");
+        return HttpResponse::NotFound().body("api_error_manifest_unknown");
     }
 
     if let Err(err) = tokio::fs::remove_file(&manifest_path).await {
-        return HttpResponse::InternalServerError().body(err.to_string());
+        tracing::error!("Failed to delete manifest: {}", err);
+        return HttpResponse::InternalServerError().body("api_error_internal");
     }
 
     let tags_dir = repo_path.join("tags");
@@ -156,7 +157,12 @@ fn render_delete_image_modal(query: &DeleteImageModalQuery) -> String {
                 .child(
                     div()
                         .class("confirm-modal-header")
-                        .child(div().class("confirm-modal-title").text("Confirm Delete"))
+                        .child(
+                            div()
+                                .class("confirm-modal-title")
+                                .attr("data-i18n", "ui_modal_delete_title")
+                                .text("Confirm Delete"),
+                        )
                         .child(
                             button()
                                 .class("confirm-modal-close")
@@ -170,7 +176,10 @@ fn render_delete_image_modal(query: &DeleteImageModalQuery) -> String {
                 .child(
                     div()
                         .class("confirm-modal-body")
-                        .child(p().text("Are you sure you want to delete this image?"))
+                        .child(
+                            p().attr("data-i18n", "ui_docker_delete_confirm_text")
+                                .text("Are you sure you want to delete this image?"),
+                        )
                         .child(div().class("confirm-delete-target").text(target))
                         .child(
                             form()
@@ -197,12 +206,14 @@ fn render_delete_image_modal(query: &DeleteImageModalQuery) -> String {
                                         .attr("hx-get", ui_path("/docker/delete-image-modal/empty"))
                                         .attr("hx-target", "#confirm-delete-image-modal")
                                         .attr("hx-swap", "outerHTML")
+                                        .attr("data-i18n", "ui_common_cancel")
                                         .text("Cancel"),
                                 )
                                 .child(
                                     button()
                                         .class("button delete")
                                         .attr("type", "submit")
+                                        .attr("data-i18n", "ui_common_delete")
                                         .text("Delete"),
                                 ),
                         ),
@@ -290,17 +301,23 @@ fn render_metadata_panel(repo: Option<&str>, selected_meta: Option<&TagMetadata>
             .class("meta-list")
             .child(meta_row("ui_meta_tag", &meta.tag))
             .child(meta_row("ui_meta_digest", &meta.digest))
-            .child(meta_row(
-                "ui_meta_media_type",
-                meta.media_type.as_deref().unwrap_or("unknown"),
-            ))
-            .child(meta_row(
-                "ui_meta_manifest_size",
-                &meta
-                    .size_bytes
-                    .map(|v| format!("{v} bytes"))
-                    .unwrap_or_else(|| "unknown".to_string()),
-            ))
+            .child(match meta.media_type.as_deref() {
+                Some(media_type) => meta_row("ui_meta_media_type", media_type),
+                None => meta_row_unknown("ui_meta_media_type"),
+            })
+            .child(match meta.size_bytes {
+                Some(size) => meta_row_value(
+                    "ui_meta_manifest_size",
+                    span()
+                        .attr("data-i18n", "ui_meta_bytes")
+                        .attr(
+                            "data-i18n-args",
+                            format!("{{\"size\":\"{size}\"}}"),
+                        )
+                        .text(format!("{size} bytes")),
+                ),
+                None => meta_row_unknown("ui_meta_manifest_size"),
+            })
             .child(
                 div().class("mt-4").child(
                     button()
@@ -338,10 +355,21 @@ fn render_metadata_panel(repo: Option<&str>, selected_meta: Option<&TagMetadata>
 }
 
 fn meta_row(label_key: &str, value: &str) -> Element {
+    meta_row_value(label_key, span().text(value))
+}
+
+fn meta_row_unknown(label_key: &str) -> Element {
+    meta_row_value(
+        label_key,
+        span().attr("data-i18n", "ui_meta_unknown").text("unknown"),
+    )
+}
+
+fn meta_row_value(label_key: &str, value: Element) -> Element {
     div()
         .class("meta-row")
         .child(div().class("meta-label").attr("data-i18n", label_key))
-        .child(div().class("meta-value mono").text(value))
+        .child(div().class("meta-value mono").child(value))
 }
 
 fn build_repo_tree(repositories: &[String]) -> RepoTreeNode {

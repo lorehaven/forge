@@ -45,7 +45,12 @@ fn render_vllm_manage_page(is_admin: bool) -> HttpResponse {
                                     .class("gpu")
                                     .attr("id", "gpu-status")
                                     .attr("sse-swap", "gpu-status")
-                                    .child(div().class("gpu-name").text("GPU: n/a"))
+                                    .child(
+                                        div()
+                                            .class("gpu-name")
+                                            .attr("data-i18n", "ui_gpu_unavailable")
+                                            .text("GPU: n/a"),
+                                    )
                                     .child(
                                         div()
                                             .class("gpu-total")

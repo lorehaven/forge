@@ -95,6 +95,7 @@ pub async fn send_message(
                 div().class("message-inner").child(
                     div()
                         .class("message-content")
+                        .attr("data-i18n", "ui_chat_regenerating")
                         .text("Sage is regenerating..."),
                 ),
             );
@@ -113,7 +114,7 @@ pub async fn send_message(
         .attr("hx-target", format!("#user-{}", message_id))
         .attr("hx-swap", "innerHTML")
         .child(i().class("fas fa-edit"))
-        .child(span().text(" Edit"));
+        .child(span().attr("data-i18n", "ui_chat_edit").text(" Edit"));
 
     let staged_ids = chat_req.file_id_list();
     let attachments_opt = if staged_ids.is_empty() {
@@ -145,7 +146,12 @@ pub async fn send_message(
         .child(
             div()
                 .class("message-inner")
-                .child(div().class("message-content").text("Sage is thinking...")),
+                .child(
+                    div()
+                        .class("message-content")
+                        .attr("data-i18n", "ui_chat_thinking")
+                        .text("Sage is thinking..."),
+                ),
         );
 
     let user_dot = div()
@@ -170,6 +176,7 @@ pub async fn send_message(
                     div()
                         .class("nav-tooltip")
                         .attr("id", format!("tooltip-ai-{}", message_id))
+                        .attr("data-i18n", "ui_chat_thinking")
                         .text("Sage is thinking..."),
                 ),
         );
@@ -372,12 +379,12 @@ pub async fn stream_message(
         Ok(i) => i,
         Err(err) => {
             tracing::error!("Failed to get vLLM instances: {}", err);
-            return HttpResponse::InternalServerError().body(err.to_string());
+            return HttpResponse::InternalServerError().body("api_error_switchboard_unavailable");
         }
     };
 
     let Some(instance) = instances.into_iter().find(|i| i.id == req.instance_id) else {
-        return HttpResponse::NotFound().body("Model instance not found");
+        return HttpResponse::NotFound().body("api_error_instance_not_found");
     };
 
     if !instance.is_chat_capable() {
@@ -386,8 +393,7 @@ pub async fn stream_message(
             instance.id,
             instance.task
         );
-        return HttpResponse::BadRequest()
-            .body("Selected model is an embedding model and cannot be used for chat");
+        return HttpResponse::BadRequest().body("api_error_embedding_model_chat");
     }
 
     let max_model_len = instance.max_model_len.unwrap_or(2048) as usize;
@@ -575,7 +581,7 @@ pub async fn stream_message(
         Ok(s) => s,
         Err(err) => {
             tracing::error!("Failed to start chat stream: {}", err);
-            return HttpResponse::InternalServerError().body(err.to_string());
+            return HttpResponse::InternalServerError().body("api_error_stream_failed");
         }
     };
 
@@ -609,7 +615,12 @@ pub async fn stream_message(
                 Err(err) => {
                     let html = div()
                         .class("message-inner")
-                        .child(div().class("message-content").text(format!("Error: {}", err)))
+                        .child(
+                            div()
+                                .class("message-content")
+                                .child(span().attr("data-i18n", "ui_chat_error").text("Error"))
+                                .child(span().text(format!(": {}", err))),
+                        )
                         .render();
                     yield Ok::<_, actix_web::Error>(encode_sse("message", &html));
                     return;
@@ -965,7 +976,7 @@ pub async fn stream_message(
             .attr("hx-target", ".chat-history")
             .attr("hx-swap", "beforeend")
             .child(i().class("fas fa-sync-alt"))
-            .child(span().text(" Regenerate"));
+            .child(span().attr("data-i18n", "ui_chat_regenerate").text(" Regenerate"));
 
         controls = controls.child(regenerate_btn);
 
@@ -1037,7 +1048,7 @@ pub async fn stream_message(
                     .attr("hx-target", format!("#user-{}", uid))
                     .attr("hx-swap", "innerHTML")
                     .child(i().class("fas fa-edit"))
-                    .child(span().text(" Edit"));
+                    .child(span().attr("data-i18n", "ui_chat_edit").text(" Edit"));
 
                 let user_controls = div()
                     .class("branch-controls")
@@ -1122,7 +1133,11 @@ pub async fn stream_message(
                             div()
                                 .attr("style", "display: flex; align-items: center; gap: 0.5rem;")
                                 .child(i().class("fas fa-chevron-right chevron"))
-                                .child(span().text("Projects"))
+                                .child(
+                                    span()
+                                        .attr("data-i18n", "ui_sidebar_projects")
+                                        .text("Projects"),
+                                )
                         )
                         .child(
                             button()
@@ -1132,7 +1147,7 @@ pub async fn stream_message(
                                 .attr("hx-target", "body")
                                 .attr("hx-swap", "beforeend")
                                 .child(i().class("fas fa-plus"))
-                                .child(span().text("New")),
+                                .child(span().attr("data-i18n", "ui_sidebar_new").text("New")),
                         ),
                 );
 
@@ -1190,7 +1205,8 @@ pub async fn stream_message(
                                     .attr("hx-get", with_base_path(&format!("/ui/chat/conversations/delete-modal/{}?active_id={}", conv_item.id, req.conversation_id)))
                                     .attr("hx-target", "#confirm-delete-modal")
                                     .attr("hx-swap", "outerHTML")
-                                    .child(i().class("fas fa-trash")).child(span().text("Delete"))
+                                    .child(i().class("fas fa-trash"))
+                                    .child(span().attr("data-i18n", "ui_common_delete").text("Delete"))
                                 )
                             )
                         );
@@ -1211,7 +1227,11 @@ pub async fn stream_message(
                         div()
                             .attr("style", "display: flex; align-items: center; gap: 0.5rem;")
                             .child(i().class("fas fa-chevron-right chevron"))
-                            .child(span().text(conv_header_text))
+                            .child(
+                                span()
+                                    .attr("data-i18n", "ui_sidebar_history")
+                                    .text(conv_header_text),
+                            )
                     )
             );
 
@@ -1252,7 +1272,11 @@ pub async fn stream_message(
                                             .attr("hx-target", "#confirm-delete-modal")
                                             .attr("hx-swap", "outerHTML")
                                             .child(i().class("fas fa-trash"))
-                                            .child(span().text("Delete"))
+                                            .child(
+                                                span()
+                                                    .attr("data-i18n", "ui_common_delete")
+                                                    .text("Delete"),
+                                            )
                                     )
                             )
                     );
@@ -1308,10 +1332,10 @@ pub async fn delete_modal(
     use quench_db::prelude::Crud;
     let repo = db.repository::<crate::models::Conversation>();
 
-    let mut title = "this conversation".to_string();
-    if let Ok(Some(conv)) = repo.read(&conv_id).await {
-        title = format!("\"{}\"", conv.title);
-    }
+    let title = match repo.read(&conv_id).await {
+        Ok(Some(conv)) => Some(format!("\"{}\"", conv.title)),
+        _ => None,
+    };
 
     let active_id_val = query.active_id.clone().unwrap_or_default();
 
@@ -1335,7 +1359,12 @@ pub async fn delete_modal(
                 .child(
                     div()
                         .class("estimates-modal-header")
-                        .child(div().class("estimates-modal-title").text("Confirm Delete"))
+                        .child(
+                            div()
+                                .class("estimates-modal-title")
+                                .attr("data-i18n", "ui_modal_delete_title")
+                                .text("Confirm Delete"),
+                        )
                         .child(
                             button()
                                 .class("estimates-modal-close")
@@ -1352,8 +1381,17 @@ pub async fn delete_modal(
                 .child(
                     div()
                         .class("estimates-modal-body")
-                        .child(p().text("Are you sure you want to delete this conversation?"))
-                        .child(div().class("model-to-delete-name").text(title))
+                        .child(
+                            p().attr("data-i18n", "ui_chat_delete_confirm_text")
+                                .text("Are you sure you want to delete this conversation?"),
+                        )
+                        .child(match title {
+                            Some(title) => div().class("model-to-delete-name").text(title),
+                            None => div()
+                                .class("model-to-delete-name")
+                                .attr("data-i18n", "ui_chat_this_conversation")
+                                .text("this conversation"),
+                        })
                         .child(
                             form()
                                 .class("confirm-actions")
@@ -1378,12 +1416,14 @@ pub async fn delete_modal(
                                         )
                                         .attr("hx-target", "#confirm-delete-modal")
                                         .attr("hx-swap", "outerHTML")
+                                        .attr("data-i18n", "ui_common_cancel")
                                         .text("Cancel"),
                                 )
                                 .child(
                                     button()
                                         .class("button danger")
                                         .attr("type", "submit")
+                                        .attr("data-i18n", "ui_common_delete")
                                         .text("Delete"),
                                 ),
                         ),
@@ -1441,7 +1481,7 @@ pub async fn switch_branch(
         switch_active_message(&db, &form.conversation_id, &form.target_message_id).await
     {
         tracing::error!("Failed to switch active branch: {}", err);
-        return HttpResponse::InternalServerError().body(err.to_string());
+        return HttpResponse::InternalServerError().body("api_error_internal");
     }
 
     HttpResponse::Ok()
@@ -1745,11 +1785,11 @@ pub async fn regenerate(
     };
 
     if msg.role != "assistant" {
-        return HttpResponse::BadRequest().body("Can only regenerate assistant messages");
+        return HttpResponse::BadRequest().body("api_error_regenerate_non_assistant");
     }
 
     let Some(parent_id) = msg.parent_id else {
-        return HttpResponse::BadRequest().body("Message has no parent to regenerate from");
+        return HttpResponse::BadRequest().body("api_error_no_parent_message");
     };
 
     let conv_repo = db.repository::<crate::models::Conversation>();
@@ -1759,13 +1799,13 @@ pub async fn regenerate(
     };
 
     let Ok(Some(parent_msg)) = repo.read(&parent_id).await else {
-        return HttpResponse::NotFound().body("Parent message not found");
+        return HttpResponse::NotFound().body("api_error_parent_not_found");
     };
 
     // Use current models from switchboard
     let instances = switchboard.get_vllm_instances().await.unwrap_or_default();
     let Some(instance) = instances.iter().find(|i| i.is_chat_capable()) else {
-        return HttpResponse::ServiceUnavailable().body("No AI models available for regeneration");
+        return HttpResponse::ServiceUnavailable().body("api_error_no_models_available");
     };
 
     let message_id = Uuid::new_v4().to_string();
@@ -1814,6 +1854,7 @@ pub async fn regenerate(
                     div()
                         .class("nav-tooltip")
                         .attr("id", format!("tooltip-ai-{}", message_id))
+                        .attr("data-i18n", "ui_chat_regenerating")
                         .text("Sage is regenerating..."),
                 ),
         );
@@ -1861,12 +1902,14 @@ pub async fn edit_form(
                                         .attr("type", "button")
                                         .class("branch-btn cancel-btn")
                                         .attr("onclick", "window.location.reload();")
+                                        .attr("data-i18n", "ui_common_cancel")
                                         .text("Cancel")
                                 )
                                 .child(
                                     button()
                                         .attr("type", "submit")
                                         .class("branch-btn save-btn")
+                                        .attr("data-i18n", "ui_chat_save_submit")
                                         .text("Save & Submit")
                                 )
                         )
@@ -1907,7 +1950,7 @@ pub async fn handle_edit(
 
     if let Err(err) = repo.create(&user_msg).await {
         tracing::error!("Failed to create edited user message: {}", err);
-        return HttpResponse::InternalServerError().body(err.to_string());
+        return HttpResponse::InternalServerError().body("api_error_internal");
     }
 
     // Update conversation tip to the new user message

@@ -40,6 +40,13 @@ pub struct FileUploadForm {
     pub project_id: Option<Text<String>>,
 }
 
+/// Log the underlying error and answer with the generic i18n error code. The
+/// UI resolves `api_error_*` codes through the i18n dictionary.
+fn internal_error<E: std::fmt::Display>(e: E) -> HttpResponse {
+    tracing::error!("Internal error: {}", e);
+    HttpResponse::InternalServerError().body("api_error_internal")
+}
+
 /// Validate and store an uploaded file, then start background processing.
 /// Shared by the JSON API and the UI upload endpoint; errors come back as
 /// ready-to-return HTTP responses.
@@ -55,29 +62,26 @@ pub async fn create_uploaded_file(
         (None, Some(p)) => (None, Some(p.0.clone())),
         _ => {
             return Err(HttpResponse::BadRequest()
-                .body("Exactly one of conversation_id or project_id must be provided"));
+                .body("api_error_file_scope_required"));
         }
     };
 
     let Some(file_name) = form.file.file_name.clone() else {
-        return Err(HttpResponse::BadRequest().body("Missing file name"));
+        return Err(HttpResponse::BadRequest().body("api_error_missing_file_name"));
     };
 
     let Some(mime_type) = allowed_mime_type(&file_name) else {
         return Err(
-            HttpResponse::BadRequest().body("Unsupported file type. Allowed: pdf, txt, csv, md")
+            HttpResponse::BadRequest().body("api_error_unsupported_file_type")
         );
     };
 
     let max_size = max_file_size_bytes();
     if form.file.data.len() as u64 > max_size {
-        return Err(HttpResponse::PayloadTooLarge().body(format!(
-            "File exceeds maximum size of {} MB",
-            max_size / (1024 * 1024)
-        )));
+        return Err(HttpResponse::PayloadTooLarge().body("api_error_file_too_large"));
     }
     if form.file.data.is_empty() {
-        return Err(HttpResponse::BadRequest().body("File is empty"));
+        return Err(HttpResponse::BadRequest().body("api_error_file_empty"));
     }
 
     // The upload target must exist and belong to the requesting user.
@@ -85,16 +89,16 @@ pub async fn create_uploaded_file(
         match db.repository::<Conversation>().read(cid).await {
             Ok(Some(c)) if c.owner == username => {}
             Ok(Some(_)) => return Err(HttpResponse::Forbidden().finish()),
-            Ok(None) => return Err(HttpResponse::NotFound().body("Conversation not found")),
-            Err(e) => return Err(HttpResponse::InternalServerError().body(e.to_string())),
+            Ok(None) => return Err(HttpResponse::NotFound().body("api_error_conversation_not_found")),
+            Err(e) => return Err(internal_error(e)),
         }
     }
     if let Some(pid) = &project_id {
         match db.repository::<Project>().read(pid).await {
             Ok(Some(p)) if p.owner == username => {}
             Ok(Some(_)) => return Err(HttpResponse::Forbidden().finish()),
-            Ok(None) => return Err(HttpResponse::NotFound().body("Project not found")),
-            Err(e) => return Err(HttpResponse::InternalServerError().body(e.to_string())),
+            Ok(None) => return Err(HttpResponse::NotFound().body("api_error_project_not_found")),
+            Err(e) => return Err(internal_error(e)),
         }
     }
 
@@ -110,12 +114,9 @@ pub async fn create_uploaded_file(
             .bind(&project_id)
             .fetch_one(pg_db.pool())
             .await
-            .map_err(|e| HttpResponse::InternalServerError().body(e.to_string()))?;
+            .map_err(internal_error)?;
         if count as u64 >= max_files {
-            return Err(HttpResponse::UnprocessableEntity().body(format!(
-                "File limit reached ({} files max per conversation/project)",
-                max_files
-            )));
+            return Err(HttpResponse::UnprocessableEntity().body("api_error_file_limit_reached"));
         }
     }
 
@@ -175,7 +176,7 @@ pub async fn create_uploaded_file(
 
             if let Err(e) = result {
                 tracing::error!("Failed to store uploaded file: {}", e);
-                return Err(HttpResponse::InternalServerError().body(e.to_string()));
+                return Err(HttpResponse::InternalServerError().body("api_error_internal"));
             }
 
             pipeline::spawn_processing(
@@ -188,7 +189,7 @@ pub async fn create_uploaded_file(
             Ok(file)
         }
         Db::InMemory(_) => {
-            Err(HttpResponse::NotImplemented().body("File storage requires a Postgres database"))
+            Err(HttpResponse::NotImplemented().body("api_error_postgres_required"))
         }
     }
 }
@@ -244,30 +245,30 @@ pub async fn list_files(
             let conversation = match db.repository::<Conversation>().read(cid).await {
                 Ok(Some(c)) if c.owner == username => c,
                 Ok(Some(_)) => return HttpResponse::Forbidden().finish(),
-                Ok(None) => return HttpResponse::NotFound().body("Conversation not found"),
-                Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+                Ok(None) => return HttpResponse::NotFound().body("api_error_conversation_not_found"),
+                Err(e) => return internal_error(e),
             };
 
             match visible_files_for_conversation(&db, &conversation).await {
                 Ok(files) => HttpResponse::Ok().json(files),
-                Err(e) => HttpResponse::InternalServerError().body(e),
+                Err(e) => internal_error(e),
             }
         }
         (None, Some(pid)) => {
             match db.repository::<Project>().read(pid).await {
                 Ok(Some(p)) if p.owner == username => {}
                 Ok(Some(_)) => return HttpResponse::Forbidden().finish(),
-                Ok(None) => return HttpResponse::NotFound().body("Project not found"),
-                Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+                Ok(None) => return HttpResponse::NotFound().body("api_error_project_not_found"),
+                Err(e) => return internal_error(e),
             }
 
             match visible_files_for_project(&db, pid).await {
                 Ok(files) => HttpResponse::Ok().json(files),
-                Err(e) => HttpResponse::InternalServerError().body(e),
+                Err(e) => internal_error(e),
             }
         }
         _ => HttpResponse::BadRequest()
-            .body("Exactly one of conversation_id or project_id must be provided"),
+            .body("api_error_file_scope_required"),
     }
 }
 
@@ -444,8 +445,8 @@ async fn load_owned_file(db: &Db, file_id: &str, username: &str) -> Result<File,
     match db.repository::<File>().read(file_id).await {
         Ok(Some(f)) if f.owner == username => Ok(f),
         Ok(Some(_)) => Err(HttpResponse::Forbidden().finish()),
-        Ok(None) => Err(HttpResponse::NotFound().body("File not found")),
-        Err(e) => Err(HttpResponse::InternalServerError().body(e.to_string())),
+        Ok(None) => Err(HttpResponse::NotFound().body("api_error_file_not_found")),
+        Err(e) => Err(internal_error(e)),
     }
 }
 
@@ -508,12 +509,12 @@ pub async fn download_file(
                         ))
                         .body(data)
                 }
-                Ok(None) => HttpResponse::NotFound().body("File content not found"),
-                Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+                Ok(None) => HttpResponse::NotFound().body("api_error_file_content_not_found"),
+                Err(e) => internal_error(e),
             }
         }
         Db::InMemory(_) => {
-            HttpResponse::NotImplemented().body("File storage requires a Postgres database")
+            HttpResponse::NotImplemented().body("api_error_postgres_required")
         }
     }
 }
@@ -538,7 +539,7 @@ pub async fn reprocess_file(
     };
 
     if file.status == crate::files::STATUS_PROCESSING {
-        return HttpResponse::Conflict().body("File is already being processed");
+        return HttpResponse::Conflict().body("api_error_file_already_processing");
     }
 
     pipeline::spawn_processing(
@@ -580,7 +581,7 @@ pub async fn list_chunks(
                 .await
             {
                 Ok(chunks) => HttpResponse::Ok().json(chunks),
-                Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+                Err(e) => internal_error(e),
             }
         }
         Db::InMemory(_) => match db.repository::<FileChunk>().list().await {
@@ -592,7 +593,7 @@ pub async fn list_chunks(
                 chunks.sort_by_key(|c| c.chunk_index);
                 HttpResponse::Ok().json(chunks)
             }
-            Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+            Err(e) => internal_error(e),
         },
     }
 }
@@ -617,7 +618,7 @@ pub async fn delete_file(
     // Blobs and chunks are removed by ON DELETE CASCADE.
     match db.repository::<File>().delete(&file.id).await {
         Ok(()) => HttpResponse::NoContent().finish(),
-        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+        Err(e) => internal_error(e),
     }
 }
 

@@ -254,7 +254,12 @@ fn render_model_grid(models: Vec<Model>, gpu: &GpuInfo, is_admin: bool) -> Strin
                     .child(render_separator()),
             )
         } else {
-            ("fit-line fit-no".to_string(), div().text("No estimates"))
+            (
+                "fit-line fit-no".to_string(),
+                div()
+                    .attr("data-i18n", "ui_models_card_no_estimates")
+                    .text("No estimates"),
+            )
         };
 
         let mut header = div().class("card-header").child(
@@ -274,6 +279,7 @@ fn render_model_grid(models: Vec<Model>, gpu: &GpuInfo, is_admin: bool) -> Strin
                     .class("card-delete")
                     .attr("type", "button")
                     .attr("title", "Delete model")
+                    .attr("data-i18n-title", "ui_models_card_delete_tooltip")
                     .attr(
                         "hx-get",
                         format!(
@@ -300,19 +306,34 @@ fn render_model_grid(models: Vec<Model>, gpu: &GpuInfo, is_admin: bool) -> Strin
                             .child(
                                 div()
                                     .class("card-meta-params")
-                                    .child(span().text("Params: "))
+                                    .child(
+                                        span()
+                                            .attr("data-i18n", "ui_models_card_params")
+                                            .text("Params"),
+                                    )
+                                    .child(span().text(": "))
                                     .child(span().text(format!("{:.1}B", model.params_billion))),
                             )
                             .child(
                                 div()
                                     .class("card-meta-quant")
-                                    .child(span().text("Quant: "))
+                                    .child(
+                                        span()
+                                            .attr("data-i18n", "ui_models_card_quant")
+                                            .text("Quant"),
+                                    )
+                                    .child(span().text(": "))
                                     .child(span().text(model.quant.to_string())),
                             )
                             .child(
                                 div()
                                     .class("card-meta-context")
-                                    .child(span().text("Context: "))
+                                    .child(
+                                        span()
+                                            .attr("data-i18n", "ui_models_card_context")
+                                            .text("Context"),
+                                    )
+                                    .child(span().text(": "))
                                     .child(span().text(model.context.to_string())),
                             ),
                     )
@@ -321,13 +342,23 @@ fn render_model_grid(models: Vec<Model>, gpu: &GpuInfo, is_admin: bool) -> Strin
                             .child(
                                 div()
                                     .class("card-meta-layers")
-                                    .child(span().text("Layers: "))
+                                    .child(
+                                        span()
+                                            .attr("data-i18n", "ui_models_card_layers")
+                                            .text("Layers"),
+                                    )
+                                    .child(span().text(": "))
                                     .child(span().text(model.layers.to_string())),
                             )
                             .child(
                                 div()
                                     .class("card-meta-hidden")
-                                    .child(span().text("Hidden: "))
+                                    .child(
+                                        span()
+                                            .attr("data-i18n", "ui_models_card_hidden")
+                                            .text("Hidden"),
+                                    )
+                                    .child(span().text(": "))
                                     .child(span().text(model.hidden_size.to_string())),
                             ),
                     ),
@@ -519,6 +550,7 @@ fn render_estimates_modal(model: &Model, gpu: &GpuInfo, query: &EstimatesModalQu
                                     context_filter,
                                     "all",
                                     "All Contexts",
+                                    "ui_models_modal_estimates_filter_all_contexts",
                                     &contexts,
                                 ))
                                 .child(select_from_values(
@@ -526,6 +558,7 @@ fn render_estimates_modal(model: &Model, gpu: &GpuInfo, query: &EstimatesModalQu
                                     quant_filter,
                                     "all",
                                     "All Quants",
+                                    "ui_models_modal_estimates_filter_all_quants",
                                     &quants,
                                 )),
                         )
@@ -667,10 +700,14 @@ fn select_from_values(
     selected: &str,
     all_value: &str,
     all_label: &str,
+    all_i18n_key: &str,
     values: &[String],
 ) -> Element {
     let mut select = select().attr("name", name);
-    let mut all = option().attr("value", all_value).text(all_label);
+    let mut all = option()
+        .attr("value", all_value)
+        .attr("data-i18n", all_i18n_key)
+        .text(all_label);
     if selected == all_value {
         all = all.attr("selected", "selected");
     }
