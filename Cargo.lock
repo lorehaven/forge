@@ -4461,7 +4461,7 @@ dependencies = [
 
 [[package]]
 name = "sage-service"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "actix-multipart",
  "actix-web",
@@ -5277,7 +5277,7 @@ dependencies = [
 
 [[package]]
 name = "switchboard-service"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "actix-web",
  "async-trait",
