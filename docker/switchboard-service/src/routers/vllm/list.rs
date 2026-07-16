@@ -175,38 +175,44 @@ pub fn render_instances_grid(instances: Vec<VllmInstance>, is_admin: bool) -> St
                             ),
                     ),
             )
-            .child(
-                div().class("card-fit").child(
-                    div()
-                        .class(format!("fit-line {}", fit_class))
-                        .child(
-                            span()
-                                .attr("data-i18n", "ui_models_card_quant")
-                                .text("Quant"),
-                        )
-                        .child(span().text(": "))
-                        .child(
-                            span().text(
-                                instance
-                                    .quantization
-                                    .as_deref()
-                                    .unwrap_or("auto")
-                                    .to_string(),
-                            ),
-                        )
+            .child(div().class("card-fit").child({
+                let mut fit_line = div()
+                    .class(format!("fit-line {}", fit_class))
+                    .child(
+                        span()
+                            .attr("data-i18n", "ui_models_card_quant")
+                            .text("Quant"),
+                    )
+                    .child(span().text(": "))
+                    .child(
+                        span().text(
+                            instance
+                                .quantization
+                                .as_deref()
+                                .unwrap_or("auto")
+                                .to_string(),
+                        ),
+                    );
+                if let Some(dtype) = instance.dtype.as_deref() {
+                    fit_line = fit_line
                         .child(span().text(" | "))
-                        .child(
-                            span()
-                                .attr("data-i18n", "ui_vllm_meta_gpu_util")
-                                .text("GPU Util"),
-                        )
+                        .child(span().attr("data-i18n", "ui_vllm_form_dtype").text("Dtype"))
                         .child(span().text(": "))
-                        .child(span().text(format!(
-                            "{:.2}",
-                            instance.gpu_memory_utilization.unwrap_or(0.9)
-                        ))),
-                ),
-            )
+                        .child(span().text(dtype.to_string()));
+                }
+                fit_line
+                    .child(span().text(" | "))
+                    .child(
+                        span()
+                            .attr("data-i18n", "ui_vllm_meta_gpu_util")
+                            .text("GPU Util"),
+                    )
+                    .child(span().text(": "))
+                    .child(span().text(format!(
+                        "{:.2}",
+                        instance.gpu_memory_utilization.unwrap_or(0.9)
+                    )))
+            }))
             .child({
                 let mut diag = div().class("instance-diagnostics");
                 let mut has_diag = false;

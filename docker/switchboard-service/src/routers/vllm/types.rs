@@ -9,6 +9,10 @@ pub struct VllmInstance {
     pub host: String,
     pub port: u16,
     pub quantization: Option<String>,
+    /// vLLM weight/activation dtype the instance was launched with (passed as
+    /// `--dtype`, e.g. "float16"); None = vLLM default ("auto", usually bfloat16).
+    #[serde(default)]
+    pub dtype: Option<String>,
     pub max_model_len: Option<u32>,
     pub gpu_memory_utilization: Option<f32>,
     pub enable_prefix_caching: bool,
@@ -31,6 +35,10 @@ pub struct LaunchRequest {
     pub port: u16,
     pub namespace: Option<String>,
     pub quantization: Option<String>,
+    /// vLLM dtype to launch with (passed as `--dtype`, e.g. "float16" for GPUs
+    /// or models that misbehave with the default bfloat16). None = vLLM "auto".
+    #[serde(default)]
+    pub dtype: Option<String>,
     pub max_model_len: Option<u32>,
     pub gpu_memory_utilization: Option<f32>,
     pub enable_prefix_caching: bool,

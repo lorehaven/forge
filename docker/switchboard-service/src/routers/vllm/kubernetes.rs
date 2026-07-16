@@ -90,6 +90,10 @@ impl VllmEngine for KubernetesVllmEngine {
                 host: format!("{name}.{namespace}.svc.cluster.local"),
                 port,
                 quantization: annotations.get("vllm-quantization").cloned(),
+                dtype: annotations
+                    .get("vllm-dtype")
+                    .filter(|v| !v.is_empty())
+                    .cloned(),
                 max_model_len: annotations
                     .get("vllm-max-model-len")
                     .and_then(|v| v.parse::<u32>().ok()),
@@ -155,6 +159,11 @@ impl VllmEngine for KubernetesVllmEngine {
         if let Some(ref q) = req.quantization {
             args.push("--quantization".to_string());
             args.push(q.clone());
+        }
+
+        if let Some(ref dtype) = req.dtype {
+            args.push("--dtype".to_string());
+            args.push(dtype.clone());
         }
 
         if let Some(len) = req.max_model_len {
@@ -360,6 +369,7 @@ impl VllmEngine for KubernetesVllmEngine {
                 "annotations": {
                     "vllm-model": req.model.clone(),
                     "vllm-quantization": req.quantization.as_deref().unwrap_or(""),
+                    "vllm-dtype": req.dtype.as_deref().unwrap_or(""),
                     "vllm-max-model-len": req.max_model_len.map(|v| v.to_string()).unwrap_or_default(),
                     "vllm-gpu-memory-utilization": req.gpu_memory_utilization.map(|v| v.to_string()).unwrap_or_default(),
                     "vllm-enable-prefix-caching": req.enable_prefix_caching.to_string(),
@@ -462,6 +472,7 @@ impl VllmEngine for KubernetesVllmEngine {
             host: format!("{name}.{namespace}.svc.cluster.local"),
             port: req.port,
             quantization: req.quantization.clone(),
+            dtype: req.dtype.clone(),
             max_model_len: req.max_model_len,
             gpu_memory_utilization: req.gpu_memory_utilization,
             enable_prefix_caching: req.enable_prefix_caching,

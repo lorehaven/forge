@@ -19,6 +19,7 @@ struct LaunchRecord {
     host: String,
     port: u16,
     quantization: Option<String>,
+    dtype: Option<String>,
     max_model_len: Option<u32>,
     gpu_memory_utilization: Option<f32>,
     enable_prefix_caching: bool,
@@ -89,6 +90,8 @@ impl VllmEngine for NativeVllmEngine {
 
             let quantization = extract_arg(&parts, "--quantization");
 
+            let dtype = extract_arg(&parts, "--dtype");
+
             let max_model_len =
                 extract_arg(&parts, "--max-model-len").and_then(|v| v.parse::<u32>().ok());
 
@@ -127,6 +130,7 @@ impl VllmEngine for NativeVllmEngine {
                 host,
                 port,
                 quantization,
+                dtype,
                 max_model_len,
                 gpu_memory_utilization,
                 enable_prefix_caching,
@@ -160,6 +164,7 @@ impl VllmEngine for NativeVllmEngine {
                     host: record.host.clone(),
                     port: record.port,
                     quantization: record.quantization.clone(),
+                    dtype: record.dtype.clone(),
                     max_model_len: record.max_model_len,
                     gpu_memory_utilization: record.gpu_memory_utilization,
                     enable_prefix_caching: record.enable_prefix_caching,
@@ -204,6 +209,11 @@ impl VllmEngine for NativeVllmEngine {
         if let Some(ref q) = req.quantization {
             args.push("--quantization".to_string());
             args.push(q.clone());
+        }
+
+        if let Some(ref dtype) = req.dtype {
+            args.push("--dtype".to_string());
+            args.push(dtype.clone());
         }
 
         if let Some(len) = req.max_model_len {
@@ -283,6 +293,7 @@ impl VllmEngine for NativeVllmEngine {
                         host: req.host.clone(),
                         port,
                         quantization: req.quantization.clone(),
+                        dtype: req.dtype.clone(),
                         max_model_len: req.max_model_len,
                         gpu_memory_utilization: req.gpu_memory_utilization,
                         enable_prefix_caching: req.enable_prefix_caching,
@@ -307,6 +318,7 @@ impl VllmEngine for NativeVllmEngine {
                             host: req.host.clone(),
                             port,
                             quantization: req.quantization.clone(),
+                            dtype: req.dtype.clone(),
                             max_model_len: req.max_model_len,
                             gpu_memory_utilization: req.gpu_memory_utilization,
                             enable_prefix_caching: req.enable_prefix_caching,
@@ -340,6 +352,7 @@ impl VllmEngine for NativeVllmEngine {
                         host: req.host.clone(),
                         port,
                         quantization: req.quantization.clone(),
+                        dtype: req.dtype.clone(),
                         max_model_len: req.max_model_len,
                         gpu_memory_utilization: req.gpu_memory_utilization,
                         enable_prefix_caching: req.enable_prefix_caching,
@@ -359,6 +372,7 @@ impl VllmEngine for NativeVllmEngine {
                     host: req.host.clone(),
                     port,
                     quantization: req.quantization.clone(),
+                    dtype: req.dtype.clone(),
                     max_model_len: req.max_model_len,
                     gpu_memory_utilization: req.gpu_memory_utilization,
                     enable_prefix_caching: req.enable_prefix_caching,

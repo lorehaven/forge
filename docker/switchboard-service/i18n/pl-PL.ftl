@@ -47,6 +47,7 @@ ui_vllm_form_host = Host
 ui_vllm_form_port = Port
 ui_vllm_form_namespace = Przestrzeń nazw
 ui_vllm_form_quant = Kwantyzacja
+ui_vllm_form_dtype = Dtype
 ui_vllm_form_max_len = Maks. długość modelu
 ui_vllm_form_gpu_util = Wykorzystanie pamięci GPU
 ui_vllm_form_prefix_caching = Włącz buforowanie prefiksów

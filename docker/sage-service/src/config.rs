@@ -13,6 +13,10 @@ pub struct DefaultModel {
     /// AWQ 4-bit checkpoints). None = vLLM infers from the checkpoint config.
     #[serde(rename = "quant", default)]
     pub quantization: Option<String>,
+    /// vLLM dtype (passed as `--dtype`, e.g. "float16" for models that fail
+    /// with the default bfloat16). None = vLLM "auto".
+    #[serde(default)]
+    pub dtype: Option<String>,
     #[serde(default)]
     pub enable_tool_calling: bool,
     /// vLLM task, e.g. "embed" for embedding models (passed to switchboard
@@ -45,6 +49,7 @@ impl DefaultModel {
                 gpu_memory_utilization: None,
                 max_model_len: None,
                 quantization: None,
+                dtype: None,
                 enable_tool_calling: false,
                 task: None,
             }];
@@ -223,6 +228,13 @@ mod tests {
         let list_quant = DefaultModel::parse_list(quant_json);
         assert_eq!(list_quant.len(), 1);
         assert_eq!(list_quant[0].quantization.as_deref(), Some("awq"));
+        assert_eq!(list_quant[0].dtype, None);
+
+        // Model with an explicit dtype (e.g. GPUs/models that fail on bfloat16)
+        let dtype_json = r#"{"name": "mistralai/Mistral-7B-Instruct-v0.3", "dtype": "float16"}"#;
+        let list_dtype = DefaultModel::parse_list(dtype_json);
+        assert_eq!(list_dtype.len(), 1);
+        assert_eq!(list_dtype[0].dtype.as_deref(), Some("float16"));
 
         // Backwards compatibility with raw string name
         let raw_str = "qwen2.5-coder:7b";

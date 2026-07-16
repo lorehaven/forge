@@ -278,6 +278,7 @@ async fn request_model_launch(
             model.gpu_memory_utilization,
             model.max_model_len,
             model.quantization.as_deref(),
+            model.dtype.as_deref(),
             model.enable_tool_calling,
             model.task.as_deref(),
         )

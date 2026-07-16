@@ -47,6 +47,7 @@ ui_vllm_form_host = Hôte
 ui_vllm_form_port = Port
 ui_vllm_form_namespace = Espace de noms
 ui_vllm_form_quant = Quantification
+ui_vllm_form_dtype = Dtype
 ui_vllm_form_max_len = Longueur max. du modèle
 ui_vllm_form_gpu_util = Utilisation mémoire GPU
 ui_vllm_form_prefix_caching = Activer le cache de préfixes

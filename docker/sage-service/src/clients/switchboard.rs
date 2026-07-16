@@ -197,12 +197,14 @@ impl SwitchboardClient {
         result.map_err(|e| anyhow::anyhow!("{}", e))
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn launch_instance(
         &self,
         model: &str,
         gpu_memory_utilization: Option<f32>,
         max_model_len: Option<u32>,
         quantization: Option<&str>,
+        dtype: Option<&str>,
         enable_tool_calling: bool,
         task: Option<&str>,
     ) -> Result<VllmInstance> {
@@ -219,6 +221,7 @@ impl SwitchboardClient {
             "port": 8000,
             "namespace": null,
             "quantization": quantization,
+            "dtype": dtype,
             "max_model_len": max_model_len,
             "gpu_memory_utilization": gpu_memory_utilization,
             "enable_prefix_caching": false,

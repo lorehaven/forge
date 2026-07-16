@@ -247,6 +247,7 @@ mod tests {
             gpu_memory_utilization: None,
             max_model_len: None,
             quantization: None,
+            dtype: None,
             enable_tool_calling: false,
             task: None,
         }

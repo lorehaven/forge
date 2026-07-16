@@ -11,6 +11,7 @@ pub struct LaunchModalQuery {
     pub port: Option<String>,
     pub namespace: Option<String>,
     pub quantization: Option<String>,
+    pub dtype: Option<String>,
     pub max_model_len: Option<String>,
     pub gpu_memory_utilization: Option<String>,
     pub prefix_caching: Option<bool>,
@@ -307,6 +308,16 @@ fn runtime_fields(query: &LaunchModalQuery) -> Element {
                 .class("form-group")
                 .child(
                     label()
+                        .attr("data-i18n", "ui_vllm_form_dtype")
+                        .text("Dtype"),
+                )
+                .child(dtype_select(query.dtype.as_deref())),
+        )
+        .child(
+            div()
+                .class("form-group")
+                .child(
+                    label()
                         .attr("data-i18n", "ui_vllm_form_max_len")
                         .text("Max Model Len"),
                 )
@@ -334,6 +345,25 @@ fn quantization_select(selected: Option<&str>) -> Element {
     ] {
         let mut opt = option().attr("value", quantization).text(quantization);
         if selected == Some(quantization) {
+            opt = opt.attr("selected", "selected");
+        }
+        select = select.child(opt);
+    }
+    select
+}
+
+fn dtype_select(selected: Option<&str>) -> Element {
+    let mut select = select()
+        .attr("id", "launch-dtype")
+        .attr("name", "dtype")
+        .attr("hx-get", with_base_path("/api/v1/vllm/launch-modal"))
+        .attr("hx-target", "#launch-modal")
+        .attr("hx-swap", "outerHTML")
+        .attr("hx-include", "#launch-form")
+        .child(option().attr("value", "").text("auto"));
+    for dtype in ["float16", "bfloat16", "float32"] {
+        let mut opt = option().attr("value", dtype).text(dtype);
+        if selected == Some(dtype) {
             opt = opt.attr("selected", "selected");
         }
         select = select.child(opt);
