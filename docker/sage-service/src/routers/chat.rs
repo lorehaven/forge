@@ -54,11 +54,13 @@ pub async fn chat(
             role: "system".to_string(),
             content: config.system_prompt.clone(),
             tool_calls: None,
+            images: None,
         },
         ChatMessage {
             role: "user".to_string(),
             content: req.message.clone(),
             tool_calls: None,
+            images: None,
         },
     ];
 

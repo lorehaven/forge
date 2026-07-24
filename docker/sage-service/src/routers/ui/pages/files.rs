@@ -72,8 +72,21 @@ pub fn render_attachment_chip(file: &File, staged: bool) -> Element {
             .attr("hx-swap", "outerHTML");
     }
 
+    // Images show a real thumbnail instead of the generic file icon.
+    let icon = if crate::files::is_image_mime(&file.mime_type) {
+        element("img")
+            .class("attachment-thumb")
+            .attr(
+                "src",
+                with_base_path(&format!("/api/v1/files/{}/download", file.id)),
+            )
+            .attr("alt", &file.file_name)
+            .attr("loading", "lazy")
+    } else {
+        i().class("fas fa-file-lines attachment-icon")
+    };
     chip = chip
-        .child(i().class("fas fa-file-lines attachment-icon"))
+        .child(icon)
         .child(span().class("attachment-name").text(&file.file_name))
         .child(
             span()
@@ -165,7 +178,11 @@ pub fn render_project_file_row(file: &File) -> Element {
                 status_label(&file.status)
             ),
         )
-        .child(i().class("fas fa-file-lines file-item-icon"))
+        .child(i().class(if crate::files::is_image_mime(&file.mime_type) {
+            "fas fa-image file-item-icon"
+        } else {
+            "fas fa-file-lines file-item-icon"
+        }))
         .child(span().class("file-item-name").text(&file.file_name));
 
     // Surface a status badge for anything not yet searchable so the user can
@@ -415,6 +432,12 @@ pub async fn reprocess(
     };
 
     match db.repository::<File>().read(&file_id).await {
+        // Images have no text pipeline to (re)run; return the chip unchanged.
+        Ok(Some(f)) if f.owner == username && crate::files::is_image_mime(&f.mime_type) => {
+            HttpResponse::Ok()
+                .content_type("text/html")
+                .body(render_attachment_chip(&f, true).render())
+        }
         Ok(Some(mut f)) if f.owner == username => {
             pipeline::spawn_processing(
                 db.get_ref().clone(),

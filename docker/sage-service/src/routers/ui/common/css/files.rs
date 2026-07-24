@@ -50,6 +50,13 @@ pub fn files_rules() -> Vec<CssRule> {
         CssRule::new(".attachment-icon")
             .property("color", "var(--bs-gray-400)")
             .property("font-size", "0.8rem"),
+        // Thumbnail preview replacing the icon on image attachments.
+        CssRule::new(".attachment-thumb")
+            .property("width", "2.5rem")
+            .property("height", "2.5rem")
+            .property("object-fit", "cover")
+            .property("border-radius", "0.35rem")
+            .property("flex-shrink", "0"),
         CssRule::new(".attachment-name")
             .property("overflow", "hidden")
             .property("text-overflow", "ellipsis")

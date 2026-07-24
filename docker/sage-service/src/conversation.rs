@@ -49,6 +49,7 @@ impl ConversationContext {
             role: "system".to_string(),
             content: system_prompt.to_string(),
             tool_calls: None,
+            images: None,
         });
 
         // Add messages in reverse chronological order (newest first)
@@ -73,6 +74,7 @@ impl ConversationContext {
                 role: msg.role,
                 content: msg.content,
                 tool_calls: None,
+                images: None,
             });
         }
 

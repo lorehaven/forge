@@ -355,7 +355,7 @@ fn render_home_page(
                 .attr("type", "file")
                 .attr("id", "composer-file-input")
                 .attr("name", "file")
-                .attr("accept", ".pdf,.txt,.csv,.md")
+                .attr("accept", crate::routers::files::upload_accept_attribute())
                 .attr("style", "display: none;")
                 .attr("hx-post", with_base_path("/ui/files/attach"))
                 .attr("hx-encoding", "multipart/form-data")
@@ -371,7 +371,10 @@ fn render_home_page(
             let attach_btn = label()
                 .class("chat-attach-btn")
                 .attr("for", "composer-file-input")
-                .attr("title", "Attach a file (pdf, txt, csv, md)")
+                .attr(
+                    "title",
+                    "Attach a file (images, pdf, txt, csv, md, html, json, yaml, source code…)",
+                )
                 .attr("data-i18n-title", "ui_chat_attach_tooltip")
                 .child(i().class("fas fa-paperclip"))
                 .child(attach_input);

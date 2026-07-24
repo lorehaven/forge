@@ -108,6 +108,10 @@ impl VllmEngine for KubernetesVllmEngine {
                     .get("vllm-dtype")
                     .filter(|v| !v.is_empty())
                     .cloned(),
+                limit_mm_per_prompt: annotations
+                    .get("vllm-limit-mm-per-prompt")
+                    .filter(|v| !v.is_empty())
+                    .cloned(),
                 max_model_len: annotations
                     .get("vllm-max-model-len")
                     .and_then(|v| v.parse::<u32>().ok()),
@@ -152,7 +156,7 @@ impl VllmEngine for KubernetesVllmEngine {
 
         let image = std::env::var("VLLM_IMAGE").unwrap_or_else(|_| {
             if is_amd {
-                "rocm/vllm/latest".to_string()
+                "rocm/vllm:latest".to_string()
             } else {
                 "vllm/vllm-openai:latest".to_string()
             }
@@ -178,6 +182,11 @@ impl VllmEngine for KubernetesVllmEngine {
         if let Some(ref dtype) = req.dtype {
             args.push("--dtype".to_string());
             args.push(dtype.clone());
+        }
+
+        if let Some(ref limit) = req.limit_mm_per_prompt {
+            args.push("--limit-mm-per-prompt".to_string());
+            args.push(limit.clone());
         }
 
         if let Some(len) = req.max_model_len {
@@ -384,6 +393,7 @@ impl VllmEngine for KubernetesVllmEngine {
                     "vllm-model": req.model.clone(),
                     "vllm-quantization": req.quantization.as_deref().unwrap_or(""),
                     "vllm-dtype": req.dtype.as_deref().unwrap_or(""),
+                    "vllm-limit-mm-per-prompt": req.limit_mm_per_prompt.as_deref().unwrap_or(""),
                     "vllm-max-model-len": req.max_model_len.map(|v| v.to_string()).unwrap_or_default(),
                     "vllm-gpu-memory-utilization": req.gpu_memory_utilization.map(|v| v.to_string()).unwrap_or_default(),
                     "vllm-enable-prefix-caching": req.enable_prefix_caching.to_string(),
@@ -498,6 +508,7 @@ impl VllmEngine for KubernetesVllmEngine {
             port: req.port,
             quantization: req.quantization.clone(),
             dtype: req.dtype.clone(),
+            limit_mm_per_prompt: req.limit_mm_per_prompt.clone(),
             max_model_len: req.max_model_len,
             gpu_memory_utilization: req.gpu_memory_utilization,
             enable_prefix_caching: req.enable_prefix_caching,

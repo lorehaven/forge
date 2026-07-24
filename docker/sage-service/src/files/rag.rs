@@ -275,7 +275,12 @@ pub async fn augment_system_prompt(
     let files = crate::routers::files::visible_files_for_conversation(db, &conversation)
         .await
         .ok()?;
-    let ready_files: Vec<_> = files.iter().filter(|f| f.status == STATUS_READY).collect();
+    // Images have no chunks to search; they reach the model as message
+    // content parts instead of RAG excerpts.
+    let ready_files: Vec<_> = files
+        .iter()
+        .filter(|f| f.status == STATUS_READY && !crate::files::is_image_mime(&f.mime_type))
+        .collect();
     if ready_files.is_empty() {
         return None;
     }

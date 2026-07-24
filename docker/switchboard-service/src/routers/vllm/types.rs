@@ -13,6 +13,11 @@ pub struct VllmInstance {
     /// `--dtype`, e.g. "float16"); None = vLLM default ("auto", usually bfloat16).
     #[serde(default)]
     pub dtype: Option<String>,
+    /// Multimodal input limit the instance was launched with (passed verbatim
+    /// as `--limit-mm-per-prompt`, e.g. `{"image": 4}`); None = vLLM default
+    /// (1 item per modality).
+    #[serde(default)]
+    pub limit_mm_per_prompt: Option<String>,
     pub max_model_len: Option<u32>,
     pub gpu_memory_utilization: Option<f32>,
     pub enable_prefix_caching: bool,
@@ -39,6 +44,11 @@ pub struct LaunchRequest {
     /// or models that misbehave with the default bfloat16). None = vLLM "auto".
     #[serde(default)]
     pub dtype: Option<String>,
+    /// Multimodal input limit to launch with, passed verbatim as
+    /// `--limit-mm-per-prompt` (e.g. `{"image": 4}` to allow 4 images per
+    /// request on a vision model). None = vLLM default (1 per modality).
+    #[serde(default)]
+    pub limit_mm_per_prompt: Option<String>,
     pub max_model_len: Option<u32>,
     pub gpu_memory_utilization: Option<f32>,
     pub enable_prefix_caching: bool,

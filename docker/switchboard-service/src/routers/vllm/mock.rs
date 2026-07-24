@@ -26,6 +26,7 @@ impl VllmEngine for MockVllmEngine {
             port: req.port,
             quantization: req.quantization,
             dtype: req.dtype,
+            limit_mm_per_prompt: req.limit_mm_per_prompt,
             max_model_len: req.max_model_len,
             gpu_memory_utilization: req.gpu_memory_utilization,
             enable_prefix_caching: req.enable_prefix_caching,

@@ -20,16 +20,82 @@ fn db_schema() -> String {
     envmnt::get_or("DB_SCHEMA", "sage")
 }
 
+/// Every extension the upload endpoint accepts, paired with the MIME type the
+/// file is stored as. Single source of truth: uploads are validated against it
+/// and the composer's file picker builds its `accept` filter from it, so the
+/// two cannot drift apart.
+pub const ALLOWED_UPLOAD_TYPES: &[(&str, &str)] = &[
+    // Images (sent to vision models, not text-extracted)
+    ("png", "image/png"),
+    ("jpg", "image/jpeg"),
+    ("jpeg", "image/jpeg"),
+    ("webp", "image/webp"),
+    ("gif", "image/gif"),
+    // Documents
+    ("pdf", "application/pdf"),
+    ("txt", "text/plain"),
+    ("log", "text/plain"),
+    ("ini", "text/plain"),
+    ("conf", "text/plain"),
+    ("cfg", "text/plain"),
+    ("csv", "text/csv"),
+    ("md", "text/markdown"),
+    ("html", "text/html"),
+    ("htm", "text/html"),
+    // Data & config formats
+    ("json", "application/json"),
+    ("yaml", "application/yaml"),
+    ("yml", "application/yaml"),
+    ("toml", "application/toml"),
+    ("xml", "application/xml"),
+    // Source code
+    ("rs", "text/x-rust"),
+    ("py", "text/x-python"),
+    ("js", "text/javascript"),
+    ("mjs", "text/javascript"),
+    ("jsx", "text/javascript"),
+    ("ts", "text/x-typescript"),
+    ("tsx", "text/x-typescript"),
+    ("java", "text/x-java"),
+    ("kt", "text/x-kotlin"),
+    ("kts", "text/x-kotlin"),
+    ("go", "text/x-go"),
+    ("c", "text/x-c"),
+    ("h", "text/x-c"),
+    ("cpp", "text/x-c++"),
+    ("cc", "text/x-c++"),
+    ("cxx", "text/x-c++"),
+    ("hpp", "text/x-c++"),
+    ("cs", "text/x-csharp"),
+    ("rb", "text/x-ruby"),
+    ("php", "text/x-php"),
+    ("swift", "text/x-swift"),
+    ("sh", "text/x-shellscript"),
+    ("bash", "text/x-shellscript"),
+    ("zsh", "text/x-shellscript"),
+    ("fish", "text/x-shellscript"),
+    ("sql", "application/sql"),
+    ("css", "text/css"),
+    ("scss", "text/css"),
+];
+
 /// Map a file name to its stored MIME type. Returns None for unsupported formats.
 fn allowed_mime_type(file_name: &str) -> Option<&'static str> {
     let ext = file_name.rsplit('.').next()?.to_lowercase();
-    match ext.as_str() {
-        "pdf" => Some("application/pdf"),
-        "txt" => Some("text/plain"),
-        "csv" => Some("text/csv"),
-        "md" => Some("text/markdown"),
-        _ => None,
-    }
+    ALLOWED_UPLOAD_TYPES
+        .iter()
+        .find(|(e, _)| *e == ext)
+        .map(|(_, mime)| *mime)
+}
+
+/// Value for the `accept` attribute of the upload inputs: every extension the
+/// server accepts, so the browser's file picker offers exactly those.
+pub fn upload_accept_attribute() -> String {
+    ALLOWED_UPLOAD_TYPES
+        .iter()
+        .map(|(ext, _)| format!(".{ext}"))
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 #[derive(MultipartForm)]
@@ -119,6 +185,9 @@ pub async fn create_uploaded_file(
         }
     }
 
+    // Images are not text-extracted: they are ready as soon as the blob is
+    // stored and never enter the chunk/embed pipeline.
+    let is_image = crate::files::is_image_mime(mime_type);
     let now = Utc::now().to_rfc3339();
     let file = File {
         id: Uuid::new_v4().to_string(),
@@ -129,7 +198,11 @@ pub async fn create_uploaded_file(
         conversation_id,
         project_id,
         message_id: None,
-        status: STATUS_UPLOADED.to_string(),
+        status: if is_image {
+            crate::files::STATUS_READY.to_string()
+        } else {
+            STATUS_UPLOADED.to_string()
+        },
         error_message: None,
         created_at: now.clone(),
         updated_at: now,
@@ -178,12 +251,14 @@ pub async fn create_uploaded_file(
                 return Err(HttpResponse::InternalServerError().body("api_error_internal"));
             }
 
-            pipeline::spawn_processing(
-                db.clone(),
-                switchboard.clone(),
-                vllm.clone(),
-                file.id.clone(),
-            );
+            if !is_image {
+                pipeline::spawn_processing(
+                    db.clone(),
+                    switchboard.clone(),
+                    vllm.clone(),
+                    file.id.clone(),
+                );
+            }
 
             Ok(file)
         }
@@ -499,11 +574,18 @@ pub async fn download_file(
                         .chars()
                         .filter(|c| !c.is_control() && *c != '"' && *c != '\\')
                         .collect();
+                    // Images render inline (thumbnails, opening in a tab);
+                    // everything else stays a download.
+                    let disposition = if crate::files::is_image_mime(&file.mime_type) {
+                        "inline"
+                    } else {
+                        "attachment"
+                    };
                     HttpResponse::Ok()
                         .content_type(file.mime_type.clone())
                         .append_header((
                             "Content-Disposition",
-                            format!("attachment; filename=\"{}\"", safe_name),
+                            format!("{}; filename=\"{}\"", disposition, safe_name),
                         ))
                         .body(data)
                 }
@@ -536,6 +618,10 @@ pub async fn reprocess_file(
 
     if file.status == crate::files::STATUS_PROCESSING {
         return HttpResponse::Conflict().body("api_error_file_already_processing");
+    }
+    // Images have no text pipeline to (re)run; they are ready once stored.
+    if crate::files::is_image_mime(&file.mime_type) {
+        return HttpResponse::UnprocessableEntity().body("api_error_image_not_processable");
     }
 
     pipeline::spawn_processing(
@@ -627,4 +713,64 @@ pub fn scope() -> actix_web::Scope {
         .service(list_chunks)
         .service(get_file)
         .service(delete_file)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extension_lookup_is_case_insensitive_and_uses_the_last_dot() {
+        assert_eq!(allowed_mime_type("photo.PNG"), Some("image/png"));
+        assert_eq!(allowed_mime_type("archive.tar.gz"), None);
+        assert_eq!(allowed_mime_type("notes.backup.md"), Some("text/markdown"));
+        assert_eq!(allowed_mime_type("README"), None);
+        assert_eq!(allowed_mime_type("evil.exe"), None);
+    }
+
+    #[test]
+    fn accept_attribute_covers_every_supported_extension() {
+        let accept = upload_accept_attribute();
+        let listed: Vec<&str> = accept.split(',').collect();
+        assert_eq!(listed.len(), ALLOWED_UPLOAD_TYPES.len());
+        for (ext, _) in ALLOWED_UPLOAD_TYPES {
+            assert!(
+                listed.contains(&format!(".{ext}").as_str()),
+                "accept filter is missing .{ext}"
+            );
+        }
+        // The formats the picker used to be limited to, plus images.
+        for expected in [".pdf", ".txt", ".csv", ".md", ".png", ".jpg", ".webp"] {
+            assert!(accept.contains(expected), "accept filter lost {expected}");
+        }
+    }
+
+    #[test]
+    fn no_duplicate_extensions() {
+        let mut seen: Vec<&str> = ALLOWED_UPLOAD_TYPES.iter().map(|(ext, _)| *ext).collect();
+        let total = seen.len();
+        seen.sort_unstable();
+        seen.dedup();
+        assert_eq!(seen.len(), total, "duplicate extension in the accept table");
+    }
+
+    /// Everything the upload endpoint accepts must have somewhere to go: images
+    /// bypass extraction, every other MIME type must be one the extractor
+    /// knows, or the file would be stored only to fail processing.
+    #[test]
+    fn every_accepted_mime_is_handled_downstream() {
+        for (ext, mime) in ALLOWED_UPLOAD_TYPES {
+            if crate::files::is_image_mime(mime) {
+                continue;
+            }
+            // Empty/dummy input still fails (no content), but it must not fail
+            // with the "unsupported type" error.
+            if let Err(err) = crate::files::extractor::extract_text(mime, b"probe") {
+                assert!(
+                    !err.starts_with("Unsupported MIME type"),
+                    ".{ext} maps to {mime}, which the extractor rejects: {err}"
+                );
+            }
+        }
+    }
 }

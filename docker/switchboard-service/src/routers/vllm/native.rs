@@ -20,6 +20,7 @@ struct LaunchRecord {
     port: u16,
     quantization: Option<String>,
     dtype: Option<String>,
+    limit_mm_per_prompt: Option<String>,
     max_model_len: Option<u32>,
     gpu_memory_utilization: Option<f32>,
     enable_prefix_caching: bool,
@@ -92,6 +93,8 @@ impl VllmEngine for NativeVllmEngine {
 
             let dtype = extract_arg(&parts, "--dtype");
 
+            let limit_mm_per_prompt = extract_arg(&parts, "--limit-mm-per-prompt");
+
             let max_model_len =
                 extract_arg(&parts, "--max-model-len").and_then(|v| v.parse::<u32>().ok());
 
@@ -131,6 +134,7 @@ impl VllmEngine for NativeVllmEngine {
                 port,
                 quantization,
                 dtype,
+                limit_mm_per_prompt,
                 max_model_len,
                 gpu_memory_utilization,
                 enable_prefix_caching,
@@ -165,6 +169,7 @@ impl VllmEngine for NativeVllmEngine {
                     port: record.port,
                     quantization: record.quantization.clone(),
                     dtype: record.dtype.clone(),
+                    limit_mm_per_prompt: record.limit_mm_per_prompt.clone(),
                     max_model_len: record.max_model_len,
                     gpu_memory_utilization: record.gpu_memory_utilization,
                     enable_prefix_caching: record.enable_prefix_caching,
@@ -214,6 +219,11 @@ impl VllmEngine for NativeVllmEngine {
         if let Some(ref dtype) = req.dtype {
             args.push("--dtype".to_string());
             args.push(dtype.clone());
+        }
+
+        if let Some(ref limit) = req.limit_mm_per_prompt {
+            args.push("--limit-mm-per-prompt".to_string());
+            args.push(limit.clone());
         }
 
         if let Some(len) = req.max_model_len {
@@ -294,6 +304,7 @@ impl VllmEngine for NativeVllmEngine {
                         port,
                         quantization: req.quantization.clone(),
                         dtype: req.dtype.clone(),
+                        limit_mm_per_prompt: req.limit_mm_per_prompt.clone(),
                         max_model_len: req.max_model_len,
                         gpu_memory_utilization: req.gpu_memory_utilization,
                         enable_prefix_caching: req.enable_prefix_caching,
@@ -319,6 +330,7 @@ impl VllmEngine for NativeVllmEngine {
                             port,
                             quantization: req.quantization.clone(),
                             dtype: req.dtype.clone(),
+                            limit_mm_per_prompt: req.limit_mm_per_prompt.clone(),
                             max_model_len: req.max_model_len,
                             gpu_memory_utilization: req.gpu_memory_utilization,
                             enable_prefix_caching: req.enable_prefix_caching,
@@ -353,6 +365,7 @@ impl VllmEngine for NativeVllmEngine {
                         port,
                         quantization: req.quantization.clone(),
                         dtype: req.dtype.clone(),
+                        limit_mm_per_prompt: req.limit_mm_per_prompt.clone(),
                         max_model_len: req.max_model_len,
                         gpu_memory_utilization: req.gpu_memory_utilization,
                         enable_prefix_caching: req.enable_prefix_caching,
@@ -373,6 +386,7 @@ impl VllmEngine for NativeVllmEngine {
                     port,
                     quantization: req.quantization.clone(),
                     dtype: req.dtype.clone(),
+                    limit_mm_per_prompt: req.limit_mm_per_prompt.clone(),
                     max_model_len: req.max_model_len,
                     gpu_memory_utilization: req.gpu_memory_utilization,
                     enable_prefix_caching: req.enable_prefix_caching,

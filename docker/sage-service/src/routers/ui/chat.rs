@@ -406,13 +406,17 @@ pub async fn stream_message(
     let prompt_budget = max_model_len.saturating_sub(reserved_for_generation);
 
     fn estimate_tokens(msg: &ChatMessage) -> usize {
-        msg.content.chars().count().div_ceil(3) + 4
+        let image_tokens = msg.images.as_ref().map_or(0, |imgs| {
+            imgs.len() * crate::files::images::image_token_estimate()
+        });
+        msg.content.chars().count().div_ceil(3) + 4 + image_tokens
     }
 
     let mut system_message = ChatMessage {
         role: "system".to_string(),
         content: config.system_prompt.clone(),
         tool_calls: None,
+        images: None,
     };
 
     // Ensure the conversation row exists before building RAG context or running
@@ -477,11 +481,23 @@ pub async fn stream_message(
         tracing::warn!("✗ System prompt does NOT include AVAILABLE TOOLS section");
     }
 
-    let current_user_message = ChatMessage {
+    let mut current_user_message = ChatMessage {
         role: "user".to_string(),
         content: req.message.clone(),
         tool_calls: None,
+        images: None,
     };
+
+    // Attach staged image uploads to the outgoing message so vision models
+    // can see them. Non-image attachments flow through RAG instead.
+    if !req.skip_user_message {
+        let staged_images =
+            crate::files::images::load_staged_images(db.get_ref(), &req.file_id_list(), &username)
+                .await;
+        if !staged_images.is_empty() {
+            current_user_message.images = Some(staged_images);
+        }
+    }
 
     tracing::info!("User message: {}", current_user_message.content);
 
@@ -536,6 +552,13 @@ pub async fn stream_message(
     if !req.skip_user_message {
         messages.push(current_user_message);
     }
+
+    // Stay within the vLLM instance's per-prompt image limit, preferring the
+    // newest images.
+    crate::files::images::cap_images(
+        &mut messages,
+        crate::files::images::max_images_per_request(),
+    );
 
     let max_tokens = reserved_for_generation as u32;
 
@@ -706,11 +729,13 @@ pub async fn stream_message(
                         role: "system".to_string(),
                         content: "You are a helpful assistant. Present information clearly and concisely. Do not add titles, headers, or summaries—just the essential content.".to_string(),
                         tool_calls: None,
+                        images: None,
                     },
                     ChatMessage {
                         role: "user".to_string(),
                         content: parse_prompt,
                         tool_calls: None,
+                        images: None,
                     },
                 ];
 
@@ -1516,20 +1541,28 @@ pub async fn get_conversation_messages(
                     FROM {} m
                     INNER JOIN thread t ON t.parent_id = m.id
                 )
-                SELECT role, content FROM thread ORDER BY depth DESC",
+                SELECT id, role, content FROM thread ORDER BY depth DESC",
                 table, table
             );
 
-            let rows = sqlx::query_as::<_, (String, String)>(sqlx::AssertSqlSafe(query.as_str()))
-                .bind(current_id)
-                .fetch_all(pg_db.pool())
-                .await?;
+            let rows =
+                sqlx::query_as::<_, (String, String, String)>(sqlx::AssertSqlSafe(query.as_str()))
+                    .bind(current_id)
+                    .fetch_all(pg_db.pool())
+                    .await?;
 
-            for (role, content) in rows {
+            // Re-attach image uploads to their messages so vision models keep
+            // seeing them in follow-up turns.
+            let message_ids: Vec<String> = rows.iter().map(|(id, _, _)| id.clone()).collect();
+            let mut images_by_message =
+                crate::files::images::load_images_for_messages(db, &message_ids).await;
+
+            for (id, role, content) in rows {
                 chat_messages.push(ChatMessage {
                     role,
                     content,
                     tool_calls: None,
+                    images: images_by_message.remove(&id),
                 });
             }
         }
@@ -1556,6 +1589,7 @@ pub async fn get_conversation_messages(
                     role: msg.role,
                     content: msg.content,
                     tool_calls: None,
+                    images: None,
                 });
             }
         }

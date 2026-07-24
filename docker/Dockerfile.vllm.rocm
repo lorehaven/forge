@@ -19,6 +19,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libopenmpi3 \
     openmpi-bin \
     libgomp1 \
+    libjpeg-turbo8 \
+    libpng16-16 \
     && rm -rf /var/lib/apt/lists/*
 
 # CC

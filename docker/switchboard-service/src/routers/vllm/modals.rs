@@ -12,6 +12,7 @@ pub struct LaunchModalQuery {
     pub namespace: Option<String>,
     pub quantization: Option<String>,
     pub dtype: Option<String>,
+    pub limit_mm_per_prompt: Option<String>,
     pub max_model_len: Option<String>,
     pub gpu_memory_utilization: Option<String>,
     pub prefix_caching: Option<bool>,
@@ -322,6 +323,30 @@ fn runtime_fields(query: &LaunchModalQuery) -> Element {
                         .text("Max Model Len"),
                 )
                 .child(max_len),
+        )
+        .child(
+            div()
+                .class("form-group")
+                .child(
+                    label()
+                        .attr("data-i18n", "ui_vllm_form_limit_mm")
+                        .text("Multimodal Limit"),
+                )
+                .child({
+                    let mut limit = input()
+                        .attr("type", "text")
+                        .attr("id", "launch-limit-mm")
+                        .attr("name", "limit_mm_per_prompt")
+                        .attr("placeholder", r#"{"image": 4}"#);
+                    if let Some(value) = query
+                        .limit_mm_per_prompt
+                        .as_deref()
+                        .filter(|value| !value.is_empty())
+                    {
+                        limit = limit.attr("value", value);
+                    }
+                    limit
+                }),
         )
 }
 

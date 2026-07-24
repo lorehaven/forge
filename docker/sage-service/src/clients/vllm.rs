@@ -14,12 +14,47 @@ pub struct ToolCall {
     pub arguments: serde_json::Value,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct ChatMessage {
     pub role: String,
     pub content: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCall>>,
+    /// Image attachments as data URIs (`data:image/png;base64,...`). When
+    /// present, the message is serialized as an OpenAI content-parts array so
+    /// vision models receive the images alongside the text.
+    #[serde(default)]
+    pub images: Option<Vec<String>>,
+}
+
+/// Serialize to the OpenAI chat format: plain string `content` for text-only
+/// messages, an array of `text` / `image_url` parts when images are attached.
+impl Serialize for ChatMessage {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+
+        let has_images = self.images.as_ref().is_some_and(|v| !v.is_empty());
+        // Images fold into `content`, so the field count never includes them.
+        let fields = 2 + usize::from(self.tool_calls.is_some());
+        let mut state = serializer.serialize_struct("ChatMessage", fields)?;
+        state.serialize_field("role", &self.role)?;
+        if has_images {
+            let mut parts: Vec<serde_json::Value> = Vec::new();
+            if !self.content.is_empty() {
+                parts.push(serde_json::json!({"type": "text", "text": self.content}));
+            }
+            for url in self.images.iter().flatten() {
+                parts.push(serde_json::json!({"type": "image_url", "image_url": {"url": url}}));
+            }
+            state.serialize_field("content", &parts)?;
+        } else {
+            state.serialize_field("content", &self.content)?;
+        }
+        if let Some(tool_calls) = &self.tool_calls {
+            state.serialize_field("tool_calls", tool_calls)?;
+        }
+        state.end()
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -374,6 +409,54 @@ struct EmbeddingData {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn text_only_message_serializes_content_as_string() {
+        let msg = ChatMessage {
+            role: "user".to_string(),
+            content: "hello".to_string(),
+            tool_calls: None,
+            images: None,
+        };
+        let json = serde_json::to_value(&msg).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({"role": "user", "content": "hello"})
+        );
+    }
+
+    #[test]
+    fn message_with_images_serializes_content_parts() {
+        let msg = ChatMessage {
+            role: "user".to_string(),
+            content: "what is this?".to_string(),
+            tool_calls: None,
+            images: Some(vec!["data:image/png;base64,AAAA".to_string()]),
+        };
+        let json = serde_json::to_value(&msg).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "what is this?"},
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,AAAA"}}
+                ]
+            })
+        );
+    }
+
+    #[test]
+    fn message_with_empty_images_serializes_as_text() {
+        let msg = ChatMessage {
+            role: "user".to_string(),
+            content: "hello".to_string(),
+            tool_calls: None,
+            images: Some(vec![]),
+        };
+        let json = serde_json::to_value(&msg).unwrap();
+        assert_eq!(json["content"], serde_json::json!("hello"));
+    }
 
     /// The exact streamed chunks from a Qwen tool call (name in one chunk,
     /// arguments in the next) must now deserialize; previously the strict

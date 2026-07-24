@@ -30,6 +30,7 @@ pub struct LaunchRequestForm {
     namespace: Option<String>,
     quantization: Option<String>,
     dtype: Option<String>,
+    limit_mm_per_prompt: Option<String>,
     max_model_len: Option<String>,
     gpu_memory_utilization: Option<String>,
     enable_prefix_caching: Option<bool>,
@@ -56,6 +57,10 @@ pub async fn launch_instance_form(
             (!trimmed.is_empty()).then(|| trimmed.to_string())
         }),
         dtype: form.dtype.as_deref().and_then(|value| {
+            let trimmed = value.trim();
+            (!trimmed.is_empty()).then(|| trimmed.to_string())
+        }),
+        limit_mm_per_prompt: form.limit_mm_per_prompt.as_deref().and_then(|value| {
             let trimmed = value.trim();
             (!trimmed.is_empty()).then(|| trimmed.to_string())
         }),

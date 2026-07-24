@@ -200,6 +200,17 @@ pub fn render_instances_grid(instances: Vec<VllmInstance>, is_admin: bool) -> St
                         .child(span().text(": "))
                         .child(span().text(dtype.to_string()));
                 }
+                if let Some(limit) = instance.limit_mm_per_prompt.as_deref() {
+                    fit_line = fit_line
+                        .child(span().text(" | "))
+                        .child(
+                            span()
+                                .attr("data-i18n", "ui_vllm_form_limit_mm")
+                                .text("Multimodal Limit"),
+                        )
+                        .child(span().text(": "))
+                        .child(span().text(limit.to_string()));
+                }
                 fit_line
                     .child(span().text(" | "))
                     .child(

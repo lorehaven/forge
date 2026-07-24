@@ -17,6 +17,11 @@ pub struct DefaultModel {
     /// with the default bfloat16). None = vLLM "auto".
     #[serde(default)]
     pub dtype: Option<String>,
+    /// Multimodal input limit for vision models, passed verbatim as
+    /// `--limit-mm-per-prompt` (e.g. `{"image": 4}`). Should cover
+    /// SAGE_MAX_IMAGES_PER_REQUEST. None = vLLM default (1 per modality).
+    #[serde(rename = "limit_mm", default)]
+    pub limit_mm_per_prompt: Option<String>,
     #[serde(default)]
     pub enable_tool_calling: bool,
     /// vLLM task, e.g. "embed" for embedding models (passed to switchboard
@@ -50,6 +55,7 @@ impl DefaultModel {
                 max_model_len: None,
                 quantization: None,
                 dtype: None,
+                limit_mm_per_prompt: None,
                 enable_tool_calling: false,
                 task: None,
             }];
@@ -235,6 +241,17 @@ mod tests {
         let list_dtype = DefaultModel::parse_list(dtype_json);
         assert_eq!(list_dtype.len(), 1);
         assert_eq!(list_dtype[0].dtype.as_deref(), Some("float16"));
+
+        // Vision model with a multimodal limit; the value is the exact string
+        // shape used in .env (escaped inner quotes) and must survive verbatim.
+        let vl_json =
+            r#"{"name": "Qwen/Qwen3-VL-2B-Instruct-FP8", "limit_mm": "{\"image\": 2}"}"#;
+        let list_vl = DefaultModel::parse_list(vl_json);
+        assert_eq!(list_vl.len(), 1);
+        assert_eq!(
+            list_vl[0].limit_mm_per_prompt.as_deref(),
+            Some(r#"{"image": 2}"#)
+        );
 
         // Backwards compatibility with raw string name
         let raw_str = "qwen2.5-coder:7b";

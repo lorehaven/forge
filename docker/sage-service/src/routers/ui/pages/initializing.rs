@@ -248,6 +248,7 @@ mod tests {
             max_model_len: None,
             quantization: None,
             dtype: None,
+            limit_mm_per_prompt: None,
             enable_tool_calling: false,
             task: None,
         }

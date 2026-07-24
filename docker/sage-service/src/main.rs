@@ -208,6 +208,12 @@ fn init_tool_registry(
     actix_web::web::Data::new(registry)
 }
 
+/// How many times the monitor retries a default model that never reaches
+/// `running` before it gives up and moves on to the next one. Without this a
+/// single unlaunchable model would block every model behind it forever, since
+/// launches are serialized.
+const MAX_LAUNCH_ATTEMPTS: u32 = 3;
+
 fn spawn_model_monitor_task(
     switchboard: clients::switchboard::SwitchboardClient,
     config: config::SageConfig,
@@ -217,16 +223,63 @@ fn spawn_model_monitor_task(
 
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
+        // Consecutive launch attempts per model, kept across ticks so a model
+        // that keeps failing does not stall the rest of the queue.
+        let mut attempts: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
         loop {
             interval.tick().await;
-            monitor_default_models(&switchboard_clone, &config_clone).await;
+            monitor_default_models(&switchboard_clone, &config_clone, &mut attempts).await;
         }
     });
+}
+
+/// Instance is still coming up: weights loading, pod scheduling, etc.
+fn is_starting(status: &str) -> bool {
+    matches!(status, "starting" | "pending")
+}
+
+/// Instance counts as covering its model — either up or on its way up.
+fn is_active(status: &str) -> bool {
+    status == "running" || is_starting(status)
+}
+
+/// Pick the next default model to launch. Models are launched **one at a
+/// time**: while any instance is still starting this returns `None`, so the
+/// next launch waits until the current one has finished loading (or failed)
+/// rather than having several models contend for GPU memory at once.
+fn next_model_to_launch<'a>(
+    config: &'a config::SageConfig,
+    instances: &[clients::switchboard::VllmInstance],
+    attempts: &std::collections::HashMap<String, u32>,
+) -> Option<&'a config::DefaultModel> {
+    if let Some(inst) = instances.iter().find(|inst| is_starting(&inst.status)) {
+        tracing::debug!(
+            "Instance '{}' is still starting; holding off on launching the next default model.",
+            inst.model
+        );
+        return None;
+    }
+
+    config.default_models.iter().find(|model| {
+        if !config.is_model_supported(&model.name) {
+            return false;
+        }
+        if attempts
+            .get(&model.name)
+            .is_some_and(|n| *n >= MAX_LAUNCH_ATTEMPTS)
+        {
+            return false;
+        }
+        !instances
+            .iter()
+            .any(|inst| inst.model == model.name && is_active(&inst.status))
+    })
 }
 
 async fn monitor_default_models(
     switchboard: &clients::switchboard::SwitchboardClient,
     config: &config::SageConfig,
+    attempts: &mut std::collections::HashMap<String, u32>,
 ) {
     tracing::debug!("Checking active instances for default models...");
 
@@ -249,17 +302,34 @@ async fn monitor_default_models(
             );
             continue;
         }
-
-        let is_active = instances.iter().any(|inst| {
-            inst.model == model.name
-                && (inst.status == "running"
-                    || inst.status == "starting"
-                    || inst.status == "pending")
-        });
-
-        if !is_active {
-            request_model_launch(switchboard, model).await;
+        // A model that came up successfully starts over with a clean slate, so
+        // a later restart is retried rather than treated as exhausted.
+        if instances
+            .iter()
+            .any(|inst| inst.model == model.name && inst.status == "running")
+        {
+            attempts.remove(&model.name);
         }
+    }
+
+    let Some(model) = next_model_to_launch(config, &instances, attempts) else {
+        return;
+    };
+
+    let attempt = attempts.entry(model.name.clone()).or_insert(0);
+    *attempt += 1;
+    let attempt = *attempt;
+
+    request_model_launch(switchboard, model).await;
+
+    if attempt >= MAX_LAUNCH_ATTEMPTS {
+        tracing::error!(
+            "This was attempt {} of {} for default model '{}'. If it does not reach \
+             'running' it will be skipped so the remaining default models can start.",
+            attempt,
+            MAX_LAUNCH_ATTEMPTS,
+            model.name
+        );
     }
 }
 
@@ -279,6 +349,7 @@ async fn request_model_launch(
             model.max_model_len,
             model.quantization.as_deref(),
             model.dtype.as_deref(),
+            model.limit_mm_per_prompt.as_deref(),
             model.enable_tool_calling,
             model.task.as_deref(),
         )
@@ -416,4 +487,111 @@ async fn main() -> std::io::Result<()> {
     }
 
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clients::switchboard::VllmInstance;
+    use config::{DefaultModel, SageConfig};
+    use std::collections::HashMap;
+
+    fn model(name: &str) -> DefaultModel {
+        DefaultModel {
+            name: name.to_string(),
+            gpu_memory_utilization: None,
+            max_model_len: None,
+            quantization: None,
+            dtype: None,
+            limit_mm_per_prompt: None,
+            enable_tool_calling: false,
+            task: None,
+        }
+    }
+
+    fn instance(model: &str, status: &str) -> VllmInstance {
+        VllmInstance {
+            id: format!("pid-{model}"),
+            namespace: "native".to_string(),
+            model: model.to_string(),
+            host: "0.0.0.0".to_string(),
+            port: 8000,
+            quantization: None,
+            max_model_len: None,
+            gpu_memory_utilization: None,
+            enable_prefix_caching: false,
+            task: None,
+            started_at: chrono::Utc::now(),
+            status: status.to_string(),
+        }
+    }
+
+    fn test_config(models: &[&str]) -> SageConfig {
+        SageConfig {
+            system_prompt: String::new(),
+            default_models: models.iter().map(|n| model(n)).collect(),
+            supported_models: vec!["*".to_string()],
+            default_search_provider: "none".to_string(),
+            available_search_providers: vec![],
+            capability_profile: tools::capabilities::get_profile("web_assistant").unwrap(),
+            stop_models_on_shutdown: false,
+        }
+    }
+
+    #[test]
+    fn launches_the_first_missing_model() {
+        let config = test_config(&["chat", "embed"]);
+        let next = next_model_to_launch(&config, &[], &HashMap::new()).unwrap();
+        assert_eq!(next.name, "chat");
+    }
+
+    #[test]
+    fn waits_while_another_model_is_starting() {
+        let config = test_config(&["chat", "embed"]);
+        let instances = vec![instance("chat", "starting")];
+        assert!(next_model_to_launch(&config, &instances, &HashMap::new()).is_none());
+
+        let instances = vec![instance("chat", "pending")];
+        assert!(next_model_to_launch(&config, &instances, &HashMap::new()).is_none());
+    }
+
+    #[test]
+    fn moves_on_once_the_previous_model_is_running() {
+        let config = test_config(&["chat", "embed"]);
+        let instances = vec![instance("chat", "running")];
+        let next = next_model_to_launch(&config, &instances, &HashMap::new()).unwrap();
+        assert_eq!(next.name, "embed");
+    }
+
+    #[test]
+    fn relaunches_a_failed_model_before_the_rest() {
+        let config = test_config(&["chat", "embed"]);
+        let instances = vec![instance("chat", "failed")];
+        let next = next_model_to_launch(&config, &instances, &HashMap::new()).unwrap();
+        assert_eq!(next.name, "chat");
+    }
+
+    #[test]
+    fn skips_a_model_that_exhausted_its_attempts() {
+        let config = test_config(&["chat", "embed"]);
+        let instances = vec![instance("chat", "failed")];
+        let attempts = HashMap::from([("chat".to_string(), MAX_LAUNCH_ATTEMPTS)]);
+        let next = next_model_to_launch(&config, &instances, &attempts).unwrap();
+        assert_eq!(next.name, "embed");
+    }
+
+    #[test]
+    fn skips_unsupported_models() {
+        let mut config = test_config(&["chat", "embed"]);
+        config.supported_models = vec!["embed".to_string()];
+        let next = next_model_to_launch(&config, &[], &HashMap::new()).unwrap();
+        assert_eq!(next.name, "embed");
+    }
+
+    #[test]
+    fn nothing_to_launch_when_all_models_are_running() {
+        let config = test_config(&["chat", "embed"]);
+        let instances = vec![instance("chat", "running"), instance("embed", "running")];
+        assert!(next_model_to_launch(&config, &instances, &HashMap::new()).is_none());
+    }
 }

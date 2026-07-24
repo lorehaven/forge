@@ -48,6 +48,7 @@ ui_vllm_form_port = Puerto
 ui_vllm_form_namespace = Espacio de nombres
 ui_vllm_form_quant = Cuantización
 ui_vllm_form_dtype = Dtype
+ui_vllm_form_limit_mm = Límite multimodal
 ui_vllm_form_max_len = Longitud máx. del modelo
 ui_vllm_form_gpu_util = Uso de memoria GPU
 ui_vllm_form_prefix_caching = Habilitar caché de prefijos

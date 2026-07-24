@@ -205,6 +205,7 @@ impl SwitchboardClient {
         max_model_len: Option<u32>,
         quantization: Option<&str>,
         dtype: Option<&str>,
+        limit_mm_per_prompt: Option<&str>,
         enable_tool_calling: bool,
         task: Option<&str>,
     ) -> Result<VllmInstance> {
@@ -222,6 +223,7 @@ impl SwitchboardClient {
             "namespace": null,
             "quantization": quantization,
             "dtype": dtype,
+            "limit_mm_per_prompt": limit_mm_per_prompt,
             "max_model_len": max_model_len,
             "gpu_memory_utilization": gpu_memory_utilization,
             "enable_prefix_caching": false,
