@@ -1,5 +1,5 @@
 use crate::clients::switchboard::{SwitchboardClient, VllmInstance};
-use crate::models::Conversation;
+use crate::domain::models::Conversation;
 use crate::routers::ui::chat::{
     ChatRequest, ChatState, get_conversation_message_nodes, get_siblings,
 };
@@ -54,7 +54,7 @@ async fn handle_home_page(
     }
 
     // Fetch user's projects
-    let project_repo = db.repository::<crate::models::Project>();
+    let project_repo = db.repository::<crate::domain::models::Project>();
     let mut projects = project_repo.list().await.unwrap_or_default();
     projects.retain(|p| p.owner == username);
     projects.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
@@ -222,13 +222,16 @@ fn conv_title_link(link: Element, title: &str) -> Element {
 #[allow(clippy::too_many_arguments)]
 fn render_home_page(
     instances_res: anyhow::Result<Vec<VllmInstance>>,
-    projects: Vec<crate::models::Project>,
+    projects: Vec<crate::domain::models::Project>,
     conversations: Vec<Conversation>,
     active_id: String,
-    active_messages: Vec<(crate::models::Message, Vec<crate::models::Message>)>,
+    active_messages: Vec<(
+        crate::domain::models::Message,
+        Vec<crate::domain::models::Message>,
+    )>,
     sources_by_message: std::collections::HashMap<String, Vec<crate::files::rag::RagSource>>,
-    attachments_by_message: std::collections::HashMap<String, Vec<crate::models::File>>,
-    project_files: Vec<crate::models::File>,
+    attachments_by_message: std::collections::HashMap<String, Vec<crate::domain::models::File>>,
+    project_files: Vec<crate::domain::models::File>,
     auto_trigger_ai: Option<String>,
     project_id: Option<String>,
     sage_config: web::Data<crate::config::SageConfig>,

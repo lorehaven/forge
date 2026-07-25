@@ -1,5 +1,5 @@
 use crate::clients::vllm::ChatMessage;
-use crate::conversation::{ConversationContext, ConversationMessage};
+use crate::domain::conversation::{ConversationContext, ConversationMessage};
 use quench_db::prelude::Crud;
 
 /// Build conversation context from database messages
@@ -8,7 +8,7 @@ pub async fn build_conversation_context(
     conversation_id: &str,
     max_context_tokens: u32,
 ) -> Result<ConversationContext, String> {
-    use crate::models::Message;
+    use crate::domain::models::Message;
 
     let mut ctx = ConversationContext::new(max_context_tokens);
 

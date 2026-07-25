@@ -1,5 +1,5 @@
+use crate::domain::models::Conversation;
 use crate::files::STATUS_READY;
-use crate::models::Conversation;
 use crate::tools::{ToolCall, ToolDefinition, ToolExecutor, ToolParameters, ToolResult};
 use quench_db::prelude::{Crud, Db};
 

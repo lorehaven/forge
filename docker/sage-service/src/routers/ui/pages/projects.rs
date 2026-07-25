@@ -89,7 +89,7 @@ pub async fn create_project(
         None => return HttpResponse::Unauthorized().finish(),
     };
 
-    let project = crate::models::Project {
+    let project = crate::domain::models::Project {
         id: Uuid::new_v4().to_string(),
         name: form.name.clone(),
         owner: username,
@@ -97,7 +97,7 @@ pub async fn create_project(
         updated_at: Utc::now().to_rfc3339(),
     };
 
-    let repo = db.repository::<crate::models::Project>();
+    let repo = db.repository::<crate::domain::models::Project>();
     if let Err(e) = repo.create(&project).await {
         tracing::error!("Failed to create project: {}", e);
         return HttpResponse::InternalServerError().body("api_error_internal");

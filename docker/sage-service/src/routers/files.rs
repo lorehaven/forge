@@ -1,7 +1,7 @@
 use crate::clients::switchboard::SwitchboardClient;
 use crate::clients::vllm::VllmClient;
+use crate::domain::models::{Conversation, File, FileChunk, Project};
 use crate::files::{STATUS_UPLOADED, pipeline};
-use crate::models::{Conversation, File, FileChunk, Project};
 use actix_multipart::form::{MultipartForm, bytes::Bytes as MultipartBytes, text::Text};
 use actix_web::{HttpRequest, HttpResponse, Responder, delete, get, post, web};
 use chrono::Utc;

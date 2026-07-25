@@ -1,7 +1,7 @@
 use crate::clients::switchboard::SwitchboardClient;
 use crate::clients::vllm::VllmClient;
+use crate::domain::models::{Conversation, File};
 use crate::files::{STATUS_FAILED, STATUS_PROCESSING, STATUS_READY, STATUS_UPLOADED, pipeline};
-use crate::models::{Conversation, File};
 use crate::routers::files::{FileUploadForm, create_uploaded_file};
 use actix_multipart::form::MultipartForm;
 use actix_web::{HttpResponse, Responder, get, post, web};

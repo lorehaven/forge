@@ -1,8 +1,8 @@
 use crate::clients::switchboard::SwitchboardClient;
 use crate::clients::vllm::VllmClient;
+use crate::domain::models::{File, FileChunk};
 use crate::files::embedder::{self, EmbedOutcome};
 use crate::files::{STATUS_FAILED, STATUS_PROCESSING, STATUS_READY, chunker, extractor};
-use crate::models::{File, FileChunk};
 use chrono::Utc;
 use quench_db::prelude::{Crud, Db};
 use uuid::Uuid;

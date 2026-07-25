@@ -21,13 +21,13 @@ pub struct CapabilitiesResponse {
 
 #[derive(Serialize)]
 pub struct MetricsResponse {
-    pub profiles: Vec<crate::metrics::ProfileMetrics>,
+    pub profiles: Vec<crate::observability::metrics::ProfileMetrics>,
 }
 
 #[derive(Serialize)]
 pub struct CostsResponse {
-    pub users: Vec<crate::cost_tracking::UserCosts>,
-    pub profiles: Vec<crate::cost_tracking::ProfileCosts>,
+    pub users: Vec<crate::observability::cost_tracking::UserCosts>,
+    pub profiles: Vec<crate::observability::cost_tracking::ProfileCosts>,
 }
 
 #[post("")]
@@ -117,7 +117,7 @@ pub async fn capabilities(config: web::Data<SageConfig>) -> impl Responder {
 
 #[get("/metrics")]
 pub async fn get_metrics(
-    metrics_collector: web::Data<std::sync::Arc<crate::metrics::MetricsCollector>>,
+    metrics_collector: web::Data<std::sync::Arc<crate::observability::metrics::MetricsCollector>>,
 ) -> impl Responder {
     let profiles = metrics_collector.get_all_profiles_metrics();
     let response = MetricsResponse { profiles };
@@ -127,7 +127,7 @@ pub async fn get_metrics(
 #[get("/metrics/{profile}")]
 pub async fn get_metrics_by_profile(
     profile_name: web::Path<String>,
-    metrics_collector: web::Data<std::sync::Arc<crate::metrics::MetricsCollector>>,
+    metrics_collector: web::Data<std::sync::Arc<crate::observability::metrics::MetricsCollector>>,
 ) -> impl Responder {
     let profile = profile_name.into_inner();
     match metrics_collector.get_profile_metrics(&profile) {
@@ -138,7 +138,7 @@ pub async fn get_metrics_by_profile(
 
 #[get("/costs")]
 pub async fn get_costs(
-    cost_tracker: web::Data<std::sync::Arc<crate::cost_tracking::CostTracker>>,
+    cost_tracker: web::Data<std::sync::Arc<crate::observability::cost_tracking::CostTracker>>,
 ) -> impl Responder {
     let users = cost_tracker.get_all_user_costs();
     let profiles = cost_tracker.get_all_profile_costs();
@@ -149,7 +149,7 @@ pub async fn get_costs(
 #[get("/costs/user/{user_id}")]
 pub async fn get_user_costs(
     user_id: web::Path<String>,
-    cost_tracker: web::Data<std::sync::Arc<crate::cost_tracking::CostTracker>>,
+    cost_tracker: web::Data<std::sync::Arc<crate::observability::cost_tracking::CostTracker>>,
 ) -> impl Responder {
     match cost_tracker.get_user_costs(&user_id) {
         Some(costs) => HttpResponse::Ok().json(costs),
@@ -160,7 +160,7 @@ pub async fn get_user_costs(
 #[get("/context-status/{profile}")]
 pub async fn get_context_status(profile_path: web::Path<String>) -> impl Responder {
     let profile = profile_path.into_inner();
-    let status = crate::context_manager::ContextStatus::new(&profile, 0);
+    let status = crate::domain::context::ContextStatus::new(&profile, 0);
     HttpResponse::Ok().json(status)
 }
 

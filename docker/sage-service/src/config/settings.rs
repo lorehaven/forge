@@ -244,8 +244,7 @@ mod tests {
 
         // Vision model with a multimodal limit; the value is the exact string
         // shape used in .env (escaped inner quotes) and must survive verbatim.
-        let vl_json =
-            r#"{"name": "Qwen/Qwen3-VL-2B-Instruct-FP8", "limit_mm": "{\"image\": 2}"}"#;
+        let vl_json = r#"{"name": "Qwen/Qwen3-VL-2B-Instruct-FP8", "limit_mm": "{\"image\": 2}"}"#;
         let list_vl = DefaultModel::parse_list(vl_json);
         assert_eq!(list_vl.len(), 1);
         assert_eq!(

@@ -1,6 +1,6 @@
 use crate::clients::vllm::ChatMessage;
+use crate::domain::models::File;
 use crate::files::is_image_mime;
-use crate::models::File;
 use quench_db::prelude::{Crud, Db};
 use std::collections::HashMap;
 

@@ -257,9 +257,11 @@ pub async fn stream_message(
     config: web::Data<SageConfig>,
     db: web::Data<quench_db::prelude::Db>,
     search_provider_registry: web::Data<std::sync::Arc<crate::tools::SearchProviderRegistry>>,
-    metrics_collector: web::Data<std::sync::Arc<crate::metrics::MetricsCollector>>,
-    rate_limiter: web::Data<std::sync::Arc<tokio::sync::Mutex<crate::rate_limiter::RateLimiter>>>,
-    cost_tracker: web::Data<std::sync::Arc<crate::cost_tracking::CostTracker>>,
+    metrics_collector: web::Data<std::sync::Arc<crate::observability::metrics::MetricsCollector>>,
+    rate_limiter: web::Data<
+        std::sync::Arc<tokio::sync::Mutex<crate::runtime::rate_limiter::RateLimiter>>,
+    >,
+    cost_tracker: web::Data<std::sync::Arc<crate::observability::cost_tracking::CostTracker>>,
 ) -> impl Responder {
     let username = match get_user_from_req(&req_http, &jwt_config).await {
         Some(claims) => claims.sub,
@@ -426,9 +428,9 @@ pub async fn stream_message(
     // attachment already performs. Regeneration reuses an existing row.
     {
         use quench_db::prelude::Crud;
-        let conv_repo = db.repository::<crate::models::Conversation>();
+        let conv_repo = db.repository::<crate::domain::models::Conversation>();
         if matches!(conv_repo.read(&req.conversation_id).await, Ok(None)) {
-            let conv = crate::models::Conversation {
+            let conv = crate::domain::models::Conversation {
                 id: req.conversation_id.clone(),
                 // Blank until Phase 5 derives the title from the message.
                 title: String::new(),
@@ -505,7 +507,7 @@ pub async fn stream_message(
     let current_user_tokens = estimate_tokens(&current_user_message);
 
     use quench_db::prelude::Crud;
-    let repo = db.repository::<crate::models::Conversation>();
+    let repo = db.repository::<crate::domain::models::Conversation>();
     let mut active_message_id = None;
     let mut existing_title = None;
     let mut existing_project_id = None;
@@ -826,7 +828,7 @@ pub async fn stream_message(
         // PHASE 5: Database operations (unchanged from original)
         // =============================================================================
         use quench_db::prelude::Crud;
-        let conv_repo = db_clone.repository::<crate::models::Conversation>();
+        let conv_repo = db_clone.repository::<crate::domain::models::Conversation>();
         let updated_at = chrono::Utc::now().to_rfc3339();
         // A blank existing title means the conversation was created lazily (e.g.
         // by attaching a file before sending), so derive it from the message.
@@ -841,7 +843,7 @@ pub async fn stream_message(
             }
         };
 
-        let mut conv = crate::models::Conversation {
+        let mut conv = crate::domain::models::Conversation {
             id: req.conversation_id.clone(),
             title,
             active_message_id: active_message_id.clone(),
@@ -867,9 +869,9 @@ pub async fn stream_message(
         let ai_parent_id;
         if !req.skip_user_message {
             // Create user message in DB
-            let msg_repo = db_clone.repository::<crate::models::Message>();
+            let msg_repo = db_clone.repository::<crate::domain::models::Message>();
             let user_msg_id = uuid::Uuid::new_v4().to_string();
-            let user_msg = crate::models::Message {
+            let user_msg = crate::domain::models::Message {
                 id: user_msg_id.clone(),
                 conversation_id: req.conversation_id.clone(),
                 parent_id: active_message_id.clone(),
@@ -900,9 +902,9 @@ pub async fn stream_message(
         }
 
         // Create AI message in DB with full response (including embedded tool results)
-        let msg_repo = db_clone.repository::<crate::models::Message>();
+        let msg_repo = db_clone.repository::<crate::domain::models::Message>();
         let ai_msg_id = uuid::Uuid::new_v4().to_string();
-        let ai_msg = crate::models::Message {
+        let ai_msg = crate::domain::models::Message {
             id: ai_msg_id.clone(),
             conversation_id: req.conversation_id.clone(),
             parent_id: ai_parent_id.clone(),
@@ -1140,7 +1142,7 @@ pub async fn stream_message(
                 .attr("hx-swap-oob", "true");
 
             // Projects Section
-            let project_repo = db_clone.repository::<crate::models::Project>();
+            let project_repo = db_clone.repository::<crate::domain::models::Project>();
             if let Ok(mut projects) = project_repo.list().await {
                 projects.retain(|p| p.owner == username);
                 projects.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
@@ -1353,7 +1355,7 @@ pub async fn delete_modal(
 ) -> impl Responder {
     let conv_id = id.into_inner();
     use quench_db::prelude::Crud;
-    let repo = db.repository::<crate::models::Conversation>();
+    let repo = db.repository::<crate::domain::models::Conversation>();
 
     let title = match repo.read(&conv_id).await {
         Ok(Some(conv)) => Some(format!("\"{}\"", conv.title)),
@@ -1466,7 +1468,7 @@ pub async fn delete_conversation(
 ) -> impl Responder {
     let id_str = id.into_inner();
     use quench_db::prelude::Crud;
-    let repo = db.repository::<crate::models::Conversation>();
+    let repo = db.repository::<crate::domain::models::Conversation>();
     let _ = repo.delete(&id_str).await;
 
     let mut response = HttpResponse::Ok();
@@ -1568,7 +1570,7 @@ pub async fn get_conversation_messages(
         }
         quench_db::prelude::Db::InMemory(_mem_db) => {
             use quench_db::prelude::Crud;
-            let repo = db.repository::<crate::models::Message>();
+            let repo = db.repository::<crate::domain::models::Message>();
             let mut visited = std::collections::HashSet::new();
             let mut message_list = Vec::new();
             while !current_id.is_empty() && visited.insert(current_id.clone()) {
@@ -1601,7 +1603,7 @@ pub async fn get_conversation_messages(
 pub async fn get_conversation_message_nodes(
     db: &quench_db::prelude::Db,
     active_message_id: Option<&str>,
-) -> Result<Vec<crate::models::Message>, anyhow::Error> {
+) -> Result<Vec<crate::domain::models::Message>, anyhow::Error> {
     let mut message_nodes = Vec::new();
     let Some(mut current_id) = active_message_id.map(|s| s.to_string()) else {
         return Ok(message_nodes);
@@ -1634,7 +1636,7 @@ pub async fn get_conversation_message_nodes(
                 .await?;
 
             for (id, conversation_id, parent_id, role, content, created_at) in rows {
-                message_nodes.push(crate::models::Message {
+                message_nodes.push(crate::domain::models::Message {
                     id,
                     conversation_id,
                     parent_id,
@@ -1646,7 +1648,7 @@ pub async fn get_conversation_message_nodes(
         }
         quench_db::prelude::Db::InMemory(_mem_db) => {
             use quench_db::prelude::Crud;
-            let repo = db.repository::<crate::models::Message>();
+            let repo = db.repository::<crate::domain::models::Message>();
             let mut visited = std::collections::HashSet::new();
             let mut list = Vec::new();
             while !current_id.is_empty() && visited.insert(current_id.clone()) {
@@ -1673,7 +1675,7 @@ pub async fn get_siblings(
     db: &quench_db::prelude::Db,
     conversation_id: &str,
     parent_id: Option<&str>,
-) -> Result<Vec<crate::models::Message>, anyhow::Error> {
+) -> Result<Vec<crate::domain::models::Message>, anyhow::Error> {
     match db {
         quench_db::prelude::Db::Postgres(pg_db) => {
             let schema = envmnt::get_or("DB_SCHEMA", "sage");
@@ -1707,7 +1709,7 @@ pub async fn get_siblings(
             let rows = q.fetch_all(pg_db.pool()).await?;
             let mut siblings = Vec::new();
             for (id, conversation_id, parent_id, role, content, created_at) in rows {
-                siblings.push(crate::models::Message {
+                siblings.push(crate::domain::models::Message {
                     id,
                     conversation_id,
                     parent_id,
@@ -1720,7 +1722,7 @@ pub async fn get_siblings(
         }
         quench_db::prelude::Db::InMemory(_mem_db) => {
             use quench_db::prelude::Crud;
-            let repo = db.repository::<crate::models::Message>();
+            let repo = db.repository::<crate::domain::models::Message>();
             let all = repo.list().await?;
             let mut siblings: Vec<_> = all
                 .into_iter()
@@ -1767,7 +1769,7 @@ pub async fn switch_active_message(
         }
         quench_db::prelude::Db::InMemory(_mem_db) => {
             use quench_db::prelude::Crud;
-            let repo = db.repository::<crate::models::Message>();
+            let repo = db.repository::<crate::domain::models::Message>();
             loop {
                 let all = repo.list().await?;
                 let mut children: Vec<_> = all
@@ -1788,7 +1790,7 @@ pub async fn switch_active_message(
     }
 
     use quench_db::prelude::Crud;
-    let conv_repo = db.repository::<crate::models::Conversation>();
+    let conv_repo = db.repository::<crate::domain::models::Conversation>();
     if let Some(mut conv) = conv_repo.read(conversation_id).await? {
         conv.active_message_id = Some(current_id);
         conv.updated_at = chrono::Utc::now().to_rfc3339();
@@ -1811,7 +1813,7 @@ pub async fn regenerate(
     switchboard: web::Data<SwitchboardClient>,
 ) -> impl Responder {
     use quench_db::prelude::Crud;
-    let repo = db.repository::<crate::models::Message>();
+    let repo = db.repository::<crate::domain::models::Message>();
     let Ok(Some(msg)) = repo.read(&form.message_id).await else {
         return HttpResponse::NotFound().finish();
     };
@@ -1824,7 +1826,7 @@ pub async fn regenerate(
         return HttpResponse::BadRequest().body("api_error_no_parent_message");
     };
 
-    let conv_repo = db.repository::<crate::models::Conversation>();
+    let conv_repo = db.repository::<crate::domain::models::Conversation>();
     let project_id = match conv_repo.read(&msg.conversation_id).await {
         Ok(Some(conv)) => conv.project_id,
         _ => None,
@@ -1905,7 +1907,7 @@ pub async fn edit_form(
     db: web::Data<quench_db::prelude::Db>,
 ) -> impl Responder {
     use quench_db::prelude::Crud;
-    let repo = db.repository::<crate::models::Message>();
+    let repo = db.repository::<crate::domain::models::Message>();
     let Ok(Some(msg)) = repo.read(&id).await else {
         return HttpResponse::NotFound().finish();
     };
@@ -1965,13 +1967,13 @@ pub async fn handle_edit(
     db: web::Data<quench_db::prelude::Db>,
 ) -> impl Responder {
     use quench_db::prelude::Crud;
-    let repo = db.repository::<crate::models::Message>();
+    let repo = db.repository::<crate::domain::models::Message>();
     let Ok(Some(msg)) = repo.read(&form.message_id).await else {
         return HttpResponse::NotFound().finish();
     };
 
     let user_msg_id = Uuid::new_v4().to_string();
-    let user_msg = crate::models::Message {
+    let user_msg = crate::domain::models::Message {
         id: user_msg_id.clone(),
         conversation_id: msg.conversation_id.clone(),
         parent_id: msg.parent_id, // Branch from the same parent
@@ -1986,7 +1988,7 @@ pub async fn handle_edit(
     }
 
     // Update conversation tip to the new user message
-    let conv_repo = db.repository::<crate::models::Conversation>();
+    let conv_repo = db.repository::<crate::domain::models::Conversation>();
     if let Ok(Some(mut conv)) = conv_repo.read(&msg.conversation_id).await {
         conv.active_message_id = Some(user_msg_id);
         conv.updated_at = chrono::Utc::now().to_rfc3339();
@@ -2124,10 +2126,10 @@ mod tests {
     #[actix_web::test]
     async fn retrieves_only_the_selected_conversation_branch() {
         let db = Db::InMemory(quench_db::InMemoryDb::new());
-        let repo = db.repository::<crate::models::Message>();
+        let repo = db.repository::<crate::domain::models::Message>();
 
         for message in [
-            crate::models::Message {
+            crate::domain::models::Message {
                 id: "root".to_string(),
                 conversation_id: "conversation".to_string(),
                 parent_id: None,
@@ -2135,7 +2137,7 @@ mod tests {
                 content: "question".to_string(),
                 created_at: "2026-01-01T00:00:00Z".to_string(),
             },
-            crate::models::Message {
+            crate::domain::models::Message {
                 id: "answer-a".to_string(),
                 conversation_id: "conversation".to_string(),
                 parent_id: Some("root".to_string()),
@@ -2143,7 +2145,7 @@ mod tests {
                 content: "answer a".to_string(),
                 created_at: "2026-01-01T00:00:01Z".to_string(),
             },
-            crate::models::Message {
+            crate::domain::models::Message {
                 id: "answer-b".to_string(),
                 conversation_id: "conversation".to_string(),
                 parent_id: Some("root".to_string()),

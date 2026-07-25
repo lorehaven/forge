@@ -1,7 +1,7 @@
 use crate::clients::switchboard::SwitchboardClient;
 use crate::clients::vllm::VllmClient;
+use crate::domain::models::Conversation;
 use crate::files::{STATUS_READY, embedder};
-use crate::models::Conversation;
 use quench_db::prelude::{Crud, Db};
 use uuid::Uuid;
 

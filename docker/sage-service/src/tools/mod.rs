@@ -111,9 +111,10 @@ pub struct ToolRegistry {
     user_id: Option<String>,
     conversation_id: Option<String>,
     confirmations: std::collections::HashSet<String>,
-    metrics_collector: Option<std::sync::Arc<crate::metrics::MetricsCollector>>,
-    rate_limiter: Option<std::sync::Arc<tokio::sync::Mutex<crate::rate_limiter::RateLimiter>>>,
-    cost_tracker: Option<std::sync::Arc<crate::cost_tracking::CostTracker>>,
+    metrics_collector: Option<std::sync::Arc<crate::observability::metrics::MetricsCollector>>,
+    rate_limiter:
+        Option<std::sync::Arc<tokio::sync::Mutex<crate::runtime::rate_limiter::RateLimiter>>>,
+    cost_tracker: Option<std::sync::Arc<crate::observability::cost_tracking::CostTracker>>,
 }
 
 impl ToolRegistry {
@@ -162,19 +163,22 @@ impl ToolRegistry {
 
     pub fn set_metrics_collector(
         &mut self,
-        collector: std::sync::Arc<crate::metrics::MetricsCollector>,
+        collector: std::sync::Arc<crate::observability::metrics::MetricsCollector>,
     ) {
         self.metrics_collector = Some(collector);
     }
 
     pub fn set_rate_limiter(
         &mut self,
-        limiter: std::sync::Arc<tokio::sync::Mutex<crate::rate_limiter::RateLimiter>>,
+        limiter: std::sync::Arc<tokio::sync::Mutex<crate::runtime::rate_limiter::RateLimiter>>,
     ) {
         self.rate_limiter = Some(limiter);
     }
 
-    pub fn set_cost_tracker(&mut self, tracker: std::sync::Arc<crate::cost_tracking::CostTracker>) {
+    pub fn set_cost_tracker(
+        &mut self,
+        tracker: std::sync::Arc<crate::observability::cost_tracking::CostTracker>,
+    ) {
         self.cost_tracker = Some(tracker);
     }
 
@@ -219,7 +223,7 @@ impl ToolRegistry {
                 .enabled_tool_names()
                 .contains(&tool_call.name.as_str())
             {
-                crate::audit::AuditLogger::log_restricted_tool_attempt(
+                crate::observability::audit::AuditLogger::log_restricted_tool_attempt(
                     &tool_call.name,
                     profile_name,
                     self.user_id.clone(),
@@ -240,7 +244,7 @@ impl ToolRegistry {
             if profile.requires_confirmation(&tool_call.name)
                 && !self.has_confirmation(&tool_call.name)
             {
-                crate::audit::AuditLogger::log_confirmation_required(
+                crate::observability::audit::AuditLogger::log_confirmation_required(
                     &tool_call.name,
                     profile_name,
                     self.user_id.clone(),
@@ -264,7 +268,7 @@ impl ToolRegistry {
             .map(|p| p.get_timeout_for_tool(&tool_call.name))
             .unwrap_or(60);
 
-        let retry_policy = crate::retry_policy::get_retry_policy(&tool_call.name);
+        let retry_policy = crate::runtime::retry_policy::get_retry_policy(&tool_call.name);
 
         let mut timeout_occurred = false;
         let mut retry_count = 0;
@@ -348,7 +352,7 @@ impl ToolRegistry {
             );
         }
 
-        crate::audit::AuditLogger::log_tool_execution(
+        crate::observability::audit::AuditLogger::log_tool_execution(
             &tool_call.name,
             profile_name,
             self.user_id.clone(),
