@@ -3866,7 +3866,7 @@ dependencies = [
 
 [[package]]
 name = "quench-cache"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dashmap",
  "redis",
@@ -3896,7 +3896,7 @@ dependencies = [
 
 [[package]]
 name = "quench-config"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -4321,7 +4321,7 @@ dependencies = [
 
 [[package]]
 name = "riveter"
-version = "0.1.20"
+version = "0.1.21"
 dependencies = [
  "anyhow",
  "clap",
