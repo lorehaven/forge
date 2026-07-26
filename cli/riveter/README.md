@@ -106,8 +106,10 @@ REPL commands:
 beneath it. `help <command>` adds prose, the scope reference, target syntax and worked
 examples for one command; `help targets` prints the target syntax on its own.
 
-The same aliases work on the CLI (`riveter ls`, `riveter a --dry-run deployment/api`), and
-`riveter <command> --help` mirrors the REPL's per-command help.
+`riveter --help` prints that same tree — it is generated from one table shared by both
+surfaces, minus `exit` and plus `repl`. The aliases work on the CLI too (`riveter ls`,
+`riveter a --dry-run deployment/api`, `riveter h apply`), and `riveter help <command>` /
+`riveter <command> --help` give the per-command detail.
 
 ## Templates
 

@@ -4,9 +4,23 @@ const TARGET_HELP: &str = "Resources to act on as kind[/name], e.g. `deployment/
                            `statefulset` or `*/api`. Both halves accept `*` and `?` \
                            wildcards. Omit to act on every resource in scope.";
 
+/// Replaces clap's flat subcommand list with the same command tree the REPL's
+/// `help` prints, so both surfaces describe riveter identically.
+fn help_template() -> String {
+    format!(
+        "{{usage-heading}} {{usage}}\n\n{}\nOptions:\n{{options}}\n\n{}",
+        crate::help::command_tree(crate::help::Surface::Cli),
+        crate::help::reference()
+    )
+}
+
 #[derive(Parser, Debug)]
 #[command(name = "riveter")]
 #[command(version)]
+#[command(help_template = help_template())]
+// Replaced by an explicit `Help` variant so it can carry the `h` alias the
+// REPL also accepts.
+#[command(disable_help_subcommand = true)]
 pub struct Cli {
     #[command(subcommand)]
     pub cmd: Option<Cmd>,
@@ -63,6 +77,12 @@ pub enum Cmd {
     },
     /// Start the interactive REPL (also the default with no arguments)
     Repl,
+    /// Show help, or detail for one command
+    #[command(visible_alias = "h")]
+    Help {
+        /// Command to describe; omit for the full command tree
+        command: Option<String>,
+    },
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug)]

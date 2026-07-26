@@ -1,5 +1,5 @@
 use anyhow::Result;
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 use riveter::cli::{ApplyScope, Cli, Cmd, EnvCmd};
 use riveter::env::{current_env, env_list, env_set, env_show};
 use riveter::render::ResourceScope;
@@ -75,8 +75,38 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
+        Some(Cmd::Help { command }) => print_help(command.as_deref()),
         Some(Cmd::Repl) | None => repl(),
     }
+}
+
+/// Mirrors the REPL's `help [command]`: the whole tree, or one command's
+/// clap-generated detail.
+fn print_help(topic: Option<&str>) -> Result<()> {
+    let mut cmd = Cli::command();
+
+    let Some(topic) = topic else {
+        cmd.print_help()?;
+        return Ok(());
+    };
+
+    if topic == "targets" || topic == "target" {
+        println!("{}", riveter::help::targets());
+        return Ok(());
+    }
+
+    // Accept the same aliases the help table advertises.
+    let canonical =
+        riveter::help::find_on(topic, riveter::help::Surface::Cli).map_or(topic, |c| c.name);
+    match cmd.find_subcommand_mut(canonical) {
+        Some(sub) => sub.print_help()?,
+        None => anyhow::bail!(
+            "{}",
+            riveter::help::unknown_topic(topic, riveter::help::Surface::Cli)
+        ),
+    }
+
+    Ok(())
 }
 
 const fn map_apply_scope(value: ApplyScope) -> ResourceScope {

@@ -37,10 +37,10 @@ fn repl_help(topic: Option<&str>) {
 
     if topic == "targets" || topic == "target" {
         print_block(&help::targets());
-    } else if let Some(cmd) = help::find(topic) {
+    } else if let Some(cmd) = help::find_on(topic, help::Surface::Repl) {
         print_block(&help::detail(cmd));
     } else {
-        warn(&help::unknown_topic(topic));
+        warn(&help::unknown_topic(topic, help::Surface::Repl));
     }
 }
 
