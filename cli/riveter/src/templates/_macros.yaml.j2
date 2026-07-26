@@ -1,0 +1,428 @@
+{#
+  Shared building blocks for riveter templates.
+
+  Every macro emits YAML starting at column 0; callers nest it with the
+  `indent(n, true)` filter. Blank lines are harmless: `strip_empty_lines`
+  removes them from the final manifest.
+
+  Import with:  {% import "_macros.yaml.j2" as m %}
+#}
+
+{% macro metadata(res, env, namespace, extra_labels) %}
+metadata:
+  name: {{ res.name }}
+{% if namespace %}
+  namespace: {{ namespace }}
+{% endif %}
+  labels:
+    app.kubernetes.io/name: {{ res.app_name | default(res.name) }}
+    app.kubernetes.io/instance: {{ res.instance | default(res.name) }}
+    env: {{ env }}
+{% if extra_labels %}
+{% for k, v in extra_labels | dictsort %}
+    {{ k }}: "{{ v }}"
+{% endfor %}
+{% endif %}
+{% if res.labels %}
+{% for k, v in res.labels | dictsort %}
+    {{ k }}: "{{ v }}"
+{% endfor %}
+{% endif %}
+{% if res.annotations %}
+  annotations:
+{% for k, v in res.annotations | dictsort %}
+    {{ k }}: "{{ v }}"
+{% endfor %}
+{% endif %}
+{% endmacro %}
+
+{# Standard selector labels, used by both pod templates and selectors. #}
+{% macro selector_labels(res, env) %}
+app.kubernetes.io/name: {{ res.app_name | default(res.name) }}
+app.kubernetes.io/instance: {{ res.instance | default(res.name) }}
+{% endmacro %}
+
+{% macro pod_labels(res, env) %}
+{{ selector_labels(res, env) }}
+env: {{ env }}
+{% if res.pod_labels %}
+{% for k, v in res.pod_labels | dictsort %}
+{{ k }}: "{{ v }}"
+{% endfor %}
+{% endif %}
+{% endmacro %}
+
+{% macro probe(p) %}
+{% if p.http_get %}
+httpGet:
+  path: {{ p.http_get.path }}
+  port: {{ p.http_get.port }}
+  scheme: {{ p.http_get.scheme | default("HTTP") }}
+{% if p.http_get.host is defined %}
+  host: {{ p.http_get.host }}
+{% endif %}
+{% endif %}
+{% if p.tcp_socket %}
+tcpSocket:
+  port: {{ p.tcp_socket.port }}
+{% endif %}
+{% if p.grpc %}
+grpc:
+  port: {{ p.grpc.port }}
+{% endif %}
+{% if p.exec %}
+exec:
+  command:
+{% for cmd in p.exec.command %}
+    - {{ cmd }}
+{% endfor %}
+{% endif %}
+failureThreshold: {{ p.failure_threshold | default(3) }}
+periodSeconds: {{ p.period_seconds | default(10) }}
+timeoutSeconds: {{ p.timeout_seconds | default(1) }}
+{% if p.success_threshold is defined %}
+successThreshold: {{ p.success_threshold }}
+{% endif %}
+{% if p.initial_delay_seconds is defined %}
+initialDelaySeconds: {{ p.initial_delay_seconds }}
+{% endif %}
+{% endmacro %}
+
+{% macro security_context(sc) %}
+{% if sc.run_as_non_root is defined %}
+runAsNonRoot: {{ sc.run_as_non_root }}
+{% endif %}
+{% if sc.run_as_user is defined %}
+runAsUser: {{ sc.run_as_user }}
+{% endif %}
+{% if sc.run_as_group is defined %}
+runAsGroup: {{ sc.run_as_group }}
+{% endif %}
+{% if sc.privileged is defined %}
+privileged: {{ sc.privileged }}
+{% endif %}
+{% if sc.read_only_root_filesystem is defined %}
+readOnlyRootFilesystem: {{ sc.read_only_root_filesystem }}
+{% endif %}
+{% if sc.allow_privilege_escalation is defined %}
+allowPrivilegeEscalation: {{ sc.allow_privilege_escalation }}
+{% endif %}
+{% if sc.seccomp_profile %}
+seccompProfile:
+  type: {{ sc.seccomp_profile.type | default("RuntimeDefault") }}
+{% endif %}
+{% if sc.capabilities %}
+capabilities:
+{% if sc.capabilities.add %}
+  add:
+{% for cap in sc.capabilities.add %}
+    - {{ cap }}
+{% endfor %}
+{% endif %}
+{% if sc.capabilities.drop %}
+  drop:
+{% for cap in sc.capabilities.drop %}
+    - {{ cap }}
+{% endfor %}
+{% endif %}
+{% endif %}
+{% endmacro %}
+
+{% macro pod_security_context(sc) %}
+{% if sc.fs_group is defined or sc.fsGroup is defined %}
+fsGroup: {{ sc.fsGroup | default(sc.fs_group) }}
+{% endif %}
+{% if sc.fs_group_change_policy is defined %}
+fsGroupChangePolicy: {{ sc.fs_group_change_policy }}
+{% endif %}
+{{ security_context(sc) }}
+{% if sc.supplemental_groups %}
+supplementalGroups:
+{% for g in sc.supplemental_groups %}
+  - {{ g }}
+{% endfor %}
+{% endif %}
+{% endmacro %}
+
+{#
+  A single container. `c` may be an entry of `res.containers` or `res` itself
+  for the common single-container shorthand.
+#}
+{% macro container(c) %}
+- name: {{ c.container_name | default(c.name) }}
+  image: {{ c.image }}
+  imagePullPolicy: {{ c.pull_policy | default("IfNotPresent") }}
+{% if c.command %}
+  command:
+{% for a in c.command %}
+    - "{{ a }}"
+{% endfor %}
+{% endif %}
+{% if c.args %}
+  args:
+{% for a in c.args %}
+    - "{{ a }}"
+{% endfor %}
+{% endif %}
+{% if c.working_dir is defined %}
+  workingDir: {{ c.working_dir }}
+{% endif %}
+{% if c.port is defined %}
+  ports:
+    - containerPort: {{ c.port }}
+      name: {{ c.port_name | default(c.name) }}
+      protocol: {{ c.protocol | default("TCP") }}
+{% elif c.ports %}
+  ports:
+{% for p in c.ports %}
+    - containerPort: {{ p.port }}
+      name: {{ p.name }}
+      protocol: {{ p.protocol | default("TCP") }}
+{% if p.host_port is defined %}
+      hostPort: {{ p.host_port }}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% if c.env_vars or c.env_refs %}
+  env:
+{% for k, v in c.env_vars | default({}) | dictsort %}
+    - name: {{ k }}
+      value: '{{ v }}'
+{% endfor %}
+{% for e in c.env_refs | default([]) %}
+    - name: {{ e.name }}
+      valueFrom:
+{% if e.secret %}
+        secretKeyRef:
+          name: {{ e.secret.name }}
+          key: {{ e.secret.key }}
+{% elif e.config_map %}
+        configMapKeyRef:
+          name: {{ e.config_map.name }}
+          key: {{ e.config_map.key }}
+{% elif e.field %}
+        fieldRef:
+          fieldPath: {{ e.field }}
+{% elif e.resource_field %}
+        resourceFieldRef:
+          containerName: {{ e.resource_field.container }}
+          resource: {{ e.resource_field.resource }}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% if c.env_from_config_maps or c.env_from_secrets %}
+  envFrom:
+{% for cm in c.env_from_config_maps | default([]) %}
+    - configMapRef:
+        name: {{ cm }}
+{% endfor %}
+{% for s in c.env_from_secrets | default([]) %}
+    - secretRef:
+        name: {{ s }}
+{% endfor %}
+{% endif %}
+{% if c.probes %}
+{% if c.probes.liveness %}
+  livenessProbe:
+{{ probe(c.probes.liveness) | indent(4, true) }}
+{% endif %}
+{% if c.probes.readiness %}
+  readinessProbe:
+{{ probe(c.probes.readiness) | indent(4, true) }}
+{% endif %}
+{% if c.probes.startup %}
+  startupProbe:
+{{ probe(c.probes.startup) | indent(4, true) }}
+{% endif %}
+{% endif %}
+{% if c.security_context %}
+  securityContext:
+{{ security_context(c.security_context) | indent(4, true) }}
+{% endif %}
+{% if c.resources %}
+  resources:
+{% if c.resources.requests %}
+    requests:
+{% for k, v in c.resources.requests | dictsort %}
+      {{ k }}: "{{ v }}"
+{% endfor %}
+{% endif %}
+{% if c.resources.limits %}
+    limits:
+{% for k, v in c.resources.limits | dictsort %}
+      {{ k }}: "{{ v }}"
+{% endfor %}
+{% endif %}
+{% endif %}
+{% if c.volume_mounts %}
+  volumeMounts:
+{% for vm in c.volume_mounts %}
+    - name: {{ vm.name }}
+      mountPath: {{ vm.mountPath | default(vm.mount_path) }}
+{% if vm.subPath is defined or vm.sub_path is defined %}
+      subPath: {{ vm.subPath | default(vm.sub_path) }}
+{% endif %}
+{% if vm.readOnly is defined or vm.read_only is defined %}
+      readOnly: {{ vm.readOnly | default(vm.read_only) }}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endmacro %}
+
+{% macro volumes(vols) %}
+{% for vol in vols %}
+- name: {{ vol.name }}
+{% if vol.pvc_name or vol.pvc %}
+  persistentVolumeClaim:
+    claimName: {{ vol.pvc_name | default(vol.pvc) }}
+{% elif vol.config_map %}
+  configMap:
+    name: {{ vol.config_map }}
+{% if vol.default_mode is defined %}
+    defaultMode: {{ vol.default_mode }}
+{% endif %}
+{% if vol.items %}
+    items:
+{% for i in vol.items %}
+      - key: {{ i.key }}
+        path: {{ i.path }}
+{% endfor %}
+{% endif %}
+{% elif vol.secret %}
+  secret:
+    secretName: {{ vol.secret }}
+{% if vol.default_mode is defined %}
+    defaultMode: {{ vol.default_mode }}
+{% endif %}
+{% if vol.items %}
+    items:
+{% for i in vol.items %}
+      - key: {{ i.key }}
+        path: {{ i.path }}
+{% endfor %}
+{% endif %}
+{% elif vol.empty_dir is defined %}
+  emptyDir:
+{% if vol.empty_dir.medium is defined %}
+    medium: {{ vol.empty_dir.medium }}
+{% endif %}
+{% if vol.empty_dir.size_limit is defined %}
+    sizeLimit: {{ vol.empty_dir.size_limit }}
+{% endif %}
+{% elif vol.host_path or vol.path %}
+  hostPath:
+    path: {{ vol.host_path | default(vol.path) }}
+    type: {{ vol.type | default("DirectoryOrCreate") }}
+{% elif vol.spec %}
+{{ vol.spec | to_yaml | indent(2, true) }}
+{% endif %}
+{% endfor %}
+{% endmacro %}
+
+{#
+  A complete PodSpec. Containers come from `res.containers`; when that is
+  absent `res` itself is treated as a single container definition.
+#}
+{% macro pod_spec(res, env) %}
+{% if res.service_account is defined %}
+serviceAccountName: {{ res.service_account }}
+{% endif %}
+{% if res.restart_policy is defined %}
+restartPolicy: {{ res.restart_policy }}
+{% endif %}
+{% if res.host_network is defined %}
+hostNetwork: {{ res.host_network }}
+{% endif %}
+{% if res.host_pid is defined %}
+hostPID: {{ res.host_pid }}
+{% endif %}
+{% if res.dns_policy is defined %}
+dnsPolicy: {{ res.dns_policy }}
+{% endif %}
+{% if res.node_name is defined %}
+nodeName: {{ res.node_name }}
+{% endif %}
+{% if res.priority_class is defined %}
+priorityClassName: {{ res.priority_class }}
+{% endif %}
+{% if res.runtime_class is defined %}
+runtimeClassName: {{ res.runtime_class }}
+{% endif %}
+{% if res.termination_grace_period_seconds is defined %}
+terminationGracePeriodSeconds: {{ res.termination_grace_period_seconds }}
+{% endif %}
+{% if res.image_pull_secrets %}
+imagePullSecrets:
+{% for s in res.image_pull_secrets %}
+  - name: {{ s }}
+{% endfor %}
+{% endif %}
+{% if res.node_selector %}
+nodeSelector:
+{% for k, v in res.node_selector | dictsort %}
+  {{ k }}: "{{ v }}"
+{% endfor %}
+{% endif %}
+{% if res.tolerations %}
+tolerations:
+{{ res.tolerations | to_yaml }}
+{% endif %}
+{% if res.affinity %}
+affinity:
+{{ res.affinity | to_yaml | indent(2, true) }}
+{% endif %}
+{% if res.topology_spread_constraints %}
+topologySpreadConstraints:
+{{ res.topology_spread_constraints | to_yaml }}
+{% endif %}
+{% if res.pod_security_context %}
+securityContext:
+{{ pod_security_context(res.pod_security_context) | indent(2, true) }}
+{% endif %}
+{% if res.init_containers %}
+initContainers:
+{% for c in res.init_containers %}
+{{ container(c) }}
+{% endfor %}
+{% endif %}
+containers:
+{% for c in res.containers | default([res]) %}
+{{ container(c) }}
+{% endfor %}
+{% if res.volumes %}
+volumes:
+{{ volumes(res.volumes) }}
+{% endif %}
+{% endmacro %}
+
+{#
+  A pod template (metadata + spec), as embedded in Deployment/StatefulSet/
+  DaemonSet/ReplicaSet/Job/CronJob.
+#}
+{% macro pod_template(res, env) %}
+metadata:
+  labels:
+{{ pod_labels(res, env) | indent(4, true) }}
+{% if res.pod_annotations %}
+  annotations:
+{% for k, v in res.pod_annotations | dictsort %}
+    {{ k }}: "{{ v }}"
+{% endfor %}
+{% endif %}
+spec:
+{{ pod_spec(res, env) | indent(2, true) }}
+{% endmacro %}
+
+{#
+  `matchLabels` selector: explicit `res.selector` map if given, otherwise the
+  standard name/instance labels.
+#}
+{% macro match_labels(res, env) %}
+{% if res.selector %}
+{% for k, v in res.selector | dictsort %}
+{{ k }}: "{{ v }}"
+{% endfor %}
+{% else %}
+{{ selector_labels(res, env) }}
+{% endif %}
+{% endmacro %}

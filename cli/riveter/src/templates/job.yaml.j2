@@ -18,7 +18,7 @@ spec:
     spec:
       restartPolicy: {{ res.restart_policy | default("OnFailure") }}
       containers:
-        - name: {{ res.container_name | default(name) }}
+        - name: {{ res.container_name | default(res.name) }}
           image: {{ res.image }}
           imagePullPolicy: Always
 {% if res.env_vars is defined %}

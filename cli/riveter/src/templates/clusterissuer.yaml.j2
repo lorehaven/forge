@@ -1,0 +1,31 @@
+{% import "_macros.yaml.j2" as m %}
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+{{ m.metadata(res, env, none, none) }}
+spec:
+{% if res.acme %}
+  acme:
+    server: {{ res.acme.server }}
+    email: {{ res.acme.email }}
+    privateKeySecretRef:
+      name: {{ res.acme.private_key_secret | default(res.name ~ "-account-key") }}
+{% if res.acme.solvers %}
+    solvers:
+{{ res.acme.solvers | to_yaml | indent(6, true) }}
+{% else %}
+    solvers:
+      - http01:
+          ingress:
+            class: {{ res.acme.ingress_class | default("nginx") }}
+{% endif %}
+{% elif res.ca %}
+  ca:
+    secretName: {{ res.ca.secret_name }}
+{% elif res.vault %}
+  vault:
+{{ res.vault | to_yaml | indent(4, true) }}
+{% elif res.spec %}
+{{ res.spec | to_yaml | indent(2, true) }}
+{% else %}
+  selfSigned: {}
+{% endif %}

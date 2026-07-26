@@ -1,0 +1,45 @@
+{% import "_macros.yaml.j2" as m %}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+{{ m.metadata(res, env, res.namespace | default(data.namespace_name), none) }}
+spec:
+  secretName: {{ res.secret_name }}
+{% if res.common_name is defined %}
+  commonName: {{ res.common_name }}
+{% endif %}
+{% if res.duration is defined %}
+  duration: {{ res.duration }}
+{% endif %}
+{% if res.renew_before is defined %}
+  renewBefore: {{ res.renew_before }}
+{% endif %}
+{% if res.is_ca is defined %}
+  isCA: {{ res.is_ca }}
+{% endif %}
+  dnsNames:
+{% for d in res.dns_names %}
+    - {{ d }}
+{% endfor %}
+{% if res.ip_addresses %}
+  ipAddresses:
+{% for ip in res.ip_addresses %}
+    - {{ ip }}
+{% endfor %}
+{% endif %}
+{% if res.usages %}
+  usages:
+{% for u in res.usages %}
+    - {{ u }}
+{% endfor %}
+{% endif %}
+{% if res.private_key %}
+  privateKey:
+    algorithm: {{ res.private_key.algorithm | default("RSA") }}
+    size: {{ res.private_key.size | default(2048) }}
+    encoding: {{ res.private_key.encoding | default("PKCS1") }}
+    rotationPolicy: {{ res.private_key.rotation_policy | default("Never") }}
+{% endif %}
+  issuerRef:
+    name: {{ res.issuer.name | default(res.issuer_name) }}
+    kind: {{ res.issuer.kind | default("ClusterIssuer") }}
+    group: {{ res.issuer.group | default("cert-manager.io") }}

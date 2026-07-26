@@ -1,0 +1,10 @@
+{% import "_macros.yaml.j2" as m %}
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+{{ m.metadata(res, env, none, none) }}
+value: {{ res.value }}
+globalDefault: {{ res.global_default | default(false) }}
+preemptionPolicy: {{ res.preemption_policy | default("PreemptLowerPriority") }}
+{% if res.description is defined %}
+description: "{{ res.description }}"
+{% endif %}

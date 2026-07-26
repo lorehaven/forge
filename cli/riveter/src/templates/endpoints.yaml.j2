@@ -1,0 +1,19 @@
+{% import "_macros.yaml.j2" as m %}
+apiVersion: v1
+kind: Endpoints
+{{ m.metadata(res, env, res.namespace | default(data.namespace_name), none) }}
+subsets:
+{% if res.subsets %}
+{{ res.subsets | to_yaml }}
+{% else %}
+  - addresses:
+{% for a in res.addresses %}
+      - ip: {{ a }}
+{% endfor %}
+    ports:
+{% for p in res.ports %}
+      - port: {{ p.port }}
+        name: {{ p.name | default("http") }}
+        protocol: {{ p.protocol | default("TCP") }}
+{% endfor %}
+{% endif %}

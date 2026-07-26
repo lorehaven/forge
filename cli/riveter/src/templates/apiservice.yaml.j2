@@ -1,0 +1,20 @@
+{% import "_macros.yaml.j2" as m %}
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+{{ m.metadata(res, env, none, none) }}
+spec:
+  group: {{ res.group }}
+  version: {{ res.version }}
+  groupPriorityMinimum: {{ res.group_priority_minimum | default(1000) }}
+  versionPriority: {{ res.version_priority | default(100) }}
+{% if res.service %}
+  service:
+    name: {{ res.service.name }}
+    namespace: {{ res.service.namespace | default(data.namespace_name) }}
+    port: {{ res.service.port | default(443) }}
+{% endif %}
+{% if res.ca_bundle is defined %}
+  caBundle: {{ res.ca_bundle }}
+{% else %}
+  insecureSkipTLSVerify: {{ res.insecure_skip_tls_verify | default(true) }}
+{% endif %}

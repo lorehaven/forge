@@ -38,3 +38,38 @@ fn default_resources_are_mutable() {
     assert!(resource_in_scope(&res, ResourceScope::Mutable));
     assert!(!resource_in_scope(&res, ResourceScope::Immutable));
 }
+
+use riveter::render::{check_embedded_templates, template_name_for_kind};
+
+#[test]
+fn every_embedded_template_parses() {
+    let names = check_embedded_templates().expect("all embedded templates should parse");
+    assert!(names.contains(&"deployment.yaml.j2"));
+    assert!(names.contains(&"_macros.yaml.j2"));
+}
+
+#[test]
+fn kind_lookup_is_case_insensitive() {
+    assert_eq!(
+        template_name_for_kind("StatefulSet"),
+        "statefulset.yaml.j2"
+    );
+    assert_eq!(template_name_for_kind("secret"), "secret.yaml.j2");
+}
+
+#[test]
+fn kind_aliases_resolve_to_canonical_templates() {
+    let names = check_embedded_templates().expect("templates should parse");
+
+    for (alias, expected) in [
+        ("hpa", "horizontalpodautoscaler.yaml.j2"),
+        ("pdb", "poddisruptionbudget.yaml.j2"),
+        ("crd", "customresourcedefinition.yaml.j2"),
+        ("netpol", "networkpolicy.yaml.j2"),
+        ("PersistentVolumeClaim", "pvc.yaml.j2"),
+    ] {
+        let resolved = template_name_for_kind(alias);
+        assert_eq!(resolved, expected, "alias `{alias}`");
+        assert!(names.contains(&expected), "`{expected}` is not registered");
+    }
+}

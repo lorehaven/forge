@@ -1,0 +1,6 @@
+{% import "_macros.yaml.j2" as m %}
+apiVersion: v1
+kind: Pod
+{{ m.metadata(res, env, res.namespace | default(data.namespace_name), none) }}
+spec:
+{{ m.pod_spec(res, env) | indent(2, true) }}

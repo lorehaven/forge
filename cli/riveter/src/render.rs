@@ -89,6 +89,7 @@ fn render_resources(
     let mut tpl_env = Environment::new();
     load_embedded_templates(&mut tpl_env)?;
     tpl_env.add_global("env", env_name);
+    tpl_env.add_filter("to_yaml", to_yaml);
 
     let mut out = Vec::new();
     for res in resources {
@@ -97,7 +98,7 @@ fn render_resources(
         }
 
         let kind = res["kind"].as_str().context("kind missing")?;
-        let tpl_name = format!("{}.yaml.j2", kind.to_lowercase());
+        let tpl_name = template_name_for_kind(kind);
 
         let tpl = tpl_env
             .get_template(&tpl_name)
@@ -183,55 +184,127 @@ fn load_env(env: &str) -> anyhow::Result<HashMap<String, String>> {
     Ok(env_vars)
 }
 
-fn load_embedded_templates(env: &mut Environment<'_>) -> anyhow::Result<()> {
-    let templates = [
-        "configmap.yaml.j2",
-        "cronjob.yaml.j2",
-        "deployment.yaml.j2",
-        "ingress.yaml.j2",
-        "ingressroute.yaml.j2",
-        "job.yaml.j2",
-        "middleware.yaml.j2",
-        "namespace.yaml.j2",
-        "pv.yaml.j2",
-        "pvc.yaml.j2",
-        "role.yaml.j2",
-        "rolebinding.yaml.j2",
-        "clusterrole.yaml.j2",
-        "clusterrolebinding.yaml.j2",
-        "service.yaml.j2",
-        "serviceaccount.yaml.j2",
-    ];
+macro_rules! embedded_templates {
+    ($($name:literal),* $(,)?) => {
+        [$((concat!($name, ".yaml.j2"), include_str!(concat!("templates/", $name, ".yaml.j2")))),*]
+    };
+}
 
-    for tpl in templates {
-        if let Some(source) = get_template_source(tpl) {
-            env.add_template(tpl, source)
-                .with_context(|| format!("failed to load embedded template: {tpl}"))?;
-        }
+/// Every embedded template, keyed by file name. A resource `kind` maps to an
+/// entry here by lowercasing it (see [`template_name_for_kind`]).
+const TEMPLATES: &[(&str, &str)] = &embedded_templates![
+    // shared macro library, imported by the templates below
+    "_macros",
+    // workloads
+    "cronjob",
+    "daemonset",
+    "deployment",
+    "job",
+    "pod",
+    "replicaset",
+    "statefulset",
+    // config & storage
+    "configmap",
+    "pv",
+    "pvc",
+    "secret",
+    "storageclass",
+    // networking
+    "endpoints",
+    "endpointslice",
+    "gateway",
+    "httproute",
+    "ingress",
+    "ingressclass",
+    "ingressroute",
+    "middleware",
+    "networkpolicy",
+    "service",
+    // scaling, scheduling & availability
+    "horizontalpodautoscaler",
+    "poddisruptionbudget",
+    "priorityclass",
+    "runtimeclass",
+    // policy & quota
+    "limitrange",
+    "namespace",
+    "resourcequota",
+    // rbac
+    "clusterrole",
+    "clusterrolebinding",
+    "role",
+    "rolebinding",
+    "serviceaccount",
+    // api extension
+    "apiservice",
+    "customresourcedefinition",
+    "mutatingwebhookconfiguration",
+    "validatingwebhookconfiguration",
+    // cert-manager
+    "certificate",
+    "clusterissuer",
+    "issuer",
+    // escape hatch
+    "raw",
+];
+
+/// Shorthand `kind` values accepted in overlays, mapped to their canonical
+/// template. Keys must be lowercase.
+const KIND_ALIASES: &[(&str, &str)] = &[
+    ("crd", "customresourcedefinition"),
+    ("ds", "daemonset"),
+    ("hpa", "horizontalpodautoscaler"),
+    ("netpol", "networkpolicy"),
+    ("pdb", "poddisruptionbudget"),
+    ("persistentvolume", "pv"),
+    ("persistentvolumeclaim", "pvc"),
+    ("sa", "serviceaccount"),
+    ("sts", "statefulset"),
+];
+
+#[doc(hidden)]
+#[must_use]
+pub fn template_name_for_kind(kind: &str) -> String {
+    let kind = kind.to_lowercase();
+    let canonical = KIND_ALIASES
+        .iter()
+        .find(|(alias, _)| *alias == kind)
+        .map_or(kind.as_str(), |(_, target)| *target);
+
+    format!("{canonical}.yaml.j2")
+}
+
+fn load_embedded_templates(env: &mut Environment<'_>) -> anyhow::Result<()> {
+    for (name, source) in TEMPLATES {
+        env.add_template(name, source)
+            .with_context(|| format!("failed to load embedded template: {name}"))?;
     }
     Ok(())
 }
 
-fn get_template_source(name: &str) -> Option<&'static str> {
-    Some(match name {
-        "configmap.yaml.j2" => include_str!("templates/configmap.yaml.j2"),
-        "cronjob.yaml.j2" => include_str!("templates/cronjob.yaml.j2"),
-        "deployment.yaml.j2" => include_str!("templates/deployment.yaml.j2"),
-        "ingress.yaml.j2" => include_str!("templates/ingress.yaml.j2"),
-        "ingressroute.yaml.j2" => include_str!("templates/ingressroute.yaml.j2"),
-        "job.yaml.j2" => include_str!("templates/job.yaml.j2"),
-        "middleware.yaml.j2" => include_str!("templates/middleware.yaml.j2"),
-        "namespace.yaml.j2" => include_str!("templates/namespace.yaml.j2"),
-        "pv.yaml.j2" => include_str!("templates/pv.yaml.j2"),
-        "pvc.yaml.j2" => include_str!("templates/pvc.yaml.j2"),
-        "role.yaml.j2" => include_str!("templates/role.yaml.j2"),
-        "rolebinding.yaml.j2" => include_str!("templates/rolebinding.yaml.j2"),
-        "clusterrole.yaml.j2" => include_str!("templates/clusterrole.yaml.j2"),
-        "clusterrolebinding.yaml.j2" => include_str!("templates/clusterrolebinding.yaml.j2"),
-        "service.yaml.j2" => include_str!("templates/service.yaml.j2"),
-        "serviceaccount.yaml.j2" => include_str!("templates/serviceaccount.yaml.j2"),
-        _ => return None,
-    })
+/// Parses every embedded template, so a syntax error is caught by the test
+/// suite rather than by the first overlay that happens to use the kind.
+#[doc(hidden)]
+pub fn check_embedded_templates() -> anyhow::Result<Vec<&'static str>> {
+    let mut env = Environment::new();
+    env.add_filter("to_yaml", to_yaml);
+    load_embedded_templates(&mut env)?;
+
+    Ok(TEMPLATES.iter().map(|(name, _)| *name).collect())
+}
+
+/// Renders a value as YAML at column 0, for overlay fields that are passed
+/// straight through to Kubernetes (tolerations, affinity, webhooks, ...).
+/// Nest the result with minijinja's `indent` filter.
+fn to_yaml(value: &Value) -> Result<String, minijinja::Error> {
+    serde_yaml::to_string(value)
+        .map(|s| s.trim_end().to_string())
+        .map_err(|e| {
+            minijinja::Error::new(
+                minijinja::ErrorKind::InvalidOperation,
+                format!("failed to serialize value as yaml: {e}"),
+            )
+        })
 }
 
 fn substitute(value: &mut YamlValue, env: &HashMap<String, String>, re: &Regex) {

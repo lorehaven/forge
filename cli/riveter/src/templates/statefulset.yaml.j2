@@ -1,0 +1,33 @@
+{% import "_macros.yaml.j2" as m %}
+apiVersion: apps/v1
+kind: StatefulSet
+{{ m.metadata(res, env, res.namespace | default(data.namespace_name), none) }}
+spec:
+  serviceName: {{ res.service_name | default(res.name) }}
+  replicas: {{ res.replicas | default(1) }}
+  podManagementPolicy: {{ res.pod_management_policy | default("OrderedReady") }}
+  updateStrategy:
+    type: {{ res.update_strategy | default("RollingUpdate") }}
+  selector:
+    matchLabels:
+{{ m.match_labels(res, env) | indent(6, true) }}
+  template:
+{{ m.pod_template(res, env) | indent(4, true) }}
+{% if res.volume_claim_templates %}
+  volumeClaimTemplates:
+{% for vct in res.volume_claim_templates %}
+    - metadata:
+        name: {{ vct.name }}
+      spec:
+        accessModes:
+{% for mode in vct.access_modes | default(["ReadWriteOnce"]) %}
+          - {{ mode }}
+{% endfor %}
+{% if vct.storage_class is defined %}
+        storageClassName: {{ vct.storage_class }}
+{% endif %}
+        resources:
+          requests:
+            storage: {{ vct.storage }}
+{% endfor %}
+{% endif %}

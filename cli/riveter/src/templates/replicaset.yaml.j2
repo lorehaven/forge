@@ -1,0 +1,14 @@
+{% import "_macros.yaml.j2" as m %}
+apiVersion: apps/v1
+kind: ReplicaSet
+{{ m.metadata(res, env, res.namespace | default(data.namespace_name), none) }}
+spec:
+  replicas: {{ res.replicas | default(1) }}
+{% if res.min_ready_seconds is defined %}
+  minReadySeconds: {{ res.min_ready_seconds }}
+{% endif %}
+  selector:
+    matchLabels:
+{{ m.match_labels(res, env) | indent(6, true) }}
+  template:
+{{ m.pod_template(res, env) | indent(4, true) }}

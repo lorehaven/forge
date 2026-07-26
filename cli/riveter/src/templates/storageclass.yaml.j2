@@ -1,0 +1,24 @@
+{% import "_macros.yaml.j2" as m %}
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+{{ m.metadata(res, env, none, none) }}
+provisioner: {{ res.provisioner }}
+reclaimPolicy: {{ res.reclaim_policy | default("Delete") }}
+volumeBindingMode: {{ res.volume_binding_mode | default("Immediate") }}
+allowVolumeExpansion: {{ res.allow_volume_expansion | default(false) }}
+{% if res.parameters %}
+parameters:
+{% for k, v in res.parameters | dictsort %}
+  {{ k }}: "{{ v }}"
+{% endfor %}
+{% endif %}
+{% if res.mount_options %}
+mountOptions:
+{% for o in res.mount_options %}
+  - {{ o }}
+{% endfor %}
+{% endif %}
+{% if res.allowed_topologies %}
+allowedTopologies:
+{{ res.allowed_topologies | to_yaml }}
+{% endif %}

@@ -1,0 +1,39 @@
+{% import "_macros.yaml.j2" as m %}
+apiVersion: v1
+kind: LimitRange
+{{ m.metadata(res, env, res.namespace | default(data.namespace_name), none) }}
+spec:
+  limits:
+{% for l in res.limits %}
+    - type: {{ l.type | default("Container") }}
+{% if l.default %}
+      default:
+{% for k, v in l.default | dictsort %}
+        {{ k }}: "{{ v }}"
+{% endfor %}
+{% endif %}
+{% if l.default_request %}
+      defaultRequest:
+{% for k, v in l.default_request | dictsort %}
+        {{ k }}: "{{ v }}"
+{% endfor %}
+{% endif %}
+{% if l.max %}
+      max:
+{% for k, v in l.max | dictsort %}
+        {{ k }}: "{{ v }}"
+{% endfor %}
+{% endif %}
+{% if l.min %}
+      min:
+{% for k, v in l.min | dictsort %}
+        {{ k }}: "{{ v }}"
+{% endfor %}
+{% endif %}
+{% if l.max_limit_request_ratio %}
+      maxLimitRequestRatio:
+{% for k, v in l.max_limit_request_ratio | dictsort %}
+        {{ k }}: "{{ v }}"
+{% endfor %}
+{% endif %}
+{% endfor %}

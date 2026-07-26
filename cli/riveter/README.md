@@ -71,7 +71,84 @@ REPL aliases:
 
 ## Templates
 
-Riveter expects templates to be located in `src/templates` within the module (or as configured). Templates use the `.yaml.j2` extension.
+Templates live in `src/templates` and are embedded into the binary at compile time. A
+resource's `kind` is lowercased and matched against `<kind>.yaml.j2`, so `kind: statefulset`
+and `kind: StatefulSet` both render `statefulset.yaml.j2`.
+
+### Supported kinds
+
+| Group | Kinds |
+| --- | --- |
+| Workloads | `deployment`, `statefulset`, `daemonset`, `replicaset`, `pod`, `job`, `cronjob` |
+| Config & storage | `configmap`, `secret`, `pv`, `pvc`, `storageclass` |
+| Networking | `service`, `ingress`, `ingressclass`, `networkpolicy`, `endpoints`, `endpointslice`, `gateway`, `httproute` |
+| Traefik | `ingressroute`, `middleware` |
+| Scaling & scheduling | `horizontalpodautoscaler`, `poddisruptionbudget`, `priorityclass`, `runtimeclass` |
+| Policy & quota | `namespace`, `resourcequota`, `limitrange` |
+| RBAC | `serviceaccount`, `role`, `rolebinding`, `clusterrole`, `clusterrolebinding` |
+| API extension | `customresourcedefinition`, `apiservice`, `mutatingwebhookconfiguration`, `validatingwebhookconfiguration` |
+| cert-manager | `certificate`, `issuer`, `clusterissuer` |
+| Escape hatch | `raw` |
+
+Shorthand aliases: `sts`, `ds`, `hpa`, `pdb`, `crd`, `netpol`, `sa`, `persistentvolume`,
+`persistentvolumeclaim`.
+
+### Anything else: `raw`
+
+For a kind riveter has no template for (vendor CRDs, a brand-new API), `raw` emits its
+`manifest` block verbatim — `${VAR}` substitution still applies:
+
+```yaml
+- kind: raw
+  name: allow-dns
+  manifest:
+    apiVersion: cilium.io/v2
+    kind: CiliumNetworkPolicy
+    metadata:
+      name: allow-dns
+      namespace: ${NAMESPACE}
+    spec:
+      endpointSelector: {}
+```
+
+### Pod-based kinds
+
+`deployment`, `statefulset`, `daemonset`, `replicaset` and `pod` share one pod-spec
+implementation in `_macros.yaml.j2`. The single-container shorthand puts container fields
+directly on the resource; use `containers:` (and `init_containers:`) for more than one:
+
+```yaml
+- kind: statefulset
+  name: pg
+  image: postgres:17
+  replicas: 3
+  port: 5432
+  env_vars:
+    POSTGRES_DB: forge
+  env_refs:
+    - name: POSTGRES_PASSWORD
+      secret: { name: pg-secret, key: password }
+    - name: POD_IP
+      field: status.podIP
+  probes:
+    readiness:
+      tcp_socket: { port: 5432 }
+  resources:
+    limits:
+      cpu: "2"
+      nvidia.com/gpu: 1
+  volume_claim_templates:
+    - name: data
+      storage: 20Gi
+```
+
+Overlay keys are `snake_case` and map onto the Kubernetes `camelCase` fields. Fields with
+no fixed shape — `tolerations`, `affinity`, `topology_spread_constraints`, HPA `metrics`
+and `behavior`, NetworkPolicy `ingress`/`egress`, CRD `versions`, webhook `webhooks` — are
+passed straight through as YAML, so they use Kubernetes' own `camelCase` spelling.
+
+> Rendering strips blank lines from the final manifest. Blank lines inside a block scalar
+> (a `configmap` value, a multi-line `secret` entry) are removed with them.
 
 ## License
 MIT

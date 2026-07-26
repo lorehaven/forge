@@ -1,0 +1,26 @@
+{% import "_macros.yaml.j2" as m %}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+{{ m.metadata(res, env, res.namespace | default(data.namespace_name), none) }}
+spec:
+{% if res.pod_selector %}
+  podSelector:
+    matchLabels:
+{% for k, v in res.pod_selector | dictsort %}
+      {{ k }}: "{{ v }}"
+{% endfor %}
+{% else %}
+  podSelector: {}
+{% endif %}
+  policyTypes:
+{% for t in res.policy_types | default(["Ingress"]) %}
+    - {{ t }}
+{% endfor %}
+{% if res.ingress %}
+  ingress:
+{{ res.ingress | to_yaml | indent(2, true) }}
+{% endif %}
+{% if res.egress %}
+  egress:
+{{ res.egress | to_yaml | indent(2, true) }}
+{% endif %}

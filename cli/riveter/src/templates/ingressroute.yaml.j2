@@ -14,7 +14,11 @@ spec:
   routes:
 {% for route in res.routes %}
     - kind: Rule
-      match: {{ route.match | replace("{{ host }}", host) }}
+{% if data.host is defined %}
+      match: {{ route.match | replace("{{ host }}", data.host) }}
+{% else %}
+      match: {{ route.match }}
+{% endif %}
       priority: {{ route.priority }}
 {% if route.middlewares %}
       middlewares:

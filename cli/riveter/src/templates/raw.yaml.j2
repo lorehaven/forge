@@ -1,0 +1,16 @@
+{#
+  Escape hatch for any kind riveter has no dedicated template for.
+
+  Everything under `manifest` is emitted verbatim (after ${VAR} substitution),
+  so the overlay carries plain Kubernetes YAML with camelCase field names:
+
+    - kind: raw
+      manifest:
+        apiVersion: cilium.io/v2
+        kind: CiliumNetworkPolicy
+        metadata:
+          name: allow-dns
+          namespace: ${NAMESPACE}
+        spec: ...
+#}
+{{ res.manifest | to_yaml }}

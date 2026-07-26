@@ -1,0 +1,18 @@
+{% import "_macros.yaml.j2" as m %}
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+{{ m.metadata(res, env, none, none) }}
+spec:
+  controller: {{ res.controller }}
+{% if res.parameters %}
+  parameters:
+    apiGroup: {{ res.parameters.api_group }}
+    kind: {{ res.parameters.kind }}
+    name: {{ res.parameters.name }}
+{% if res.parameters.scope is defined %}
+    scope: {{ res.parameters.scope }}
+{% endif %}
+{% if res.parameters.namespace is defined %}
+    namespace: {{ res.parameters.namespace }}
+{% endif %}
+{% endif %}

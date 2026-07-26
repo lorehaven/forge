@@ -1,0 +1,37 @@
+{% import "_macros.yaml.j2" as m %}
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+{{ m.metadata(res, env, res.namespace | default(data.namespace_name), none) }}
+spec:
+  gatewayClassName: {{ res.gateway_class }}
+  listeners:
+{% for l in res.listeners %}
+    - name: {{ l.name }}
+      protocol: {{ l.protocol | default("HTTP") }}
+      port: {{ l.port }}
+{% if l.hostname is defined %}
+      hostname: {{ l.hostname }}
+{% endif %}
+{% if l.tls %}
+      tls:
+        mode: {{ l.tls.mode | default("Terminate") }}
+{% if l.tls.certificate_refs %}
+        certificateRefs:
+{% for c in l.tls.certificate_refs %}
+          - name: {{ c }}
+{% endfor %}
+{% endif %}
+{% endif %}
+{% if l.allowed_routes %}
+      allowedRoutes:
+        namespaces:
+          from: {{ l.allowed_routes.from | default("Same") }}
+{% endif %}
+{% endfor %}
+{% if res.addresses %}
+  addresses:
+{% for a in res.addresses %}
+    - type: {{ a.type | default("IPAddress") }}
+      value: {{ a.value | default(a) }}
+{% endfor %}
+{% endif %}

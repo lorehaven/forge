@@ -1,0 +1,34 @@
+{% import "_macros.yaml.j2" as m %}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+{{ m.metadata(res, env, res.namespace | default(data.namespace_name), none) }}
+spec:
+  scaleTargetRef:
+    apiVersion: {{ res.target.api_version | default("apps/v1") }}
+    kind: {{ res.target.kind | default("Deployment") }}
+    name: {{ res.target.name | default(res.target_name) }}
+  minReplicas: {{ res.min_replicas | default(1) }}
+  maxReplicas: {{ res.max_replicas }}
+  metrics:
+{% if res.metrics %}
+{{ res.metrics | to_yaml | indent(4, true) }}
+{% else %}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ res.target_cpu_utilization | default(80) }}
+{% if res.target_memory_utilization is defined %}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ res.target_memory_utilization }}
+{% endif %}
+{% endif %}
+{% if res.behavior %}
+  behavior:
+{{ res.behavior | to_yaml | indent(4, true) }}
+{% endif %}

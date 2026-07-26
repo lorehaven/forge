@@ -1,0 +1,19 @@
+{% import "_macros.yaml.j2" as m %}
+apiVersion: v1
+kind: ResourceQuota
+{{ m.metadata(res, env, res.namespace | default(data.namespace_name), none) }}
+spec:
+  hard:
+{% for k, v in res.hard | dictsort %}
+    {{ k }}: "{{ v }}"
+{% endfor %}
+{% if res.scopes %}
+  scopes:
+{% for s in res.scopes %}
+    - {{ s }}
+{% endfor %}
+{% endif %}
+{% if res.scope_selector %}
+  scopeSelector:
+{{ res.scope_selector | to_yaml | indent(4, true) }}
+{% endif %}

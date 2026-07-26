@@ -1,0 +1,49 @@
+{% import "_macros.yaml.j2" as m %}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+{{ m.metadata(res, env, res.namespace | default(data.namespace_name), none) }}
+spec:
+  parentRefs:
+{% for p in res.parent_refs %}
+    - name: {{ p.name | default(p) }}
+{% if p.namespace is defined %}
+      namespace: {{ p.namespace }}
+{% endif %}
+{% if p.section_name is defined %}
+      sectionName: {{ p.section_name }}
+{% endif %}
+{% endfor %}
+{% if res.hostnames %}
+  hostnames:
+{% for h in res.hostnames %}
+    - {{ h }}
+{% endfor %}
+{% endif %}
+  rules:
+{% for r in res.rules %}
+{% if r.matches %}
+    - matches:
+{% for match in r.matches %}
+        - path:
+            type: {{ match.type | default("PathPrefix") }}
+            value: {{ match.path | default("/") }}
+{% if match.method is defined %}
+          method: {{ match.method }}
+{% endif %}
+{% endfor %}
+      backendRefs:
+{% else %}
+    - backendRefs:
+{% endif %}
+{% for b in r.backends %}
+        - name: {{ b.name }}
+          port: {{ b.port }}
+{% if b.weight is defined %}
+          weight: {{ b.weight }}
+{% endif %}
+{% endfor %}
+{% if r.filters %}
+      filters:
+{{ r.filters | to_yaml | indent(8, true) }}
+{% endif %}
+{% endfor %}

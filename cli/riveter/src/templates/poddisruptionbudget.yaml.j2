@@ -1,0 +1,18 @@
+{% import "_macros.yaml.j2" as m %}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+{{ m.metadata(res, env, res.namespace | default(data.namespace_name), none) }}
+spec:
+{% if res.min_available is defined %}
+  minAvailable: {{ res.min_available }}
+{% elif res.max_unavailable is defined %}
+  maxUnavailable: {{ res.max_unavailable }}
+{% else %}
+  minAvailable: 1
+{% endif %}
+{% if res.unhealthy_pod_eviction_policy is defined %}
+  unhealthyPodEvictionPolicy: {{ res.unhealthy_pod_eviction_policy }}
+{% endif %}
+  selector:
+    matchLabels:
+{{ m.match_labels(res, env) | indent(6, true) }}

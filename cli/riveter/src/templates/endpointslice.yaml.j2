@@ -1,0 +1,18 @@
+{% import "_macros.yaml.j2" as m %}
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+{{ m.metadata(res, env, res.namespace | default(data.namespace_name), {"kubernetes.io/service-name": res.service_name | default(res.name)}) }}
+addressType: {{ res.address_type | default("IPv4") }}
+endpoints:
+{% for a in res.addresses %}
+  - addresses:
+      - {{ a }}
+    conditions:
+      ready: true
+{% endfor %}
+ports:
+{% for p in res.ports %}
+  - port: {{ p.port }}
+    name: {{ p.name | default("http") }}
+    protocol: {{ p.protocol | default("TCP") }}
+{% endfor %}

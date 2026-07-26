@@ -1,0 +1,6 @@
+{% import "_macros.yaml.j2" as m %}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+{{ m.metadata(res, env, none, none) }}
+webhooks:
+{{ res.webhooks | to_yaml }}
