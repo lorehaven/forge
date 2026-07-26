@@ -27,12 +27,50 @@ cargo install --path .
 
 ### Manifest Operations
 
-- `riveter render [--scope mutable|immutable|all]`: Render templates for the current environment.
-- `riveter apply [--dry-run] [--scope mutable|immutable|all]`: Apply resources to the Kubernetes cluster.
-- `riveter delete [--scope mutable|immutable|all]`: Delete resources from the Kubernetes cluster.
+- `riveter list [--scope ...] [target...]`: List the resources an environment declares.
+- `riveter render [--scope ...] [target...]`: Render templates for the current environment.
+- `riveter apply [--dry-run] [--scope ...] [target...]`: Apply resources to the cluster.
+- `riveter delete [--scope ...] [target...]`: Delete resources from the cluster.
 
 By default, `apply` and `delete` use `--scope mutable`, which skips resources marked immutable.
 To include everything explicitly, use `--scope all`.
+
+### Targeting individual resources
+
+Without targets, every command acts on the whole environment. Pass one or more
+`kind[/name]` targets to act on a subset instead:
+
+```bash
+riveter list                            # what is in this environment?
+riveter apply deployment/api            # just that deployment
+riveter apply deployment/api service/api
+riveter apply statefulset               # every statefulset
+riveter apply '*/api'                   # everything named api
+riveter render 'deployment/api-*'       # glob on either half
+riveter delete --scope all namespace/prod
+```
+
+Both halves accept `*` and `?` wildcards, matching is case-insensitive, and kind aliases
+work — `sts/pg` selects a `kind: statefulset` resource. Quote patterns so the shell does
+not expand them.
+
+A target that matches nothing is an error listing the available resources, so a typo
+cannot quietly become a no-op apply:
+
+```
+Error: no resource matches `deployment/typo`
+
+available resources:
+  namespace/forge-test
+  statefulset/pg
+  ...
+```
+
+Targets are still filtered by `--scope`. Naming an immutable resource while the scope
+excludes it is an error telling you to pass `--scope all`, rather than silently skipping it.
+
+Targeted renders are written to `manifests/<env>-manifests.selection.yaml`, so they never
+overwrite the full `manifests/<env>-manifests.yaml`.
 
 You can mark immutable resources inside `resources` entries:
 
@@ -54,20 +92,22 @@ riveter
 
 REPL commands:
 
-- `env list`
-- `env set <env>`
-- `env show`
-- `render [--scope mutable|immutable|all]`
-- `apply [--dry-run] [--scope mutable|immutable|all]`
-- `delete [--scope mutable|immutable|all]`
-- `help` or `h`
-- `exit`, `quit`, or `q`
+| Command | Aliases | |
+| --- | --- | --- |
+| `env <list\|set\|show>` | | Manage environments |
+| `list [options] [target...]` | `ls` | List the environment's resources |
+| `render [options] [target...]` | `r` | Render manifests to `manifests/` |
+| `apply [options] [target...]` | `a` | Apply manifests via kubectl |
+| `delete [options] [target...]` | `d`, `del` | Delete manifests via kubectl |
+| `help [command]` | `h` | Show help, or detail for one command |
+| `exit` | `quit`, `q` | Leave the REPL |
 
-REPL aliases:
+`help` prints the full command tree with each command's subcommands and options nested
+beneath it. `help <command>` adds prose, the scope reference, target syntax and worked
+examples for one command; `help targets` prints the target syntax on its own.
 
-- `render` -> `r`
-- `apply` -> `a`
-- `delete` -> `d` or `del`
+The same aliases work on the CLI (`riveter ls`, `riveter a --dry-run deployment/api`), and
+`riveter <command> --help` mirrors the REPL's per-command help.
 
 ## Templates
 

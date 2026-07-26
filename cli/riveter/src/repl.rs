@@ -1,5 +1,9 @@
 use crate::env::{current_env, env_list, env_set, env_show};
-use crate::render::{ResourceScope, generate_manifests_with_scope};
+use crate::help;
+use crate::render::{
+    RenderedManifest, ResourceRef, ResourceScope, Selector, generate_manifests_selected,
+    list_resources,
+};
 use anyhow::Context;
 use quench_cli::prelude::{Tone, print_box_banner, print_status, repl_prompt};
 use std::process::Command;
@@ -17,26 +21,27 @@ fn prompt() -> String {
     repl_prompt("riveter", &env)
 }
 
-fn repl_help() {
-    println!(
-        "\
-Commands:
-  env
-    list                List available environments
-    set <env>           Set current environment
-    show                Show current environment
+/// Prints without panicking when stdout is a closed pipe (`help | head`).
+fn print_block(text: &str) {
+    use std::io::Write;
 
-  render [--scope mutable|immutable|all]
-                        Render manifests
-  apply [--dry-run] [--scope mutable|immutable|all]
-                        Apply manifests via kubectl
-  delete [--scope mutable|immutable|all]
-                        Delete manifests via kubectl
+    let stdout = std::io::stdout();
+    let _ = writeln!(stdout.lock(), "{text}");
+}
 
-  help                  Show this help
-  exit | quit            Leave REPL
-"
-    );
+fn repl_help(topic: Option<&str>) {
+    let Some(topic) = topic else {
+        print_block(&help::overview());
+        return;
+    };
+
+    if topic == "targets" || topic == "target" {
+        print_block(&help::targets());
+    } else if let Some(cmd) = help::find(topic) {
+        print_block(&help::detail(cmd));
+    } else {
+        warn(&help::unknown_topic(topic));
+    }
 }
 
 fn handle_repl_command(input: &str) -> anyhow::Result<bool> {
@@ -47,7 +52,7 @@ fn handle_repl_command(input: &str) -> anyhow::Result<bool> {
 
     match args[0] {
         "help" | "h" => {
-            repl_help();
+            repl_help(args.get(1).copied());
         }
 
         "exit" | "quit" | "q" => {
@@ -67,36 +72,62 @@ fn handle_repl_command(input: &str) -> anyhow::Result<bool> {
             env_show()?;
         }
 
+        "list" | "ls" => {
+            let env = current_env()?;
+            let scope = parse_scope_arg(&args, ResourceScope::All)?;
+            let selector = parse_targets(&args)?;
+
+            let resources: Vec<ResourceRef> = list_resources(&env)?
+                .into_iter()
+                .filter(|r| selector.matches(&r.kind, &r.name) && r.in_scope(scope))
+                .collect();
+            print_resource_list(&resources);
+        }
+
         "render" | "r" => {
             let env = current_env()?;
             let scope = parse_scope_arg(&args, ResourceScope::All)?;
-            let rendered = generate_manifests_with_scope(&env, scope)?;
-            ok(&format!("rendered {}", rendered.path));
+            let selector = parse_targets(&args)?;
+            let rendered = generate_manifests_selected(&env, scope, &selector)?;
+            ok(&format!(
+                "rendered {} resource(s) to {}",
+                rendered.resource_count, rendered.path
+            ));
         }
 
         "apply" | "a" => {
             let env = current_env()?;
             let dry = args.contains(&"--dry-run");
             let scope = parse_scope_arg(&args, ResourceScope::Mutable)?;
-            let count = kubectl_apply(&env, dry, scope)?;
-            if count == 0 {
+            let selector = parse_targets(&args)?;
+
+            let rendered = kubectl_apply(&env, dry, scope, &selector)?;
+            if rendered.resource_count == 0 {
                 ok("no resources matched selected scope");
-            } else if dry {
-                ok("kubectl apply --dry-run succeeded");
             } else {
-                ok("kubectl apply succeeded");
+                let verb = if dry { "would apply" } else { "applied" };
+                ok(&format!(
+                    "{verb} {} resource(s): {}",
+                    rendered.resource_count,
+                    describe(&rendered)
+                ));
             }
         }
 
         "delete" | "del" | "d" => {
             let env = current_env()?;
             let scope = parse_scope_arg(&args, ResourceScope::Mutable)?;
-            let count = kubectl_delete(&env, scope)?;
-            if count > 0 {
-                warn(&format!("deleted resources for env: {env}"));
-                ok("kubectl delete completed");
-            } else {
+            let selector = parse_targets(&args)?;
+
+            let rendered = kubectl_delete(&env, scope, &selector)?;
+            if rendered.resource_count == 0 {
                 ok("no resources matched selected scope");
+            } else {
+                warn(&format!(
+                    "deleted {} resource(s) for env {env}: {}",
+                    rendered.resource_count,
+                    describe(&rendered)
+                ));
             }
         }
 
@@ -148,10 +179,15 @@ pub fn repl() -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn kubectl_apply(env: &str, dry: bool, scope: ResourceScope) -> anyhow::Result<usize> {
-    let rendered = generate_manifests_with_scope(env, scope)?;
+pub fn kubectl_apply(
+    env: &str,
+    dry: bool,
+    scope: ResourceScope,
+    selector: &Selector,
+) -> anyhow::Result<RenderedManifest> {
+    let rendered = generate_manifests_selected(env, scope, selector)?;
     if rendered.resource_count == 0 {
-        return Ok(0);
+        return Ok(rendered);
     }
 
     let mut cmd = Command::new("kubectl");
@@ -159,22 +195,86 @@ pub fn kubectl_apply(env: &str, dry: bool, scope: ResourceScope) -> anyhow::Resu
     if dry {
         cmd.arg("--dry-run=client");
     }
-    let status = cmd.arg("-f").arg(rendered.path).status()?;
+    let status = cmd.arg("-f").arg(&rendered.path).status()?;
     anyhow::ensure!(status.success(), "kubectl apply failed");
-    Ok(rendered.resource_count)
+    Ok(rendered)
 }
 
-pub fn kubectl_delete(env: &str, scope: ResourceScope) -> anyhow::Result<usize> {
-    let rendered = generate_manifests_with_scope(env, scope)?;
+pub fn kubectl_delete(
+    env: &str,
+    scope: ResourceScope,
+    selector: &Selector,
+) -> anyhow::Result<RenderedManifest> {
+    let rendered = generate_manifests_selected(env, scope, selector)?;
     if rendered.resource_count == 0 {
-        return Ok(0);
+        return Ok(rendered);
     }
 
     let status = Command::new("kubectl")
         .args(["delete", "-f", &rendered.path])
         .status()?;
     anyhow::ensure!(status.success(), "kubectl delete failed");
-    Ok(rendered.resource_count)
+    Ok(rendered)
+}
+
+/// `kind/name, kind/name` for reporting what a command touched.
+pub fn describe(rendered: &RenderedManifest) -> String {
+    rendered
+        .selected
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+pub fn print_resource_list(resources: &[ResourceRef]) {
+    use std::io::Write;
+
+    if resources.is_empty() {
+        warn("no resources matched");
+        return;
+    }
+
+    let kind_width = resources.iter().map(|r| r.kind.len()).max().unwrap_or(4);
+    let name_width = resources.iter().map(|r| r.name.len()).max().unwrap_or(4);
+
+    // Written directly so a closed pipe (`riveter list | head`) ends the loop
+    // instead of panicking the way `println!` does.
+    let stdout = std::io::stdout();
+    let mut out = stdout.lock();
+    for res in resources {
+        let lifecycle = if res.immutable { "immutable" } else { "mutable" };
+        if writeln!(
+            out,
+            "  {:<kind_width$}  {:<name_width$}  {lifecycle}",
+            res.kind, res.name
+        )
+        .is_err()
+        {
+            break;
+        }
+    }
+}
+
+/// Everything that is not the command word, a flag, or a flag's value is a
+/// resource target.
+fn parse_targets(args: &[&str]) -> anyhow::Result<Selector> {
+    let mut targets = Vec::new();
+    let mut idx = 1;
+
+    while idx < args.len() {
+        let arg = args[idx];
+        if arg == "--scope" {
+            idx += 2;
+        } else if arg.starts_with('-') {
+            idx += 1;
+        } else {
+            targets.push(arg.to_string());
+            idx += 1;
+        }
+    }
+
+    Selector::parse(&targets)
 }
 
 fn parse_scope_arg(args: &[&str], default: ResourceScope) -> anyhow::Result<ResourceScope> {
