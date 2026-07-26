@@ -9,7 +9,7 @@ pub(in crate::routers::ui::pages) async fn docker_tags(
     path: web::Path<String>,
     config: web::Data<JwtConfig>,
 ) -> impl Responder {
-    if !is_ui_authenticated(&req, &config) {
+    if !is_ui_authenticated(&req, &config).await {
         return ui_login_redirect();
     }
     let repository = path.into_inner();

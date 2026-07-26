@@ -1,0 +1,84 @@
+[[migrations]]
+id = "0002-files-and-rag"
+author = "sage-service"
+since = "0.2.0"
+
+# A file belongs to exactly one scope - a conversation or a project - and may be
+# attached to the message it was uploaded with.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.files (
+    id TEXT PRIMARY KEY,
+    owner TEXT NOT NULL REFERENCES ${auth_schema}.users(username) ON DELETE CASCADE,
+    file_name TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    file_size BIGINT NOT NULL,
+    conversation_id TEXT REFERENCES ${schema}.conversations(id) ON DELETE CASCADE,
+    project_id TEXT REFERENCES ${schema}.projects(id) ON DELETE CASCADE,
+    message_id TEXT REFERENCES ${schema}.messages(id) ON DELETE CASCADE,
+    status TEXT NOT NULL,
+    error_message TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK (num_nonnulls(conversation_id, project_id) = 1)
+);
+"""
+
+[[migrations.changes]]
+sql = "CREATE INDEX IF NOT EXISTS files_conversation_id_idx ON ${schema}.files (conversation_id);"
+
+[[migrations.changes]]
+sql = "CREATE INDEX IF NOT EXISTS files_project_id_idx ON ${schema}.files (project_id);"
+
+[[migrations.changes]]
+sql = "CREATE INDEX IF NOT EXISTS files_owner_idx ON ${schema}.files (owner);"
+
+[[migrations.changes]]
+sql = "CREATE INDEX IF NOT EXISTS files_message_id_idx ON ${schema}.files (message_id);"
+
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.file_blobs (
+    file_id TEXT PRIMARY KEY REFERENCES ${schema}.files(id) ON DELETE CASCADE,
+    data BYTEA NOT NULL
+);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.file_chunks (
+    id TEXT PRIMARY KEY,
+    file_id TEXT NOT NULL REFERENCES ${schema}.files(id) ON DELETE CASCADE,
+    chunk_index INTEGER NOT NULL,
+    content TEXT NOT NULL,
+    embedding vector(${embedding_dim}),
+    embedding_model TEXT,
+    metadata JSONB,
+    created_at TEXT NOT NULL,
+    UNIQUE (file_id, chunk_index)
+);
+"""
+
+[[migrations.changes]]
+sql = "CREATE INDEX IF NOT EXISTS file_chunks_file_id_idx ON ${schema}.file_chunks (file_id);"
+
+[[migrations.changes]]
+sql = "CREATE INDEX IF NOT EXISTS file_chunks_embedding_idx ON ${schema}.file_chunks USING hnsw (embedding vector_cosine_ops);"
+
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.rag_contexts (
+    id TEXT PRIMARY KEY,
+    message_id TEXT NOT NULL REFERENCES ${schema}.messages(id) ON DELETE CASCADE,
+    file_id TEXT REFERENCES ${schema}.files(id) ON DELETE SET NULL,
+    file_name TEXT NOT NULL,
+    chunk_index INTEGER,
+    detail TEXT,
+    similarity DOUBLE PRECISION,
+    source TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+"""
+
+[[migrations.changes]]
+sql = "CREATE INDEX IF NOT EXISTS rag_contexts_message_id_idx ON ${schema}.rag_contexts (message_id);"

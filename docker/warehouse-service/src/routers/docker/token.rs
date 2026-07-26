@@ -47,8 +47,11 @@ pub async fn handle(
     let now = Utc::now();
     let exp = now + Duration::minutes(10);
 
+    // Registry tokens stay single-audience: they are minted for this service's
+    // docker endpoint only, never for the realm at large.
     let claims = Claims {
         sub: username,
+        aud: vec![query.service.clone()],
         service: query.service.clone(),
         scope: query.scope.clone().unwrap_or("docker".to_string()),
         iat: now.timestamp() as usize,

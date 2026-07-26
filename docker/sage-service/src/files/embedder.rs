@@ -145,14 +145,3 @@ pub fn vector_literal(vector: &[f32]) -> String {
     out.push(']');
     out
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_vector_literal() {
-        assert_eq!(vector_literal(&[1.0, -0.5, 0.25]), "[1,-0.5,0.25]");
-        assert_eq!(vector_literal(&[]), "[]");
-    }
-}

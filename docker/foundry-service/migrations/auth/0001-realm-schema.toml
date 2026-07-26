@@ -1,0 +1,18 @@
+[[migrations]]
+id = "0001-realm-schema"
+author = "gatehouse-service"
+since = "0.1.0"
+
+[[migrations.changes]]
+createSchema = { name = "${schema}" }
+
+# Users are the realm's only durable state. Sessions live in the cache store
+# (Redis), where expiry is a TTL and revocation is a delete.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.users (
+    username TEXT PRIMARY KEY,
+    password TEXT NOT NULL,
+    roles JSONB NOT NULL
+);
+"""

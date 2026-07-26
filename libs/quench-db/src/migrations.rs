@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::path::Path;
 use walkdir::WalkDir;
@@ -7,7 +8,59 @@ use walkdir::WalkDir;
 pub struct Migration {
     pub id: String,
     pub author: String,
+
+    /// Module version this migration was introduced in. Migrations are applied
+    /// only when `since <= ` the version being installed. Defaults to `0.0.0`,
+    /// i.e. always applied.
+    #[serde(default)]
+    pub since: Option<String>,
+
     pub changes: Vec<ChangeSet>,
+}
+
+impl Migration {
+    /// Renders every change to SQL, substituting `${var}` placeholders.
+    pub fn to_sql_with(&self, vars: &BTreeMap<String, String>) -> Result<Vec<String>, RenderError> {
+        self.changes.iter().map(|c| c.to_sql_with(vars)).collect()
+    }
+}
+
+/// Substitutes `${name}` placeholders from `vars`.
+///
+/// Unknown placeholders are an error rather than being left in place - an
+/// unresolved variable in a DDL statement is never what the author meant.
+pub fn render(template: &str, vars: &BTreeMap<String, String>) -> Result<String, RenderError> {
+    let mut out = String::with_capacity(template.len());
+    let mut rest = template;
+
+    while let Some(start) = rest.find("${") {
+        out.push_str(&rest[..start]);
+        let tail = &rest[start + 2..];
+        let Some(end) = tail.find('}') else {
+            return Err(RenderError::Unterminated {
+                template: template.to_string(),
+            });
+        };
+        let name = tail[..end].trim();
+        let value = vars.get(name).ok_or_else(|| RenderError::UnknownVariable {
+            name: name.to_string(),
+            known: vars.keys().cloned().collect(),
+        })?;
+        out.push_str(value);
+        rest = &tail[end + 1..];
+    }
+
+    out.push_str(rest);
+    Ok(out)
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum RenderError {
+    #[error("unknown variable '{name}' (known: {})", known.join(", "))]
+    UnknownVariable { name: String, known: Vec<String> },
+
+    #[error("unterminated '${{' in template: {template}")]
+    Unterminated { template: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -19,11 +72,25 @@ pub struct MigrationLoader;
 
 impl MigrationLoader {
     pub fn load_from_dir<P: AsRef<Path>>(dir: P) -> anyhow::Result<Vec<Migration>> {
+        Self::load_from_dir_excluding(dir, &[])
+    }
+
+    /// Same as [`MigrationLoader::load_from_dir`], but skips the named files.
+    /// Used by the catalog to ignore `module.toml` sitting next to migrations.
+    pub fn load_from_dir_excluding<P: AsRef<Path>>(
+        dir: P,
+        exclude: &[&str],
+    ) -> anyhow::Result<Vec<Migration>> {
         let mut files: Vec<_> = WalkDir::new(dir)
             .max_depth(1)
             .into_iter()
             .filter_map(|e| e.ok())
             .filter(|e| e.path().extension().is_some_and(|ext| ext == "toml"))
+            .filter(|e| {
+                !e.file_name()
+                    .to_str()
+                    .is_some_and(|name| exclude.contains(&name))
+            })
             .collect();
 
         // Sort files by name (yyyy-mm-dd-0000.toml)
@@ -86,6 +153,11 @@ pub struct ColumnDef {
 }
 
 impl ChangeSet {
+    /// Renders this change to SQL with `${var}` placeholders substituted.
+    pub fn to_sql_with(&self, vars: &BTreeMap<String, String>) -> Result<String, RenderError> {
+        render(&self.to_sql(), vars)
+    }
+
     pub fn to_sql(&self) -> String {
         match self {
             ChangeSet::Sql(sql) => sql.clone(),

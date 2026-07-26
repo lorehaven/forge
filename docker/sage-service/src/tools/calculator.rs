@@ -77,7 +77,7 @@ impl ToolExecutor for CalculatorExecutor {
     }
 }
 
-fn eval_expression(expr: &str) -> Result<f64, String> {
+pub fn eval_expression(expr: &str) -> Result<f64, String> {
     let expr = expr.trim().to_lowercase();
 
     // Simple mathematical expression evaluator
@@ -275,30 +275,4 @@ fn eval_number(expr: &str, pos: &mut usize) -> Result<f64, String> {
     expr[start..*pos]
         .parse()
         .map_err(|_| "Invalid number".to_string())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_basic_operations() {
-        assert_eq!(eval_expression("2 + 2").unwrap(), 4.0);
-        assert_eq!(eval_expression("10 - 3").unwrap(), 7.0);
-        assert_eq!(eval_expression("4 * 5").unwrap(), 20.0);
-        assert_eq!(eval_expression("20 / 4").unwrap(), 5.0);
-    }
-
-    #[test]
-    fn test_complex_expressions() {
-        assert_eq!(eval_expression("2 + 3 * 4").unwrap(), 14.0);
-        assert_eq!(eval_expression("(2 + 3) * 4").unwrap(), 20.0);
-        assert_eq!(eval_expression("2 ^ 3").unwrap(), 8.0);
-    }
-
-    #[test]
-    fn test_functions() {
-        assert!((eval_expression("sqrt(16)").unwrap() - 4.0).abs() < 0.001);
-        assert!((eval_expression("abs(-5)").unwrap() - 5.0).abs() < 0.001);
-    }
 }

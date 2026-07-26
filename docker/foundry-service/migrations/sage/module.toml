@@ -1,0 +1,11 @@
+name = "sage"
+version = "0.2.0"
+description = "Sage AI workspace - conversations, projects, files and RAG"
+default_schema = "sage"
+requires = ["auth@^0.1", "quench-core@^0.1", "pgvector@^0.1"]
+
+[variables]
+# Must match the embedding model wired into sage (see files/embedder.rs).
+embedding_dim = "1024"
+# Realm schema that owns users; keep in sync with the auth module.
+auth_schema = "auth"

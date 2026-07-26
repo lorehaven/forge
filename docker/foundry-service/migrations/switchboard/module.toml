@@ -1,0 +1,5 @@
+name = "switchboard"
+version = "0.2.0"
+description = "Switchboard - vLLM model cache and architecture registry"
+default_schema = "switchboard"
+requires = ["auth@^0.1", "quench-core@^0.1"]

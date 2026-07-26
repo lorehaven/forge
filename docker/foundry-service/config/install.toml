@@ -1,0 +1,20 @@
+# What this Job installs. Dependencies (auth, quench-core, pgvector) are
+# resolved from the catalog - only list the services you want.
+#
+# Override per environment without rebuilding the image:
+#   FOUNDRY_INSTALL="sage@0.2.0,switchboard:switchboard_staging"
+#
+# Omitting `version` installs the version the catalog defines; pinning an older
+# version applies only the migrations tagged up to it.
+
+[[install]]
+module = "gatehouse"
+
+[[install]]
+module = "sage"
+
+[[install]]
+module = "switchboard"
+
+[[install]]
+module = "warehouse"

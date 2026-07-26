@@ -1,6 +1,5 @@
 use crate::prelude::with_base_path;
 use actix_web::{HttpResponse, web};
-use quench_auth::actix::domain::jwt::JwtConfig;
 use std::{
     fs,
     path::{Component, Path, PathBuf},
@@ -25,21 +24,33 @@ pub fn ui_login_redirect() -> HttpResponse {
         .finish()
 }
 
-pub fn is_ui_authenticated(req: &actix_web::HttpRequest, config: &JwtConfig) -> bool {
-    if !config.auth_enabled {
-        return true;
-    }
-
-    let cookie_name = format!("{}_ui_session", config.service_name);
-    let Some(cookie) = req.cookie(&cookie_name) else {
-        return false;
-    };
-
-    match config.decode_claims(cookie.value()) {
-        Ok(claims) => claims.service == config.service_name,
-        Err(_) => false,
-    }
+/// Every service puts its pages under `/ui`, so the bare server root and the
+/// bare base path land there rather than on a 404. `/ui` itself then decides
+/// between the home page and the login page.
+fn ui_root_redirect() -> HttpResponse {
+    HttpResponse::Found()
+        .append_header(("Location", ui_path("")))
+        .finish()
 }
+
+#[actix_web::get("/")]
+pub async fn server_root_redirect() -> HttpResponse {
+    ui_root_redirect()
+}
+
+#[actix_web::get("")]
+pub async fn base_path_redirect() -> HttpResponse {
+    ui_root_redirect()
+}
+
+#[actix_web::get("/")]
+pub async fn base_path_slash_redirect() -> HttpResponse {
+    ui_root_redirect()
+}
+
+/// Re-exported rather than reimplemented: a second copy of this check is how
+/// the cookie name and audience rule drifted apart in the first place.
+pub use quench_auth::actix::routers::ui::is_ui_authenticated;
 
 pub async fn serve_assets(path: web::Path<String>, dist_path: &str) -> HttpResponse {
     let Some(relative) = sanitize_asset_path(&path) else {

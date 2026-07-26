@@ -208,4 +208,14 @@ where
             .await?;
         Ok(rows)
     }
+
+    async fn find_by(&self, column: &str, value: &str) -> Result<Vec<T>, DbError> {
+        let column = crate::checked_column::<T>(column)?;
+        let query = format!("SELECT * FROM {} WHERE {} = $1", T::table_name(), column);
+        let rows = sqlx::query_as::<_, T>(sqlx::AssertSqlSafe(query.as_str()))
+            .bind(value)
+            .fetch_all(&self.db.pool)
+            .await?;
+        Ok(rows)
+    }
 }

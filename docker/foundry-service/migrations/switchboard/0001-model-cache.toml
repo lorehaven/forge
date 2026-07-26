@@ -1,0 +1,16 @@
+[[migrations]]
+id = "0001-model-cache"
+author = "switchboard-service"
+since = "0.2.0"
+
+[[migrations.changes]]
+createTable = { schema = "${schema}", name = "vllm_architectures", columns = [
+    { name = "id", data_type = "TEXT", primary_key = true, nullable = false }
+]}
+
+[[migrations.changes]]
+createTable = { schema = "${schema}", name = "model_cache", columns = [
+    { name = "path", data_type = "TEXT", primary_key = true, nullable = false },
+    { name = "data", data_type = "JSONB", nullable = false },
+    { name = "updated_at", data_type = "TIMESTAMPTZ", nullable = false }
+]}

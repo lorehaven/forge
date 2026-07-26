@@ -1,0 +1,5 @@
+name = "pgvector"
+version = "0.1.0"
+description = "pgvector extension - installed once per database, not per schema"
+scope = "database"
+default_schema = "public"

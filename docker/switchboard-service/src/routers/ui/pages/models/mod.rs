@@ -9,7 +9,7 @@ pub(super) async fn models_dashboard(
     req: actix_web::HttpRequest,
     config: web::Data<JwtConfig>,
 ) -> impl Responder {
-    if !common::is_ui_authenticated(&req, &config) {
+    if !common::is_ui_authenticated(&req, &config).await {
         return common::ui_login_redirect();
     }
     render_models_dashboard_page()
@@ -20,7 +20,7 @@ pub(super) async fn models_dashboard_slash(
     req: actix_web::HttpRequest,
     config: web::Data<JwtConfig>,
 ) -> impl Responder {
-    if !common::is_ui_authenticated(&req, &config) {
+    if !common::is_ui_authenticated(&req, &config).await {
         return common::ui_login_redirect();
     }
     render_models_dashboard_page()

@@ -58,7 +58,7 @@ impl AppState {
             }),
             jwt_config: Data::new(JwtConfig::init()),
             user_db: UserDb::init(db_wrapper.db.clone()).await,
-            session_db: SessionDb::init(db_wrapper.db.clone()),
+            session_db: SessionDb::from_env().await.expect("session store"),
             tool_registry,
             search_providers,
             metrics: Arc::new(MetricsCollector::new()),

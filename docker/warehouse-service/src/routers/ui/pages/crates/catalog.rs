@@ -21,7 +21,7 @@ pub(super) async fn crates_index(
     query: web::Query<PageQuery>,
     config: web::Data<JwtConfig>,
 ) -> impl Responder {
-    if !is_ui_authenticated(&req, &config) {
+    if !is_ui_authenticated(&req, &config).await {
         return ui_login_redirect();
     }
     render_crates_page(query.repo.clone(), query.tag.clone())
@@ -33,7 +33,7 @@ pub(super) async fn crates_index_slash(
     query: web::Query<PageQuery>,
     config: web::Data<JwtConfig>,
 ) -> impl Responder {
-    if !is_ui_authenticated(&req, &config) {
+    if !is_ui_authenticated(&req, &config).await {
         return ui_login_redirect();
     }
     render_crates_page(query.repo.clone(), query.tag.clone())
@@ -63,7 +63,7 @@ async fn set_yank_state(
     config: web::Data<JwtConfig>,
     yanked: bool,
 ) -> HttpResponse {
-    if !is_ui_authenticated(&req, &config) {
+    if !is_ui_authenticated(&req, &config).await {
         return ui_login_redirect();
     }
 

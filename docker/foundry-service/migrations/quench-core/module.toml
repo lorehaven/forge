@@ -1,0 +1,3 @@
+name = "quench-core"
+version = "0.1.0"
+description = "Base objects every Quench service needs in its target schema"

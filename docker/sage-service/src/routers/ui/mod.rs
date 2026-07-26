@@ -16,7 +16,7 @@ pub mod pages;
 
 #[get("")]
 async fn root(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
-    if !common::is_ui_authenticated(&req, &config) {
+    if !common::is_ui_authenticated(&req, &config).await {
         return common::ui_login_redirect();
     }
     HttpResponse::Found()
@@ -26,7 +26,7 @@ async fn root(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -> impl
 
 #[get("/")]
 async fn root_slash(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
-    if !common::is_ui_authenticated(&req, &config) {
+    if !common::is_ui_authenticated(&req, &config).await {
         return common::ui_login_redirect();
     }
     HttpResponse::Found()
@@ -47,7 +47,6 @@ pub fn scope(jwt_config: JwtConfig) -> impl HttpServiceFactory {
         // Auth (public - no auth required)
         .service(pages::auth::login)
         .service(pages::auth::login_slash)
-        .service(pages::auth::login_submit)
         .service(pages::auth::logout)
         .service(pages::auth::auth_status)
         // Chat (with auth)

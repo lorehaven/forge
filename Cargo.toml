@@ -19,7 +19,7 @@ readme = "README.md"
 
 [workspace.dependencies]
 actix-service = { version = "2.0" }
-actix-multipart = { version = "0.7" }
+actix-multipart = { version = "0.8" }
 actix-web = { version = "4.14", features = ["rustls-0_23"] }
 anyhow = { version = "1.0" }
 argon2 = { version = "0.5" }
@@ -27,7 +27,7 @@ async-stream = { version = "0.3" }
 assert_cmd = { version = "2.2" }
 async-trait = { version = "0.1" }
 axum = { version = "0.8", features = ["json"] }
-base64 = { version = "0.22" }
+base64 = { version = "0.23" }
 bytes = { version = "1.12" }
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.6", features = ["derive"] }
@@ -42,7 +42,7 @@ futures-util = { version = "0.3" }
 gguf = { version = "0.1" }
 hex = { version = "0.4" }
 html5ever = { version = "0.39" }
-jsonwebtoken = { version = "10.4", features = ["rust_crypto"] }
+jsonwebtoken = { version = "11.0", features = ["rust_crypto"] }
 kube = { version = "4.0", features = ["runtime", "derive"] }
 k8s-openapi = { version = "0.28", features = ["latest"] }
 markup5ever_rcdom = { version = "0.39" }
@@ -50,14 +50,15 @@ minijinja = { version = "2.21", features = ["loader", "serde"] }
 pdf-extract = { version = "0.12" }
 predicates = { version = "3.1" }
 pulldown-cmark = { version = "0.13" }
-quench-auth = { path = "libs/quench-auth", registry = "ennor", version = "0.1.0" }
+quench-auth = { path = "libs/quench-auth", registry = "ennor", version = "0.2.0" }
 quench-cache = { path = "libs/quench-cache", registry = "ennor", version = "0.1.0" }
 quench-cli = { path = "libs/quench-cli", registry = "ennor", version = "0.1.1" }
 quench-client = { path = "libs/quench-client", registry = "ennor", version = "0.1.0" }
 quench-config = { path = "libs/quench-config", registry = "ennor", version = "0.1.0" }
-quench-db = { path = "libs/quench-db", registry = "ennor", version = "0.1.1" }
-quench-starter = { path = "libs/quench-starter", registry = "ennor", version = "0.1.0" }
+quench-db = { path = "libs/quench-db", registry = "ennor", version = "0.2.0" }
+quench-starter = { path = "libs/quench-starter", registry = "ennor", version = "0.2.0" }
 quench-web = { path = "libs/quench-web", registry = "ennor", version = "0.1.6" }
+redis = { version = "0.32", features = ["tokio-comp", "cluster-async"] }
 regex = { version = "1.12" }
 reqwest = { version = "0.13", default-features = false, features = [
   "json",

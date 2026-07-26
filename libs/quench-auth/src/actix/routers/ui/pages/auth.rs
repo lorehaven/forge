@@ -1,25 +1,19 @@
-use crate::actix::domain::auth::UserDb;
-use crate::actix::domain::jwt::JwtConfig;
-use crate::actix::domain::session::SessionDb;
-use crate::actix::routers::auth::{access_cookie, issue_token_pair, refresh_cookie};
-use actix_web::{
-    HttpResponse,
-    cookie::{Cookie, SameSite},
-    web,
-};
-use quench_web::prelude::*;
+//! Sending a browser to gatehouse.
+//!
+//! A relying party has no login page of its own: gatehouse owns the form, the
+//! credentials and the session. All a service needs is the ability to hand the
+//! browser over and to accept it back, which is what lives here.
+
+use crate::actix::domain::realm;
+use actix_web::HttpResponse;
 use serde::Deserialize;
 use std::sync::LazyLock;
 
+/// `?err=1` on the login page. Gatehouse renders the error; a relying party
+/// only ever passes the parameter through.
 #[derive(Deserialize)]
 pub struct LoginQuery {
     pub err: Option<String>,
-}
-
-#[derive(Deserialize)]
-pub struct LoginForm {
-    pub username: String,
-    pub password: String,
 }
 
 static BASE_PATH: LazyLock<String> = LazyLock::new(|| {
@@ -41,160 +35,88 @@ static BASE_PATH: LazyLock<String> = LazyLock::new(|| {
 
 fn ui_path(path: &str) -> String {
     let base = BASE_PATH.as_str();
-    let result = if base == "/" {
+    if base == "/" {
         format!("/ui{path}")
     } else {
-        format!("{}/ui{path}", base)
-    };
-    tracing::trace!("auth::ui_path({}) -> {} (BASE_PATH={})", path, result, base);
-    result
+        format!("{base}/ui{path}")
+    }
 }
 
-pub fn login_form_element(error: bool) -> Element {
-    let mut login_form = form()
-        .attr("method", "post")
-        .attr("action", ui_path("/login"))
-        .child(
-            label()
-                .attr("for", "username")
-                .attr("data-i18n", "ui_login_username"),
-        )
-        .child(
-            element("input")
-                .attr("type", "text")
-                .attr("id", "username")
-                .attr("name", "username")
-                .attr("autocomplete", "username")
-                .attr("required", "required"),
-        )
-        .child(
-            label()
-                .attr("for", "password")
-                .attr("data-i18n", "ui_login_password"),
-        )
-        .child(
-            element("input")
-                .attr("type", "password")
-                .attr("id", "password")
-                .attr("name", "password")
-                .attr("autocomplete", "current-password")
-                .attr("required", "required"),
-        )
-        .child(
-            button()
-                .attr("type", "submit")
-                .attr("data-i18n", "ui_login_submit"),
-        );
-
-    if error {
-        login_form = login_form.child(
-            p().class("error")
-                .attr("data-i18n", "ui_login_invalid_credentials"),
-        );
+/// Hands the browser to gatehouse's login form, carrying a return address.
+///
+/// Gatehouse is required: a service with no `GATEHOUSE_URL` has no way for
+/// anyone to sign in, so this reports that as a configuration error rather than
+/// pretending to have a login page.
+pub fn login_delegation(request: &actix_web::HttpRequest) -> HttpResponse {
+    let return_to = absolute_url(request, &ui_path("/home"));
+    match realm::gatehouse_login_url(Some(&return_to)) {
+        Some(url) => redirect(url),
+        None => gatehouse_not_configured(),
     }
-
-    login_form
 }
 
-pub async fn handle_login_submit(
-    form: web::Form<LoginForm>,
-    config: web::Data<JwtConfig>,
-    user_db: web::Data<std::sync::Arc<UserDb>>,
-    session_db: web::Data<std::sync::Arc<SessionDb>>,
-) -> HttpResponse {
-    tracing::info!(
-        "LOGIN_SUBMIT: Attempting login for username: {}",
-        form.username
-    );
-
-    if !config.auth_enabled {
-        tracing::warn!("LOGIN_SUBMIT: Auth is disabled, redirecting to home");
-        return HttpResponse::Found()
-            .append_header(("Location", ui_path("/home")))
-            .finish();
+/// Realm-wide logout, which is also gatehouse's to perform.
+pub fn logout_delegation(request: &actix_web::HttpRequest) -> HttpResponse {
+    let return_to = absolute_url(request, &ui_path("/login"));
+    match realm::gatehouse_logout_url(Some(&return_to)) {
+        Some(url) => redirect(url),
+        None => gatehouse_not_configured(),
     }
+}
 
-    let Some(user) = user_db.validate(&form.username, &form.password).await else {
-        tracing::warn!(
-            "LOGIN_SUBMIT: Invalid credentials for username: {}",
-            form.username
-        );
-        let error_url = ui_path("/login?err=1");
-        tracing::debug!("LOGIN_SUBMIT: Redirecting to: {}", error_url);
-        return HttpResponse::Found()
-            .append_header(("Location", error_url))
-            .finish();
-    };
-
-    tracing::info!(
-        "LOGIN_SUBMIT: User validated successfully: {}",
-        user.username
-    );
-
-    let Ok(tokens) = issue_token_pair(&config, &session_db, &user).await else {
-        tracing::error!(
-            "LOGIN_SUBMIT: Failed to issue token pair for user: {}",
-            user.username
-        );
-        let error_url = ui_path("/login?err=1");
-        tracing::debug!("LOGIN_SUBMIT: Redirecting to: {}", error_url);
-        return HttpResponse::Found()
-            .append_header(("Location", error_url))
-            .finish();
-    };
-
-    tracing::info!("LOGIN_SUBMIT: Tokens issued for user: {}", user.username);
-    let access_cookie = access_cookie(&config, tokens.access_token);
-    let refresh_cookie = refresh_cookie(&config, tokens.refresh_token);
-    let home_url = ui_path("/home");
-    tracing::debug!("LOGIN_SUBMIT: Redirecting to home: {}", home_url);
-
+fn redirect(location: String) -> HttpResponse {
     HttpResponse::Found()
-        .cookie(access_cookie)
-        .cookie(refresh_cookie)
-        .append_header(("Location", home_url))
+        .append_header(("Location", location))
         .finish()
 }
 
-pub async fn handle_logout(
-    request: actix_web::HttpRequest,
-    config: web::Data<JwtConfig>,
-    session_db: web::Data<std::sync::Arc<SessionDb>>,
-) -> HttpResponse {
-    tracing::info!(
-        "LOGOUT: User logging out from service: {}",
-        config.service_name
+fn gatehouse_not_configured() -> HttpResponse {
+    tracing::error!(
+        "GATEHOUSE_URL is not set: this service cannot sign anyone in, because \
+         gatehouse owns the login form and the realm session"
     );
+    HttpResponse::ServiceUnavailable().body("gatehouse is not configured")
+}
 
-    let refresh_cookie_name = format!("{}_refresh_token", config.service_name);
-    if let Some(cookie) = request.cookie(&refresh_cookie_name) {
-        tracing::debug!("LOGOUT: Revoking refresh token");
-        let result = session_db.revoke_by_refresh_token(cookie.value()).await;
-        tracing::debug!("LOGOUT: Revoke result: {:?}", result);
-    } else {
-        tracing::debug!("LOGOUT: No refresh token found in cookies");
-    }
+/// Best-effort absolute URL for `path` on this service, so gatehouse can send
+/// the browser back where it came from.
+fn absolute_url(request: &actix_web::HttpRequest, path: &str) -> String {
+    let info = request.connection_info().clone();
+    format!("{}://{}{}", info.scheme(), info.host(), path)
+}
 
-    let cookie_name = format!("{}_ui_session", config.service_name);
-    let access_cookie = Cookie::build(cookie_name, "")
-        .path("/")
-        .http_only(true)
-        .same_site(SameSite::Strict)
-        .max_age(actix_web::cookie::time::Duration::seconds(0))
-        .finish();
-    let refresh_cookie = Cookie::build(refresh_cookie_name, "")
-        .path("/")
-        .http_only(true)
-        .same_site(SameSite::Strict)
-        .max_age(actix_web::cookie::time::Duration::seconds(0))
-        .finish();
+/// `?redirect=` target, accepted only as a rooted same-origin path or a prefix
+/// listed in `AUTH_REDIRECT_HOSTS` - an open redirect here would be a phishing
+/// primitive.
+pub fn redirect_target(request: &actix_web::HttpRequest) -> Option<String> {
+    let query = request.query_string();
+    let raw = query.split('&').find_map(|pair| {
+        let (key, value) = pair.split_once('=')?;
+        (key == "redirect").then_some(value)
+    })?;
+    let decoded = urlencoding::decode(raw).ok()?.into_owned();
+    validated_redirect(&decoded)
+}
 
-    let login_url = ui_path("/login");
-    tracing::debug!("LOGOUT: Redirecting to: {}", login_url);
+pub fn validated_redirect(target: &str) -> Option<String> {
+    // `//host` and `/\host` are protocol-relative: rooted to the eye, absolute
+    // to a browser. Only a single-slash path counts as same-origin.
+    let same_origin =
+        target.starts_with('/') && !target.starts_with("//") && !target.starts_with("/\\");
+    let allowed = same_origin
+        || allowed_redirect_hosts()
+            .iter()
+            .any(|prefix| target.starts_with(prefix));
+    allowed.then(|| target.to_string())
+}
 
-    HttpResponse::Found()
-        .cookie(access_cookie)
-        .cookie(refresh_cookie)
-        .append_header(("Location", login_url))
-        .finish()
+/// Prefixes a `?redirect=` may point at, from `AUTH_REDIRECT_HOSTS`
+/// (comma-separated). Empty means same-origin paths only.
+pub fn allowed_redirect_hosts() -> Vec<String> {
+    envmnt::get_or("AUTH_REDIRECT_HOSTS", "")
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| value.trim_end_matches('/').to_string())
+        .collect()
 }

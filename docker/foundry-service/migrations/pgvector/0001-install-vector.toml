@@ -1,0 +1,7 @@
+[[migrations]]
+id = "0001-install-vector"
+author = "quench-srv"
+since = "0.1.0"
+
+[[migrations.changes]]
+createExtension = { name = "vector" }

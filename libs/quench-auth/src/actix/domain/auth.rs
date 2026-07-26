@@ -55,8 +55,7 @@ impl User {
 
 impl Model for User {
     fn table_name() -> String {
-        let schema = envmnt::get_or("DB_SCHEMA", "public");
-        format!("{}.users", schema)
+        format!("{}.users", crate::actix::domain::realm::auth_schema())
     }
 
     fn columns() -> Vec<&'static str> {
@@ -72,77 +71,16 @@ pub enum UserDb {
     Base { repo: Repository<User> },
 }
 
+/// Read-only access to the realm's users.
+///
+/// Relying parties need this for the machine-to-machine Basic auth path and,
+/// in warehouse's case, the registry token endpoint. Creating users is
+/// gatehouse's job, so there is deliberately no write method here.
 impl UserDb {
     pub async fn init(db: Db) -> Arc<Self> {
-        let repo = db.repository::<User>();
-        let arc_db = Arc::new(Self::Base { repo });
-
-        let auth_enabled = envmnt::get_or("SERVICE_AUTH_ENABLED", "false")
-            .parse()
-            .unwrap_or(false);
-
-        if auth_enabled {
-            let admin_user = envmnt::get_or_panic("SERVICE_USERNAME");
-            let admin_pass = envmnt::get_or_panic("SERVICE_PASSWORD");
-            if arc_db.get_user(&admin_user).await.is_none() {
-                tracing::info!("Creating admin user: {}", admin_user);
-                arc_db
-                    .add_user(
-                        User::new(admin_user, admin_pass, vec![Role::Admin])
-                            .expect("failed to hash admin password"),
-                    )
-                    .await;
-            } else {
-                tracing::info!("Admin user {} already exists", admin_user);
-            }
-
-            // Technical service user
-            let tech_user = envmnt::get_or(
-                "SERVICE_TECH_USERNAME",
-                &envmnt::get_or("TECH_USERNAME", ""),
-            );
-            let tech_pass = envmnt::get_or(
-                "SERVICE_TECH_PASSWORD",
-                &envmnt::get_or("TECH_PASSWORD", ""),
-            );
-
-            if !tech_user.is_empty() && !tech_pass.is_empty() {
-                if arc_db.get_user(&tech_user).await.is_none() {
-                    tracing::info!("Creating technical service user: {}", tech_user);
-                    let tech_user_clone = tech_user.clone();
-                    arc_db
-                        .add_user(
-                            User::new(tech_user_clone.clone(), tech_pass, vec![Role::Service])
-                                .expect("failed to hash service password"),
-                        )
-                        .await;
-                    tracing::info!(
-                        "Technical service user {} created successfully",
-                        tech_user_clone
-                    );
-                } else {
-                    tracing::info!("Technical service user {} already exists", tech_user);
-                }
-            } else {
-                tracing::warn!(
-                    "SERVICE_TECH_USERNAME or SERVICE_TECH_PASSWORD not set (tech_user empty: {}, tech_pass empty: {})",
-                    tech_user.is_empty(),
-                    tech_pass.is_empty()
-                );
-            }
-        }
-
-        arc_db
-    }
-
-    pub async fn add_user(&self, user: User) {
-        let Self::Base { repo } = self;
-        // Check if user exists to decide between create and update
-        if repo.read(&user.username).await.unwrap_or(None).is_some() {
-            repo.update(&user).await.ok();
-        } else {
-            repo.create(&user).await.ok();
-        }
+        Arc::new(Self::Base {
+            repo: db.repository::<User>(),
+        })
     }
 
     pub async fn get_user(&self, username: &str) -> Option<User> {
@@ -169,21 +107,5 @@ impl UserDb {
             tracing::warn!("UserDb::validate: Invalid password for user: {}", username);
             None
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn passwords_use_argon2id_with_unique_salts() {
-        let first = User::new("first".into(), "password".into(), vec![Role::User]).unwrap();
-        let second = User::new("second".into(), "password".into(), vec![Role::User]).unwrap();
-
-        assert!(first.password.starts_with("$argon2id$"));
-        assert_ne!(first.password, second.password);
-        assert!(first.verify_password("password"));
-        assert!(!first.verify_password("wrong"));
     }
 }

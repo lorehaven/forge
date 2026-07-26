@@ -3,14 +3,20 @@ use serde::{Serialize, de::DeserializeOwned};
 use std::fmt::Debug;
 
 pub mod backends;
+pub mod catalog;
 pub mod error;
 pub mod migrations;
+pub mod plan;
 pub mod prelude;
+pub mod runner;
 
 pub use backends::in_memory::{InMemoryDb, InMemoryRepository};
 pub use backends::postgres::{PostgresDb, PostgresRepository};
+pub use catalog::{Catalog, CatalogError, CatalogModule, ModuleManifest, ModuleScope, Requirement};
 pub use error::DbError;
 pub use migrations::{ChangeSet, ColumnDef, Migration, MigrationFile, MigrationLoader};
+pub use plan::{InstallRequest, MigrationPlan, PlanError, PlannedMigration, ResolvedModule};
+pub use runner::{ApplyReport, MigrationOutcome, MigrationResult, MigrationRunner, ResetReport};
 
 #[async_trait]
 pub trait Database: Send + Sync + Debug {
@@ -34,6 +40,26 @@ pub trait Crud<T: Model>: Send + Sync {
     async fn update(&self, model: &T) -> Result<T, DbError>;
     async fn delete(&self, id: &str) -> Result<(), DbError>;
     async fn list(&self) -> Result<Vec<T>, DbError>;
+
+    /// Rows where `column` equals `value`.
+    ///
+    /// The value binds as a parameter; the column cannot, so it is checked
+    /// against [`Model::columns`] before being interpolated.
+    async fn find_by(&self, column: &str, value: &str) -> Result<Vec<T>, DbError>;
+}
+
+/// Rejects a column that the model does not declare, so a caller cannot smuggle
+/// SQL through the identifier position of `find_by`.
+pub(crate) fn checked_column<T: Model>(column: &str) -> Result<&'static str, DbError> {
+    T::columns()
+        .into_iter()
+        .find(|known| *known == column)
+        .ok_or_else(|| {
+            DbError::Unknown(format!(
+                "unknown column '{column}' for table {}",
+                T::table_name()
+            ))
+        })
 }
 
 #[derive(Clone, Debug)]
@@ -120,31 +146,11 @@ where
             Repository::InMemory(repo) => repo.list().await,
         }
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde::{Deserialize, Serialize};
-
-    #[derive(Debug, Serialize, Deserialize, Clone)]
-    struct TestModel {
-        id: String,
-        name: String,
-    }
-
-    impl Model for TestModel {
-        fn table_name() -> String {
-            "test_table".to_string()
+    async fn find_by(&self, column: &str, value: &str) -> Result<Vec<T>, DbError> {
+        match self {
+            Repository::Postgres(repo) => repo.find_by(column, value).await,
+            Repository::InMemory(repo) => repo.find_by(column, value).await,
         }
-
-        fn columns() -> Vec<&'static str> {
-            vec!["id", "name"]
-        }
-    }
-
-    #[test]
-    fn test_model_trait() {
-        assert_eq!(TestModel::table_name(), "test_table");
     }
 }

@@ -24,8 +24,7 @@ pub fn is_admin(req: &actix_web::HttpRequest, config: &web::Data<JwtConfig>) -> 
     }
 
     // Fallback for UI if extensions wasn't populated somehow (though Auth middleware should)
-    let cookie_name = format!("{}_ui_session", config.service_name);
-    let Some(cookie) = req.cookie(&cookie_name) else {
+    let Some(cookie) = req.cookie(&quench_auth::prelude::realm::session_cookie_name()) else {
         return false;
     };
 

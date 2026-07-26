@@ -1,0 +1,40 @@
+[[migrations]]
+id = "0001-workspace"
+author = "sage-service"
+since = "0.2.0"
+
+# Ownership points at the realm's users, which is the only user table there is.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.projects (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    owner TEXT NOT NULL REFERENCES ${auth_schema}.users(username) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.conversations (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    owner TEXT NOT NULL,
+    active_message_id TEXT,
+    project_id TEXT REFERENCES ${schema}.projects(id) ON DELETE CASCADE,
+    updated_at TEXT NOT NULL
+);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.messages (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL REFERENCES ${schema}.conversations(id) ON DELETE CASCADE,
+    parent_id TEXT REFERENCES ${schema}.messages(id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+"""

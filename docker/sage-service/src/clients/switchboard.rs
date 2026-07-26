@@ -41,6 +41,12 @@ pub struct SwitchboardClient {
     circuit_breaker: Arc<CircuitBreaker>,
 }
 
+impl Default for SwitchboardClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SwitchboardClient {
     pub fn new() -> Self {
         let base_url = envmnt::get_or("SWITCHBOARD_URL", "http://switchboard-service:8080");

@@ -56,7 +56,7 @@ async fn main() -> std::io::Result<()> {
     let db_wrapper = DbWrapper::init_env().await;
     let jwt_config = web::Data::new(JwtConfig::init());
     let user_db = UserDb::init(db_wrapper.db.clone()).await;
-    let session_db = SessionDb::init(db_wrapper.db.clone());
+    let session_db = SessionDb::from_env().await.expect("session store");
 
     let root_user_db = user_db.clone();
     let root_session_db = session_db.clone();

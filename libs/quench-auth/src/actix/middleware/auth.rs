@@ -151,35 +151,30 @@ where
         }
 
         // Check Cookie if no token in header
-        if token.is_none() {
-            let cookie_name = format!("{}_ui_session", self.config.service_name);
-            if let Some(cookie) = req.cookie(&cookie_name) {
-                token = Some(cookie.value().to_string());
-            }
+        if token.is_none()
+            && let Some(cookie) = req.cookie(&crate::actix::domain::realm::session_cookie_name())
+        {
+            token = Some(cookie.value().to_string());
         }
 
         let Some(token_str) = token else {
             tracing::warn!("AuthMiddleware: No token found in header or cookie");
             return Box::pin(async move {
-                let res = actix_web::HttpResponse::Unauthorized()
-                    .finish()
-                    .map_into_right_body();
+                let res = unauthorized(&req).map_into_right_body();
                 Ok(req.into_response(res))
             });
         };
 
         match self.config.decode_claims(&token_str) {
             Ok(claims) => {
-                if claims.service != self.config.service_name {
+                if !claims.allows(&self.config.service_name) {
                     tracing::warn!(
-                        "AuthMiddleware: Token service mismatch. Expected {}, got {}",
+                        "AuthMiddleware: Token audience mismatch. Expected {}, got {:?}",
                         self.config.service_name,
-                        claims.service
+                        claims.aud
                     );
                     return Box::pin(async move {
-                        let res = actix_web::HttpResponse::Unauthorized()
-                            .finish()
-                            .map_into_right_body();
+                        let res = unauthorized(&req).map_into_right_body();
                         Ok(req.into_response(res))
                     });
                 }
@@ -206,9 +201,7 @@ where
                                 session_id,
                                 claims.sub
                             );
-                            let res = actix_web::HttpResponse::Unauthorized()
-                                .finish()
-                                .map_into_right_body();
+                            let res = unauthorized(&req).map_into_right_body();
                             return Ok(req.into_response(res));
                         }
                     }
@@ -221,12 +214,34 @@ where
             Err(e) => {
                 tracing::warn!("AuthMiddleware: Failed to decode claims: {:?}", e);
                 Box::pin(async move {
-                    let res = actix_web::HttpResponse::Unauthorized()
-                        .finish()
-                        .map_into_right_body();
+                    let res = unauthorized(&req).map_into_right_body();
                     Ok(req.into_response(res))
                 })
             }
         }
     }
+}
+
+/// 401 for API callers; a redirect to the gatehouse login for browsers, so an
+/// expired session lands on the realm login page instead of a blank error.
+fn unauthorized(req: &ServiceRequest) -> actix_web::HttpResponse {
+    if wants_html(req)
+        && let Some(login_url) =
+            crate::actix::domain::realm::gatehouse_login_url(Some(&req.uri().to_string()))
+    {
+        return actix_web::HttpResponse::Found()
+            .append_header(("Location", login_url))
+            .finish();
+    }
+
+    actix_web::HttpResponse::Unauthorized()
+        .append_header(("WWW-Authenticate", "Bearer"))
+        .finish()
+}
+
+fn wants_html(req: &ServiceRequest) -> bool {
+    req.headers()
+        .get("Accept")
+        .and_then(|accept| accept.to_str().ok())
+        .is_some_and(|accept| accept.contains("text/html"))
 }

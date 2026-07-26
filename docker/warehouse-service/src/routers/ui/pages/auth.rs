@@ -1,55 +1,21 @@
-use crate::routers::ui::common::{UiPageKind, render_page};
-use actix_web::{HttpResponse, Responder, get, post, web};
-use quench_auth::actix::routers::ui::pages::auth::{
-    LoginForm, LoginQuery, handle_login_submit, handle_logout, login_form_element,
-};
-use quench_auth::prelude::{JwtConfig, SessionDb, UserDb};
-use quench_web::prelude::*;
+//! Login and logout belong to gatehouse; this service only hands the browser
+//! over. There is deliberately no local login form - gatehouse owns the
+//! credentials, the session and the realm cookie.
+
+use actix_web::{HttpRequest, Responder, get};
+use quench_auth::actix::routers::ui::pages::auth::{login_delegation, logout_delegation};
 
 #[get("/login")]
-pub(super) async fn login(query: web::Query<LoginQuery>) -> impl Responder {
-    render_login_page(query.err.as_deref() == Some("1"))
+pub(super) async fn login(req: HttpRequest) -> impl Responder {
+    login_delegation(&req)
 }
 
 #[get("/login/")]
-pub(super) async fn login_slash(query: web::Query<LoginQuery>) -> impl Responder {
-    render_login_page(query.err.as_deref() == Some("1"))
-}
-
-#[post("/login")]
-pub(super) async fn login_submit(
-    form: web::Form<LoginForm>,
-    config: web::Data<JwtConfig>,
-    user_db: web::Data<std::sync::Arc<UserDb>>,
-    session_db: web::Data<std::sync::Arc<SessionDb>>,
-) -> impl Responder {
-    handle_login_submit(form, config, user_db, session_db).await
+pub(super) async fn login_slash(req: HttpRequest) -> impl Responder {
+    login_delegation(&req)
 }
 
 #[get("/logout")]
-pub(super) async fn logout(
-    req: actix_web::HttpRequest,
-    config: web::Data<JwtConfig>,
-    session_db: web::Data<std::sync::Arc<SessionDb>>,
-) -> impl Responder {
-    handle_logout(req, config, session_db).await
-}
-
-fn render_login_page(error: bool) -> HttpResponse {
-    let login_form = login_form_element(error);
-
-    render_page(
-        HttpResponse::Ok(),
-        content().class("container-fluid login-layout").child(
-            div()
-                .class("panel login-panel")
-                .child(
-                    div()
-                        .class("panel-title")
-                        .attr("data-i18n", "ui_login_sign_in"),
-                )
-                .child(div().class("meta-list").child(login_form)),
-        ),
-        UiPageKind::Auth,
-    )
+pub(super) async fn logout(req: HttpRequest) -> impl Responder {
+    logout_delegation(&req)
 }

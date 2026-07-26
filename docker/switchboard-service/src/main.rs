@@ -1,45 +1,11 @@
-use crate::routers::gpu::{GpuBroadcaster, init_gpu_status_publisher};
-use crate::routers::models::{init_model_store, start_sync_job, warm_model_cache};
-use crate::routers::vllm::engine::VllmEngine;
-use crate::routers::vllm::sse::VllmBroadcaster;
-use actix_web::{dev::HttpServiceFactory, web};
+use actix_web::web;
+use switchboard_service::routers;
+use switchboard_service::routers::gpu::init_gpu_status_publisher;
+use switchboard_service::routers::models::{init_model_store, start_sync_job, warm_model_cache};
+use switchboard_service::{base_path_scope, root_scope};
 
 use quench_auth::prelude::*;
 use quench_starter::prelude::*;
-use std::sync::Arc;
-use tokio::sync::broadcast::Sender;
-
-pub mod routers;
-
-pub fn root_scope() -> impl HttpServiceFactory {
-    web::scope("")
-}
-
-pub fn base_path_scope(
-    vllm_engine: Arc<dyn VllmEngine>,
-    gpu_tx: Sender<String>,
-    vllm_tx: Sender<String>,
-    jwt_config: web::Data<JwtConfig>,
-    user_db: Arc<UserDb>,
-    session_db: Arc<SessionDb>,
-) -> impl HttpServiceFactory {
-    web::scope("")
-        .app_data(web::Data::new(GpuBroadcaster(gpu_tx)))
-        .app_data(web::Data::new(VllmBroadcaster(vllm_tx)))
-        .app_data(jwt_config.clone())
-        .app_data(web::Data::new(user_db))
-        .app_data(web::Data::new(session_db))
-        .service(routers::ui::scope())
-        .service(
-            web::scope("")
-                .wrap(quench_auth::actix::middleware::auth::Auth::new(
-                    jwt_config.get_ref().clone(),
-                ))
-                .service(routers::gpu::scope())
-                .service(routers::models::scope(vllm_engine.clone()))
-                .service(routers::vllm::scope(vllm_engine)),
-        )
-}
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -49,7 +15,7 @@ async fn main() -> std::io::Result<()> {
     let db_wrapper = DbWrapper::init_env().await;
     let jwt_config = web::Data::new(JwtConfig::init());
     let user_db = UserDb::init(db_wrapper.db.clone()).await;
-    let session_db = SessionDb::init(db_wrapper.db.clone());
+    let session_db = SessionDb::from_env().await.expect("session store");
 
     init_model_store(db_wrapper.db.clone()).await;
 

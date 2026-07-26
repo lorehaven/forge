@@ -11,7 +11,7 @@ where
     F: FnOnce() -> HttpResponse,
 {
     // Check authentication using the utility functions from the parent module
-    if !crate::actix::routers::ui::is_ui_authenticated(&req, &config) {
+    if !crate::actix::routers::ui::is_ui_authenticated(&req, &config).await {
         return crate::actix::routers::ui::ui_login_redirect();
     }
     render_fn()

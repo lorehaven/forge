@@ -1,0 +1,29 @@
+[package]
+name = "gatehouse-service"
+version = "0.1.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "Gatehouse - the Forge authentication service: one login, one identity store"
+keywords = ["auth", "sso", "jwt", "identity"]
+categories = ["authentication", "web-programming"]
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+readme = "README.md"
+
+[[bin]]
+name = "gatehouse-service"
+path = "src/main.rs"
+
+[dependencies]
+actix-web = { workspace = true }
+jsonwebtoken = { workspace = true }
+anyhow = { workspace = true }
+envmnt = { workspace = true }
+quench-auth = { workspace = true }
+quench-db = { workspace = true }
+quench-starter = { workspace = true }
+quench-web = { workspace = true }
+serde = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }

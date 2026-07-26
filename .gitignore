@@ -10,3 +10,9 @@
 .welder/
 /vllm/
 plans/
+
+# Local dev environment state (run.fish)
+.run/
+
+# Cutover rehearsal logs and pids (scripts/rehearse-cutover.fish)
+.rehearsal/

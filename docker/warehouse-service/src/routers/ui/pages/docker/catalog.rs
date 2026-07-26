@@ -37,7 +37,7 @@ pub(in crate::routers::ui::pages) async fn docker_catalog(
     query: web::Query<PageQuery>,
     config: web::Data<JwtConfig>,
 ) -> impl Responder {
-    if !is_ui_authenticated(&req, &config) {
+    if !is_ui_authenticated(&req, &config).await {
         return ui_login_redirect();
     }
     render_catalog_page(query.repo.clone(), query.tag.clone())
@@ -49,7 +49,7 @@ pub(in crate::routers::ui::pages) async fn docker_catalog_slash(
     query: web::Query<PageQuery>,
     config: web::Data<JwtConfig>,
 ) -> impl Responder {
-    if !is_ui_authenticated(&req, &config) {
+    if !is_ui_authenticated(&req, &config).await {
         return ui_login_redirect();
     }
     render_catalog_page(query.repo.clone(), query.tag.clone())
@@ -61,7 +61,7 @@ pub(in crate::routers::ui::pages) async fn delete_image_modal(
     query: web::Query<DeleteImageModalQuery>,
     config: web::Data<JwtConfig>,
 ) -> impl Responder {
-    if !is_ui_authenticated(&req, &config) {
+    if !is_ui_authenticated(&req, &config).await {
         return ui_login_redirect();
     }
 
@@ -75,7 +75,7 @@ pub(in crate::routers::ui::pages) async fn empty_delete_image_modal(
     req: HttpRequest,
     config: web::Data<JwtConfig>,
 ) -> impl Responder {
-    if !is_ui_authenticated(&req, &config) {
+    if !is_ui_authenticated(&req, &config).await {
         return ui_login_redirect();
     }
 
@@ -90,7 +90,7 @@ pub(in crate::routers::ui::pages) async fn delete_image(
     form: web::Form<DeleteImageForm>,
     config: web::Data<JwtConfig>,
 ) -> impl Responder {
-    if !is_ui_authenticated(&req, &config) {
+    if !is_ui_authenticated(&req, &config).await {
         return ui_login_redirect();
     }
 

@@ -77,24 +77,6 @@ static UI_SHELL_VLLM_MANAGEMENT: LazyLock<AppShell> = LazyLock::new(|| {
         .build()
 });
 
-static UI_SHELL_AUTH: LazyLock<AppShell> = LazyLock::new(|| {
-    css::ensure_switchboard_css();
-
-    AppShellBuilder::new()
-        .title("Switchboard")
-        .supported_locales(supported_locales())
-        .default_theme(Theme::DefaultDark)
-        .supported_themes(vec![Theme::DefaultDark])
-        .header(ui_header(None, true, false, false))
-        .links(vec![Link::new(
-            "stylesheet",
-            &ui_asset_path("/css/switchboard.css"),
-        )])
-        .with_nav(false)
-        .resources_prefix(ui_path(""))
-        .build()
-});
-
 fn ui_header(
     title_key: Option<&str>,
     show_locale_switch: bool,
@@ -175,7 +157,6 @@ pub(super) fn render_page(
         UiPageKind::Home => &*UI_SHELL_HOME,
         UiPageKind::ModelsDashboard => &*UI_SHELL_MODELS_DASHBOARD,
         UiPageKind::VllmManagement => &*UI_SHELL_VLLM_MANAGEMENT,
-        UiPageKind::Auth => &*UI_SHELL_AUTH,
     };
     builder
         .content_type(ContentType::html())
@@ -186,7 +167,6 @@ pub(super) enum UiPageKind {
     Home,
     ModelsDashboard,
     VllmManagement,
-    Auth,
 }
 
 pub(super) fn ui_login_redirect() -> HttpResponse {

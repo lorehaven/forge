@@ -1,0 +1,75 @@
+# syntax=docker/dockerfile:1.5
+#
+# Image for foundry-service: a run-to-completion migration job, not a server.
+# Ships the migration catalog and the install config instead of web resources.
+
+# ---------- Dependency build stage ----------
+FROM rust:1.94-alpine3.22 AS deps-builder
+
+# Install build dependencies
+RUN apk add --no-cache musl-dev pkgconfig build-base ca-certificates git curl openssl
+
+# Add MUSL target
+RUN rustup target add x86_64-unknown-linux-musl
+
+# Configure Forge workspace registry aliases used by Cargo manifests.
+ARG CARGO_REGISTRIES_ENNOR_INDEX=sparse+https://ennor.ddns.net/index/
+ARG CARGO_REGISTRIES_ENNOR_TOKEN=
+RUN mkdir -p /usr/local/cargo && \
+    printf "[registries.ennor]\nindex = \"%s\"\n" "${CARGO_REGISTRIES_ENNOR_INDEX}" > /usr/local/cargo/config.toml && \
+    if [ -n "${CARGO_REGISTRIES_ENNOR_TOKEN}" ]; then \
+      printf "token = \"%s\"\n" "${CARGO_REGISTRIES_ENNOR_TOKEN}" >> /usr/local/cargo/config.toml; \
+    fi
+
+WORKDIR /usr/src/app
+
+# Copy workspace structure and manifests (minimal layer to trigger on manifest changes)
+COPY Cargo.toml Cargo.lock ./
+COPY cli ./cli
+COPY docker ./docker
+COPY examples ./examples
+COPY libs ./libs
+COPY tests ./tests
+
+# Build all dependencies (cached separately from source changes)
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo build --release --target x86_64-unknown-linux-musl --workspace --offline 2>/dev/null || \
+    cargo build --release --target x86_64-unknown-linux-musl --workspace
+
+# ---------- Build stage ----------
+FROM deps-builder AS builder
+
+# Copy full sources (this layer can be rebuilt without touching dependencies)
+COPY . .
+
+# Build with pre-cached dependencies
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo build --release --target x86_64-unknown-linux-musl --workspace
+
+# ---------- Runtime stage ----------
+FROM alpine:3.22
+
+ARG PROJECT_NAME
+ENV PROJECT_NAME=${PROJECT_NAME}
+
+ARG RESOURCES_PATH
+ENV RESOURCES_PATH=${RESOURCES_PATH}
+
+RUN apk add --no-cache ca-certificates
+
+WORKDIR /app
+
+COPY --from=builder /usr/src/app/${RESOURCES_PATH}/config ./config
+COPY --from=builder /usr/src/app/${RESOURCES_PATH}/migrations ./migrations
+COPY --from=builder /usr/src/app/target/x86_64-unknown-linux-musl/release/${PROJECT_NAME} ./service
+RUN strip ./service || true
+
+# Ensure ownership
+RUN chown -R 999:999 /app
+
+USER 999:999
+
+ENTRYPOINT ["./service"]
+CMD ["apply"]

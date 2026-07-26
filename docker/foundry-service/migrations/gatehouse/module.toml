@@ -1,0 +1,5 @@
+name = "gatehouse"
+version = "0.1.0"
+description = "Gatehouse auth service - owns the realm; all of its state is the auth module"
+default_schema = "auth"
+requires = ["auth@^0.1"]

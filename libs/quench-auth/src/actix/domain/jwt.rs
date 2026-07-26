@@ -7,6 +7,9 @@ use serde::{Deserialize, Serialize};
 pub struct JwtConfig {
     pub jwt_secret: Vec<u8>,
     pub service_name: String,
+    /// Services a token issued here is valid for. Gatehouse lists the whole
+    /// realm; a relying party lists only itself.
+    pub audiences: Vec<String>,
     pub realm: String,
     pub auth_enabled: bool,
     pub access_token_ttl_secs: i64,
@@ -18,6 +21,18 @@ impl JwtConfig {
         let jwt_secret = envmnt::get_or_panic("JWT_SECRET").into_bytes();
         let service_name = envmnt::get_or("SERVICE_NAME", "service");
         let realm = envmnt::get_or("SERVICE_REALM", "https://localhost:8698/token");
+
+        let audiences: Vec<String> = envmnt::get_or("SERVICE_AUDIENCES", "")
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .collect();
+        let audiences = if audiences.is_empty() {
+            vec![service_name.clone()]
+        } else {
+            audiences
+        };
 
         let auth_enabled = envmnt::get_or("SERVICE_AUTH_ENABLED", "false")
             .parse()
@@ -32,6 +47,7 @@ impl JwtConfig {
         Self {
             jwt_secret,
             service_name,
+            audiences,
             realm,
             auth_enabled,
             access_token_ttl_secs,
@@ -48,8 +64,13 @@ impl JwtConfig {
     }
 
     pub fn decode_claims(&self, token: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
-        let mut validation = Validation::default();
-        validation.validate_exp = true;
+        // Audience is checked against this service by `Claims::allows`, which
+        // also honours the legacy single-`service` claim.
+        let mut validation = Validation {
+            validate_aud: false,
+            validate_exp: true,
+            ..Validation::default()
+        };
         validation.required_spec_claims.insert("iat".to_string());
         validation.required_spec_claims.insert("exp".to_string());
         let token_data = decode::<Claims>(
@@ -66,15 +87,16 @@ impl JwtConfig {
         Ok(token_data.claims)
     }
 
+    /// Issues a token valid for every audience this config declares.
     pub fn issue_access_token(
         &self,
         username: String,
         scope: String,
         session_id: Option<String>,
     ) -> Result<String, jsonwebtoken::errors::Error> {
-        self.encode_claims(&Claims::new(
+        self.encode_claims(&Claims::for_audiences(
             username,
-            self.service_name.clone(),
+            self.audiences.clone(),
             scope,
             session_id,
             self.access_token_ttl_secs,
@@ -85,7 +107,16 @@ impl JwtConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
     pub sub: String,
+
+    /// Services this token is valid for.
+    #[serde(default)]
+    pub aud: Vec<String>,
+
+    /// Single-service audience as issued before the shared realm. Kept so
+    /// tokens minted by the previous release stay valid for one rollout;
+    /// remove once every service is on 0.2.
     pub service: String,
+
     pub scope: String,
     pub exp: usize,
     pub iat: usize,
@@ -94,9 +125,21 @@ pub struct Claims {
 }
 
 impl Claims {
+    /// Single-audience token - the pre-realm shape, still used by the
+    /// machine-to-machine Basic auth path.
     pub fn new(
         sub: String,
         service: String,
+        scope: String,
+        sid: Option<String>,
+        duration_secs: i64,
+    ) -> Self {
+        Self::for_audiences(sub, vec![service], scope, sid, duration_secs)
+    }
+
+    pub fn for_audiences(
+        sub: String,
+        aud: Vec<String>,
         scope: String,
         sid: Option<String>,
         duration_secs: i64,
@@ -107,67 +150,25 @@ impl Claims {
 
         Self {
             sub,
-            service,
+            service: aud.first().cloned().unwrap_or_default(),
+            aud,
             scope,
             exp,
             iat,
             sid,
         }
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use envmnt;
-
-    #[test]
-    fn test_jwt_expiration() {
-        envmnt::set("JWT_SECRET", "test_secret");
-        let config = JwtConfig::init();
-
-        let claims = Claims::new(
-            "user".to_string(),
-            "service".to_string(),
-            "scope".to_string(),
-            None,
-            -300,
-        ); // Expired 5 minutes ago
-        let token = config.encode_claims(&claims).unwrap();
-
-        let result = config.decode_claims(&token);
-        assert!(
-            result.is_err(),
-            "Expired token should be rejected: {:?}",
-            result
-        );
+    /// Whether this token may be presented to `service_name`.
+    pub fn allows(&self, service_name: &str) -> bool {
+        self.aud.iter().any(|audience| audience == service_name) || self.service == service_name
     }
 
-    #[test]
-    fn test_jwt_iat_future() {
-        envmnt::set("JWT_SECRET", "test_secret");
-        let config = JwtConfig::init();
-
-        let now = chrono::Utc::now();
-        let iat = (now + chrono::Duration::seconds(300)).timestamp() as usize; // Issued 5 minutes in the future
-        let exp = (now + chrono::Duration::seconds(600)).timestamp() as usize;
-
-        let claims = Claims {
-            sub: "user".to_string(),
-            service: "service".to_string(),
-            scope: "scope".to_string(),
-            exp,
-            iat,
-            sid: None,
-        };
-
-        let token = config.encode_claims(&claims).unwrap();
-
-        let result = config.decode_claims(&token);
-        assert!(
-            result.is_err(),
-            "Token with future iat should be rejected: {:?}",
-            result
-        );
+    pub fn roles(&self) -> Vec<String> {
+        self.scope
+            .split([' ', ','])
+            .filter(|role| !role.is_empty())
+            .map(str::to_string)
+            .collect()
     }
 }

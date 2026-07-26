@@ -114,4 +114,19 @@ where
         }
         Ok(results)
     }
+
+    async fn find_by(&self, column: &str, value: &str) -> Result<Vec<T>, DbError> {
+        let column = crate::checked_column::<T>(column)?;
+        let table = self.db.get_table(&T::table_name());
+        let data = table.read().unwrap();
+        let mut results = Vec::new();
+        for json in data.values() {
+            // Only string-valued columns are comparable here; anything else
+            // never matches, mirroring a type mismatch in SQL.
+            if json.get(column).and_then(|found| found.as_str()) == Some(value) {
+                results.push(serde_json::from_value(json.clone())?);
+            }
+        }
+        Ok(results)
+    }
 }

@@ -1,0 +1,38 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: foundry-init
+  labels:
+    app.kubernetes.io/name: foundry
+spec:
+  # Migrations are idempotent and guarded by an advisory lock, so retries are safe.
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: foundry
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: foundry
+          image: ennor.ddns.net/forge/foundry:latest
+          imagePullPolicy: Always
+          args: ["apply"]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: foundry
+                  key: url
+            # Overrides config/install.toml baked into the image. gatehouse
+            # pulls in the shared auth realm the others authenticate against.
+            - name: FOUNDRY_INSTALL
+              value: "gatehouse,sage,switchboard,warehouse"
+            - name: RUST_LOG
+              value: "info"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi

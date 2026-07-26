@@ -22,7 +22,7 @@ pub(super) struct PageQuery {
 
 #[get("")]
 async fn root(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
-    if !common::is_ui_authenticated(&req, &config) {
+    if !common::is_ui_authenticated(&req, &config).await {
         return common::ui_login_redirect();
     }
     HttpResponse::Found()
@@ -32,7 +32,7 @@ async fn root(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -> impl
 
 #[get("/")]
 async fn root_slash(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
-    if !common::is_ui_authenticated(&req, &config) {
+    if !common::is_ui_authenticated(&req, &config).await {
         return common::ui_login_redirect();
     }
     HttpResponse::Found()
@@ -44,7 +44,7 @@ async fn root_slash(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -
 
 #[get("/docker")]
 async fn docker_root(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
-    if !common::is_ui_authenticated(&req, &config) {
+    if !common::is_ui_authenticated(&req, &config).await {
         return common::ui_login_redirect();
     }
     HttpResponse::PermanentRedirect()
@@ -57,7 +57,7 @@ async fn docker_root_slash(
     req: actix_web::HttpRequest,
     config: web::Data<JwtConfig>,
 ) -> impl Responder {
-    if !common::is_ui_authenticated(&req, &config) {
+    if !common::is_ui_authenticated(&req, &config).await {
         return common::ui_login_redirect();
     }
     HttpResponse::PermanentRedirect()
@@ -69,7 +69,7 @@ async fn docker_root_slash(
 
 #[get("/crates")]
 async fn crates_root(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
-    if !common::is_ui_authenticated(&req, &config) {
+    if !common::is_ui_authenticated(&req, &config).await {
         return common::ui_login_redirect();
     }
     HttpResponse::PermanentRedirect()
@@ -82,7 +82,7 @@ async fn crates_root_slash(
     req: actix_web::HttpRequest,
     config: web::Data<JwtConfig>,
 ) -> impl Responder {
-    if !common::is_ui_authenticated(&req, &config) {
+    if !common::is_ui_authenticated(&req, &config).await {
         return common::ui_login_redirect();
     }
     HttpResponse::PermanentRedirect()
@@ -109,7 +109,6 @@ pub fn scope() -> impl HttpServiceFactory {
         // Auth
         .service(pages::auth::login)
         .service(pages::auth::login_slash)
-        .service(pages::auth::login_submit)
         .service(pages::auth::logout)
         // Home
         .service(pages::home::home)

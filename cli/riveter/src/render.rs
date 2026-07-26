@@ -121,7 +121,9 @@ fn scoped_manifest_path(env: &str, scope: ResourceScope) -> String {
     }
 }
 
-fn resource_in_scope(res: &YamlValue, scope: ResourceScope) -> bool {
+#[doc(hidden)]
+#[must_use]
+pub fn resource_in_scope(res: &YamlValue, scope: ResourceScope) -> bool {
     match scope {
         ResourceScope::All => true,
         ResourceScope::Mutable => !resource_is_immutable(res),
@@ -254,35 +256,4 @@ pub fn strip_empty_lines(s: &str) -> String {
         .collect::<Vec<_>>()
         .join("\n")
         + "\n"
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{ResourceScope, resource_in_scope};
-    use serde_yaml::Value as YamlValue;
-
-    fn parse_resource(yaml: &str) -> YamlValue {
-        serde_yaml::from_str(yaml).expect("resource yaml should parse")
-    }
-
-    #[test]
-    fn immutable_flag_marks_resource_immutable() {
-        let res = parse_resource("kind: namespace\nimmutable: true\n");
-        assert!(!resource_in_scope(&res, ResourceScope::Mutable));
-        assert!(resource_in_scope(&res, ResourceScope::Immutable));
-    }
-
-    #[test]
-    fn lifecycle_static_marks_resource_immutable() {
-        let res = parse_resource("kind: ingress\nlifecycle: static\n");
-        assert!(!resource_in_scope(&res, ResourceScope::Mutable));
-        assert!(resource_in_scope(&res, ResourceScope::Immutable));
-    }
-
-    #[test]
-    fn default_resources_are_mutable() {
-        let res = parse_resource("kind: deployment\n");
-        assert!(resource_in_scope(&res, ResourceScope::Mutable));
-        assert!(!resource_in_scope(&res, ResourceScope::Immutable));
-    }
 }

@@ -1,0 +1,7 @@
+[[migrations]]
+id = "0001-create-schema"
+author = "quench-db"
+since = "0.1.0"
+
+[[migrations.changes]]
+createSchema = { name = "${schema}" }

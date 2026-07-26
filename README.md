@@ -91,6 +91,34 @@ Features:
 - Service-oriented architecture
 - Local and remote storage workflows
 
+---
+
+### `gatehouse`
+Authentication service for the whole estate.
+
+Features:
+- One identity store (`auth` schema) shared by every service
+- One login page and one realm-wide session cookie
+- Realm-wide logout and session revocation
+- Relying parties verify tokens locally, with no call on the hot path
+
+Requirements:
+- `postgres`
+
+---
+
+### `foundry`
+Database initialization job for every Forge service.
+
+Features:
+- Single migration catalog of versioned, reusable modules
+- Dependency resolution with topological apply order
+- Version pinning - install a service at a chosen version
+- Runs as a Kubernetes Job or init container
+
+Requirements:
+- `postgres`
+
 ## Prerequisites
 
 - Rust 1.84+ (Edition 2024)
@@ -129,6 +157,37 @@ cargo run -p forge-toolbox
 # welder workflow repl
 cargo run -p welder -- --workflow ./welder/samples/agent.toml
 ```
+
+## Tests
+
+```bash
+cargo test --workspace     # unit and integration tests
+fish run.fish test         # the BDD suite, against live services
+
+# the 0.2.0 cutover, end to end, against a restored copy of production
+./scripts/rehearse-cutover.fish --database-url postgres://…/prod_copy --yes
+```
+
+The Redis-backed cache tests are skipped unless `CACHE_TEST_REDIS_URL` is set;
+the cluster ones want `CACHE_TEST_REDIS_CLUSTER_URL` with comma-separated seeds.
+
+No crate keeps tests in `src/`. Each one has a `tests/unit.rs` entry point that
+declares the test modules, and the modules themselves live in `tests/unit/`,
+named after the file they cover:
+
+```text
+docker/sage-service/
+├── src/tools/parser.rs
+└── tests/
+    ├── unit.rs                       #[path = "unit/tools_parser_tests.rs"] mod …
+    └── unit/tools_parser_tests.rs    use sage_service::tools::parser::*;
+```
+
+Because a test in `tests/` is a separate crate, it can only reach the public
+API. The services are therefore `[lib]` + `[[bin]]`: the lib holds the modules
+and `main.rs` is a thin entry point. Where a genuinely internal helper is worth
+testing, it is `#[doc(hidden)] pub` in the libraries and plain `pub` in the
+services.
 
 ## Project Structure
 

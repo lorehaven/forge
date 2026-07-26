@@ -72,8 +72,14 @@ where
                     .service(routers::health::scope())
                     .service(routers::swagger::swagger_redirect)
                     .service(routers::swagger::swagger_index_redirect)
+                    // Before the service module: every service mounts its
+                    // routes under a catch-all `scope("")`, which would
+                    // otherwise swallow the bare base path and 404.
+                    .service(routers::ui::base_path_redirect)
+                    .service(routers::ui::base_path_slash_redirect)
                     .service(scoped_module()),
             )
+            .service(routers::ui::server_root_redirect)
             .service(root_module())
     });
 

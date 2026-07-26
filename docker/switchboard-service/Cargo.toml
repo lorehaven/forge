@@ -1,6 +1,6 @@
 [package]
 name = "switchboard-service"
-version = "0.1.10"
+version = "0.2.0"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Switchboard - dashboard/management service"
@@ -10,6 +10,10 @@ homepage = { workspace = true }
 repository = { workspace = true }
 license = { workspace = true }
 readme = { workspace = true }
+
+[lib]
+name = "switchboard_service"
+path = "src/lib.rs"
 
 [[bin]]
 name = "switchboard-service"
