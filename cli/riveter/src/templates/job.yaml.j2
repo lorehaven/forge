@@ -1,46 +1,37 @@
+{% import "_macros.yaml.j2" as m %}
+{#
+  `pull_policy`, `restart_policy` and `host_path_type` keep the defaults this
+  template shipped with. A Job's `spec.template` is immutable, so the pod
+  template only grows a `metadata` block when the overlay asks for one.
+#}
+{% set defaults = {
+  "pull_policy": "Always",
+  "restart_policy": "OnFailure",
+  "host_path_type": "File"
+} %}
 apiVersion: batch/v1
 kind: Job
-metadata:
-  name: {{ res.name }}
-  namespace: {{ data.namespace_name }}
-  labels:
-    app.kubernetes.io/name: {{ res.app_name }}
-    app.kubernetes.io/instance: {{ res.instance }}
-    env: {{ env }}
-{% if res.annotations is defined %}
-  annotations:
-{% for k, v in res.annotations | dictsort %}
-    {{ k }}: "{{ v }}"
-{% endfor %}
-{% endif %}
+{{ m.metadata(res, env, res.namespace | default(data.namespace_name), none) }}
 spec:
+{% if res.completions is defined %}
+  completions: {{ res.completions }}
+{% endif %}
+{% if res.parallelism is defined %}
+  parallelism: {{ res.parallelism }}
+{% endif %}
+{% if res.backoff_limit is defined %}
+  backoffLimit: {{ res.backoff_limit }}
+{% endif %}
+{% if res.active_deadline_seconds is defined %}
+  activeDeadlineSeconds: {{ res.active_deadline_seconds }}
+{% endif %}
+{% if res.ttl_seconds_after_finished is defined %}
+  ttlSecondsAfterFinished: {{ res.ttl_seconds_after_finished }}
+{% endif %}
   template:
+{% if res.pod_labels or res.pod_annotations %}
+{{ m.pod_template(res, env, defaults) | indent(4, true) }}
+{% else %}
     spec:
-      restartPolicy: {{ res.restart_policy | default("OnFailure") }}
-      containers:
-        - name: {{ res.container_name | default(res.name) }}
-          image: {{ res.image }}
-          imagePullPolicy: Always
-{% if res.env_vars is defined %}
-          env:
-{% for k, v in res.env_vars | dictsort %}
-            - name: {{ k }}
-              value: "{{ v }}"
-{% endfor %}
-{% endif %}
-{% if res.volume_mounts %}
-          volumeMounts:
-{% for vm in res.volume_mounts %}
-            - name: {{ vm.name }}
-              mountPath: {{ vm.mountPath }}
-{% endfor %}
-{% endif %}
-{% if res.volumes %}
-      volumes:
-{% for vol in res.volumes %}
-        - name: {{ vol.name }}
-          hostPath:
-            path: {{ vol.path }}
-            type: {{ vol.type | default("File") }}
-{% endfor %}
+{{ m.pod_spec(res, env, defaults) | indent(6, true) }}
 {% endif %}

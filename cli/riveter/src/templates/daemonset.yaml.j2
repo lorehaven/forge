@@ -12,4 +12,4 @@ spec:
     matchLabels:
 {{ m.match_labels(res, env) | indent(6, true) }}
   template:
-{{ m.pod_template(res, env) | indent(4, true) }}
+{{ m.pod_template(res, env, none) | indent(4, true) }}

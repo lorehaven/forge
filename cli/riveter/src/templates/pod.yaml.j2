@@ -3,4 +3,4 @@ apiVersion: v1
 kind: Pod
 {{ m.metadata(res, env, res.namespace | default(data.namespace_name), none) }}
 spec:
-{{ m.pod_spec(res, env) | indent(2, true) }}
+{{ m.pod_spec(res, env, none) | indent(2, true) }}

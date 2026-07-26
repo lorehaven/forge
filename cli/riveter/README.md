@@ -113,8 +113,9 @@ For a kind riveter has no template for (vendor CRDs, a brand-new API), `raw` emi
 
 ### Pod-based kinds
 
-`deployment`, `statefulset`, `daemonset`, `replicaset` and `pod` share one pod-spec
-implementation in `_macros.yaml.j2`. The single-container shorthand puts container fields
+`deployment`, `statefulset`, `daemonset`, `replicaset`, `pod`, `job` and `cronjob` all
+share one pod-spec implementation in `_macros.yaml.j2`, so a feature added there is
+available to every one of them. The single-container shorthand puts container fields
 directly on the resource; use `containers:` (and `init_containers:`) for more than one:
 
 ```yaml
@@ -146,6 +147,23 @@ Overlay keys are `snake_case` and map onto the Kubernetes `camelCase` fields. Fi
 no fixed shape — `tolerations`, `affinity`, `topology_spread_constraints`, HPA `metrics`
 and `behavior`, NetworkPolicy `ingress`/`egress`, CRD `versions`, webhook `webhooks` — are
 passed straight through as YAML, so they use Kubernetes' own `camelCase` spelling.
+
+Three kinds keep the defaults they had before the templates were unified, so migrating
+does not change what an existing overlay renders:
+
+| Kind | Default |
+| --- | --- |
+| `deployment` | container name `ossiriand`, `serviceAccountName: ossiriand-<env>-sa`, `imagePullPolicy: Always` |
+| `job` | `restartPolicy: OnFailure`, `imagePullPolicy: Always`, hostPath `type: File` |
+| `cronjob` | `restartPolicy: OnFailure`, `imagePullPolicy: Always`, hostPath `type:` unset |
+
+Newer pod-based kinds default to `imagePullPolicy: IfNotPresent` and set
+`serviceAccountName` only when the overlay does. Override any of them per resource with
+`container_name`, `service_account`, `pull_policy` and a volume's `type`.
+
+`job` and `cronjob` only emit a pod-template `metadata` block when the overlay sets
+`pod_labels` or `pod_annotations` — a Job's `spec.template` is immutable, so adding labels
+unconditionally would break `apply` on existing Jobs.
 
 > Rendering strips blank lines from the final manifest. Blank lines inside a block scalar
 > (a `configmap` value, a multi-line `secret` entry) are removed with them.

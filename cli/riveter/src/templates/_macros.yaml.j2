@@ -146,12 +146,16 @@ supplementalGroups:
 
 {#
   A single container. `c` may be an entry of `res.containers` or `res` itself
-  for the common single-container shorthand.
+  for the common single-container shorthand, in which case `name_default`
+  carries the kind's fallback container name.
+
+  `defaults` lets a kind pin the defaults it shipped with before the templates
+  were unified; see `pod_spec`.
 #}
-{% macro container(c) %}
-- name: {{ c.container_name | default(c.name) }}
+{% macro container(c, name_default, defaults) %}
+- name: {{ c.container_name | default(name_default) }}
   image: {{ c.image }}
-  imagePullPolicy: {{ c.pull_policy | default("IfNotPresent") }}
+  imagePullPolicy: {{ c.pull_policy | default(defaults.pull_policy | default("IfNotPresent")) }}
 {% if c.command %}
   command:
 {% for a in c.command %}
@@ -187,7 +191,7 @@ supplementalGroups:
   env:
 {% for k, v in c.env_vars | default({}) | dictsort %}
     - name: {{ k }}
-      value: '{{ v }}'
+      value: '{{ v | replace("'", "''") }}'
 {% endfor %}
 {% for e in c.env_refs | default([]) %}
     - name: {{ e.name }}
@@ -269,7 +273,7 @@ supplementalGroups:
 {% endif %}
 {% endmacro %}
 
-{% macro volumes(vols) %}
+{% macro volumes(vols, defaults) %}
 {% for vol in vols %}
 - name: {{ vol.name }}
 {% if vol.pvc_name or vol.pvc %}
@@ -312,7 +316,7 @@ supplementalGroups:
 {% elif vol.host_path or vol.path %}
   hostPath:
     path: {{ vol.host_path | default(vol.path) }}
-    type: {{ vol.type | default("DirectoryOrCreate") }}
+    type: {{ vol.type | default(defaults.host_path_type | default("DirectoryOrCreate")) }}
 {% elif vol.spec %}
 {{ vol.spec | to_yaml | indent(2, true) }}
 {% endif %}
@@ -322,13 +326,22 @@ supplementalGroups:
 {#
   A complete PodSpec. Containers come from `res.containers`; when that is
   absent `res` itself is treated as a single container definition.
+
+  `defaults` is an optional map letting a kind keep the defaults it had before
+  the pod-based templates were unified. Pass `none` for the plain behaviour.
+  Recognised keys:
+    container_name   fallback container name in the single-container form
+    service_account  fallback serviceAccountName
+    restart_policy   fallback restartPolicy
+    pull_policy      fallback imagePullPolicy
+    host_path_type   fallback hostPath type
 #}
-{% macro pod_spec(res, env) %}
-{% if res.service_account is defined %}
-serviceAccountName: {{ res.service_account }}
+{% macro pod_spec(res, env, defaults) %}
+{% if res.service_account is defined or defaults.service_account is defined %}
+serviceAccountName: {{ res.service_account | default(defaults.service_account) }}
 {% endif %}
-{% if res.restart_policy is defined %}
-restartPolicy: {{ res.restart_policy }}
+{% if res.restart_policy is defined or defaults.restart_policy is defined %}
+restartPolicy: {{ res.restart_policy | default(defaults.restart_policy) }}
 {% endif %}
 {% if res.host_network is defined %}
 hostNetwork: {{ res.host_network }}
@@ -382,16 +395,20 @@ securityContext:
 {% if res.init_containers %}
 initContainers:
 {% for c in res.init_containers %}
-{{ container(c) }}
+{{ container(c, c.name, defaults) }}
 {% endfor %}
 {% endif %}
 containers:
-{% for c in res.containers | default([res]) %}
-{{ container(c) }}
+{% if res.containers %}
+{% for c in res.containers %}
+{{ container(c, c.name, defaults) }}
 {% endfor %}
+{% else %}
+{{ container(res, defaults.container_name | default(res.name), defaults) }}
+{% endif %}
 {% if res.volumes %}
 volumes:
-{{ volumes(res.volumes) }}
+{{ volumes(res.volumes, defaults) }}
 {% endif %}
 {% endmacro %}
 
@@ -399,7 +416,7 @@ volumes:
   A pod template (metadata + spec), as embedded in Deployment/StatefulSet/
   DaemonSet/ReplicaSet/Job/CronJob.
 #}
-{% macro pod_template(res, env) %}
+{% macro pod_template(res, env, defaults) %}
 metadata:
   labels:
 {{ pod_labels(res, env) | indent(4, true) }}
@@ -410,7 +427,7 @@ metadata:
 {% endfor %}
 {% endif %}
 spec:
-{{ pod_spec(res, env) | indent(2, true) }}
+{{ pod_spec(res, env, defaults) | indent(2, true) }}
 {% endmacro %}
 
 {#

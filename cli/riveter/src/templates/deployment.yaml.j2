@@ -1,180 +1,40 @@
+{% import "_macros.yaml.j2" as m %}
+{#
+  `container_name` and `service_account` keep the defaults this template shipped
+  with, so migrating to the shared macros does not silently rename containers or
+  drop the service account on existing deployments.
+#}
+{% set defaults = {
+  "container_name": "ossiriand",
+  "service_account": "ossiriand-" ~ env ~ "-sa",
+  "pull_policy": "Always"
+} %}
 apiVersion: apps/v1
 kind: Deployment
-metadata:
-  name: {{ res.name }}
-  namespace: {{ data.namespace_name }}
-  labels:
-    app.kubernetes.io/name: {{ res.app_name | default(res.name) }}
-    app.kubernetes.io/instance: {{ res.instance | default(res.name) }}
-    env: {{ env }}
+{{ m.metadata(res, env, res.namespace | default(data.namespace_name), none) }}
 spec:
   replicas: {{ res.replicas | default(1) }}
+{% if res.revision_history_limit is defined %}
+  revisionHistoryLimit: {{ res.revision_history_limit }}
+{% endif %}
+{% if res.min_ready_seconds is defined %}
+  minReadySeconds: {{ res.min_ready_seconds }}
+{% endif %}
+{% if res.strategy %}
+  strategy:
+    type: {{ res.strategy.type | default("RollingUpdate") }}
+{% if res.strategy.max_surge is defined or res.strategy.max_unavailable is defined %}
+    rollingUpdate:
+{% if res.strategy.max_surge is defined %}
+      maxSurge: {{ res.strategy.max_surge }}
+{% endif %}
+{% if res.strategy.max_unavailable is defined %}
+      maxUnavailable: {{ res.strategy.max_unavailable }}
+{% endif %}
+{% endif %}
+{% endif %}
   selector:
     matchLabels:
-      app.kubernetes.io/name: {{ res.app_name | default(res.name) }}
-      app.kubernetes.io/instance: {{ res.instance | default(res.name) }}
+{{ m.match_labels(res, env) | indent(6, true) }}
   template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: {{ res.app_name | default(res.name) }}
-        app.kubernetes.io/instance: {{ res.instance | default(res.name) }}
-        env: {{ env }}
-    spec:
-      serviceAccountName: {{ res.service_account | default("ossiriand-" ~ env ~ "-sa") }}
-
-{% if res.pod_security_context %}
-      securityContext:
-{% if res.pod_security_context.fsGroup is defined %}
-        fsGroup: {{ res.pod_security_context.fsGroup }}
-{% endif %}
-{% endif %}
-
-      containers:
-        - name: {{ res.container_name | default("ossiriand") }}
-          image: {{ res.image }}
-          imagePullPolicy: {{ res.pull_policy | default("Always") }}
-{% if res.port is defined %}
-          ports:
-            - containerPort: {{ res.port }}
-              name: {{ res.name }}
-              protocol: TCP
-{% endif %}
-{% if res.ports is defined %}
-          ports:
-{% for p in res.ports %}
-            - containerPort: {{ p.port }}
-              name: {{ p.name }}
-              protocol: TCP
-{% endfor %}
-{% endif %}
-
-{% if res.probes %}
-{% if res.probes.liveness %}
-          livenessProbe:
-
-{% if res.probes.liveness.http_get %}
-            httpGet:
-              path: {{ res.probes.liveness.http_get.path }}
-              port: {{ res.probes.liveness.http_get.port }}
-              scheme: {{ res.probes.liveness.http_get.scheme | default("HTTP") }}
-{% endif %}
-
-{% if res.probes.liveness.exec %}
-            exec:
-              command:
-{% for cmd in res.probes.liveness.exec.command %}
-                - {{ cmd }}
-{% endfor %}
-{% endif %}
-
-            failureThreshold: {{ res.probes.liveness.failure_threshold | default(3) }}
-            periodSeconds: {{ res.probes.liveness.period_seconds | default(10) }}
-            timeoutSeconds: {{ res.probes.liveness.timeout_seconds | default(1) }}
-
-{% if res.probes.liveness.initial_delay_seconds %}
-            initialDelaySeconds: {{ res.probes.liveness.initial_delay_seconds }}
-{% endif %}
-{% endif %}
-
-{% if res.probes.readiness %}
-          readinessProbe:
-
-{% if res.probes.readiness.http_get %}
-            httpGet:
-              path: {{ res.probes.readiness.http_get.path }}
-              port: {{ res.probes.readiness.http_get.port }}
-              scheme: {{ res.probes.readiness.http_get.scheme | default("HTTP") }}
-{% endif %}
-
-{% if res.probes.readiness.exec %}
-            exec:
-              command:
-{% for cmd in res.probes.readiness.exec.command %}
-                - {{ cmd }}
-{% endfor %}
-{% endif %}
-
-            failureThreshold: {{ res.probes.readiness.failure_threshold | default(3) }}
-            periodSeconds: {{ res.probes.readiness.period_seconds | default(10) }}
-            timeoutSeconds: {{ res.probes.readiness.timeout_seconds | default(1) }}
-
-{% if res.probes.readiness.initial_delay_seconds %}
-            initialDelaySeconds: {{ res.probes.readiness.initial_delay_seconds }}
-{% endif %}
-{% endif %}
-
-{% endif %}
-
-          securityContext:
-{% if res.security_context %}
-{% if res.security_context.run_as_non_root is defined %}
-            runAsNonRoot: {{ res.security_context.run_as_non_root }}
-{% endif %}
-{% if res.security_context.run_as_user is defined %}
-            runAsUser: {{ res.security_context.run_as_user }}
-{% endif %}
-{% if res.security_context.run_as_group is defined %}
-            runAsGroup: {{ res.security_context.run_as_group }}
-{% endif %}
-{% if res.security_context.privileged is defined %}
-            privileged: {{ res.security_context.privileged }}
-{% endif %}
-{% if res.security_context.capabilities %}
-            capabilities:
-              add:
-{% for cap in res.security_context.capabilities.add %}
-                - {{ cap }}
-{% endfor %}
-{% endif %}
-{% endif %}
-
-{% if res.resources %}
-          resources:
-{% if res.resources.requests %}
-            requests:
-              cpu: {{ res.resources.requests.cpu }}
-              memory: {{ res.resources.requests.memory }}
-{% endif %}
-{% if res.resources.limits %}
-            limits:
-              cpu: {{ res.resources.limits.cpu }}
-              memory: {{ res.resources.limits.memory }}
-{% endif %}
-{% endif %}
-{% if res.env_vars is defined and res.env_vars | length > 0 %}
-          env:
-{% for k, v in res.env_vars | dictsort %}
-            - name: {{ k }}
-              value: '{{ v }}'
-{% endfor %}
-{% endif %}
-{% if res.volume_mounts %}
-          volumeMounts:
-{% for vm in res.volume_mounts %}
-            - name: {{ vm.name }}
-              mountPath: {{ vm.mountPath }}
-{% if vm.readOnly is defined %}
-              readOnly: {{ vm.readOnly }}
-{% endif %}
-{% endfor %}
-{% endif %}
-{% if res.volumes %}
-      volumes:
-{% for vol in res.volumes %}
-        - name: {{ vol.name }}
-{% if vol.pvc_name %}
-          persistentVolumeClaim:
-            claimName: {{ vol.pvc_name }}
-{% elif vol.pvc %}
-          persistentVolumeClaim:
-            claimName: {{ vol.pvc }}
-{% elif vol.config_map %}
-          configMap:
-            name: {{ vol.config_map }}
-{% elif vol.host_path %}
-          hostPath:
-            path: {{ vol.host_path }}
-            type: {{ vol.type | default("DirectoryOrCreate") }}
-{% endif %}
-{% endfor %}
-{% endif %}
+{{ m.pod_template(res, env, defaults) | indent(4, true) }}
