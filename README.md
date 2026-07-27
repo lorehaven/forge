@@ -119,6 +119,23 @@ Features:
 Requirements:
 - `postgres`
 
+---
+
+### `conveyor`
+CI/CD service for the whole estate.
+
+Features:
+- Pipelines defined in-repo as `.conveyor.toml`, read at the commit being built
+- Git webhooks in, commit statuses back out
+- Postgres-backed run queue, so a restart loses no queued work
+- Pluggable executors - local processes, or an isolated Kubernetes Job per job
+- `anvil`, `riveter` and `warehouse` as first-class step kinds
+- A web UI with live log streaming, and `conveyor-cli` for the terminal
+
+Requirements:
+- `postgres`
+- `git`
+
 ## Prerequisites
 
 - Rust 1.84+ (Edition 2024)
