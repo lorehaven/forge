@@ -1,0 +1,144 @@
+ns_name: golden
+namespace_name: golden
+
+resources:
+  # Rich single-container deployment: probes, volumes, env, security context.
+  - kind: deployment
+    name: api
+    image: nginx:${IMAGE_TAG}
+    replicas: 3
+    port: 8080
+    port_name: http
+    revision_history_limit: 5
+    strategy:
+      type: RollingUpdate
+      max_surge: 1
+      max_unavailable: 0
+    labels:
+      tier: frontend
+    annotations:
+      owner: platform
+    pod_labels:
+      shard: a
+    pod_annotations:
+      prometheus.io/scrape: "true"
+    env_vars:
+      LOG_LEVEL: debug
+      GREETING: "it's here"
+    env_refs:
+      - name: DB_PASSWORD
+        secret: { name: db, key: password }
+      - name: FEATURE_FLAGS
+        config_map: { name: flags, key: json }
+      - name: POD_IP
+        field: status.podIP
+      - name: CPU_LIMIT
+        resource_field: { container: api, resource: limits.cpu }
+    env_from_config_maps: [shared-config]
+    env_from_secrets: [shared-secret]
+    probes:
+      liveness:
+        http_get: { path: /healthz, port: 8080 }
+        initial_delay_seconds: 10
+      readiness:
+        tcp_socket: { port: 8080 }
+        failure_threshold: 5
+      startup:
+        exec: { command: ["cat", "/tmp/ready"] }
+    resources:
+      requests: { cpu: "100m", memory: 128Mi }
+      limits: { cpu: "1", memory: 512Mi, nvidia.com/gpu: 1 }
+    security_context:
+      run_as_non_root: true
+      run_as_user: 1000
+      read_only_root_filesystem: true
+      allow_privilege_escalation: false
+      seccomp_profile: { type: RuntimeDefault }
+      capabilities:
+        drop: [ALL]
+        add: [NET_BIND_SERVICE]
+    pod_security_context:
+      fs_group: 2000
+      supplemental_groups: [3000]
+    volume_mounts:
+      - { name: data, mount_path: /var/lib/data }
+      - { name: conf, mount_path: /etc/app/app.conf, sub_path: app.conf, read_only: true }
+    volumes:
+      - { name: data, pvc_name: api-data }
+      - { name: conf, config_map: app-config, default_mode: 420, items: [{ key: app.conf, path: app.conf }] }
+    node_selector:
+      kubernetes.io/os: linux
+    tolerations:
+      - key: dedicated
+        operator: Equal
+        value: api
+        effect: NoSchedule
+    priority_class: high
+    termination_grace_period_seconds: 30
+    image_pull_secrets: [registry-cred]
+
+  # Multi-container form with init containers.
+  - kind: deployment
+    name: web
+    replicas: 1
+    init_containers:
+      - name: migrate
+        image: migrate:1
+        command: ["/bin/migrate"]
+        args: ["--up"]
+    containers:
+      - name: app
+        image: web:1
+        port: 3000
+      - name: sidecar
+        image: envoy:1
+        ports:
+          - { port: 9901, name: admin }
+          - { port: 8443, name: https, host_port: 8443, protocol: TCP }
+
+  - kind: statefulset
+    name: pg
+    image: postgres:17
+    replicas: 3
+    port: 5432
+    service_name: pg-headless
+    probes:
+      readiness:
+        tcp_socket: { port: 5432 }
+    volume_claim_templates:
+      - { name: data, storage: 20Gi }
+
+  - kind: daemonset
+    name: node-agent
+    image: agent:2
+    host_network: true
+    host_pid: true
+    dns_policy: ClusterFirstWithHostNet
+    volumes:
+      - { name: proc, host_path: /proc }
+
+  - kind: replicaset
+    name: legacy
+    image: legacy:1
+    replicas: 2
+
+  - kind: pod
+    name: debug
+    image: busybox
+    command: ["sh", "-c", "sleep $${SLEEP_SECONDS}"]
+    restart_policy: Never
+
+  - kind: job
+    name: migrate
+    image: migrate:1
+    volumes:
+      - { name: script, host_path: /opt/migrate.sh }
+
+  - kind: cronjob
+    name: nightly
+    image: report:1
+    schedule: "0 2 * * *"
+    pod_labels:
+      job: nightly
+    volumes:
+      - { name: out, host_path: /var/out }

@@ -1,0 +1,222 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: golden
+  labels:
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: team-quota
+  namespace: golden
+  labels:
+    app.kubernetes.io/name: team-quota
+    app.kubernetes.io/instance: team-quota
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+spec:
+  hard:
+    limits.memory: "20Gi"
+    pods: "50"
+    requests.cpu: "10"
+  scopes:
+    - NotTerminating
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: defaults
+  namespace: golden
+  labels:
+    app.kubernetes.io/name: defaults
+    app.kubernetes.io/instance: defaults
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: "500m"
+        memory: "512Mi"
+      defaultRequest:
+        cpu: "100m"
+        memory: "128Mi"
+      max:
+        cpu: "2"
+        memory: "2Gi"
+      min:
+        cpu: "10m"
+        memory: "16Mi"
+      maxLimitRequestRatio:
+        cpu: "4"
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api
+  namespace: golden
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/instance: api
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api
+  namespace: golden
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/instance: api
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+spec:
+  minAvailable: 2
+  unhealthyPodEvictionPolicy: AlwaysAllow
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api
+      app.kubernetes.io/instance: api
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: high
+  labels:
+    app.kubernetes.io/name: high
+    app.kubernetes.io/instance: high
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+value: 1000
+globalDefault: false
+preemptionPolicy: PreemptLowerPriority
+description: "Latency-sensitive workloads"
+---
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: gvisor
+  labels:
+    app.kubernetes.io/name: gvisor
+    app.kubernetes.io/instance: gvisor
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+handler: runsc
+overhead:
+  podFixed:
+    cpu: "50m"
+scheduling:
+  nodeSelector:
+    sandbox: "true"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: api
+  namespace: golden
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/instance: api
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+  annotations:
+    eks.amazonaws.com/role-arn: "arn:aws:iam::1:role/api"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: api
+  namespace: golden
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/instance: api
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - "configmaps"
+  - "secrets"
+  verbs:
+  - "get"
+  - "list"
+  - "watch"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: api
+  namespace: golden
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/instance: api
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: api
+subjects:
+- kind: ServiceAccount
+  name: api
+  namespace: golden
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: api-reader
+  labels:
+    app.kubernetes.io/name: api-reader
+    app.kubernetes.io/instance: api-reader
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+rules:
+- apiGroups:
+  - "apps"
+  resources:
+  - "deployments"
+  verbs:
+  - "get"
+  - "list"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: api-reader
+  labels:
+    app.kubernetes.io/name: api-reader
+    app.kubernetes.io/instance: api-reader
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: api-reader
+subjects:
+- kind: ServiceAccount
+  name: api
+  namespace: golden

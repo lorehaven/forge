@@ -1,0 +1,395 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: golden
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/instance: api
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+    tier: "frontend"
+  annotations:
+    owner: "platform"
+spec:
+  replicas: 3
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api
+      app.kubernetes.io/instance: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: api
+        app.kubernetes.io/instance: api
+        env: golden
+        shard: "a"
+      annotations:
+        prometheus.io/scrape: "true"
+    spec:
+      priorityClassName: high
+      terminationGracePeriodSeconds: 30
+      imagePullSecrets:
+        - name: registry-cred
+      nodeSelector:
+        kubernetes.io/os: "linux"
+      tolerations:
+      - effect: NoSchedule
+        key: dedicated
+        operator: Equal
+        value: api
+      securityContext:
+        fsGroup: 2000
+        supplementalGroups:
+          - 3000
+      containers:
+      - name: api
+        image: nginx:1.27
+        imagePullPolicy: Always
+        ports:
+          - containerPort: 8080
+            name: http
+            protocol: TCP
+        env:
+          - name: GREETING
+            value: 'it''s here'
+          - name: LOG_LEVEL
+            value: 'debug'
+          - name: DB_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: db
+                key: password
+          - name: FEATURE_FLAGS
+            valueFrom:
+              configMapKeyRef:
+                name: flags
+                key: json
+          - name: POD_IP
+            valueFrom:
+              fieldRef:
+                fieldPath: status.podIP
+          - name: CPU_LIMIT
+            valueFrom:
+              resourceFieldRef:
+                containerName: api
+                resource: limits.cpu
+        envFrom:
+          - configMapRef:
+              name: shared-config
+          - secretRef:
+              name: shared-secret
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+            scheme: HTTP
+          failureThreshold: 3
+          periodSeconds: 10
+          timeoutSeconds: 1
+          initialDelaySeconds: 10
+        readinessProbe:
+          tcpSocket:
+            port: 8080
+          failureThreshold: 5
+          periodSeconds: 10
+          timeoutSeconds: 1
+        startupProbe:
+          exec:
+            command:
+              - cat
+              - /tmp/ready
+          failureThreshold: 3
+          periodSeconds: 10
+          timeoutSeconds: 1
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          seccompProfile:
+            type: RuntimeDefault
+          capabilities:
+            add:
+              - NET_BIND_SERVICE
+            drop:
+              - ALL
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "1"
+            memory: "512Mi"
+            nvidia.com/gpu: "1"
+        volumeMounts:
+          - name: data
+            mountPath: /var/lib/data
+          - name: conf
+            mountPath: /etc/app/app.conf
+            subPath: app.conf
+            readOnly: true
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: api-data
+      - name: conf
+        configMap:
+          name: app-config
+          defaultMode: 420
+          items:
+            - key: app.conf
+              path: app.conf
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: golden
+  labels:
+    app.kubernetes.io/name: web
+    app.kubernetes.io/instance: web
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: web
+      app.kubernetes.io/instance: web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: web
+        app.kubernetes.io/instance: web
+        env: golden
+    spec:
+      initContainers:
+      - name: migrate
+        image: migrate:1
+        imagePullPolicy: Always
+        command:
+          - "/bin/migrate"
+        args:
+          - "--up"
+      containers:
+      - name: app
+        image: web:1
+        imagePullPolicy: Always
+        ports:
+          - containerPort: 3000
+            name: app
+            protocol: TCP
+      - name: sidecar
+        image: envoy:1
+        imagePullPolicy: Always
+        ports:
+          - containerPort: 9901
+            name: admin
+            protocol: TCP
+          - containerPort: 8443
+            name: https
+            protocol: TCP
+            hostPort: 8443
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: pg
+  namespace: golden
+  labels:
+    app.kubernetes.io/name: pg
+    app.kubernetes.io/instance: pg
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+spec:
+  serviceName: pg-headless
+  replicas: 3
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: pg
+      app.kubernetes.io/instance: pg
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: pg
+        app.kubernetes.io/instance: pg
+        env: golden
+    spec:
+      containers:
+      - name: pg
+        image: postgres:17
+        imagePullPolicy: IfNotPresent
+        ports:
+          - containerPort: 5432
+            name: pg
+            protocol: TCP
+        readinessProbe:
+          tcpSocket:
+            port: 5432
+          failureThreshold: 3
+          periodSeconds: 10
+          timeoutSeconds: 1
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 20Gi
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-agent
+  namespace: golden
+  labels:
+    app.kubernetes.io/name: node-agent
+    app.kubernetes.io/instance: node-agent
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+spec:
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: node-agent
+      app.kubernetes.io/instance: node-agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: node-agent
+        app.kubernetes.io/instance: node-agent
+        env: golden
+    spec:
+      hostNetwork: true
+      hostPID: true
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+      - name: node-agent
+        image: agent:2
+        imagePullPolicy: IfNotPresent
+      volumes:
+      - name: proc
+        hostPath:
+          path: /proc
+          type: DirectoryOrCreate
+---
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: legacy
+  namespace: golden
+  labels:
+    app.kubernetes.io/name: legacy
+    app.kubernetes.io/instance: legacy
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: legacy
+      app.kubernetes.io/instance: legacy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: legacy
+        app.kubernetes.io/instance: legacy
+        env: golden
+    spec:
+      containers:
+      - name: legacy
+        image: legacy:1
+        imagePullPolicy: IfNotPresent
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: debug
+  namespace: golden
+  labels:
+    app.kubernetes.io/name: debug
+    app.kubernetes.io/instance: debug
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+spec:
+  restartPolicy: Never
+  containers:
+  - name: debug
+    image: busybox
+    imagePullPolicy: IfNotPresent
+    command:
+      - "sh"
+      - "-c"
+      - "sleep ${SLEEP_SECONDS}"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate
+  namespace: golden
+  labels:
+    app.kubernetes.io/name: migrate
+    app.kubernetes.io/instance: migrate
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: migrate
+        image: migrate:1
+        imagePullPolicy: Always
+      volumes:
+      - name: script
+        hostPath:
+          path: /opt/migrate.sh
+          type: File
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: nightly
+  namespace: golden
+  labels:
+    app.kubernetes.io/name: nightly
+    app.kubernetes.io/instance: nightly
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+spec:
+  schedule: "0 2 * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: nightly
+            app.kubernetes.io/instance: nightly
+            env: golden
+            job: "nightly"
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: nightly
+            image: report:1
+            imagePullPolicy: Always
+          volumes:
+          - name: out
+            hostPath:
+              path: /var/out
+              type:

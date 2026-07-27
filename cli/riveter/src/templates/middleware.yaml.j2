@@ -4,7 +4,7 @@ metadata:
   name: {{ res.name }}
   namespace: {{ data.namespace_name }}
   labels:
-    app.kubernetes.io/managed-by: custom-tool
+    app.kubernetes.io/managed-by: riveter
     env: {{ env }}
 spec:
 {% if res.redirect_scheme is defined %}

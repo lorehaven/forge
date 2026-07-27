@@ -1,0 +1,43 @@
+# The overlay-level `defaults:` block: fallbacks for every pod-based kind,
+# still overridable per resource. Pins the behaviour that replaced the
+# hardcoded `ossiriand` container name and service account.
+namespace_name: golden
+
+defaults:
+  container_name: ossiriand
+  service_account: ossiriand-{{ env }}-sa
+  pull_policy: IfNotPresent
+  restart_policy: Never
+  host_path_type: DirectoryOrCreate
+
+resources:
+  - kind: deployment
+    name: api
+    image: nginx
+
+  # Per-resource fields win over the overlay defaults.
+  - kind: deployment
+    name: worker
+    image: nginx
+    container_name: worker
+    service_account: worker-sa
+    pull_policy: Always
+
+  - kind: statefulset
+    name: pg
+    image: postgres:17
+
+  - kind: job
+    name: migrate
+    image: migrate:1
+    volumes:
+      - { name: script, host_path: /opt/migrate.sh }
+
+  - kind: cronjob
+    name: nightly
+    image: report:1
+    schedule: "0 2 * * *"
+
+  - kind: pod
+    name: debug
+    image: busybox

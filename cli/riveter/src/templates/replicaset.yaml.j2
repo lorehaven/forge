@@ -1,4 +1,12 @@
 {% import "_macros.yaml.j2" as m %}
+{% set od = data.defaults | default({}) %}
+{% set defaults = {
+  "container_name": od.container_name | default(""),
+  "service_account": od.service_account | default(""),
+  "pull_policy": od.pull_policy | default("IfNotPresent"),
+  "restart_policy": od.restart_policy | default(""),
+  "host_path_type": od.host_path_type | default("DirectoryOrCreate")
+} %}
 apiVersion: apps/v1
 kind: ReplicaSet
 {{ m.metadata(res, env, res.namespace | default(data.namespace_name), none) }}
@@ -11,4 +19,4 @@ spec:
     matchLabels:
 {{ m.match_labels(res, env) | indent(6, true) }}
   template:
-{{ m.pod_template(res, env, none) | indent(4, true) }}
+{{ m.pod_template(res, env, defaults) | indent(4, true) }}

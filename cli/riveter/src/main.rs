@@ -1,10 +1,13 @@
 use anyhow::Result;
 use clap::{CommandFactory, Parser};
 use riveter::cli::{ApplyScope, Cli, Cmd, EnvCmd};
-use riveter::env::{current_env, env_list, env_set, env_show};
+use riveter::env::{env_list, env_set, env_show, resolve_env};
 use riveter::render::ResourceScope;
 use riveter::render::{Selector, generate_manifests_selected, list_resources};
-use riveter::repl::{describe, kubectl_apply, kubectl_delete, ok, print_resource_list, repl};
+use riveter::repl::{
+    WaitPolicy, describe, kubectl_apply, kubectl_delete, kubectl_diff, note_skipped, ok,
+    print_resource_list, prune, repl, report_prune, warn,
+};
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -16,7 +19,7 @@ fn main() -> Result<()> {
             EnvCmd::Show => env_show(),
         },
         Some(Cmd::List { scope, targets }) => {
-            let env = current_env()?;
+            let env = resolve_env(cli.env.as_deref())?;
             let scope = map_apply_scope(scope);
             let selector = Selector::parse(&targets)?;
 
@@ -29,23 +32,32 @@ fn main() -> Result<()> {
             Ok(())
         }
         Some(Cmd::Render { scope, targets }) => {
-            let env = current_env()?;
+            let env = resolve_env(cli.env.as_deref())?;
             let selector = Selector::parse(&targets)?;
             let rendered = generate_manifests_selected(&env, map_apply_scope(scope), &selector)?;
             ok(&format!(
                 "rendered {} resource(s) to {}",
                 rendered.resource_count, rendered.path
             ));
+            if let Some(note) = note_skipped(&rendered) {
+                warn(&note);
+            }
             Ok(())
         }
         Some(Cmd::Apply {
             dry_run,
+            no_wait,
+            timeout,
             scope,
             targets,
         }) => {
-            let env = current_env()?;
+            let env = resolve_env(cli.env.as_deref())?;
             let selector = Selector::parse(&targets)?;
-            let rendered = kubectl_apply(&env, dry_run, map_apply_scope(scope), &selector)?;
+            let wait = WaitPolicy {
+                enabled: !no_wait,
+                timeout_seconds: timeout,
+            };
+            let rendered = kubectl_apply(&env, dry_run, map_apply_scope(scope), &selector, wait)?;
 
             if rendered.resource_count == 0 {
                 ok("no resources matched selected scope");
@@ -59,8 +71,27 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
+        Some(Cmd::Diff { scope, targets }) => {
+            let env = resolve_env(cli.env.as_deref())?;
+            let selector = Selector::parse(&targets)?;
+            let (rendered, differs) = kubectl_diff(&env, map_apply_scope(scope), &selector)?;
+
+            if rendered.resource_count == 0 {
+                ok("no resources matched selected scope");
+            } else if differs {
+                warn("the cluster differs from these manifests");
+            } else {
+                ok("cluster matches these manifests");
+            }
+            Ok(())
+        }
+        Some(Cmd::Prune { dry_run }) => {
+            let env = resolve_env(cli.env.as_deref())?;
+            report_prune(&prune(&env, dry_run)?, dry_run);
+            Ok(())
+        }
         Some(Cmd::Delete { scope, targets }) => {
-            let env = current_env()?;
+            let env = resolve_env(cli.env.as_deref())?;
             let selector = Selector::parse(&targets)?;
             let rendered = kubectl_delete(&env, map_apply_scope(scope), &selector)?;
 

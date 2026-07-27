@@ -22,6 +22,13 @@ fn help_template() -> String {
 // REPL also accepts.
 #[command(disable_help_subcommand = true)]
 pub struct Cli {
+    /// Environment to act on, overriding `env set` and `RIVETER_ENV`.
+    ///
+    /// The environment recorded by `env set` is shared state in the working
+    /// directory; naming it here pins one invocation to one environment.
+    #[arg(long, short = 'e', global = true, value_name = "ENV")]
+    pub env: Option<String>,
+
     #[command(subcommand)]
     pub cmd: Option<Cmd>,
 }
@@ -47,11 +54,13 @@ pub enum Cmd {
     },
     /// Render manifests into manifests/
     ///
-    /// Writes `manifests/<env>-manifests.yaml`, or `-manifests.selection.yaml`
-    /// when targets are given, so the full manifest is never overwritten.
+    /// Defaults to the same scope as `apply`, so a render previews exactly what
+    /// an apply would send. Writes `manifests/<env>-manifests.<scope>.yaml`, or
+    /// `-manifests.selection.yaml` when targets are given, so the full manifest
+    /// is never overwritten.
     #[command(visible_alias = "r")]
     Render {
-        #[arg(long, value_enum, default_value_t = ApplyScope::All, help = SCOPE_HELP)]
+        #[arg(long, value_enum, default_value_t = ApplyScope::Mutable, help = SCOPE_HELP)]
         scope: ApplyScope,
         #[arg(value_name = "TARGET", help = TARGET_HELP)]
         targets: Vec<String>,
@@ -62,10 +71,34 @@ pub enum Cmd {
         /// Pass --dry-run=client to kubectl; nothing reaches the cluster
         #[arg(long)]
         dry_run: bool,
+        /// Return as soon as kubectl accepts the manifests, without waiting for
+        /// the rollout to become ready
+        #[arg(long)]
+        no_wait: bool,
+        /// Seconds to wait for each rollout before giving up
+        #[arg(long, value_name = "SECONDS", default_value_t = 300)]
+        timeout: u64,
         #[arg(long, value_enum, default_value_t = ApplyScope::Mutable, help = SCOPE_HELP)]
         scope: ApplyScope,
         #[arg(value_name = "TARGET", help = TARGET_HELP)]
         targets: Vec<String>,
+    },
+    /// Show what applying would change, via `kubectl diff`
+    #[command(visible_alias = "df")]
+    Diff {
+        #[arg(long, value_enum, default_value_t = ApplyScope::Mutable, help = SCOPE_HELP)]
+        scope: ApplyScope,
+        #[arg(value_name = "TARGET", help = TARGET_HELP)]
+        targets: Vec<String>,
+    },
+    /// Delete cluster resources riveter manages that the overlay no longer declares
+    ///
+    /// Finds live resources labelled as belonging to this environment, compares
+    /// them against what the overlay renders, and removes the difference.
+    Prune {
+        /// List what would be pruned without deleting anything
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Render the selected resources and delete them with kubectl
     #[command(visible_aliases = ["d", "del"])]

@@ -16,7 +16,11 @@ pub enum Surface {
 
 impl Surface {
     const fn shows(self, on: Self) -> bool {
-        matches!(self, Self::Both) || matches!((self, on), (Self::Cli, Self::Cli) | (Self::Repl, Self::Repl))
+        matches!(self, Self::Both)
+            || matches!(
+                (self, on),
+                (Self::Cli, Self::Cli) | (Self::Repl, Self::Repl)
+            )
     }
 }
 
@@ -100,15 +104,20 @@ pub const COMMANDS: &[CommandHelp] = &[
         aliases: &["r"],
         usage: "[options] [target...]",
         summary: "Render manifests to manifests/",
-        detail: "Writes manifests/<env>-manifests.yaml, or -manifests.mutable.yaml /\n\
-                 -manifests.immutable.yaml when --scope narrows it. With targets the\n\
-                 output goes to -manifests.selection.yaml so the full manifest is\n\
-                 never overwritten.",
+        detail: "Defaults to the same scope as apply, so a render previews exactly what\n\
+                 an apply would send. Writes manifests/<env>-manifests.mutable.yaml, or\n\
+                 -manifests.yaml / -manifests.immutable.yaml as --scope says. With\n\
+                 targets the output goes to -manifests.selection.yaml so the full\n\
+                 manifest is never overwritten.",
         subcommands: &[],
-        options: &[("--scope <scope>", SCOPE_ALL)],
+        options: &[("--scope <scope>", SCOPE_MUTABLE)],
         examples: &[
-            ("render", "the whole environment"),
-            ("render deployment/api", "one resource to the selection file"),
+            ("render", "what a default apply would send"),
+            ("render --scope all", "every resource, immutable included"),
+            (
+                "render deployment/api",
+                "one resource to the selection file",
+            ),
         ],
         targets: true,
     },
@@ -119,20 +128,61 @@ pub const COMMANDS: &[CommandHelp] = &[
         usage: "[options] [target...]",
         summary: "Apply manifests via kubectl",
         detail: "Renders the selected resources, then runs `kubectl apply -f` on the\n\
-                 rendered file.",
+                 rendered file. Waits for each Deployment, StatefulSet and DaemonSet\n\
+                 to become ready afterwards, so a rollout that never comes up is\n\
+                 reported as a failure rather than a success.",
         subcommands: &[],
         options: &[
             ("--dry-run", "Pass --dry-run=client to kubectl"),
+            ("--no-wait", "Return once kubectl accepts the manifests"),
+            ("--timeout <seconds>", "Per-rollout wait, default 300"),
             ("--scope <scope>", SCOPE_MUTABLE),
         ],
         examples: &[
-            ("apply", "every mutable resource"),
+            ("apply", "every mutable resource, waiting for rollouts"),
             ("apply deployment/api", "one deployment"),
             ("apply deployment service", "every deployment and service"),
             ("apply --dry-run '*/api'", "preview everything named api"),
+            ("apply --no-wait", "do not block on readiness"),
             ("apply --scope all namespace", "include immutable resources"),
         ],
         targets: true,
+    },
+    CommandHelp {
+        name: "diff",
+        surface: Surface::Both,
+        aliases: &["df"],
+        usage: "[options] [target...]",
+        summary: "Show what applying would change",
+        detail: "Renders the selected resources, then runs `kubectl diff -f` on the\n\
+                 rendered file. Shows the change against live cluster state, which a\n\
+                 render on its own cannot.",
+        subcommands: &[],
+        options: &[("--scope <scope>", SCOPE_MUTABLE)],
+        examples: &[
+            ("diff", "what a default apply would change"),
+            ("diff deployment/api", "one deployment"),
+        ],
+        targets: true,
+    },
+    CommandHelp {
+        name: "prune",
+        surface: Surface::Both,
+        aliases: &[],
+        usage: "[--dry-run]",
+        summary: "Remove resources the overlay no longer declares",
+        detail: "Lists live resources labelled as belonging to this environment,\n\
+                 compares them against what the overlay renders, and deletes the\n\
+                 difference. `delete` only removes what the overlay still declares, so\n\
+                 without this an entry removed from an overlay would live on in the\n\
+                 cluster forever. Namespaces and `raw` resources are never pruned.",
+        subcommands: &[],
+        options: &[("--dry-run", "List what would be pruned, delete nothing")],
+        examples: &[
+            ("prune --dry-run", "what has been orphaned"),
+            ("prune", "remove it"),
+        ],
+        targets: false,
     },
     CommandHelp {
         name: "delete",
@@ -148,7 +198,10 @@ pub const COMMANDS: &[CommandHelp] = &[
         examples: &[
             ("delete", "every mutable resource"),
             ("delete job/migrate", "one job"),
-            ("delete --scope all namespace/prod", "including immutable ones"),
+            (
+                "delete --scope all namespace/prod",
+                "including immutable ones",
+            ),
         ],
         targets: true,
     },

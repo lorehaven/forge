@@ -1,0 +1,83 @@
+namespace_name: golden
+
+resources:
+  - kind: namespace
+    immutable: true
+
+  - kind: resourcequota
+    name: team-quota
+    hard:
+      requests.cpu: "10"
+      limits.memory: 20Gi
+      pods: "50"
+    scopes: [NotTerminating]
+
+  - kind: limitrange
+    name: defaults
+    limits:
+      - type: Container
+        default: { cpu: 500m, memory: 512Mi }
+        default_request: { cpu: 100m, memory: 128Mi }
+        max: { cpu: "2", memory: 2Gi }
+        min: { cpu: 10m, memory: 16Mi }
+        max_limit_request_ratio: { cpu: "4" }
+
+  - kind: hpa
+    name: api
+    target:
+      name: api
+    min_replicas: 2
+    max_replicas: 10
+    target_cpu_utilization: 70
+    target_memory_utilization: 80
+
+  - kind: pdb
+    name: api
+    min_available: 2
+    unhealthy_pod_eviction_policy: AlwaysAllow
+
+  - kind: priorityclass
+    name: high
+    value: 1000
+    description: Latency-sensitive workloads
+
+  - kind: runtimeclass
+    name: gvisor
+    handler: runsc
+    overhead:
+      cpu: 50m
+    node_selector:
+      sandbox: "true"
+
+  - kind: sa
+    name: api
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::1:role/api
+
+  - kind: role
+    name: api
+    rules:
+      - resources: [configmaps, secrets]
+        verbs: [get, list, watch]
+
+  - kind: rolebinding
+    name: api
+    roleRef:
+      name: api
+    subjects:
+      - name: api
+
+  - kind: clusterrole
+    name: api-reader
+    rules:
+      - apiGroups: ["apps"]
+        resources: [deployments]
+        verbs: [get, list]
+
+  - kind: clusterrolebinding
+    name: api-reader
+    roleRef:
+      name: api-reader
+    subjects:
+      - name: api
+        namespace: golden

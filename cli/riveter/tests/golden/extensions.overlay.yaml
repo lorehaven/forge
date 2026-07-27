@@ -1,0 +1,103 @@
+namespace_name: golden
+
+resources:
+  - kind: crd
+    name: widgets.example.com
+    group: example.com
+    scope: Namespaced
+    names:
+      kind: Widget
+      plural: widgets
+      singular: widget
+      list_kind: WidgetList
+      short_names: [wdg]
+      categories: [all]
+    versions:
+      - name: v1
+        served: true
+        storage: true
+        schema:
+          openAPIV3Schema:
+            type: object
+            properties:
+              spec:
+                type: object
+
+  - kind: apiservice
+    name: v1beta1.metrics.k8s.io
+    group: metrics.k8s.io
+    version: v1beta1
+    group_priority_minimum: 100
+    version_priority: 100
+    service:
+      name: metrics-server
+      port: 443
+
+  - kind: mutatingwebhookconfiguration
+    name: pod-defaulter
+    webhooks:
+      - name: pods.example.com
+        admissionReviewVersions: [v1]
+        sideEffects: None
+        clientConfig:
+          service:
+            name: webhook
+            namespace: golden
+            path: /mutate
+        rules:
+          - apiGroups: [""]
+            apiVersions: [v1]
+            operations: [CREATE]
+            resources: [pods]
+
+  - kind: validatingwebhookconfiguration
+    name: pod-validator
+    webhooks:
+      - name: validate.example.com
+        admissionReviewVersions: [v1]
+        sideEffects: None
+        clientConfig:
+          service:
+            name: webhook
+            namespace: golden
+            path: /validate
+
+  - kind: certificate
+    name: api-tls
+    secret_name: api-tls
+    common_name: api.example.com
+    duration: 2160h
+    renew_before: 360h
+    dns_names: [api.example.com, www.example.com]
+    ip_addresses: ["10.0.0.1"]
+    usages: [digital signature, key encipherment]
+    private_key:
+      algorithm: ECDSA
+      size: 256
+      encoding: PKCS8
+      rotation_policy: Always
+    issuer:
+      name: letsencrypt
+      kind: ClusterIssuer
+
+  - kind: issuer
+    name: selfsigned
+
+  - kind: clusterissuer
+    name: letsencrypt
+    acme:
+      server: https://acme-v02.api.letsencrypt.org/directory
+      email: ops@example.com
+      ingress_class: nginx
+
+  # Escape hatch: emitted verbatim, with ${VAR} still applied.
+  - kind: raw
+    name: allow-dns
+    manifest:
+      apiVersion: cilium.io/v2
+      kind: CiliumNetworkPolicy
+      metadata:
+        name: allow-dns
+        namespace: ${NAMESPACE}
+      spec:
+        endpointSelector: {}

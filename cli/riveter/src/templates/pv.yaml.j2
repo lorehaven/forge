@@ -3,7 +3,7 @@ kind: PersistentVolume
 metadata:
   name: {{ res.name }}
   labels:
-    app.kubernetes.io/managed-by: custom-tool
+    app.kubernetes.io/managed-by: riveter
     env: {{ env }}
 spec:
   capacity:

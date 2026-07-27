@@ -1,0 +1,174 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: widgets.example.com
+  labels:
+    app.kubernetes.io/name: widgets.example.com
+    app.kubernetes.io/instance: widgets.example.com
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+spec:
+  group: example.com
+  scope: Namespaced
+  names:
+    kind: Widget
+    plural: widgets
+    singular: widget
+    listKind: WidgetList
+    shortNames:
+      - wdg
+    categories:
+      - all
+  versions:
+    - name: v1
+      schema:
+        openAPIV3Schema:
+          properties:
+            spec:
+              type: object
+          type: object
+      served: true
+      storage: true
+---
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+metadata:
+  name: v1beta1.metrics.k8s.io
+  labels:
+    app.kubernetes.io/name: v1beta1.metrics.k8s.io
+    app.kubernetes.io/instance: v1beta1.metrics.k8s.io
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+spec:
+  group: metrics.k8s.io
+  version: v1beta1
+  groupPriorityMinimum: 100
+  versionPriority: 100
+  service:
+    name: metrics-server
+    namespace: golden
+    port: 443
+  insecureSkipTLSVerify: true
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: pod-defaulter
+  labels:
+    app.kubernetes.io/name: pod-defaulter
+    app.kubernetes.io/instance: pod-defaulter
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook
+      namespace: golden
+      path: /mutate
+  name: pods.example.com
+  rules:
+  - apiGroups:
+    - ''
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    resources:
+    - pods
+  sideEffects: None
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: pod-validator
+  labels:
+    app.kubernetes.io/name: pod-validator
+    app.kubernetes.io/instance: pod-validator
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook
+      namespace: golden
+      path: /validate
+  name: validate.example.com
+  sideEffects: None
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: api-tls
+  namespace: golden
+  labels:
+    app.kubernetes.io/name: api-tls
+    app.kubernetes.io/instance: api-tls
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+spec:
+  secretName: api-tls
+  commonName: api.example.com
+  duration: 2160h
+  renewBefore: 360h
+  dnsNames:
+    - api.example.com
+    - www.example.com
+  ipAddresses:
+    - 10.0.0.1
+  usages:
+    - digital signature
+    - key encipherment
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    encoding: PKCS8
+    rotationPolicy: Always
+  issuerRef:
+    name: letsencrypt
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: selfsigned
+  namespace: golden
+  labels:
+    app.kubernetes.io/name: selfsigned
+    app.kubernetes.io/instance: selfsigned
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt
+  labels:
+    app.kubernetes.io/name: letsencrypt
+    app.kubernetes.io/instance: letsencrypt
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: ops@example.com
+    privateKeySecretRef:
+      name: letsencrypt-account-key
+    solvers:
+      - http01:
+          ingress:
+            class: nginx
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: golden
+spec:
+  endpointSelector: {}

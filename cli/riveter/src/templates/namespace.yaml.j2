@@ -3,4 +3,5 @@ kind: Namespace
 metadata:
   name: {{ data.namespace_name }}
   labels:
+    app.kubernetes.io/managed-by: riveter
     env: {{ env }}

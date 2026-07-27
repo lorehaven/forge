@@ -1,0 +1,53 @@
+namespace_name: golden
+
+resources:
+  # Block scalars: the blank line inside `nginx.conf` is content and must
+  # survive rendering.
+  - kind: configmap
+    name: app-config
+    data:
+      app.conf: |
+        listen 8080
+
+        server_name example.com
+      motd: single line
+
+  - kind: secret
+    name: db
+    string_data:
+      password: ${DB_PASSWORD}
+      quoted: "it's got an apostrophe"
+      pem: |
+        -----BEGIN KEY-----
+        abc
+
+        def
+        -----END KEY-----
+
+  - kind: secret
+    name: registry
+    type: kubernetes.io/dockerconfigjson
+    immutable_data: true
+    data:
+      .dockerconfigjson: eyJhdXRocyI6e319
+
+  - kind: pv
+    name: api-data-pv
+    storage: 20Gi
+    host_path: /mnt/disks/api
+    claim_ref: api-data
+
+  - kind: pvc
+    name: api-data
+    storage: 20Gi
+    volume_name: api-data-pv
+
+  - kind: storageclass
+    name: fast
+    provisioner: rancher.io/local-path
+    reclaim_policy: Retain
+    volume_binding_mode: WaitForFirstConsumer
+    allow_volume_expansion: true
+    parameters:
+      type: nvme
+    mount_options: [noatime]

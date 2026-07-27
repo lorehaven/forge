@@ -1,13 +1,16 @@
 {% import "_macros.yaml.j2" as m %}
 {#
-  `container_name` and `service_account` keep the defaults this template shipped
-  with, so migrating to the shared macros does not silently rename containers or
-  drop the service account on existing deployments.
+  The overlay's `defaults:` block over this kind's own. `container_name` and
+  `service_account` have no built-in fallback: a container takes the resource's
+  name, and no serviceAccountName is emitted unless something asks for one.
 #}
+{% set od = data.defaults | default({}) %}
 {% set defaults = {
-  "container_name": "ossiriand",
-  "service_account": "ossiriand-" ~ env ~ "-sa",
-  "pull_policy": "Always"
+  "container_name": od.container_name | default(""),
+  "service_account": od.service_account | default(""),
+  "pull_policy": od.pull_policy | default("Always"),
+  "restart_policy": od.restart_policy | default(""),
+  "host_path_type": od.host_path_type | default("DirectoryOrCreate")
 } %}
 apiVersion: apps/v1
 kind: Deployment

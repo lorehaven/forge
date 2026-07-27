@@ -1,0 +1,110 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: golden
+  labels:
+    app.kubernetes.io/name: app-config
+    app.kubernetes.io/instance: app-config
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+data:
+  app.conf: |
+    listen 8080
+
+    server_name example.com
+  motd: |
+    single line
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: db
+  namespace: golden
+  labels:
+    app.kubernetes.io/name: db
+    app.kubernetes.io/instance: db
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+type: Opaque
+stringData:
+  password: 'hunter2'
+  pem: |
+    -----BEGIN KEY-----
+    abc
+
+    def
+    -----END KEY-----
+  quoted: 'it''s got an apostrophe'
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: registry
+  namespace: golden
+  labels:
+    app.kubernetes.io/name: registry
+    app.kubernetes.io/instance: registry
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+type: kubernetes.io/dockerconfigjson
+immutable: true
+data:
+  .dockerconfigjson: eyJhdXRocyI6e319
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: api-data-pv
+  labels:
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  volumeMode: Filesystem
+  hostPath:
+    path: /mnt/disks/api
+    type: Directory
+  claimRef:
+    namespace: golden
+    name: api-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: api-data
+  namespace: golden
+  labels:
+    app.kubernetes.io/name: api-data
+    app.kubernetes.io/instance: api-data
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  volumeName: api-data-pv  # binds to specific PV
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: fast
+  labels:
+    app.kubernetes.io/name: fast
+    app.kubernetes.io/instance: fast
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+provisioner: rancher.io/local-path
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+parameters:
+  type: "nvme"
+mountOptions:
+  - noatime

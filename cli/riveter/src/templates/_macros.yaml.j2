@@ -17,6 +17,7 @@ metadata:
   labels:
     app.kubernetes.io/name: {{ res.app_name | default(res.name) }}
     app.kubernetes.io/instance: {{ res.instance | default(res.name) }}
+    app.kubernetes.io/managed-by: riveter
     env: {{ env }}
 {% if extra_labels %}
 {% for k, v in extra_labels | dictsort %}
@@ -327,8 +328,9 @@ supplementalGroups:
   A complete PodSpec. Containers come from `res.containers`; when that is
   absent `res` itself is treated as a single container definition.
 
-  `defaults` is an optional map letting a kind keep the defaults it had before
-  the pod-based templates were unified. Pass `none` for the plain behaviour.
+  `defaults` carries the fallbacks for this kind, built by each template from
+  the overlay's `defaults:` block over the kind's own. An empty string means
+  "unset", so a fallback the overlay does not supply emits nothing.
   Recognised keys:
     container_name   fallback container name in the single-container form
     service_account  fallback serviceAccountName
@@ -337,10 +339,10 @@ supplementalGroups:
     host_path_type   fallback hostPath type
 #}
 {% macro pod_spec(res, env, defaults) %}
-{% if res.service_account is defined or defaults.service_account is defined %}
+{% if res.service_account or defaults.service_account %}
 serviceAccountName: {{ res.service_account | default(defaults.service_account) }}
 {% endif %}
-{% if res.restart_policy is defined or defaults.restart_policy is defined %}
+{% if res.restart_policy or defaults.restart_policy %}
 restartPolicy: {{ res.restart_policy | default(defaults.restart_policy) }}
 {% endif %}
 {% if res.host_network is defined %}
@@ -404,7 +406,7 @@ containers:
 {{ container(c, c.name, defaults) }}
 {% endfor %}
 {% else %}
-{{ container(res, defaults.container_name | default(res.name), defaults) }}
+{{ container(res, defaults.container_name or res.name, defaults) }}
 {% endif %}
 {% if res.volumes %}
 volumes:

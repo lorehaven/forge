@@ -1,0 +1,257 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: golden
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/instance: api
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+spec:
+  selector:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/instance: api
+  ports:
+    - port: 80
+      targetPort: 8080
+      nodePort: 30080
+      name: http
+      protocol: TCP
+  type: NodePort
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: api
+  namespace: golden
+  labels:
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+  annotations:
+    # cert-manager annotation for automatic certificate
+    cert-manager.io/cluster-issuer: letsencrypt
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "16m"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - api.example.com
+      secretName: api-tls
+  rules:
+    - host: api.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 80
+          - path: /v2
+            pathType: Exact
+            backend:
+              service:
+                name: api-v2
+                port:
+                  number: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: nginx
+  labels:
+    app.kubernetes.io/name: nginx
+    app.kubernetes.io/instance: nginx
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+spec:
+  controller: k8s.io/ingress-nginx
+  parameters:
+    apiGroup: k8s.io
+    kind: IngressParameters
+    name: nginx-params
+    scope: Cluster
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-allow
+  namespace: golden
+  labels:
+    app.kubernetes.io/name: api-allow
+    app.kubernetes.io/instance: api-allow
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: "api"
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: web
+    ports:
+    - port: 8080
+      protocol: TCP
+  egress:
+  - ports:
+    - port: 53
+      protocol: UDP
+    to:
+    - namespaceSelector: {}
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: external-db
+  namespace: golden
+  labels:
+    app.kubernetes.io/name: external-db
+    app.kubernetes.io/instance: external-db
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+subsets:
+  - addresses:
+      - ip: 10.0.0.5
+      - ip: 10.0.0.6
+    ports:
+      - port: 5432
+        name: pg
+        protocol: TCP
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: external-db
+  namespace: golden
+  labels:
+    app.kubernetes.io/name: external-db
+    app.kubernetes.io/instance: external-db
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+    kubernetes.io/service-name: "external-db"
+addressType: IPv4
+endpoints:
+  - addresses:
+      - 10.0.0.5
+    conditions:
+      ready: true
+ports:
+  - port: 5432
+    name: pg
+    protocol: TCP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: edge
+  namespace: golden
+  labels:
+    app.kubernetes.io/name: edge
+    app.kubernetes.io/instance: edge
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+spec:
+  gatewayClassName: istio
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+    - name: https
+      protocol: HTTPS
+      port: 443
+      hostname: example.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: example-tls
+      allowedRoutes:
+        namespaces:
+          from: All
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: api
+  namespace: golden
+  labels:
+    app.kubernetes.io/name: api
+    app.kubernetes.io/instance: api
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+spec:
+  parentRefs:
+    - name: edge
+      sectionName: https
+  hostnames:
+    - api.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /v1
+          method: GET
+      backendRefs:
+        - name: api
+          port: 80
+          weight: 90
+        - name: api-canary
+          port: 80
+          weight: 10
+    - backendRefs:
+        - name: api
+          port: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: api
+  namespace: golden
+  labels:
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - kind: Rule
+      match: Host(``)
+      priority: 10
+      middlewares:
+        - name: strip-api
+      services:
+        - name: api
+          port: 80
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: strip-api
+  namespace: golden
+  labels:
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+spec:
+  stripPrefix:
+    prefixes:
+      - /api
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: to-https
+  namespace: golden
+  labels:
+    app.kubernetes.io/managed-by: riveter
+    env: golden
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true

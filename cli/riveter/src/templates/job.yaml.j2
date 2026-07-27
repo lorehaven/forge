@@ -4,10 +4,13 @@
   template shipped with. A Job's `spec.template` is immutable, so the pod
   template only grows a `metadata` block when the overlay asks for one.
 #}
+{% set od = data.defaults | default({}) %}
 {% set defaults = {
-  "pull_policy": "Always",
-  "restart_policy": "OnFailure",
-  "host_path_type": "File"
+  "container_name": od.container_name | default(""),
+  "service_account": od.service_account | default(""),
+  "pull_policy": od.pull_policy | default("Always"),
+  "restart_policy": od.restart_policy | default("OnFailure"),
+  "host_path_type": od.host_path_type | default("File")
 } %}
 apiVersion: batch/v1
 kind: Job

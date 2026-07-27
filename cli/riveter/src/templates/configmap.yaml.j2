@@ -6,6 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/name: {{ res.app_name | default(res.name) }}
     app.kubernetes.io/instance: {{ res.instance | default(res.name) }}
+    app.kubernetes.io/managed-by: riveter
     env: {{ env }}
 data:
 {% for key in res.data %}

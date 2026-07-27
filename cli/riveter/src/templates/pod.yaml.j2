@@ -1,6 +1,14 @@
 {% import "_macros.yaml.j2" as m %}
+{% set od = data.defaults | default({}) %}
+{% set defaults = {
+  "container_name": od.container_name | default(""),
+  "service_account": od.service_account | default(""),
+  "pull_policy": od.pull_policy | default("IfNotPresent"),
+  "restart_policy": od.restart_policy | default(""),
+  "host_path_type": od.host_path_type | default("DirectoryOrCreate")
+} %}
 apiVersion: v1
 kind: Pod
 {{ m.metadata(res, env, res.namespace | default(data.namespace_name), none) }}
 spec:
-{{ m.pod_spec(res, env, none) | indent(2, true) }}
+{{ m.pod_spec(res, env, defaults) | indent(2, true) }}

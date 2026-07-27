@@ -94,7 +94,11 @@ fn detail_covers_options_subcommands_and_examples() {
             assert!(text.contains(name), "`{}` detail omits {name}", cmd.name);
         }
         for (example, _) in cmd.examples {
-            assert!(text.contains(example), "`{}` detail omits {example}", cmd.name);
+            assert!(
+                text.contains(example),
+                "`{}` detail omits {example}",
+                cmd.name
+            );
         }
 
         assert_eq!(
@@ -124,7 +128,10 @@ fn targets_topic_is_indented() {
     let text = targets();
     assert!(text.starts_with("Targets:\n"));
     assert!(
-        text.lines().skip(1).filter(|l| !l.is_empty()).all(|l| l.starts_with("  ")),
+        text.lines()
+            .skip(1)
+            .filter(|l| !l.is_empty())
+            .all(|l| l.starts_with("  ")),
         "targets topic should be indented like every other block"
     );
 }

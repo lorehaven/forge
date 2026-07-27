@@ -1,0 +1,116 @@
+namespace_name: golden
+host: example.com
+
+resources:
+  - kind: service
+    name: api
+    port: 80
+    target_port: 8080
+    type: NodePort
+    node_port: 30080
+
+  - kind: ingress
+    name: api
+    issuer_name: letsencrypt
+    secret_name: api
+    force_ssl_redirect: true
+    annotations:
+      nginx.ingress.kubernetes.io/proxy-body-size: 16m
+    routes:
+      - host: api.example.com
+        paths:
+          - { path: /, service_name: api, service_port: 80 }
+          - { path: /v2, type: Exact, service_name: api-v2, service_port: 80 }
+
+  - kind: ingressclass
+    name: nginx
+    controller: k8s.io/ingress-nginx
+    parameters:
+      api_group: k8s.io
+      kind: IngressParameters
+      name: nginx-params
+      scope: Cluster
+
+  - kind: networkpolicy
+    name: api-allow
+    pod_selector:
+      app.kubernetes.io/name: api
+    policy_types: [Ingress, Egress]
+    ingress:
+      - from:
+          - podSelector:
+              matchLabels:
+                app.kubernetes.io/name: web
+        ports:
+          - protocol: TCP
+            port: 8080
+    egress:
+      - to:
+          - namespaceSelector: {}
+        ports:
+          - protocol: UDP
+            port: 53
+
+  - kind: endpoints
+    name: external-db
+    addresses: ["10.0.0.5", "10.0.0.6"]
+    ports:
+      - { port: 5432, name: pg }
+
+  - kind: endpointslice
+    name: external-db
+    service_name: external-db
+    addresses: ["10.0.0.5"]
+    ports:
+      - { port: 5432, name: pg }
+
+  - kind: gateway
+    name: edge
+    gateway_class: istio
+    listeners:
+      - name: http
+        port: 80
+      - name: https
+        port: 443
+        protocol: HTTPS
+        hostname: example.com
+        tls:
+          mode: Terminate
+          certificate_refs: [example-tls]
+        allowed_routes:
+          from: All
+
+  - kind: httproute
+    name: api
+    parent_refs:
+      - { name: edge, section_name: https }
+    hostnames: [api.example.com]
+    rules:
+      - matches:
+          - { path: /v1, type: PathPrefix, method: GET }
+        backends:
+          - { name: api, port: 80, weight: 90 }
+          - { name: api-canary, port: 80, weight: 10 }
+      - backends:
+          - { name: api, port: 80 }
+
+  - kind: ingressroute
+    name: api
+    entrypoints: [websecure]
+    routes:
+      - match: Host(`{{ host }}`)
+        priority: 10
+        service_name: api
+        service_port: 80
+        middlewares: [strip-api]
+
+  - kind: middleware
+    name: strip-api
+    strip_prefix:
+      prefixes: ["/api"]
+
+  - kind: middleware
+    name: to-https
+    redirect_scheme:
+      scheme: https
+      permanent: true
