@@ -25,5 +25,4 @@ quench-db = { workspace = true }
 quench-starter = { workspace = true }
 quench-web = { workspace = true }
 serde = { workspace = true }
-tokio = { workspace = true }
 tracing = { workspace = true }

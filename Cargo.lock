@@ -1999,7 +1999,6 @@ dependencies = [
  "quench-starter",
  "quench-web",
  "serde",
- "tokio",
  "tracing",
 ]
 
@@ -4325,7 +4324,6 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
- "dotenvy",
  "minijinja",
  "quench-cli",
  "regex",

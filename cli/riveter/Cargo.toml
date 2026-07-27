@@ -23,7 +23,6 @@ path = "src/lib.rs"
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true }
-dotenvy = { workspace = true }
 minijinja = { workspace = true }
 quench-cli = { workspace = true }
 regex = { workspace = true }
