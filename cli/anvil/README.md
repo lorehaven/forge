@@ -74,9 +74,9 @@ packages = ["service", "worker"]
 dockerfile = "Dockerfile"
 
 [docker.modules.core.worker]
-dockerfile = "Dockerfile.worker"
 image_name = "core-worker"
 registries = ["registry.internal/my-org", "backup-registry.internal/my-org"]
+build_args = { RUNTIME_PACKAGES = "git", RUN_AS = "999:999" }
 
 [publish]
 registry = "forge-registry"
@@ -84,6 +84,18 @@ packages = ["service", "worker"]
 ```
 
 `[docker].registry` is optional only if every package has its own `registries` override.
+
+### Build arguments
+
+Anvil always passes `PROJECT_NAME` and `RESOURCES_PATH`, derived from the module
+and package names. A package that needs more declares `build_args`, and they are
+passed after the derived ones - so a package that genuinely needs a different
+`RESOURCES_PATH` can override it too.
+
+This is what lets one parameterised Dockerfile serve packages that differ in
+small ways. Reach for `build_args` before `dockerfile`: a forked Dockerfile that
+exists for the sake of one line stops tracking the original the moment the
+original changes.
 
 ## License
 MIT

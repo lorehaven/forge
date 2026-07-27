@@ -1,7 +1,7 @@
 use anyhow::Result;
 use quench_cli::prelude::{Tone, print_status};
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 
 #[derive(Debug, Default, Deserialize)]
@@ -51,6 +51,18 @@ pub struct DockerPackageOverride {
     // Deprecated single-registry override, kept for backward compatibility.
     #[serde(default)]
     pub registry: Option<String>,
+
+    /// Extra `--build-arg` values for this package.
+    ///
+    /// What lets one Dockerfile serve every service: a package that needs an
+    /// extra runtime package, a different resource directory or its own user
+    /// says so here, rather than forking the whole file over a line of it.
+    ///
+    /// A `BTreeMap` rather than a `HashMap` so the arguments reach `docker
+    /// build` in the same order every time - a build that varies by iteration
+    /// order is one whose cache misses at random.
+    #[serde(default)]
+    pub build_args: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Default, Deserialize)]

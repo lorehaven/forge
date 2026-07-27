@@ -1,6 +1,7 @@
 use crate::config;
 use crate::util::run_command;
 use anyhow::{Context, Result};
+use std::collections::BTreeMap;
 use std::fs;
 use std::process::Command;
 
@@ -50,6 +51,24 @@ fn get_dockerfile_for_package(config: &config::Config, package: &str) -> Result<
         .get(package)
         .and_then(|override_cfg| override_cfg.dockerfile.as_ref())
         .map_or_else(|| module_cfg.dockerfile.clone(), Clone::clone))
+}
+
+/// The package's own `--build-arg` values, if it declared any.
+///
+/// Empty for most packages: the Dockerfile's defaults describe a plain web
+/// service, and only a package that is not one has anything to say here.
+fn get_build_args_for_package(
+    config: &config::Config,
+    package: &str,
+) -> Result<BTreeMap<String, String>> {
+    let module = find_module_for_package(config, package)?;
+    let module_cfg = &config.docker.modules[module];
+
+    Ok(module_cfg
+        .package_overrides
+        .get(package)
+        .map(|override_cfg| override_cfg.build_args.clone())
+        .unwrap_or_default())
 }
 
 fn get_image_name_for_package(config: &config::Config, package: &str) -> Result<String> {
@@ -130,7 +149,18 @@ pub fn build(config: &config::Config, package: &str) -> Result<()> {
     let image_name = get_image_name_for_package(config, package)?;
     let module = find_module_for_package(config, package)?;
     let resources_path = format!("{module}/{package}");
+    let build_args = get_build_args_for_package(config, package)?;
     println!("Building Docker image for package: {package} using {dockerfile}");
+    if !build_args.is_empty() {
+        // Worth printing: these are the whole reason two packages that build
+        // from the same file end up as different images.
+        let rendered = build_args
+            .iter()
+            .map(|(name, value)| format!("{name}={value}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        println!("  build args: {rendered}");
+    }
 
     let mut cmd = Command::new("docker");
     cmd.arg("build")
@@ -148,10 +178,16 @@ pub fn build(config: &config::Config, package: &str) -> Result<()> {
         .arg("--build-arg")
         .arg(format!("PROJECT_NAME={package}"))
         .arg("--build-arg")
-        .arg(format!("RESOURCES_PATH={resources_path}"))
-        .arg("-t")
-        .arg(image_name)
-        .arg(".");
+        .arg(format!("RESOURCES_PATH={resources_path}"));
+
+    // After the ones anvil derives, so a package that genuinely needs a
+    // different `RESOURCES_PATH` can say so - docker takes the last value for a
+    // repeated argument.
+    for (name, value) in &build_args {
+        cmd.arg("--build-arg").arg(format!("{name}={value}"));
+    }
+
+    cmd.arg("-t").arg(image_name).arg(".");
 
     if let Ok(token) = std::env::var("CARGO_REGISTRIES_ENNOR_TOKEN")
         && !token.trim().is_empty()
