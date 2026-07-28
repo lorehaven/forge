@@ -18,7 +18,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true }
-conveyor-service = { path = "../../docker/conveyor-service" }
+conveyor-service = { workspace = true }
 dotenvy = { workspace = true }
 envmnt = { workspace = true }
 futures-util = { workspace = true }
