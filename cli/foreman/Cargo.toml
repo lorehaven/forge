@@ -1,0 +1,29 @@
+[package]
+name = "foreman"
+version = "0.1.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "Foreman - run a project's local development estate from one TOML file"
+keywords = ["development", "tools", "orchestration"]
+categories = ["command-line-utilities", "development-tools"]
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+readme = "README.md"
+
+[[bin]]
+name = "foreman"
+path = "src/main.rs"
+
+[lib]
+name = "foreman"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+libc = { workspace = true }
+quench-cli = { workspace = true }
+rustyline = { workspace = true }
+serde = { workspace = true }
+toml = { workspace = true }

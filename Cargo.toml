@@ -46,6 +46,7 @@ hmac = { version = "0.13" }
 html5ever = { version = "0.39" }
 jsonwebtoken = { version = "11.0", features = ["rust_crypto"] }
 kube = { version = "4.0", features = ["runtime", "derive"] }
+libc = { version = "0.2" }
 k8s-openapi = { version = "0.28", features = ["latest"] }
 markup5ever_rcdom = { version = "0.39" }
 minijinja = { version = "2.21", features = ["loader", "serde"] }

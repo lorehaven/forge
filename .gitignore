@@ -11,7 +11,7 @@
 /vllm/
 plans/
 
-# Local dev environment state (run.fish)
+# Local dev environment state (foreman)
 .run/
 
 # Cutover rehearsal logs and pids (scripts/rehearse-cutover.fish)

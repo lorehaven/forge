@@ -1,0 +1,96 @@
+# Foreman - the local development estate for this project.
+#
+# Every string here is a template. `${name}` comes from [vars], and inside a
+# service block from that service's own name, package, port and base_path.
+#
+#   foreman                   start everything
+#   foreman start <service>   start one service and what it needs
+#   foreman repl              pick services interactively, then start them
+#   foreman stop [all]        stop the services, or the containers too
+#   foreman status            what is up, and on which port
+#   foreman logs <service>    follow one service's log
+#   foreman db | reset        install the schema catalog, or rebuild it
+#   foreman test [service]    run the test suite
+#   foreman list              what this file defines
+
+[project]
+name = "example"
+description = "local development estate"
+run_dir = ".run"          # pid files and logs, relative to this file
+
+[vars]
+database_url = "postgres://postgres:postgres@localhost:5432/postgres"
+# Values can also be lifted out of a dotenv file, so this config cannot drift
+# from what the services already expect:
+# jwt_secret = { env_file = "docker/api/.env", key = "JWT_SECRET", default = "dev-secret" }
+
+# How a service's binary is produced, and where it lands. Services are launched
+# from the built binary rather than through `cargo run`, because `stop` needs a
+# real pid: killing a `cargo run` parent leaves the service holding its port.
+[build]
+command = ["cargo", "build", "-q", "--package", "${package}"]
+binary = "target/debug/${package}"
+
+[[containers]]
+name = "postgres"
+image = "postgres:18-alpine"
+ports = ["5432:5432"]
+env = { POSTGRES_USER = "postgres", POSTGRES_PASSWORD = "postgres", POSTGRES_DB = "postgres" }
+ready = ["pg_isready", "-U", "postgres"]      # run inside the container until it succeeds
+ready_timeout_secs = 30
+address = "localhost:5432"                     # for the message only
+
+# Work that happens around the services rather than in them. `role = "migrate"`
+# runs before every start and on `foreman db`; `role = "reset"` runs on
+# `foreman reset`; anything else runs on `foreman run <name>`.
+[tasks.migrate]
+role = "migrate"
+description = "applying migrations"
+containers = ["postgres"]
+build = ["cargo", "build", "-q", "--package", "migrator"]
+command = ["${project_root}/target/debug/migrator", "${selection}", "apply"]
+env = { DATABASE_URL = "${database_url}" }
+# Repeated once per selected service, in place of `${selection}` above, and only
+# when a strict subset of the estate was asked for.
+each_selected = ["--install", "${service}"]
+done = "database ready"
+
+# Settings every service shares. A service's own values win, and `env` merges
+# key by key rather than replacing.
+[defaults]
+scheme = "http"
+host = "localhost"
+health_path = "/health"
+start_timeout_secs = 30
+workdir = "docker/${package}"
+env = { DATABASE_URL = "${database_url}", SERVER_ADDR = "0.0.0.0:${port}", RUST_LOG = "info" }
+
+# The order services are listed in is the order they start. `needs` is what a
+# service cannot start without: selecting it selects these too.
+[[services]]
+name = "api"
+package = "api-service"
+port = 8080
+base_path = "/api"
+needs = []
+
+[[services]]
+name = "web"
+package = "web-service"
+port = 8081
+base_path = "/web"
+needs = ["api"]
+env = { API_URL = "http://localhost:8080/api" }
+
+# Printed after a successful start.
+[[notes]]
+tone = "ok"
+label = "ready"
+message = "http://localhost:8081/web"
+when_selected = "web"
+
+[test]
+command = ["cargo", "test", "--workspace"]
+service_arg = ["--package", "${service}-tests"]
+stop_services = true
+note = "the estate is down; `foreman` brings it back"

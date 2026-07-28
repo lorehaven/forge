@@ -177,16 +177,22 @@ cargo run -p welder -- --workflow ./welder/samples/agent.toml
 
 ## Local development
 
-`run.fish` brings the estate up on localhost: postgres and redis in docker,
-foundry over the database, then the services from `target/debug`.
+`foreman` brings the estate up on localhost: postgres and redis in docker,
+foundry over the database, then the services from `target/debug`. What it
+starts, on which ports, and with which environment is all in `foreman.toml` at
+the repository root.
 
 ```bash
-./run.fish                    # the whole estate
-./run.fish start conveyor     # only conveyor, and what it needs
-./run.fish repl               # pick services interactively, then `up`
-./run.fish status             # what is up, and on which port
-./run.fish logs conveyor      # follow one service's log
-./run.fish stop [all]         # services, or services and containers too
+cargo install --path cli/foreman
+
+foreman                       # the whole estate
+foreman start conveyor        # only conveyor, and what it needs
+foreman repl                  # pick services interactively, then `up`
+foreman status                # what is up, and on which port
+foreman logs conveyor         # follow one service's log
+foreman stop [all]            # services, or services and containers too
+foreman list                  # what foreman.toml defines
+foreman env sage              # the environment one service would start with
 ```
 
 Naming services starts a subset: only those packages are built, and foundry
@@ -198,7 +204,7 @@ gatehouse in on its own — a subset is never a half-wired estate.
 
 ```bash
 cargo test --workspace     # unit and integration tests
-fish run.fish test         # the BDD suite, against live services
+foreman test               # the BDD suite, against live services
 
 # the 0.2.0 cutover, end to end, against a restored copy of production
 ./scripts/rehearse-cutover.fish --database-url postgres://…/prod_copy --yes

@@ -1,0 +1,294 @@
+# Local development environment for the Forge estate.
+#
+#   foreman                  start postgres and redis, install the schemas, run every service
+#   foreman start conveyor   start only conveyor and what it needs
+#   foreman repl             pick services interactively, then start them
+#   foreman stop             stop the services (the containers keep running)
+#   foreman stop conveyor    stop one of them
+#   foreman stop all         stop the services and the containers under them
+#   foreman status           what is up, and on which port
+#   foreman logs sage        follow one service's log
+#   foreman db               postgres + the schema catalog, no services
+#   foreman reset            drop every schema foundry owns and reinstall (dev only)
+#   foreman test             run every BDD suite
+#   foreman test sage        run one suite (or pass cucumber flags: --tags, --name)
+#
+# Services are built with cargo and then launched from target/debug directly,
+# rather than through `anvil run`. `anvil run` is the right thing when you are
+# working on one service interactively; here foreman needs a real PID per
+# service so `stop` can actually stop it - killing a `cargo run` parent leaves
+# the service running and holding its port.
+#
+# Naming services starts a subset of the estate: only those packages are built,
+# and foundry installs only their schemas. Working on conveyor does not need
+# sage's model launch or switchboard's GPU. What a service cannot start without
+# comes with it - see `needs` below - so a subset is never a half-wired estate.
+
+[project]
+name = "forge"
+description = "local development estate"
+run_dir = ".run"
+
+# ---------------------------------------------------------------------------
+# Values
+# ---------------------------------------------------------------------------
+#
+# The secrets are read out of the existing service .env files rather than
+# restated here, so the realm cannot quietly diverge from what the services
+# already expect.
+
+[vars]
+database_url = "postgres://postgres:postgres@localhost:5432/postgres"
+redis_url = "redis://localhost:6379"
+
+# The realm shares one signing key; without it a token minted by gatehouse is
+# rejected everywhere else.
+realm_secret = { env_file = "docker/sage-service/.env", key = "JWT_SECRET", default = "forge-local-dev-secret" }
+
+# The interactive account.
+admin_user = { env_file = "docker/switchboard-service/.env", key = "SERVICE_USERNAME", default = "admin" }
+admin_password = { env_file = "docker/switchboard-service/.env", key = "SERVICE_PASSWORD", default = "password" }
+
+# The machine-to-machine account. sage presents these to switchboard over Basic
+# auth; switchboard used to create the account itself, but identity is
+# realm-wide now, so gatehouse has to seed it or sage gets a 401.
+tech_user = { env_file = "docker/sage-service/.env", key = "SWITCHBOARD_TECH_USERNAME", default = "service" }
+tech_password = { env_file = "docker/sage-service/.env", key = "SWITCHBOARD_TECH_PASSWORD", default = "password" }
+
+[build]
+command = ["cargo", "build", "-q", "--all-features", "--package", "${package}"]
+binary = "target/debug/${package}"
+
+# ---------------------------------------------------------------------------
+# What the estate sits on
+# ---------------------------------------------------------------------------
+
+[[containers]]
+name = "postgres"
+container_name = "postgres"
+image = "pgvector/pgvector:pg18"
+ports = ["5432:5432"]
+env = { POSTGRES_USER = "postgres", POSTGRES_PASSWORD = "postgres", POSTGRES_DB = "postgres" }
+ready = ["pg_isready", "-U", "postgres"]
+ready_timeout_secs = 30
+address = "localhost:5432"
+
+# Sessions live in Redis: expiry is its TTL, revocation is a delete, and every
+# service reads the same store so a logout is immediate everywhere.
+[[containers]]
+name = "redis"
+container_name = "forge-redis"
+image = "redis:7-alpine"
+ports = ["6379:6379"]
+ready = ["redis-cli", "ping"]
+ready_timeout_secs = 15
+address = "localhost:6379"
+
+# ---------------------------------------------------------------------------
+# The database
+# ---------------------------------------------------------------------------
+
+# Each service's catalog module is named after it, so a subset of the estate
+# becomes a list of `--install` flags; shared modules (auth, quench-core,
+# pgvector) resolve from the catalog and do not need listing. Starting the whole
+# estate uses the install config as-is.
+#
+# Scoping matters more than it looks: starting a service later re-runs this with
+# the wider selection, so the schemas arrive when the service that needs them
+# does rather than all at once at the first boot.
+[tasks.foundry]
+role = "migrate"
+description = "applying the migration catalog"
+containers = ["postgres"]
+build = ["cargo", "build", "-q", "--package", "foundry-service"]
+# One flag per module: `--install` is repeatable but takes a single spec, and
+# only FOUNDRY_INSTALL splits on commas.
+each_selected = ["--install", "${service}"]
+selection = "subset-only"
+env = { DATABASE_URL = "${database_url}" }
+command = [
+  "${project_root}/target/debug/foundry-service",
+  "--catalog", "${project_root}/docker/foundry-service/migrations",
+  "--config", "${project_root}/docker/foundry-service/config/install.toml",
+  "${selection}",
+  "apply",
+]
+done = "database ready"
+
+# Schema lifecycle belongs to foundry, so wiping the database for a fresh start
+# is its `reset` command rather than a flag on each service.
+[tasks.reset]
+role = "reset"
+containers = ["postgres"]
+stop_services = true
+warn = "dropping every schema foundry owns in ${database_url}"
+build = ["cargo", "build", "-q", "--package", "foundry-service"]
+env = { DATABASE_URL = "${database_url}" }
+command = [
+  "${project_root}/target/debug/foundry-service",
+  "--catalog", "${project_root}/docker/foundry-service/migrations",
+  "--config", "${project_root}/docker/foundry-service/config/install.toml",
+  "reset",
+  "--yes",
+]
+done = "database rebuilt; `foreman` starts the estate"
+
+# ---------------------------------------------------------------------------
+# Services
+# ---------------------------------------------------------------------------
+
+# Shared realm settings. These override the per-service .env files, which
+# dotenvy will not do the other way round - values already in the environment
+# win.
+#
+# Services run from their own directory: that is where their .env, TLS
+# certificate, i18n bundle and static assets live, and every one of those paths
+# is resolved relative to the working directory.
+[defaults]
+scheme = "https"
+host = "localhost"
+health_path = "/health"
+start_timeout_secs = 30
+stop_timeout_secs = 4
+workdir = "docker/${package}"
+cert_files = ["cert.pem", "key.pem"]
+
+[defaults.env]
+DATABASE_URL = "${database_url}"
+JWT_SECRET = "${realm_secret}"
+SERVICE_AUTH_ENABLED = "true"
+AUTH_DB_SCHEMA = "auth"
+SERVER_ADDR = "0.0.0.0:${port}"
+BASE_PATH = "${base_path}"
+SERVICE_NAME = "${name}"
+REDIS_URL = "${redis_url}"
+RUST_LOG = "info"
+# Relying parties send a browser to gatehouse when there is no session.
+# Gatehouse itself unsets it below - it is the destination, not a client.
+GATEHOUSE_URL = "https://localhost:5443/gatehouse"
+
+# The order below is the dependency order, and a selection keeps it: gatehouse
+# first because it owns the realm the others authenticate against, sage after
+# switchboard because it checks switchboard at startup.
+
+# Gatehouse owns the realm: it is the only service that seeds users and the only
+# one that mints tokens for the whole estate. It ships no dev certificate of its
+# own, so it borrows warehouse's - the whole estate speaks HTTPS and the Secure
+# realm cookie behaves the same everywhere.
+[[services]]
+name = "gatehouse"
+package = "gatehouse-service"
+port = 5443
+base_path = "/gatehouse"
+needs = []
+unset = ["GATEHOUSE_URL"]
+cert_from = "docker/warehouse-service"
+
+[services.env]
+AUTH_BOOTSTRAP = "true"
+SERVICE_USERNAME = "${admin_user}"
+SERVICE_PASSWORD = "${admin_password}"
+SERVICE_TECH_USERNAME = "${tech_user}"
+SERVICE_TECH_PASSWORD = "${tech_password}"
+SERVICE_AUDIENCES = "sage,switchboard,warehouse,gatehouse,conveyor"
+AUTH_REDIRECT_HOSTS = "https://localhost:6443,https://localhost:7443,https://localhost:8443,https://localhost:9443"
+SERVER_HTTP_REDIRECT_ADDR = "0.0.0.0:5080"
+CONVEYOR_UI_URL = "https://localhost:9443/conveyor/ui/home"
+SAGE_UI_URL = "https://localhost:8443/sage/ui/home"
+SWITCHBOARD_UI_URL = "https://localhost:7443/switchboard/ui/home"
+WAREHOUSE_UI_URL = "https://localhost:6443/warehouse/ui/home"
+
+[[services]]
+name = "warehouse"
+package = "warehouse-service"
+port = 6443
+base_path = "/warehouse"
+needs = ["gatehouse"]
+
+[[services]]
+name = "switchboard"
+package = "switchboard-service"
+port = 7443
+base_path = "/switchboard"
+needs = ["gatehouse"]
+
+# vLLM instances are switchboard's children, not foreman's: killing switchboard
+# orphans them, and they keep the GPU and their ports. Ask switchboard to stop
+# them first - best effort, since it may already be down.
+[[services.pre_stop]]
+description = "stopping vLLM instances"
+timeout_secs = 60
+# Give vLLM a moment to exit afterwards; it does not always go down with the
+# request.
+settle_secs = 3
+# A literal string: the regex below is full of backslashes, and TOML's basic
+# strings would want every one of them doubled.
+shell = '''
+api=https://localhost:7443/switchboard/api/v1/vllm/instances
+auth='${tech_user}:${tech_password}'
+ids=$(curl -sk --max-time 5 -u "$auth" "$api" | grep -oP '"id"\s*:\s*"\K[^"]+')
+for id in $ids; do
+  echo "stopping vLLM instance $id"
+  curl -sk --max-time 30 -X DELETE -u "$auth" "$api/$id" >/dev/null 2>&1
+done
+'''
+
+[[services]]
+name = "sage"
+package = "sage-service"
+port = 8443
+base_path = "/sage"
+needs = ["gatehouse", "switchboard"]
+
+# sage asks switchboard to launch its SAGE_DEFAULT_MODELS at startup, which is
+# what puts the initializing screen in front of the home page. That is the
+# normal flow, so it stays on; FORGE_SKIP_MODELS=1 turns it off when you want
+# the estate up without spending the GPU.
+[[services.env_when]]
+env_set = "FORGE_SKIP_MODELS"
+note = "FORGE_SKIP_MODELS set - not launching default models"
+env = { SAGE_DEFAULT_MODELS = "[]" }
+
+[[services]]
+name = "conveyor"
+package = "conveyor-service"
+port = 9443
+base_path = "/conveyor"
+needs = ["gatehouse"]
+cert_from = "docker/warehouse-service"
+
+# ---------------------------------------------------------------------------
+# After a start
+# ---------------------------------------------------------------------------
+
+[[notes]]
+tone = "ok"
+label = "ready"
+message = "sign in at https://localhost:5443/gatehouse/ui/login"
+when_selected = "gatehouse"
+
+[[notes]]
+tone = "info"
+label = "credentials"
+message = "${admin_user} / ${admin_password} (service account: ${tech_user})"
+when_selected = "gatehouse"
+
+# vLLM can outlive the stop request, and it holds both the GPU and its port.
+# Reported rather than killed: some of these may not be ours.
+[[warnings]]
+name = "vllm"
+pgrep = "vllm serve"
+message = "these hold the GPU and port 8000+; kill them with: kill ${pids}"
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+#
+# The BDD suite starts its own copies of the services on the same ports as the
+# development environment, so the two cannot be up at once.
+
+[test]
+command = ["cargo", "run", "--package", "forge-bdd", "--"]
+service_arg = ["--service", "${service}"]
+stop_services = true
+note = "the development environment is down; `foreman` brings it back"
