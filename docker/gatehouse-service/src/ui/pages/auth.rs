@@ -74,6 +74,17 @@ pub(super) async fn login_submit(
         .finish()
 }
 
+/// What the page shell's session watcher polls.
+///
+/// Gatehouse needs this as much as a relying party does: `/ui/home` is the
+/// estate's launcher, which is exactly the kind of page somebody leaves open.
+/// The watcher does not turn the login page into a redirect loop, because it
+/// refuses to redirect from a `/login` path in the first place.
+#[get("/status")]
+pub(super) async fn status(request: HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
+    quench_auth::actix::routers::ui::pages::auth::auth_status(&request, &config)
+}
+
 /// Realm-wide logout: revokes the session and clears the shared cookie, so
 /// every service sees the user as signed out.
 #[get("/logout")]

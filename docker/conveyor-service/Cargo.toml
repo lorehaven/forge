@@ -1,0 +1,56 @@
+[package]
+name = "conveyor-service"
+version = "0.1.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "Conveyor - the Forge CI/CD service: webhooks, pipelines and runs"
+keywords = ["ci", "cd", "pipeline", "automation"]
+categories = ["development-tools"]
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+readme = "README.md"
+
+[lib]
+name = "conveyor_service"
+path = "src/lib.rs"
+
+[[bin]]
+name = "conveyor-service"
+path = "src/main.rs"
+
+[dependencies]
+actix-web = { workspace = true }
+async-trait = { workspace = true }
+base64 = { workspace = true }
+bytes = { workspace = true }
+chacha20poly1305 = { workspace = true }
+chrono = { workspace = true }
+envmnt = { workspace = true }
+futures-util = { workspace = true }
+hex = { workspace = true }
+hmac = { workspace = true }
+k8s-openapi = { workspace = true }
+kube = { workspace = true }
+quench-auth = { workspace = true }
+quench-db = { workspace = true }
+quench-starter = { workspace = true }
+quench-web = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+shlex = { workspace = true }
+sqlx = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+urlencoding = { workspace = true }
+uuid = { workspace = true }
+which = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true }

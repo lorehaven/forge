@@ -5,8 +5,9 @@
 //! browser over and to accept it back, which is what lives here.
 
 use crate::actix::domain::realm;
+use crate::prelude::JwtConfig;
 use actix_web::HttpResponse;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::sync::LazyLock;
 
 /// `?err=1` on the login page. Gatehouse renders the error; a relying party
@@ -39,6 +40,63 @@ fn ui_path(path: &str) -> String {
         format!("/ui{path}")
     } else {
         format!("{base}/ui{path}")
+    }
+}
+
+/// What a page's session watcher is told about the session it is holding.
+#[derive(Serialize)]
+pub struct AuthStatus {
+    pub authenticated: bool,
+    pub username: Option<String>,
+    pub roles: Vec<String>,
+}
+
+impl AuthStatus {
+    pub fn anonymous() -> Self {
+        Self {
+            authenticated: false,
+            username: None,
+            roles: Vec::new(),
+        }
+    }
+}
+
+/// Answers "is the cookie I am holding still worth anything".
+///
+/// Always a `200`: this is a question about the session, not a request that
+/// needs one, and answering `401` would make every watcher's error handling
+/// carry the meaning instead of the body.
+///
+/// Reads the cookie and the signature only. Whether the session is still live
+/// in the shared store is a heavier check that `is_ui_authenticated` does on
+/// the requests that matter; here it would put a store round trip on every open
+/// tab every minute, to catch a revocation moments earlier than the next real
+/// request will anyway.
+pub fn auth_status(request: &actix_web::HttpRequest, config: &JwtConfig) -> HttpResponse {
+    if !config.auth_enabled {
+        return HttpResponse::Ok().json(AuthStatus {
+            authenticated: true,
+            username: Some("dev".to_string()),
+            roles: vec!["admin".to_string()],
+        });
+    }
+
+    let Some(cookie) = request.cookie(&realm::session_cookie_name()) else {
+        return HttpResponse::Ok().json(AuthStatus::anonymous());
+    };
+
+    match config.decode_claims(cookie.value()) {
+        Ok(claims) => HttpResponse::Ok().json(AuthStatus {
+            authenticated: true,
+            username: Some(claims.sub),
+            roles: claims
+                .scope
+                .split(',')
+                .filter(|role| !role.is_empty())
+                .map(str::to_string)
+                .collect(),
+        }),
+        Err(_) => HttpResponse::Ok().json(AuthStatus::anonymous()),
     }
 }
 

@@ -1,0 +1,44 @@
+#[path = "unit/artifacts_tests.rs"]
+mod artifacts_tests;
+#[path = "unit/config_settings_tests.rs"]
+mod config_settings_tests;
+#[path = "unit/domain_run_tests.rs"]
+mod domain_run_tests;
+#[path = "unit/domain_status_tests.rs"]
+mod domain_status_tests;
+#[path = "unit/executors_manifest_tests.rs"]
+mod executors_manifest_tests;
+#[path = "unit/executors_mock_tests.rs"]
+mod executors_mock_tests;
+#[path = "unit/executors_native_tests.rs"]
+mod executors_native_tests;
+#[path = "unit/pipeline_condition_tests.rs"]
+mod pipeline_condition_tests;
+#[path = "unit/pipeline_graph_tests.rs"]
+mod pipeline_graph_tests;
+#[path = "unit/pipeline_parser_tests.rs"]
+mod pipeline_parser_tests;
+#[path = "unit/pipeline_spec_tests.rs"]
+mod pipeline_spec_tests;
+#[path = "unit/providers_generic_tests.rs"]
+mod providers_generic_tests;
+#[path = "unit/providers_github_tests.rs"]
+mod providers_github_tests;
+#[path = "unit/routers_api_routing_tests.rs"]
+mod routers_api_routing_tests;
+#[path = "unit/routers_api_stream_tests.rs"]
+mod routers_api_stream_tests;
+#[path = "unit/routers_ui_format_tests.rs"]
+mod routers_ui_format_tests;
+#[path = "unit/routers_ui_runs_tests.rs"]
+mod routers_ui_runs_tests;
+#[path = "unit/secrets_crypto_tests.rs"]
+mod secrets_crypto_tests;
+#[path = "unit/secrets_redact_tests.rs"]
+mod secrets_redact_tests;
+#[path = "unit/steps_mod_tests.rs"]
+mod steps_mod_tests;
+#[path = "unit/steps_tools_tests.rs"]
+mod steps_tools_tests;
+#[path = "unit/workspace_checkout_tests.rs"]
+mod workspace_checkout_tests;

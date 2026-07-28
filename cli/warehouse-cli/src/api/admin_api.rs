@@ -208,7 +208,11 @@ mod tests {
 
     #[test]
     fn a_service_at_the_root_needs_no_prefix() {
-        let reg = registry("https://registry.local:8443", "https://registry.local:8443", "");
+        let reg = registry(
+            "https://registry.local:8443",
+            "https://registry.local:8443",
+            "",
+        );
 
         assert_eq!(
             service_url(admin_base_url(&reg), &reg.base_path, DOCKER_GC).unwrap(),

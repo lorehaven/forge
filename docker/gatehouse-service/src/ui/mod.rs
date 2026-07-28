@@ -38,6 +38,7 @@ pub fn scope() -> actix_web::Scope {
         .service(pages::auth::login_slash)
         .service(pages::auth::login_submit)
         .service(pages::auth::logout)
+        .service(pages::auth::status)
         // Requires a realm session; `handle_home` redirects when there is none.
         .service(pages::home::home)
         .service(pages::home::home_slash)

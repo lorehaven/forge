@@ -45,6 +45,15 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     cargo build --release --target x86_64-unknown-linux-musl --workspace
 
+# No strip step here on purpose. `[profile.release] strip = "debuginfo"` in the
+# workspace manifest already does it, for local builds as well as this one, so a
+# binary built here and one built in an image are the same binary.
+#
+# There used to be a `strip ./service || true` in the runtime stage below. Bare
+# alpine has no binutils, so it failed with "not found" on every build and the
+# `|| true` turned that into silence - the images shipped unstripped for as long
+# as the line existed.
+
 # ---------- Runtime stage ----------
 FROM alpine:3.22
 
@@ -54,17 +63,36 @@ ENV PROJECT_NAME=${PROJECT_NAME}
 ARG RESOURCES_PATH
 ENV RESOURCES_PATH=${RESOURCES_PATH}
 
-RUN apk add --no-cache ca-certificates
+# The three ways a service is allowed to differ, set per package under
+# `build_args` in .anvil.toml. Anything that needs more than these belongs in
+# its own Dockerfile - but nothing has yet, and a fork of this file for the sake
+# of one line drifts out of step with it the moment this one changes.
+
+# Extra apk packages the runtime needs. Conveyor asks for `git`: it checks out
+# the commit before it can read the pipeline that commit declares.
+ARG RUNTIME_PACKAGES=""
+
+# What ships beside `config`. Web services carry their translations; foundry is
+# a migration job and carries its catalog instead.
+ARG RESOURCE_DIR=i18n
+
+# Who the entrypoint runs as. Root is the standing behaviour; a service that has
+# been checked against it asks for 999:999, which everything under /app is
+# already owned by.
+ARG RUN_AS=root
+
+RUN apk add --no-cache ca-certificates ${RUNTIME_PACKAGES}
 
 WORKDIR /app
 
-COPY --from=builder /usr/src/app/${RESOURCES_PATH}/config ./config
-COPY --from=builder /usr/src/app/${RESOURCES_PATH}/i18n ./i18n
-COPY --from=builder /usr/src/app/target/x86_64-unknown-linux-musl/release/${PROJECT_NAME} ./service
-RUN strip ./service || true
+# Ownership is set as each file is copied. A `RUN chown -R /app` afterwards does
+# the same job but writes a whole second copy of everything it touches into its
+# own layer - it doubled the binary, about 30MB an image, for a metadata change.
+COPY --from=builder --chown=999:999 /usr/src/app/${RESOURCES_PATH}/config ./config
+COPY --from=builder --chown=999:999 /usr/src/app/${RESOURCES_PATH}/${RESOURCE_DIR} ./${RESOURCE_DIR}
+COPY --from=builder --chown=999:999 /usr/src/app/target/x86_64-unknown-linux-musl/release/${PROJECT_NAME} ./service
 
-# Ensure ownership
-RUN chown -R 999:999 /app
+USER ${RUN_AS}
 
 EXPOSE 80
 ENTRYPOINT ["./service"]

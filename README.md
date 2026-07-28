@@ -175,6 +175,25 @@ cargo run -p forge-toolbox
 cargo run -p welder -- --workflow ./welder/samples/agent.toml
 ```
 
+## Local development
+
+`run.fish` brings the estate up on localhost: postgres and redis in docker,
+foundry over the database, then the services from `target/debug`.
+
+```bash
+./run.fish                    # the whole estate
+./run.fish start conveyor     # only conveyor, and what it needs
+./run.fish repl               # pick services interactively, then `up`
+./run.fish status             # what is up, and on which port
+./run.fish logs conveyor      # follow one service's log
+./run.fish stop [all]         # services, or services and containers too
+```
+
+Naming services starts a subset: only those packages are built, and foundry
+installs only their schemas. Working on conveyor needs gatehouse for the realm
+but not sage's model launch or switchboard's GPU, and `start conveyor` pulls
+gatehouse in on its own — a subset is never a half-wired estate.
+
 ## Tests
 
 ```bash

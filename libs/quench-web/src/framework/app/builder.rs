@@ -1,7 +1,15 @@
 use super::i18n::available_locales;
-use super::scripts::{locale_script, theme_script};
+use super::scripts::{locale_script, session_script, theme_script};
 use crate::{Element, Link, PageBuilder, Script, Theme, div};
 use strum::IntoEnumIterator;
+
+/// How often a page asks whether its session is still good.
+///
+/// A minute is far longer than the estate's other watchers, and deliberately:
+/// theme and locale are read from a cookie already in the browser, where this
+/// costs a request per tab. It is short enough that a revoked session stops
+/// being usable while the person who revoked it is still watching.
+const SESSION_CHECK_SECS: u64 = 60;
 
 const FONTAWESOME_CSS: &str =
     "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css";
@@ -112,6 +120,7 @@ impl AppBuilder {
                 &self.supported_themes,
                 &self.resources_prefix,
             ),
+            session_script(&self.resources_prefix, SESSION_CHECK_SECS),
         ];
         scripts.extend(self.scripts);
 

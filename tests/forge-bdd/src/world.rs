@@ -18,6 +18,7 @@ pub enum Target {
     Switchboard,
     Warehouse,
     Gatehouse,
+    Conveyor,
 }
 
 impl Target {
@@ -28,14 +29,16 @@ impl Target {
             Target::Switchboard => "switchboard",
             Target::Warehouse => "warehouse",
             Target::Gatehouse => "gatehouse",
+            Target::Conveyor => "conveyor",
         }
     }
 
-    pub const ALL: [Target; 4] = [
+    pub const ALL: [Target; 5] = [
         Target::Sage,
         Target::Switchboard,
         Target::Warehouse,
         Target::Gatehouse,
+        Target::Conveyor,
     ];
 
     pub fn parse(value: &str) -> Option<Self> {
@@ -60,6 +63,8 @@ pub struct ForgeWorld {
     pub warehouse_url: String,
     pub gatehouse_base_url: String,
     pub gatehouse_url: String,
+    pub conveyor_base_url: String,
+    pub conveyor_url: String,
 
     pub client: reqwest::Client,
 
@@ -99,6 +104,7 @@ impl ForgeWorld {
         let switchboard_base_url = service_url("SWITCHBOARD_API_URL", "https://127.0.0.1:8554");
         let warehouse_base_url = service_url("WAREHOUSE_API_URL", "https://127.0.0.1:8443");
         let gatehouse_base_url = service_url("GATEHOUSE_API_URL", "http://127.0.0.1:5443");
+        let conveyor_base_url = service_url("CONVEYOR_API_URL", "http://127.0.0.1:9999");
 
         let client = reqwest::Client::builder()
             .danger_accept_invalid_certs(true)
@@ -117,6 +123,8 @@ impl ForgeWorld {
             warehouse_base_url,
             gatehouse_url: format!("{gatehouse_base_url}/gatehouse"),
             gatehouse_base_url,
+            conveyor_url: format!("{conveyor_base_url}/conveyor"),
+            conveyor_base_url,
             client,
             last_status: None,
             last_json: None,
@@ -147,6 +155,7 @@ impl ForgeWorld {
             Target::Switchboard => &self.switchboard_url,
             Target::Warehouse => &self.warehouse_url,
             Target::Gatehouse => &self.gatehouse_url,
+            Target::Conveyor => &self.conveyor_url,
         }
     }
 
@@ -157,6 +166,7 @@ impl ForgeWorld {
             Target::Switchboard => &self.switchboard_base_url,
             Target::Warehouse => &self.warehouse_base_url,
             Target::Gatehouse => &self.gatehouse_base_url,
+            Target::Conveyor => &self.conveyor_base_url,
         }
     }
 

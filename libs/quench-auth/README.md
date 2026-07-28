@@ -14,7 +14,29 @@ does not contain the auth API.
 | `domain::session` | `SessionDb`, backed by the cache store (Redis); relying parties use `is_active` to honour revocation |
 | `middleware::auth::Auth` | verifies the token on every request: signature, expiry, audience, session |
 | `routers::ui` | `is_ui_authenticated`, `get_user_from_req` |
-| `routers::ui::pages::auth` | `login_delegation`, `logout_delegation`, `redirect_target` — handing the browser to gatehouse and validating its return address |
+| `routers::ui::pages::auth` | `login_delegation`, `logout_delegation`, `redirect_target` — handing the browser to gatehouse and validating its return address; `auth_status`, what an open page polls to learn its session ended |
+
+## Noticing a session that ended
+
+A page is authenticated once, when it is rendered, and a tab left open then goes
+on looking signed in however long ago the session expired or was revoked. The
+first anyone learns of it is a click that lands on a login page.
+
+`auth_status` closes that. Mount it at `/ui/status` and the page shell's session
+watcher — in quench-web, so every service gets it — polls it once a minute and
+on returning to the tab, and navigates to login when the answer says
+`authenticated: false`. Only that answer counts: a 404, a network blip or a body
+that will not parse are all ignored, since throwing somebody out of a working
+page because one request failed is worse than the bug being fixed.
+
+It reads the cookie and its signature, not the session store. Whether the
+session is still live is `is_ui_authenticated`'s job on the requests that matter;
+doing it here would put a store round trip on every open tab every minute to
+catch a revocation moments before the next real request does.
+
+Services mount it themselves, so one that does not is simply not watched —
+gatehouse deliberately does not, since it owns the login page the watcher would
+send people to.
 
 ## What is not here, and why
 

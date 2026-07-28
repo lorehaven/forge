@@ -13,6 +13,8 @@ ui_home_subtitle = Jedno logowanie do wszystkiego poniżej.
 ui_home_group_services = Dostępne usługi
 ui_home_no_services = Żadne usługi nie są obecnie włączone.
 
+ui_service_conveyor_title = Conveyor
+ui_service_conveyor_desc = Potoki, kompilacje i wdrożenia.
 ui_service_sage_title = Sage
 ui_service_sage_desc = Środowisko AI: rozmowy, projekty i pliki.
 ui_service_switchboard_title = Switchboard

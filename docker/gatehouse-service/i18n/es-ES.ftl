@@ -13,6 +13,8 @@ ui_home_subtitle = Un solo inicio de sesión para todo lo siguiente.
 ui_home_group_services = Servicios disponibles
 ui_home_no_services = No hay servicios habilitados actualmente.
 
+ui_service_conveyor_title = Conveyor
+ui_service_conveyor_desc = Canalizaciones, compilaciones y despliegues.
 ui_service_sage_title = Sage
 ui_service_sage_desc = Espacio de trabajo de IA: conversaciones, proyectos y archivos.
 ui_service_switchboard_title = Switchboard

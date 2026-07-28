@@ -8,6 +8,9 @@
 # version applies only the migrations tagged up to it.
 
 [[install]]
+module = "conveyor"
+
+[[install]]
 module = "gatehouse"
 
 [[install]]

@@ -104,6 +104,44 @@ impl Fixture {
             Target::Switchboard => self.start_switchboard().await,
             Target::Warehouse => self.start_warehouse().await,
             Target::Gatehouse => self.start_gatehouse().await,
+            Target::Conveyor => self.start_conveyor().await,
+        }
+    }
+
+    /// Conveyor, with no database.
+    ///
+    /// Its queue needs Postgres and says so; the suite deliberately runs on an
+    /// in-memory store, so these scenarios cover what a database cannot change:
+    /// the UI shell, gatehouse delegation, which routes need a token, and the
+    /// webhook endpoint's refusals. Everything that does touch the queue is
+    /// covered by `docker/conveyor-service/tests/integration`, against a real
+    /// Postgres.
+    async fn start_conveyor(&self) -> Service {
+        self.build("conveyor-service").await;
+        println!("Starting conveyor-service...");
+
+        let mut command = Command::new(self.binary("conveyor-service"));
+        command
+            .current_dir(self.service_dir("conveyor-service"))
+            .envs(std::env::vars());
+        self.common_env(&mut command, "conveyor");
+        command
+            .env("SERVER_ADDR", "127.0.0.1:9999")
+            .env("SERVER_HTTP_REDIRECT_ADDR", "127.0.0.1:9998")
+            .env("BASE_PATH", "/conveyor")
+            .env("DB_SCHEMA", "test_conveyor")
+            .env("SERVICE_AUTH_ENABLED", "true")
+            // No TLS here: conveyor ships no dev certificate of its own, and
+            // the suite has no reason to borrow one.
+            .env("SERVER_CERT_PATH", "missing.pem")
+            .env("SERVER_KEY_PATH", "missing.pem")
+            // Set, so the webhook endpoint's "not configured" path is the one
+            // scenario that has to turn it off rather than the default.
+            .env("CONVEYOR_WEBHOOK_SECRET", "conveyor-bdd-secret");
+
+        Service {
+            target: Target::Conveyor,
+            child: command.spawn().expect("failed to start conveyor-service"),
         }
     }
 

@@ -1,0 +1,161 @@
+[[migrations]]
+id = "0001-repos-and-runs"
+author = "conveyor-service"
+since = "0.1.0"
+
+# Repositories conveyor is willing to build. Registration is explicit: conveyor
+# runs code the repository supplies, so "whatever webhook arrives" is not an
+# acceptable trigger.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.repos (
+    id TEXT PRIMARY KEY,
+    provider TEXT NOT NULL,
+    owner TEXT NOT NULL,
+    name TEXT NOT NULL,
+    clone_url TEXT NOT NULL,
+    default_branch TEXT NOT NULL DEFAULT 'master',
+    registered_by TEXT NOT NULL REFERENCES ${auth_schema}.users(username) ON DELETE CASCADE,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+"""
+
+# One registration per repository per provider: two rows for the same slug would
+# each verify the same delivery and queue a run.
+[[migrations.changes]]
+sql = """
+CREATE UNIQUE INDEX IF NOT EXISTS repos_provider_slug_idx
+    ON ${schema}.repos (provider, owner, name);
+"""
+
+# A run is also its own queue entry - `status`, `claimed_by` and `claimed_at`
+# are what the scheduler's claim loop reads and writes. Keeping the queue in the
+# same row as the record means a run cannot be queued twice and a restart loses
+# nothing.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.runs (
+    id TEXT PRIMARY KEY,
+    repo_id TEXT NOT NULL REFERENCES ${schema}.repos(id) ON DELETE CASCADE,
+    trigger TEXT NOT NULL,
+    git_ref TEXT NOT NULL,
+    sha TEXT NOT NULL,
+    message TEXT,
+    delivery_id TEXT,
+    status TEXT NOT NULL DEFAULT 'queued',
+    queued_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    started_at TIMESTAMPTZ,
+    finished_at TIMESTAMPTZ,
+    claimed_by TEXT,
+    claimed_at TIMESTAMPTZ,
+    attempt INTEGER NOT NULL DEFAULT 0,
+    error TEXT
+);
+"""
+
+# What makes a redelivered webhook a no-op rather than a second run. Partial,
+# because a manually triggered run has no delivery id and any number of those
+# may exist.
+[[migrations.changes]]
+sql = """
+CREATE UNIQUE INDEX IF NOT EXISTS runs_delivery_id_idx
+    ON ${schema}.runs (delivery_id) WHERE delivery_id IS NOT NULL;
+"""
+
+# The claim loop's index: it only ever looks at queued rows, oldest first.
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS runs_queue_idx
+    ON ${schema}.runs (status, queued_at);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS runs_repo_recent_idx
+    ON ${schema}.runs (repo_id, queued_at DESC);
+"""
+
+# `stage` and `needs` are copied from the pipeline onto the row rather than
+# looked up later: the `.conveyor.toml` that produced them lives at a commit,
+# and rendering an old run should not require checking that commit out again.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.jobs (
+    id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL REFERENCES ${schema}.runs(id) ON DELETE CASCADE,
+    stage TEXT NOT NULL,
+    name TEXT NOT NULL,
+    needs JSONB NOT NULL DEFAULT '[]'::JSONB,
+    status TEXT NOT NULL DEFAULT 'queued',
+    exit_code INTEGER,
+    started_at TIMESTAMPTZ,
+    finished_at TIMESTAMPTZ,
+    error TEXT
+);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS jobs_run_idx ON ${schema}.jobs (run_id);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.steps (
+    id TEXT PRIMARY KEY,
+    job_id TEXT NOT NULL REFERENCES ${schema}.jobs(id) ON DELETE CASCADE,
+    ordinal INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    command TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'queued',
+    exit_code INTEGER,
+    started_at TIMESTAMPTZ,
+    finished_at TIMESTAMPTZ
+);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE UNIQUE INDEX IF NOT EXISTS steps_job_ordinal_idx
+    ON ${schema}.steps (job_id, ordinal);
+"""
+
+# Append-only. `seq` is assigned by the writer rather than a sequence so a
+# reader can ask for everything after what it already has, and resume a
+# following stream without gaps or repeats.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.logs (
+    job_id TEXT NOT NULL REFERENCES ${schema}.jobs(id) ON DELETE CASCADE,
+    seq BIGINT NOT NULL,
+    stream TEXT NOT NULL,
+    written_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    chunk TEXT NOT NULL,
+    PRIMARY KEY (job_id, seq)
+);
+"""
+
+# Conveyor records the reference, not the bytes: a crate version or an image tag
+# lives in warehouse, and copying it here would give the estate two answers to
+# "what did this build publish".
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.artifacts (
+    id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL REFERENCES ${schema}.runs(id) ON DELETE CASCADE,
+    job_id TEXT NOT NULL REFERENCES ${schema}.jobs(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    name TEXT NOT NULL,
+    version TEXT,
+    uri TEXT NOT NULL,
+    digest TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS artifacts_run_idx ON ${schema}.artifacts (run_id);
+"""

@@ -1,5 +1,5 @@
 use crate::prelude::with_base_path;
-use actix_web::{HttpResponse, web};
+use actix_web::{HttpRequest, HttpResponse, web};
 use std::{
     fs,
     path::{Component, Path, PathBuf},
@@ -22,6 +22,28 @@ pub fn ui_login_redirect() -> HttpResponse {
     HttpResponse::Found()
         .append_header(("Location", ui_path("/login")))
         .finish()
+}
+
+/// The same redirect, in the form the caller can actually act on.
+///
+/// A fragment request is an XHR, and the browser follows a `302` below the
+/// point htmx can see it. What htmx swaps in is then whatever the login flow
+/// answered with - a login page nested inside the page that asked, or nothing
+/// at all when the chain crosses to gatehouse's origin and CORS stops it. The
+/// one thing it never does is take you to the login page.
+///
+/// `HX-Redirect` is the header htmx reads and turns into a real navigation, so
+/// an expired session ends the same way whether it was noticed by a page load
+/// or by a poll. Sent on a `200`: htmx does not look at the headers of a
+/// response it considers an error.
+pub fn ui_login_redirect_for(request: &HttpRequest) -> HttpResponse {
+    if request.headers().contains_key("HX-Request") {
+        return HttpResponse::Ok()
+            .append_header(("HX-Redirect", ui_path("/login")))
+            .finish();
+    }
+
+    ui_login_redirect()
 }
 
 /// Every service puts its pages under `/ui`, so the bare server root and the

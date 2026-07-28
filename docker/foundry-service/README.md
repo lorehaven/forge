@@ -122,20 +122,23 @@ Configuration precedence is flags, then environment, then `config/install.toml`:
 
 ## Kubernetes
 
-`k8s/job.yaml` is a ready-to-edit manifest. The image runs `apply` by default:
+Deployment manifests live outside this repository. The image needs no command -
+`apply` is what it does when given none:
 
 ```yaml
 containers:
   - name: foundry
     image: ennor.ddns.net/forge/foundry:latest
-    args: ["apply"]
     env:
       - name: DATABASE_URL
         valueFrom:
           secretKeyRef: { name: foundry, key: url }
       - name: FOUNDRY_INSTALL
-        value: "sage,switchboard,warehouse"
+        value: "gatehouse,sage,switchboard,warehouse,conveyor"
 ```
+
+It runs as uid 999, which is what `/app` is owned by, so no `securityContext`
+is needed to keep it off root.
 
 Run it as a `Job` before rolling out services, or as an init container on a
 single service (`FOUNDRY_INSTALL=sage`). Services no longer migrate at startup.

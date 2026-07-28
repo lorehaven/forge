@@ -75,6 +75,7 @@ async fn main() {
                 Target::Switchboard => format!("{}/health", probe.switchboard_url),
                 Target::Warehouse => format!("{}/health", probe.warehouse_url),
                 Target::Gatehouse => format!("{}/ui/login", probe.gatehouse_url),
+                Target::Conveyor => format!("{}/health", probe.conveyor_url),
             };
             (*target, url)
         })

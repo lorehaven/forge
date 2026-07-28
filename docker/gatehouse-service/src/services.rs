@@ -19,7 +19,13 @@ struct ServiceDefinition {
     card_class: &'static str,
 }
 
-const SERVICES: [ServiceDefinition; 3] = [
+const SERVICES: [ServiceDefinition; 4] = [
+    ServiceDefinition {
+        env_prefix: "CONVEYOR",
+        title_key: "ui_service_conveyor_title",
+        desc_key: "ui_service_conveyor_desc",
+        card_class: "home-card-conveyor",
+    },
     ServiceDefinition {
         env_prefix: "SAGE",
         title_key: "ui_service_sage_title",

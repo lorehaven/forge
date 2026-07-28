@@ -1,0 +1,29 @@
+[package]
+name = "conveyor-cli"
+version = "0.1.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "Conveyor CLI - drive the Forge CI/CD service from a terminal"
+keywords = ["ci", "cd", "pipeline", "cli"]
+categories = ["command-line-utilities", "development-tools"]
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+readme = "README.md"
+
+[[bin]]
+name = "conveyor"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+conveyor-service = { path = "../../docker/conveyor-service" }
+dotenvy = { workspace = true }
+envmnt = { workspace = true }
+futures-util = { workspace = true }
+quench-cli = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }

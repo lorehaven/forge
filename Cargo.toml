@@ -95,3 +95,20 @@ uuid = { version = "1.23", features = ["v4"] }
 urlencoding = { version = "2.1" }
 walkdir = { version = "2.5" }
 which = { version = "8.0" }
+
+# Release binaries keep their symbol table, so a panic in a running service
+# names the functions it came from. Only debug info is dropped - a release build
+# generates little of it anyway, which is why this costs almost nothing and why
+# the alternative, stripping symbols too, was worth about 6MB of a 30MB binary.
+#
+# Stripping is Cargo's job rather than the Dockerfile's so that a binary built
+# here and one built in an image are the same binary.
+[profile.release]
+strip = "debuginfo"
+
+# No `lto` here on purpose. Thin LTO was measured on conveyor-service and made
+# things worse on both axes: the binary grew 31.0MB -> 32.3MB, because
+# cross-crate inlining duplicated more code than the extra dead-code
+# elimination removed, and the dependency compile went 170s -> 320s. Fat LTO
+# with `codegen-units = 1` may still win on size, but costs more build time
+# again - measure before believing it.

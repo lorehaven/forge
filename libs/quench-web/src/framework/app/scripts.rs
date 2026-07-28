@@ -162,6 +162,81 @@ window.getLocale = getLocale;
     )
 }
 
+/// Watches the realm session and sends the browser to login when it ends.
+///
+/// Every page in the estate is server-rendered behind an authentication check,
+/// which settles the question once, at render time, and never again. A tab left
+/// open then goes on looking signed in for as long as nobody touches it - past
+/// the session's expiry, and past a logout performed in another tab or by an
+/// administrator revoking it. The first anyone learns of it is a click that
+/// lands on a login page, having lost whatever was on screen.
+///
+/// Deliberately narrow about what counts as evidence. Only a well-formed answer
+/// saying `authenticated: false` redirects. A 404 - a service that serves no
+/// `/ui/status` - a network blip, or a body that will not parse are all left
+/// alone: throwing somebody out of a working page because one request failed
+/// would be a worse bug than the one this closes.
+pub fn session_script(resources_prefix: &str, interval_secs: u64) -> Script {
+    let status_url = format!("{resources_prefix}/status");
+    let login_url = format!("{resources_prefix}/login");
+    let interval_ms = interval_secs * 1000;
+
+    js!(
+        r#"
+// ---- Session Watch ----
+
+const SESSION_STATUS_URL = "{status_url}";
+const SESSION_LOGIN_URL = "{login_url}";
+const SESSION_INTERVAL_MS = {interval_ms};
+
+let sessionCheckInFlight = false;
+
+async function checkSession() {{
+    // A hidden tab is not showing anybody stale state, and polling from every
+    // background tab multiplies the cost by however many are open.
+    if (sessionCheckInFlight || document.hidden) return;
+
+    // The login page redirecting to itself would be a navigation loop, once a
+    // minute, forever.
+    if (window.location.pathname.replace(/\/$/, "").endsWith("/login")) return;
+
+    sessionCheckInFlight = true;
+    try {{
+        const response = await fetch(SESSION_STATUS_URL, {{
+            credentials: "same-origin",
+            headers: {{ "Accept": "application/json" }},
+            cache: "no-store",
+        }});
+        if (!response.ok) return;
+
+        const status = await response.json();
+        // `=== false` rather than falsy: a body without the field says nothing
+        // about the session, and must not be read as a denial.
+        if (status && status.authenticated === false) {{
+            window.location.href = SESSION_LOGIN_URL;
+        }}
+    }} catch (error) {{
+        // Offline, or a service restarting. Not evidence the session ended.
+    }} finally {{
+        sessionCheckInFlight = false;
+    }}
+}}
+
+setInterval(checkSession, SESSION_INTERVAL_MS);
+
+// The case the interval alone is bad at: a tab left for an hour and come back
+// to. Checking on the way in means the redirect happens before the first click
+// rather than because of it.
+document.addEventListener("visibilitychange", () => {{
+    if (!document.hidden) checkSession();
+}});
+        "#,
+        status_url = status_url,
+        login_url = login_url,
+        interval_ms = interval_ms
+    )
+}
+
 pub fn theme_script(
     default_theme: &str,
     supported_themes: &[Theme],

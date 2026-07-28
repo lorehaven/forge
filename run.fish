@@ -2,21 +2,30 @@
 #
 # Local development environment for the Forge estate.
 #
-#   ./run.fish              start postgres, initialise the database, run every service
-#   ./run.fish stop         stop the services (postgres keeps running)
-#   ./run.fish stop all     stop the services and postgres
-#   ./run.fish status       what is up, and on which port
-#   ./run.fish logs sage    follow one service's log
-#   ./run.fish db           postgres + foundry only, no services
-#   ./run.fish reset        drop every schema foundry owns and reinstall (dev only)
-#   ./run.fish test         run every BDD suite
-#   ./run.fish test sage    run one suite (or pass cucumber flags: --tags, --name)
+#   ./run.fish                  start postgres, initialise the database, run every service
+#   ./run.fish start conveyor   start only conveyor and what it needs
+#   ./run.fish repl             pick services interactively, then start them
+#   ./run.fish stop             stop the services (postgres keeps running)
+#   ./run.fish stop conveyor    stop one of them
+#   ./run.fish stop all         stop the services and postgres
+#   ./run.fish status           what is up, and on which port
+#   ./run.fish logs sage        follow one service's log
+#   ./run.fish db               postgres + foundry only, no services
+#   ./run.fish reset            drop every schema foundry owns and reinstall (dev only)
+#   ./run.fish test             run every BDD suite
+#   ./run.fish test sage        run one suite (or pass cucumber flags: --tags, --name)
 #
 # Services are built with cargo and then launched from target/debug directly,
 # rather than through `anvil run`. `anvil run` is the right thing when you are
 # working on one service interactively; here the script needs a real PID per
 # service so `stop` can actually stop it - killing a `cargo run` parent leaves
 # the service running and holding its port.
+#
+# Naming services starts a subset of the estate: only those packages are built,
+# and foundry installs only their schemas. Working on conveyor does not need
+# sage's model launch or switchboard's GPU. What a service cannot start without
+# comes with it - see the `needs` column below - so a subset is never a
+# half-wired estate.
 
 # Absolute: services are launched with their own working directory, so every
 # path this script hands them has to survive that change.
@@ -26,12 +35,17 @@ cd $repo_root
 set -g run_dir $repo_root/.run
 set -g log_dir $run_dir/logs
 
-# name | package | port | base path
+# name | package | port | base path | needs
+#
+# `needs` is what the service cannot start without, and it is also the start
+# order: gatehouse owns the realm everything else authenticates against, and
+# sage checks switchboard at startup. Selecting a service selects these too.
 set -g services \
-    "gatehouse|gatehouse-service|5443|/gatehouse" \
-    "warehouse|warehouse-service|6443|/warehouse" \
-    "switchboard|switchboard-service|7443|/switchboard" \
-    "sage|sage-service|8443|/sage"
+    "gatehouse|gatehouse-service|5443|/gatehouse|-" \
+    "warehouse|warehouse-service|6443|/warehouse|gatehouse" \
+    "switchboard|switchboard-service|7443|/switchboard|gatehouse" \
+    "sage|sage-service|8443|/sage|gatehouse,switchboard" \
+    "conveyor|conveyor-service|9443|/conveyor|gatehouse"
 
 set -g pg_container postgres
 set -g pg_image pgvector/pgvector:pg18
@@ -90,6 +104,81 @@ end
 function die -a message
     say err error $message
     exit 1
+end
+
+# ---------------------------------------------------------------------------
+# Selecting services
+# ---------------------------------------------------------------------------
+
+function service_names
+    for entry in $services
+        string split -f1 "|" $entry
+    end
+end
+
+function service_field -a name index
+    for entry in $services
+        set -l parts (string split "|" $entry)
+        if test $parts[1] = $name
+            echo $parts[$index]
+            return 0
+        end
+    end
+    return 1
+end
+
+# Everything downstream iterates the table rather than the argument list, so a
+# selection is always in start order however it was typed or clicked.
+function in_table_order
+    for entry in $services
+        set -l name (string split -f1 "|" $entry)
+        contains -- $name $argv; and echo $name
+    end
+end
+
+# A service is no use without the ones it authenticates against, so asking for
+# sage and getting a sage that 401s on every request would be the wrong kind of
+# obedience. Pulling the dependencies in is quiet: they are printed as part of
+# the selection, so what actually started is never a surprise.
+function with_dependencies
+    set -l wanted
+    set -l pending $argv
+
+    while test (count $pending) -gt 0
+        set -l name $pending[1]
+        set -e pending[1]
+        contains -- $name $wanted; and continue
+        set -a wanted $name
+
+        set -l needs (service_field $name 5)
+        if test -n "$needs"; and test "$needs" != -
+            set -a pending (string split "," $needs)
+        end
+    end
+
+    in_table_order $wanted
+end
+
+# Validates whatever was on the command line and puts it in table order. No
+# names means the whole estate, which is what `./run.fish` has always done.
+function resolve_names
+    if test (count $argv) -eq 0
+        service_names
+        return 0
+    end
+
+    set -l known (service_names)
+    for name in $argv
+        contains -- $name $known
+        or die "unknown service '$name' (known: "(string join ', ' $known)")"
+    end
+
+    in_table_order $argv
+end
+
+# What to start: the names asked for, plus what they cannot start without.
+function resolve_selection
+    with_dependencies (resolve_names $argv)
 end
 
 # ---------------------------------------------------------------------------
@@ -154,8 +243,26 @@ end
 # Database initialisation
 # ---------------------------------------------------------------------------
 
+# Takes the services being started. Each service's catalog module is named
+# after it, so a subset becomes `--install`; shared modules (auth, quench-core,
+# pgvector) resolve from the catalog and do not need listing. With no names the
+# install config is used as-is, which is the whole estate.
+#
+# Scoping matters more than it looks: starting a service later re-runs this with
+# the wider selection, so the schemas arrive when the service that needs them
+# does rather than all at once at the first boot.
 function init_database
-    say info foundry "applying the migration catalog"
+    set -l scope
+    if test (count $argv) -gt 0; and test (count $argv) -lt (count (service_names))
+        # One flag per module: `--install` is repeatable but takes a single spec,
+        # and only FOUNDRY_INSTALL splits on commas.
+        for name in $argv
+            set -a scope --install $name
+        end
+        say info foundry "applying "(string join ', ' $argv)
+    else
+        say info foundry "applying the migration catalog"
+    end
 
     cargo build -q --package foundry-service
     or die "foundry-service build failed"
@@ -166,6 +273,7 @@ function init_database
         $repo_root/target/debug/foundry-service \
         --catalog $repo_root/docker/foundry-service/migrations \
         --config $repo_root/docker/foundry-service/config/install.toml \
+        $scope \
         apply
     or die "database initialisation failed"
 
@@ -176,19 +284,20 @@ end
 # Services
 # ---------------------------------------------------------------------------
 
-# gatehouse ships no dev certificate of its own; borrow warehouse's so the whole
-# estate speaks HTTPS and the Secure realm cookie behaves the same everywhere.
-function ensure_gatehouse_cert
-    set -l dir $repo_root/docker/gatehouse-service
+# gatehouse and conveyor ship no dev certificate of their own; borrow
+# warehouse's so the whole estate speaks HTTPS and the Secure realm cookie
+# behaves the same everywhere.
+function ensure_cert -a name
+    set -l dir $repo_root/docker/$name-service
     if test -f $dir/cert.pem; and test -f $dir/key.pem
         return 0
     end
     if test -f $repo_root/docker/warehouse-service/cert.pem
         ln -sf $repo_root/docker/warehouse-service/cert.pem $dir/cert.pem
         ln -sf $repo_root/docker/warehouse-service/key.pem $dir/key.pem
-        say info gatehouse "linked warehouse's dev certificate"
+        say info $name "linked warehouse's dev certificate"
     else
-        say warn gatehouse "no dev certificate; will serve plain HTTP"
+        say warn $name "no dev certificate; will serve plain HTTP"
     end
 end
 
@@ -230,9 +339,10 @@ function start_service -a name package port base_path
             SERVICE_PASSWORD=$admin_password \
             SERVICE_TECH_USERNAME=$tech_user \
             SERVICE_TECH_PASSWORD=$tech_password \
-            SERVICE_AUDIENCES=sage,switchboard,warehouse,gatehouse \
-            AUTH_REDIRECT_HOSTS=https://localhost:6443,https://localhost:7443,https://localhost:8443 \
+            SERVICE_AUDIENCES=sage,switchboard,warehouse,gatehouse,conveyor \
+            AUTH_REDIRECT_HOSTS=https://localhost:6443,https://localhost:7443,https://localhost:8443,https://localhost:9443 \
             SERVER_HTTP_REDIRECT_ADDR=0.0.0.0:5080 \
+            CONVEYOR_UI_URL=https://localhost:9443/conveyor/ui/home \
             SAGE_UI_URL=https://localhost:8443/sage/ui/home \
             SWITCHBOARD_UI_URL=https://localhost:7443/switchboard/ui/home \
             WAREHOUSE_UI_URL=https://localhost:6443/warehouse/ui/home
@@ -315,12 +425,18 @@ function warn_about_stray_vllm
     end
 end
 
+# Takes the services to stop, defaulting to all of them. Dependencies are not
+# expanded here: stopping conveyor should not take gatehouse - and everything
+# else authenticating against it - down with it.
 function stop_services
-    stop_vllm_instances
+    set -l selected $argv
+    if test (count $selected) -eq 0
+        set selected (service_names)
+    end
 
-    for entry in $services
-        set -l parts (string split "|" $entry)
-        set -l name $parts[1]
+    contains -- switchboard $selected; and stop_vllm_instances
+
+    for name in $selected
         set -l pid_file $run_dir/$name.pid
 
         if is_running $name
@@ -344,27 +460,39 @@ end
 # ---------------------------------------------------------------------------
 
 function cmd_start
+    set -l selected (resolve_selection $argv)
+
+    if test (count $selected) -lt (count (service_names))
+        say info selection (string join ', ' $selected)
+    end
+
     mkdir -p $log_dir
     start_postgres
     start_redis
-    init_database
-    ensure_gatehouse_cert
+    init_database $selected
 
-    # gatehouse first: it owns the realm the others authenticate against. sage
-    # last, because it checks switchboard at startup.
-    for entry in $services
-        set -l parts (string split "|" $entry)
-        start_service $parts[1] $parts[2] $parts[3] $parts[4]
+    # gatehouse and conveyor borrow warehouse's certificate; the others carry
+    # their own.
+    for name in gatehouse conveyor
+        contains -- $name $selected; and ensure_cert $name
+    end
+
+    # The table's order is the dependency order, and `resolve_selection` keeps
+    # it: gatehouse first because it owns the realm the others authenticate
+    # against, sage after switchboard because it checks switchboard at startup.
+    for name in $selected
+        start_service $name (service_field $name 2) (service_field $name 3) (service_field $name 4)
     end
 
     echo
-    say ok ready "sign in at https://localhost:5443/gatehouse/ui/login"
-    say info credentials "$admin_user / $admin_password (service account: $tech_user)"
+    if contains -- gatehouse $selected
+        say ok ready "sign in at https://localhost:5443/gatehouse/ui/login"
+        say info credentials "$admin_user / $admin_password (service account: $tech_user)"
+    end
     say info logs "$log_dir"
     echo
-    for entry in $services
-        set -l parts (string split "|" $entry)
-        printf "  %-12s https://localhost:%s%s\n" $parts[1] $parts[3] $parts[4]
+    for name in $selected
+        printf "  %-12s https://localhost:%s%s\n" $name (service_field $name 3) (service_field $name 4)
     end
     echo
     say info stop "./run.fish stop"
@@ -391,7 +519,7 @@ end
 
 function cmd_logs -a name
     if test -z "$name"
-        die "usage: ./run.fish logs <gatehouse|warehouse|switchboard|sage>"
+        die "usage: ./run.fish logs <gatehouse|warehouse|switchboard|sage|conveyor>"
     end
     set -l log_file $log_dir/$name.log
     test -f $log_file; or die "no log for '$name' at $log_file"
@@ -469,10 +597,193 @@ function cmd_test
     return $result
 end
 
-function cmd_stop -a scope
-    stop_services
+# ---------------------------------------------------------------------------
+# The picker
+# ---------------------------------------------------------------------------
+#
+# For the case the flags are clumsy at: deciding what you need by looking at
+# what is already up, then starting it. `./run.fish start conveyor` is the same
+# thing in one line once you know what you want.
+#
+# Selection is kept global because fish functions return status, not lists, and
+# threading it through every handler as an argument would be worse to read than
+# one variable named for what it is.
+set -g picked
+
+function repl_list
+    echo
+    set -l index 0
+    for entry in $services
+        set index (math $index + 1)
+        set -l parts (string split "|" $entry)
+        set -l name $parts[1]
+
+        if contains -- $name $picked
+            set_color green
+            printf "  [x] "
+            set_color normal
+        else
+            printf "  [ ] "
+        end
+
+        printf "%d) %-12s " $index $name
+        if is_running $name
+            set_color green
+            printf "running on %s" $parts[3]
+        else
+            set_color brblack
+            printf "stopped"
+        end
+        set_color normal
+        echo
+    end
+    echo
+end
+
+function repl_help
+    echo "  <n> | <name>   toggle one (several at a time is fine: 1 5, sage conveyor)"
+    echo "  all | none     select every service, or clear the selection"
+    echo "  running        select whatever is up right now"
+    echo "  up             start the selection, with what it depends on"
+    echo "  down           stop the selection"
+    echo "  status         what is up, and on which port"
+    echo "  logs <name>    follow one service's log until you interrupt it"
+    echo "  db | reset     initialise the database, or drop it and rebuild"
+    echo "  list           the services again"
+    echo "  quit           leave; anything started keeps running"
+    echo
+end
+
+function repl_toggle -a token
+    set -l name $token
+
+    # A number is an index into the list as printed, which is the table order.
+    if string match -qr '^[0-9]+$' -- $token
+        set -l names (service_names)
+        if test $token -lt 1 -o $token -gt (count $names)
+            say warn picker "no service $token"
+            return 1
+        end
+        set name $names[$token]
+    end
+
+    contains -- $name (service_names)
+    or begin
+        say warn picker "unknown service '$name'"
+        return 1
+    end
+
+    if contains -- $name $picked
+        set -g picked (string match -v -- $name $picked)
+        say info picker "$name off"
+    else
+        set -g picked (in_table_order $picked $name)
+        say ok picker "$name on"
+    end
+end
+
+function cmd_repl
+    # Seeded from the command line, so `./run.fish repl conveyor` opens with the
+    # obvious thing already ticked.
+    set -g picked (resolve_names $argv)
+    if test (count $argv) -eq 0
+        set -g picked
+    end
+
+    say info picker "pick services, then `up`. `help` for the rest, `quit` to leave."
+    repl_list
+
+    while true
+        set -l prompt "forge> "
+        if test (count $picked) -gt 0
+            set prompt "forge ("(string join ',' $picked)")> "
+        end
+
+        read -l --prompt-str $prompt line
+        or begin
+            # Ctrl-D. Leaving without starting anything is a valid answer.
+            echo
+            break
+        end
+
+        set -l words (string split -n " " -- (string trim -- $line))
+        test (count $words) -eq 0; and continue
+
+        switch $words[1]
+            case quit exit q
+                break
+            case help h '?'
+                repl_help
+            case list ls l
+                repl_list
+            case all
+                set -g picked (service_names)
+                repl_list
+            case none clear
+                set -g picked
+                repl_list
+            case running
+                set -g picked
+                for name in (service_names)
+                    is_running $name; and set -a picked $name
+                end
+                repl_list
+            case up start
+                if test (count $picked) -eq 0
+                    say warn picker "nothing selected - `all` for the whole estate"
+                else
+                    cmd_start $picked
+                    # Dependencies may have joined the selection on the way in;
+                    # showing them keeps `down` from being a surprise.
+                    set -g picked (with_dependencies $picked)
+                    repl_list
+                end
+            case down stop
+                if test (count $picked) -eq 0
+                    say warn picker "nothing selected"
+                else
+                    stop_services $picked
+                    warn_about_stray_vllm
+                    repl_list
+                end
+            case status
+                cmd_status
+                echo
+            case logs
+                if test (count $words) -lt 2
+                    say warn picker "usage: logs <service>"
+                else
+                    # Interrupting `tail -f` is how you get back here, so the
+                    # picker must not take SIGINT as a reason to exit.
+                    cmd_logs $words[2]
+                end
+            case db
+                cmd_db
+            case reset
+                cmd_reset
+            case '*'
+                for token in $words
+                    repl_toggle $token
+                end
+                repl_list
+        end
+    end
+
+    say info picker "left the picker; ./run.fish status shows what is up"
+end
+
+function cmd_stop
+    # `all` reaches past the services to the containers under them; anything
+    # else is a list of services, and no argument is every service.
+    if test "$argv[1]" = all
+        stop_services
+    else
+        stop_services (resolve_names $argv)
+    end
+
     warn_about_stray_vllm
-    if test "$scope" = all
+
+    if test "$argv[1]" = all
         docker stop $pg_container >/dev/null 2>&1
         and say ok postgres "stopped"
         or say info postgres "not running"
@@ -484,9 +795,11 @@ end
 
 switch "$argv[1]"
     case '' start
-        cmd_start
+        cmd_start $argv[2..-1]
+    case repl pick
+        cmd_repl $argv[2..-1]
     case stop
-        cmd_stop $argv[2]
+        cmd_stop $argv[2..-1]
     case status
         cmd_status
     case logs
@@ -499,6 +812,13 @@ switch "$argv[1]"
         cmd_test $argv[2..-1]
         exit $status
     case '*'
-        echo "usage: ./run.fish [start|stop [all]|status|logs <service>|db|reset|test [service|flags]]"
-        exit 1
+        # A bare service name is a start: `./run.fish conveyor` is what anyone
+        # who has read the service list types first.
+        if contains -- "$argv[1]" (service_names)
+            cmd_start $argv
+        else
+            echo "usage: ./run.fish [start [service...]|repl|stop [all|service...]|status|logs <service>|db|reset|test [service|flags]]"
+            echo "       services: "(string join ', ' (service_names))
+            exit 1
+        end
 end

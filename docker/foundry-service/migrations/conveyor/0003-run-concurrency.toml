@@ -1,0 +1,34 @@
+[[migrations]]
+id = "0003-run-concurrency"
+author = "conveyor-service"
+since = "0.1.0"
+
+# One run in flight per repository, enforced by the database rather than by the
+# scheduler.
+#
+# The claim query already skips a repository that has a run going, but that
+# check and the claim are not one atomic act: two workers can both read the
+# repository as free and then both claim. With several replicas that means two
+# checkouts of the same repository writing to the same registry at once. This
+# index turns the second claim into a unique violation, which the worker treats
+# as "not claimable right now" and retries. Partial, because the rule is only
+# about runs that are actually running - any number may be queued or finished.
+[[migrations.changes]]
+sql = """
+CREATE UNIQUE INDEX IF NOT EXISTS runs_one_running_per_repo_idx
+    ON ${schema}.runs (repo_id) WHERE status = 'running';
+"""
+
+# Cancellation has to survive the trip between replicas: the request arrives at
+# whichever one answered the HTTP call, and the worker holding the job is
+# probably a different one. A column the worker polls says so without conveyor
+# needing a message bus.
+#
+# Separate from `status` because a cancelled-but-still-running run is both
+# things at once, and collapsing them would lose the fact that the job is still
+# being torn down.
+[[migrations.changes]]
+sql = """
+ALTER TABLE ${schema}.runs
+    ADD COLUMN IF NOT EXISTS cancel_requested BOOLEAN NOT NULL DEFAULT FALSE;
+"""
