@@ -14,6 +14,7 @@ pub struct AppShellBuilder {
     pub(crate) header_label: String,
     pub(crate) footer_label: String,
     pub(crate) with_nav: bool,
+    pub(crate) with_header: bool,
     pub(crate) header: Option<Element>,
     pub(crate) footer: Option<Element>,
     pub(crate) links: Vec<Link>,
@@ -32,6 +33,7 @@ impl Default for AppShellBuilder {
             header_label: "header_label".to_string(),
             footer_label: "footer_label".to_string(),
             with_nav: true,
+            with_header: true,
             header: None,
             footer: None,
             links: Vec::new(),
@@ -75,6 +77,13 @@ impl AppShellBuilder {
 
     pub fn with_nav(mut self, value: bool) -> Self {
         self.with_nav = value;
+        self
+    }
+
+    /// Drops the top bar entirely. A page that carries its own chrome - the
+    /// login card, for one - has nothing to put in it.
+    pub fn with_header(mut self, value: bool) -> Self {
+        self.with_header = value;
         self
     }
 
@@ -146,25 +155,27 @@ impl AppShellBuilder {
             &self.resources_prefix,
         );
 
-        let header = self.header.unwrap_or_else(|| {
-            let nav_panel = NavPanelBuilder::new()
-                .default_theme(effective_default_theme)
-                .default_locale(effective_default_locale.clone().unwrap_or_default())
-                .supported_themes(supported_themes.clone())
-                .supported_locales(supported_locales.clone())
-                .build();
-            let mut builder = HeaderBuilder::new().label(self.header_label);
-            if self.with_nav {
-                builder = builder.with_nav(nav_panel);
-            }
-            builder.build()
+        let header = self.with_header.then(|| {
+            self.header.unwrap_or_else(|| {
+                let nav_panel = NavPanelBuilder::new()
+                    .default_theme(effective_default_theme)
+                    .default_locale(effective_default_locale.clone().unwrap_or_default())
+                    .supported_themes(supported_themes.clone())
+                    .supported_locales(supported_locales.clone())
+                    .build();
+                let mut builder = HeaderBuilder::new().label(self.header_label);
+                if self.with_nav {
+                    builder = builder.with_nav(nav_panel);
+                }
+                builder.build()
+            })
         });
 
         let footer = self
             .footer
             .unwrap_or_else(|| FooterBuilder::new().label(self.footer_label).build());
 
-        let base = AppBuilder::new()
+        let mut base = AppBuilder::new()
             .title(self.title)
             .links(self.links)
             .scripts(self.scripts)
@@ -172,9 +183,12 @@ impl AppShellBuilder {
             .supported_locales(supported_locales)
             .default_theme(effective_default_theme)
             .default_locale(effective_default_locale.clone().unwrap_or_default())
-            .header(header)
             .footer(footer)
             .resources_prefix(self.resources_prefix);
+
+        if let Some(header) = header {
+            base = base.header(header);
+        }
 
         Ok(AppShell { base })
     }

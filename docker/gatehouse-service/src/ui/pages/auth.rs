@@ -4,7 +4,7 @@
 //! `quench-auth`: relying parties only ever redirect a browser to this page.
 
 use crate::api::auth::issue_token_pair;
-use crate::ui::common::{UiPageKind, render_page, ui_path};
+use crate::ui::common::{UiPageKind, render_page, supported_locales, ui_path};
 use actix_web::{HttpRequest, HttpResponse, Responder, get, post, web};
 use quench_auth::actix::routers::ui::pages::auth::{
     LoginQuery, redirect_target, validated_redirect,
@@ -162,17 +162,29 @@ fn render_login_page(request: &HttpRequest, error: bool) -> HttpResponse {
         );
     }
 
+    // The page shell has no top panel here, so the card carries the estate
+    // label and the language switch itself, in a bar above the credentials.
+    let login_bar = div()
+        .class("login-bar")
+        .child(span().class("login-brand").attr("data-i18n", "header_label"))
+        .child(locale_switch(Some(supported_locales()), None));
+
+    let credentials = div()
+        .class("login-credentials")
+        .child(
+            div()
+                .class("panel-title")
+                .attr("data-i18n", "ui_login_sign_in"),
+        )
+        .child(div().class("meta-list").child(login_form));
+
     render_page(
         HttpResponse::Ok(),
         content().class("container-fluid login-layout").child(
             div()
                 .class("panel login-panel")
-                .child(
-                    div()
-                        .class("panel-title")
-                        .attr("data-i18n", "ui_login_sign_in"),
-                )
-                .child(div().class("meta-list").child(login_form)),
+                .child(login_bar)
+                .child(credentials),
         ),
         UiPageKind::Auth,
     )

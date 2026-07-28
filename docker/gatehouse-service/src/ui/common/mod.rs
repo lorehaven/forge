@@ -10,44 +10,47 @@ mod css;
 
 const SUPPORTED_LOCALES: [&str; 5] = ["en-US", "pl-PL", "es-ES", "de-DE", "fr-FR"];
 
-fn supported_locales() -> Vec<String> {
+pub(super) fn supported_locales() -> Vec<String> {
     SUPPORTED_LOCALES.iter().map(|s| s.to_string()).collect()
 }
 
-fn shell(title_key: Option<&str>, show_home: bool, show_logout: bool) -> AppShell {
+fn shell(header: Option<Element>) -> AppShell {
     css::ensure_gatehouse_css();
 
-    AppShellBuilder::new()
+    let mut builder = AppShellBuilder::new()
         .title("Gatehouse")
         .supported_locales(supported_locales())
         .default_theme(Theme::DefaultDark)
         .supported_themes(vec![Theme::DefaultDark])
-        .header(ui_header(title_key, true, show_home, show_logout))
         .links(vec![Link::new(
             "stylesheet",
             &ui_asset_path("/css/gatehouse.css"),
         )])
         .with_nav(false)
-        .resources_prefix(ui_path(""))
-        .build()
+        .resources_prefix(ui_path(""));
+
+    builder = match header {
+        Some(header) => builder.header(header),
+        None => builder.with_header(false),
+    };
+
+    builder.build()
 }
 
 static UI_SHELL_HOME: LazyLock<AppShell> =
-    LazyLock::new(|| shell(Some("ui_home_title"), false, true));
+    LazyLock::new(|| shell(Some(ui_header("ui_home_title", true, false, true))));
 
-// The login page has nowhere to go home to and nothing to log out of.
-static UI_SHELL_AUTH: LazyLock<AppShell> = LazyLock::new(|| shell(None, false, false));
+// The login page carries its own bar on the card, so the shell has no top
+// panel: there is nowhere to go home to and nothing to log out of either.
+static UI_SHELL_AUTH: LazyLock<AppShell> = LazyLock::new(|| shell(None));
 
 fn ui_header(
-    title_key: Option<&str>,
+    title_key: &str,
     show_locale_switch: bool,
     show_home: bool,
     show_logout: bool,
 ) -> Element {
-    let title = match title_key {
-        Some(key) => h2().attr("data-i18n", key),
-        None => h2().attr("data-i18n", "header_label"),
-    };
+    let title = h2().attr("data-i18n", title_key);
 
     header()
         .child(div().class("left-panel").child(title))

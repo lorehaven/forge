@@ -161,14 +161,44 @@ pub fn home_rules() -> Vec<CssRule> {
 
 pub fn login_rules() -> Vec<CssRule> {
     vec![
+        // The login page runs without a top panel, so only the footer and the
+        // content padding come off the viewport height.
         CssRule::new(".login-layout")
-            .property("min-height", "calc(100vh - 10rem)")
+            .property("min-height", "calc(100vh - 6rem)")
             .property("display", "flex")
             .property("align-items", "center")
             .property("justify-content", "center"),
         CssRule::new(".login-panel")
             .property("width", "100%")
             .property("max-width", "28rem"),
+        // The card's own top bar: what the page shell's header would have held.
+        CssRule::new(".login-bar")
+            .property("display", "flex")
+            .property("align-items", "center")
+            .property("justify-content", "space-between")
+            .property("gap", "1rem")
+            .property("padding", "0.75rem 1rem")
+            .property("background-color", "var(--bs-gray-800)")
+            .property("border-bottom", "0.1rem solid var(--bs-gray-700)"),
+        CssRule::new(".login-brand")
+            .property("font-size", "1.1rem")
+            .property("font-weight", "600")
+            .property("letter-spacing", "0.02em")
+            .property("color", "var(--bs-gray-100)")
+            .property("white-space", "nowrap")
+            .property("overflow", "hidden")
+            .property("text-overflow", "ellipsis"),
+        CssRule::new(".login-bar .locale-switch")
+            .property("display", "flex")
+            .property("align-items", "center")
+            .property("flex", "0 0 auto"),
+        CssRule::new(".login-credentials")
+            .property("display", "flex")
+            .property("flex-direction", "column")
+            .property("min-height", "0")
+            // The bar is the card's heading; the credentials title sits below
+            // it as a section label rather than a second stacked bar.
+            .child(CssRule::new(".panel-title").property("background-color", "transparent")),
     ]
 }
 
