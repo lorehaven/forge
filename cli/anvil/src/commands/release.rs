@@ -99,10 +99,16 @@ pub fn release(config: &Config, package: Option<String>, all: bool, dry_run: boo
                     }
                 }
             }
+
+            // Tagged here rather than once at the end, because a publish cannot
+            // be undone. If a later package fails, everything already released
+            // keeps its tag, and the repository still says what shipped - where
+            // tagging at the end would leave those versions in the registry
+            // with nothing in git to name them.
+            create_release_tag(item)?;
         }
     }
 
-    create_release_tags(&plan)?;
     println!("\n✅ Release completed successfully");
     Ok(())
 }
@@ -591,13 +597,11 @@ fn ensure_release_tags_absent(plan: &[ReleasePlanItem]) -> Result<()> {
     Ok(())
 }
 
-fn create_release_tags(plan: &[ReleasePlanItem]) -> Result<()> {
-    for item in plan {
-        let mut cmd = Command::new("git");
-        cmd.arg("tag").arg(&item.tag_to_create);
-        run_command(cmd, &format!("git tag {}", item.tag_to_create))?;
-    }
-    Ok(())
+/// Tags one package, immediately after it has been released.
+fn create_release_tag(item: &ReleasePlanItem) -> Result<()> {
+    let mut cmd = Command::new("git");
+    cmd.arg("tag").arg(&item.tag_to_create);
+    run_command(cmd, &format!("git tag {}", item.tag_to_create))
 }
 
 fn is_docker_package(config: &Config, package: &str) -> bool {
