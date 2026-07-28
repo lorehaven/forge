@@ -251,7 +251,7 @@ impl Fixture {
             .env("BASE_PATH", "/gatehouse")
             .env("SERVICE_AUTH_ENABLED", "true")
             // Plain HTTP, deterministically: gatehouse ships no certificate of
-            // its own, but the dev script (run.fish) symlinks one in, and the
+            // its own, but the dev environment (foreman) symlinks one in, and the
             // suite must not change behaviour depending on whether that ran.
             .env("SERVER_CERT_PATH", "/nonexistent/bdd-no-tls.pem")
             .env("SERVER_KEY_PATH", "/nonexistent/bdd-no-tls.key")

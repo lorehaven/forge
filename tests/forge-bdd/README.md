@@ -10,13 +10,13 @@ cargo run -p forge-bdd -- --tags '@sage and not @slow'
 cargo run -p forge-bdd -- --name 'refresh'      # filter by scenario name
 ```
 
-Or through the dev script, which takes the local environment down first — the
-suite starts its own services on the same ports:
+Or through foreman, which takes the local environment down first — the suite
+starts its own services on the same ports:
 
 ```bash
-./run.fish test                 # every suite
-./run.fish test gatehouse       # one suite; a bare name means --service
-./run.fish test --tags @sage    # anything starting with `-` goes to cucumber
+foreman test                 # every suite
+foreman test gatehouse       # one suite; a bare name means --service
+foreman test --tags @sage    # anything starting with `-` goes to cucumber
 ```
 
 The runner starts only the services a run needs, waits for them to answer, runs
