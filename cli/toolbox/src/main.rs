@@ -25,10 +25,24 @@ struct MonitoredCrate {
     binary: &'static str,
 }
 
+/// Every installable the workspace builds, in the order they are listed.
+///
+/// `forge-toolbox` is deliberately absent: it cannot replace its own running
+/// binary from inside this list, so it reports on itself through
+/// [`toolbox_note`] instead. The services under `docker/` are absent too - they
+/// ship as images, and nothing installs them with cargo.
 const MONITORED_CRATES: &[MonitoredCrate] = &[
     MonitoredCrate {
         package: "anvil",
         binary: "anvil",
+    },
+    MonitoredCrate {
+        package: "conveyor-cli",
+        binary: "conveyor",
+    },
+    MonitoredCrate {
+        package: "foreman",
+        binary: "foreman",
     },
     MonitoredCrate {
         package: "pulley",
