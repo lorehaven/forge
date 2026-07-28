@@ -1,6 +1,6 @@
 [package]
 name = "gatehouse-service"
-version = "0.1.0"
+version = "0.1.1"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Gatehouse - the Forge authentication service: one login, one identity store"
