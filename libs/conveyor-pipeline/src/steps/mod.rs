@@ -11,7 +11,7 @@
 //! deploy stage that fails after the build and test stages have already spent
 //! their time.
 
-use crate::pipeline::Step;
+use crate::Step;
 
 pub mod anvil;
 pub mod riveter;

@@ -1,8 +1,8 @@
 //! Unit tests for `pipeline/parser.rs`.
 
-use conveyor_service::pipeline::parser::SpecError;
-use conveyor_service::pipeline::spec::Step;
-use conveyor_service::pipeline::{PIPELINE_FILE, parse};
+use conveyor_pipeline::parser::SpecError;
+use conveyor_pipeline::spec::Step;
+use conveyor_pipeline::{PIPELINE_FILE, parse};
 
 /// The file from conveyor's own README, which is the shape people will copy.
 const README_PIPELINE: &str = r#"

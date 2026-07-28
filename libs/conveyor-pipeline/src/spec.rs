@@ -5,7 +5,7 @@
 //! exists, and the graph is acyclic - because [`super::parse`] is the only way
 //! to build a [`PipelineSpec`] and it refuses to return an invalid one.
 
-use crate::pipeline::condition::Condition;
+use crate::condition::Condition;
 use std::collections::BTreeMap;
 
 /// The file conveyor looks for in a checkout.

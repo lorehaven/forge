@@ -10,9 +10,9 @@
 //! that does not match any variant says nothing about which step, in which job,
 //! or what the alternatives were.
 
-use crate::pipeline::condition::{Condition, ConditionError};
-use crate::pipeline::graph::{self, GraphError};
-use crate::pipeline::spec::{Job, PipelineSpec, Stage, Step, Triggers};
+use crate::condition::{Condition, ConditionError};
+use crate::graph::{self, GraphError};
+use crate::spec::{Job, PipelineSpec, Stage, Step, Triggers};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 

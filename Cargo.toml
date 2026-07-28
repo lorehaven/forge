@@ -32,12 +32,11 @@ bytes = { version = "1.12" }
 chacha20poly1305 = { version = "0.11" }
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.6", features = ["derive"] }
-# conveyor-cli links the service's own pipeline parser, so `conveyor validate`
-# accepts exactly what a run will accept rather than agreeing with it most of
-# the time. Published like the quench libraries - path for the workspace build,
-# registry and version for the manifest that reaches the registry, since a
-# published crate cannot depend on a path.
-conveyor-service = { path = "docker/conveyor-service", registry = "ennor", version = "0.1.0" }
+# The pipeline language, shared by the service that runs pipelines and the CLI
+# that checks them. A library rather than a corner of conveyor-service, because
+# conveyor-service is a deployable image: it has no business in the dependency
+# graph of anything installed from a registry.
+conveyor-pipeline = { path = "libs/conveyor-pipeline", registry = "ennor", version = "0.1.0" }
 crossterm = { version = "0.29" }
 cucumber = { version = "0.23" }
 csv = { version = "1.4" }

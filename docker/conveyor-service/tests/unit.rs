@@ -12,14 +12,6 @@ mod executors_manifest_tests;
 mod executors_mock_tests;
 #[path = "unit/executors_native_tests.rs"]
 mod executors_native_tests;
-#[path = "unit/pipeline_condition_tests.rs"]
-mod pipeline_condition_tests;
-#[path = "unit/pipeline_graph_tests.rs"]
-mod pipeline_graph_tests;
-#[path = "unit/pipeline_parser_tests.rs"]
-mod pipeline_parser_tests;
-#[path = "unit/pipeline_spec_tests.rs"]
-mod pipeline_spec_tests;
 #[path = "unit/providers_generic_tests.rs"]
 mod providers_generic_tests;
 #[path = "unit/providers_github_tests.rs"]
@@ -36,9 +28,5 @@ mod routers_ui_runs_tests;
 mod secrets_crypto_tests;
 #[path = "unit/secrets_redact_tests.rs"]
 mod secrets_redact_tests;
-#[path = "unit/steps_mod_tests.rs"]
-mod steps_mod_tests;
-#[path = "unit/steps_tools_tests.rs"]
-mod steps_tools_tests;
 #[path = "unit/workspace_checkout_tests.rs"]
 mod workspace_checkout_tests;

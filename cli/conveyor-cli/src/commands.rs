@@ -401,7 +401,7 @@ pub fn validate(args: &ValidateArgs) -> Result<()> {
     let source = std::fs::read_to_string(&args.path)
         .with_context(|| format!("could not read {}", args.path))?;
 
-    match conveyor_service::pipeline::parse(&source) {
+    match conveyor_pipeline::parse(&source) {
         Ok(spec) => {
             print_status(
                 Tone::Success,

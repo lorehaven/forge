@@ -1,6 +1,6 @@
 //! Unit tests for `pipeline/condition.rs`.
 
-use conveyor_service::pipeline::condition::{Condition, ConditionError, EvalContext, Variable};
+use conveyor_pipeline::condition::{Condition, ConditionError, EvalContext, Variable};
 
 fn on_branch(branch: &str) -> EvalContext {
     EvalContext::new("push", &format!("refs/heads/{branch}"), "abc1234")

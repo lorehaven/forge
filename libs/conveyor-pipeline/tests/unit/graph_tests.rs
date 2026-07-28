@@ -1,9 +1,9 @@
 //! Unit tests for `pipeline/graph.rs`: ordering, cycle detection, and what a
 //! particular run decides to execute.
 
-use conveyor_service::pipeline::graph::{Decision, GraphError, topological_order};
-use conveyor_service::pipeline::spec::{Job, Stage, Step};
-use conveyor_service::pipeline::{EvalContext, parse, plan};
+use conveyor_pipeline::graph::{Decision, GraphError, topological_order};
+use conveyor_pipeline::spec::{Job, Stage, Step};
+use conveyor_pipeline::{EvalContext, parse, plan};
 use std::collections::BTreeMap;
 
 fn job(name: &str) -> Job {

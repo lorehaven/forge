@@ -1,0 +1,26 @@
+[package]
+name = "conveyor-pipeline"
+version = "0.1.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "The Conveyor pipeline language - parsing, conditions and run planning"
+keywords = ["ci", "cd", "pipeline"]
+categories = ["development-tools", "parser-implementations"]
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+readme = "README.md"
+
+[lib]
+name = "conveyor_pipeline"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { workspace = true }
+shlex = { workspace = true }
+thiserror = { workspace = true }
+toml = { workspace = true }
+
+[[test]]
+name = "unit"
+path = "tests/unit.rs"

@@ -6,8 +6,8 @@
 //! [`plan`] is a property of the pipeline *and* a particular run, and answers
 //! which stages that run will execute.
 
-use crate::pipeline::condition::EvalContext;
-use crate::pipeline::spec::{PipelineSpec, Stage};
+use crate::condition::EvalContext;
+use crate::spec::{PipelineSpec, Stage};
 use std::collections::HashMap;
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]

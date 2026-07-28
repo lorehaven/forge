@@ -982,7 +982,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
- "conveyor-service",
+ "conveyor-pipeline",
  "dotenvy",
  "envmnt",
  "futures-util",
@@ -991,6 +991,16 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "conveyor-pipeline"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "shlex",
+ "thiserror",
+ "toml",
 ]
 
 [[package]]
@@ -1003,6 +1013,7 @@ dependencies = [
  "bytes",
  "chacha20poly1305",
  "chrono",
+ "conveyor-pipeline",
  "envmnt",
  "futures-util",
  "hex",

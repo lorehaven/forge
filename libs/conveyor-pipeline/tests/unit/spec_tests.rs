@@ -1,6 +1,6 @@
 //! Unit tests for `pipeline/spec.rs`: ref globbing and trigger matching.
 
-use conveyor_service::pipeline::spec::{Step, Triggers, glob_match};
+use conveyor_pipeline::spec::{Step, Triggers, glob_match};
 
 // ---------------------------------------------------------------------------
 // Globs

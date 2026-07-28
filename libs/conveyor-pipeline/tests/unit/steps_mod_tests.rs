@@ -1,7 +1,7 @@
 //! Unit tests for `steps/mod.rs` and `steps/shell.rs`.
 
-use conveyor_service::pipeline::Step;
-use conveyor_service::steps::{StepError, argv, shell};
+use conveyor_pipeline::Step;
+use conveyor_pipeline::steps::{StepError, argv, shell};
 
 #[test]
 fn a_run_step_is_handed_to_a_shell_whole() {

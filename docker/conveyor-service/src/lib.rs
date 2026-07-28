@@ -16,13 +16,20 @@ pub mod artifacts;
 pub mod config;
 pub mod domain;
 pub mod executors;
-pub mod pipeline;
+// The pipeline language is its own crate, so `conveyor validate` can link the
+// parser a run will actually use without linking the service around it. Kept
+// under the name it has always had here: to everything below, it is still
+// `crate::pipeline`.
+pub use conveyor_pipeline as pipeline;
+// Turning a step into something an executor can spawn moved with the language
+// it belongs to: what `anvil publish` means is a property of the pipeline, not
+// of the runtime that happens to execute it.
+pub use conveyor_pipeline::steps;
 pub mod providers;
 pub mod routers;
 pub mod scheduler;
 pub mod secrets;
 pub mod startup;
-pub mod steps;
 pub mod workspace;
 
 pub fn root_scope() -> impl HttpServiceFactory {
