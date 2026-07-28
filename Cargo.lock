@@ -6163,9 +6163,11 @@ version = "0.2.2"
 dependencies = [
  "actix-web",
  "base64 0.23.0",
+ "bytes",
  "chrono",
  "envmnt",
  "futures-util",
+ "hex",
  "jsonwebtoken",
  "quench-auth",
  "quench-config",
@@ -6174,7 +6176,9 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "tempfile",
  "tokio",
+ "tokio-stream",
  "tracing",
  "uuid",
 ]

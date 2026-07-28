@@ -166,7 +166,11 @@ fn render_login_page(request: &HttpRequest, error: bool) -> HttpResponse {
     // label and the language switch itself, in a bar above the credentials.
     let login_bar = div()
         .class("login-bar")
-        .child(span().class("login-brand").attr("data-i18n", "header_label"))
+        .child(
+            span()
+                .class("login-brand")
+                .attr("data-i18n", "header_label"),
+        )
         .child(locale_switch(Some(supported_locales()), None));
 
     let credentials = div()
