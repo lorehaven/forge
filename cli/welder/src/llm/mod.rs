@@ -30,10 +30,17 @@ impl Content {
     }
 }
 
+/// Default sampling temperature used when an agent doesn't configure one.
+pub const DEFAULT_TEMPERATURE: f32 = 0.7;
+/// Default max generated tokens used when an agent doesn't configure one.
+pub const DEFAULT_MAX_TOKENS: usize = 2048;
+
 #[derive(Debug, Clone)]
 pub struct LlmRequest {
     pub model: String,
     pub contents: Vec<Content>,
+    pub temperature: f32,
+    pub max_tokens: usize,
 }
 
 #[derive(Debug, Clone)]

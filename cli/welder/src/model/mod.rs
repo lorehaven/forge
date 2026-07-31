@@ -1,24 +1,15 @@
 pub mod caller;
+pub mod switchboard_client;
 pub mod vllm_client;
 
-use crate::config::CONFIG;
+use crate::config::is_verbose;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::Duration;
+use switchboard_client::{LaunchInstanceRequest, SwitchboardClient};
 use tokio::time::sleep;
-
-fn is_verbose() -> bool {
-    // Check env var first (doesn't require CONFIG to be initialized)
-    if let Ok(val) = std::env::var("WELDER_DEBUG")
-        && (val.to_lowercase() == "true" || val == "1")
-    {
-        return true;
-    }
-    // Then check config (only after CONFIG is initialized)
-    CONFIG.backend.debug
-}
 
 macro_rules! debug_log {
     ($($arg:tt)*) => {
@@ -237,4 +228,176 @@ fn extract_host_port(url: &str) -> Result<(String, u16)> {
     let host = parts[0].to_string();
     let port = parts[1].parse::<u16>()?;
     Ok((host, port))
+}
+
+/// Launch hints for a model whose lifecycle is owned by switchboard rather
+/// than welder. Used only if no matching instance is already running.
+#[derive(Debug, Clone)]
+pub struct SwitchboardModelConfig {
+    pub model: String,
+    pub quantization: Option<String>,
+    pub dtype: Option<String>,
+    pub max_model_len: Option<u32>,
+    pub gpu_memory_utilization: Option<f32>,
+    pub limit_mm_per_prompt: Option<String>,
+    pub task: Option<String>,
+}
+
+/// Resolves model names to running instance addresses via switchboard.
+///
+/// Launches instances that aren't already up. The counterpart of
+/// `ModelManager` for the `switchboard` backend: same "register then
+/// initialize" shape, but instance lifecycle lives in switchboard, not here.
+#[derive(Debug)]
+pub struct SwitchboardManager {
+    client: SwitchboardClient,
+    instances: HashMap<String, SwitchboardModelConfig>,
+    resolved: HashMap<String, String>,
+    timeout_seconds: u64,
+}
+
+impl SwitchboardManager {
+    #[must_use]
+    pub fn new(client: SwitchboardClient, timeout_seconds: u64) -> Self {
+        Self {
+            client,
+            instances: HashMap::new(),
+            resolved: HashMap::new(),
+            timeout_seconds,
+        }
+    }
+
+    /// Register a model to be resolved (and launched if necessary) against switchboard.
+    pub fn register(&mut self, config: SwitchboardModelConfig) {
+        self.instances.insert(config.model.clone(), config);
+    }
+
+    /// For each registered model: reuse a running instance if switchboard
+    /// already has one, otherwise request a launch and wait for it to come up.
+    pub async fn initialize(&mut self) -> Result<()> {
+        let configs: Vec<_> = self.instances.values().cloned().collect();
+        if configs.is_empty() {
+            return Ok(());
+        }
+
+        println!(
+            "[model-mgr] Resolving {} model(s) via switchboard...",
+            configs.len()
+        );
+
+        for config in configs {
+            if let Some(address) = self.find_running(&config.model).await? {
+                println!("[model-mgr] ✓ {} already running on {address}", config.model);
+                self.resolved.insert(config.model.clone(), address);
+                continue;
+            }
+
+            println!("[model-mgr] Requesting switchboard launch: {}", config.model);
+            self.client
+                .launch_instance(LaunchInstanceRequest {
+                    model: config.model.clone(),
+                    host: "0.0.0.0".to_string(),
+                    port: 8000,
+                    namespace: None,
+                    quantization: config.quantization.clone(),
+                    dtype: config.dtype.clone(),
+                    limit_mm_per_prompt: config.limit_mm_per_prompt.clone(),
+                    max_model_len: config.max_model_len,
+                    gpu_memory_utilization: config.gpu_memory_utilization,
+                    enable_prefix_caching: false,
+                    enable_tool_calling: false,
+                    task: config.task.clone(),
+                })
+                .await?;
+
+            println!("[model-mgr] Waiting for {} to become ready...", config.model);
+            let address = self.wait_for_running(&config.model).await?;
+            println!("[model-mgr] ✓ {} ready on {address}", config.model);
+            self.resolved.insert(config.model.clone(), address);
+        }
+
+        println!("[model-mgr] ✓ All switchboard-managed model(s) ready");
+        Ok(())
+    }
+
+    /// Get the resolved `host:port` for a specific model.
+    #[must_use]
+    pub fn get_url(&self, model: &str) -> Option<String> {
+        self.resolved.get(model).cloned()
+    }
+
+    async fn find_running(&self, model: &str) -> Result<Option<String>> {
+        Ok(self
+            .matching_instance(model)
+            .await?
+            .filter(switchboard_client::VllmInstance::is_running)
+            .map(|i| i.address()))
+    }
+
+    async fn matching_instance(
+        &self,
+        model: &str,
+    ) -> Result<Option<switchboard_client::VllmInstance>> {
+        let instances = self.client.list_instances().await?;
+        Ok(instances
+            .into_iter()
+            .find(|i| i.model == model && i.is_chat_capable()))
+    }
+
+    /// Number of *consecutive* failed `list_instances` calls tolerated while
+    /// polling before giving up. A single dropped connection or a momentary
+    /// 502 from switchboard shouldn't kill the whole wait loop, but a
+    /// persistently broken connection still needs to surface as an error
+    /// instead of silently spinning until `timeout_seconds` runs out.
+    const MAX_CONSECUTIVE_POLL_ERRORS: u32 = 10;
+
+    async fn wait_for_running(&self, model: &str) -> Result<String> {
+        let max_retries = self.timeout_seconds * 2; // 2 attempts per second (500ms each)
+        let mut consecutive_errors = 0u32;
+
+        for attempt in 0..max_retries {
+            match self.matching_instance(model).await {
+                Ok(Some(instance)) => {
+                    consecutive_errors = 0;
+                    if instance.is_running() {
+                        return Ok(instance.address());
+                    }
+                    if instance.is_failed() {
+                        return Err(anyhow::anyhow!(
+                            "switchboard instance for '{model}' failed to start"
+                        ));
+                    }
+                }
+                Ok(None) => {
+                    consecutive_errors = 0;
+                }
+                Err(err) => {
+                    consecutive_errors += 1;
+                    if consecutive_errors >= Self::MAX_CONSECUTIVE_POLL_ERRORS {
+                        return Err(err.context(format!(
+                            "switchboard was unreachable for {consecutive_errors} consecutive poll attempts while waiting for '{model}'"
+                        )));
+                    }
+                    debug_log!(
+                        "[switchboard] poll for {model} failed ({consecutive_errors}/{}): {err}",
+                        Self::MAX_CONSECUTIVE_POLL_ERRORS
+                    );
+                }
+            }
+
+            if attempt > 0 && attempt % 20 == 0 && is_verbose() {
+                debug_log!(
+                    "[switchboard] still waiting for {model}... ({}s elapsed)",
+                    attempt / 2
+                );
+            }
+
+            sleep(Duration::from_millis(500)).await;
+        }
+
+        Err(anyhow::anyhow!(
+            "switchboard instance for '{model}' did not become ready after {}s",
+            self.timeout_seconds
+        ))
+    }
 }

@@ -12,6 +12,7 @@ use std::{
 };
 
 use crate::config::allowlists::{RUN_CMD_COMMON, RUN_CMD_TECH_KEYS, run_cmd_for_tech};
+use crate::config::is_verbose;
 use crate::engine::tools::{run_tool, tool_help};
 use crate::model::caller::call_model;
 
@@ -23,6 +24,8 @@ pub struct AgentNode {
     pub tools: Vec<String>,
     pub max_tool_steps: usize,
     pub run_cmd_allowlist: Vec<String>,
+    pub temperature: f32,
+    pub max_tokens: usize,
 }
 
 impl Debug for AgentNode {
@@ -86,7 +89,13 @@ Request: {input}
 Delegate:"
             );
 
-            let raw_decision = call_model(node.model.clone(), routing_prompt).await?;
+            let raw_decision = call_model(
+                node.model.clone(),
+                routing_prompt,
+                node.temperature,
+                node.max_tokens,
+            )
+            .await?;
             let response_lower = raw_decision.to_ascii_lowercase();
 
             // Try to find any delegate name in the response
@@ -97,12 +106,14 @@ Delegate:"
                 .map(|c| c.to_ascii_lowercase())
                 .unwrap_or_default();
 
-            eprintln!(
-                "[routing-debug] raw: {:?} | matched: '{}' | children: {:?}",
-                raw_decision.lines().next().unwrap_or("(empty)"),
-                decision,
-                node.children
-            );
+            if is_verbose() {
+                eprintln!(
+                    "[routing-debug] raw: {:?} | matched: '{}' | children: {:?}",
+                    raw_decision.lines().next().unwrap_or("(empty)"),
+                    decision,
+                    node.children
+                );
+            }
 
             if !decision.is_empty()
                 && let Some(child) = node
@@ -121,7 +132,13 @@ Delegate:"
 
         let result = if node.tools.is_empty() {
             let execution_prompt = format!("{}\n\nUser request:\n{input}", node.instruction);
-            call_model(node.model.clone(), execution_prompt).await?
+            call_model(
+                node.model.clone(),
+                execution_prompt,
+                node.temperature,
+                node.max_tokens,
+            )
+            .await?
         } else {
             execute_with_tools(node, input).await?
         };
@@ -168,6 +185,49 @@ fn first_sentence(s: &str) -> &str {
         .map_or_else(|| s.trim(), |(first, _)| first.trim())
 }
 
+/// Tool output beyond this length is truncated before being folded into the
+/// prompt history — `read_file`/`search` can return output far larger than
+/// there's room for once it's resent on every subsequent step.
+const MAX_TOOL_OUTPUT_CHARS: usize = 4_000;
+
+/// Total history size cap. Every step's history is resent as part of the
+/// prompt on every following step, so left unbounded it grows the prompt by
+/// O(steps²) in the worst case. Once this is exceeded, the oldest entries are
+/// dropped from the front, keeping the most recent (and most relevant) context.
+const MAX_HISTORY_CHARS: usize = 12_000;
+
+fn truncate_for_history(text: &str) -> std::borrow::Cow<'_, str> {
+    if text.len() <= MAX_TOOL_OUTPUT_CHARS {
+        return std::borrow::Cow::Borrowed(text);
+    }
+
+    let mut cut = MAX_TOOL_OUTPUT_CHARS;
+    while !text.is_char_boundary(cut) {
+        cut -= 1;
+    }
+
+    std::borrow::Cow::Owned(format!(
+        "{}\n...[truncated {} of {} bytes]",
+        &text[..cut],
+        text.len() - cut,
+        text.len()
+    ))
+}
+
+fn cap_history(history: &mut String) {
+    if history.len() <= MAX_HISTORY_CHARS {
+        return;
+    }
+
+    let mut start = history.len() - MAX_HISTORY_CHARS;
+    while !history.is_char_boundary(start) {
+        start += 1;
+    }
+
+    let kept = history.split_off(start);
+    *history = format!("...[earlier tool output truncated]\n{kept}");
+}
+
 async fn execute_with_tools(node: &AgentNode, input: String) -> Result<String> {
     let index = preindex_project(node);
     let effective_run_cmd_allowlist = resolve_run_cmd_allowlist(node, index.file_paths.as_deref());
@@ -211,7 +271,7 @@ Step {step}/{max_steps}. Output your JSON now:",
             max_steps = max_steps
         );
 
-        let raw = call_model(node.model.clone(), prompt).await?;
+        let raw = call_model(node.model.clone(), prompt, node.temperature, node.max_tokens).await?;
         let parsed = extract_json(&raw).and_then(|s| serde_json::from_str::<ToolResponse>(&s).ok());
 
         let Some(response) = parsed else {
@@ -252,10 +312,11 @@ Step {step}/{max_steps}. Output your JSON now:",
                 history.push_str(" args=");
                 history.push_str(&args.to_string());
                 history.push_str(" output:\n");
-                history.push_str(&result.output);
+                history.push_str(&truncate_for_history(&result.output));
                 history.push('\n');
             }
             Err(err) => {
+                let err_text = err.to_string();
                 history.push_str("step ");
                 history.push_str(&step.to_string());
                 history.push_str(": tool=");
@@ -263,10 +324,12 @@ Step {step}/{max_steps}. Output your JSON now:",
                 history.push_str(" args=");
                 history.push_str(&args.to_string());
                 history.push_str(" error: ");
-                history.push_str(&err.to_string());
+                history.push_str(&truncate_for_history(&err_text));
                 history.push('\n');
             }
         }
+
+        cap_history(&mut history);
     }
 
     Ok(format!(
@@ -436,4 +499,74 @@ fn has_extension(path: &str, extension: &str) -> bool {
     Path::new(path)
         .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case(extension))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_json_from_raw_object() {
+        assert_eq!(
+            extract_json(r#"{"action":"final"}"#),
+            Some(r#"{"action":"final"}"#.to_string())
+        );
+    }
+
+    #[test]
+    fn extract_json_from_fenced_block() {
+        let raw = "```json\n{\"action\":\"final\",\"content\":\"hi\"}\n```";
+        assert_eq!(
+            extract_json(raw),
+            Some("{\"action\":\"final\",\"content\":\"hi\"}".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_json_from_surrounding_prose() {
+        let raw = "Sure, here it is: {\"action\":\"final\"} - hope that helps!";
+        assert_eq!(
+            extract_json(raw),
+            Some(r#"{"action":"final"}"#.to_string())
+        );
+    }
+
+    #[test]
+    fn extract_json_returns_none_without_braces() {
+        assert_eq!(extract_json("no json here"), None);
+    }
+
+    #[test]
+    fn first_sentence_splits_on_terminator() {
+        assert_eq!(first_sentence("Do the thing. Then stop."), "Do the thing");
+        assert_eq!(first_sentence("No terminator here"), "No terminator here");
+    }
+
+    #[test]
+    fn truncate_for_history_leaves_short_text_untouched() {
+        assert_eq!(truncate_for_history("short"), "short");
+    }
+
+    #[test]
+    fn truncate_for_history_truncates_long_text() {
+        let long = "a".repeat(MAX_TOOL_OUTPUT_CHARS + 500);
+        let result = truncate_for_history(&long);
+        assert!(result.len() < long.len());
+        assert!(result.contains("truncated"));
+    }
+
+    #[test]
+    fn cap_history_leaves_short_history_untouched() {
+        let mut history = "short history".to_string();
+        cap_history(&mut history);
+        assert_eq!(history, "short history");
+    }
+
+    #[test]
+    fn cap_history_trims_from_the_front() {
+        let mut history = "a".repeat(MAX_HISTORY_CHARS + 1000);
+        cap_history(&mut history);
+        assert!(history.len() < MAX_HISTORY_CHARS + 1000);
+        assert!(history.starts_with("...[earlier tool output truncated]"));
+    }
 }

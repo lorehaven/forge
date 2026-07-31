@@ -90,8 +90,8 @@ impl Llm for VllmModel {
         let chat_request = ChatCompletionRequest {
             model: self.config.model.clone(),
             messages,
-            temperature: 0.7,
-            max_tokens: 2048,
+            temperature: request.temperature,
+            max_tokens: request.max_tokens,
             stop: Some(vec![
                 "\n\nassistant\n".to_string(),
                 "\n\n### ".to_string(),

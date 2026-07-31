@@ -2,6 +2,7 @@ use crate::config::CONFIG;
 use std::sync::{Arc, LazyLock};
 
 pub mod ollama;
+pub mod switchboard;
 pub mod vllm;
 
 #[async_trait::async_trait]
@@ -29,6 +30,17 @@ pub static BACKEND: LazyLock<Arc<dyn Backend>> =
             let back = vllm::VllmBackend::new();
             back.initialize()
                 .expect("error: failed to initialize vllm backend");
+            Arc::new(back)
+        }
+        "switchboard" => {
+            let url = CONFIG
+                .backend
+                .switchboard_url
+                .clone()
+                .expect("config error: backend.switchboard_url must be set");
+            let back = switchboard::SwitchboardBackend::new(url);
+            back.initialize()
+                .expect("error: failed to initialize switchboard backend");
             Arc::new(back)
         }
         _ => panic!("unsupported backend: {}", CONFIG.backend.kind),

@@ -21,6 +21,14 @@ struct ChatRequest {
     model: String,
     messages: Vec<ChatMessage>,
     stream: bool,
+    options: ChatOptions,
+}
+
+#[derive(Serialize)]
+struct ChatOptions {
+    temperature: f32,
+    /// Ollama's name for max generated tokens.
+    num_predict: usize,
 }
 
 #[derive(Deserialize)]
@@ -66,6 +74,10 @@ impl Llm for OllamaModel {
                 content: prompt,
             }],
             stream: false,
+            options: ChatOptions {
+                temperature: request.temperature,
+                num_predict: request.max_tokens,
+            },
         };
 
         let url = format!("{}/api/chat", self.host);

@@ -17,6 +17,29 @@ pub struct BackendConfig {
     pub kind: String,
     pub ollama_url: Option<String>,
     pub debug: bool,
+    /// Base URL of a switchboard-service instance (e.g.
+    /// `https://localhost:7443/switchboard`). Required when `kind = "switchboard"`.
+    pub switchboard_url: Option<String>,
+    /// Set to `false` to accept switchboard's self-signed dev certificate.
+    #[serde(default = "default_switchboard_tls_verify")]
+    pub switchboard_tls_verify: bool,
+}
+
+const fn default_switchboard_tls_verify() -> bool {
+    true
+}
+
+/// Whether verbose/debug logging is enabled, via `WELDER_DEBUG` or
+/// `[backend].debug`. Shared so every module gates its debug output the
+/// same way instead of each re-deriving its own notion of "verbose".
+#[must_use]
+pub fn is_verbose() -> bool {
+    if let Ok(val) = std::env::var("WELDER_DEBUG")
+        && (val.eq_ignore_ascii_case("true") || val == "1")
+    {
+        return true;
+    }
+    CONFIG.backend.debug
 }
 
 impl Config {
@@ -54,6 +77,8 @@ impl Default for BackendConfig {
             kind: "ollama".to_string(),
             ollama_url: Some("127.0.0.1:11434".to_string()),
             debug: false,
+            switchboard_url: None,
+            switchboard_tls_verify: true,
         }
     }
 }

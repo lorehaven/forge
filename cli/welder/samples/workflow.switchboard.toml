@@ -1,0 +1,69 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Welder — switchboard-managed model example
+#
+# With `.welder/config.toml` set to `kind = "switchboard"`, welder no longer
+# spawns `vllm serve` itself: it asks a running switchboard-service for a
+# chat-capable instance of each model, launching one if none exists, then
+# talks to the resolved host:port over the same OpenAI-compatible chat
+# endpoint the local vllm backend uses.
+#
+# Requires WELDER_SWITCHBOARD_USERNAME / WELDER_SWITCHBOARD_PASSWORD in the
+# environment (or a .env file) so welder can authenticate to switchboard.
+# ─────────────────────────────────────────────────────────────────────────────
+
+[root]
+name = "project_manager"
+
+[switchboard]
+timeout_seconds = 600
+
+# Shared model definitions. No `url`/`model_path` needed here — switchboard
+# resolves those from its own model catalog. The fields below are only used
+# as launch hints if switchboard doesn't already have a running instance.
+[models.llama3-8b]
+quantization = "Q4_K_M"
+dtype = "float16"
+max_model_len = 4096
+gpu_memory_utilization = 0.80
+
+[[agent]]
+name = "project_manager"
+model = "llama3-8b"
+vllm_model = "llama3-8b"
+instruction = """
+You are a project manager who oversees content creation projects.
+Delegate content creation requests to content_creator.
+Handle project status, planning, and coordination yourself.
+"""
+children = ["content_creator"]
+
+[[agent]]
+name = "content_creator"
+model = "llama3-8b"
+vllm_model = "llama3-8b"
+instruction = """
+You are a content lead who coordinates research and writing.
+Delegate fact-finding and research tasks to researcher.
+Delegate writing, drafting, and editing tasks to writer.
+Handle content strategy and review yourself.
+"""
+children = ["researcher", "writer"]
+
+[[agent]]
+name = "researcher"
+model = "llama3-8b"
+vllm_model = "llama3-8b"
+instruction = """
+You are a research specialist. Gather facts, analyze topics, and produce structured
+research notes. Be thorough and cite key points clearly. Provide only the research
+and stop when complete.
+"""
+
+[[agent]]
+name = "writer"
+model = "llama3-8b"
+vllm_model = "llama3-8b"
+instruction = """
+You are a professional writer. You produce clear, engaging, well-structured
+written content. Use the research provided and write for a general audience.
+"""

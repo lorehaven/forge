@@ -6326,10 +6326,12 @@ dependencies = [
  "async-trait",
  "dotenvy",
  "quench-cli",
+ "quench-client",
  "reqwest",
  "serde",
  "serde_json",
  "shlex",
+ "tempfile",
  "tokio",
  "toml",
 ]

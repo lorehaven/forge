@@ -23,6 +23,7 @@ use std::{
 };
 
 use crate::llm::{Llm, ollama::OllamaModel};
+use model::switchboard_client::SwitchboardClient;
 use model::vllm_client::{VllmConfig, VllmModel};
 
 pub mod backend;
@@ -32,9 +33,9 @@ pub mod llm;
 pub mod model;
 pub mod ui;
 
-use config::workflow::Workflow;
+use config::workflow::{AgentConfig, Workflow};
 use engine::executor::{AgentNode, execute};
-use model::ModelManager;
+use model::{ModelManager, SwitchboardManager, SwitchboardModelConfig};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -49,45 +50,20 @@ async fn main() -> anyhow::Result<()> {
     let workflow = load_workflow(&workflow_path)?;
     println!("[welder] ✓ Workflow loaded");
 
-    println!("[welder] Initializing model manager...");
-    let vllm_instances = extract_vllm_instances(&workflow)?;
-    if vllm_instances.is_empty() {
-        println!("[welder] ⚠ No vLLM configuration found in workflow agents");
-        println!("[welder] Agents must have [agent.vllm] configuration");
-        Err(anyhow::anyhow!(
-            "vLLM not configured for any agents in workflow"
-        ))
-    } else {
-        println!("[welder] Found {} vLLM instance(s)", vllm_instances.len());
-        for inst in &vllm_instances {
-            println!("[welder]   - {} on {}", inst.model, inst.url);
-        }
-
-        let vllm_cfg = model::VllmConfig {
-            timeout_seconds: workflow
-                .vllm
-                .as_ref()
-                .and_then(|v| v.timeout_seconds)
-                .unwrap_or(300),
-        };
-
-        let mut model_manager = ModelManager::new(vllm_cfg);
-        for inst in vllm_instances {
-            model_manager.register(inst);
-        }
-        model_manager.initialize().await?;
-        println!("[welder] ✓ Model manager ready");
-
-        println!("[welder] Building agents...");
-        let agents = build_agents(&workflow, &model_manager)?;
-        println!("[welder] ✓ {} agent(s) ready", agents.len());
-        for agent_name in agents.keys() {
-            println!("[welder]   - {agent_name}");
-        }
-
-        println!("[welder] Starting REPL...");
-        run_repl(&workflow, &workflow_path, &agents).await
+    println!("[welder] Building agents...");
+    let agents = match config::CONFIG.backend.kind.as_str() {
+        "vllm" => build_vllm_agents(&workflow).await?,
+        "ollama" => build_ollama_agents(&workflow)?,
+        "switchboard" => build_switchboard_agents(&workflow).await?,
+        other => return Err(anyhow::anyhow!("Unsupported backend: {other}")),
+    };
+    println!("[welder] ✓ {} agent(s) ready", agents.len());
+    for agent_name in agents.keys() {
+        println!("[welder]   - {agent_name}");
     }
+
+    println!("[welder] Starting REPL...");
+    run_repl(&workflow, &workflow_path, &agents).await
 }
 
 fn handle_version_flag() -> bool {
@@ -111,11 +87,26 @@ fn get_workflow_path() -> anyhow::Result<String> {
 // RUNTIME INIT
 // ─────────────────────────────────────────────────────────────
 
+/// How long welder waits for the configured backend (ollama daemon, or a
+/// reachable switchboard) to come up before giving up. Without a bound, a
+/// misconfigured `switchboard_url` or a backend that never starts leaves the
+/// process spinning silently forever with no feedback at all.
+const BACKEND_READY_TIMEOUT_SECS: u64 = 30;
+
 async fn init_runtime() -> anyhow::Result<()> {
     std::sync::LazyLock::force(&config::CONFIG);
     std::sync::LazyLock::force(&backend::BACKEND);
 
+    let max_attempts = BACKEND_READY_TIMEOUT_SECS * 2; // 2 attempts per second (500ms each)
+    let mut attempts = 0u64;
     while !backend::BACKEND.is_running() {
+        if attempts >= max_attempts {
+            return Err(anyhow::anyhow!(
+                "backend '{}' did not become reachable within {BACKEND_READY_TIMEOUT_SECS}s; check [backend] in .welder/config.toml",
+                config::CONFIG.backend.kind
+            ));
+        }
+        attempts += 1;
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
 
@@ -139,14 +130,22 @@ fn load_workflow(path: &str) -> anyhow::Result<Workflow> {
 // BUILD AGENTS
 // ─────────────────────────────────────────────────────────────
 
-fn extract_vllm_instances(workflow: &Workflow) -> anyhow::Result<Vec<model::ModelInstanceConfig>> {
-    let mut instances = std::collections::HashMap::new();
-    let empty_models = std::collections::HashMap::new();
-    let model_defs = workflow.models.as_ref().unwrap_or(&empty_models);
-
+/// Resolve each agent's `[models.NAME]` (or inline `[agent.vllm]`) entry,
+/// deduplicated by referenced model name. Shared by the vllm and switchboard
+/// backends, which both key their instances off the same workflow schema.
+fn resolve_model_configs(
+    workflow: &Workflow,
+) -> anyhow::Result<Vec<(&AgentConfig, &config::workflow::AgentVllmConfig)>> {
+    let mut resolved = Vec::new();
     for agent_cfg in &workflow.agent {
-        // Resolve vllm config: either direct vllm block or reference to models section
         let vllm_cfg = if let Some(ref model_ref) = agent_cfg.vllm_model {
+            let model_defs = workflow.models.as_ref().ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Agent '{}' references model '{}' but no [models] table is defined",
+                    agent_cfg.name,
+                    model_ref
+                )
+            })?;
             model_defs.get(model_ref).ok_or_else(|| {
                 anyhow::anyhow!(
                     "Agent '{}' references model '{}' which is not defined in [models]",
@@ -157,16 +156,33 @@ fn extract_vllm_instances(workflow: &Workflow) -> anyhow::Result<Vec<model::Mode
         } else if let Some(ref vllm) = agent_cfg.vllm {
             vllm
         } else {
-            continue; // No vllm config for this agent
+            continue; // No model config for this agent
         };
 
-        let key = (agent_cfg.model.clone(), vllm_cfg.url.clone());
+        resolved.push((agent_cfg, vllm_cfg));
+    }
+
+    Ok(resolved)
+}
+
+fn extract_vllm_instances(workflow: &Workflow) -> anyhow::Result<Vec<model::ModelInstanceConfig>> {
+    let mut instances = std::collections::HashMap::new();
+
+    for (agent_cfg, vllm_cfg) in resolve_model_configs(workflow)? {
+        let url = vllm_cfg.url.clone().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Agent '{}' vllm config is missing 'url' (required for the local vllm backend)",
+                agent_cfg.name
+            )
+        })?;
+
+        let key = (agent_cfg.model.clone(), url.clone());
 
         instances
             .entry(key)
             .or_insert_with(|| model::ModelInstanceConfig {
                 model: agent_cfg.model.clone(),
-                url: vllm_cfg.url.clone(),
+                url,
                 model_path: vllm_cfg.model_path.clone(),
                 dtype: vllm_cfg.dtype.clone().unwrap_or_else(|| "auto".to_string()),
                 max_model_len: vllm_cfg.max_model_len,
@@ -178,43 +194,39 @@ fn extract_vllm_instances(workflow: &Workflow) -> anyhow::Result<Vec<model::Mode
     Ok(instances.into_values().collect())
 }
 
-fn build_agents(
+fn extract_switchboard_instances(
     workflow: &Workflow,
-    model_manager: &ModelManager,
-) -> anyhow::Result<HashMap<String, AgentNode>> {
+) -> anyhow::Result<Vec<SwitchboardModelConfig>> {
+    let mut instances = std::collections::HashMap::new();
+
+    for (agent_cfg, vllm_cfg) in resolve_model_configs(workflow)? {
+        instances
+            .entry(agent_cfg.model.clone())
+            .or_insert_with(|| SwitchboardModelConfig {
+                model: agent_cfg.model.clone(),
+                quantization: vllm_cfg.quantization.clone(),
+                dtype: vllm_cfg.dtype.clone(),
+                max_model_len: vllm_cfg.max_model_len.and_then(|v| u32::try_from(v).ok()),
+                gpu_memory_utilization: vllm_cfg.gpu_memory_utilization,
+                limit_mm_per_prompt: vllm_cfg.limit_mm_per_prompt.clone(),
+                task: vllm_cfg.task.clone(),
+            });
+    }
+
+    Ok(instances.into_values().collect())
+}
+
+/// Build every agent in the workflow, delegating model construction to
+/// `make_model` so each backend only has to say how it turns an
+/// [`AgentConfig`] into an [`Llm`] client.
+fn build_agents<F>(workflow: &Workflow, mut make_model: F) -> anyhow::Result<HashMap<String, AgentNode>>
+where
+    F: FnMut(&AgentConfig) -> anyhow::Result<Arc<dyn Llm>>,
+{
     let mut agents = HashMap::new();
 
     for cfg in &workflow.agent {
-        let model: Arc<dyn Llm> = match config::CONFIG.backend.kind.as_str() {
-            "vllm" => {
-                let model_url = model_manager.get_url(&cfg.model).ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "Agent '{}' references model '{}' but no vLLM config found for it",
-                        cfg.name,
-                        cfg.model
-                    )
-                })?;
-
-                let mut config = VllmConfig::new(&cfg.model);
-                config.host = format!("http://{model_url}");
-                Arc::new(VllmModel::new(config)?)
-            }
-            "ollama" => {
-                let ollama_url = config::CONFIG
-                    .backend
-                    .ollama_url
-                    .clone()
-                    .unwrap_or_else(|| "127.0.0.1:11434".to_string());
-
-                Arc::new(OllamaModel::new(
-                    &cfg.model,
-                    format!("http://{ollama_url}"),
-                )?)
-            }
-            backend => {
-                return Err(anyhow::anyhow!("Unsupported backend: {backend}"));
-            }
-        };
+        let model = make_model(cfg)?;
 
         agents.insert(
             cfg.name.clone(),
@@ -225,11 +237,128 @@ fn build_agents(
                 tools: cfg.tools.clone().unwrap_or_default(),
                 max_tool_steps: cfg.max_tool_steps.unwrap_or(8),
                 run_cmd_allowlist: cfg.run_cmd_allowlist.clone().unwrap_or_default(),
+                temperature: cfg.temperature.unwrap_or(llm::DEFAULT_TEMPERATURE),
+                max_tokens: cfg.max_tokens.unwrap_or(llm::DEFAULT_MAX_TOKENS),
             },
         );
     }
 
     Ok(agents)
+}
+
+/// Local backend: welder spawns and owns a `vllm serve` process per model,
+/// on the fixed `host:port` from each `[models.NAME]` entry.
+async fn build_vllm_agents(workflow: &Workflow) -> anyhow::Result<HashMap<String, AgentNode>> {
+    let vllm_instances = extract_vllm_instances(workflow)?;
+    if vllm_instances.is_empty() {
+        println!("[welder] ⚠ No vLLM configuration found in workflow agents");
+        println!("[welder] Agents must have [agent.vllm] configuration");
+        return Err(anyhow::anyhow!(
+            "vLLM not configured for any agents in workflow"
+        ));
+    }
+
+    println!("[welder] Found {} vLLM instance(s)", vllm_instances.len());
+    for inst in &vllm_instances {
+        println!("[welder]   - {} on {}", inst.model, inst.url);
+    }
+
+    let vllm_cfg = model::VllmConfig {
+        timeout_seconds: workflow
+            .vllm
+            .as_ref()
+            .and_then(|v| v.timeout_seconds)
+            .unwrap_or(300),
+    };
+
+    let mut model_manager = ModelManager::new(vllm_cfg);
+    for inst in vllm_instances {
+        model_manager.register(inst);
+    }
+    model_manager.initialize().await?;
+    println!("[welder] ✓ Model manager ready");
+
+    build_agents(workflow, |cfg| {
+        let model_url = model_manager.get_url(&cfg.model).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Agent '{}' references model '{}' but no vLLM config found for it",
+                cfg.name,
+                cfg.model
+            )
+        })?;
+
+        let mut vllm_config = VllmConfig::new(&cfg.model);
+        vllm_config.host = format!("http://{model_url}");
+        Ok(Arc::new(VllmModel::new(vllm_config)?) as Arc<dyn Llm>)
+    })
+}
+
+/// Ollama backend: no instance management at all, just a shared local daemon.
+fn build_ollama_agents(workflow: &Workflow) -> anyhow::Result<HashMap<String, AgentNode>> {
+    let ollama_url = config::CONFIG
+        .backend
+        .ollama_url
+        .clone()
+        .unwrap_or_else(|| "127.0.0.1:11434".to_string());
+
+    build_agents(workflow, |cfg| {
+        Ok(Arc::new(OllamaModel::new(&cfg.model, format!("http://{ollama_url}"))?) as Arc<dyn Llm>)
+    })
+}
+
+/// Switchboard backend: model instances are launched and tracked by a
+/// switchboard-service, and welder discovers their `host:port` from it
+/// instead of spawning `vllm serve` itself. Once an instance is running,
+/// welder still talks to it directly over the same OpenAI-compatible chat
+/// endpoint the local vllm backend uses.
+async fn build_switchboard_agents(workflow: &Workflow) -> anyhow::Result<HashMap<String, AgentNode>> {
+    let switchboard_models = extract_switchboard_instances(workflow)?;
+    if switchboard_models.is_empty() {
+        println!("[welder] ⚠ No model configuration found in workflow agents");
+        println!("[welder] Agents must reference a [models.NAME] entry");
+        return Err(anyhow::anyhow!(
+            "switchboard backend requires at least one model reference in the workflow"
+        ));
+    }
+
+    println!(
+        "[welder] Resolving {} model(s) via switchboard",
+        switchboard_models.len()
+    );
+
+    let base_url = config::CONFIG
+        .backend
+        .switchboard_url
+        .clone()
+        .expect("config error: backend.switchboard_url must be set");
+    let client = SwitchboardClient::new(&base_url, config::CONFIG.backend.switchboard_tls_verify)?;
+
+    let timeout_seconds = workflow
+        .switchboard
+        .as_ref()
+        .and_then(|s| s.timeout_seconds)
+        .unwrap_or(300);
+
+    let mut switchboard_manager = SwitchboardManager::new(client, timeout_seconds);
+    for model_cfg in switchboard_models {
+        switchboard_manager.register(model_cfg);
+    }
+    switchboard_manager.initialize().await?;
+    println!("[welder] ✓ Switchboard model(s) ready");
+
+    build_agents(workflow, |cfg| {
+        let model_url = switchboard_manager.get_url(&cfg.model).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Agent '{}' references model '{}' but switchboard has no instance for it",
+                cfg.name,
+                cfg.model
+            )
+        })?;
+
+        let mut vllm_config = VllmConfig::new(&cfg.model);
+        vllm_config.host = format!("http://{model_url}");
+        Ok(Arc::new(VllmModel::new(vllm_config)?) as Arc<dyn Llm>)
+    })
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -260,4 +389,153 @@ async fn run_repl(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(toml_src: &str) -> Workflow {
+        toml::from_str(toml_src).expect("valid workflow toml")
+    }
+
+    #[test]
+    fn extract_vllm_instances_requires_url() {
+        let workflow = parse(
+            r#"
+            [root]
+            name = "a"
+
+            [[agent]]
+            name = "a"
+            model = "m"
+            instruction = "do things"
+            vllm_model = "m"
+
+            [models.m]
+            dtype = "float16"
+            "#,
+        );
+
+        let err = extract_vllm_instances(&workflow).unwrap_err();
+        assert!(err.to_string().contains("missing 'url'"));
+    }
+
+    #[test]
+    fn extract_vllm_instances_resolves_referenced_model() {
+        let workflow = parse(
+            r#"
+            [root]
+            name = "a"
+
+            [[agent]]
+            name = "a"
+            model = "m"
+            instruction = "do things"
+            vllm_model = "m"
+
+            [models.m]
+            url = "127.0.0.1:8000"
+            "#,
+        );
+
+        let instances = extract_vllm_instances(&workflow).unwrap();
+        assert_eq!(instances.len(), 1);
+        assert_eq!(instances[0].url, "127.0.0.1:8000");
+        assert_eq!(instances[0].model, "m");
+    }
+
+    #[test]
+    fn extract_vllm_instances_errors_on_unknown_model_ref() {
+        let workflow = parse(
+            r#"
+            [root]
+            name = "a"
+
+            [[agent]]
+            name = "a"
+            model = "m"
+            instruction = "do things"
+            vllm_model = "does-not-exist"
+
+            [models.other]
+            url = "127.0.0.1:8000"
+            "#,
+        );
+
+        let err = extract_vllm_instances(&workflow).unwrap_err();
+        assert!(err.to_string().contains("not defined in [models]"));
+    }
+
+    #[test]
+    fn extract_switchboard_instances_does_not_require_url() {
+        let workflow = parse(
+            r#"
+            [root]
+            name = "a"
+
+            [[agent]]
+            name = "a"
+            model = "m"
+            instruction = "do things"
+            vllm_model = "m"
+
+            [models.m]
+            quantization = "Q4_K_M"
+            task = "generate"
+            "#,
+        );
+
+        let instances = extract_switchboard_instances(&workflow).unwrap();
+        assert_eq!(instances.len(), 1);
+        assert_eq!(instances[0].model, "m");
+        assert_eq!(instances[0].quantization.as_deref(), Some("Q4_K_M"));
+        assert_eq!(instances[0].task.as_deref(), Some("generate"));
+    }
+
+    #[test]
+    fn extract_switchboard_instances_dedupes_by_model_name() {
+        let workflow = parse(
+            r#"
+            [root]
+            name = "a"
+
+            [[agent]]
+            name = "a"
+            model = "shared"
+            instruction = "do things"
+            vllm_model = "shared"
+            children = ["b"]
+
+            [[agent]]
+            name = "b"
+            model = "shared"
+            instruction = "do things"
+            vllm_model = "shared"
+
+            [models.shared]
+            dtype = "float16"
+            "#,
+        );
+
+        let instances = extract_switchboard_instances(&workflow).unwrap();
+        assert_eq!(instances.len(), 1);
+    }
+
+    #[test]
+    fn agents_without_model_config_are_skipped_by_resolve() {
+        let workflow = parse(
+            r#"
+            [root]
+            name = "a"
+
+            [[agent]]
+            name = "a"
+            model = "m"
+            instruction = "do things"
+            "#,
+        );
+
+        assert!(resolve_model_configs(&workflow).unwrap().is_empty());
+    }
 }

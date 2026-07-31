@@ -20,8 +20,6 @@ thiserror = { workspace = true }
 
 [features]
 default = ["request-cache", "data-cache"]
-# Shared, cross-replica cache. Off by default: it pulls in a Redis client and
-# most callers only need the in-process one.
 redis = ["dep:redis", "data-cache"]
 request-cache = []
 data-cache = []
