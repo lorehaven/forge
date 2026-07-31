@@ -12,7 +12,8 @@ pub(super) async fn home(
     req: actix_web::HttpRequest,
     config: web::Data<JwtConfig>,
 ) -> impl Responder {
-    handle_home(req, config, render_home_page).await
+    let admin = is_admin(&req, &config).await;
+    handle_home(req, config, move || render_home_page(admin)).await
 }
 
 #[get("/home/")]
@@ -20,10 +21,21 @@ pub(super) async fn home_slash(
     req: actix_web::HttpRequest,
     config: web::Data<JwtConfig>,
 ) -> impl Responder {
-    handle_home(req, config, render_home_page).await
+    let admin = is_admin(&req, &config).await;
+    handle_home(req, config, move || render_home_page(admin)).await
 }
 
-fn render_home_page() -> HttpResponse {
+/// Whether to offer the realm administration link.
+///
+/// Cosmetic only - the admin pages check for themselves, and so does the API
+/// behind them. But a visible control that answers 403 is worse than no control.
+async fn is_admin(req: &actix_web::HttpRequest, config: &JwtConfig) -> bool {
+    quench_auth::actix::routers::ui::get_user_from_req(req, config)
+        .await
+        .is_some_and(|claims| claims.has_role("admin"))
+}
+
+fn render_home_page(admin: bool) -> HttpResponse {
     let services = enabled_services();
 
     let mut sections = div().class("home-sections");
@@ -53,6 +65,25 @@ fn render_home_page() -> HttpResponse {
                         .attr("data-i18n", "ui_home_group_services"),
                 )
                 .child(cards),
+        );
+    }
+
+    // The realm itself, not a service: rendered as its own section so it does not
+    // look like another destination in the estate.
+    if admin {
+        sections = sections.child(
+            div()
+                .class("home-section")
+                .child(
+                    h3().class("home-section-title")
+                        .attr("data-i18n", "ui_home_group_realm"),
+                )
+                .child(div().class("home-grid").child(service_card(
+                    &crate::ui::common::ui_path("/admin/users"),
+                    "ui_admin_users_title",
+                    "ui_admin_users_desc",
+                    "home-card-gatehouse",
+                ))),
         );
     }
 

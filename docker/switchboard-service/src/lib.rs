@@ -28,13 +28,22 @@ pub fn base_path_scope(
         .app_data(web::Data::new(user_db))
         .app_data(web::Data::new(session_db))
         .service(routers::ui::scope())
-        .service(
-            web::scope("")
-                .wrap(quench_auth::actix::middleware::auth::Auth::new(
-                    jwt_config.get_ref().clone(),
-                ))
-                .service(routers::gpu::scope())
-                .service(routers::models::scope(vllm_engine.clone()))
-                .service(routers::vllm::scope(vllm_engine)),
-        )
+        // Each API scope wraps its own `Auth` and `RequireWrite` now, rather
+        // than sharing one pair of wraps the way this used to be structured:
+        // `models::scope` needs `handle_list` to skip `RequireWrite` while
+        // everything else in it does not, which only works if that scope
+        // controls its own wrapping - see its module docs. `gpu` and `vllm`
+        // have no such exception, but wrap themselves the same way for
+        // consistency, and because `.wrap()` has to happen inside the function
+        // that returns `impl HttpServiceFactory` - the opaque return type has
+        // no `.wrap()` of its own for a caller to chain.
+        .service(routers::gpu::scope(jwt_config.get_ref().clone()))
+        .service(routers::vllm::scope(
+            vllm_engine.clone(),
+            jwt_config.get_ref().clone(),
+        ))
+        .service(routers::models::scope(
+            vllm_engine,
+            jwt_config.get_ref().clone(),
+        ))
 }

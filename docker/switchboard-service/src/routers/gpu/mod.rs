@@ -4,6 +4,9 @@ use actix_web::dev::HttpServiceFactory;
 use actix_web::{Error, HttpResponse, Responder, get, web};
 use bytes::Bytes;
 use futures_util::StreamExt;
+use quench_auth::actix::middleware::auth::Auth;
+use quench_auth::actix::middleware::require_write::RequireWrite;
+use quench_auth::prelude::JwtConfig;
 use quench_web::prelude::*;
 use tokio::sync::broadcast::Sender;
 use tokio_stream::wrappers::BroadcastStream;
@@ -18,8 +21,14 @@ pub struct GpuBroadcaster(pub Sender<String>);
 // Scope
 // ---------------------------------------------------------------------------
 
-pub fn scope() -> impl HttpServiceFactory {
+/// Both routes are GET, so `RequireWrite` never actually refuses anything
+/// here - it is mounted for the same reason every scope in the estate mounts
+/// it: so a route added here later that does write is covered without anyone
+/// having to remember to add the check.
+pub fn scope(jwt_config: JwtConfig) -> impl HttpServiceFactory {
     web::scope("/api/v1/gpu")
+        .wrap(RequireWrite::new(jwt_config.clone()))
+        .wrap(Auth::new(jwt_config))
         .service(handle_sse)
         .service(get_status)
 }

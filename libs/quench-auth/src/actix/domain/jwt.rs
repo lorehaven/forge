@@ -1,3 +1,4 @@
+use crate::actix::domain::auth::{Permissions, Role};
 use jsonwebtoken::{
     DecodingKey, EncodingKey, Header, Validation, decode, encode, errors::ErrorKind,
 };
@@ -94,13 +95,43 @@ impl JwtConfig {
         scope: String,
         session_id: Option<String>,
     ) -> Result<String, jsonwebtoken::errors::Error> {
+        self.issue_access_token_for(username, self.audiences.clone(), scope, session_id)
+    }
+
+    /// Issues a token valid for `audiences` only.
+    ///
+    /// Gatehouse narrows the list to the services the subject may actually
+    /// reach, which is what makes the audience check in the relying party's
+    /// middleware enforce service access without the relying party knowing
+    /// permissions exist. `self.audiences` stays the ceiling - see
+    /// `narrow_audiences`.
+    pub fn issue_access_token_for(
+        &self,
+        username: String,
+        audiences: Vec<String>,
+        scope: String,
+        session_id: Option<String>,
+    ) -> Result<String, jsonwebtoken::errors::Error> {
         self.encode_claims(&Claims::for_audiences(
             username,
-            self.audiences.clone(),
+            audiences,
             scope,
             session_id,
             self.access_token_ttl_secs,
         ))
+    }
+
+    /// `wanted`, restricted to audiences this config declares.
+    ///
+    /// A caller cannot widen a token past `SERVICE_AUDIENCES` by asking for
+    /// more, so a stale grant naming a service this deployment does not run
+    /// cannot put that service in an audience list.
+    pub fn narrow_audiences(&self, wanted: &[String]) -> Vec<String> {
+        self.audiences
+            .iter()
+            .filter(|audience| wanted.iter().any(|want| want == *audience))
+            .cloned()
+            .collect()
     }
 }
 
@@ -164,11 +195,62 @@ impl Claims {
         self.aud.iter().any(|audience| audience == service_name) || self.service == service_name
     }
 
+    /// Every entry in the scope claim, roles and permissions alike.
     pub fn roles(&self) -> Vec<String> {
         self.scope
             .split([' ', ','])
             .filter(|role| !role.is_empty())
             .map(str::to_string)
             .collect()
+    }
+
+    /// Whether the token carries a role.
+    ///
+    /// Token-wise, not a substring test. `scope.contains("admin")` would also
+    /// match a permission whose service happened to be named `admin`; the
+    /// vocabularies are kept disjoint (roles never contain a colon, permission
+    /// levels are only `read`/`write`) so that cannot arise, and this makes it a
+    /// guarantee rather than a convention.
+    pub fn has_role(&self, role: &str) -> bool {
+        self.roles()
+            .iter()
+            .any(|held| !held.contains(':') && held.eq_ignore_ascii_case(role))
+    }
+
+    /// The `service:action` entries in the scope claim, folded into
+    /// `{service: {action, ...}}`. A service granted several actions carries
+    /// one token per action (`sage:read sage:write`), not a combined one -
+    /// the wire format stays a flat list of space-separated tokens either way.
+    pub fn permissions(&self) -> Permissions {
+        let mut result = Permissions::new();
+        for entry in self.roles() {
+            if let Some((service, action)) = entry.split_once(':') {
+                result
+                    .entry(service.to_string())
+                    .or_default()
+                    .insert(action.to_string());
+            }
+        }
+        result
+    }
+
+    /// Whether the token permits `action` on `service`.
+    ///
+    /// A wildcard role short-circuits, which is why an admin's token carries no
+    /// permission entries at all.
+    pub fn can(&self, service: &str, action: &str) -> bool {
+        if self.has_wildcard() {
+            return true;
+        }
+        self.permissions()
+            .get(service)
+            .is_some_and(|actions| actions.contains(action))
+    }
+
+    /// Whether any role on the token grants everything.
+    pub fn has_wildcard(&self) -> bool {
+        self.roles().iter().any(|held| {
+            !held.contains(':') && Role::parse(held).is_some_and(|role| role.is_wildcard())
+        })
     }
 }

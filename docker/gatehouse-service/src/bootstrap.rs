@@ -3,7 +3,7 @@
 //! Gatehouse is the only service that writes users, so this lives here rather
 //! than in `quench-auth` - a relying party has no business creating an account.
 
-use quench_auth::prelude::{Role, User};
+use quench_auth::prelude::{Permissions, Role, User};
 use quench_db::prelude::{Crud, Db};
 
 /// Creates the admin and machine-to-machine accounts if they are missing.
@@ -47,7 +47,16 @@ async fn seed(db: &Db, username: &str, password: &str, role: Role, label: &str) 
         return;
     }
 
-    let Ok(user) = User::new(username.to_string(), password.to_string(), vec![role]) else {
+    // No permissions: both seeded accounts hold a wildcard role, which grants
+    // everything without any of it being written down. Enumerating grants here
+    // would go stale as soon as the estate gained a service.
+    let Ok(user) = User::new(
+        username.to_string(),
+        password.to_string(),
+        vec![role],
+        Permissions::new(),
+        None,
+    ) else {
         tracing::error!("failed to hash the {label} password; {username} not created");
         return;
     };

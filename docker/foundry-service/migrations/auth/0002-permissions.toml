@@ -1,0 +1,20 @@
+[[migrations]]
+id = "0002-permissions"
+author = "gatehouse-service"
+since = "0.1.1"
+
+# What a user may do, as `{service: level}` with level in (read, write) - e.g.
+# {"sage": "write", "warehouse": "read"}. A column rather than a grants table
+# because issuing a token needs all of one user's grants, which is exactly this
+# row, and `quench-db`'s Crud is single-primary-key: a (username, service) table
+# would need a synthetic key and a second query per login.
+#
+# Empty is the right default twice over. The seeded admin and service accounts
+# hold wildcard roles, which grant everything without enumerating it, so there
+# is nothing to backfill; and a newly created ordinary user should start with no
+# access rather than inheriting someone else's.
+[[migrations.changes]]
+sql = """
+ALTER TABLE ${schema}.users
+    ADD COLUMN IF NOT EXISTS permissions JSONB NOT NULL DEFAULT '{}'::jsonb;
+"""

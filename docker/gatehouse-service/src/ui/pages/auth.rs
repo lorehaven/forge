@@ -25,17 +25,41 @@ pub struct LoginForm {
     pub redirect: Option<String>,
 }
 
+/// Notices this page can show beyond "wrong credentials" - one per thing that
+/// can redirect here from registration or password reset. A second, separate
+/// `web::Query` extractor rather than folding these into `LoginQuery`: that
+/// type is shared with every other service's login redirect and has no
+/// business knowing gatehouse grew a registration flow.
+#[derive(Deserialize, Default)]
+pub struct LoginNotices {
+    #[serde(default)]
+    pub registered: Option<String>,
+    #[serde(default)]
+    pub verified: Option<String>,
+    #[serde(default)]
+    pub reset: Option<String>,
+    #[serde(default)]
+    pub reset_requested: Option<String>,
+    #[serde(default)]
+    pub err: Option<String>,
+}
+
 #[get("/login")]
-pub(super) async fn login(request: HttpRequest, query: web::Query<LoginQuery>) -> impl Responder {
-    render_login_page(&request, query.err.as_deref() == Some("1"))
+pub(super) async fn login(
+    request: HttpRequest,
+    query: web::Query<LoginQuery>,
+    notices: web::Query<LoginNotices>,
+) -> impl Responder {
+    render_login_page(&request, query.err.as_deref() == Some("1"), &notices)
 }
 
 #[get("/login/")]
 pub(super) async fn login_slash(
     request: HttpRequest,
     query: web::Query<LoginQuery>,
+    notices: web::Query<LoginNotices>,
 ) -> impl Responder {
-    render_login_page(&request, query.err.as_deref() == Some("1"))
+    render_login_page(&request, query.err.as_deref() == Some("1"), &notices)
 }
 
 #[post("/login")]
@@ -106,7 +130,7 @@ pub(super) async fn logout(
         .finish()
 }
 
-fn render_login_page(request: &HttpRequest, error: bool) -> HttpResponse {
+fn render_login_page(request: &HttpRequest, error: bool, notices: &LoginNotices) -> HttpResponse {
     // Carried through the form so a login that started at sage returns to sage.
     let redirect = redirect_target(request);
 
@@ -160,7 +184,23 @@ fn render_login_page(request: &HttpRequest, error: bool) -> HttpResponse {
             p().class("error")
                 .attr("data-i18n", "ui_login_invalid_credentials"),
         );
+    } else if let Some(key) = login_error_key(notices) {
+        login_form = login_form.child(p().class("error").attr("data-i18n", key));
+    } else if let Some(key) = login_ok_key(notices) {
+        login_form = login_form.child(p().class("admin-notice ok").attr("data-i18n", key));
     }
+
+    login_form = login_form
+        .child(
+            a().class("admin-hint")
+                .attr("href", ui_path("/forgot-password"))
+                .attr("data-i18n", "ui_login_forgot_password"),
+        )
+        .child(
+            a().class("admin-hint")
+                .attr("href", ui_path("/register"))
+                .attr("data-i18n", "ui_login_register"),
+        );
 
     // The page shell has no top panel here, so the card carries the estate
     // label and the language switch itself, in a bar above the credentials.
@@ -192,6 +232,35 @@ fn render_login_page(request: &HttpRequest, error: bool) -> HttpResponse {
         ),
         UiPageKind::Auth,
     )
+}
+
+/// Only these two literal error keys are ever produced by the redirects that
+/// land here (`register.rs`'s `verify`, `reset.rs`'s reset submit) - checked
+/// against a fixed list rather than trusted from the query string, so a
+/// hand-crafted link cannot put arbitrary text on the page.
+fn login_error_key(notices: &LoginNotices) -> Option<&'static str> {
+    match notices.err.as_deref() {
+        Some("ui_login_verify_invalid") => Some("ui_login_verify_invalid"),
+        Some("ui_login_reset_invalid") => Some("ui_login_reset_invalid"),
+        _ => None,
+    }
+}
+
+/// Which "ok" banner to show, checked in an order that matters: a successful
+/// reset is more specific news than "we sent a link" would be if somehow both
+/// were set.
+fn login_ok_key(notices: &LoginNotices) -> Option<&'static str> {
+    if notices.reset.is_some() {
+        Some("ui_login_reset_ok")
+    } else if notices.reset_requested.is_some() {
+        Some("ui_login_reset_requested_ok")
+    } else if notices.verified.is_some() {
+        Some("ui_login_verified_ok")
+    } else if notices.registered.is_some() {
+        Some("ui_login_registered_ok")
+    } else {
+        None
+    }
 }
 
 /// Anything under `/ui` that is not a page sends you to the login form.

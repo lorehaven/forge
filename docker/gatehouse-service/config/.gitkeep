@@ -1,2 +1,0 @@
-# Gatehouse is configured entirely through the environment; this directory
-# exists because the shared Dockerfile copies it into the image.

@@ -39,7 +39,29 @@ pub fn scope() -> actix_web::Scope {
         .service(pages::auth::login_submit)
         .service(pages::auth::logout)
         .service(pages::auth::status)
+        .service(pages::register::register_page)
+        .service(pages::register::register_page_slash)
+        .service(pages::register::register_submit)
+        .service(pages::register::verify)
+        .service(pages::reset::forgot_password_page)
+        .service(pages::reset::forgot_password_page_slash)
+        .service(pages::reset::forgot_password_submit)
+        .service(pages::reset::reset_password_page)
+        .service(pages::reset::reset_password_submit)
         // Requires a realm session; `handle_home` redirects when there is none.
         .service(pages::home::home)
         .service(pages::home::home_slash)
+        // Requires the admin role on top of a session; each handler checks, so a
+        // route added here without the check is a compile-time-visible omission
+        // rather than an open page.
+        .service(pages::admin::users_page)
+        .service(pages::admin::users_page_slash)
+        .service(pages::admin::create_user)
+        // Before `/admin/users/{username}`: actix matches in registration order,
+        // and `{username}` would otherwise swallow the delete/template paths'
+        // parent.
+        .service(pages::admin::delete_user)
+        .service(pages::admin::apply_template)
+        .service(pages::admin::save_user)
+        .service(pages::admin::edit_user)
 }

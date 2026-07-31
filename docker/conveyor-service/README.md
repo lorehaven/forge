@@ -327,7 +327,10 @@ curl -X POST "$CONVEYOR/api/v1/webhooks/generic" \
 
 ## API
 
-All under `/conveyor/api/v1`, behind the realm's auth.
+All under `/conveyor/api/v1`, behind the realm's auth. Every POST/PUT/DELETE
+below needs `conveyor:write` (or a wildcard role); every GET needs only
+`conveyor:read`, enforced by `RequireWrite` (`quench-auth`) — see
+`docs/PERMISSIONS_PLAN.md`.
 
 | | |
 |---|---|

@@ -1,13 +1,21 @@
 use super::types::LaunchRequest;
+use crate::routers::models::mod_impl::can;
 use crate::routers::vllm::engine::VllmEngine;
 use actix_web::{HttpResponse, Responder, http::header::ContentType, post, web};
+use quench_auth::prelude::JwtConfig;
 use std::sync::Arc;
 
 #[post("/instances")]
 pub async fn launch_instance(
+    http_req: actix_web::HttpRequest,
+    config: web::Data<JwtConfig>,
     req: web::Json<LaunchRequest>,
     engine: web::Data<Arc<dyn VllmEngine>>,
 ) -> impl Responder {
+    if !can(&http_req, &config, "launch") {
+        return HttpResponse::Forbidden().finish();
+    }
+
     let req = req.into_inner();
     if req.model.trim().is_empty() {
         return HttpResponse::BadRequest().body("api_error_model_name_empty");
@@ -41,9 +49,15 @@ pub struct LaunchRequestForm {
 
 #[post("/instances/form")]
 pub async fn launch_instance_form(
+    http_req: actix_web::HttpRequest,
+    config: web::Data<JwtConfig>,
     form: web::Form<LaunchRequestForm>,
     engine: web::Data<Arc<dyn VllmEngine>>,
 ) -> impl Responder {
+    if !can(&http_req, &config, "launch") {
+        return HttpResponse::Forbidden().finish();
+    }
+
     let req = LaunchRequest {
         model: form.model.clone(),
         host: form.host.clone().unwrap_or_else(|| "0.0.0.0".to_string()),

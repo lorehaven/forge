@@ -24,6 +24,8 @@ Feature: UI Authentication
     Then response should be a redirect
     And the redirect location should contain "/gatehouse/ui/logout"
 
-  Scenario: A protected page without a session goes to the login route
-    When a GET request is sent to protected page "/ui/home" without token
-    Then response status should be 302
+  # What a protected page does without a session is asserted in `ui_jwt.feature`
+  # instead, which exercises every way a token can fail to authenticate it.
+  # This file once carried warehouse's 302 scenario, copied verbatim; it passed
+  # only because the step it borrowed reached warehouse's port instead of
+  # switchboard's, and it never exercised this service at all.

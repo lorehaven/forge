@@ -31,6 +31,7 @@ use actix_web::dev::HttpServiceFactory;
 use actix_web::middleware::NormalizePath;
 use actix_web::web;
 use quench_auth::actix::middleware::auth::Auth;
+use quench_auth::actix::middleware::require_write::RequireWrite;
 use quench_auth::prelude::JwtConfig;
 use serde::Deserialize;
 use std::path::{Component, Path, PathBuf};
@@ -280,9 +281,16 @@ pub struct ListQuery {
 /// Route order is load-bearing: `/{storage}/file` is concrete and has to be
 /// registered before `/{storage}`, which would otherwise match it and treat
 /// `file` as a storage name.
+///
+/// Upload and delete are the only writes here, both already the right HTTP
+/// method (`PUT`, `DELETE`) for download/list/head's `GET`, so `RequireWrite`
+/// needs no route-level exceptions. It has to sit *inside* `Auth` - the `Auth`
+/// wrap has to be the last one registered, so it runs first and populates the
+/// claims `RequireWrite` reads. See `require_write`'s module docs.
 pub fn scope(jwt_config: JwtConfig) -> impl HttpServiceFactory {
     web::scope("/api/v1/files")
         .wrap(NormalizePath::trim())
+        .wrap(RequireWrite::new(jwt_config.clone()))
         .wrap(Auth::new(jwt_config))
         .service(ops::upload::handle)
         .service(ops::download::handle)

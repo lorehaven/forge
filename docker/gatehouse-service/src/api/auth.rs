@@ -4,7 +4,7 @@
 
 use actix_web::{HttpRequest, HttpResponse, Responder, cookie::Cookie, get, post, web};
 use quench_auth::prelude::realm;
-use quench_auth::prelude::{Claims, JwtConfig, Session, SessionDb, User, UserDb};
+use quench_auth::prelude::{Claims, JwtConfig, Permissions, Session, SessionDb, User, UserDb};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
@@ -117,6 +117,10 @@ pub struct UserInfo {
     pub sub: String,
     pub roles: Vec<String>,
     pub audiences: Vec<String>,
+    /// The `service:action` grants the token carries. Empty for a wildcard
+    /// role - `admin` in `roles` is what says "everything", and `/api/v1/me`
+    /// is the endpoint that resolves that into an answer per service.
+    pub permissions: Permissions,
 }
 
 /// Subject and roles behind a valid access token. Relying parties use this to
@@ -129,8 +133,16 @@ async fn userinfo(
 ) -> impl Responder {
     match access_claims(&request, &config, &sessions).await {
         Some(claims) => HttpResponse::Ok().json(UserInfo {
+            // Roles only: the permission entries are reported separately rather
+            // than mixed into the role list, which is what splitting the raw
+            // scope string used to do.
+            roles: claims
+                .roles()
+                .into_iter()
+                .filter(|entry| !entry.contains(':'))
+                .collect(),
+            permissions: claims.permissions(),
             sub: claims.sub,
-            roles: claims.scope.split(' ').map(str::to_string).collect(),
             audiences: claims.aud,
         }),
         None => HttpResponse::Unauthorized().finish(),
@@ -162,8 +174,9 @@ fn token_response(
     session: &Session,
     refresh_token: String,
 ) -> Result<TokenResponse, jsonwebtoken::errors::Error> {
-    let access_token = config.issue_access_token(
+    let access_token = config.issue_access_token_for(
         user.username.clone(),
+        user_audiences(config, user),
         user_scope(user),
         Some(session.id.clone()),
     )?;
@@ -175,12 +188,57 @@ fn token_response(
     })
 }
 
+/// The scope claim: roles, then one `service:action` entry per granted
+/// action. A service granted several actions gets one token per action
+/// (`sage:read sage:write`), not a combined one - the wire format is a flat
+/// list of space-separated tokens either way, and that keeps the parser on
+/// the other end (`Claims::permissions`) simple.
+///
+/// A wildcard role emits the role alone. Expanding it into a grant per service
+/// would make the token bigger, go stale when the estate gained a service, and
+/// tell a reader less - `admin` is the more informative claim.
 fn user_scope(user: &User) -> String {
-    user.get_roles()
+    let mut entries: Vec<String> = user
+        .get_roles()
         .iter()
-        .map(|role| format!("{:?}", role).to_lowercase())
-        .collect::<Vec<_>>()
-        .join(" ")
+        .map(|role| role.as_str().to_string())
+        .collect();
+
+    if !user.has_wildcard() {
+        for (service, actions) in user.get_permissions() {
+            for action in actions {
+                entries.push(format!("{service}:{action}"));
+            }
+        }
+    }
+
+    entries.join(" ")
+}
+
+/// Services this user's token is valid for.
+///
+/// The point of narrowing: the audience check already in every relying party's
+/// middleware then rejects a user with no grant, so service-level access
+/// enforces itself without a single line changing outside gatehouse.
+///
+/// Gatehouse is always included. It serves the login page, the home page and
+/// refresh, so a token that excluded it would leave the user unable to reach the
+/// thing that would grant them anything.
+fn user_audiences(config: &JwtConfig, user: &User) -> Vec<String> {
+    if user.has_wildcard() {
+        return config.audiences.clone();
+    }
+
+    let mut wanted: Vec<String> = user.get_permissions().into_keys().collect();
+    wanted.push(config.service_name.clone());
+
+    let mut audiences = config.narrow_audiences(&wanted);
+    // `narrow_audiences` filters against SERVICE_AUDIENCES, which need not list
+    // gatehouse itself.
+    if !audiences.contains(&config.service_name) {
+        audiences.push(config.service_name.clone());
+    }
+    audiences
 }
 
 /// Realm-wide session cookie. The `config` argument is no longer read - the
@@ -208,4 +266,126 @@ async fn access_claims(
     let session_id = claims.sid.as_deref()?;
     let active = sessions.is_active(session_id, &claims.sub).await.ok()?;
     (claims.allows(&config.service_name) && active).then_some(claims)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use quench_auth::prelude::{Permissions, Role};
+
+    fn config() -> JwtConfig {
+        envmnt::set("JWT_SECRET", "test_secret");
+        let mut config = JwtConfig::init();
+        config.service_name = "gatehouse".to_string();
+        config.audiences = vec![
+            "sage".to_string(),
+            "switchboard".to_string(),
+            "warehouse".to_string(),
+        ];
+        config
+    }
+
+    fn user(roles: Vec<Role>, grants: &[(&str, &[&str])]) -> User {
+        let permissions: Permissions = grants
+            .iter()
+            .map(|(service, actions)| {
+                (
+                    (*service).to_string(),
+                    actions.iter().map(|action| action.to_string()).collect(),
+                )
+            })
+            .collect();
+        User::new(
+            "someone".to_string(),
+            "password".to_string(),
+            roles,
+            permissions,
+            None,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn a_grant_becomes_a_scope_entry_per_action() {
+        let scope = user_scope(&user(
+            vec![Role::User],
+            &[("sage", &["write"]), ("warehouse", &["read"])],
+        ));
+
+        assert_eq!(scope, "user sage:write warehouse:read");
+    }
+
+    /// Two actions on the same service become two tokens, not a combined one.
+    #[test]
+    fn several_actions_on_one_service_become_several_scope_entries() {
+        let scope = user_scope(&user(
+            vec![Role::User],
+            &[("switchboard", &["read", "launch"])],
+        ));
+
+        assert_eq!(scope, "user switchboard:launch switchboard:read");
+    }
+
+    /// The token stays small and stays true as the estate grows.
+    #[test]
+    fn a_wildcard_role_emits_the_role_and_nothing_else() {
+        let scope = user_scope(&user(vec![Role::Admin], &[("sage", &["read"])]));
+        assert_eq!(scope, "admin");
+    }
+
+    #[test]
+    fn audiences_narrow_to_the_services_a_user_was_granted() {
+        let config = config();
+        let audiences = user_audiences(&config, &user(vec![Role::User], &[("sage", &["read"])]));
+
+        assert!(audiences.contains(&"sage".to_string()));
+        assert!(!audiences.contains(&"switchboard".to_string()));
+        assert!(!audiences.contains(&"warehouse".to_string()));
+    }
+
+    #[test]
+    fn an_admin_keeps_the_whole_realm() {
+        let config = config();
+        let audiences = user_audiences(&config, &user(vec![Role::Admin], &[]));
+        assert_eq!(audiences, config.audiences);
+    }
+
+    /// Gatehouse serves the login page, the home page and refresh. A token that
+    /// excluded it would leave the holder unable to reach the one service that
+    /// could grant them anything.
+    #[test]
+    fn gatehouse_is_always_an_audience() {
+        let config = config();
+
+        for holder in [
+            user(vec![Role::User], &[]),
+            user(vec![Role::User], &[("sage", &["read"])]),
+        ] {
+            let audiences = user_audiences(&config, &holder);
+            assert!(
+                audiences.contains(&"gatehouse".to_string()),
+                "gatehouse missing from {audiences:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_user_with_no_grants_gets_gatehouse_alone() {
+        let config = config();
+        let audiences = user_audiences(&config, &user(vec![Role::User], &[]));
+        assert_eq!(audiences, vec!["gatehouse".to_string()]);
+    }
+
+    /// A grant left behind after a service was removed from the deployment must
+    /// not put that service back into an audience list.
+    #[test]
+    fn a_grant_for_a_service_this_deployment_does_not_run_is_ignored() {
+        let config = config();
+        let audiences = user_audiences(
+            &config,
+            &user(vec![Role::User], &[("conveyor", &["write"])]),
+        );
+
+        assert_eq!(audiences, vec!["gatehouse".to_string()]);
+    }
 }

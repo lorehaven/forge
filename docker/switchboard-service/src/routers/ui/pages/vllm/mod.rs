@@ -14,7 +14,9 @@ pub(super) async fn vllm_manage(
     if get_user_from_req(&req, &config).await.is_none() {
         return common::ui_login_redirect();
     }
-    render_vllm_manage_page(crate::routers::models::mod_impl::is_admin(&req, &config))
+    render_vllm_manage_page(crate::routers::models::mod_impl::can(
+        &req, &config, "launch",
+    ))
 }
 
 #[get("/vllm/manage/")]
@@ -25,10 +27,12 @@ pub(super) async fn vllm_manage_slash(
     if get_user_from_req(&req, &config).await.is_none() {
         return common::ui_login_redirect();
     }
-    render_vllm_manage_page(crate::routers::models::mod_impl::is_admin(&req, &config))
+    render_vllm_manage_page(crate::routers::models::mod_impl::can(
+        &req, &config, "launch",
+    ))
 }
 
-fn render_vllm_manage_page(is_admin: bool) -> HttpResponse {
+fn render_vllm_manage_page(can_launch: bool) -> HttpResponse {
     render_page(
         HttpResponse::Ok(),
         content()
@@ -66,7 +70,7 @@ fn render_vllm_manage_page(is_admin: bool) -> HttpResponse {
                             ),
                     )
                     .child(div().class("flex-1"))
-                    .child_opt(is_admin.then(|| {
+                    .child_opt(can_launch.then(|| {
                         a().attr("id", "launch-instance-action")
                             .class("toolbar-action")
                             .attr("href", "#launch-modal")

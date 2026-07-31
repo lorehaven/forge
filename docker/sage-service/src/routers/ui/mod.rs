@@ -2,6 +2,7 @@ use actix_web::dev::HttpServiceFactory;
 use actix_web::{HttpResponse, Responder, get, web};
 pub use common::assets;
 use quench_auth::actix::middleware::auth::Auth;
+use quench_auth::actix::middleware::require_write::RequireWrite;
 use quench_auth::prelude::JwtConfig;
 use quench_starter::prelude::with_base_path;
 
@@ -49,12 +50,27 @@ pub fn scope(jwt_config: JwtConfig) -> impl HttpServiceFactory {
         .service(pages::auth::login_slash)
         .service(pages::auth::logout)
         .service(pages::auth::auth_status)
-        // Chat (with auth)
-        .service(chat::scope().wrap(Auth::new(jwt_config.clone())))
-        // Projects (with auth)
-        .service(pages::projects::scope().wrap(Auth::new(jwt_config.clone())))
-        // Files (with auth)
-        .service(pages::files::scope().wrap(Auth::new(jwt_config.clone())))
+        // Chat, projects and files all mutate through these pages exactly as
+        // their API counterparts do (sending a message, creating a project,
+        // attaching a file), so the same permission applies here: `RequireWrite`
+        // reads the claims `Auth` just populated, which is why it has to be
+        // wrapped inside it - `Auth`'s `.wrap()` registered last, so it runs
+        // first.
+        .service(
+            chat::scope()
+                .wrap(RequireWrite::new(jwt_config.clone()))
+                .wrap(Auth::new(jwt_config.clone())),
+        )
+        .service(
+            pages::projects::scope()
+                .wrap(RequireWrite::new(jwt_config.clone()))
+                .wrap(Auth::new(jwt_config.clone())),
+        )
+        .service(
+            pages::files::scope()
+                .wrap(RequireWrite::new(jwt_config.clone()))
+                .wrap(Auth::new(jwt_config.clone())),
+        )
         // Initializing screen (auth checked inside; gates access to home)
         .service(pages::initializing::initializing)
         .service(pages::initializing::initializing_status)

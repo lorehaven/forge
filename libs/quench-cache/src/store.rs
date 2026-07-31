@@ -125,6 +125,48 @@ impl CacheStore {
         }
     }
 
+    /// Adds `member` to the set at `key`, refreshing the set's lifetime.
+    ///
+    /// A set rather than a value because the members arrive from concurrent
+    /// writers - several sessions for one user - and read-modify-write over a
+    /// JSON array would drop one of two simultaneous additions.
+    pub async fn add_to_set(
+        &self,
+        key: &str,
+        member: &str,
+        ttl_secs: Option<u64>,
+    ) -> Result<(), CacheError> {
+        match self {
+            Self::InMemory(cache) => {
+                cache.add_to_set(key, member, ttl_secs);
+                Ok(())
+            }
+            #[cfg(feature = "redis")]
+            Self::Redis(store) => store.add_to_set(key, member, ttl_secs).await,
+        }
+    }
+
+    /// Members of the set at `key`, in no particular order. A missing set reads
+    /// as empty rather than as an error - to a caller they mean the same thing.
+    pub async fn set_members(&self, key: &str) -> Result<Vec<String>, CacheError> {
+        match self {
+            Self::InMemory(cache) => Ok(cache.set_members(key)),
+            #[cfg(feature = "redis")]
+            Self::Redis(store) => store.set_members(key).await,
+        }
+    }
+
+    pub async fn remove_from_set(&self, key: &str, member: &str) -> Result<(), CacheError> {
+        match self {
+            Self::InMemory(cache) => {
+                cache.remove_from_set(key, member);
+                Ok(())
+            }
+            #[cfg(feature = "redis")]
+            Self::Redis(store) => store.remove_from_set(key, member).await,
+        }
+    }
+
     /// Drops everything this store owns. On Redis that is the configured key
     /// prefix only - never the whole database, which may not be yours.
     pub async fn clear(&self) -> Result<(), CacheError> {
@@ -330,6 +372,53 @@ impl RedisStore {
         let mut connection = self.connection.clone();
         connection
             .del::<_, ()>(self.qualified(key))
+            .await
+            .map_err(|err| CacheError::Backend(err.to_string()))
+    }
+
+    /// `SADD`, then `EXPIRE` when a lifetime is given.
+    ///
+    /// Two commands rather than one, and not in a transaction: a set that ends
+    /// up without its expiry is a key that outlives its usefulness, which is
+    /// worse than nothing but not wrong. Both are single-key, so a cluster
+    /// routes them to the same node.
+    pub async fn add_to_set(
+        &self,
+        key: &str,
+        member: &str,
+        ttl_secs: Option<u64>,
+    ) -> Result<(), CacheError> {
+        let mut connection = self.connection.clone();
+        let qualified = self.qualified(key);
+
+        connection
+            .sadd::<_, _, ()>(&qualified, member)
+            .await
+            .map_err(|err| CacheError::Backend(err.to_string()))?;
+
+        if let Some(ttl) = ttl_secs {
+            connection
+                .expire::<_, ()>(&qualified, ttl as i64)
+                .await
+                .map_err(|err| CacheError::Backend(err.to_string()))?;
+        }
+        Ok(())
+    }
+
+    pub async fn set_members(&self, key: &str) -> Result<Vec<String>, CacheError> {
+        let mut connection = self.connection.clone();
+        connection
+            .smembers(self.qualified(key))
+            .await
+            .map_err(|err| CacheError::Backend(err.to_string()))
+    }
+
+    /// `SREM`. Redis drops a set once its last member leaves, so there is no
+    /// empty key left behind to clean up.
+    pub async fn remove_from_set(&self, key: &str, member: &str) -> Result<(), CacheError> {
+        let mut connection = self.connection.clone();
+        connection
+            .srem::<_, _, ()>(self.qualified(key), member)
             .await
             .map_err(|err| CacheError::Backend(err.to_string()))
     }

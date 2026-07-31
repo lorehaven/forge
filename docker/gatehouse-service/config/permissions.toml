@@ -1,0 +1,100 @@
+# The realm's permission catalog: which services exist, what actions each
+# supports, and the named grant bundles ("templates") an admin can assign
+# instead of building a grant by hand.
+#
+# This is the estate's one place a service's grantable shape lives. Before
+# this file existed, "which services can a token be issued for" was
+# SERVICE_AUDIENCES (an env var - fine) and "what can be granted on them" was
+# a hardcoded two-value enum in Rust (not fine: the same two options for every
+# service, and a real third option needed a gatehouse code change and a
+# release). Now both live here: adding a service, or giving one a new
+# grantable action, is an edit to this file and a gatehouse restart - no
+# rebuild.
+#
+# Read once at startup (`PERMISSIONS_CONFIG`, default this path relative to
+# gatehouse's working directory). Changing it needs a restart to take effect,
+# the same as `SERVICE_AUDIENCES` did.
+
+# ---------------------------------------------------------------------------
+# Services
+# ---------------------------------------------------------------------------
+#
+# `actions` is the full set of names grantable on that service. There is no
+# ordering and no implication between them ("write" does not imply "read") -
+# each is checked for membership on its own. A service that only ever needs a
+# coarse split lists exactly `["read", "write"]`; `RequireWrite` (in
+# quench-auth) checks specifically for the `"write"` action, so that pair
+# keeps behaving exactly like the old two-level model. A service whose writes
+# need finer distinctions - switchboard's launching an instance is not the
+# same permission as deleting a model - lists whatever action names its own
+# routes check for with `Claims::can`.
+
+[services.sage]
+label = "Sage"
+actions = ["read", "write"]
+
+[services.warehouse]
+label = "Warehouse"
+actions = ["read", "write"]
+
+[services.conveyor]
+label = "Conveyor"
+actions = ["read", "write"]
+
+[services.switchboard]
+label = "Switchboard"
+actions = ["read", "launch", "stop", "delete-model"]
+
+# Gatehouse administers itself through the same catalog it hands to every
+# other service. This is what lets user administration be delegated below
+# full admin: creating, editing and deleting users, and granting them
+# catalog permissions, are actions like any other - checked with the same
+# `Claims::can`, satisfied by the same wildcard roles. Assigning the `admin`
+# or `service` role is deliberately NOT one of these actions: it stays gated
+# on holding the literal `admin` role, in gatehouse's own code
+# (`realm::{create,update}`), not on anything in this file - a catalog entry
+# that could grant "the power to grant admin" would make `admin` optional
+# rather than the emergency-only role it is meant to be.
+[services.gatehouse]
+label = "Gatehouse"
+actions = ["read-users", "create-user", "edit-user", "delete-user", "manage-permissions"]
+
+# ---------------------------------------------------------------------------
+# Templates
+# ---------------------------------------------------------------------------
+#
+# Named bundles of grants, assignable in one step from the admin pages instead
+# of checking each box by hand. Every action a template grants must be one the
+# corresponding [services.*] entry above declares - checked at startup, so a
+# typo here fails loudly rather than silently granting nothing.
+
+[templates.viewer]
+sage = ["read"]
+warehouse = ["read"]
+switchboard = ["read"]
+conveyor = ["read"]
+
+[templates.editor]
+sage = ["read", "write"]
+warehouse = ["read", "write"]
+switchboard = ["read", "launch", "stop"]
+conveyor = ["read", "write"]
+
+# Everything short of assigning roles: create, edit, delete a user, and grant
+# them catalog permissions (including this template itself). What "avoid
+# using admin day to day" is meant to run on.
+[templates.user-manager]
+gatehouse = ["read-users", "create-user", "edit-user", "delete-user", "manage-permissions"]
+
+# ---------------------------------------------------------------------------
+# Registration
+# ---------------------------------------------------------------------------
+#
+# What a self-service-registered account starts with. Unlike an admin-created
+# user - which starts with nothing, on purpose, because an admin is right
+# there to grant it - a self-registered user has no admin in the loop, so
+# "start with nothing" would just mean an account that can never do anything
+# until somebody happens to notice it exists.
+
+[registration]
+default_template = "viewer"

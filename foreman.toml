@@ -190,7 +190,11 @@ SERVICE_USERNAME = "${admin_user}"
 SERVICE_PASSWORD = "${admin_password}"
 SERVICE_TECH_USERNAME = "${tech_user}"
 SERVICE_TECH_PASSWORD = "${tech_password}"
-SERVICE_AUDIENCES = "sage,switchboard,warehouse,gatehouse,conveyor"
+# Not SERVICE_AUDIENCES: gatehouse derives the realm's audience list from its
+# permission catalog now (docker/gatehouse-service/config/permissions.toml),
+# so that one file is what adding a service means editing - see the catalog's
+# own comments. Every other service still reads SERVICE_AUDIENCES normally for
+# its own, single-service default.
 AUTH_REDIRECT_HOSTS = "https://localhost:6443,https://localhost:7443,https://localhost:8443,https://localhost:9443"
 SERVER_HTTP_REDIRECT_ADDR = "0.0.0.0:5080"
 CONVEYOR_UI_URL = "https://localhost:9443/conveyor/ui/home"

@@ -7,6 +7,7 @@ use crate::scheduler::QueueError;
 use actix_web::http::StatusCode;
 use actix_web::{HttpMessage, HttpRequest, HttpResponse, web};
 use quench_auth::actix::middleware::auth::Auth;
+use quench_auth::actix::middleware::require_write::RequireWrite;
 use quench_auth::prelude::{Claims, JwtConfig, realm};
 use serde_json::json;
 
@@ -21,6 +22,12 @@ pub mod webhooks;
 /// Webhooks are deliberately outside it: a provider has no realm token, and its
 /// delivery is authenticated by its signature instead.
 ///
+/// Every other scope has a clean method shape - registering, enabling,
+/// deleting a repo; writing or deleting a secret; starting or cancelling a
+/// run - all POST/PUT/DELETE, with every GET a genuine read. `RequireWrite`
+/// needs no route-level exceptions here, so it stacks on `Auth` the same way
+/// every other service in the estate does it.
+///
 /// Registration order is load-bearing. Actix picks the first service whose path
 /// matches and does not fall through to the next, so the concrete webhook route
 /// comes first, then `/repos`, and the catch-all `scope("")` that holds the run
@@ -28,9 +35,21 @@ pub mod webhooks;
 pub fn scope(jwt_config: JwtConfig) -> actix_web::Scope {
     web::scope("/api/v1")
         .service(webhooks::receive)
-        .service(secrets::scope().wrap(Auth::new(jwt_config.clone())))
-        .service(repos::scope().wrap(Auth::new(jwt_config.clone())))
-        .service(runs::scope().wrap(Auth::new(jwt_config)))
+        .service(
+            secrets::scope()
+                .wrap(RequireWrite::new(jwt_config.clone()))
+                .wrap(Auth::new(jwt_config.clone())),
+        )
+        .service(
+            repos::scope()
+                .wrap(RequireWrite::new(jwt_config.clone()))
+                .wrap(Auth::new(jwt_config.clone())),
+        )
+        .service(
+            runs::scope()
+                .wrap(RequireWrite::new(jwt_config.clone()))
+                .wrap(Auth::new(jwt_config)),
+        )
 }
 
 /// Who is making this request, for the `registered_by` and `owner` columns.

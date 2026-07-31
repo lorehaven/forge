@@ -1,5 +1,5 @@
 use super::types::VllmInstance;
-use crate::routers::models::mod_impl::is_admin;
+use crate::routers::models::mod_impl::can;
 use crate::routers::vllm::engine::VllmEngine;
 use actix_web::{HttpResponse, Responder, get, web};
 use quench_auth::prelude::JwtConfig;
@@ -33,10 +33,10 @@ pub async fn handle_grid(
     config: web::Data<JwtConfig>,
     engine: web::Data<Arc<dyn VllmEngine>>,
 ) -> impl Responder {
-    let admin = is_admin(&req, &config);
+    let can_stop = can(&req, &config, "stop");
     match engine.list_instances().await {
         Ok(instances) => {
-            let html = render_instances_grid(instances, admin);
+            let html = render_instances_grid(instances, can_stop);
             HttpResponse::Ok().content_type("text/html").body(html)
         }
         Err(err) => {
@@ -46,7 +46,7 @@ pub async fn handle_grid(
     }
 }
 
-pub fn render_instances_grid(instances: Vec<VllmInstance>, is_admin: bool) -> String {
+pub fn render_instances_grid(instances: Vec<VllmInstance>, can_stop: bool) -> String {
     if instances.is_empty() {
         return instances_grid_shell()
             .child(
@@ -79,7 +79,7 @@ pub fn render_instances_grid(instances: Vec<VllmInstance>, is_admin: bool) -> St
             .class("card-header")
             .child(div().class("card-title").text(&instance.model));
 
-        if is_admin && instance.status != "failed" && instance.status != "terminating" {
+        if can_stop && instance.status != "failed" && instance.status != "terminating" {
             header = header.child(
                 button()
                     .class("card-delete")

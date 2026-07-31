@@ -17,12 +17,20 @@ path = "src/main.rs"
 
 [dependencies]
 actix-web = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+futures-util = { workspace = true }
 jsonwebtoken = { workspace = true }
 anyhow = { workspace = true }
 envmnt = { workspace = true }
 quench-auth = { workspace = true }
+quench-cache = { workspace = true, features = ["redis"] }
+quench-config = { workspace = true }
 quench-db = { workspace = true }
 quench-starter = { workspace = true }
 quench-web = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
+urlencoding = { workspace = true }
 tracing = { workspace = true }
+uuid = { workspace = true }

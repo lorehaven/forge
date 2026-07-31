@@ -82,6 +82,13 @@ pub struct ForgeWorld {
     // switchboard
     pub last_id: Option<String>,
     pub credentials: Option<(String, String)>,
+    /// Bearer token switchboard requests present. Switchboard has no `UserDb`
+    /// of its own (identity is federated through gatehouse-issued tokens), so
+    /// unlike conveyor's `credentials`/basic-auth pair this is what actually
+    /// authenticates it once `SERVICE_AUTH_ENABLED=true`. Defaults to a
+    /// full-access token; `I hold a switchboard token scoped "..."` narrows it
+    /// for a single scenario.
+    pub switchboard_token: String,
 
     // warehouse
     pub docker_digest: Option<String>,
@@ -96,6 +103,9 @@ pub struct ForgeWorld {
     pub refresh_cookie: Option<String>,
     pub access_token: Option<String>,
     pub refresh_token: Option<String>,
+    /// Kept apart from `access_token` so a scenario can sign in as the user it
+    /// just created and still administer the realm afterwards.
+    pub admin_token: Option<String>,
 }
 
 impl ForgeWorld {
@@ -135,6 +145,13 @@ impl ForgeWorld {
             current_conversation_id: None,
             last_id: None,
             credentials: None,
+            switchboard_token: build_test_jwt(
+                "bdd-user",
+                "switchboard",
+                "admin",
+                &jwt_secret,
+                3600,
+            ),
             docker_digest: None,
             token: None,
             username: env::var("SERVICE_USERNAME").unwrap_or_else(|_| "admin".to_string()),
@@ -145,6 +162,7 @@ impl ForgeWorld {
             refresh_cookie: None,
             access_token: None,
             refresh_token: None,
+            admin_token: None,
         }
     }
 
@@ -206,7 +224,9 @@ impl ForgeWorld {
     }
 
     pub fn apply_auth(&self, mut rb: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-        if let Some((username, password)) = &self.credentials {
+        if self.target == Target::Switchboard {
+            rb = rb.bearer_auth(&self.switchboard_token);
+        } else if let Some((username, password)) = &self.credentials {
             rb = rb.basic_auth(username, Some(password));
         }
         rb
@@ -247,6 +267,52 @@ impl ForgeWorld {
     }
 }
 
+/// Mints a realm-shaped JWT directly, signed with the suite's shared secret -
+/// for services under test that run alone in the BDD harness, with no
+/// gatehouse present to have issued one.
+pub fn build_test_jwt(
+    sub: &str,
+    service: &str,
+    scope: &str,
+    secret: &str,
+    duration_secs: i64,
+) -> String {
+    use jsonwebtoken::{EncodingKey, Header, encode};
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, Serialize, Deserialize)]
+    struct Claims {
+        sub: String,
+        #[serde(default)]
+        aud: Vec<String>,
+        service: String,
+        scope: String,
+        iat: usize,
+        exp: usize,
+    }
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as usize;
+
+    let claims = Claims {
+        sub: sub.to_string(),
+        aud: vec![service.to_string()],
+        service: service.to_string(),
+        scope: scope.to_string(),
+        iat: now,
+        exp: now + duration_secs as usize,
+    };
+
+    encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(secret.as_bytes()),
+    )
+    .unwrap_or_else(|_| "invalid-token".to_string())
+}
+
 fn service_url(key: &str, default: &str) -> String {
     env::var(key)
         .ok()
@@ -258,6 +324,12 @@ fn service_url(key: &str, default: &str) -> String {
 
 /// Token the sage suite presents; the legacy single-`service` claim shape,
 /// which the shared realm still accepts.
+///
+/// `sage:write` is here because this is the *default* identity the suite's
+/// functional scenarios use - uploading, chatting, creating projects - and
+/// those scenarios predate permissions and were written assuming full access.
+/// The permission boundary itself is what `warehouse/files.feature` tests
+/// against a token built for exactly that; this one is not it.
 fn sage_test_jwt(secret: &str) -> String {
     use jsonwebtoken::{EncodingKey, Header, encode};
     use serde::{Deserialize, Serialize};
@@ -279,7 +351,7 @@ fn sage_test_jwt(secret: &str) -> String {
     let claims = Claims {
         sub: "test-user".to_string(),
         service: "sage".to_string(),
-        scope: "user".to_string(),
+        scope: "user sage:write".to_string(),
         iat: now,
         exp: now + 3600,
     };

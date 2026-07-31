@@ -98,6 +98,75 @@ impl DataCache {
         self.cache.remove(key).is_some()
     }
 
+    /// Adds `member` to the set held at `key`, creating it when absent.
+    ///
+    /// Sets are stored as a JSON array. Unlike the plain value calls this one
+    /// goes through DashMap's entry API rather than get-then-set: two writers
+    /// adding to the same set concurrently must not lose each other's member,
+    /// which is the whole reason a caller reaches for a set instead of a value.
+    ///
+    /// Adding refreshes the set's lifetime, matching Redis `SADD` followed by
+    /// `EXPIRE`.
+    pub fn add_to_set(&self, key: &str, member: &str, ttl_secs: Option<u64>) {
+        let member = Value::String(member.to_string());
+        let mut entry = self.cache.entry(key.to_string()).or_insert(CacheEntry {
+            value: Value::Array(Vec::new()),
+            timestamp: now(),
+            ttl_secs,
+        });
+
+        // An expired set is a new set: `get` reports it gone, so adding to what
+        // is left behind would resurrect members that every reader already
+        // considers absent.
+        let stale = entry.is_expired() || !entry.value.is_array();
+        if stale {
+            entry.value = Value::Array(Vec::new());
+        }
+        if let Value::Array(members) = &mut entry.value
+            && !members.contains(&member)
+        {
+            members.push(member);
+        }
+
+        entry.timestamp = now();
+        entry.ttl_secs = ttl_secs;
+    }
+
+    /// Members of the set at `key`; empty when it is missing, expired, or holds
+    /// something that is not a set.
+    pub fn set_members(&self, key: &str) -> Vec<String> {
+        match self.get(key) {
+            Some(Value::Array(members)) => members
+                .into_iter()
+                .filter_map(|member| member.as_str().map(str::to_string))
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Removes `member` from the set at `key`, dropping the key once the set is
+    /// empty so it does not outlive its members.
+    pub fn remove_from_set(&self, key: &str, member: &str) {
+        // The guard is released before `remove`: DashMap shards by key, and
+        // holding a reference into the shard while removing from it deadlocks.
+        let emptied = {
+            let Some(mut entry) = self.cache.get_mut(key) else {
+                return;
+            };
+            match &mut entry.value {
+                Value::Array(members) => {
+                    members.retain(|held| held.as_str() != Some(member));
+                    members.is_empty()
+                }
+                _ => false,
+            }
+        };
+
+        if emptied {
+            self.cache.remove(key);
+        }
+    }
+
     /// Clear all entries
     pub fn clear(&self) {
         self.cache.clear();
@@ -150,6 +219,13 @@ impl Default for DataCache {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
 #[derive(Debug, Clone)]

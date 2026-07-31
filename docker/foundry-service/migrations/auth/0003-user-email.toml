@@ -1,0 +1,17 @@
+[[migrations]]
+id = "0003-user-email"
+author = "gatehouse-service"
+since = "0.1.2"
+
+# Both nullable: every account seeded by bootstrap.rs today has neither, and a
+# realm that never turns on self-service registration never needs either
+# filled in. `email_verified_at` is a timestamp rather than a boolean so "when"
+# is answerable without a second column, the same reasoning `auth.users` never
+# needed for anything until now - nothing else here has ever recorded when it
+# happened, because nothing else here needed to know.
+[[migrations.changes]]
+sql = """
+ALTER TABLE ${schema}.users
+    ADD COLUMN IF NOT EXISTS email TEXT,
+    ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ;
+"""

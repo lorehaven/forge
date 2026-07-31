@@ -7,8 +7,49 @@
 
 use crate::world::Target;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::sync::{Arc, Mutex, OnceLock};
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::time::{Duration, sleep};
+
+/// Lines gatehouse has printed to stdout, captured live.
+///
+/// `LoggingSender` (`docker/gatehouse-service/src/email.rs`) writes the
+/// registration/reset link nowhere else, by design - this is what lets the
+/// registration and password-reset BDD scenarios read a link they were never
+/// otherwise given. Every other service inherits the harness's own stdout
+/// unchanged; only gatehouse needs its own tapped and re-piped, so only
+/// gatehouse pays for it.
+static GATEHOUSE_LOG: OnceLock<Arc<Mutex<Vec<String>>>> = OnceLock::new();
+
+pub fn gatehouse_log() -> Arc<Mutex<Vec<String>>> {
+    GATEHOUSE_LOG
+        .get_or_init(|| Arc::new(Mutex::new(Vec::new())))
+        .clone()
+}
+
+/// Waits for a gatehouse log line containing `needle`, most recent first: the
+/// line lands a beat after the HTTP response that triggered it, not within it.
+pub async fn wait_for_gatehouse_log(needle: &str) -> Option<String> {
+    let log = gatehouse_log();
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Some(line) = log
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .find(|line| line.contains(needle))
+        {
+            return Some(line.clone());
+        }
+        if std::time::Instant::now() >= deadline {
+            return None;
+        }
+        sleep(Duration::from_millis(50)).await;
+    }
+}
 
 /// A service the suite started, killed on drop as a backstop.
 pub struct Service {
@@ -194,7 +235,7 @@ impl Fixture {
             .env("SERVER_HTTP_REDIRECT_ADDR", "127.0.0.1:8081")
             .env("BASE_PATH", "/switchboard")
             .env("DB_SCHEMA", "test_switchboard")
-            .env("SERVICE_AUTH_ENABLED", "false")
+            .env("SERVICE_AUTH_ENABLED", "true")
             .env("VLLM_MANAGEMENT_MODE", "mock");
 
         Service {
@@ -212,6 +253,12 @@ impl Fixture {
         let storage_dir = self.workspace_root.join("target").join("bdd-storage");
         let _ = std::fs::remove_dir_all(&storage_dir);
         std::fs::create_dir_all(&storage_dir).ok();
+        // Unlike the crates and docker registries, the files API confines a
+        // write by canonicalizing the storage root (`routers::files::confined`)
+        // - a root that does not exist on disk canonicalizes to nothing, so
+        // every write into it is refused as "outside the storage" before it
+        // gets anywhere near auth or permissions.
+        std::fs::create_dir_all(storage_dir.join("files").join("test")).ok();
 
         let mut command = Command::new(self.binary("warehouse-service"));
         command
@@ -228,7 +275,11 @@ impl Fixture {
             .env("FEATURE_DOCKER_ENABLED", "true")
             .env("FEATURE_FILES_ENABLED", "true")
             .env("CRATES_STORAGE_PATH", storage_dir.join("crates"))
-            .env("STORAGE_PATH", storage_dir.join("docker"));
+            .env("STORAGE_PATH", storage_dir.join("docker"))
+            .env(
+                "FILE_STORAGES",
+                format!("test={}", storage_dir.join("files").display()),
+            );
 
         Service {
             target: Target::Warehouse,
@@ -272,11 +323,23 @@ impl Fixture {
                 "WAREHOUSE_UI_URL",
                 "https://127.0.0.1:8443/warehouse/ui/home",
             )
-            .env("FEATURE_WAREHOUSE_ENABLED", "false");
+            .env("FEATURE_WAREHOUSE_ENABLED", "false")
+            .stdout(Stdio::piped());
+
+        let mut child = command.spawn().expect("failed to start gatehouse-service");
+        let stdout = child.stdout.take().expect("gatehouse stdout not piped");
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(stdout).lines();
+            let log = gatehouse_log();
+            while let Ok(Some(line)) = lines.next_line().await {
+                println!("{line}");
+                log.lock().unwrap().push(line);
+            }
+        });
 
         Service {
             target: Target::Gatehouse,
-            child: command.spawn().expect("failed to start gatehouse-service"),
+            child,
         }
     }
 }

@@ -1,4 +1,4 @@
-use super::mod_impl::is_admin;
+use super::mod_impl::can;
 use super::store::get_store;
 use super::types::{Model, ModelEstimate, ModelFilters};
 use crate::routers::gpu::get_gpu_info;
@@ -27,11 +27,11 @@ pub async fn handle_grid(
 ) -> impl Responder {
     let gpu = get_gpu_info().unwrap_or_default();
     let mut models = get_store().get_all_models().await;
-    let admin = is_admin(&req, &config);
+    let can_delete = can(&req, &config, "delete-model");
 
     apply_filters(&mut models, &filters, &gpu);
 
-    let html = render_model_grid(models, &gpu, admin);
+    let html = render_model_grid(models, &gpu, can_delete);
 
     HttpResponse::Ok().content_type("text/html").body(html)
 }
@@ -204,7 +204,7 @@ fn render_separator() -> Element {
     span().class("fit-separator").text(" | ")
 }
 
-fn render_model_grid(models: Vec<Model>, gpu: &GpuInfo, is_admin: bool) -> String {
+fn render_model_grid(models: Vec<Model>, gpu: &GpuInfo, can_delete: bool) -> String {
     let mut grid = div()
         .attr("id", "models-grid")
         .attr("name", "models-grid")
@@ -273,7 +273,7 @@ fn render_model_grid(models: Vec<Model>, gpu: &GpuInfo, is_admin: bool) -> Strin
                 .child(span().class("card-title-text").text(&model.name)),
         );
 
-        if is_admin {
+        if can_delete {
             header = header.child(
                 button()
                     .class("card-delete")

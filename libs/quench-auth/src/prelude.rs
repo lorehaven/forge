@@ -1,4 +1,4 @@
-pub use crate::actix::domain::auth::{Role, User, UserDb};
+pub use crate::actix::domain::auth::{Actions, Permissions, Role, User, UserDb};
 pub use crate::actix::domain::jwt::{Claims, JwtConfig};
 pub use crate::actix::domain::realm;
 pub use crate::actix::domain::session::{Session, SessionDb};

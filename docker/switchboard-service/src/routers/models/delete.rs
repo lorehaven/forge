@@ -1,4 +1,4 @@
-use super::mod_impl::{GGUF_ROOTS, HF_ROOTS, is_admin};
+use super::mod_impl::{GGUF_ROOTS, HF_ROOTS, can};
 use super::store::get_store;
 use super::types::DeleteModelRequest;
 use actix_web::web::Json;
@@ -12,7 +12,7 @@ pub async fn delete_model(
     config: web::Data<JwtConfig>,
     body: Json<DeleteModelRequest>,
 ) -> impl Responder {
-    if !is_admin(&req, &config) {
+    if !can(&req, &config, "delete-model") {
         return HttpResponse::Forbidden().finish();
     }
 
@@ -25,7 +25,7 @@ pub async fn delete_model_form(
     config: web::Data<JwtConfig>,
     form: web::Form<DeleteModelRequest>,
 ) -> impl Responder {
-    if !is_admin(&req, &config) {
+    if !can(&req, &config, "delete-model") {
         return HttpResponse::Forbidden().finish();
     }
 
