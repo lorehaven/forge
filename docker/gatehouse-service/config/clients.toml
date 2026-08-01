@@ -1,5 +1,5 @@
 # OAuth clients gatehouse issues tokens to - see `src/clients.rs` for how
-# this is loaded and `docs/SSO_PLAN.md` §2 for the design.
+# this is loaded.
 #
 # Each relying party gets one authorization-code client (browser login,
 # `redirect_path` under its own `<PREFIX>_UI_URL`/`<PREFIX>_URL`); sage's

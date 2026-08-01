@@ -4,9 +4,9 @@ Feature: Files API permission enforcement
   I want a `read` grant to mean something narrower than `write`
   So that a permission level is not just decoration
 
-  # This is Phase D of docs/PERMISSIONS_PLAN.md: `RequireWrite`, mounted on
-  # `routers::files::scope`. Upload and delete are PUT/DELETE; download, head
-  # and list are all GET, so the method-shape rule needs no exceptions here.
+  # `RequireWrite`, mounted on `routers::files::scope`. Upload and delete are
+  # PUT/DELETE; download, head and list are all GET, so the method-shape rule
+  # needs no exceptions here.
 
   Background:
     Given warehouse API is available

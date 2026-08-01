@@ -10,8 +10,7 @@ Feature: Docker Registry API
   # The registry token endpoint checks credentials against the shared realm,
   # which only gatehouse seeds. A service running on its own here has an empty
   # realm, so the assertion is that unknown credentials are refused; the
-  # authenticated path is covered by the gatehouse suite and by the upgrade
-  # verification in docs/PRODUCTION_UPGRADE.md.
+  # authenticated path is covered by the gatehouse suite.
   Scenario: The registry token endpoint requires realm credentials
     When token for service "warehouse" and scope "repository:test-repo:pull" is requested
     Then response status should be 401

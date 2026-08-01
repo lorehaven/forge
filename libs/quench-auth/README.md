@@ -82,15 +82,17 @@ crate, and `UserDb` remains read-only.
 `GATEHOUSE_URL` is therefore mandatory for any service using this crate with
 auth enabled — see the gatehouse README.
 
-## Still here only until SSO Phase 2
+## Still here
 
-Two read paths keep relying parties talking to the database directly:
+`UserDb::validate` and `SessionDb::is_active` are the two read paths that keep
+a relying party talking to a store directly rather than trusting the token
+alone:
 
-- `UserDb::validate` — the Basic-auth machine-to-machine path (sage → switchboard,
-  and warehouse's registry token endpoint). Goes away with the
-  `client_credentials` grant.
-- `SessionDb::is_active` — per-request revocation, now a Redis read rather than
-  a database one. Goes away with token introspection, or with access tokens
-  short enough not to need it.
-
-Both are noted in `docs/SSO_PLAN.md` §2.4/§2.6.
+- `UserDb::validate` — no longer sage → switchboard (that moved to the
+  `client_credentials` grant, verified via JWKS like everything else), but
+  still warehouse's Docker Registry v2 token endpoint, which authenticates
+  with HTTP Basic because the registry protocol requires it, not the estate's
+  own choice.
+- `SessionDb::is_active` — per-request revocation, a Redis read rather than a
+  database one. Would go away with token introspection, or with access tokens
+  short enough not to need it - neither is planned.

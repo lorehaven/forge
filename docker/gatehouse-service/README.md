@@ -91,20 +91,21 @@ startup, so there is nothing to build or commit.
 
 | Variable | Purpose |
 |---|---|
-| `DATABASE_URL` | Postgres holding the `auth` schema (users) |
+| `DATABASE_URL` | Postgres holding the `auth` schema (users, signing keys, OAuth clients and codes) |
 | `REDIS_URL` / `CACHE_URL` | shared session store; required on every service |
-| `JWT_SECRET` | HS256 signing key — **the same value in every service** |
-| `SERVICE_AUDIENCES` | services a gatehouse token is valid for, e.g. `sage,switchboard,warehouse` |
+| `GATEHOUSE_KEY_ENCRYPTION_KEY` | encrypts `auth.signing_keys` at rest — gatehouse only, never shared |
+| `CLIENTS_CONFIG` | OAuth client catalog, default `config/clients.toml` |
 | `AUTH_BOOTSTRAP` | defaults to `true` here, unset everywhere else |
 | `SERVICE_USERNAME` / `SERVICE_PASSWORD` | the admin created on first boot |
-| `SERVICE_TECH_USERNAME` / `SERVICE_TECH_PASSWORD` | machine-to-machine account (was switchboard's) |
 | `AUTH_DB_SCHEMA` | realm schema, default `auth` |
 | `AUTH_COOKIE_NAME` / `AUTH_REFRESH_COOKIE_NAME` | default `forge_session` / `forge_refresh` |
 | `AUTH_COOKIE_DOMAIN` | parent domain for cross-subdomain SSO; unset = host-only |
 | `AUTH_REDIRECT_HOSTS` | comma-separated relying-party origins allowed as `?redirect=` |
 
-Relying parties set `GATEHOUSE_URL` (this service's base URL), `REDIS_URL`, and
-the same `JWT_SECRET`, `AUTH_COOKIE_*` and `SERVICE_NAME`.
+There is no shared signing secret any more, so a relying party's own
+configuration is smaller: `GATEHOUSE_URL` (this service's base URL, to fetch
+JWKS from), `GATEHOUSE_CLIENT_ID` / `GATEHOUSE_CLIENT_SECRET` (its own entry in
+`config/clients.toml`), `REDIS_URL` and `SERVICE_NAME`.
 
 ## Users, roles and permissions
 
@@ -141,9 +142,10 @@ service that could grant them anything. `SERVICE_AUDIENCES` remains the ceiling:
 grant naming a service this deployment does not run is ignored at issue time and
 rejected at grant time.
 
-The `read`/`write` distinction is carried in the token but not yet enforced by the
-relying parties — that is `docs/PERMISSIONS_PLAN.md` Phase D. Today a grant of
-either level means the service is reachable.
+The two-level `read`/`write` model described above predates the per-action
+catalog (`config/permissions.toml`): a grant is now `service:action` (e.g.
+`switchboard:launch`), enforced by whatever action each relying party's routes
+actually declare, not a blanket read/write ladder.
 
 Changing what someone may do ends their sessions, so the new answer applies at
 once rather than whenever their access token expires. The exception is an admin
@@ -221,8 +223,8 @@ which is why it is a set rather than a JSON array read and written back.
 
 There is still deliberately **no session listing UI and no audit trail**. The
 index would support "sign out my other devices"; "who granted this, and when"
-would not — that needs durable per-grant records in Postgres, sketched in
-`docs/PERMISSIONS_PLAN.md` §5.
+would not — that needs durable per-grant records in Postgres, which nothing
+here builds toward yet.
 
 ## Database
 
@@ -232,19 +234,30 @@ Schema comes from the foundry catalog's `auth` module, not from this service:
 foundry-service --install gatehouse apply
 ```
 
-That creates `auth.users`, the realm's only table. Bootstrap then seeds
-`SERVICE_USERNAME` / `SERVICE_PASSWORD` and the machine identity
-`SERVICE_TECH_USERNAME` / `SERVICE_TECH_PASSWORD`, and never overwrites a user
-that already exists — so on a second boot the passwords in the environment are
-ignored.
+That creates `auth.users`, plus `auth.signing_keys` (this service's own Ed25519
+keys — see below), `auth.clients` and `auth.authorization_codes` (the OAuth
+redirect flow). Bootstrap then seeds `SERVICE_USERNAME` / `SERVICE_PASSWORD`,
+and never overwrites a user that already exists — so on a second boot the
+password in the environment is ignored.
 
 There are no sessions in Postgres, so there is nothing to migrate: everyone
 signs in once against the new realm.
 
-## Not yet here
+## Signing and the redirect flow
 
-Deliberately staged (see `docs/SSO_PLAN.md` Phase 2): asymmetric EdDSA signing
-with JWKS, the authorization-code + PKCE redirect flow, and the
-`client_credentials` grant for machine-to-machine. Today the realm shares one
-HS256 secret and one cookie, which requires all services to sit under a common
-parent domain.
+Tokens are signed with Ed25519 (EdDSA), not a shared secret: gatehouse holds
+the private key (`auth.signing_keys`, encrypted at rest with
+`GATEHOUSE_KEY_ENCRYPTION_KEY`) and publishes the public half at
+`/.well-known/jwks.json`. A relying party fetches and caches that JWKS to
+verify locally — still no call to gatehouse on the hot path. Rotating keys
+(`POST /api/v1/admin/keys/rotate`, gated on `gatehouse:manage-signing-keys`)
+retires the outgoing key rather than deleting it, so tokens it already signed
+keep verifying until they expire on their own.
+
+A relying party's `/ui/login` starts a real authorization-code + PKCE round
+trip (`GET /api/v1/authorize`, `POST /api/v1/token`) rather than trusting a
+realm-wide cookie gatehouse set directly - each service ends up with a token
+scoped to itself, that it fetched itself. `client_credentials` is the same
+`/api/v1/token` endpoint, for a machine identity (sage → switchboard) instead
+of a user. OAuth clients are seeded from `config/clients.toml` at boot rather
+than managed through an API - a small, fixed set, not worth a UI for yet.

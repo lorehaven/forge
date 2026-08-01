@@ -16,18 +16,18 @@ whole, and nothing resolves it by version. Conveyor's artifacts are the first
 caller.
 
 Everything is under `{BASE_PATH}/api/v1/files` and behind the realm's auth —
-Basic, Bearer or the realm cookie, like any other relying party. Turned on with
-`FEATURE_FILES_ENABLED`.
+a bearer token or the realm cookie, verified against gatehouse's JWKS like any
+other relying party. Turned on with `FEATURE_FILES_ENABLED`.
 
 Upload and delete need the realm's `warehouse:write` permission (or a wildcard
 role); download and list need only `warehouse:read`. Enforced by `RequireWrite`
 (`quench-auth`), which 403s a write-shaped request when the token's scope has
-no matching grant — see `docs/PERMISSIONS_PLAN.md`.
+no matching grant.
 
 The crates registry (`/api/v1/crates`) and admin endpoints (`/admin`) are
 **not** behind this: they have no real authentication yet, so there is no
 identity to build a permission on top of. Fixing that is separate, unstarted
-work — see `docs/PERMISSIONS_PLAN.md` §7.1.
+work.
 
 ### Storages
 
@@ -110,7 +110,10 @@ Warehouse implements Docker Registry HTTP API v2 endpoints under `/v2`, plus tok
 
 Key environment variables:
 
-- `JWT_SECRET` (required)
+- `DOCKER_TOKEN_SECRET` (required when auth is enabled) — signs and verifies
+  these registry tokens. Local to warehouse and independent of the realm's
+  Ed25519 keys: the registry protocol speaks its own Basic-then-Bearer
+  exchange that gatehouse has no part in, so there is nothing to share.
 - `SERVICE_AUTH_ENABLED` (`true|false`, default `false`)
 - `SERVICE_USERNAME`, `SERVICE_PASSWORD` (required when auth is enabled)
 - `SERVICE_NAME` (default `warehouse`)
