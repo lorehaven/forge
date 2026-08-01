@@ -618,6 +618,38 @@ pub async fn read_logs(db: &Db, job_id: &str, after: i64) -> Result<Vec<LogChunk
         .collect()
 }
 
+/// A job's steps, in the order they ran - the counterpart `record_steps`
+/// never got, since nothing read them back until the repo scan summary did.
+pub async fn list_steps(db: &Db, job_id: &str) -> Result<Vec<StepState>, QueueError> {
+    let pool = pool(db)?;
+    let schema = schema();
+    let sql = format!(
+        "SELECT ordinal, kind, command, status, exit_code, started_at, finished_at \
+         FROM {schema}.steps WHERE job_id = $1 ORDER BY ordinal"
+    );
+
+    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+        .bind(job_id)
+        .fetch_all(pool)
+        .await?;
+
+    rows.iter()
+        .map(|row| {
+            let status: String = row.try_get("status")?;
+            Ok(StepState {
+                ordinal: usize::try_from(row.try_get::<i32, _>("ordinal")?).unwrap_or(0),
+                kind: row.try_get("kind")?,
+                command: row.try_get("command")?,
+                status: Status::parse(&status)
+                    .ok_or_else(|| QueueError::BadRow(format!("unknown status '{status}'")))?,
+                exit_code: row.try_get("exit_code")?,
+                started_at: row.try_get("started_at")?,
+                finished_at: row.try_get("finished_at")?,
+            })
+        })
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // Rows
 // ---------------------------------------------------------------------------

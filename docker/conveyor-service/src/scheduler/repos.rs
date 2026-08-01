@@ -87,6 +87,27 @@ pub async fn find_by_slug(
     row.as_ref().map(from_row).transpose()
 }
 
+/// Looks a repository up the way the UI does: by `owner/name` alone, with no
+/// provider to disambiguate. Unlike `find_by_slug`, this is not exposed to a
+/// webhook - a provider identifies itself, a browser URL does not.
+pub async fn find_by_owner_name(
+    db: &Db,
+    owner: &str,
+    name: &str,
+) -> Result<Option<Repo>, QueueError> {
+    let pool = pool(db)?;
+    let schema = schema();
+    let sql = format!("SELECT {COLUMNS} FROM {schema}.repos WHERE owner = $1 AND name = $2");
+
+    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+        .bind(owner)
+        .bind(name)
+        .fetch_optional(pool)
+        .await?;
+
+    row.as_ref().map(from_row).transpose()
+}
+
 pub async fn list(db: &Db) -> Result<Vec<Repo>, QueueError> {
     let pool = pool(db)?;
     let schema = schema();

@@ -120,5 +120,21 @@ pub fn runs_rules() -> Vec<CssRule> {
             .property("align-items", "baseline")
             .property("padding", "0.3rem 0")
             .property("font-size", "0.9rem"),
+        // ---------------------------------------------------------------
+        // Repo scan
+        // ---------------------------------------------------------------
+        CssRule::new(".scan-grid")
+            .property("display", "grid")
+            .property(
+                "grid-template-columns",
+                "repeat(auto-fit, minmax(18rem, 1fr))",
+            )
+            .property("gap", "1rem"),
+        CssRule::new(".scan-details")
+            .property("margin", "0.5rem 0 0")
+            .property("padding-left", "1.1rem")
+            .property("font-size", "0.82rem")
+            .property("color", "var(--bs-gray-400)")
+            .child(CssRule::new("li").property("margin", "0.15rem 0")),
     ]
 }

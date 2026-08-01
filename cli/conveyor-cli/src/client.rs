@@ -29,8 +29,14 @@ impl Client {
         gatehouse_url: Option<String>,
         insecure: bool,
     ) -> Result<Self> {
+        // Lowest-priority source: a flag beats an env var beats this. See
+        // `crate::config` for why a malformed file is an error but a missing
+        // one is not.
+        let file = crate::config::FileConfig::load()?;
+
         let base_url = url
             .or_else(|| non_empty("CONVEYOR_URL"))
+            .or_else(|| file.url.clone())
             .context(
                 "conveyor's address is not set: pass --url or set CONVEYOR_URL, \
                  e.g. https://localhost:9443/conveyor",
@@ -38,11 +44,17 @@ impl Client {
             .trim_end_matches('/')
             .to_string();
 
-        let username = username.or_else(|| non_empty("CONVEYOR_USERNAME"));
-        let password = password.or_else(|| non_empty("CONVEYOR_PASSWORD"));
+        let username = username
+            .or_else(|| non_empty("CONVEYOR_USERNAME"))
+            .or_else(|| file.username.clone());
+        let password = password
+            .or_else(|| non_empty("CONVEYOR_PASSWORD"))
+            .or_else(|| file.password.clone());
 
         let http = reqwest::Client::builder()
-            .danger_accept_invalid_certs(insecure || envmnt::is_or("CONVEYOR_INSECURE", false))
+            .danger_accept_invalid_certs(
+                insecure || envmnt::is_or("CONVEYOR_INSECURE", false) || file.insecure,
+            )
             .build()
             .context("could not build an HTTP client")?;
 
@@ -50,6 +62,7 @@ impl Client {
             Some(username) => {
                 let gatehouse_url = gatehouse_url
                     .or_else(|| non_empty("GATEHOUSE_URL"))
+                    .or_else(|| file.gatehouse_url.clone())
                     .context(
                         "CONVEYOR_USERNAME is set but gatehouse's address is not: pass \
                          --gatehouse-url or set GATEHOUSE_URL, e.g. https://localhost:5443/gatehouse",

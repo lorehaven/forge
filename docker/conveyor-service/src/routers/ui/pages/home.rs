@@ -191,7 +191,15 @@ fn repos_panel(repositories: &[Repo]) -> Element {
     for repo in repositories {
         table = table.child(
             element("tr")
-                .child(element("td").text(repo.slug()))
+                .child(
+                    element("td").child(
+                        a().attr(
+                            "href",
+                            ui_path(&format!("/repos/{}/{}/scan", repo.owner, repo.name)),
+                        )
+                        .text(repo.slug()),
+                    ),
+                )
                 .child(element("td").class("muted").text(repo.provider.to_string()))
                 .child(element("td").class("mono").text(&repo.default_branch))
                 .child(element("td").child(if repo.enabled {

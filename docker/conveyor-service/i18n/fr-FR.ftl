@@ -43,6 +43,16 @@ ui_meta_attempt = Tentative
 ui_artifacts_title = Artefacts
 ui_log_loading = Chargement…
 
+# ── Scan ─────────────────────────────────────────────────────────────────────
+
+ui_scan_subtitle = Lint, dépendances inutilisées et vulnérabilités connues, à partir de la dernière exécution.
+ui_scan_lint_title = Lint
+ui_scan_machete_title = Dépendances inutilisées
+ui_scan_audit_title = Vulnérabilités
+ui_scan_no_runs = Ce dépôt n'a pas encore été exécuté.
+ui_scan_no_checks = La dernière exécution n'a exécuté ni lint, ni machete, ni audit. Ajoutez `anvil lint`, `anvil machete` ou `anvil audit` comme étapes dans .conveyor.toml pour les voir ici.
+ui_scan_repo_not_found = Dépôt introuvable.
+
 # ── Status ───────────────────────────────────────────────────────────────────
 
 ui_status_queued = En attente

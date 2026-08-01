@@ -969,7 +969,7 @@ dependencies = [
 
 [[package]]
 name = "conveyor-cli"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -982,6 +982,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "toml",
 ]
 
 [[package]]
@@ -996,7 +997,7 @@ dependencies = [
 
 [[package]]
 name = "conveyor-service"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "actix-web",
  "async-trait",

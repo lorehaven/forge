@@ -11,6 +11,7 @@ use quench_cli::prelude::{Tone, print_status};
 mod cli;
 mod client;
 mod commands;
+mod config;
 
 #[tokio::main]
 async fn main() {

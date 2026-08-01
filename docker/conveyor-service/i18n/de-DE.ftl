@@ -43,6 +43,16 @@ ui_meta_attempt = Versuch
 ui_artifacts_title = Artefakte
 ui_log_loading = Wird geladen…
 
+# ── Scan ─────────────────────────────────────────────────────────────────────
+
+ui_scan_subtitle = Lint, ungenutzte Abhängigkeiten und bekannte Schwachstellen, aus dem letzten Lauf.
+ui_scan_lint_title = Lint
+ui_scan_machete_title = Ungenutzte Abhängigkeiten
+ui_scan_audit_title = Schwachstellen
+ui_scan_no_runs = Dieses Repository wurde noch nicht ausgeführt.
+ui_scan_no_checks = Der letzte Lauf hat weder lint, machete noch audit ausgeführt. Füge `anvil lint`, `anvil machete` oder `anvil audit` als Schritte in .conveyor.toml hinzu, um sie hier zu sehen.
+ui_scan_repo_not_found = Kein solches Repository.
+
 # ── Status ───────────────────────────────────────────────────────────────────
 
 ui_status_queued = In Warteschlange

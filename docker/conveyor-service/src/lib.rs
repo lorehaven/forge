@@ -27,6 +27,7 @@ pub use conveyor_pipeline as pipeline;
 pub use conveyor_pipeline::steps;
 pub mod providers;
 pub mod routers;
+pub mod scan;
 pub mod scheduler;
 pub mod secrets;
 pub mod startup;

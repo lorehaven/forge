@@ -43,6 +43,16 @@ ui_meta_attempt = Attempt
 ui_artifacts_title = Artifacts
 ui_log_loading = Loading…
 
+# ── Scan ─────────────────────────────────────────────────────────────────────
+
+ui_scan_subtitle = Lint, unused dependencies and known vulnerabilities, from the most recent run.
+ui_scan_lint_title = Lint
+ui_scan_machete_title = Unused dependencies
+ui_scan_audit_title = Vulnerabilities
+ui_scan_no_runs = This repository has not run yet.
+ui_scan_no_checks = The most recent run did not run lint, machete or audit. Add `anvil lint`, `anvil machete` or `anvil audit` as steps in .conveyor.toml to see them here.
+ui_scan_repo_not_found = No such repository.
+
 # ── Status ───────────────────────────────────────────────────────────────────
 
 ui_status_queued = Queued
