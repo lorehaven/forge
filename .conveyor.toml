@@ -1,0 +1,49 @@
+# Every push to master, and every pull request. Naming any event turns the
+# others off, so a tag push does not build here.
+on = { push = ["master"], pull_request = ["*"] }
+
+# ---------------------------------------------------------------- check
+# Formatting, clippy, unused dependencies and a vulnerability audit. Separate
+# jobs in one stage, so they run together and one failure does not hide the
+# other three - and so the repo scan page (/conveyor/ui/repos/.../scan) has
+# lint, machete and audit to read back from.
+[[stage]]
+name = "check"
+
+[[stage.job]]
+name  = "format"
+image = "ossiriand.arda:8080/forge/ci/rust-builder:latest"
+steps = [{ anvil = "format --check" }]
+
+[[stage.job]]
+name  = "lint"
+image = "ossiriand.arda:8080/forge/ci/rust-builder:latest"
+# Matches the workspace's own lint policy - see anvil lint --all-targets
+# --deny-warnings used everywhere else in this repo.
+steps = [{ anvil = "lint --all-targets --deny-warnings" }]
+
+[[stage.job]]
+name  = "deps"
+image = "ossiriand.arda:8080/forge/ci/rust-builder:latest"
+steps = [{ anvil = "machete" }, { anvil = "audit" }]
+
+# ---------------------------------------------------------------- build
+[[stage]]
+name  = "build"
+needs = ["check"]
+
+[[stage.job]]
+name  = "workspace"
+image = "ossiriand.arda:8080/forge/ci/rust-builder:latest"
+steps = [{ anvil = "build --all" }]
+
+# ---------------------------------------------------------------- test
+[[stage]]
+name  = "test"
+needs = ["build"]
+
+[[stage.job]]
+name  = "unit"
+image = "ossiriand.arda:8080/forge/ci/rust-builder:latest"
+env   = { RUST_BACKTRACE = "1" }
+steps = [{ anvil = "test --all" }]
