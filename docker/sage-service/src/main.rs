@@ -17,6 +17,10 @@ async fn main() -> std::io::Result<()> {
     let init_switchboard = state.switchboard.clone();
     let init_config = state.config.clone();
 
+    let launched = startup::default_models::LaunchedInstances::default();
+    let init_launched = launched.clone();
+    let shutdown_launched = launched;
+
     let result = serve(
         root_scope,
         move || base_path_scope(state.clone()),
@@ -40,7 +44,11 @@ async fn main() -> std::io::Result<()> {
             )
             .await;
 
-            startup::default_models::spawn_monitor(init_switchboard.clone(), init_config.clone());
+            startup::default_models::spawn_monitor(
+                init_switchboard.clone(),
+                init_config.clone(),
+                init_launched,
+            );
 
             if let Err(e) = startup::validate_startup(&init_switchboard, &init_config).await {
                 tracing::error!("Startup validation failed: {}", e);
@@ -55,7 +63,8 @@ async fn main() -> std::io::Result<()> {
     // The server future resolves once actix has completed its graceful
     // shutdown (e.g. on SIGTERM/SIGINT), so the default models we asked
     // switchboard to launch at startup can be torn down here.
-    startup::default_models::shutdown(&shutdown_switchboard, &shutdown_config).await;
+    startup::default_models::shutdown(&shutdown_switchboard, &shutdown_config, &shutdown_launched)
+        .await;
 
     result
 }

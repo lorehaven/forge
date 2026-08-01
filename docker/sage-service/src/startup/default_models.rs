@@ -1,4 +1,8 @@
 use std::collections::HashMap;
+use std::sync::Arc;
+
+use chrono::{DateTime, Utc};
+use tokio::sync::Mutex;
 
 use crate::clients::switchboard::{SwitchboardClient, VllmInstance};
 use crate::config::{DefaultModel, SageConfig};
@@ -9,9 +13,58 @@ use crate::config::{DefaultModel, SageConfig};
 /// launches are serialized.
 pub const MAX_LAUNCH_ATTEMPTS: u32 = 3;
 
+/// Instances this process's own monitor has launched, keyed by instance id
+/// with the `started_at` switchboard reported at launch time.
+///
+/// During a rolling update the new pod's monitor typically launches a
+/// default model within its first tick, before Kubernetes has even noticed
+/// the pod is ready - well before the old pod receives SIGTERM. If shutdown
+/// stopped every active instance matching a configured model name, the old
+/// pod would tear down the instance the new pod just launched out from under
+/// it.
+///
+/// `owns` decides what shutdown is allowed to stop: an instance this process
+/// itself launched and that nothing has relaunched since (compared by
+/// `started_at`, not just id - the id is stable across relaunches of the
+/// same model/port, so id alone can't tell "still mine" from "replaced"),
+/// *or* an instance that already existed before this process even started,
+/// which this process merely inherited (e.g. left running by an earlier
+/// crash) and is still responsible for cleaning up. What it excludes is
+/// exactly the rolling-update case: an instance that appeared after this
+/// process started but that a *different* process launched.
+#[derive(Clone)]
+pub struct LaunchedInstances {
+    launches: Arc<Mutex<HashMap<String, DateTime<Utc>>>>,
+    process_started_at: DateTime<Utc>,
+}
+
+impl Default for LaunchedInstances {
+    fn default() -> Self {
+        Self {
+            launches: Arc::new(Mutex::new(HashMap::new())),
+            process_started_at: Utc::now(),
+        }
+    }
+}
+
+impl LaunchedInstances {
+    async fn record(&self, id: String, started_at: DateTime<Utc>) {
+        self.launches.lock().await.insert(id, started_at);
+    }
+
+    async fn owns(&self, id: &str, started_at: DateTime<Utc>) -> bool {
+        started_at < self.process_started_at
+            || self.launches.lock().await.get(id) == Some(&started_at)
+    }
+}
+
 /// Keep the configured default models running: every 10s the monitor asks
 /// switchboard which instances are up and launches the next missing one.
-pub fn spawn_monitor(switchboard: SwitchboardClient, config: SageConfig) {
+pub fn spawn_monitor(
+    switchboard: SwitchboardClient,
+    config: SageConfig,
+    launched: LaunchedInstances,
+) {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
         // Consecutive launch attempts per model, kept across ticks so a model
@@ -19,7 +72,7 @@ pub fn spawn_monitor(switchboard: SwitchboardClient, config: SageConfig) {
         let mut attempts: HashMap<String, u32> = HashMap::new();
         loop {
             interval.tick().await;
-            monitor_default_models(&switchboard, &config, &mut attempts).await;
+            monitor_default_models(&switchboard, &config, &mut attempts, &launched).await;
         }
     });
 }
@@ -71,6 +124,7 @@ async fn monitor_default_models(
     switchboard: &SwitchboardClient,
     config: &SageConfig,
     attempts: &mut HashMap<String, u32>,
+    launched: &LaunchedInstances,
 ) {
     tracing::debug!("Checking active instances for default models...");
 
@@ -111,7 +165,7 @@ async fn monitor_default_models(
     *attempt += 1;
     let attempt = *attempt;
 
-    request_model_launch(switchboard, model).await;
+    request_model_launch(switchboard, model, launched).await;
 
     if attempt >= MAX_LAUNCH_ATTEMPTS {
         tracing::error!(
@@ -124,7 +178,11 @@ async fn monitor_default_models(
     }
 }
 
-async fn request_model_launch(switchboard: &SwitchboardClient, model: &DefaultModel) {
+async fn request_model_launch(
+    switchboard: &SwitchboardClient,
+    model: &DefaultModel,
+    launched: &LaunchedInstances,
+) {
     tracing::info!(
         "Default model '{}' is not available. Requesting switchboard to launch it.",
         model.name
@@ -144,6 +202,7 @@ async fn request_model_launch(switchboard: &SwitchboardClient, model: &DefaultMo
         .await
     {
         Ok(inst) => {
+            launched.record(inst.id.clone(), inst.started_at).await;
             tracing::info!(
                 "Successfully requested launch of model '{}'. Instance ID: {}",
                 model.name,
@@ -162,9 +221,15 @@ async fn request_model_launch(switchboard: &SwitchboardClient, model: &DefaultMo
 
 /// Gracefully stop the default models on service shutdown. Fetches the active
 /// instances and asks switchboard to SIGTERM each one that corresponds to a
-/// configured default model. Best-effort: failures are logged, not fatal.
-/// Does nothing unless `stop_models_on_shutdown` is enabled.
-pub async fn shutdown(switchboard: &SwitchboardClient, config: &SageConfig) {
+/// configured default model *and* that this process itself launched (see
+/// `LaunchedInstances`) - never one a newer sage replica already relaunched
+/// after this process's own launch. Best-effort: failures are logged, not
+/// fatal. Does nothing unless `stop_models_on_shutdown` is enabled.
+pub async fn shutdown(
+    switchboard: &SwitchboardClient,
+    config: &SageConfig,
+    launched: &LaunchedInstances,
+) {
     if !config.stop_models_on_shutdown {
         tracing::debug!("SAGE_STOP_MODELS_ON_SHUTDOWN is disabled; leaving default models running");
         return;
@@ -188,6 +253,15 @@ pub async fn shutdown(switchboard: &SwitchboardClient, config: &SageConfig) {
             inst.model == model.name
                 && matches!(inst.status.as_str(), "running" | "starting" | "pending")
         }) {
+            if !launched.owns(&inst.id, inst.started_at).await {
+                tracing::debug!(
+                    "Not stopping '{}' (instance {}): launched by a different sage instance",
+                    model.name,
+                    inst.id
+                );
+                continue;
+            }
+
             match switchboard.stop_instance(&inst.id).await {
                 Ok(_) => tracing::info!(
                     "Requested graceful stop of default model '{}' (instance {})",
