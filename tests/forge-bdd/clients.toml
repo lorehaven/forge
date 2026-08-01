@@ -1,0 +1,37 @@
+# OAuth clients for the BDD harness's own gatehouse instance - mirrors
+# docker/gatehouse-service/config/clients.toml, with redirect_uris pointed at
+# the fixed ports services.rs starts each service on. Secrets are read from
+# env the same way the real config does; services.rs sets matching
+# CLIENT_SECRET_* / GATEHOUSE_CLIENT_SECRET values on both sides.
+
+[[client]]
+client_id = "sage"
+redirect_path = "/ui/auth/callback"
+allowed_scopes = ["sage"]
+secret_env = "CLIENT_SECRET_SAGE"
+
+[[client]]
+client_id = "switchboard"
+redirect_path = "/ui/auth/callback"
+allowed_scopes = ["switchboard"]
+secret_env = "CLIENT_SECRET_SWITCHBOARD"
+
+[[client]]
+client_id = "warehouse"
+redirect_path = "/ui/auth/callback"
+allowed_scopes = ["warehouse"]
+secret_env = "CLIENT_SECRET_WAREHOUSE"
+
+[[client]]
+client_id = "conveyor"
+redirect_path = "/ui/auth/callback"
+allowed_scopes = ["conveyor"]
+secret_env = "CLIENT_SECRET_CONVEYOR"
+
+# sage's machine identity toward switchboard - client_credentials only, no
+# redirect_path. allowed_scopes is the audience (switchboard), not a scope
+# entry; the token's actual scope is the fixed wildcard `service` role.
+[[client]]
+client_id = "sage-switchboard"
+allowed_scopes = ["switchboard"]
+secret_env = "CLIENT_SECRET_SAGE_SWITCHBOARD"

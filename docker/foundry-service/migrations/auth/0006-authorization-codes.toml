@@ -1,0 +1,24 @@
+[[migrations]]
+id = "0006-authorization-codes"
+author = "gatehouse-service"
+since = "0.2.0"
+
+# One row per code issued by GET /authorize, consumed exactly once by
+# POST /token. `code_hash` rather than the raw code, same reasoning as
+# refresh tokens: the value that matters is only ever compared, never read
+# back. `consumed_at` rather than deleting the row lets a replay be told
+# apart from an unknown code in logs.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.authorization_codes (
+    code_hash      TEXT PRIMARY KEY,
+    client_id      TEXT NOT NULL REFERENCES ${schema}.clients(client_id) ON DELETE CASCADE,
+    username       TEXT NOT NULL REFERENCES ${schema}.users(username) ON DELETE CASCADE,
+    redirect_uri   TEXT NOT NULL,
+    scope          TEXT NOT NULL,
+    pkce_challenge TEXT NOT NULL,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at     TIMESTAMPTZ NOT NULL,
+    consumed_at    TIMESTAMPTZ
+);
+"""

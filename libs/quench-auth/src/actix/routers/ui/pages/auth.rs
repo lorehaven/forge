@@ -5,6 +5,7 @@
 //! browser over and to accept it back, which is what lives here.
 
 use crate::actix::domain::realm;
+use crate::actix::domain::sso_client::{self, SsoConfig};
 use crate::prelude::JwtConfig;
 use actix_web::HttpResponse;
 use serde::{Deserialize, Serialize};
@@ -72,7 +73,7 @@ impl AuthStatus {
 /// the requests that matter; here it would put a store round trip on every open
 /// tab every minute, to catch a revocation moments earlier than the next real
 /// request will anyway.
-pub fn auth_status(request: &actix_web::HttpRequest, config: &JwtConfig) -> HttpResponse {
+pub async fn auth_status(request: &actix_web::HttpRequest, config: &JwtConfig) -> HttpResponse {
     if !config.auth_enabled {
         return HttpResponse::Ok().json(AuthStatus {
             authenticated: true,
@@ -85,7 +86,7 @@ pub fn auth_status(request: &actix_web::HttpRequest, config: &JwtConfig) -> Http
         return HttpResponse::Ok().json(AuthStatus::anonymous());
     };
 
-    match config.decode_claims(cookie.value()) {
+    match config.decode_claims(cookie.value()).await {
         Ok(claims) => HttpResponse::Ok().json(AuthStatus {
             authenticated: true,
             username: Some(claims.sub),
@@ -100,17 +101,16 @@ pub fn auth_status(request: &actix_web::HttpRequest, config: &JwtConfig) -> Http
     }
 }
 
-/// Hands the browser to gatehouse's login form, carrying a return address.
-///
-/// Gatehouse is required: a service with no `GATEHOUSE_URL` has no way for
-/// anyone to sign in, so this reports that as a configuration error rather than
-/// pretending to have a login page.
-pub fn login_delegation(request: &actix_web::HttpRequest) -> HttpResponse {
-    let return_to = absolute_url(request, &ui_path("/home"));
-    match realm::gatehouse_login_url(Some(&return_to)) {
-        Some(url) => redirect(url),
-        None => gatehouse_not_configured(),
-    }
+/// Starts the authorization-code + PKCE round trip at gatehouse, so this
+/// service ends up with a token it fetched itself rather than trusting a
+/// realm-wide cookie gatehouse set directly. See `sso_client::authorize_redirect`.
+pub fn login_delegation(request: &actix_web::HttpRequest, sso: &SsoConfig) -> HttpResponse {
+    sso_client::authorize_redirect(request, sso)
+}
+
+/// `GET /ui/auth/callback` - completes the exchange `login_delegation` started.
+pub async fn auth_callback(request: &actix_web::HttpRequest, sso: &SsoConfig) -> HttpResponse {
+    sso_client::callback(request, sso).await
 }
 
 /// Realm-wide logout, which is also gatehouse's to perform.

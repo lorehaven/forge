@@ -36,7 +36,6 @@ async fn status_with_auth(auth: bool, request: test::TestRequest) -> StatusCode 
     let _guard = lock().lock().await;
 
     unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", if auth { "true" } else { "false" }) };
-    unsafe { std::env::set_var("JWT_SECRET", "conveyor-routing-tests") };
 
     let db = Db::connect("").await.expect("in-memory database");
     let app = test::init_service(
@@ -44,7 +43,7 @@ async fn status_with_auth(auth: bool, request: test::TestRequest) -> StatusCode 
             .app_data(web::Data::new(db))
             .app_data(web::Data::new(Providers::from_env()))
             .app_data(web::Data::new(ConveyorConfig::default()))
-            .service(api::scope(JwtConfig::init())),
+            .service(api::scope(JwtConfig::for_tests())),
     )
     .await;
 

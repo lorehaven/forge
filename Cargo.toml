@@ -54,10 +54,10 @@ minijinja = { version = "2.21", features = ["loader", "serde"] }
 pdf-extract = { version = "0.12" }
 predicates = { version = "3.1" }
 pulldown-cmark = { version = "0.13" }
-quench-auth = { path = "libs/quench-auth", registry = "ennor", version = "0.2.0" }
+quench-auth = { path = "libs/quench-auth", registry = "ennor", version = "0.3.0" }
 quench-cache = { path = "libs/quench-cache", registry = "ennor", version = "0.1.0" }
 quench-cli = { path = "libs/quench-cli", registry = "ennor", version = "0.1.1" }
-quench-client = { path = "libs/quench-client", registry = "ennor", version = "0.1.0" }
+quench-client = { path = "libs/quench-client", registry = "ennor", version = "0.2.0" }
 quench-config = { path = "libs/quench-config", registry = "ennor", version = "0.1.0" }
 quench-db = { path = "libs/quench-db", registry = "ennor", version = "0.2.0" }
 quench-starter = { path = "libs/quench-starter", registry = "ennor", version = "0.2.0" }

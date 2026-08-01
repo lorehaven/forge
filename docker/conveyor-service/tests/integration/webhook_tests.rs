@@ -23,7 +23,6 @@ const SECRET: &str = "conveyor-webhook-tests";
 /// so the tests do not race over it.
 fn configure(secret: Option<&str>) {
     unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", "false") };
-    unsafe { std::env::set_var("JWT_SECRET", "conveyor-webhook-tests") };
     match secret {
         Some(secret) => unsafe { std::env::set_var("CONVEYOR_WEBHOOK_SECRET", secret) },
         None => unsafe { std::env::remove_var("CONVEYOR_WEBHOOK_SECRET") },
@@ -45,7 +44,7 @@ async fn deliver(
             .app_data(web::Data::new(db.clone()))
             .app_data(web::Data::new(Providers::from_env()))
             .app_data(web::Data::new(config))
-            .service(api::scope(JwtConfig::init())),
+            .service(api::scope(JwtConfig::for_tests())),
     )
     .await;
 

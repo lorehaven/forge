@@ -11,7 +11,7 @@ pub async fn list_running_models(
     config: web::Data<JwtConfig>,
     engine: web::Data<Arc<dyn VllmEngine>>,
 ) -> impl Responder {
-    if !is_admin(&req, &config) {
+    if !is_admin(&req, &config).await {
         return HttpResponse::Forbidden().finish();
     }
 

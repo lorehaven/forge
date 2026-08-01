@@ -27,35 +27,17 @@ fn realm_tokens_are_accepted_by_every_listed_audience() {
     assert!(!claims.allows("switchboard"));
 }
 
-/// Tokens minted before the shared realm carry only `service`; they must
-/// keep working for the length of one rollout.
-#[test]
-fn legacy_single_service_tokens_still_verify() {
-    let legacy = Claims {
-        sub: "user".to_string(),
-        aud: vec![],
-        service: "switchboard".to_string(),
-        scope: "admin".to_string(),
-        exp: 0,
-        iat: 0,
-        sid: None,
-    };
-
-    assert!(legacy.allows("switchboard"));
-    assert!(!legacy.allows("sage"));
-}
-
-#[test]
-fn issued_tokens_round_trip_through_the_audience_check() {
-    envmnt::set("JWT_SECRET", "test_secret");
-    let mut config = JwtConfig::init();
+#[tokio::test]
+async fn issued_tokens_round_trip_through_the_audience_check() {
+    let mut config = JwtConfig::for_tests_with_signing();
     config.service_name = "gatehouse".to_string();
     config.audiences = vec!["sage".to_string(), "switchboard".to_string()];
 
     let token = config
         .issue_access_token("user".to_string(), "admin".to_string(), None)
+        .await
         .unwrap();
-    let claims = config.decode_claims(&token).unwrap();
+    let claims = config.decode_claims(&token).await.unwrap();
 
     assert!(claims.allows("sage"));
     assert!(claims.allows("switchboard"));
@@ -136,8 +118,7 @@ fn an_unknown_role_name_is_not_a_wildcard() {
 
 #[test]
 fn narrowing_cannot_widen_a_token_past_the_configured_audiences() {
-    envmnt::set("JWT_SECRET", "test_secret");
-    let mut config = JwtConfig::init();
+    let mut config = JwtConfig::for_tests();
     config.audiences = vec!["sage".to_string(), "warehouse".to_string()];
 
     // A grant naming a service this deployment does not run must not appear.
@@ -151,10 +132,9 @@ fn narrowing_cannot_widen_a_token_past_the_configured_audiences() {
     assert!(config.narrow_audiences(&[]).is_empty());
 }
 
-#[test]
-fn a_narrowed_token_is_rejected_by_the_audience_it_excludes() {
-    envmnt::set("JWT_SECRET", "test_secret");
-    let mut config = JwtConfig::init();
+#[tokio::test]
+async fn a_narrowed_token_is_rejected_by_the_audience_it_excludes() {
+    let mut config = JwtConfig::for_tests_with_signing();
     config.service_name = "gatehouse".to_string();
     config.audiences = vec!["sage".to_string(), "switchboard".to_string()];
 
@@ -165,8 +145,9 @@ fn a_narrowed_token_is_rejected_by_the_audience_it_excludes() {
             "user sage:read".to_string(),
             None,
         )
+        .await
         .unwrap();
-    let claims = config.decode_claims(&token).unwrap();
+    let claims = config.decode_claims(&token).await.unwrap();
 
     assert!(claims.allows("sage"));
     assert!(
@@ -175,21 +156,20 @@ fn a_narrowed_token_is_rejected_by_the_audience_it_excludes() {
     );
 }
 
-#[test]
-fn test_jwt_expiration() {
-    envmnt::set("JWT_SECRET", "test_secret");
-    let config = JwtConfig::init();
+#[tokio::test]
+async fn test_jwt_expiration() {
+    let config = JwtConfig::for_tests_with_signing();
 
-    let claims = Claims::new(
+    let claims = Claims::for_audiences(
         "user".to_string(),
-        "service".to_string(),
+        vec!["service".to_string()],
         "scope".to_string(),
         None,
         -300,
     ); // Expired 5 minutes ago
-    let token = config.encode_claims(&claims).unwrap();
+    let token = config.encode_claims(&claims).await.unwrap();
 
-    let result = config.decode_claims(&token);
+    let result = config.decode_claims(&token).await;
     assert!(
         result.is_err(),
         "Expired token should be rejected: {:?}",
@@ -197,10 +177,9 @@ fn test_jwt_expiration() {
     );
 }
 
-#[test]
-fn test_jwt_iat_future() {
-    envmnt::set("JWT_SECRET", "test_secret");
-    let config = JwtConfig::init();
+#[tokio::test]
+async fn test_jwt_iat_future() {
+    let config = JwtConfig::for_tests_with_signing();
 
     let now = chrono::Utc::now();
     let iat = (now + chrono::Duration::seconds(300)).timestamp() as usize; // Issued 5 minutes in the future
@@ -209,16 +188,15 @@ fn test_jwt_iat_future() {
     let claims = Claims {
         sub: "user".to_string(),
         aud: vec!["service".to_string()],
-        service: "service".to_string(),
         scope: "scope".to_string(),
         exp,
         iat,
         sid: None,
     };
 
-    let token = config.encode_claims(&claims).unwrap();
+    let token = config.encode_claims(&claims).await.unwrap();
 
-    let result = config.decode_claims(&token);
+    let result = config.decode_claims(&token).await;
     assert!(
         result.is_err(),
         "Token with future iat should be rejected: {:?}",

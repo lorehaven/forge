@@ -121,7 +121,10 @@ impl ForgeWorld {
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
 
-        let jwt_secret = env::var("JWT_SECRET").unwrap_or_else(|_| "test_secret_key".to_string());
+        let gatehouse_url = format!("{gatehouse_base_url}/gatehouse");
+        let jwt_token = mint_test_token(&client, &gatehouse_url, "test-user", &["sage"], "user sage:write").await;
+        let switchboard_token =
+            mint_test_token(&client, &gatehouse_url, "bdd-user", &["switchboard"], "admin").await;
 
         Self {
             target: Target::default(),
@@ -131,7 +134,7 @@ impl ForgeWorld {
             switchboard_base_url,
             warehouse_url: format!("{warehouse_base_url}/warehouse"),
             warehouse_base_url,
-            gatehouse_url: format!("{gatehouse_base_url}/gatehouse"),
+            gatehouse_url,
             gatehouse_base_url,
             conveyor_url: format!("{conveyor_base_url}/conveyor"),
             conveyor_base_url,
@@ -141,17 +144,11 @@ impl ForgeWorld {
             last_body: None,
             last_headers: reqwest::header::HeaderMap::new(),
             last_response_headers: reqwest::header::HeaderMap::new(),
-            jwt_token: sage_test_jwt(&jwt_secret),
+            jwt_token,
             current_conversation_id: None,
             last_id: None,
             credentials: None,
-            switchboard_token: build_test_jwt(
-                "bdd-user",
-                "switchboard",
-                "admin",
-                &jwt_secret,
-                3600,
-            ),
+            switchboard_token,
             docker_digest: None,
             token: None,
             username: env::var("SERVICE_USERNAME").unwrap_or_else(|_| "admin".to_string()),
@@ -267,50 +264,58 @@ impl ForgeWorld {
     }
 }
 
-/// Mints a realm-shaped JWT directly, signed with the suite's shared secret -
-/// for services under test that run alone in the BDD harness, with no
-/// gatehouse present to have issued one.
-pub fn build_test_jwt(
-    sub: &str,
-    service: &str,
-    scope: &str,
-    secret: &str,
-    duration_secs: i64,
-) -> String {
-    use jsonwebtoken::{EncodingKey, Header, encode};
-    use serde::{Deserialize, Serialize};
+/// Mints a real, JWKS-verifiable token by asking gatehouse's
+/// `POST /api/v1/test/token` (`docker/gatehouse-service/src/api/test_tokens.rs`,
+/// enabled by `GATEHOUSE_TEST_MODE=true` - see `services.rs`) to sign one for
+/// an arbitrary subject/audience/scope. No user or session has to exist for
+/// this - the same shortcut the suite took when every service verified
+/// against one shared HS256 secret, now routed through gatehouse's real
+/// signing key so a relying party's JWKS-based verification accepts it.
+pub async fn mint_test_token(client: &reqwest::Client, gatehouse_url: &str, sub: &str, aud: &[&str], scope: &str) -> String {
+    mint_test_token_at(client, gatehouse_url, sub, aud, scope, None, None).await
+}
 
-    #[derive(Debug, Serialize, Deserialize)]
-    struct Claims {
-        sub: String,
-        #[serde(default)]
-        aud: Vec<String>,
-        service: String,
-        scope: String,
-        iat: usize,
-        exp: usize,
+/// Same, with explicit `iat`/`exp` (unix seconds) - what an expired-token or
+/// future-`iat` scenario needs, since a real login can never produce either.
+pub async fn mint_test_token_at(
+    client: &reqwest::Client,
+    gatehouse_url: &str,
+    sub: &str,
+    aud: &[&str],
+    scope: &str,
+    iat: Option<i64>,
+    exp: Option<i64>,
+) -> String {
+    let response = client
+        .post(format!("{gatehouse_url}/api/v1/test/token"))
+        .json(&serde_json::json!({
+            "sub": sub,
+            "aud": aud,
+            "scope": scope,
+            "iat": iat,
+            "exp": exp,
+        }))
+        .send()
+        .await
+        .unwrap_or_else(|e| panic!("failed to reach gatehouse's test token endpoint: {e}"));
+
+    if !response.status().is_success() {
+        panic!(
+            "gatehouse refused to mint a test token (status {}) - is GATEHOUSE_TEST_MODE=true? {}",
+            response.status(),
+            response.text().await.unwrap_or_default()
+        );
     }
 
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as usize;
-
-    let claims = Claims {
-        sub: sub.to_string(),
-        aud: vec![service.to_string()],
-        service: service.to_string(),
-        scope: scope.to_string(),
-        iat: now,
-        exp: now + duration_secs as usize,
-    };
-
-    encode(
-        &Header::default(),
-        &claims,
-        &EncodingKey::from_secret(secret.as_bytes()),
-    )
-    .unwrap_or_else(|_| "invalid-token".to_string())
+    #[derive(serde::Deserialize)]
+    struct TokenResponse {
+        access_token: String,
+    }
+    response
+        .json::<TokenResponse>()
+        .await
+        .expect("gatehouse's test token response was not what was expected")
+        .access_token
 }
 
 fn service_url(key: &str, default: &str) -> String {
@@ -320,46 +325,4 @@ fn service_url(key: &str, default: &str) -> String {
         .unwrap_or_else(|| default.to_string())
         .trim_end_matches('/')
         .to_string()
-}
-
-/// Token the sage suite presents; the legacy single-`service` claim shape,
-/// which the shared realm still accepts.
-///
-/// `sage:write` is here because this is the *default* identity the suite's
-/// functional scenarios use - uploading, chatting, creating projects - and
-/// those scenarios predate permissions and were written assuming full access.
-/// The permission boundary itself is what `warehouse/files.feature` tests
-/// against a token built for exactly that; this one is not it.
-fn sage_test_jwt(secret: &str) -> String {
-    use jsonwebtoken::{EncodingKey, Header, encode};
-    use serde::{Deserialize, Serialize};
-
-    #[derive(Debug, Serialize, Deserialize)]
-    struct Claims {
-        sub: String,
-        service: String,
-        scope: String,
-        iat: usize,
-        exp: usize,
-    }
-
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as usize;
-
-    let claims = Claims {
-        sub: "test-user".to_string(),
-        service: "sage".to_string(),
-        scope: "user sage:write".to_string(),
-        iat: now,
-        exp: now + 3600,
-    };
-
-    encode(
-        &Header::default(),
-        &claims,
-        &EncodingKey::from_secret(secret.as_bytes()),
-    )
-    .unwrap_or_else(|_| "invalid-token".to_string())
 }

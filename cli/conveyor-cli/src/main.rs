@@ -37,8 +37,10 @@ async fn run() -> Result<()> {
         cli.url.clone(),
         cli.username.clone(),
         cli.password.clone(),
+        cli.gatehouse_url.clone(),
         cli.insecure,
-    )?;
+    )
+    .await?;
 
     match &cli.command {
         cli::Commands::Repo { command } => commands::repo(&client, command).await,

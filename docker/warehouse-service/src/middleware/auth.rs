@@ -5,7 +5,7 @@ use actix_web::{
     http::header::{HeaderValue, WWW_AUTHENTICATE},
 };
 use futures_util::future::{LocalBoxFuture, Ready, ok};
-use quench_auth::prelude::JwtConfig;
+use crate::docker_token::DockerTokenConfig;
 use quench_starter::prelude::error;
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
@@ -16,13 +16,13 @@ static AUTH_FAILURES: LazyLock<Mutex<HashMap<String, Vec<Instant>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 pub struct WarehouseAuth {
-    config: JwtConfig,
+    config: DockerTokenConfig,
     max_failures: usize,
     window: Duration,
 }
 
 impl WarehouseAuth {
-    pub fn new(config: JwtConfig) -> Self {
+    pub fn new(config: DockerTokenConfig) -> Self {
         let max_failures = envmnt::get_or("MAX_AUTH_FAILURES_PER_MINUTE", "30")
             .parse()
             .unwrap_or(30);
@@ -61,7 +61,7 @@ where
 
 pub struct WarehouseAuthMiddleware<S> {
     service: S,
-    config: JwtConfig,
+    config: DockerTokenConfig,
     max_failures: usize,
     window: Duration,
 }
@@ -121,7 +121,7 @@ where
             return unauthorized(req, &self.config);
         }
 
-        let decoded = self.config.decode_claims(token.unwrap());
+        let decoded = self.config.decode(token.unwrap());
 
         if decoded.is_err() {
             record_auth_failure(&req, self.window);
@@ -153,7 +153,7 @@ where
 
 fn throttled<B>(
     req: ServiceRequest,
-    config: &JwtConfig,
+    config: &DockerTokenConfig,
 ) -> LocalBoxFuture<'static, Result<ServiceResponse<EitherBody<B>>, Error>>
 where
     B: MessageBody + 'static,
@@ -246,7 +246,7 @@ fn scope_allows(scope: &str, repository: &str, action: &str) -> bool {
 
 fn unauthorized<B>(
     req: ServiceRequest,
-    config: &JwtConfig,
+    config: &DockerTokenConfig,
 ) -> LocalBoxFuture<'static, Result<ServiceResponse<EitherBody<B>>, Error>>
 where
     B: MessageBody + 'static,

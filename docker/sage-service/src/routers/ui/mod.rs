@@ -48,6 +48,7 @@ pub fn scope(jwt_config: JwtConfig) -> impl HttpServiceFactory {
         // Auth (public - no auth required)
         .service(pages::auth::login)
         .service(pages::auth::login_slash)
+        .service(pages::auth::callback)
         .service(pages::auth::logout)
         .service(pages::auth::auth_status)
         // Chat, projects and files all mutate through these pages exactly as

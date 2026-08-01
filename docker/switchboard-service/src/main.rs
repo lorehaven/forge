@@ -4,6 +4,7 @@ use switchboard_service::routers::gpu::init_gpu_status_publisher;
 use switchboard_service::routers::models::{init_model_store, start_sync_job, warm_model_cache};
 use switchboard_service::{base_path_scope, root_scope};
 
+use quench_auth::actix::domain::sso_client::SsoConfig;
 use quench_auth::prelude::*;
 use quench_starter::prelude::*;
 
@@ -13,7 +14,8 @@ async fn main() -> std::io::Result<()> {
     tracing::info!("Switchboard service starting");
 
     let db_wrapper = DbWrapper::init_env().await;
-    let jwt_config = web::Data::new(JwtConfig::init());
+    let jwt_config = web::Data::new(JwtConfig::init().await);
+    let sso_config = web::Data::new(SsoConfig::init());
     let user_db = UserDb::init(db_wrapper.db.clone()).await;
     let session_db = SessionDb::from_env().await.expect("session store");
 
@@ -41,6 +43,7 @@ async fn main() -> std::io::Result<()> {
                 gpu_tx.clone(),
                 vllm_tx.clone(),
                 jwt_config.clone(),
+                sso_config.clone(),
                 user_db.clone(),
                 session_db.clone(),
             )

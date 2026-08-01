@@ -11,7 +11,7 @@ pub async fn stop_instance(
     id: web::Path<String>,
     engine: web::Data<Arc<dyn VllmEngine>>,
 ) -> impl Responder {
-    if !can(&http_req, &config, "stop") {
+    if !can(&http_req, &config, "stop").await {
         return HttpResponse::Forbidden().finish();
     }
 

@@ -148,9 +148,9 @@ impl FromRequest for SubjectClaims {
                     "SERVICE_AUTH_ENABLED is off: serving {} unauthenticated",
                     req.path()
                 );
-                return Ok(Self(Claims::new(
+                return Ok(Self(Claims::for_audiences(
                     "anonymous".to_string(),
-                    config.service_name.clone(),
+                    vec![config.service_name.clone()],
                     Role::Admin.as_str().to_string(),
                     None,
                     60,
@@ -166,6 +166,7 @@ impl FromRequest for SubjectClaims {
 
             let claims = config
                 .decode_claims(&token)
+                .await
                 .map_err(|_| actix_web::error::ErrorUnauthorized(""))?;
             if !claims.allows(&config.service_name) {
                 return Err(actix_web::error::ErrorUnauthorized(""));
@@ -238,6 +239,8 @@ action_claims!(ReadUsersClaims, "read-users");
 action_claims!(CreateUserClaims, "create-user");
 action_claims!(EditUserClaims, "edit-user");
 action_claims!(DeleteUserClaims, "delete-user");
+// Guards `POST /api/v1/admin/keys/rotate` - see `crate::api::jwks`.
+action_claims!(ManageSigningKeysClaims, "manage-signing-keys");
 action_claims!(ManagePermissionsClaims, "manage-permissions");
 
 fn bearer_token(req: &HttpRequest) -> Option<String> {

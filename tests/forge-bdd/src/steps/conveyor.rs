@@ -72,53 +72,24 @@ async fn open_path(world: &mut ForgeWorld, path: String) {
 // API
 // ---------------------------------------------------------------------------
 
-/// A realm token, not Basic auth.
+/// A real realm token, minted off gatehouse rather than a shared secret.
 ///
 /// Conveyor is a relying party: gatehouse owns the users, and conveyor never
 /// seeds any of its own. There is no account here to send a password for, so
-/// the suite mints a token with the realm's shared signing key - which is
-/// exactly what conveyor verifies locally on every request.
+/// the suite asks gatehouse's test-mint endpoint for one instead - see
+/// `world::mint_test_token`.
 #[given("I am authenticated against conveyor")]
 async fn authenticated(world: &mut ForgeWorld) {
-    world.access_token = Some(conveyor_token(&realm_secret()));
-}
-
-fn realm_secret() -> String {
-    std::env::var("JWT_SECRET").unwrap_or_else(|_| "test_secret_key".to_string())
-}
-
-fn conveyor_token(secret: &str) -> String {
-    use jsonwebtoken::{EncodingKey, Header, encode};
-    use serde::Serialize;
-
-    #[derive(Serialize)]
-    struct Claims {
-        sub: String,
-        aud: Vec<String>,
-        service: String,
-        scope: String,
-        iat: usize,
-        exp: usize,
-    }
-
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as usize)
-        .unwrap_or_default();
-
-    encode(
-        &Header::default(),
-        &Claims {
-            sub: "conveyor-bdd".to_string(),
-            aud: vec!["conveyor".to_string()],
-            service: "conveyor".to_string(),
-            scope: "admin".to_string(),
-            iat: now,
-            exp: now + 3600,
-        },
-        &EncodingKey::from_secret(secret.as_bytes()),
-    )
-    .expect("sign a realm token")
+    world.access_token = Some(
+        crate::world::mint_test_token(
+            &world.client,
+            &world.gatehouse_url,
+            "conveyor-bdd",
+            &["conveyor"],
+            "admin",
+        )
+        .await,
+    );
 }
 
 /// The generic `GET request is sent to` step applies Basic auth only; this one

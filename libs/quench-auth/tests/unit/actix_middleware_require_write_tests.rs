@@ -7,8 +7,7 @@ use quench_auth::actix::domain::jwt::{Claims, JwtConfig};
 use quench_auth::actix::middleware::require_write::RequireWrite;
 
 fn config() -> JwtConfig {
-    envmnt::set("JWT_SECRET", "test_secret");
-    let mut config = JwtConfig::init();
+    let mut config = JwtConfig::for_tests();
     config.service_name = "sage".to_string();
     config.auth_enabled = true;
     config

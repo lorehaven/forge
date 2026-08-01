@@ -64,7 +64,7 @@ pub async fn register(
             .default_branch
             .clone()
             .unwrap_or_else(|| "master".to_string()),
-        registered_by: actor(&request),
+        registered_by: actor(&request).await,
     };
 
     match repos::create(&db, &new).await {

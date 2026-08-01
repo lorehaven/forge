@@ -1,0 +1,19 @@
+[[migrations]]
+id = "0005-clients"
+author = "gatehouse-service"
+since = "0.2.0"
+
+# OAuth clients: the relying parties (browser authorization-code flow) and
+# machine identities (client_credentials) gatehouse will issue tokens to.
+# Seeded from docker/gatehouse-service/config/clients.toml at boot, not
+# managed through a UI - the estate has a small, fixed set of these.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.clients (
+    client_id      TEXT PRIMARY KEY,
+    secret_hash    TEXT NOT NULL,
+    redirect_uris  TEXT[] NOT NULL DEFAULT '{}',
+    allowed_scopes TEXT[] NOT NULL DEFAULT '{}',
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+"""

@@ -34,7 +34,8 @@ pub async fn put_global(
     body: web::Json<SetSecret>,
     db: web::Data<Db>,
 ) -> impl Responder {
-    write(&db, Scope::Global, &path, &body.value, &actor(&request)).await
+    let actor = actor(&request).await;
+    write(&db, Scope::Global, &path, &body.value, &actor).await
 }
 
 #[get("")]
@@ -69,7 +70,10 @@ pub async fn put_repo(
 ) -> impl Responder {
     let (repo_id, name) = path.into_inner();
     match repo_scope(&db, &repo_id).await {
-        Ok(scope) => write(&db, scope, &name, &body.value, &actor(&request)).await,
+        Ok(scope) => {
+            let actor = actor(&request).await;
+            write(&db, scope, &name, &body.value, &actor).await
+        }
         Err(response) => response,
     }
 }

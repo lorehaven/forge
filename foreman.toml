@@ -41,19 +41,28 @@ run_dir = ".run"
 database_url = "postgres://postgres:postgres@localhost:5432/postgres"
 redis_url = "redis://localhost:6379"
 
-# The realm shares one signing key; without it a token minted by gatehouse is
-# rejected everywhere else.
-realm_secret = { env_file = "docker/sage-service/.env", key = "JWT_SECRET", default = "forge-local-dev-secret" }
+# Encrypts gatehouse's Ed25519 signing keys at rest (`auth.signing_keys`).
+# Nothing else needs it - relying parties verify against JWKS, never this.
+key_encryption_key = { env_file = "docker/gatehouse-service/.env", key = "GATEHOUSE_KEY_ENCRYPTION_KEY", default = "forge-local-dev-key-encryption-key" }
+
+# Signs warehouse's own Docker Registry v2 tokens - a protocol gatehouse has
+# no part in, so this never leaves warehouse.
+docker_token_secret = { env_file = "docker/warehouse-service/.env", key = "DOCKER_TOKEN_SECRET", default = "forge-local-dev-docker-token-secret" }
 
 # The interactive account.
 admin_user = { env_file = "docker/switchboard-service/.env", key = "SERVICE_USERNAME", default = "admin" }
 admin_password = { env_file = "docker/switchboard-service/.env", key = "SERVICE_PASSWORD", default = "password" }
 
-# The machine-to-machine account. sage presents these to switchboard over Basic
-# auth; switchboard used to create the account itself, but identity is
-# realm-wide now, so gatehouse has to seed it or sage gets a 401.
-tech_user = { env_file = "docker/sage-service/.env", key = "SWITCHBOARD_TECH_USERNAME", default = "service" }
-tech_password = { env_file = "docker/sage-service/.env", key = "SWITCHBOARD_TECH_PASSWORD", default = "password" }
+# One OAuth client secret per relying party (`docker/gatehouse-service/config/clients.toml`),
+# read out of each service's own .env so the realm cannot quietly diverge from
+# what the service already expects - the same reasoning `admin_user`/`admin_password`
+# above already follow. `client_secret_sage_switchboard` is sage's machine identity toward
+# switchboard (`client_credentials`), not a relying-party login client.
+client_secret_sage = { env_file = "docker/sage-service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-sage" }
+client_secret_switchboard = { env_file = "docker/switchboard-service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-switchboard" }
+client_secret_warehouse = { env_file = "docker/warehouse-service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-warehouse" }
+client_secret_conveyor = { env_file = "docker/conveyor-service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-conveyor" }
+client_secret_sage_switchboard = { env_file = "docker/sage-service/.env", key = "CLIENT_SECRET_SAGE_SWITCHBOARD", default = "forge-local-dev-secret-sage-switchboard" }
 
 [build]
 command = ["cargo", "build", "-q", "--all-features", "--package", "${package}"]
@@ -155,7 +164,6 @@ cert_files = ["cert.pem", "key.pem"]
 
 [defaults.env]
 DATABASE_URL = "${database_url}"
-JWT_SECRET = "${realm_secret}"
 SERVICE_AUTH_ENABLED = "true"
 AUTH_DB_SCHEMA = "auth"
 SERVER_ADDR = "0.0.0.0:${port}"
@@ -163,9 +171,17 @@ BASE_PATH = "${base_path}"
 SERVICE_NAME = "${name}"
 REDIS_URL = "${redis_url}"
 RUST_LOG = "info"
-# Relying parties send a browser to gatehouse when there is no session.
-# Gatehouse itself unsets it below - it is the destination, not a client.
+# Relying parties send a browser to gatehouse when there is no session, and
+# verify tokens against its published JWKS - no shared secret anywhere now.
+# Gatehouse itself unsets these below - it is the destination, not a client.
 GATEHOUSE_URL = "https://localhost:5443/gatehouse"
+# Matches its own `client_id` in `config/clients.toml`; each service's own
+# `[services.env]` block below sets the matching `GATEHOUSE_CLIENT_SECRET`.
+GATEHOUSE_CLIENT_ID = "${name}"
+# The estate's dev certificates are issued for registry.local, not localhost -
+# every service already accepts that for its own calls (SWITCHBOARD_TLS_VERIFY
+# below); JWKS fetches and the /token exchange need the same exception.
+GATEHOUSE_TLS_VERIFY = "false"
 
 # The order below is the dependency order, and a selection keeps it: gatehouse
 # first because it owns the realm the others authenticate against, sage after
@@ -181,15 +197,23 @@ package = "gatehouse-service"
 port = 5443
 base_path = "/gatehouse"
 needs = []
-unset = ["GATEHOUSE_URL"]
+# Gatehouse is the destination, not a client of itself - it has its own
+# native login form rather than redirecting anywhere.
+unset = ["GATEHOUSE_URL", "GATEHOUSE_CLIENT_ID"]
 cert_from = "docker/warehouse-service"
 
 [services.env]
 AUTH_BOOTSTRAP = "true"
 SERVICE_USERNAME = "${admin_user}"
 SERVICE_PASSWORD = "${admin_password}"
-SERVICE_TECH_USERNAME = "${tech_user}"
-SERVICE_TECH_PASSWORD = "${tech_password}"
+GATEHOUSE_KEY_ENCRYPTION_KEY = "${key_encryption_key}"
+# One secret per relying party in config/clients.toml, plus sage's machine
+# identity toward switchboard - see that file for what each is.
+CLIENT_SECRET_SAGE = "${client_secret_sage}"
+CLIENT_SECRET_SWITCHBOARD = "${client_secret_switchboard}"
+CLIENT_SECRET_WAREHOUSE = "${client_secret_warehouse}"
+CLIENT_SECRET_CONVEYOR = "${client_secret_conveyor}"
+CLIENT_SECRET_SAGE_SWITCHBOARD = "${client_secret_sage_switchboard}"
 # Not SERVICE_AUDIENCES: gatehouse derives the realm's audience list from its
 # permission catalog now (docker/gatehouse-service/config/permissions.toml),
 # so that one file is what adding a service means editing - see the catalog's
@@ -209,12 +233,19 @@ port = 6443
 base_path = "/warehouse"
 needs = ["gatehouse"]
 
+[services.env]
+GATEHOUSE_CLIENT_SECRET = "${client_secret_warehouse}"
+DOCKER_TOKEN_SECRET = "${docker_token_secret}"
+
 [[services]]
 name = "switchboard"
 package = "switchboard-service"
 port = 7443
 base_path = "/switchboard"
 needs = ["gatehouse"]
+
+[services.env]
+GATEHOUSE_CLIENT_SECRET = "${client_secret_switchboard}"
 
 # vLLM instances are switchboard's children, not foreman's: killing switchboard
 # orphans them, and they keep the GPU and their ports. Ask switchboard to stop
@@ -229,11 +260,16 @@ settle_secs = 3
 # strings would want every one of them doubled.
 shell = '''
 api=https://localhost:7443/switchboard/api/v1/vllm/instances
-auth='${tech_user}:${tech_password}'
-ids=$(curl -sk --max-time 5 -u "$auth" "$api" | grep -oP '"id"\s*:\s*"\K[^"]+')
+token=$(curl -sk --max-time 5 -X POST https://localhost:5443/gatehouse/api/v1/token \
+  -d grant_type=client_credentials \
+  -d client_id=sage-switchboard \
+  -d client_secret='${client_secret_sage_switchboard}' \
+  | grep -oP '"access_token"\s*:\s*"\K[^"]+')
+auth="Authorization: Bearer $token"
+ids=$(curl -sk --max-time 5 -H "$auth" "$api" | grep -oP '"id"\s*:\s*"\K[^"]+')
 for id in $ids; do
   echo "stopping vLLM instance $id"
-  curl -sk --max-time 30 -X DELETE -u "$auth" "$api/$id" >/dev/null 2>&1
+  curl -sk --max-time 30 -X DELETE -H "$auth" "$api/$id" >/dev/null 2>&1
 done
 '''
 
@@ -243,6 +279,13 @@ package = "sage-service"
 port = 8443
 base_path = "/sage"
 needs = ["gatehouse", "switchboard"]
+
+[services.env]
+GATEHOUSE_CLIENT_SECRET = "${client_secret_sage}"
+# sage's own machine identity toward switchboard (client_credentials),
+# distinct from GATEHOUSE_CLIENT_SECRET above, which is sage's identity as a
+# browser-login client.
+CLIENT_SECRET_SAGE_SWITCHBOARD = "${client_secret_sage_switchboard}"
 
 # sage asks switchboard to launch its SAGE_DEFAULT_MODELS at startup, which is
 # what puts the initializing screen in front of the home page. That is the
@@ -261,6 +304,9 @@ base_path = "/conveyor"
 needs = ["gatehouse"]
 cert_from = "docker/warehouse-service"
 
+[services.env]
+GATEHOUSE_CLIENT_SECRET = "${client_secret_conveyor}"
+
 # ---------------------------------------------------------------------------
 # After a start
 # ---------------------------------------------------------------------------
@@ -274,7 +320,7 @@ when_selected = "gatehouse"
 [[notes]]
 tone = "info"
 label = "credentials"
-message = "${admin_user} / ${admin_password} (service account: ${tech_user})"
+message = "${admin_user} / ${admin_password}"
 when_selected = "gatehouse"
 
 # vLLM can outlive the stop request, and it holds both the GPU and its port.

@@ -20,6 +20,12 @@ pub struct Cli {
     #[arg(long, global = true, value_name = "PASSWORD")]
     pub password: Option<String>,
 
+    /// Where gatehouse is, e.g. `https://localhost:5443/gatehouse`. Defaults
+    /// to `$GATEHOUSE_URL` - required whenever a username/password is given,
+    /// since gatehouse is who exchanges them for a token now.
+    #[arg(long, global = true, value_name = "URL")]
+    pub gatehouse_url: Option<String>,
+
     /// Accept a self-signed certificate, as the estate's internal ones are.
     #[arg(long, global = true)]
     pub insecure: bool,

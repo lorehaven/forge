@@ -19,12 +19,14 @@ async fn start_mock_switchboard_server() {
     async fn handle_request(req: Request<Body>) -> Result<Response<Body>, Infallible> {
         let path = req.uri().path();
 
-        // Check basic auth
+        // sage authenticates with a gatehouse-issued bearer token now
+        // (client_credentials), not HTTP Basic - see
+        // `docker/sage-service/src/clients/switchboard.rs`.
         let has_auth = req
             .headers()
             .get(hyper::header::AUTHORIZATION)
             .and_then(|h| h.to_str().ok())
-            .map(|auth| auth.starts_with("Basic "))
+            .map(|auth| auth.starts_with("Bearer "))
             .unwrap_or(false);
 
         eprintln!(

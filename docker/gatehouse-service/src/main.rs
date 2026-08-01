@@ -14,21 +14,27 @@ use std::sync::Arc;
 mod api;
 mod bootstrap;
 mod catalog;
+mod clients;
+mod codes;
 mod email;
+mod keys;
 mod realm;
 mod services;
 mod tokens;
 mod ui;
 
 pub use catalog::PermissionCatalog;
+pub use keys::SigningKeys;
 pub use tokens::VerificationTokens;
 
 pub fn root_scope() -> impl HttpServiceFactory {
     web::scope("")
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn base_path_scope(
     jwt_config: web::Data<JwtConfig>,
+    signing_keys: web::Data<Arc<SigningKeys>>,
     user_db: Arc<UserDb>,
     session_db: Arc<SessionDb>,
     db: Db,
@@ -38,6 +44,7 @@ pub fn base_path_scope(
 ) -> impl HttpServiceFactory {
     web::scope("")
         .app_data(jwt_config)
+        .app_data(signing_keys)
         .app_data(web::Data::new(user_db))
         // The auth API takes `Data<SessionDb>` and the UI pages take
         // `Data<Arc<SessionDb>>`; register both views of the same instance.
@@ -56,6 +63,17 @@ pub fn base_path_scope(
         .app_data(web::Data::new(mailer))
         .app_data(web::Data::new(tokens))
         .service(api::auth::scope())
+        // Registered as bare handlers, not `web::scope("")`: actix's scope
+        // resolution treats an empty prefix as matching every path, so the
+        // first such scope permanently claims routing and 404s internally
+        // for anything not defined inside it - every sibling `.service(...)`
+        // registered after it, including `ui::scope()`, would silently
+        // become unreachable.
+        .service(api::jwks::jwks)
+        .service(api::jwks::rotate)
+        .service(api::oauth::authorize)
+        .service(api::oauth::token)
+        .service(api::test_tokens::mint)
         .service(api::users::scope())
         .service(api::users::me_scope())
         .service(ui::scope())
@@ -74,6 +92,20 @@ async fn main() -> std::io::Result<()> {
          (default config/permissions.toml)",
     ));
 
+    ui::common::ensure_assets();
+
+    let db_wrapper = DbWrapper::init_env().await;
+
+    // Every token gatehouse issues is signed with a key from here - see
+    // `keys.rs`. Retiring a rotated-out key after one access-token TTL means
+    // an outstanding token keeps verifying for the rest of its life.
+    let access_token_ttl_secs = envmnt::get_or("ACCESS_TOKEN_TTL_SECS", "900")
+        .parse()
+        .unwrap_or(900);
+    let signing_keys = keys::SigningKeys::init(db_wrapper.db.clone(), access_token_ttl_secs)
+        .await
+        .expect("failed to load or generate gatehouse's signing keys");
+
     // The catalog's service list is the realm's audience list now: it is what
     // decides which services a token can be issued for, same as
     // `SERVICE_AUDIENCES` used to, but it cannot drift from what is actually
@@ -85,7 +117,7 @@ async fn main() -> std::io::Result<()> {
     // narrowing entirely (see `user_audiences`) and gets this ceiling
     // verbatim, so gatehouse missing from it would lock every admin out of
     // gatehouse's own admin API on their next token.
-    let mut jwt_config = JwtConfig::init();
+    let mut jwt_config = JwtConfig::init_signing(signing_keys.clone());
     jwt_config.audiences = catalog.service_names().map(str::to_string).collect();
     if !jwt_config.audiences.contains(&jwt_config.service_name) {
         jwt_config.audiences.push(jwt_config.service_name.clone());
@@ -97,11 +129,15 @@ async fn main() -> std::io::Result<()> {
         jwt_config.audiences
     );
 
-    ui::common::ensure_assets();
-
-    let db_wrapper = DbWrapper::init_env().await;
     let jwt_config = web::Data::new(jwt_config);
+    let signing_keys = web::Data::new(signing_keys);
     bootstrap::seed_users(&db_wrapper.db).await;
+    if let Err(err) = clients::seed_clients(&db_wrapper.db).await {
+        tracing::error!(
+            "failed to seed OAuth clients from CLIENTS_CONFIG: {err} - the \
+             authorization-code and client_credentials grants will reject every client"
+        );
+    }
     let user_db = UserDb::init(db_wrapper.db.clone()).await;
 
     // Sessions live in the cache store, not the database: expiry is its TTL and
@@ -125,6 +161,7 @@ async fn main() -> std::io::Result<()> {
         move || {
             base_path_scope(
                 jwt_config.clone(),
+                signing_keys.clone(),
                 user_db.clone(),
                 session_db.clone(),
                 db.clone(),

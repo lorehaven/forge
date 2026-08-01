@@ -69,8 +69,6 @@ impl Service {
 
 pub struct Fixture {
     workspace_root: PathBuf,
-    /// Shared by every service so one realm token verifies everywhere.
-    jwt_secret: String,
 }
 
 impl Fixture {
@@ -82,11 +80,7 @@ impl Fixture {
             .expect("workspace root")
             .to_path_buf();
 
-        Self {
-            workspace_root,
-            jwt_secret: std::env::var("JWT_SECRET")
-                .unwrap_or_else(|_| "forge-bdd-shared-secret".to_string()),
-        }
+        Self { workspace_root }
     }
 
     fn service_dir(&self, package: &str) -> PathBuf {
@@ -114,11 +108,11 @@ impl Fixture {
         assert!(status.success(), "{package} build failed");
     }
 
-    /// Environment every service shares: one realm, one signing key, an
+    /// Environment every service shares: one realm (gatehouse, always
+    /// started alongside whatever was selected - see `main.rs`), an
     /// in-memory database so the suite needs no Postgres.
     fn common_env(&self, command: &mut Command, service_name: &str) {
         command
-            .env("JWT_SECRET", &self.jwt_secret)
             .env("SERVICE_NAME", service_name)
             .env("SERVER_CERT_PATH", "cert.pem")
             .env("SERVER_KEY_PATH", "key.pem")
@@ -136,6 +130,15 @@ impl Fixture {
             // cannot sign anyone in, so the fixture always points at it even
             // when this run does not start it.
             .env("GATEHOUSE_URL", "http://127.0.0.1:5443/gatehouse")
+            .env("GATEHOUSE_TLS_VERIFY", "false")
+            // This service's own OAuth client identity toward gatehouse
+            // (`tests/forge-bdd/clients.toml`) - matched on gatehouse's side
+            // by the identically-named CLIENT_SECRET_* in `start_gatehouse`.
+            .env("GATEHOUSE_CLIENT_ID", service_name)
+            .env(
+                "GATEHOUSE_CLIENT_SECRET",
+                format!("bdd-client-secret-{service_name}"),
+            )
             .kill_on_drop(true);
     }
 
@@ -206,8 +209,13 @@ impl Fixture {
             // Mock backends started by the suite.
             .env("SWITCHBOARD_URL", "http://127.0.0.1:19554/switchboard")
             .env("VLLM_BASE_URL", "http://127.0.0.1:18000")
-            .env("SWITCHBOARD_TECH_USERNAME", "admin")
-            .env("SWITCHBOARD_TECH_PASSWORD", "password")
+            // sage's machine identity toward switchboard (client_credentials) -
+            // matches the "sage-switchboard" entry in `clients.toml` and the
+            // identically-named var on gatehouse's own env in `start_gatehouse`.
+            .env(
+                "CLIENT_SECRET_SAGE_SWITCHBOARD",
+                "bdd-client-secret-sage-switchboard",
+            )
             .env("SWITCHBOARD_TLS_VERIFY", "false")
             .env("SAGE_CAPABILITY_PROFILE", "web_assistant")
             .env("SAGE_DEFAULT_MODELS", r#"[{"name":"test-model"}]"#)
@@ -306,14 +314,47 @@ impl Fixture {
             // suite must not change behaviour depending on whether that ran.
             .env("SERVER_CERT_PATH", "/nonexistent/bdd-no-tls.pem")
             .env("SERVER_KEY_PATH", "/nonexistent/bdd-no-tls.key")
-            // Tokens gatehouse mints are valid across the whole realm.
-            .env("SERVICE_AUDIENCES", "sage,switchboard,warehouse,gatehouse")
+            // Ignored now (the permission catalog decides audiences - see
+            // `docker/gatehouse-service/config/permissions.toml`, which
+            // already lists every BDD service), kept for anyone still
+            // reading this env block for the old story.
+            .env("SERVICE_AUDIENCES", "sage,switchboard,warehouse,conveyor,gatehouse")
+            // Signing keys are encrypted at rest even in this throwaway
+            // in-memory database - see `keys.rs`.
+            .env("GATEHOUSE_KEY_ENCRYPTION_KEY", "forge-bdd-key-encryption-key")
+            // Turns on `POST /api/v1/test/token` (`api/test_tokens.rs`), the
+            // harness's replacement for self-signing tokens against a shared
+            // secret: a real, JWKS-verifiable token for an arbitrary
+            // subject/audience/scope, no user or session required.
+            .env("GATEHOUSE_TEST_MODE", "true")
+            // Mirrors `docker/gatehouse-service/config/clients.toml`, with
+            // redirect_uris pointed at the fixed ports below instead of a
+            // real deployment's - see `tests/forge-bdd/clients.toml`. Powers
+            // the `/ui/login` → gatehouse `/authorize` → code → `/ui/auth/callback`
+            // round trip `ui_auth.feature` exercises.
+            .env(
+                "CLIENTS_CONFIG",
+                self.workspace_root
+                    .join("tests/forge-bdd/clients.toml")
+                    .display()
+                    .to_string(),
+            )
+            .env("CLIENT_SECRET_SAGE", "bdd-client-secret-sage")
+            .env("CLIENT_SECRET_SWITCHBOARD", "bdd-client-secret-switchboard")
+            .env("CLIENT_SECRET_WAREHOUSE", "bdd-client-secret-warehouse")
+            .env("CLIENT_SECRET_CONVEYOR", "bdd-client-secret-conveyor")
+            .env(
+                "CLIENT_SECRET_SAGE_SWITCHBOARD",
+                "bdd-client-secret-sage-switchboard",
+            )
             .env(
                 "AUTH_REDIRECT_HOSTS",
                 "https://127.0.0.1:8443,http://127.0.0.1:8443",
             )
             // Home page fixture: two services configured, one turned off by its
             // feature flag, so the suite covers both halves of the gating rule.
+            // Also what `clients.toml`'s redirect_uris are built from - see
+            // `redirect_base_url` in `docker/gatehouse-service/src/clients.rs`.
             .env("SAGE_UI_URL", "https://127.0.0.1:7777/sage/ui/home")
             .env(
                 "SWITCHBOARD_UI_URL",
@@ -323,6 +364,7 @@ impl Fixture {
                 "WAREHOUSE_UI_URL",
                 "https://127.0.0.1:8443/warehouse/ui/home",
             )
+            .env("CONVEYOR_UI_URL", "http://127.0.0.1:9999/conveyor/ui/home")
             .env("FEATURE_WAREHOUSE_ENABLED", "false")
             .stdout(Stdio::piped());
 

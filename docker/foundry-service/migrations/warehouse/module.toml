@@ -2,4 +2,4 @@ name = "warehouse"
 version = "0.2.0"
 description = "Warehouse - storage service; authenticates against the shared realm"
 default_schema = "warehouse"
-requires = ["auth@^0.1", "quench-core@^0.1"]
+requires = ["auth@^0.2", "quench-core@^0.1"]

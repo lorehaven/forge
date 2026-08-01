@@ -2,7 +2,7 @@ name = "conveyor"
 version = "0.1.0"
 description = "Conveyor - CI/CD repositories, runs, jobs, logs and artifacts"
 default_schema = "conveyor"
-requires = ["auth@^0.1", "quench-core@^0.1"]
+requires = ["auth@^0.2", "quench-core@^0.1"]
 
 [variables]
 # Realm schema that owns users; keep in sync with the auth module.

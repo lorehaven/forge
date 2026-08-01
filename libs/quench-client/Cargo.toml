@@ -1,6 +1,6 @@
 [package]
 name = "quench-client"
-version = "0.1.2"
+version = "0.2.0"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Quench - HTTP client abstraction with auth and retry support"
@@ -15,5 +15,6 @@ readme = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
 tracing = { workspace = true }
 anyhow = { workspace = true }

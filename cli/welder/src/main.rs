@@ -331,7 +331,8 @@ async fn build_switchboard_agents(workflow: &Workflow) -> anyhow::Result<HashMap
         .switchboard_url
         .clone()
         .expect("config error: backend.switchboard_url must be set");
-    let client = SwitchboardClient::new(&base_url, config::CONFIG.backend.switchboard_tls_verify)?;
+    let client =
+        SwitchboardClient::new(&base_url, config::CONFIG.backend.switchboard_tls_verify).await?;
 
     let timeout_seconds = workflow
         .switchboard

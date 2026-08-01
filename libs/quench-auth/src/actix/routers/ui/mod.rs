@@ -17,7 +17,7 @@ pub async fn is_ui_authenticated(req: &actix_web::HttpRequest, config: &JwtConfi
         return false;
     };
 
-    let Ok(claims) = config.decode_claims(cookie.value()) else {
+    let Ok(claims) = config.decode_claims(cookie.value()).await else {
         return false;
     };
     if !claims.allows(&config.service_name) {
@@ -66,9 +66,9 @@ pub async fn get_user_from_req(
     }
 
     if !config.auth_enabled {
-        return Some(crate::actix::domain::jwt::Claims::new(
+        return Some(crate::actix::domain::jwt::Claims::for_audiences(
             "admin".to_string(),
-            config.service_name.clone(),
+            vec![config.service_name.clone()],
             "admin".to_string(),
             None,
             3600,
@@ -77,7 +77,7 @@ pub async fn get_user_from_req(
 
     let cookie = req.cookie(&crate::actix::domain::realm::session_cookie_name())?;
 
-    let claims = match config.decode_claims(cookie.value()) {
+    let claims = match config.decode_claims(cookie.value()).await {
         Ok(c) if c.allows(&config.service_name) => c,
         _ => return None,
     };

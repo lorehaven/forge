@@ -1,5 +1,5 @@
-use anyhow::{Context, Result, anyhow};
-use quench_client::BasicAuthClient;
+use anyhow::{Context, Result, anyhow, bail};
+use quench_client::BearerAuthClient;
 use serde::{Deserialize, Serialize};
 
 /// A vLLM instance as reported by switchboard's `/api/v1/vllm/instances`.
@@ -58,7 +58,7 @@ pub struct LaunchInstanceRequest {
 /// and launch model instances instead of managing `vllm serve` itself.
 #[derive(Clone)]
 pub struct SwitchboardClient {
-    client: BasicAuthClient,
+    client: BearerAuthClient,
 }
 
 impl std::fmt::Debug for SwitchboardClient {
@@ -67,23 +67,50 @@ impl std::fmt::Debug for SwitchboardClient {
     }
 }
 
+#[derive(Deserialize)]
+struct TokenResponse {
+    access_token: String,
+}
+
 impl SwitchboardClient {
-    /// Reads credentials from `WELDER_SWITCHBOARD_USERNAME` /
-    /// `WELDER_SWITCHBOARD_PASSWORD`, matching how switchboard's `Auth`
-    /// middleware validates HTTP Basic credentials against its own user db.
-    pub fn new(base_url: &str, tls_verify: bool) -> Result<Self> {
+    /// Logs in once against gatehouse with `WELDER_SWITCHBOARD_USERNAME` /
+    /// `WELDER_SWITCHBOARD_PASSWORD` and uses the resulting bearer token for
+    /// every switchboard call thereafter - switchboard's `Auth` middleware no
+    /// longer accepts Basic auth directly.
+    pub async fn new(base_url: &str, tls_verify: bool) -> Result<Self> {
         let username = std::env::var("WELDER_SWITCHBOARD_USERNAME").context(
             "WELDER_SWITCHBOARD_USERNAME must be set to use the switchboard backend",
         )?;
         let password = std::env::var("WELDER_SWITCHBOARD_PASSWORD").context(
             "WELDER_SWITCHBOARD_PASSWORD must be set to use the switchboard backend",
         )?;
+        let gatehouse_url = std::env::var("GATEHOUSE_URL").context(
+            "GATEHOUSE_URL must be set to use the switchboard backend - gatehouse is who \
+             exchanges WELDER_SWITCHBOARD_USERNAME/PASSWORD for a token now",
+        )?;
 
-        let client = BasicAuthClient::builder(base_url)
-            .username(&username)
-            .password(&password)
-            .tls_verify(tls_verify)
+        let http = reqwest::Client::builder()
+            .danger_accept_invalid_certs(!tls_verify)
             .build()
+            .context("failed to build the gatehouse login client")?;
+        let response = http
+            .post(format!(
+                "{}/api/v1/auth/login",
+                gatehouse_url.trim_end_matches('/')
+            ))
+            .json(&serde_json::json!({ "username": username, "password": password }))
+            .send()
+            .await
+            .context("failed to reach gatehouse to log in")?;
+        if !response.status().is_success() {
+            bail!("gatehouse rejected WELDER_SWITCHBOARD_USERNAME/PASSWORD");
+        }
+        let tokens: TokenResponse = response
+            .json()
+            .await
+            .context("gatehouse's login response was not what was expected")?;
+
+        let client = BearerAuthClient::with_tls_verify(base_url, &tokens.access_token, tls_verify)
             .context("failed to build switchboard HTTP client")?;
 
         Ok(Self { client })

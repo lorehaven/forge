@@ -1,6 +1,7 @@
 use actix_web::Scope;
 use actix_web::web::Data;
 use dashmap::DashMap;
+use quench_auth::actix::domain::sso_client::SsoConfig;
 use quench_auth::prelude::{JwtConfig, SessionDb, UserDb};
 use quench_starter::prelude::DbWrapper;
 use std::sync::Arc;
@@ -24,6 +25,7 @@ pub struct AppState {
     pub config: SageConfig,
     pub chat_state: Data<ChatState>,
     pub jwt_config: Data<JwtConfig>,
+    pub sso_config: Data<SsoConfig>,
     pub user_db: Arc<UserDb>,
     pub session_db: Arc<SessionDb>,
     pub tool_registry: Data<tools::ToolRegistry>,
@@ -56,7 +58,8 @@ impl AppState {
             chat_state: Data::new(ChatState {
                 pending_messages: DashMap::new(),
             }),
-            jwt_config: Data::new(JwtConfig::init()),
+            jwt_config: Data::new(JwtConfig::init().await),
+            sso_config: Data::new(SsoConfig::init()),
             user_db: UserDb::init(db_wrapper.db.clone()).await,
             session_db: SessionDb::from_env().await.expect("session store"),
             tool_registry,
@@ -78,6 +81,7 @@ impl AppState {
             .app_data(Data::new(self.config))
             .app_data(self.chat_state)
             .app_data(self.jwt_config)
+            .app_data(self.sso_config)
             .app_data(Data::new(self.user_db))
             .app_data(Data::new(self.session_db))
             .app_data(self.tool_registry)

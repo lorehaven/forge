@@ -3,18 +3,26 @@
 //! credentials, the session and the realm cookie.
 
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
-use quench_auth::actix::routers::ui::pages::auth::{login_delegation, logout_delegation};
+use quench_auth::actix::domain::sso_client::SsoConfig;
+use quench_auth::actix::routers::ui::pages::auth::{
+    auth_callback, login_delegation, logout_delegation,
+};
 use quench_auth::prelude::JwtConfig;
 use serde::Serialize;
 
 #[get("/login")]
-pub(super) async fn login(req: HttpRequest) -> impl Responder {
-    login_delegation(&req)
+pub(super) async fn login(req: HttpRequest, sso: web::Data<SsoConfig>) -> impl Responder {
+    login_delegation(&req, &sso)
 }
 
 #[get("/login/")]
-pub(super) async fn login_slash(req: HttpRequest) -> impl Responder {
-    login_delegation(&req)
+pub(super) async fn login_slash(req: HttpRequest, sso: web::Data<SsoConfig>) -> impl Responder {
+    login_delegation(&req, &sso)
+}
+
+#[get("/auth/callback")]
+pub(super) async fn callback(req: HttpRequest, sso: web::Data<SsoConfig>) -> impl Responder {
+    auth_callback(&req, &sso).await
 }
 
 #[get("/logout")]
@@ -50,7 +58,7 @@ pub(super) async fn auth_status(
         });
     };
 
-    match config.decode_claims(cookie.value()) {
+    match config.decode_claims(cookie.value()).await {
         Ok(claims) => HttpResponse::Ok().json(AuthStatus {
             authenticated: true,
             username: Some(claims.sub),

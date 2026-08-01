@@ -8,15 +8,18 @@ Feature: UI Authentication
     Given warehouse API is available
 
   # This service has no login form of its own: gatehouse owns the credentials,
-  # the session and the realm cookie.
+  # the session and the realm cookie. The redirect starts the authorization-code
+  # + PKCE exchange (gatehouse/api/v1/authorize), not a bare hop to the login
+  # form - gatehouse only shows a form if there is no gatehouse session yet.
   Scenario: The login route hands the browser to gatehouse
     When I open the login page
     Then response should be a redirect
-    And the redirect location should contain "/gatehouse/ui/login"
+    And the redirect location should contain "/gatehouse/api/v1/authorize"
+    And the redirect location should contain "client_id=warehouse"
 
   Scenario: The return address is carried to gatehouse
     When I open the login page
-    Then the redirect location should contain "redirect="
+    Then the redirect location should contain "redirect_uri="
     And the redirect location should contain "warehouse"
 
   Scenario: Logging out is realm-wide

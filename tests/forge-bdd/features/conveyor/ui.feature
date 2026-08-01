@@ -23,12 +23,13 @@ Feature: Conveyor's pages
     And the redirect location should contain "/ui/login"
 
   # Gatehouse owns the login form; conveyor only hands the browser over, and
-  # carries a return address so the visit comes back here.
+  # starts the authorization-code + PKCE exchange so the visit comes back here
+  # (redirect_uri) once it completes.
   Scenario: Logging in is delegated to gatehouse
     When I open the conveyor path "/ui/login"
     Then response should be a redirect
-    And the redirect location should contain "/gatehouse/ui/login"
-    And the redirect location should contain "redirect="
+    And the redirect location should contain "/gatehouse/api/v1/authorize"
+    And the redirect location should contain "redirect_uri="
 
   Scenario: Logging out is delegated to gatehouse
     When I open the conveyor path "/ui/logout"

@@ -100,14 +100,17 @@ async fn get_with_wrong_secret(world: &mut ForgeWorld, page: String) {
 
 #[when(expr = "GET request is sent to protected page {string} with expired token")]
 async fn get_with_expired_token(world: &mut ForgeWorld, page: String) {
-    let jwt_secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "secret".to_string());
-    let token = create_token(
+    let now = chrono::Utc::now().timestamp();
+    let token = crate::world::mint_test_token_at(
+        &world.client,
+        &world.gatehouse_url,
         "admin",
-        "switchboard",
+        &["switchboard"],
         "admin",
-        jwt_secret.as_bytes(),
-        -3600,
-    );
+        Some(now),
+        Some(now - 3600),
+    )
+    .await;
     let url = format!("{}{}", world.switchboard_url, page);
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
@@ -127,8 +130,7 @@ async fn get_with_expired_token(world: &mut ForgeWorld, page: String) {
 
 #[when(expr = "GET request is sent to protected page {string} with token for service {string}")]
 async fn get_with_wrong_service(world: &mut ForgeWorld, page: String, service: String) {
-    let jwt_secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "secret".to_string());
-    let token = create_token("admin", &service, "admin", jwt_secret.as_bytes(), 3600);
+    let token = crate::world::mint_test_token(&world.client, &world.gatehouse_url, "admin", &[&service], "admin").await;
     let url = format!("{}{}", world.switchboard_url, page);
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)
@@ -148,26 +150,17 @@ async fn get_with_wrong_service(world: &mut ForgeWorld, page: String, service: S
 
 #[when(expr = "GET request is sent to protected page {string} with token with future iat")]
 async fn get_with_future_iat(world: &mut ForgeWorld, page: String) {
-    let jwt_secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "secret".to_string());
-
-    let now = Utc::now();
-    let iat = (now + chrono::Duration::seconds(300)).timestamp() as usize; // 5 minutes in future
-    let exp = (now + chrono::Duration::seconds(3600)).timestamp() as usize;
-
-    let claims = Claims {
-        sub: "admin".to_string(),
-        service: "switchboard".to_string(),
-        scope: "admin".to_string(),
-        exp,
-        iat,
-    };
-
-    let token = encode(
-        &Header::default(),
-        &claims,
-        &EncodingKey::from_secret(jwt_secret.as_bytes()),
+    let now = Utc::now().timestamp();
+    let token = crate::world::mint_test_token_at(
+        &world.client,
+        &world.gatehouse_url,
+        "admin",
+        &["switchboard"],
+        "admin",
+        Some(now + 300), // 5 minutes in the future
+        Some(now + 3600),
     )
-    .expect("Failed to encode token");
+    .await;
 
     let url = format!("{}{}", world.switchboard_url, page);
     let client = reqwest::Client::builder()

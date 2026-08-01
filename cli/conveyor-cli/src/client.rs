@@ -1,24 +1,32 @@
 //! Talking to conveyor.
 //!
-//! Basic auth against the realm, which is what every other CLI in the estate
-//! uses for a machine account. The service verifies it the same way it verifies
-//! a browser's token.
+//! Credentials go to gatehouse, once, at startup - `POST /api/v1/auth/login`,
+//! the same resource-owner login every service's browser flow ends up at.
+//! Every call to conveyor after that carries the bearer token gatehouse
+//! handed back, never the password itself.
 
 use anyhow::{Context, Result, bail};
+use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 pub struct Client {
     base_url: String,
-    credentials: Option<(String, String)>,
+    token: Option<String>,
     http: reqwest::Client,
 }
 
+#[derive(Deserialize)]
+struct TokenResponse {
+    access_token: String,
+}
+
 impl Client {
-    pub fn new(
+    pub async fn new(
         url: Option<String>,
         username: Option<String>,
         password: Option<String>,
+        gatehouse_url: Option<String>,
         insecure: bool,
     ) -> Result<Self> {
         let base_url = url
@@ -32,15 +40,31 @@ impl Client {
 
         let username = username.or_else(|| non_empty("CONVEYOR_USERNAME"));
         let password = password.or_else(|| non_empty("CONVEYOR_PASSWORD"));
-        let credentials = username.map(|user| (user, password.unwrap_or_default()));
+
+        let http = reqwest::Client::builder()
+            .danger_accept_invalid_certs(insecure || envmnt::is_or("CONVEYOR_INSECURE", false))
+            .build()
+            .context("could not build an HTTP client")?;
+
+        let token = match username {
+            Some(username) => {
+                let gatehouse_url = gatehouse_url
+                    .or_else(|| non_empty("GATEHOUSE_URL"))
+                    .context(
+                        "CONVEYOR_USERNAME is set but gatehouse's address is not: pass \
+                         --gatehouse-url or set GATEHOUSE_URL, e.g. https://localhost:5443/gatehouse",
+                    )?
+                    .trim_end_matches('/')
+                    .to_string();
+                Some(login(&http, &gatehouse_url, &username, &password.unwrap_or_default()).await?)
+            }
+            None => None,
+        };
 
         Ok(Self {
             base_url,
-            credentials,
-            http: reqwest::Client::builder()
-                .danger_accept_invalid_certs(insecure || envmnt::is_or("CONVEYOR_INSECURE", false))
-                .build()
-                .context("could not build an HTTP client")?,
+            token,
+            http,
         })
     }
 
@@ -49,8 +73,8 @@ impl Client {
     }
 
     fn authenticated(&self, request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-        match &self.credentials {
-            Some((user, password)) => request.basic_auth(user, Some(password)),
+        match &self.token {
+            Some(token) => request.bearer_auth(token),
             None => request,
         }
     }
@@ -115,6 +139,30 @@ impl Client {
             &response.text().await.unwrap_or_default()
         ));
     }
+}
+
+/// One password exchange against gatehouse's resource-owner login. Not
+/// cached to disk - a CLI invocation is short-lived enough that logging in
+/// once per run is the simplest thing that works.
+async fn login(http: &reqwest::Client, gatehouse_url: &str, username: &str, password: &str) -> Result<String> {
+    let response = http
+        .post(format!("{gatehouse_url}/api/v1/auth/login"))
+        .json(&serde_json::json!({ "username": username, "password": password }))
+        .send()
+        .await
+        .context("failed to reach gatehouse to log in")?;
+
+    if !response.status().is_success() {
+        bail!(
+            "gatehouse rejected {username}'s credentials (set CONVEYOR_USERNAME and CONVEYOR_PASSWORD)"
+        );
+    }
+
+    let tokens: TokenResponse = response
+        .json()
+        .await
+        .context("gatehouse's login response was not what was expected")?;
+    Ok(tokens.access_token)
 }
 
 async fn decode<T: DeserializeOwned>(response: reqwest::Response, path: &str) -> Result<T> {

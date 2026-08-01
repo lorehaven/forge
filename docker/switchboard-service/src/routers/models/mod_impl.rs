@@ -22,7 +22,7 @@ pub static GGUF_ROOTS: LazyLock<Vec<String>> =
 /// scope claim: with permissions in the same claim, `contains("admin")` would
 /// also match a grant naming a service called `admin`. `system` is gone with it -
 /// it was never a role the realm issues.
-pub fn is_admin(req: &actix_web::HttpRequest, config: &web::Data<JwtConfig>) -> bool {
+pub async fn is_admin(req: &actix_web::HttpRequest, config: &web::Data<JwtConfig>) -> bool {
     if !config.auth_enabled {
         return true;
     }
@@ -40,7 +40,7 @@ pub fn is_admin(req: &actix_web::HttpRequest, config: &web::Data<JwtConfig>) -> 
         return false;
     };
 
-    match config.decode_claims(cookie.value()) {
+    match config.decode_claims(cookie.value()).await {
         Ok(claims) => claims.has_wildcard(),
         Err(_) => false,
     }
@@ -56,7 +56,7 @@ pub fn is_admin(req: &actix_web::HttpRequest, config: &web::Data<JwtConfig>) -> 
 /// declare a `"write"` action in the catalog at all, on purpose, so nothing
 /// there is reachable through a coarse write grant any more - a route needs
 /// the specific action this checks.
-pub fn can(req: &actix_web::HttpRequest, config: &web::Data<JwtConfig>, action: &str) -> bool {
+pub async fn can(req: &actix_web::HttpRequest, config: &web::Data<JwtConfig>, action: &str) -> bool {
     if !config.auth_enabled {
         return true;
     }
@@ -73,7 +73,7 @@ pub fn can(req: &actix_web::HttpRequest, config: &web::Data<JwtConfig>, action: 
         return false;
     };
 
-    match config.decode_claims(cookie.value()) {
+    match config.decode_claims(cookie.value()).await {
         Ok(claims) => claims.can(&config.service_name, action),
         Err(_) => false,
     }

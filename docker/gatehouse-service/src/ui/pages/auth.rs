@@ -106,7 +106,7 @@ pub(super) async fn login_submit(
 /// refuses to redirect from a `/login` path in the first place.
 #[get("/status")]
 pub(super) async fn status(request: HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
-    quench_auth::actix::routers::ui::pages::auth::auth_status(&request, &config)
+    quench_auth::actix::routers::ui::pages::auth::auth_status(&request, &config).await
 }
 
 /// Realm-wide logout: revokes the session and clears the shared cookie, so

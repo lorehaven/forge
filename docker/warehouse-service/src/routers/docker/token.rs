@@ -1,9 +1,8 @@
+use crate::docker_token::{DockerClaims, DockerTokenConfig};
 use actix_web::{HttpRequest, HttpResponse, Responder, get, http::header, web};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::{Duration, Utc};
-use jsonwebtoken::{EncodingKey, Header, encode};
 use quench_auth::prelude::UserDb;
-use quench_auth::prelude::{Claims, JwtConfig};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
@@ -25,7 +24,7 @@ pub struct TokenResponse {
 #[get("/token")]
 pub async fn handle(
     req: HttpRequest,
-    config: web::Data<JwtConfig>,
+    config: web::Data<DockerTokenConfig>,
     user_db: web::Data<std::sync::Arc<UserDb>>,
     query: web::Query<TokenQuery>,
 ) -> impl Responder {
@@ -48,23 +47,17 @@ pub async fn handle(
     let exp = now + Duration::minutes(10);
 
     // Registry tokens stay single-audience: they are minted for this service's
-    // docker endpoint only, never for the realm at large.
-    let claims = Claims {
+    // docker endpoint only, never for the realm at large - and never leave
+    // warehouse, so they carry no `aud` list at all, just `service`.
+    let claims = DockerClaims {
         sub: username,
-        aud: vec![query.service.clone()],
         service: query.service.clone(),
         scope: query.scope.clone().unwrap_or("docker".to_string()),
         iat: now.timestamp() as usize,
         exp: exp.timestamp() as usize,
-        sid: None,
     };
 
-    let token = encode(
-        &Header::default(),
-        &claims,
-        &EncodingKey::from_secret(&config.jwt_secret),
-    )
-    .unwrap();
+    let token = config.encode(&claims).unwrap();
 
     HttpResponse::Ok().json(TokenResponse {
         token,
@@ -73,31 +66,24 @@ pub async fn handle(
     })
 }
 
-async fn validate_basic(req: &HttpRequest, config: &JwtConfig, user_db: &UserDb) -> Option<String> {
+/// Basic auth only - the docker registry protocol's own exchange. There is no
+/// UI-session fallback: a docker client never carries the realm cookie, and
+/// the estate's SSO flow has no say over this endpoint.
+async fn validate_basic(
+    req: &HttpRequest,
+    config: &DockerTokenConfig,
+    user_db: &UserDb,
+) -> Option<String> {
     if !config.auth_enabled {
         return Some("anonymous".to_string());
     }
 
-    // 1. Try Authorization header
-    if let Some(header_value) = req
+    let header_value = req
         .headers()
         .get(header::AUTHORIZATION)
-        .and_then(|h| h.to_str().ok())
-        && let Some(encoded) = header_value.strip_prefix("Basic ")
-        && let Some(username) = validate_basic_encoded(encoded, user_db).await
-    {
-        return Some(username);
-    }
-
-    // 2. Fallback to HttpOnly cookie (UI session)
-    let cookie_name = format!("{}_ui_session", config.service_name);
-    if let Some(cookie) = req.cookie(&cookie_name)
-        && let Ok(claims) = config.decode_claims(cookie.value())
-    {
-        return Some(claims.sub);
-    }
-
-    None
+        .and_then(|h| h.to_str().ok())?;
+    let encoded = header_value.strip_prefix("Basic ")?;
+    validate_basic_encoded(encoded, user_db).await
 }
 
 async fn validate_basic_encoded(encoded: &str, user_db: &UserDb) -> Option<String> {

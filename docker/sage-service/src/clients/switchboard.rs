@@ -1,6 +1,6 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use quench_client::BasicAuthClient;
+use quench_client::ClientCredentialsClient;
 use quench_starter::metrics::{RequestMetrics, TimedBlock};
 use quench_starter::resilience::{CircuitBreaker, RetryConfig, retry_with_backoff};
 use serde::{Deserialize, Serialize};
@@ -36,7 +36,7 @@ impl VllmInstance {
 
 #[derive(Clone)]
 pub struct SwitchboardClient {
-    client: BasicAuthClient,
+    client: ClientCredentialsClient,
     metrics: Arc<RequestMetrics>,
     circuit_breaker: Arc<CircuitBreaker>,
 }
@@ -50,29 +50,15 @@ impl Default for SwitchboardClient {
 impl SwitchboardClient {
     pub fn new() -> Self {
         let base_url = envmnt::get_or("SWITCHBOARD_URL", "http://switchboard-service:8080");
-        let username = envmnt::get_or("SWITCHBOARD_TECH_USERNAME", "");
-        let password = envmnt::get_or("SWITCHBOARD_TECH_PASSWORD", "");
+        let gatehouse_url = envmnt::get_or("GATEHOUSE_URL", "");
+        let client_secret = envmnt::get_or("CLIENT_SECRET_SAGE_SWITCHBOARD", "");
 
-        if username.is_empty() || password.is_empty() {
-            tracing::error!(
-                "SWITCHBOARD_TECH_USERNAME or SWITCHBOARD_TECH_PASSWORD not set! \
-                 username empty: {}, password empty: {}",
-                username.is_empty(),
-                password.is_empty()
-            );
+        if gatehouse_url.is_empty() || client_secret.is_empty() {
             panic!(
-                "Missing required environment variables: \
-                 SWITCHBOARD_TECH_USERNAME={}, SWITCHBOARD_TECH_PASSWORD={}",
-                if username.is_empty() {
-                    "NOT SET"
-                } else {
-                    "SET"
-                },
-                if password.is_empty() {
-                    "NOT SET"
-                } else {
-                    "SET"
-                }
+                "Missing required environment variables: GATEHOUSE_URL={}, \
+                 CLIENT_SECRET_SAGE_SWITCHBOARD={}",
+                if gatehouse_url.is_empty() { "NOT SET" } else { "SET" },
+                if client_secret.is_empty() { "NOT SET" } else { "SET" },
             );
         }
 
@@ -81,15 +67,16 @@ impl SwitchboardClient {
             .unwrap_or(true);
 
         tracing::info!(
-            "Initializing SwitchboardClient with URL: {}, username: {}, tls_verify: {}",
+            "Initializing SwitchboardClient with URL: {}, tls_verify: {}",
             base_url,
-            username,
             tls_verify
         );
 
-        let client = BasicAuthClient::builder(&base_url)
-            .username(&username)
-            .password(&password)
+        let token_url = format!("{}/api/v1/token", gatehouse_url.trim_end_matches('/'));
+        let client = ClientCredentialsClient::builder(&base_url)
+            .token_url(&token_url)
+            .client_id("sage-switchboard")
+            .client_secret(&client_secret)
             .tls_verify(tls_verify)
             .build()
             .expect("Failed to build HTTP client");

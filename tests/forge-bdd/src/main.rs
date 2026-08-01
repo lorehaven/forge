@@ -60,8 +60,20 @@ async fn main() {
 
     let fixture = services::Fixture::new(manifest_dir);
     let mut running = Vec::new();
+
+    // Every service verifies its tokens against gatehouse's JWKS now, and
+    // `ForgeWorld::new()` mints a token that way for every scenario - so
+    // gatehouse has to be running and answering before anything else starts,
+    // and before the very first `ForgeWorld` (the probe, right below) is
+    // built, whether or not a suite selected `@gatehouse` itself.
     if !opts.custom.no_spawn {
-        for target in &selected {
+        running.push(fixture.start(Target::Gatehouse).await);
+        services::wait_until_ready(&[(
+            Target::Gatehouse,
+            "http://127.0.0.1:5443/gatehouse/ui/login".to_string(),
+        )])
+        .await;
+        for target in selected.iter().filter(|target| **target != Target::Gatehouse) {
             running.push(fixture.start(*target).await);
         }
     }

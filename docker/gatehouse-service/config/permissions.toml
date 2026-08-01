@@ -57,7 +57,7 @@ actions = ["read", "launch", "stop", "delete-model"]
 # rather than the emergency-only role it is meant to be.
 [services.gatehouse]
 label = "Gatehouse"
-actions = ["read-users", "create-user", "edit-user", "delete-user", "manage-permissions"]
+actions = ["read-users", "create-user", "edit-user", "delete-user", "manage-permissions", "manage-signing-keys"]
 
 # ---------------------------------------------------------------------------
 # Templates

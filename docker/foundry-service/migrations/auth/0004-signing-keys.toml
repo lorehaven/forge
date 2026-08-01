@@ -1,0 +1,24 @@
+[[migrations]]
+id = "0004-signing-keys"
+author = "gatehouse-service"
+since = "0.2.0"
+
+# Ed25519 keypairs gatehouse signs access tokens with. `private_key` is
+# ChaCha20-Poly1305 ciphertext (key from GATEHOUSE_KEY_ENCRYPTION_KEY), hex
+# encoded - TEXT rather than BYTEA because quench-db's generic Crud path
+# round-trips a model through jsonb_populate_record, which does not decode a
+# JSON array-of-numbers into bytea correctly. `not_after` is null while a key
+# is the one gatehouse signs new tokens with; rotation sets it on the outgoing
+# key rather than deleting the row, so tokens it already signed keep
+# verifying via JWKS until their own TTL elapses.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.signing_keys (
+    kid         TEXT PRIMARY KEY,
+    algorithm   TEXT NOT NULL,
+    private_key TEXT NOT NULL,
+    public_key  TEXT NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    not_after   TIMESTAMPTZ
+);
+"""

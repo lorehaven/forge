@@ -10,6 +10,10 @@ use actix_web::cookie::{Cookie, SameSite, time::Duration};
 pub const DEFAULT_AUTH_SCHEMA: &str = "auth";
 pub const DEFAULT_SESSION_COOKIE: &str = "forge_session";
 pub const DEFAULT_REFRESH_COOKIE: &str = "forge_refresh";
+/// Holds the PKCE verifier + `state` + return destination for the few seconds
+/// between a relying party redirecting to `/authorize` and the browser coming
+/// back to `/auth/callback`. Never leaves this service - gatehouse never sees it.
+pub const AUTHORIZE_STATE_COOKIE: &str = "forge_authorize_state";
 
 /// Schema holding `users` and `sessions`. Shared by every service; only
 /// gatehouse writes to it outside of session bookkeeping.
@@ -100,6 +104,58 @@ fn cleared_cookie(name: String) -> Cookie<'static> {
         builder = builder.domain(domain);
     }
     builder.finish()
+}
+
+/// A short-lived, unnamed-elsewhere cookie for the authorize round trip.
+/// Deliberately not domain-scoped even when `AUTH_COOKIE_DOMAIN` is set: it is
+/// read back by the exact host that set it, never another relying party.
+pub fn authorize_state_cookie(value: impl Into<String>) -> Cookie<'static> {
+    Cookie::build(AUTHORIZE_STATE_COOKIE, value.into())
+        .path("/")
+        .http_only(true)
+        .same_site(SameSite::Lax)
+        .secure(true)
+        .max_age(Duration::minutes(5))
+        .finish()
+}
+
+pub fn cleared_authorize_state_cookie() -> Cookie<'static> {
+    Cookie::build(AUTHORIZE_STATE_COOKIE, "")
+        .path("/")
+        .http_only(true)
+        .same_site(SameSite::Lax)
+        .secure(true)
+        .max_age(Duration::seconds(0))
+        .finish()
+}
+
+/// This service's own mount point (`BASE_PATH`), normalized to either `/` or
+/// a leading-slash, no-trailing-slash prefix.
+pub fn base_path() -> String {
+    let raw = envmnt::get_or("BASE_PATH", "/");
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed == "/" {
+        "/".to_string()
+    } else {
+        let without_trailing = trimmed.trim_end_matches('/');
+        if without_trailing.is_empty() {
+            "/".to_string()
+        } else if without_trailing.starts_with('/') {
+            without_trailing.to_string()
+        } else {
+            format!("/{without_trailing}")
+        }
+    }
+}
+
+/// `path` under this service's own `/ui` scope, e.g. `ui_path("/home")`.
+pub fn ui_path(path: &str) -> String {
+    let base = base_path();
+    if base == "/" {
+        format!("/ui{path}")
+    } else {
+        format!("{base}/ui{path}")
+    }
 }
 
 fn non_empty(value: String) -> Option<String> {

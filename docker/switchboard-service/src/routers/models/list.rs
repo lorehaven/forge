@@ -27,7 +27,7 @@ pub async fn handle_grid(
 ) -> impl Responder {
     let gpu = get_gpu_info().unwrap_or_default();
     let mut models = get_store().get_all_models().await;
-    let can_delete = can(&req, &config, "delete-model");
+    let can_delete = can(&req, &config, "delete-model").await;
 
     apply_filters(&mut models, &filters, &gpu);
 

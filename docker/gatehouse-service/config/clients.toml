@@ -1,0 +1,44 @@
+# OAuth clients gatehouse issues tokens to - see `src/clients.rs` for how
+# this is loaded and `docs/SSO_PLAN.md` §2 for the design.
+#
+# Each relying party gets one authorization-code client (browser login,
+# `redirect_path` under its own `<PREFIX>_UI_URL`/`<PREFIX>_URL`); sage's
+# machine identity toward switchboard gets one client_credentials-only client
+# (no `redirect_path` - it never sends a browser anywhere).
+#
+# A client's secret is never written here - only the name of the env var
+# gatehouse reads it from (`secret_env`), which must also be set in the
+# owning service's own environment as `GATEHOUSE_CLIENT_SECRET`.
+
+[[client]]
+client_id = "sage"
+redirect_path = "/ui/auth/callback"
+allowed_scopes = ["sage"]
+secret_env = "CLIENT_SECRET_SAGE"
+
+[[client]]
+client_id = "switchboard"
+redirect_path = "/ui/auth/callback"
+allowed_scopes = ["switchboard"]
+secret_env = "CLIENT_SECRET_SWITCHBOARD"
+
+[[client]]
+client_id = "warehouse"
+redirect_path = "/ui/auth/callback"
+allowed_scopes = ["warehouse"]
+secret_env = "CLIENT_SECRET_WAREHOUSE"
+
+[[client]]
+client_id = "conveyor"
+redirect_path = "/ui/auth/callback"
+allowed_scopes = ["conveyor"]
+secret_env = "CLIENT_SECRET_CONVEYOR"
+
+# sage's machine identity toward switchboard - client_credentials only.
+# `allowed_scopes` here is the audience (switchboard, not sage-switchboard);
+# the token's actual scope is the fixed wildcard `service` role, matching what
+# the Basic-auth path it replaces used to grant.
+[[client]]
+client_id = "sage-switchboard"
+allowed_scopes = ["switchboard"]
+secret_env = "CLIENT_SECRET_SAGE_SWITCHBOARD"

@@ -33,7 +33,7 @@ pub async fn handle_grid(
     config: web::Data<JwtConfig>,
     engine: web::Data<Arc<dyn VllmEngine>>,
 ) -> impl Responder {
-    let can_stop = can(&req, &config, "stop");
+    let can_stop = can(&req, &config, "stop").await;
     match engine.list_instances().await {
         Ok(instances) => {
             let html = render_instances_grid(instances, can_stop);

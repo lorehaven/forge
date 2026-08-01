@@ -3,62 +3,14 @@
 //! mounted on `routers::files::scope`). The BDD harness configures a `test`
 //! storage for exactly this - see `FILE_STORAGES` in `services.rs`.
 
-use crate::world::ForgeWorld;
+use crate::world::{ForgeWorld, mint_test_token};
 use cucumber::{given, then, when};
-use jsonwebtoken::{EncodingKey, Header, encode};
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Serialize, Deserialize)]
-struct Claims {
-    sub: String,
-    #[serde(default)]
-    aud: Vec<String>,
-    service: String,
-    scope: String,
-    exp: usize,
-    iat: usize,
-    #[serde(default)]
-    sid: Option<String>,
-}
-
-/// Mints a realm-shaped token directly, the way `ui_jwt.rs` does for the same
-/// reason: this suite runs warehouse alone, with no gatehouse to issue one.
-/// `scope` is whatever the scenario is testing - a role, a `service:level`
-/// grant, or both.
-fn token(secret: &str, scope: &str) -> String {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as usize;
-
-    let claims = Claims {
-        sub: "bdd-user".to_string(),
-        aud: vec!["warehouse".to_string()],
-        service: "warehouse".to_string(),
-        scope: scope.to_string(),
-        exp: now + 3600,
-        iat: now,
-        sid: None,
-    };
-
-    encode(
-        &Header::default(),
-        &claims,
-        &EncodingKey::from_secret(secret.as_bytes()),
-    )
-    .expect("failed to encode test token")
-}
-
-/// The suite shares one signing key across every service (`services.rs`), the
-/// same variable `JwtConfig::init` reads, so this is the same secret warehouse
-/// is verifying against.
-fn jwt_secret() -> String {
-    std::env::var("JWT_SECRET").unwrap_or_else(|_| "forge-bdd-shared-secret".to_string())
-}
 
 #[given(expr = "I hold a token scoped {string}")]
 async fn hold_token(world: &mut ForgeWorld, scope: String) {
-    world.token = Some(token(&jwt_secret(), &scope));
+    world.token = Some(
+        mint_test_token(&world.client, &world.gatehouse_url, "bdd-user", &["warehouse"], &scope).await,
+    );
 }
 
 #[given("I hold no token")]

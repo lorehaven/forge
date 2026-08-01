@@ -57,7 +57,7 @@ pub fn scope(jwt_config: JwtConfig) -> actix_web::Scope {
 /// The `Auth` middleware has already established that there is a valid token;
 /// this only reads the name out of it. `unknown` is unreachable behind that
 /// middleware and is not a fallback anyone should rely on.
-pub fn actor(request: &HttpRequest) -> String {
+pub async fn actor(request: &HttpRequest) -> String {
     // The borrow is scoped deliberately. `extensions()` hands out a `Ref` that
     // otherwise lives to the end of the statement, and `session_subject` reads
     // a cookie - which makes actix take `extensions_mut()` to cache the parsed
@@ -67,20 +67,23 @@ pub fn actor(request: &HttpRequest) -> String {
         extensions.get::<Claims>().map(|claims| claims.sub.clone())
     };
 
-    from_token
-        .or_else(|| session_subject(request))
-        // `SERVICE_AUTH_ENABLED=false` lets the middleware through without an
-        // identity, which is the only way to get here. `dev` is what the rest
-        // of the estate calls that account.
-        .unwrap_or_else(|| "dev".to_string())
+    match from_token {
+        Some(sub) => sub,
+        None => session_subject(request)
+            .await
+            // `SERVICE_AUTH_ENABLED=false` lets the middleware through without
+            // an identity, which is the only way to get here. `dev` is what
+            // the rest of the estate calls that account.
+            .unwrap_or_else(|| "dev".to_string()),
+    }
 }
 
 /// The realm cookie, for a call that came from a browser rather than from a
 /// client sending a bearer token.
-fn session_subject(request: &HttpRequest) -> Option<String> {
+async fn session_subject(request: &HttpRequest) -> Option<String> {
     let cookie = request.cookie(&realm::session_cookie_name())?;
     let config = request.app_data::<web::Data<JwtConfig>>()?;
-    config.decode_claims(cookie.value()).ok().map(|c| c.sub)
+    config.decode_claims(cookie.value()).await.ok().map(|c| c.sub)
 }
 
 pub fn json_error(status: StatusCode, message: &str) -> HttpResponse {

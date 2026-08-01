@@ -12,7 +12,7 @@ pub async fn delete_model(
     config: web::Data<JwtConfig>,
     body: Json<DeleteModelRequest>,
 ) -> impl Responder {
-    if !can(&req, &config, "delete-model") {
+    if !can(&req, &config, "delete-model").await {
         return HttpResponse::Forbidden().finish();
     }
 
@@ -25,7 +25,7 @@ pub async fn delete_model_form(
     config: web::Data<JwtConfig>,
     form: web::Form<DeleteModelRequest>,
 ) -> impl Responder {
-    if !can(&req, &config, "delete-model") {
+    if !can(&req, &config, "delete-model").await {
         return HttpResponse::Forbidden().finish();
     }
 

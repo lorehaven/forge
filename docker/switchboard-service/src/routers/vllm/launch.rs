@@ -12,7 +12,7 @@ pub async fn launch_instance(
     req: web::Json<LaunchRequest>,
     engine: web::Data<Arc<dyn VllmEngine>>,
 ) -> impl Responder {
-    if !can(&http_req, &config, "launch") {
+    if !can(&http_req, &config, "launch").await {
         return HttpResponse::Forbidden().finish();
     }
 
@@ -54,7 +54,7 @@ pub async fn launch_instance_form(
     form: web::Form<LaunchRequestForm>,
     engine: web::Data<Arc<dyn VllmEngine>>,
 ) -> impl Responder {
-    if !can(&http_req, &config, "launch") {
+    if !can(&http_req, &config, "launch").await {
         return HttpResponse::Forbidden().finish();
     }
 

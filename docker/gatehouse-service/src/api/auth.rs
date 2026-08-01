@@ -78,7 +78,7 @@ async fn refresh(
     let Some(user) = users.get_user(&session.username).await else {
         return HttpResponse::Unauthorized().finish();
     };
-    match token_response(&config, &user, &session, refresh_token) {
+    match token_response(&config, &user, &session, refresh_token).await {
         Ok(tokens) if cookie_flow => {
             let access_cookie = access_cookie(&config, tokens.access_token.clone());
             let refresh_cookie = refresh_cookie(&config, tokens.refresh_token.clone());
@@ -165,21 +165,78 @@ pub async fn issue_token_pair(
     let (session, refresh_token) = sessions
         .create(&user.username, config.refresh_token_ttl_secs)
         .await?;
-    Ok(token_response(config, user, &session, refresh_token)?)
+    Ok(token_response(config, user, &session, refresh_token).await?)
 }
 
-fn token_response(
+/// Same as `issue_token_pair`, but for the `authorization_code` grant
+/// (`crate::api::oauth`): the token's audience is narrowed to the requesting
+/// client rather than every service the user happens to hold grants on - the
+/// whole point of a relying party fetching its own token instead of trusting
+/// a realm-wide one.
+pub(crate) async fn issue_token_pair_for_client(
+    config: &JwtConfig,
+    sessions: &SessionDb,
+    user: &User,
+    client_audiences: &[String],
+) -> anyhow::Result<TokenResponse> {
+    let (session, refresh_token) = sessions
+        .create(&user.username, config.refresh_token_ttl_secs)
+        .await?;
+    let access_token = config
+        .issue_access_token_for(
+            user.username.clone(),
+            config.narrow_audiences(client_audiences),
+            user_scope(user),
+            Some(session.id.clone()),
+        )
+        .await?;
+    Ok(TokenResponse {
+        access_token,
+        refresh_token,
+        token_type: "Bearer".to_string(),
+        expires_in: config.access_token_ttl_secs,
+    })
+}
+
+/// The `client_credentials` grant: an access-only token identifying the
+/// client itself rather than a user, scoped to the wildcard `service` role -
+/// the same access Basic auth used to grant sage against switchboard. No
+/// session, so no refresh token either; a client just asks again.
+pub(crate) async fn issue_client_credentials_token(
+    config: &JwtConfig,
+    client_id: &str,
+    audiences: &[String],
+) -> anyhow::Result<TokenResponse> {
+    let access_token = config
+        .issue_access_token_for(
+            client_id.to_string(),
+            config.narrow_audiences(audiences),
+            "service".to_string(),
+            None,
+        )
+        .await?;
+    Ok(TokenResponse {
+        access_token,
+        refresh_token: String::new(),
+        token_type: "Bearer".to_string(),
+        expires_in: config.access_token_ttl_secs,
+    })
+}
+
+pub async fn token_response(
     config: &JwtConfig,
     user: &User,
     session: &Session,
     refresh_token: String,
 ) -> Result<TokenResponse, jsonwebtoken::errors::Error> {
-    let access_token = config.issue_access_token_for(
-        user.username.clone(),
-        user_audiences(config, user),
-        user_scope(user),
-        Some(session.id.clone()),
-    )?;
+    let access_token = config
+        .issue_access_token_for(
+            user.username.clone(),
+            user_audiences(config, user),
+            user_scope(user),
+            Some(session.id.clone()),
+        )
+        .await?;
     Ok(TokenResponse {
         access_token,
         refresh_token,
@@ -197,7 +254,7 @@ fn token_response(
 /// A wildcard role emits the role alone. Expanding it into a grant per service
 /// would make the token bigger, go stale when the estate gained a service, and
 /// tell a reader less - `admin` is the more informative claim.
-fn user_scope(user: &User) -> String {
+pub(crate) fn user_scope(user: &User) -> String {
     let mut entries: Vec<String> = user
         .get_roles()
         .iter()
@@ -224,7 +281,7 @@ fn user_scope(user: &User) -> String {
 /// Gatehouse is always included. It serves the login page, the home page and
 /// refresh, so a token that excluded it would leave the user unable to reach the
 /// thing that would grant them anything.
-fn user_audiences(config: &JwtConfig, user: &User) -> Vec<String> {
+pub(crate) fn user_audiences(config: &JwtConfig, user: &User) -> Vec<String> {
     if user.has_wildcard() {
         return config.audiences.clone();
     }
@@ -262,7 +319,7 @@ async fn access_claims(
         .to_str()
         .ok()?
         .strip_prefix("Bearer ")?;
-    let claims = config.decode_claims(token).ok()?;
+    let claims = config.decode_claims(token).await.ok()?;
     let session_id = claims.sid.as_deref()?;
     let active = sessions.is_active(session_id, &claims.sub).await.ok()?;
     (claims.allows(&config.service_name) && active).then_some(claims)
@@ -274,8 +331,7 @@ mod tests {
     use quench_auth::prelude::{Permissions, Role};
 
     fn config() -> JwtConfig {
-        envmnt::set("JWT_SECRET", "test_secret");
-        let mut config = JwtConfig::init();
+        let mut config = JwtConfig::for_tests();
         config.service_name = "gatehouse".to_string();
         config.audiences = vec![
             "sage".to_string(),

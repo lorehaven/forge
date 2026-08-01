@@ -109,6 +109,7 @@ pub fn scope() -> impl HttpServiceFactory {
         // Auth
         .service(pages::auth::login)
         .service(pages::auth::login_slash)
+        .service(pages::auth::callback)
         .service(pages::auth::logout)
         .service(pages::auth::status)
         // Home

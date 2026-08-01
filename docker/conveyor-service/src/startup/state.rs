@@ -1,5 +1,6 @@
 use actix_web::Scope;
 use actix_web::web::Data;
+use quench_auth::actix::domain::sso_client::SsoConfig;
 use quench_auth::prelude::{JwtConfig, SessionDb, UserDb};
 use quench_starter::prelude::DbWrapper;
 use std::sync::Arc;
@@ -14,6 +15,7 @@ use crate::providers::Providers;
 pub struct AppState {
     pub config: ConveyorConfig,
     pub jwt_config: Data<JwtConfig>,
+    pub sso_config: Data<SsoConfig>,
     pub user_db: Arc<UserDb>,
     pub session_db: Arc<SessionDb>,
     pub db: quench_db::prelude::Db,
@@ -41,7 +43,8 @@ impl AppState {
         );
 
         let state = Self {
-            jwt_config: Data::new(JwtConfig::init()),
+            jwt_config: Data::new(JwtConfig::init().await),
+            sso_config: Data::new(SsoConfig::init()),
             user_db: UserDb::init(db_wrapper.db.clone()).await,
             // Sessions live in the shared store, so a logout at gatehouse is
             // immediately a logout here.
@@ -62,6 +65,7 @@ impl AppState {
         scope
             .app_data(Data::new(self.config))
             .app_data(self.jwt_config)
+            .app_data(self.sso_config)
             .app_data(Data::new(self.user_db))
             .app_data(Data::new(self.session_db))
             .app_data(Data::new(self.db))
