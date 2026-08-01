@@ -32,7 +32,9 @@ async fn main() -> std::io::Result<()> {
         root_scope,
         move || base_path_scope(state.clone()),
         Some(db_wrapper),
-        async {},
+        async move {
+            wait_for_services("conveyor-service", vec![gatehouse_health_url().as_str()]).await;
+        },
     )
     .await
 }

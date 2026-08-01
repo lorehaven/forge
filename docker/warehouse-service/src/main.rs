@@ -1,7 +1,7 @@
 use actix_web::web;
 use quench_auth::actix::domain::sso_client::SsoConfig;
 use quench_auth::prelude::{JwtConfig, SessionDb, UserDb};
-use quench_starter::prelude::{DbWrapper, serve};
+use quench_starter::prelude::{DbWrapper, gatehouse_health_url, serve, wait_for_services};
 use warehouse_service::docker_token::DockerTokenConfig;
 use warehouse_service::{base_path_scope, root_scope};
 
@@ -48,7 +48,9 @@ async fn main() -> std::io::Result<()> {
             )
         },
         Some(db_wrapper),
-        async {},
+        async move {
+            wait_for_services("warehouse-service", vec![gatehouse_health_url().as_str()]).await;
+        },
     )
     .await
 }

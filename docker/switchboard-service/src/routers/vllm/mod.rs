@@ -5,6 +5,7 @@ pub mod list;
 pub mod mock;
 pub mod modals;
 pub mod native;
+pub mod reaper;
 pub mod sse;
 pub mod stop;
 pub mod types;
@@ -19,6 +20,7 @@ use quench_auth::actix::middleware::auth::Auth;
 use quench_auth::prelude::JwtConfig;
 use std::sync::Arc;
 
+pub use reaper::spawn_reaper;
 pub use sse::init_vllm_status_publisher;
 pub use types::*;
 

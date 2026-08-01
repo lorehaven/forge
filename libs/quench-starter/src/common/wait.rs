@@ -2,6 +2,14 @@ use quench_cli::prelude::{Tone, print_status};
 use std::time::Duration;
 use tokio::time::sleep;
 
+/// The one dependency every relying party shares: they all verify tokens
+/// against gatehouse's JWKS and redirect there for login, so none of them is
+/// meaningfully ready until it is reachable.
+pub fn gatehouse_health_url() -> String {
+    let gatehouse_url = envmnt::get_or("GATEHOUSE_URL", "");
+    format!("{}/health/ready", gatehouse_url.trim_end_matches('/'))
+}
+
 pub async fn wait_for_services(service_name: &str, urls: Vec<&str>) {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(2))

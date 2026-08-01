@@ -23,16 +23,27 @@ async fn main() -> std::io::Result<()> {
 
     let (gpu_tx, _) = tokio::sync::broadcast::channel::<String>(100);
     let vllm_engine = routers::vllm::init_engine().await;
+    routers::vllm::spawn_reaper(vllm_engine.clone());
     let (vllm_tx, _) = tokio::sync::broadcast::channel::<String>(100);
 
     let init_gpu_tx = gpu_tx.clone();
     let init_vllm_tx = vllm_tx.clone();
     let init_vllm_engine = vllm_engine.clone();
+    let gatehouse_health_url = gatehouse_health_url();
     let init = async move {
-        warm_model_cache().await;
-        start_sync_job();
-        init_gpu_status_publisher(init_gpu_tx);
-        routers::vllm::init_vllm_status_publisher(init_vllm_tx, init_vllm_engine);
+        // Gatehouse readiness gates this service's own readiness (every
+        // incoming request verifies against its JWKS), but it is unrelated to
+        // the model cache/sync/publisher setup below, so the two run
+        // concurrently rather than one delaying the other.
+        tokio::join!(
+            wait_for_services("switchboard-service", vec![gatehouse_health_url.as_str()]),
+            async {
+                warm_model_cache().await;
+                start_sync_job();
+                init_gpu_status_publisher(init_gpu_tx);
+                routers::vllm::init_vllm_status_publisher(init_vllm_tx, init_vllm_engine);
+            }
+        );
     };
 
     serve(
