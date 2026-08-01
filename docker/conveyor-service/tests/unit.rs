@@ -22,6 +22,8 @@ mod routers_api_routing_tests;
 mod routers_api_stream_tests;
 #[path = "unit/routers_ui_format_tests.rs"]
 mod routers_ui_format_tests;
+#[path = "unit/routers_ui_home_tests.rs"]
+mod routers_ui_home_tests;
 #[path = "unit/routers_ui_runs_tests.rs"]
 mod routers_ui_runs_tests;
 #[path = "unit/secrets_crypto_tests.rs"]

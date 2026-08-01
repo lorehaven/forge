@@ -205,5 +205,52 @@ pub fn runs_rules() -> Vec<CssRule> {
         CssRule::new(".finding-severity-error")
             .property("background-color", "var(--bs-danger)")
             .property("color", "var(--bs-gray-950)"),
+        // ---------------------------------------------------------------
+        // Repo chips (home page) and the manual-run button beside them
+        // ---------------------------------------------------------------
+        CssRule::new(".chip-row")
+            .property("display", "flex")
+            .property("gap", "0.35rem")
+            .property("flex-wrap", "wrap"),
+        CssRule::new(".chip")
+            .property("display", "inline-flex")
+            .property("align-items", "center")
+            .property("font-size", "0.72rem")
+            .property("font-weight", "600")
+            .property("padding", "0.15rem 0.45rem")
+            .property("border-radius", "0.2rem")
+            .property("background-color", "var(--bs-gray-700)")
+            .property("color", "var(--bs-gray-300)"),
+        CssRule::new(".chip-clean")
+            .property("background-color", "var(--bs-gray-800)")
+            .property("color", "var(--bs-success-500)"),
+        CssRule::new(".chip-warning")
+            .property("background-color", "var(--bs-warning)")
+            .property("color", "var(--bs-gray-950)"),
+        CssRule::new(".chip-danger")
+            .property("background-color", "var(--bs-danger)")
+            .property("color", "var(--bs-gray-950)"),
+        CssRule::new(".chip-none")
+            .property("background-color", "transparent")
+            .property("color", "var(--bs-gray-600)")
+            .property("border", "0.1rem dashed var(--bs-gray-700)"),
+        CssRule::new(".run-button")
+            .property("padding", "0.35rem 0.75rem")
+            .property("font-size", "0.85rem")
+            .property("border-radius", "0.3rem")
+            .property("background-color", "var(--bs-gray-800)")
+            .property("color", "var(--bs-gray-200)")
+            .property("border", "0.1rem solid var(--bs-gray-600)")
+            .property("cursor", "pointer")
+            .property("transition", "background-color 0.15s")
+            .child(
+                CssRule::new("&:hover:not(:disabled)")
+                    .property("background-color", "var(--bs-gray-700)"),
+            )
+            .child(
+                CssRule::new("&:disabled")
+                    .property("opacity", "0.5")
+                    .property("cursor", "default"),
+            ),
     ]
 }

@@ -1,8 +1,8 @@
 //! Triggering runs, and looking at what they did.
 
-use crate::domain::Trigger;
+use crate::domain::{Run, Trigger};
 use crate::routers::api::{ApiError, json_error};
-use crate::scheduler::queue::{self, NewRun};
+use crate::scheduler::queue::{self, NewRun, QueueError};
 use crate::scheduler::repos;
 use actix_web::http::StatusCode;
 use actix_web::{HttpResponse, Responder, get, post, web};
@@ -20,57 +20,86 @@ pub struct TriggerRun {
     pub sha: Option<String>,
 }
 
+/// Why [`trigger_manual`] could not start a run - shared between the JSON API
+/// handler below and the UI's "run now" button, which need to report the same
+/// failures in different shapes (a JSON error body vs. a re-rendered page).
+#[derive(Debug, thiserror::Error)]
+pub enum TriggerError {
+    #[error("no such repository")]
+    NotFound,
+    #[error("this repository is disabled")]
+    Disabled,
+    #[error("{0}")]
+    BadRef(String),
+    #[error("{0}")]
+    ResolveFailed(String),
+    #[error("{0}")]
+    BadSha(String),
+    #[error(transparent)]
+    Queue(#[from] QueueError),
+}
+
+/// `ApiError`'s fields are private to `routers::api`, not `pub`, but this
+/// module is a descendant of it and so can still build one directly - the
+/// same way `queue::QueueError` already does two steps up.
+impl From<TriggerError> for ApiError {
+    fn from(error: TriggerError) -> Self {
+        let TriggerError::Queue(queue_error) = error else {
+            let status = match &error {
+                TriggerError::NotFound => StatusCode::NOT_FOUND,
+                TriggerError::Disabled => StatusCode::CONFLICT,
+                TriggerError::BadRef(_) | TriggerError::BadSha(_) => StatusCode::BAD_REQUEST,
+                TriggerError::ResolveFailed(_) => StatusCode::BAD_GATEWAY,
+                TriggerError::Queue(_) => unreachable!(),
+            };
+            return Self {
+                status,
+                message: error.to_string(),
+            };
+        };
+        Self::from(queue_error)
+    }
+}
+
 /// Starts a run by hand.
 ///
 /// The pipeline's `on` patterns do not gate this - somebody asked for this run
 /// by name, and refusing would leave them no way to build a branch the patterns
 /// do not cover.
 ///
-/// Registered inside the `/repos` scope rather than here: actix matches scopes
-/// by prefix and stops at the first that matches, so a `/repos/...` route
-/// declared beside that scope is never reached.
-#[post("/{repo_id}/runs")]
-pub async fn trigger(
-    path: web::Path<String>,
-    body: Option<web::Json<TriggerRun>>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    let repo_id = path.into_inner();
-    let body = body.map(web::Json::into_inner);
-
-    let repo = match repos::read(&db, &repo_id).await {
+/// Without a `sha`, the ref's current commit is resolved once here, so the run
+/// records what it actually built rather than whatever the ref moves to before
+/// a worker picks it up.
+pub(crate) async fn trigger_manual(
+    db: &Db,
+    repo_id: &str,
+    git_ref: Option<String>,
+    sha: Option<String>,
+) -> Result<Run, TriggerError> {
+    let repo = match repos::read(db, repo_id).await {
         Ok(Some(repo)) => repo,
-        Ok(None) => return json_error(StatusCode::NOT_FOUND, "no such repository"),
-        Err(error) => return ApiError::from(error).into_response(),
+        Ok(None) => return Err(TriggerError::NotFound),
+        Err(error) => return Err(TriggerError::Queue(error)),
     };
 
     if !repo.enabled {
-        return json_error(StatusCode::CONFLICT, "this repository is disabled");
+        return Err(TriggerError::Disabled);
     }
 
-    let git_ref = body
-        .as_ref()
-        .and_then(|body| body.git_ref.clone())
-        .unwrap_or_else(|| format!("refs/heads/{}", repo.default_branch));
+    let git_ref = git_ref.unwrap_or_else(|| format!("refs/heads/{}", repo.default_branch));
 
-    if let Err(error) = crate::workspace::checkout::validate_ref(&git_ref) {
-        return json_error(StatusCode::BAD_REQUEST, &error.to_string());
-    }
+    crate::workspace::checkout::validate_ref(&git_ref)
+        .map_err(|error| TriggerError::BadRef(error.to_string()))?;
 
-    // Without a sha there is nothing to pin the run to, and the ref can move
-    // between now and the moment a worker picks it up. Asking the repository
-    // resolves it once, here, so the run records what it actually built.
-    let sha = match body.as_ref().and_then(|body| body.sha.clone()) {
+    let sha = match sha {
         Some(sha) => sha,
-        None => match resolve_ref(&repo.clone_url, &git_ref).await {
-            Ok(sha) => sha,
-            Err(error) => return json_error(StatusCode::BAD_GATEWAY, &error),
-        },
+        None => resolve_ref(&repo.clone_url, &git_ref)
+            .await
+            .map_err(TriggerError::ResolveFailed)?,
     };
 
-    if let Err(error) = crate::workspace::checkout::validate_sha(&sha) {
-        return json_error(StatusCode::BAD_REQUEST, &error.to_string());
-    }
+    crate::workspace::checkout::validate_sha(&sha)
+        .map_err(|error| TriggerError::BadSha(error.to_string()))?;
 
     let new = NewRun {
         repo_id: repo.id.clone(),
@@ -83,8 +112,31 @@ pub async fn trigger(
         delivery_id: None,
     };
 
-    match queue::enqueue(&db, &new).await {
-        Ok(enqueued) => HttpResponse::Accepted().json(enqueued.run()),
+    let enqueued = queue::enqueue(db, &new).await?;
+    Ok(enqueued.run().clone())
+}
+
+/// Registered inside the `/repos` scope rather than here: actix matches scopes
+/// by prefix and stops at the first that matches, so a `/repos/...` route
+/// declared beside that scope is never reached.
+#[post("/{repo_id}/runs")]
+pub async fn trigger(
+    path: web::Path<String>,
+    body: Option<web::Json<TriggerRun>>,
+    db: web::Data<Db>,
+) -> impl Responder {
+    let repo_id = path.into_inner();
+    let body = body.map(web::Json::into_inner);
+
+    match trigger_manual(
+        &db,
+        &repo_id,
+        body.as_ref().and_then(|body| body.git_ref.clone()),
+        body.as_ref().and_then(|body| body.sha.clone()),
+    )
+    .await
+    {
+        Ok(run) => HttpResponse::Accepted().json(run),
         Err(error) => ApiError::from(error).into_response(),
     }
 }
