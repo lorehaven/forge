@@ -3,7 +3,6 @@
 **/dist/
 **/target/
 .aider*
-.anvil.toml
 .cargo/
 .claude/
 .warehouse/

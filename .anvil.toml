@@ -1,0 +1,82 @@
+[docker]
+registry = "ennor.ddns.net/forge"
+
+[docker.modules.docker]
+dockerfile = "docker/Dockerfile.alpine"
+packages = [
+    "warehouse-service",
+    "switchboard-service",
+    "sage-service",
+    "foundry-service",
+    "gatehouse-service",
+    "conveyor-service",
+]
+
+[docker.modules.docker.conveyor-service]
+module_name = "conveyor"
+image_name = "conveyor"
+registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
+build_args = { RUNTIME_PACKAGES = "git" }
+
+[docker.modules.docker.gatehouse-service]
+module_name = "gatehouse"
+image_name = "gatehouse"
+registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
+
+[docker.modules.docker.foundry-service]
+module_name = "foundry"
+image_name = "foundry"
+registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
+build_args = { RESOURCE_DIR = "migrations", RUN_AS = "999:999" }
+
+[docker.modules.docker.sage-service]
+module_name = "sage"
+image_name = "sage"
+registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
+
+[docker.modules.docker.switchboard-service]
+dockerfile = "docker/Dockerfile.ubuntu.rocm"
+module_name = "switchboard"
+image_name = "switchboard"
+registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
+
+[docker.modules.docker.warehouse-service]
+module_name = "warehouse"
+image_name = "warehouse"
+registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
+
+[install]
+packages = [
+    "anvil",
+    "conveyor-cli",
+    "foreman",
+    "forge-toolbox",
+    "pulley",
+    "riveter",
+    "switchboard-cli",
+    "warehouse-cli",
+    "welder",
+]
+
+[release]
+registry = "ennor"
+packages = [
+    "anvil",
+    "conveyor-cli",
+    "conveyor-pipeline",
+    "foreman",
+    "forge-toolbox",
+    "pulley",
+    "quench-auth",
+    "quench-cache",
+    "quench-cli",
+    "quench-client",
+    "quench-config",
+    "quench-db",
+    "quench-starter",
+    "quench-web",
+    "quench-web-components",
+    "riveter",
+    "warehouse-cli",
+    "welder",
+]
