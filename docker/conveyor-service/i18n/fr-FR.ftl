@@ -52,6 +52,8 @@ ui_scan_audit_title = Vulnérabilités
 ui_scan_no_runs = Ce dépôt n'a pas encore été exécuté.
 ui_scan_no_checks = La dernière exécution n'a exécuté ni lint, ni machete, ni audit. Ajoutez `anvil lint`, `anvil machete` ou `anvil audit` comme étapes dans .conveyor.toml pour les voir ici.
 ui_scan_repo_not_found = Dépôt introuvable.
+ui_scan_back = Retour à l'aperçu
+ui_scan_clean = Rien trouvé.
 
 # ── Status ───────────────────────────────────────────────────────────────────
 

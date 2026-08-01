@@ -87,14 +87,15 @@ async fn summarises_lint_machete_and_audit_from_one_job() {
 
     let logs = vec![
         chunk(0, t0, "warning: unused variable: `x`"),
-        chunk(1, t0, "error: could not compile `foo`"),
+        chunk(1, t0, "  --> src/main.rs:10:9"),
+        chunk(2, t0, "error: could not compile `foo`"),
         chunk(
-            2,
+            3,
             t0 + Duration::seconds(2),
             "cargo-machete didn't find any unused dependencies in this directory. Good job!",
         ),
-        chunk(3, t0 + Duration::seconds(4), "Scanning Cargo.lock"),
-        chunk(4, t0 + Duration::seconds(4), "0 vulnerabilities found"),
+        chunk(4, t0 + Duration::seconds(4), "Scanning Cargo.lock"),
+        chunk(5, t0 + Duration::seconds(4), "0 vulnerabilities found"),
     ];
     queue::append_logs(&db, &job.id, &logs)
         .await
@@ -106,14 +107,23 @@ async fn summarises_lint_machete_and_audit_from_one_job() {
     let lint = summary.lint.expect("lint result");
     assert!(!lint.passed);
     assert_eq!(lint.headline, "1 warning, 1 error");
+    assert_eq!(lint.findings.len(), 2);
+    assert_eq!(lint.findings[0].title, "unused variable: `x`");
+    assert_eq!(lint.findings[0].severity.as_deref(), Some("warning"));
+    assert_eq!(
+        lint.findings[0].location.as_deref(),
+        Some("src/main.rs:10:9")
+    );
 
     let machete = summary.machete.expect("machete result");
     assert!(machete.passed);
     assert_eq!(machete.headline, "clean");
+    assert!(machete.findings.is_empty());
 
     let audit = summary.audit.expect("audit result");
     assert!(audit.passed);
     assert_eq!(audit.headline, "clean");
+    assert!(audit.findings.is_empty());
 }
 
 #[tokio::test]

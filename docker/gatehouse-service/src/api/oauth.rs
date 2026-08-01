@@ -61,7 +61,15 @@ pub async fn authorize(
     }
 
     let Some(claims) = subject_from_cookie(&request, &config, &sessions).await else {
-        let original = format!("/api/v1/authorize?{}", request.query_string());
+        // `with_base_path`, not a literal `/api/v1/authorize`: the redirect
+        // the login form carries has to point back at the actual mounted
+        // route (e.g. `/gatehouse/api/v1/authorize`), or the browser lands on
+        // a 404 the moment it tries to follow it after logging in.
+        let original = format!(
+            "{}?{}",
+            quench_starter::prelude::with_base_path("/api/v1/authorize"),
+            request.query_string()
+        );
         let login_url = format!(
             "{}?redirect={}",
             ui_path("/login"),

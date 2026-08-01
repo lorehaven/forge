@@ -45,6 +45,48 @@ impl CheckKind {
             Self::Audit => "ui_scan_audit_title",
         }
     }
+
+    /// The URL segment this check's detail subpage lives at.
+    pub fn slug(self) -> &'static str {
+        match self {
+            Self::Lint => "lint",
+            Self::Machete => "machete",
+            Self::Audit => "audit",
+        }
+    }
+
+    pub fn from_slug(slug: &str) -> Option<Self> {
+        match slug {
+            "lint" => Some(Self::Lint),
+            "machete" => Some(Self::Machete),
+            "audit" => Some(Self::Audit),
+            _ => None,
+        }
+    }
+}
+
+/// One specific thing a check found - a clippy diagnostic, an unused
+/// dependency, a RUSTSEC advisory. Fields are optional because the three
+/// tools don't share a shape: `machete` has no severity or date, `lint` has
+/// no advisory id, and so on. The overview cards only need `Vec<Finding>`'s
+/// length; the detail subpage is what actually reads the rest of this.
+#[derive(Debug, Clone, Default)]
+pub struct Finding {
+    pub title: String,
+    /// `RUSTSEC-2023-0071`, for audit findings. Nothing else has one.
+    pub id: Option<String>,
+    /// `warning` / `error` for lint, the advisory's own CVSS-ish string
+    /// (`5.9 (medium)`) or `unmaintained` / `yanked` for audit.
+    pub severity: Option<String>,
+    /// When the advisory was published, for audit - the closest thing to
+    /// "when this was introduced" available without diffing dependency
+    /// history across runs, which is its own, much bigger feature.
+    pub date: Option<String>,
+    /// `src/main.rs:10:9` for lint, the crate the dependency is unused in for
+    /// machete.
+    pub location: Option<String>,
+    /// Audit's `Solution:` line, when it has one.
+    pub extra: Option<String>,
 }
 
 #[derive(Debug)]
@@ -54,9 +96,10 @@ pub struct CheckResult {
     pub passed: bool,
     /// One line: "clean", "3 warnings", "1 vulnerability found", etc.
     pub headline: String,
-    /// A handful of the most relevant lines - specific findings when parsing
-    /// found any, otherwise the tail of the raw log.
-    pub details: Vec<String>,
+    /// What the parser found, richest first for lint/audit's own ordering.
+    /// Capped at 50 - a job that failed this badly needs its own log, not a
+    /// summary page trying to hold all of it.
+    pub findings: Vec<Finding>,
 }
 
 #[derive(Debug, Default)]
@@ -70,6 +113,14 @@ pub struct ScanSummary {
 impl ScanSummary {
     pub fn is_empty(&self) -> bool {
         self.lint.is_none() && self.machete.is_none() && self.audit.is_none()
+    }
+
+    pub fn get(&self, kind: CheckKind) -> Option<&CheckResult> {
+        match kind {
+            CheckKind::Lint => self.lint.as_ref(),
+            CheckKind::Machete => self.machete.as_ref(),
+            CheckKind::Audit => self.audit.as_ref(),
+        }
     }
 }
 
@@ -141,7 +192,7 @@ async fn collect_job_checks(
             kind,
             job_name: job.qualified_name(),
             headline: String::new(),
-            details: Vec::new(),
+            findings: Vec::new(),
             passed,
         }
         .parsed(&lines, step.exit_code);
@@ -156,6 +207,10 @@ async fn collect_job_checks(
     Ok(())
 }
 
+/// Findings a summary page shows at all. Not a hard technical limit - just
+/// where "a summary" stops and "you want the log" starts.
+const MAX_FINDINGS: usize = 50;
+
 impl CheckResult {
     fn parsed(mut self, lines: &[&str], exit_code: Option<i32>) -> Self {
         let stripped: Vec<String> = lines.iter().map(|line| strip_ansi(line)).collect();
@@ -167,9 +222,10 @@ impl CheckResult {
             CheckKind::Audit => parse_audit(&borrowed),
         };
 
-        if let Some((headline, details)) = parsed {
+        if let Some((headline, mut findings)) = parsed {
+            findings.truncate(MAX_FINDINGS);
             self.headline = headline;
-            self.details = details;
+            self.findings = findings;
             return self;
         }
 
@@ -183,35 +239,62 @@ impl CheckResult {
                 None => "failed".to_string(),
             }
         };
-        self.details = stripped
+        self.findings = stripped
             .iter()
             .rev()
             .take(10)
             .rev()
             .map(|line| line.trim_end().to_string())
             .filter(|line| !line.is_empty())
+            .map(|title| Finding {
+                title,
+                ..Finding::default()
+            })
             .collect();
         self
     }
 }
 
-/// `cargo`'s own diagnostics, one per line: `warning: ...` / `error: ...` /
-/// `error[E0000]: ...`. Cheap and format-stable enough for a summary count -
+/// `cargo`'s own diagnostics: `warning: message` / `error: message` /
+/// `warning[clippy::foo]: message`, each optionally followed by a `--> file:
+/// line:col` location line. Cheap and format-stable enough for a summary -
 /// this is not trying to be `--message-format=json`.
-fn parse_lint(lines: &[&str]) -> Option<(String, Vec<String>)> {
+fn parse_lint(lines: &[&str]) -> Option<(String, Vec<Finding>)> {
     let mut warnings = 0usize;
     let mut errors = 0usize;
-    let mut details = Vec::new();
+    let mut findings: Vec<Finding> = Vec::new();
 
     for line in lines {
-        let trimmed = line.trim_start();
-        if trimmed.starts_with("warning:") || trimmed.starts_with("warning[") {
+        let trimmed = line.trim();
+
+        let bracketed = |prefix: &str| trimmed.split_once(prefix).map(|(_, rest)| rest.trim());
+        let (kind, title) = if let Some(rest) = trimmed.strip_prefix("warning: ") {
+            ("warning", rest.trim().to_string())
+        } else if let Some(rest) = trimmed.strip_prefix("error: ") {
+            ("error", rest.trim().to_string())
+        } else if trimmed.starts_with("warning[") {
+            ("warning", bracketed("]: ").unwrap_or(trimmed).to_string())
+        } else if trimmed.starts_with("error[") {
+            ("error", bracketed("]: ").unwrap_or(trimmed).to_string())
+        } else if let Some(location) = trimmed.strip_prefix("-->") {
+            if let Some(finding) = findings.last_mut() {
+                finding.location = Some(location.trim().to_string());
+            }
+            continue;
+        } else {
+            continue;
+        };
+
+        if kind == "warning" {
             warnings += 1;
-            details.push(trimmed.to_string());
-        } else if trimmed.starts_with("error:") || trimmed.starts_with("error[") {
+        } else {
             errors += 1;
-            details.push(trimmed.to_string());
         }
+        findings.push(Finding {
+            title,
+            severity: Some(kind.to_string()),
+            ..Finding::default()
+        });
     }
 
     if warnings == 0 && errors == 0 {
@@ -221,20 +304,19 @@ fn parse_lint(lines: &[&str]) -> Option<(String, Vec<String>)> {
         return None;
     }
 
-    details.truncate(20);
     let headline = match (warnings, errors) {
         (0, 0) => "clean".to_string(),
         (w, 0) => format!("{w} warning{}", plural(w)),
         (0, e) => format!("{e} error{}", plural(e)),
         (w, e) => format!("{w} warning{}, {e} error{}", plural(w), plural(e)),
     };
-    Some((headline, details))
+    Some((headline, findings))
 }
 
 /// `cargo-machete`'s two shapes: a clean "didn't find any unused
 /// dependencies" line, or one `crate -- path:` header per crate followed by
 /// its indented, unused dependency names.
-fn parse_machete(lines: &[&str]) -> Option<(String, Vec<String>)> {
+fn parse_machete(lines: &[&str]) -> Option<(String, Vec<Finding>)> {
     if lines
         .iter()
         .any(|line| line.contains("didn't find any unused dependencies"))
@@ -243,7 +325,7 @@ fn parse_machete(lines: &[&str]) -> Option<(String, Vec<String>)> {
     }
 
     let mut current_crate: Option<&str> = None;
-    let mut details = Vec::new();
+    let mut findings = Vec::new();
 
     for line in lines {
         if let Some(header) = line.strip_suffix(':').filter(|_| line.contains(" -- ")) {
@@ -251,46 +333,49 @@ fn parse_machete(lines: &[&str]) -> Option<(String, Vec<String>)> {
             continue;
         }
         if line.starts_with(char::is_whitespace) && !line.trim().is_empty() {
-            let dep = line.trim();
-            match current_crate {
-                Some(krate) => details.push(format!("{krate}: {dep}")),
-                None => details.push(dep.to_string()),
-            }
+            findings.push(Finding {
+                title: line.trim().to_string(),
+                location: current_crate.map(str::to_string),
+                ..Finding::default()
+            });
         }
     }
 
-    if details.is_empty() {
+    if findings.is_empty() {
         return None;
     }
 
     let headline = format!(
         "{} unused dependenc{}",
-        details.len(),
-        plural_y(details.len())
+        findings.len(),
+        plural_y(findings.len())
     );
-    details.truncate(20);
-    Some((headline, details))
+    Some((headline, findings))
 }
 
-/// `cargo-audit`'s `ID:`/`Title:`/`Severity:` blocks, one per advisory, plus
-/// its own final "N vulnerabilities found" line when present.
-fn parse_audit(lines: &[&str]) -> Option<(String, Vec<String>)> {
-    let mut details = Vec::new();
-    // `Title:` precedes `ID:` within one advisory block, so a block is
-    // complete - and pushed - the moment its `ID:` line arrives.
-    let mut current_title: Option<String> = None;
+/// `cargo-audit`'s `Crate:`/`Title:`/`Date:`/`ID:`/`Severity:`/`Solution:`
+/// blocks (vulnerabilities and `Warning: unmaintained`/`yanked` notices
+/// share the same shape), separated by blank lines, plus its own final
+/// "N vulnerabilities found" line when there is nothing to report.
+fn parse_audit(lines: &[&str]) -> Option<(String, Vec<Finding>)> {
+    let mut findings = Vec::new();
+    let mut block: Vec<&str> = Vec::new();
 
     for line in lines {
-        if let Some(title) = line.strip_prefix("Title:") {
-            current_title = Some(title.trim().to_string());
-        } else if let Some(id) = line.strip_prefix("ID:")
-            && let Some(title) = current_title.take()
-        {
-            details.push(format!("{}: {title}", id.trim()));
+        if line.trim().is_empty() {
+            if let Some(finding) = audit_block(&block) {
+                findings.push(finding);
+            }
+            block.clear();
+        } else {
+            block.push(line);
         }
     }
+    if let Some(finding) = audit_block(&block) {
+        findings.push(finding);
+    }
 
-    if details.is_empty() {
+    if findings.is_empty() {
         if lines
             .iter()
             .any(|line| line.contains("0 vulnerabilities found"))
@@ -300,13 +385,46 @@ fn parse_audit(lines: &[&str]) -> Option<(String, Vec<String>)> {
         return None;
     }
 
-    let headline = format!(
-        "{} vulnerabilit{} found",
-        details.len(),
-        plural_y(details.len())
-    );
-    details.truncate(20);
-    Some((headline, details))
+    let headline = format!("{} finding{}", findings.len(), plural(findings.len()));
+    Some((headline, findings))
+}
+
+fn audit_block(block: &[&str]) -> Option<Finding> {
+    let mut finding = Finding::default();
+    let mut krate = None;
+    let mut version = None;
+
+    for line in block {
+        if let Some(v) = line.strip_prefix("Crate:") {
+            krate = Some(v.trim().to_string());
+        } else if let Some(v) = line.strip_prefix("Version:") {
+            version = Some(v.trim().to_string());
+        } else if let Some(v) = line.strip_prefix("Title:") {
+            finding.title = v.trim().to_string();
+        } else if let Some(v) = line.strip_prefix("Date:") {
+            finding.date = Some(v.trim().to_string());
+        } else if let Some(v) = line.strip_prefix("ID:") {
+            finding.id = Some(v.trim().to_string());
+        } else if let Some(v) = line.strip_prefix("Severity:") {
+            finding.severity = Some(v.trim().to_string());
+        } else if let Some(v) = line.strip_prefix("Solution:") {
+            finding.extra = Some(format!("Solution: {}", v.trim()));
+        } else if let Some(v) = line.strip_prefix("Warning:") {
+            // `unmaintained` / `yanked` - a severity of sorts when there is no
+            // CVSS-style one to show instead.
+            finding.severity.get_or_insert_with(|| v.trim().to_string());
+        }
+    }
+
+    if finding.title.is_empty() {
+        return None;
+    }
+    finding.location = match (krate, version) {
+        (Some(krate), Some(version)) => Some(format!("{krate} {version}")),
+        (Some(krate), None) => Some(krate),
+        (None, _) => None,
+    };
+    Some(finding)
 }
 
 fn plural(count: usize) -> &'static str {
@@ -353,51 +471,108 @@ mod tests {
 
     #[test]
     fn parses_clean_lint() {
-        assert_eq!(parse_lint(&["Checking foo v0.1.0", "Finished"]), None);
+        assert!(parse_lint(&["Checking foo v0.1.0", "Finished"]).is_none());
     }
 
     #[test]
-    fn parses_lint_warnings() {
-        let lines = ["warning: unused variable: `x`", "warning: unused import"];
-        let (headline, details) = parse_lint(&lines).expect("should parse");
+    fn parses_lint_warnings_with_location() {
+        let lines = [
+            "warning: unused variable: `x`",
+            "  --> src/main.rs:10:9",
+            "warning: unused import",
+        ];
+        let (headline, findings) = parse_lint(&lines).expect("should parse");
         assert_eq!(headline, "2 warnings");
-        assert_eq!(details.len(), 2);
+        assert_eq!(findings.len(), 2);
+        assert_eq!(findings[0].title, "unused variable: `x`");
+        assert_eq!(findings[0].severity.as_deref(), Some("warning"));
+        assert_eq!(findings[0].location.as_deref(), Some("src/main.rs:10:9"));
+        assert_eq!(findings[1].location, None);
+    }
+
+    #[test]
+    fn parses_bracketed_lint_diagnostics() {
+        let lines = ["error[E0308]: mismatched types"];
+        let (headline, findings) = parse_lint(&lines).expect("should parse");
+        assert_eq!(headline, "1 error");
+        assert_eq!(findings[0].title, "mismatched types");
+        assert_eq!(findings[0].severity.as_deref(), Some("error"));
     }
 
     #[test]
     fn parses_clean_machete() {
         let lines =
             ["cargo-machete didn't find any unused dependencies in this directory. Good job!"];
-        let (headline, details) = parse_machete(&lines).expect("should parse");
+        let (headline, findings) = parse_machete(&lines).expect("should parse");
         assert_eq!(headline, "clean");
-        assert!(details.is_empty());
+        assert!(findings.is_empty());
     }
 
     #[test]
     fn parses_machete_findings() {
         let lines = ["foo -- ./crates/foo:", "    serde_yaml", "    once_cell"];
-        let (headline, details) = parse_machete(&lines).expect("should parse");
+        let (headline, findings) = parse_machete(&lines).expect("should parse");
         assert_eq!(headline, "2 unused dependencies");
-        assert_eq!(details, vec!["foo: serde_yaml", "foo: once_cell"]);
+        assert_eq!(findings[0].title, "serde_yaml");
+        assert_eq!(findings[0].location.as_deref(), Some("foo"));
+        assert_eq!(findings[1].title, "once_cell");
     }
 
     #[test]
     fn parses_clean_audit() {
         let lines = ["Scanning Cargo.lock", "0 vulnerabilities found"];
-        let (headline, details) = parse_audit(&lines).expect("should parse");
+        let (headline, findings) = parse_audit(&lines).expect("should parse");
         assert_eq!(headline, "clean");
-        assert!(details.is_empty());
+        assert!(findings.is_empty());
     }
 
     #[test]
-    fn parses_audit_findings() {
+    fn parses_audit_findings_with_all_fields() {
         let lines = [
             "Crate:     time",
+            "Version:   0.1.43",
             "Title:     Potential segfault",
+            "Date:      2020-11-18",
             "ID:        RUSTSEC-2020-0071",
+            "Severity:  6.2 (medium)",
+            "Solution:  Upgrade to >=0.2.23",
         ];
-        let (headline, details) = parse_audit(&lines).expect("should parse");
-        assert_eq!(headline, "1 vulnerability found");
-        assert_eq!(details, vec!["RUSTSEC-2020-0071: Potential segfault"]);
+        let (headline, findings) = parse_audit(&lines).expect("should parse");
+        assert_eq!(headline, "1 finding");
+        let finding = &findings[0];
+        assert_eq!(finding.title, "Potential segfault");
+        assert_eq!(finding.id.as_deref(), Some("RUSTSEC-2020-0071"));
+        assert_eq!(finding.date.as_deref(), Some("2020-11-18"));
+        assert_eq!(finding.severity.as_deref(), Some("6.2 (medium)"));
+        assert_eq!(finding.location.as_deref(), Some("time 0.1.43"));
+        assert_eq!(
+            finding.extra.as_deref(),
+            Some("Solution: Upgrade to >=0.2.23")
+        );
+    }
+
+    #[test]
+    fn parses_multiple_audit_blocks_separated_by_blank_lines() {
+        let lines = [
+            "Crate:     rsa",
+            "Version:   0.9.10",
+            "Title:     Marvin Attack",
+            "Date:      2023-11-22",
+            "ID:        RUSTSEC-2023-0071",
+            "Severity:  5.9 (medium)",
+            "Solution:  No fixed upgrade is available!",
+            "",
+            "Crate:     proc-macro-error2",
+            "Version:   2.0.1",
+            "Warning:   unmaintained",
+            "Title:     proc-macro-error2 is unmaintained",
+            "Date:      2026-06-07",
+            "ID:        RUSTSEC-2026-0173",
+        ];
+        let (headline, findings) = parse_audit(&lines).expect("should parse");
+        assert_eq!(headline, "2 findings");
+        assert_eq!(findings[0].id.as_deref(), Some("RUSTSEC-2023-0071"));
+        assert_eq!(findings[1].id.as_deref(), Some("RUSTSEC-2026-0173"));
+        assert_eq!(findings[1].severity.as_deref(), Some("unmaintained"));
     }
 }

@@ -127,14 +127,83 @@ pub fn runs_rules() -> Vec<CssRule> {
             .property("display", "grid")
             .property(
                 "grid-template-columns",
-                "repeat(auto-fit, minmax(18rem, 1fr))",
+                "repeat(auto-fit, minmax(14rem, 1fr))",
             )
             .property("gap", "1rem"),
-        CssRule::new(".scan-details")
-            .property("margin", "0.5rem 0 0")
-            .property("padding-left", "1.1rem")
+        CssRule::new(".scan-card")
+            .property("display", "flex")
+            .property("flex-direction", "column")
+            .property("gap", "0.4rem")
+            .property("padding", "1.25rem")
+            .property("border", "0.1rem solid var(--bs-gray-700)")
+            .property("border-left", "0.3rem solid var(--bs-gray-600)")
+            .property("border-radius", "0.4rem")
+            .property("background-color", "var(--bs-gray-900)")
+            .property("text-decoration", "none")
+            .property("color", "inherit")
+            .property("transition", "border-color 0.15s, transform 0.15s")
+            .child(
+                CssRule::new("&:hover")
+                    .property("border-color", "var(--bs-gray-400)")
+                    .property("transform", "translateY(-0.1rem)"),
+            )
+            .child(
+                CssRule::new("&.status-success")
+                    .property("border-left-color", "var(--bs-success-500)"),
+            )
+            .child(
+                CssRule::new("&.status-failed").property("border-left-color", "var(--bs-danger)"),
+            ),
+        CssRule::new(".scan-card-count")
+            .property("font-size", "2.4rem")
+            .property("font-weight", "700")
+            .property("line-height", "1"),
+        CssRule::new(".scan-card-title")
+            .property("font-size", "0.85rem")
+            .property("text-transform", "uppercase")
+            .property("letter-spacing", "0.04em")
+            .property("color", "var(--bs-gray-400)"),
+        CssRule::new(".scan-card-headline")
+            .property("font-size", "0.9rem")
+            .property("color", "var(--bs-gray-300)"),
+        CssRule::new(".finding-list")
+            .property("display", "flex")
+            .property("flex-direction", "column")
+            .property("gap", "0.6rem"),
+        CssRule::new(".finding-item")
+            .property("padding", "0.75rem 1rem")
+            .property("border", "0.1rem solid var(--bs-gray-800)")
+            .property("border-radius", "0.3rem")
+            .property("background-color", "var(--bs-gray-900)"),
+        CssRule::new(".finding-head")
+            .property("display", "flex")
+            .property("align-items", "center")
+            .property("gap", "0.6rem")
+            .property("font-weight", "600"),
+        CssRule::new(".finding-meta")
+            .property("display", "flex")
+            .property("gap", "1rem")
+            .property("flex-wrap", "wrap")
+            .property("margin-top", "0.3rem")
+            .property("font-size", "0.82rem")
+            .property("color", "var(--bs-gray-400)"),
+        CssRule::new(".finding-extra")
+            .property("margin-top", "0.4rem")
             .property("font-size", "0.82rem")
             .property("color", "var(--bs-gray-400)")
-            .child(CssRule::new("li").property("margin", "0.15rem 0")),
+            .property("font-style", "italic"),
+        CssRule::new(".finding-severity")
+            .property("font-size", "0.72rem")
+            .property("text-transform", "uppercase")
+            .property("letter-spacing", "0.03em")
+            .property("padding", "0.1rem 0.4rem")
+            .property("border-radius", "0.2rem")
+            .property("background-color", "var(--bs-gray-700)"),
+        CssRule::new(".finding-severity-warning")
+            .property("background-color", "var(--bs-warning)")
+            .property("color", "var(--bs-gray-950)"),
+        CssRule::new(".finding-severity-error")
+            .property("background-color", "var(--bs-danger)")
+            .property("color", "var(--bs-gray-950)"),
     ]
 }

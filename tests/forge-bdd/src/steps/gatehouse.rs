@@ -207,6 +207,26 @@ async fn open_home(world: &mut ForgeWorld) {
     world.record_response(res).await;
 }
 
+/// The no-session branch of `GET /api/v1/authorize`: a client the BDD harness
+/// already registers (`clients.toml`), a made-up but well-formed PKCE
+/// challenge, and no session cookie - exactly what a browser sends on its
+/// first visit.
+#[when(expr = "I request authorization for client {string} without a session")]
+async fn request_authorization_without_session(world: &mut ForgeWorld, client_id: String) {
+    let redirect_uri = format!("{}/ui/auth/callback", world.conveyor_url);
+    let url = format!(
+        "{}/api/v1/authorize?client_id={client_id}&redirect_uri={}&state=test-state&code_challenge=test-challenge&code_challenge_method=S256",
+        world.gatehouse_url,
+        urlencoding::encode(&redirect_uri),
+    );
+    let res = no_redirect_client()
+        .get(&url)
+        .send()
+        .await
+        .expect("authorize request failed");
+    world.record_response(res).await;
+}
+
 #[when("I open the base path")]
 async fn open_base_path(world: &mut ForgeWorld) {
     let res = no_redirect_client()

@@ -52,6 +52,8 @@ ui_scan_audit_title = Vulnerabilidades
 ui_scan_no_runs = Este repositorio aún no se ha ejecutado.
 ui_scan_no_checks = La ejecución más reciente no ejecutó lint, machete ni audit. Añade `anvil lint`, `anvil machete` o `anvil audit` como pasos en .conveyor.toml para verlos aquí.
 ui_scan_repo_not_found = No existe ese repositorio.
+ui_scan_back = Volver al resumen
+ui_scan_clean = No se encontró nada.
 
 # ── Status ───────────────────────────────────────────────────────────────────
 

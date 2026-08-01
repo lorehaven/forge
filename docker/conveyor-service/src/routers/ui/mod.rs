@@ -54,4 +54,5 @@ pub fn scope(_jwt_config: JwtConfig) -> impl HttpServiceFactory {
         .service(pages::runs::run_state)
         .service(pages::jobs::log)
         .service(pages::scan::scan_page)
+        .service(pages::scan::scan_detail_page)
 }

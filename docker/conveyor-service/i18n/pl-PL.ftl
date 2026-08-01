@@ -52,6 +52,8 @@ ui_scan_audit_title = Podatności
 ui_scan_no_runs = To repozytorium jeszcze się nie uruchomiło.
 ui_scan_no_checks = Ostatnie uruchomienie nie uruchomiło lint, machete ani audit. Dodaj `anvil lint`, `anvil machete` lub `anvil audit` jako kroki w .conveyor.toml, aby zobaczyć je tutaj.
 ui_scan_repo_not_found = Nie znaleziono takiego repozytorium.
+ui_scan_back = Powrót do przeglądu
+ui_scan_clean = Niczego nie znaleziono.
 
 # ── Status ───────────────────────────────────────────────────────────────────
 
