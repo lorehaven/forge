@@ -219,7 +219,10 @@ fn extract_switchboard_instances(
 /// Build every agent in the workflow, delegating model construction to
 /// `make_model` so each backend only has to say how it turns an
 /// [`AgentConfig`] into an [`Llm`] client.
-fn build_agents<F>(workflow: &Workflow, mut make_model: F) -> anyhow::Result<HashMap<String, AgentNode>>
+fn build_agents<F>(
+    workflow: &Workflow,
+    mut make_model: F,
+) -> anyhow::Result<HashMap<String, AgentNode>>
 where
     F: FnMut(&AgentConfig) -> anyhow::Result<Arc<dyn Llm>>,
 {
@@ -302,7 +305,10 @@ fn build_ollama_agents(workflow: &Workflow) -> anyhow::Result<HashMap<String, Ag
         .unwrap_or_else(|| "127.0.0.1:11434".to_string());
 
     build_agents(workflow, |cfg| {
-        Ok(Arc::new(OllamaModel::new(&cfg.model, format!("http://{ollama_url}"))?) as Arc<dyn Llm>)
+        Ok(Arc::new(OllamaModel::new(
+            &cfg.model,
+            format!("http://{ollama_url}"),
+        )?) as Arc<dyn Llm>)
     })
 }
 
@@ -311,7 +317,9 @@ fn build_ollama_agents(workflow: &Workflow) -> anyhow::Result<HashMap<String, Ag
 /// instead of spawning `vllm serve` itself. Once an instance is running,
 /// welder still talks to it directly over the same OpenAI-compatible chat
 /// endpoint the local vllm backend uses.
-async fn build_switchboard_agents(workflow: &Workflow) -> anyhow::Result<HashMap<String, AgentNode>> {
+async fn build_switchboard_agents(
+    workflow: &Workflow,
+) -> anyhow::Result<HashMap<String, AgentNode>> {
     let switchboard_models = extract_switchboard_instances(workflow)?;
     if switchboard_models.is_empty() {
         println!("[welder] ⚠ No model configuration found in workflow agents");

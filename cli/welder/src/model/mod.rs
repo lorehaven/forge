@@ -287,12 +287,18 @@ impl SwitchboardManager {
 
         for config in configs {
             if let Some(address) = self.find_running(&config.model).await? {
-                println!("[model-mgr] ✓ {} already running on {address}", config.model);
+                println!(
+                    "[model-mgr] ✓ {} already running on {address}",
+                    config.model
+                );
                 self.resolved.insert(config.model.clone(), address);
                 continue;
             }
 
-            println!("[model-mgr] Requesting switchboard launch: {}", config.model);
+            println!(
+                "[model-mgr] Requesting switchboard launch: {}",
+                config.model
+            );
             self.client
                 .launch_instance(LaunchInstanceRequest {
                     model: config.model.clone(),
@@ -310,7 +316,10 @@ impl SwitchboardManager {
                 })
                 .await?;
 
-            println!("[model-mgr] Waiting for {} to become ready...", config.model);
+            println!(
+                "[model-mgr] Waiting for {} to become ready...",
+                config.model
+            );
             let address = self.wait_for_running(&config.model).await?;
             println!("[model-mgr] ✓ {} ready on {address}", config.model);
             self.resolved.insert(config.model.clone(), address);

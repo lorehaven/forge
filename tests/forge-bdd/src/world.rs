@@ -122,9 +122,22 @@ impl ForgeWorld {
             .unwrap_or_else(|_| reqwest::Client::new());
 
         let gatehouse_url = format!("{gatehouse_base_url}/gatehouse");
-        let jwt_token = mint_test_token(&client, &gatehouse_url, "test-user", &["sage"], "user sage:write").await;
-        let switchboard_token =
-            mint_test_token(&client, &gatehouse_url, "bdd-user", &["switchboard"], "admin").await;
+        let jwt_token = mint_test_token(
+            &client,
+            &gatehouse_url,
+            "test-user",
+            &["sage"],
+            "user sage:write",
+        )
+        .await;
+        let switchboard_token = mint_test_token(
+            &client,
+            &gatehouse_url,
+            "bdd-user",
+            &["switchboard"],
+            "admin",
+        )
+        .await;
 
         Self {
             target: Target::default(),
@@ -271,7 +284,13 @@ impl ForgeWorld {
 /// this - the same shortcut the suite took when every service verified
 /// against one shared HS256 secret, now routed through gatehouse's real
 /// signing key so a relying party's JWKS-based verification accepts it.
-pub async fn mint_test_token(client: &reqwest::Client, gatehouse_url: &str, sub: &str, aud: &[&str], scope: &str) -> String {
+pub async fn mint_test_token(
+    client: &reqwest::Client,
+    gatehouse_url: &str,
+    sub: &str,
+    aud: &[&str],
+    scope: &str,
+) -> String {
     mint_test_token_at(client, gatehouse_url, sub, aud, scope, None, None).await
 }
 

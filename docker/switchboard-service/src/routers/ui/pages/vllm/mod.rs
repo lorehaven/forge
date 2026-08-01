@@ -14,9 +14,7 @@ pub(super) async fn vllm_manage(
     if get_user_from_req(&req, &config).await.is_none() {
         return common::ui_login_redirect();
     }
-    render_vllm_manage_page(
-        crate::routers::models::mod_impl::can(&req, &config, "launch").await,
-    )
+    render_vllm_manage_page(crate::routers::models::mod_impl::can(&req, &config, "launch").await)
 }
 
 #[get("/vllm/manage/")]
@@ -27,9 +25,7 @@ pub(super) async fn vllm_manage_slash(
     if get_user_from_req(&req, &config).await.is_none() {
         return common::ui_login_redirect();
     }
-    render_vllm_manage_page(
-        crate::routers::models::mod_impl::can(&req, &config, "launch").await,
-    )
+    render_vllm_manage_page(crate::routers::models::mod_impl::can(&req, &config, "launch").await)
 }
 
 fn render_vllm_manage_page(can_launch: bool) -> HttpResponse {

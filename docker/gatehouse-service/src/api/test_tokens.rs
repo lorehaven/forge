@@ -30,7 +30,10 @@ struct TestTokenRequest {
 }
 
 #[post("/api/v1/test/token")]
-pub async fn mint(config: web::Data<JwtConfig>, body: web::Json<TestTokenRequest>) -> impl Responder {
+pub async fn mint(
+    config: web::Data<JwtConfig>,
+    body: web::Json<TestTokenRequest>,
+) -> impl Responder {
     if !envmnt::is_or("GATEHOUSE_TEST_MODE", false) {
         return HttpResponse::NotFound().finish();
     }
@@ -46,7 +49,9 @@ pub async fn mint(config: web::Data<JwtConfig>, body: web::Json<TestTokenRequest
     };
 
     match config.encode_claims(&claims).await {
-        Ok(access_token) => HttpResponse::Ok().json(serde_json::json!({ "access_token": access_token })),
+        Ok(access_token) => {
+            HttpResponse::Ok().json(serde_json::json!({ "access_token": access_token }))
+        }
         Err(err) => {
             tracing::error!("test token mint failed: {err}");
             HttpResponse::InternalServerError().finish()

@@ -57,8 +57,16 @@ impl SwitchboardClient {
             panic!(
                 "Missing required environment variables: GATEHOUSE_URL={}, \
                  CLIENT_SECRET_SAGE_SWITCHBOARD={}",
-                if gatehouse_url.is_empty() { "NOT SET" } else { "SET" },
-                if client_secret.is_empty() { "NOT SET" } else { "SET" },
+                if gatehouse_url.is_empty() {
+                    "NOT SET"
+                } else {
+                    "SET"
+                },
+                if client_secret.is_empty() {
+                    "NOT SET"
+                } else {
+                    "SET"
+                },
             );
         }
 

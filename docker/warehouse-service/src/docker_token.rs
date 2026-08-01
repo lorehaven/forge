@@ -42,7 +42,10 @@ impl DockerTokenConfig {
             validate_aud: false,
             ..Validation::default()
         };
-        Ok(decode::<DockerClaims>(token, &DecodingKey::from_secret(&self.secret), &validation)?.claims)
+        Ok(
+            decode::<DockerClaims>(token, &DecodingKey::from_secret(&self.secret), &validation)?
+                .claims,
+        )
     }
 }
 

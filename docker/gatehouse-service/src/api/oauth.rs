@@ -62,7 +62,11 @@ pub async fn authorize(
 
     let Some(claims) = subject_from_cookie(&request, &config, &sessions).await else {
         let original = format!("/api/v1/authorize?{}", request.query_string());
-        let login_url = format!("{}?redirect={}", ui_path("/login"), urlencoding::encode(&original));
+        let login_url = format!(
+            "{}?redirect={}",
+            ui_path("/login"),
+            urlencoding::encode(&original)
+        );
         return HttpResponse::Found()
             .append_header(("Location", login_url))
             .finish();
@@ -84,7 +88,12 @@ pub async fn authorize(
         expires_at: now + chrono::Duration::seconds(60),
         consumed_at: None,
     };
-    if db.repository::<AuthorizationCodeRow>().create(&row).await.is_err() {
+    if db
+        .repository::<AuthorizationCodeRow>()
+        .create(&row)
+        .await
+        .is_err()
+    {
         return internal_error();
     }
 
@@ -125,7 +134,9 @@ pub async fn token(
     sessions: web::Data<Arc<SessionDb>>,
 ) -> impl Responder {
     match body.grant_type.as_str() {
-        "authorization_code" => authorization_code_grant(&body, &config, &db, &users, &sessions).await,
+        "authorization_code" => {
+            authorization_code_grant(&body, &config, &db, &users, &sessions).await
+        }
         "refresh_token" => refresh_token_grant(&body, &config, &users, &sessions).await,
         "client_credentials" => client_credentials_grant(&body, &config, &db).await,
         other => bad_request(&format!("unsupported grant_type '{other}'")),
@@ -139,10 +150,15 @@ async fn authorization_code_grant(
     users: &UserDb,
     sessions: &SessionDb,
 ) -> HttpResponse {
-    let (Some(code), Some(redirect_uri), Some(client_id), Some(client_secret)) =
-        (&body.code, &body.redirect_uri, &body.client_id, &body.client_secret)
-    else {
-        return bad_request("authorization_code requires code, redirect_uri, client_id and client_secret");
+    let (Some(code), Some(redirect_uri), Some(client_id), Some(client_secret)) = (
+        &body.code,
+        &body.redirect_uri,
+        &body.client_id,
+        &body.client_secret,
+    ) else {
+        return bad_request(
+            "authorization_code requires code, redirect_uri, client_id and client_secret",
+        );
     };
 
     let clients = db.repository::<ClientRow>();
@@ -199,7 +215,10 @@ async fn refresh_token_grant(
     let Some(refresh_token) = &body.refresh_token else {
         return bad_request("refresh_token grant requires refresh_token");
     };
-    let rotated = match sessions.rotate(refresh_token, config.refresh_token_ttl_secs).await {
+    let rotated = match sessions
+        .rotate(refresh_token, config.refresh_token_ttl_secs)
+        .await
+    {
         Ok(Some(rotated)) => rotated,
         Ok(None) => return HttpResponse::Unauthorized().finish(),
         Err(err) => {
@@ -220,7 +239,11 @@ async fn refresh_token_grant(
     }
 }
 
-async fn client_credentials_grant(body: &TokenRequest, config: &JwtConfig, db: &Db) -> HttpResponse {
+async fn client_credentials_grant(
+    body: &TokenRequest,
+    config: &JwtConfig,
+    db: &Db,
+) -> HttpResponse {
     let (Some(client_id), Some(client_secret)) = (&body.client_id, &body.client_secret) else {
         return bad_request("client_credentials requires client_id and client_secret");
     };
@@ -269,4 +292,3 @@ fn bad_request(message: &str) -> HttpResponse {
 fn internal_error() -> HttpResponse {
     HttpResponse::InternalServerError().finish()
 }
-

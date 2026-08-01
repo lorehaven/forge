@@ -19,7 +19,10 @@ pub async fn jwks(keys: web::Data<Arc<SigningKeys>>) -> impl Responder {
 /// there. Gated on `gatehouse:manage-signing-keys`, one of the few catalog
 /// actions delegable below the literal `admin` role.
 #[post("/api/v1/admin/keys/rotate")]
-pub async fn rotate(keys: web::Data<Arc<SigningKeys>>, _claims: ManageSigningKeysClaims) -> impl Responder {
+pub async fn rotate(
+    keys: web::Data<Arc<SigningKeys>>,
+    _claims: ManageSigningKeysClaims,
+) -> impl Responder {
     match keys.rotate().await {
         Ok(()) => HttpResponse::NoContent().finish(),
         Err(err) => {

@@ -83,7 +83,11 @@ pub async fn actor(request: &HttpRequest) -> String {
 async fn session_subject(request: &HttpRequest) -> Option<String> {
     let cookie = request.cookie(&realm::session_cookie_name())?;
     let config = request.app_data::<web::Data<JwtConfig>>()?;
-    config.decode_claims(cookie.value()).await.ok().map(|c| c.sub)
+    config
+        .decode_claims(cookie.value())
+        .await
+        .ok()
+        .map(|c| c.sub)
 }
 
 pub fn json_error(status: StatusCode, message: &str) -> HttpResponse {

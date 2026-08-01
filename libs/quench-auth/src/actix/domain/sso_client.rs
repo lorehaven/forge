@@ -38,7 +38,9 @@ impl SsoConfig {
     }
 
     fn configured(&self) -> bool {
-        !self.client_id.is_empty() && !self.client_secret.is_empty() && realm::gatehouse_url().is_some()
+        !self.client_id.is_empty()
+            && !self.client_secret.is_empty()
+            && realm::gatehouse_url().is_some()
     }
 }
 
@@ -139,7 +141,11 @@ pub async fn callback(request: &actix_web::HttpRequest, config: &SsoConfig) -> H
         ("code_verifier", saved.code_verifier.as_str()),
     ];
 
-    let response = http.post(format!("{base}/api/v1/token")).form(&form).send().await;
+    let response = http
+        .post(format!("{base}/api/v1/token"))
+        .form(&form)
+        .send()
+        .await;
     let Ok(response) = response else {
         return callback_failed("could not reach gatehouse");
     };

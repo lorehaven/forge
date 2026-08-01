@@ -78,12 +78,10 @@ impl SwitchboardClient {
     /// every switchboard call thereafter - switchboard's `Auth` middleware no
     /// longer accepts Basic auth directly.
     pub async fn new(base_url: &str, tls_verify: bool) -> Result<Self> {
-        let username = std::env::var("WELDER_SWITCHBOARD_USERNAME").context(
-            "WELDER_SWITCHBOARD_USERNAME must be set to use the switchboard backend",
-        )?;
-        let password = std::env::var("WELDER_SWITCHBOARD_PASSWORD").context(
-            "WELDER_SWITCHBOARD_PASSWORD must be set to use the switchboard backend",
-        )?;
+        let username = std::env::var("WELDER_SWITCHBOARD_USERNAME")
+            .context("WELDER_SWITCHBOARD_USERNAME must be set to use the switchboard backend")?;
+        let password = std::env::var("WELDER_SWITCHBOARD_PASSWORD")
+            .context("WELDER_SWITCHBOARD_PASSWORD must be set to use the switchboard backend")?;
         let gatehouse_url = std::env::var("GATEHOUSE_URL").context(
             "GATEHOUSE_URL must be set to use the switchboard backend - gatehouse is who \
              exchanges WELDER_SWITCHBOARD_USERNAME/PASSWORD for a token now",

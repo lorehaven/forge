@@ -318,10 +318,16 @@ impl Fixture {
             // `docker/gatehouse-service/config/permissions.toml`, which
             // already lists every BDD service), kept for anyone still
             // reading this env block for the old story.
-            .env("SERVICE_AUDIENCES", "sage,switchboard,warehouse,conveyor,gatehouse")
+            .env(
+                "SERVICE_AUDIENCES",
+                "sage,switchboard,warehouse,conveyor,gatehouse",
+            )
             // Signing keys are encrypted at rest even in this throwaway
             // in-memory database - see `keys.rs`.
-            .env("GATEHOUSE_KEY_ENCRYPTION_KEY", "forge-bdd-key-encryption-key")
+            .env(
+                "GATEHOUSE_KEY_ENCRYPTION_KEY",
+                "forge-bdd-key-encryption-key",
+            )
             // Turns on `POST /api/v1/test/token` (`api/test_tokens.rs`), the
             // harness's replacement for self-signing tokens against a shared
             // secret: a real, JWKS-verifiable token for an arbitrary

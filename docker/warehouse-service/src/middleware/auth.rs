@@ -1,3 +1,4 @@
+use crate::docker_token::DockerTokenConfig;
 use actix_web::{
     Error,
     body::{EitherBody, MessageBody},
@@ -5,7 +6,6 @@ use actix_web::{
     http::header::{HeaderValue, WWW_AUTHENTICATE},
 };
 use futures_util::future::{LocalBoxFuture, Ready, ok};
-use crate::docker_token::DockerTokenConfig;
 use quench_starter::prelude::error;
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};

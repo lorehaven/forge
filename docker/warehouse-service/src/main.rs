@@ -1,7 +1,7 @@
 use actix_web::web;
+use quench_auth::actix::domain::sso_client::SsoConfig;
 use quench_auth::prelude::{JwtConfig, SessionDb, UserDb};
 use quench_starter::prelude::{DbWrapper, serve};
-use quench_auth::actix::domain::sso_client::SsoConfig;
 use warehouse_service::docker_token::DockerTokenConfig;
 use warehouse_service::{base_path_scope, root_scope};
 

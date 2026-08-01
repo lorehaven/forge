@@ -291,7 +291,9 @@ impl BearerAuthClient {
     }
 
     pub fn with_tls_verify(base_url: &str, token: &str, tls_verify: bool) -> Result<Self> {
-        let client = HttpClient::builder(base_url).tls_verify(tls_verify).build()?;
+        let client = HttpClient::builder(base_url)
+            .tls_verify(tls_verify)
+            .build()?;
         Ok(Self {
             client,
             token: token.to_string(),

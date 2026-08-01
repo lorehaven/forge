@@ -130,7 +130,14 @@ async fn get_with_expired_token(world: &mut ForgeWorld, page: String) {
 
 #[when(expr = "GET request is sent to protected page {string} with token for service {string}")]
 async fn get_with_wrong_service(world: &mut ForgeWorld, page: String, service: String) {
-    let token = crate::world::mint_test_token(&world.client, &world.gatehouse_url, "admin", &[&service], "admin").await;
+    let token = crate::world::mint_test_token(
+        &world.client,
+        &world.gatehouse_url,
+        "admin",
+        &[&service],
+        "admin",
+    )
+    .await;
     let url = format!("{}{}", world.switchboard_url, page);
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(true)

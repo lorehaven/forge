@@ -73,7 +73,10 @@ async fn main() {
             "http://127.0.0.1:5443/gatehouse/ui/login".to_string(),
         )])
         .await;
-        for target in selected.iter().filter(|target| **target != Target::Gatehouse) {
+        for target in selected
+            .iter()
+            .filter(|target| **target != Target::Gatehouse)
+        {
             running.push(fixture.start(*target).await);
         }
     }

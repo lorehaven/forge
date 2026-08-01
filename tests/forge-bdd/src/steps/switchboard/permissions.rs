@@ -8,6 +8,12 @@ use cucumber::given;
 
 #[given(expr = "I hold a switchboard token scoped {string}")]
 async fn hold_switchboard_token(world: &mut ForgeWorld, scope: String) {
-    world.switchboard_token =
-        mint_test_token(&world.client, &world.gatehouse_url, "bdd-user", &["switchboard"], &scope).await;
+    world.switchboard_token = mint_test_token(
+        &world.client,
+        &world.gatehouse_url,
+        "bdd-user",
+        &["switchboard"],
+        &scope,
+    )
+    .await;
 }

@@ -159,7 +159,10 @@ impl JwtConfig {
     /// Errs if this config has no signer - true for every service but
     /// gatehouse, which should never be asking to mint a token in the first
     /// place.
-    pub async fn encode_claims(&self, claims: &Claims) -> Result<String, jsonwebtoken::errors::Error> {
+    pub async fn encode_claims(
+        &self,
+        claims: &Claims,
+    ) -> Result<String, jsonwebtoken::errors::Error> {
         let signer = self
             .signer
             .as_ref()

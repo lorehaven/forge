@@ -9,7 +9,14 @@ use cucumber::{given, then, when};
 #[given(expr = "I hold a token scoped {string}")]
 async fn hold_token(world: &mut ForgeWorld, scope: String) {
     world.token = Some(
-        mint_test_token(&world.client, &world.gatehouse_url, "bdd-user", &["warehouse"], &scope).await,
+        mint_test_token(
+            &world.client,
+            &world.gatehouse_url,
+            "bdd-user",
+            &["warehouse"],
+            &scope,
+        )
+        .await,
     );
 }
 

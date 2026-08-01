@@ -56,7 +56,11 @@ pub async fn is_admin(req: &actix_web::HttpRequest, config: &web::Data<JwtConfig
 /// declare a `"write"` action in the catalog at all, on purpose, so nothing
 /// there is reachable through a coarse write grant any more - a route needs
 /// the specific action this checks.
-pub async fn can(req: &actix_web::HttpRequest, config: &web::Data<JwtConfig>, action: &str) -> bool {
+pub async fn can(
+    req: &actix_web::HttpRequest,
+    config: &web::Data<JwtConfig>,
+    action: &str,
+) -> bool {
     if !config.auth_enabled {
         return true;
     }

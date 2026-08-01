@@ -43,7 +43,10 @@ struct SigningKeyRow {
 
 impl Model for SigningKeyRow {
     fn table_name() -> String {
-        format!("{}.signing_keys", quench_auth::prelude::realm::auth_schema())
+        format!(
+            "{}.signing_keys",
+            quench_auth::prelude::realm::auth_schema()
+        )
     }
 
     fn columns() -> Vec<&'static str> {
@@ -90,7 +93,13 @@ impl SigningKeys {
             keys: RwLock::new(Vec::new()),
         });
         this.reload().await?;
-        if this.keys.read().unwrap().iter().all(|k| k.not_after.is_some()) {
+        if this
+            .keys
+            .read()
+            .unwrap()
+            .iter()
+            .all(|k| k.not_after.is_some())
+        {
             this.rotate().await?;
         }
         Ok(this)
@@ -104,7 +113,10 @@ impl SigningKeys {
             .filter(|row| row.not_after.is_none_or(|expiry| expiry > now))
             .map(|row| LoadedKey {
                 kid: row.kid,
-                private_key_der: decrypt(&self.cipher, &hex::decode(&row.private_key).unwrap_or_default()),
+                private_key_der: decrypt(
+                    &self.cipher,
+                    &hex::decode(&row.private_key).unwrap_or_default(),
+                ),
                 public_key: hex::decode(&row.public_key).unwrap_or_default(),
                 not_after: row.not_after,
             })
@@ -185,17 +197,17 @@ impl KeySigner for SigningKeys {
 
 fn build_cipher() -> anyhow::Result<ChaCha20Poly1305> {
     let material = envmnt::get_or_panic("GATEHOUSE_KEY_ENCRYPTION_KEY");
-    let derived = Sha256::digest(material.as_bytes());
-    Ok(ChaCha20Poly1305::new(Key::from_slice(&derived)))
+    let derived: [u8; 32] = Sha256::digest(material.as_bytes()).into();
+    Ok(ChaCha20Poly1305::new(&Key::from(derived)))
 }
 
 fn encrypt(cipher: &ChaCha20Poly1305, plaintext: &[u8]) -> Vec<u8> {
     use rand_core::RngCore;
     let mut nonce_bytes = [0u8; 12];
     rand_core::OsRng.fill_bytes(&mut nonce_bytes);
-    let nonce = Nonce::from_slice(&nonce_bytes);
+    let nonce = Nonce::from(nonce_bytes);
     let ciphertext = cipher
-        .encrypt(nonce, plaintext)
+        .encrypt(&nonce, plaintext)
         .expect("signing key encryption failed");
     let mut out = nonce_bytes.to_vec();
     out.extend(ciphertext);
@@ -204,8 +216,9 @@ fn encrypt(cipher: &ChaCha20Poly1305, plaintext: &[u8]) -> Vec<u8> {
 
 fn decrypt(cipher: &ChaCha20Poly1305, data: &[u8]) -> Vec<u8> {
     let (nonce_bytes, ciphertext) = data.split_at(12);
-    let nonce = Nonce::from_slice(nonce_bytes);
+    let nonce_bytes: [u8; 12] = nonce_bytes.try_into().expect("nonce is always 12 bytes");
+    let nonce = Nonce::from(nonce_bytes);
     cipher
-        .decrypt(nonce, ciphertext)
+        .decrypt(&nonce, ciphertext)
         .expect("signing key decryption failed - is GATEHOUSE_KEY_ENCRYPTION_KEY unchanged?")
 }

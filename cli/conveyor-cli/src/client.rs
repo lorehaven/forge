@@ -56,7 +56,15 @@ impl Client {
                     )?
                     .trim_end_matches('/')
                     .to_string();
-                Some(login(&http, &gatehouse_url, &username, &password.unwrap_or_default()).await?)
+                Some(
+                    login(
+                        &http,
+                        &gatehouse_url,
+                        &username,
+                        &password.unwrap_or_default(),
+                    )
+                    .await?,
+                )
             }
             None => None,
         };
@@ -144,7 +152,12 @@ impl Client {
 /// One password exchange against gatehouse's resource-owner login. Not
 /// cached to disk - a CLI invocation is short-lived enough that logging in
 /// once per run is the simplest thing that works.
-async fn login(http: &reqwest::Client, gatehouse_url: &str, username: &str, password: &str) -> Result<String> {
+async fn login(
+    http: &reqwest::Client,
+    gatehouse_url: &str,
+    username: &str,
+    password: &str,
+) -> Result<String> {
     let response = http
         .post(format!("{gatehouse_url}/api/v1/auth/login"))
         .json(&serde_json::json!({ "username": username, "password": password }))

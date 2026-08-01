@@ -228,6 +228,7 @@ fn cap_history(history: &mut String) {
     *history = format!("...[earlier tool output truncated]\n{kept}");
 }
 
+#[allow(clippy::too_many_lines)]
 async fn execute_with_tools(node: &AgentNode, input: String) -> Result<String> {
     let index = preindex_project(node);
     let effective_run_cmd_allowlist = resolve_run_cmd_allowlist(node, index.file_paths.as_deref());
@@ -271,7 +272,13 @@ Step {step}/{max_steps}. Output your JSON now:",
             max_steps = max_steps
         );
 
-        let raw = call_model(node.model.clone(), prompt, node.temperature, node.max_tokens).await?;
+        let raw = call_model(
+            node.model.clone(),
+            prompt,
+            node.temperature,
+            node.max_tokens,
+        )
+        .await?;
         let parsed = extract_json(&raw).and_then(|s| serde_json::from_str::<ToolResponse>(&s).ok());
 
         let Some(response) = parsed else {
@@ -525,10 +532,7 @@ mod tests {
     #[test]
     fn extract_json_from_surrounding_prose() {
         let raw = "Sure, here it is: {\"action\":\"final\"} - hope that helps!";
-        assert_eq!(
-            extract_json(raw),
-            Some(r#"{"action":"final"}"#.to_string())
-        );
+        assert_eq!(extract_json(raw), Some(r#"{"action":"final"}"#.to_string()));
     }
 
     #[test]
