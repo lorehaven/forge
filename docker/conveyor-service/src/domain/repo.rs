@@ -45,13 +45,17 @@ impl fmt::Display for Provider {
 pub struct Repo {
     pub id: String,
     pub provider: Provider,
-    /// Organisation or user, as the provider names it.
+    /// Organisation or user, as the provider names it. Independent of
+    /// `project_id`: this is the provider's identity for the repo (what a
+    /// webhook slug names), not its place in conveyor's own tree.
     pub owner: String,
     pub name: String,
     pub clone_url: String,
     pub default_branch: String,
     /// The realm account that registered it, and who its secrets belong to.
     pub registered_by: String,
+    /// Where this repo sits in conveyor's organisational tree.
+    pub project_id: String,
     /// A disabled repo keeps its history and stops accepting triggers.
     pub enabled: bool,
     pub created_at: DateTime<Utc>,

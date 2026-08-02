@@ -125,6 +125,7 @@ async fn reporting_a_status_is_a_no_op_rather_than_a_failure() {
         clone_url: "file:///tmp/x".to_string(),
         default_branch: "master".to_string(),
         registered_by: "someone".to_string(),
+        project_id: "project-1".to_string(),
         enabled: true,
         created_at: Utc::now(),
         updated_at: Utc::now(),

@@ -40,6 +40,10 @@ actions = ["read", "write"]
 [services.conveyor]
 label = "Conveyor"
 actions = ["read", "write"]
+# Lets a grant name one project (or one of its ancestor nodes, which covers
+# everything nested under it) instead of only "every repo conveyor holds" -
+# see `conveyor:project:<id>:<action>` in quench-auth's `Permissions`.
+resource_types = ["project"]
 
 [services.switchboard]
 label = "Switchboard"

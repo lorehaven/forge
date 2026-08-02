@@ -321,6 +321,7 @@ mod tests {
             clone_url: "https://github.com/lorehaven/palantir.git".to_string(),
             default_branch: "main".to_string(),
             registered_by: "admin".to_string(),
+            project_id: "project-1".to_string(),
             enabled: true,
             created_at: Utc::now(),
             updated_at: Utc::now(),

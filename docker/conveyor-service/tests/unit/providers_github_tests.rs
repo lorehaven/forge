@@ -361,6 +361,7 @@ async fn reporting_a_status_without_a_token_says_so() {
         clone_url: "https://example.invalid/x.git".to_string(),
         default_branch: "master".to_string(),
         registered_by: "someone".to_string(),
+        project_id: "project-1".to_string(),
         enabled: true,
         created_at: Utc::now(),
         updated_at: Utc::now(),

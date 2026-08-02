@@ -20,6 +20,14 @@ struct ServiceEntry {
     label: Option<String>,
     #[serde(default)]
     actions: Vec<String>,
+    /// Kinds of resource this service accepts a scoped grant on - e.g.
+    /// conveyor's `project`. Declaring one here is what makes
+    /// `is_known_action` accept `<resource_type>:<resource_id>:<action>` as
+    /// well as a plain action name; the resource id itself is never
+    /// validated against anything, the same way `repos.id` is an opaque
+    /// string to everything that isn't conveyor.
+    #[serde(default)]
+    resource_types: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -113,14 +121,45 @@ impl PermissionCatalog {
             .unwrap_or(&[])
     }
 
+    pub fn resource_types_for(&self, service: &str) -> &[String] {
+        self.services
+            .get(service)
+            .map(|entry| entry.resource_types.as_slice())
+            .unwrap_or(&[])
+    }
+
     pub fn is_known_service(&self, service: &str) -> bool {
         self.services.contains_key(service)
     }
 
+    /// Whether `action` is grantable on `service` - either a plain action
+    /// this service's catalog entry enumerates, or a resource-scoped grant
+    /// shaped `<resource_type>:<resource_id>:<base_action>` where
+    /// `resource_type` is one this service declares and `base_action` is
+    /// itself one of the enumerated actions. The resource id in the middle is
+    /// deliberately unchecked - gatehouse has no way to know whether a given
+    /// conveyor project id exists, and does not need to: an admin naming one
+    /// that does not exist just grants access to nothing, the same safe
+    /// direction an unparseable permissions row already fails in.
     pub fn is_known_action(&self, service: &str, action: &str) -> bool {
-        self.actions_for(service)
+        if self.actions_for(service).iter().any(|known| known == action) {
+            return true;
+        }
+
+        let Some((resource_type, rest)) = action.split_once(':') else {
+            return false;
+        };
+        let Some((_resource_id, base_action)) = rest.split_once(':') else {
+            return false;
+        };
+
+        self.resource_types_for(service)
             .iter()
-            .any(|known| known == action)
+            .any(|known| known == resource_type)
+            && self
+                .actions_for(service)
+                .iter()
+                .any(|known| known == base_action)
     }
 
     /// `service` and `service:action` entries a grant map holds that this
@@ -220,6 +259,28 @@ mod tests {
         assert!(catalog.is_known_action("sage", "write"));
         assert!(!catalog.is_known_action("sage", "delete-everything"));
         assert!(!catalog.is_known_service("warehouse"));
+    }
+
+    #[test]
+    fn a_resource_scoped_action_is_known_when_its_type_and_base_action_are() {
+        let catalog = load(
+            r#"
+            [services.conveyor]
+            actions = ["read", "write"]
+            resource_types = ["project"]
+            "#,
+        )
+        .unwrap();
+
+        assert!(catalog.is_known_action("conveyor", "project:abc-123:write"));
+        assert!(catalog.is_known_action("conveyor", "project:abc-123:read"));
+        // The resource id itself is never validated - any string in the
+        // middle segment is accepted.
+        assert!(catalog.is_known_action("conveyor", "project:does-not-exist:read"));
+        // An undeclared resource type, or a base action the service does not
+        // grant, is still rejected.
+        assert!(!catalog.is_known_action("conveyor", "repo:abc-123:read"));
+        assert!(!catalog.is_known_action("conveyor", "project:abc-123:launch"));
     }
 
     #[test]

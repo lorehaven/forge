@@ -1,0 +1,96 @@
+[[migrations]]
+id = "0004-projects"
+author = "conveyor-service"
+since = "0.1.0"
+
+# The organisational tree a repository sits in. A node is deliberately just a
+# node - it may have children, may have a repository attached (via
+# `repos.project_id` below), both, or neither. There is no separate "group"
+# type: whether a node reads as a container or as a leaf falls out of what is
+# attached to it, not out of a column here.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.projects (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    parent_id TEXT REFERENCES ${schema}.projects(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+"""
+
+# Siblings can't share a name. Root-level nodes (`parent_id IS NULL`) need
+# their own partial index for the same reason `secrets` split its uniqueness
+# in two: Postgres treats NULL as distinct from NULL, so a plain unique index
+# on (parent_id, name) would let any number of same-named roots through.
+[[migrations.changes]]
+sql = """
+CREATE UNIQUE INDEX IF NOT EXISTS projects_parent_name_idx
+    ON ${schema}.projects (parent_id, name);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE UNIQUE INDEX IF NOT EXISTS projects_root_name_idx
+    ON ${schema}.projects (name) WHERE parent_id IS NULL;
+"""
+
+# Nullable for now - backfilled below, then closed off. Deliberately separate
+# from `owner`/`name`: those are the provider's identity for a repository
+# (what a webhook slug names, matched by `find_by_slug`) and stay untouched.
+# `project_id` is conveyor's own organisational placement and can be moved
+# around later without affecting webhook matching at all.
+[[migrations.changes]]
+sql = """
+ALTER TABLE ${schema}.repos
+    ADD COLUMN IF NOT EXISTS project_id TEXT REFERENCES ${schema}.projects(id);
+"""
+
+# Backfill: one root project per distinct `owner`, reproducing today's
+# `lorehaven/forge` shape as the starting tree so nothing manual is required
+# before this ships. Run unconditionally rather than gated on an "is this a
+# fresh install" check - on a fresh install with no repos yet, both inserts
+# below are no-ops.
+[[migrations.changes]]
+sql = """
+INSERT INTO ${schema}.projects (id, name, parent_id)
+SELECT gen_random_uuid()::text, o.owner, NULL
+FROM (SELECT DISTINCT owner FROM ${schema}.repos) o
+ON CONFLICT (name) WHERE parent_id IS NULL DO NOTHING;
+"""
+
+# One child project per repository, named after it, under its owner's root.
+# Repos that happen to share an owner/name across providers land under the
+# same project node - the tree is conveyor's own organisational concept, not
+# a per-provider one, so that collapsing is the right outcome rather than an
+# edge case to special-case around.
+[[migrations.changes]]
+sql = """
+INSERT INTO ${schema}.projects (id, name, parent_id)
+SELECT gen_random_uuid()::text, r.name, root.id
+FROM ${schema}.repos r
+JOIN ${schema}.projects root ON root.name = r.owner AND root.parent_id IS NULL
+WHERE r.project_id IS NULL
+ON CONFLICT (parent_id, name) DO NOTHING;
+"""
+
+# Point every repo at the leaf project the two inserts above just gave it. A
+# separate pass keyed on name, not on insertion order, so the provider-overlap
+# case above resolves to the same project row for every repo that matches it.
+[[migrations.changes]]
+sql = """
+UPDATE ${schema}.repos r
+SET project_id = leaf.id
+FROM ${schema}.projects leaf
+JOIN ${schema}.projects root ON leaf.parent_id = root.id
+WHERE root.name = r.owner AND root.parent_id IS NULL
+  AND leaf.name = r.name
+  AND r.project_id IS NULL;
+"""
+
+# Closes the column off now that every existing row has been placed. A no-op
+# on a fresh install with no rows to violate it.
+[[migrations.changes]]
+sql = """
+ALTER TABLE ${schema}.repos ALTER COLUMN project_id SET NOT NULL;
+"""

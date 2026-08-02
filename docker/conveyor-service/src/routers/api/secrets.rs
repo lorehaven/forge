@@ -9,6 +9,7 @@
 //! wildcard first segment would collide with the `/repos` scope, and actix does
 //! not fall through from a scope whose prefix matched.
 
+use crate::routers::api::authz::{can_on_project, can_unscoped};
 use crate::routers::api::{ApiError, actor, json_error};
 use crate::scheduler::repos;
 use crate::secrets::store::{self, Scope, SecretError};
@@ -26,6 +27,11 @@ pub struct SetSecret {
 // ---------------------------------------------------------------------------
 // Estate-wide
 // ---------------------------------------------------------------------------
+//
+// Not attached to any project, so there is nothing to scope these by beyond
+// the blanket `conveyor:write`/`conveyor:read` grant - a resource-scoped grant
+// on one project has no bearing on a secret every pipeline in the estate can
+// read.
 
 #[put("/{name}")]
 pub async fn put_global(
@@ -34,17 +40,26 @@ pub async fn put_global(
     body: web::Json<SetSecret>,
     db: web::Data<Db>,
 ) -> impl Responder {
+    if !can_unscoped(&request, "write") {
+        return json_error(StatusCode::FORBIDDEN, "no write access to estate-wide secrets");
+    }
     let actor = actor(&request).await;
     write(&db, Scope::Global, &path, &body.value, &actor).await
 }
 
 #[get("")]
-pub async fn list_global(db: web::Data<Db>) -> impl Responder {
+pub async fn list_global(request: HttpRequest, db: web::Data<Db>) -> impl Responder {
+    if !can_unscoped(&request, "read") {
+        return json_error(StatusCode::FORBIDDEN, "no read access to estate-wide secrets");
+    }
     read_names(&db, Scope::Global).await
 }
 
 #[delete("/{name}")]
-pub async fn delete_global(path: web::Path<String>, db: web::Data<Db>) -> impl Responder {
+pub async fn delete_global(request: HttpRequest, path: web::Path<String>, db: web::Data<Db>) -> impl Responder {
+    if !can_unscoped(&request, "write") {
+        return json_error(StatusCode::FORBIDDEN, "no write access to estate-wide secrets");
+    }
     remove(&db, Scope::Global, &path).await
 }
 
@@ -69,7 +84,7 @@ pub async fn put_repo(
     db: web::Data<Db>,
 ) -> impl Responder {
     let (repo_id, name) = path.into_inner();
-    match repo_scope(&db, &repo_id).await {
+    match repo_scope(&request, &db, &repo_id, "write").await {
         Ok(scope) => {
             let actor = actor(&request).await;
             write(&db, scope, &name, &body.value, &actor).await
@@ -79,17 +94,21 @@ pub async fn put_repo(
 }
 
 #[get("/{repo_id}/secrets")]
-pub async fn list_repo(path: web::Path<String>, db: web::Data<Db>) -> impl Responder {
-    match repo_scope(&db, &path).await {
+pub async fn list_repo(request: HttpRequest, path: web::Path<String>, db: web::Data<Db>) -> impl Responder {
+    match repo_scope(&request, &db, &path, "read").await {
         Ok(scope) => read_names(&db, scope).await,
         Err(response) => response,
     }
 }
 
 #[delete("/{repo_id}/secrets/{name}")]
-pub async fn delete_repo(path: web::Path<(String, String)>, db: web::Data<Db>) -> impl Responder {
+pub async fn delete_repo(
+    request: HttpRequest,
+    path: web::Path<(String, String)>,
+    db: web::Data<Db>,
+) -> impl Responder {
     let (repo_id, name) = path.into_inner();
-    match repo_scope(&db, &repo_id).await {
+    match repo_scope(&request, &db, &repo_id, "write").await {
         Ok(scope) => remove(&db, scope, &name).await,
         Err(response) => response,
     }
@@ -99,9 +118,23 @@ pub async fn delete_repo(path: web::Path<(String, String)>, db: web::Data<Db>) -
 // Shared
 // ---------------------------------------------------------------------------
 
-async fn repo_scope(db: &Db, repo_id: &str) -> Result<Scope, HttpResponse> {
+async fn repo_scope(
+    request: &HttpRequest,
+    db: &Db,
+    repo_id: &str,
+    action: &str,
+) -> Result<Scope, HttpResponse> {
     match repos::read(db, repo_id).await {
-        Ok(Some(repo)) => Ok(Scope::Repo(repo.id)),
+        Ok(Some(repo)) => {
+            if can_on_project(request, db, &repo.project_id, action).await {
+                Ok(Scope::Repo(repo.id))
+            } else {
+                Err(json_error(
+                    StatusCode::FORBIDDEN,
+                    &format!("no {action} access to this repository's secrets"),
+                ))
+            }
+        }
         Ok(None) => Err(json_error(StatusCode::NOT_FOUND, "no such repository")),
         Err(error) => Err(ApiError::from(error).into_response()),
     }

@@ -555,6 +555,27 @@ pub async fn read_run(db: &Db, run_id: &str) -> Result<Option<Run>, QueueError> 
     row.as_ref().map(run_from_row).transpose()
 }
 
+/// The repository a job's run belongs to, for permission checks that only
+/// have a `job_id` to start from (the log-reading routes).
+pub async fn repo_id_for_job(db: &Db, job_id: &str) -> Result<Option<String>, QueueError> {
+    let pool = pool(db)?;
+    let schema = schema();
+    let sql = format!(
+        "SELECT r.repo_id FROM {schema}.jobs j \
+         JOIN {schema}.runs r ON r.id = j.run_id \
+         WHERE j.id = $1"
+    );
+
+    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+        .bind(job_id)
+        .fetch_optional(pool)
+        .await?;
+
+    row.map(|row| row.try_get::<String, _>("repo_id"))
+        .transpose()
+        .map_err(QueueError::from)
+}
+
 pub async fn list_runs(db: &Db, repo_id: Option<&str>, limit: i64) -> Result<Vec<Run>, QueueError> {
     let pool = pool(db)?;
     let schema = schema();

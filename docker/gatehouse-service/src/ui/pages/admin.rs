@@ -219,6 +219,14 @@ pub(super) async fn save_user(
     let form = form.into_inner();
     let actor_is_admin = actor.has_role(Role::Admin.as_str());
 
+    // Read before writing so a resource-scoped grant set through the API -
+    // this form has no field for one - survives a save made through the plain
+    // checkbox matrix instead of being silently dropped.
+    let existing_permissions = match realm::get(&db, &username).await {
+        Ok(user) => user.get_permissions(),
+        Err(err) => return back_to_list(&err),
+    };
+
     let changes = UserChanges {
         // An empty password box means "leave it alone", not "set an empty
         // password" - the realm would reject the latter anyway.
@@ -235,7 +243,7 @@ pub(super) async fn save_user(
             .map(String::as_str)
             .filter(|_| actor_is_admin)
             .map(|value| vec![parse_role(Some(value))]),
-        permissions: Some(permissions_from_form(&catalog, &form)),
+        permissions: Some(permissions_from_form(&catalog, &form, &existing_permissions)),
     };
 
     match realm::update(
@@ -323,18 +331,27 @@ pub(super) async fn delete_user(
 }
 
 /// Reads one `perm_<service>_<action>` checkbox per action the catalog
-/// declares, for every service it declares.
+/// declares, for every service it declares - then folds in whatever `existing`
+/// held that this form never had a box for.
 ///
 /// Driven by the catalog rather than by what the form happens to contain, so a
 /// field named after a service or action this deployment does not know about
 /// is ignored here rather than rejected later - the same posture
 /// `permissions_from_form` has always taken, just with one more level of
 /// nesting now that a service can declare more than two grantable actions.
+///
+/// The fold-in matters because the checkbox matrix only ever renders and reads
+/// back plain, enumerated actions (`permission_row`, `catalog.actions_for`) - a
+/// resource-scoped grant like `conveyor:project:<id>:write`, only settable
+/// through the API today, has no checkbox here at all. Without this, saving
+/// any other change on this page - a password, a role - would rebuild the
+/// permissions map from checkboxes alone and silently erase it.
 fn permissions_from_form(
     catalog: &PermissionCatalog,
     form: &HashMap<String, String>,
+    existing: &Permissions,
 ) -> Permissions {
-    catalog
+    let mut result: Permissions = catalog
         .service_names()
         .filter_map(|service| {
             let actions: Actions = catalog
@@ -345,7 +362,25 @@ fn permissions_from_form(
                 .collect();
             (!actions.is_empty()).then(|| (service.to_string(), actions))
         })
-        .collect()
+        .collect();
+
+    for (service, actions) in existing {
+        let plain: std::collections::HashSet<&str> = catalog
+            .actions_for(service)
+            .iter()
+            .map(String::as_str)
+            .collect();
+        for action in actions {
+            if !plain.contains(action.as_str()) {
+                result
+                    .entry(service.clone())
+                    .or_default()
+                    .insert(action.clone());
+            }
+        }
+    }
+
+    result
 }
 
 /// A missing or unrecognised role is an ordinary user. Never an admin: a mangled
@@ -918,4 +953,70 @@ fn error_page(err: &RealmError) -> HttpResponse {
         ),
         UiPageKind::Admin,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn catalog() -> PermissionCatalog {
+        let dir = std::env::temp_dir().join(format!("admin-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("permissions.toml");
+        std::fs::write(
+            &path,
+            r#"
+            [services.conveyor]
+            actions = ["read", "write"]
+            resource_types = ["project"]
+            "#,
+        )
+        .unwrap();
+        let result = PermissionCatalog::load_from(&path.to_string_lossy()).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        result
+    }
+
+    #[test]
+    fn a_resource_scoped_grant_survives_a_plain_checkbox_save() {
+        let catalog = catalog();
+        let mut existing = Permissions::new();
+        existing.insert(
+            "conveyor".to_string(),
+            ["project:abc-123:write".to_string()].into_iter().collect(),
+        );
+
+        // The form checks conveyor's plain "read" box and leaves "write"
+        // unchecked - as if an admin were narrowing the blanket grant, with
+        // no idea the resource-scoped one even exists.
+        let mut form = HashMap::new();
+        form.insert("perm_conveyor_read".to_string(), "on".to_string());
+
+        let result = permissions_from_form(&catalog, &form, &existing);
+        let conveyor = result.get("conveyor").expect("conveyor grants survive");
+
+        assert!(conveyor.contains("read"), "the checked box is honoured");
+        assert!(!conveyor.contains("write"), "the unchecked plain box is dropped");
+        assert!(
+            conveyor.contains("project:abc-123:write"),
+            "the resource-scoped grant this form has no box for is preserved"
+        );
+    }
+
+    #[test]
+    fn a_plain_grant_can_still_be_revoked() {
+        let catalog = catalog();
+        let mut existing = Permissions::new();
+        existing.insert("conveyor".to_string(), ["read".to_string()].into_iter().collect());
+
+        // Nothing checked at all - unchecking every box should still clear a
+        // plain grant, not treat it as "unknown, so preserve it".
+        let form = HashMap::new();
+
+        let result = permissions_from_form(&catalog, &form, &existing);
+        assert!(
+            result.get("conveyor").is_none_or(|actions| !actions.contains("read")),
+            "an unchecked plain action is actually revoked"
+        );
+    }
 }

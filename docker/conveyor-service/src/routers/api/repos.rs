@@ -5,7 +5,9 @@
 //! acceptable answer to which ones it will build.
 
 use crate::domain::Provider;
-use crate::routers::api::{ApiError, actor, json_error};
+use crate::routers::api::authz::{can_on_project, granted_project_ids};
+use crate::routers::api::{ApiError, actor, claims, json_error};
+use crate::scheduler::projects;
 use crate::scheduler::repos::{self, NewRepo};
 use actix_web::{HttpRequest, HttpResponse, Responder, delete, get, post, web};
 use quench_db::prelude::Db;
@@ -21,6 +23,8 @@ pub struct RegisterRepo {
     pub clone_url: String,
     #[serde(default)]
     pub default_branch: Option<String>,
+    /// The project node this repo attaches to.
+    pub project_id: String,
 }
 
 #[post("")]
@@ -49,10 +53,24 @@ pub async fn register(
         );
     }
 
+    if body.project_id.trim().is_empty() {
+        return json_error(
+            actix_web::http::StatusCode::BAD_REQUEST,
+            "project_id is required",
+        );
+    }
+
     // Checked here rather than at checkout time: a clone url git would read as
     // an option should never be stored, let alone handed to a worker.
     if let Err(error) = crate::workspace::checkout::validate_url(&body.clone_url) {
         return json_error(actix_web::http::StatusCode::BAD_REQUEST, &error.to_string());
+    }
+
+    if !can_on_project(&request, &db, &body.project_id, "write").await {
+        return json_error(
+            actix_web::http::StatusCode::FORBIDDEN,
+            "no write access to that project",
+        );
     }
 
     let new = NewRepo {
@@ -65,6 +83,7 @@ pub async fn register(
             .clone()
             .unwrap_or_else(|| "master".to_string()),
         registered_by: actor(&request).await,
+        project_id: body.project_id.clone(),
     };
 
     match repos::create(&db, &new).await {
@@ -73,21 +92,54 @@ pub async fn register(
     }
 }
 
+/// Filters to the repos the caller may read, rather than 403ing: a caller
+/// with no blanket `conveyor:read` still gets a (possibly empty) list scoped
+/// to whatever projects they hold a resource-scoped grant on, the same way a
+/// directory listing shows what you can see rather than refusing the whole
+/// directory because you can't see everything in it.
 #[get("")]
-pub async fn list(db: web::Data<Db>) -> impl Responder {
-    match repos::list(&db).await {
-        Ok(repos) => HttpResponse::Ok().json(repos),
-        Err(error) => ApiError::from(error).into_response(),
+pub async fn list(request: HttpRequest, db: web::Data<Db>) -> impl Responder {
+    let all = match repos::list(&db).await {
+        Ok(repos) => repos,
+        Err(error) => return ApiError::from(error).into_response(),
+    };
+
+    let Some(claims) = claims(&request) else {
+        // Auth disabled (the realm-wide dev switch): no identity to scope by,
+        // so nothing is filtered - matches every other route's bypass.
+        return HttpResponse::Ok().json(all);
+    };
+
+    if claims.can("conveyor", "read") {
+        return HttpResponse::Ok().json(all);
     }
+
+    let granted = granted_project_ids(&claims, "read");
+    let visible = match projects::descendant_ids(&db, &granted).await {
+        Ok(ids) => ids,
+        Err(error) => return ApiError::from(error).into_response(),
+    };
+
+    let repos: Vec<_> = all
+        .into_iter()
+        .filter(|repo| visible.contains(&repo.project_id))
+        .collect();
+    HttpResponse::Ok().json(repos)
 }
 
 #[get("/{id}")]
-pub async fn read(path: web::Path<String>, db: web::Data<Db>) -> impl Responder {
-    match repos::read(&db, &path).await {
-        Ok(Some(repo)) => HttpResponse::Ok().json(repo),
-        Ok(None) => json_error(actix_web::http::StatusCode::NOT_FOUND, "no such repository"),
-        Err(error) => ApiError::from(error).into_response(),
+pub async fn read(request: HttpRequest, path: web::Path<String>, db: web::Data<Db>) -> impl Responder {
+    let repo = match repos::read(&db, &path).await {
+        Ok(Some(repo)) => repo,
+        Ok(None) => return json_error(actix_web::http::StatusCode::NOT_FOUND, "no such repository"),
+        Err(error) => return ApiError::from(error).into_response(),
+    };
+
+    if !can_on_project(&request, &db, &repo.project_id, "read").await {
+        return json_error(actix_web::http::StatusCode::FORBIDDEN, "no read access to this repository");
     }
+
+    HttpResponse::Ok().json(repo)
 }
 
 #[derive(Deserialize)]
@@ -99,10 +151,21 @@ pub struct SetEnabled {
 /// which is what you want for one that has gone bad rather than gone away.
 #[post("/{id}/enabled")]
 pub async fn set_enabled(
+    request: HttpRequest,
     path: web::Path<String>,
     body: web::Json<SetEnabled>,
     db: web::Data<Db>,
 ) -> impl Responder {
+    let repo = match repos::read(&db, &path).await {
+        Ok(Some(repo)) => repo,
+        Ok(None) => return json_error(actix_web::http::StatusCode::NOT_FOUND, "no such repository"),
+        Err(error) => return ApiError::from(error).into_response(),
+    };
+
+    if !can_on_project(&request, &db, &repo.project_id, "write").await {
+        return json_error(actix_web::http::StatusCode::FORBIDDEN, "no write access to this repository");
+    }
+
     match repos::set_enabled(&db, &path, body.enabled).await {
         Ok(Some(repo)) => HttpResponse::Ok().json(repo),
         Ok(None) => json_error(actix_web::http::StatusCode::NOT_FOUND, "no such repository"),
@@ -111,7 +174,17 @@ pub async fn set_enabled(
 }
 
 #[delete("/{id}")]
-pub async fn remove(path: web::Path<String>, db: web::Data<Db>) -> impl Responder {
+pub async fn remove(request: HttpRequest, path: web::Path<String>, db: web::Data<Db>) -> impl Responder {
+    let repo = match repos::read(&db, &path).await {
+        Ok(Some(repo)) => repo,
+        Ok(None) => return json_error(actix_web::http::StatusCode::NOT_FOUND, "no such repository"),
+        Err(error) => return ApiError::from(error).into_response(),
+    };
+
+    if !can_on_project(&request, &db, &repo.project_id, "write").await {
+        return json_error(actix_web::http::StatusCode::FORBIDDEN, "no write access to this repository");
+    }
+
     match repos::delete(&db, &path).await {
         Ok(true) => HttpResponse::NoContent().finish(),
         Ok(false) => json_error(actix_web::http::StatusCode::NOT_FOUND, "no such repository"),

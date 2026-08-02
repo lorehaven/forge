@@ -11,9 +11,11 @@
 //! which is every one of these so far - are unaffected.
 
 use crate::executors::{Handle, JobExecutor, LogChunk, Stream as LogStream};
-use crate::routers::api::ApiError;
+use crate::routers::api::authz::can_on_project;
+use crate::routers::api::{ApiError, json_error};
 use crate::scheduler::queue;
-use actix_web::{Error, HttpResponse, Responder, get, web};
+use actix_web::http::StatusCode;
+use actix_web::{Error, HttpRequest, HttpResponse, Responder, get, web};
 use bytes::Bytes;
 use futures_util::StreamExt;
 use futures_util::stream::iter as stream_iter;
@@ -53,12 +55,28 @@ pub struct StreamQuery {
 /// log again.
 #[get("/jobs/{id}/stream")]
 pub async fn stream_logs(
+    request: HttpRequest,
     path: web::Path<String>,
     query: web::Query<StreamQuery>,
     db: web::Data<Db>,
     executor: web::Data<Arc<dyn JobExecutor>>,
 ) -> impl Responder {
     let job_id = path.into_inner();
+
+    match crate::scheduler::queue::repo_id_for_job(&db, &job_id).await {
+        Ok(Some(repo_id)) => match crate::scheduler::repos::read(&db, &repo_id).await {
+            Ok(Some(repo)) => {
+                if !can_on_project(&request, &db, &repo.project_id, "read").await {
+                    return json_error(StatusCode::FORBIDDEN, "no read access to this job's logs");
+                }
+            }
+            Ok(None) => return json_error(StatusCode::NOT_FOUND, "no such job"),
+            Err(error) => return ApiError::from(error).into_response(),
+        },
+        Ok(None) => return json_error(StatusCode::NOT_FOUND, "no such job"),
+        Err(error) => return ApiError::from(error).into_response(),
+    }
+
     let format = query.format;
     let handle = Handle::new(job_id.clone());
 

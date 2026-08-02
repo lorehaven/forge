@@ -18,6 +18,7 @@
 #![allow(dead_code)]
 
 use conveyor_service::domain::{Provider, Repo};
+use conveyor_service::scheduler::projects::{self, NewProject};
 use conveyor_service::scheduler::repos::{self, NewRepo};
 use quench_db::prelude::{Database, Db};
 use std::path::Path;
@@ -48,8 +49,10 @@ pub async fn database() -> Option<(Db, MutexGuard<'static, ()>)> {
         .await
         .expect("connect to the test database");
 
-    // Cascades to runs, jobs, steps, logs and artifacts.
-    db.execute("TRUNCATE conveyor.repos, conveyor.runs CASCADE")
+    // Cascades to runs, jobs, steps, logs and artifacts. `repos` first: it
+    // references `projects`, so truncating `projects` alone would fail the
+    // foreign key without also naming the table that points at it.
+    db.execute("TRUNCATE conveyor.repos, conveyor.projects, conveyor.runs CASCADE")
         .await
         .expect("truncate");
     db.execute(&format!(
@@ -69,6 +72,16 @@ pub fn skipped(test: &str) {
 }
 
 pub async fn register_repo(db: &Db, name: &str, clone_url: &str) -> Repo {
+    let project = projects::create(
+        db,
+        &NewProject {
+            name: name.to_string(),
+            parent_id: None,
+        },
+    )
+    .await
+    .expect("create the project");
+
     repos::create(
         db,
         &NewRepo {
@@ -78,6 +91,7 @@ pub async fn register_repo(db: &Db, name: &str, clone_url: &str) -> Repo {
             clone_url: clone_url.to_string(),
             default_branch: "master".to_string(),
             registered_by: TEST_USER.to_string(),
+            project_id: project.id,
         },
     )
     .await

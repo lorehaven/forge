@@ -7,10 +7,11 @@ use crate::scheduler::QueueError;
 use actix_web::http::StatusCode;
 use actix_web::{HttpMessage, HttpRequest, HttpResponse, web};
 use quench_auth::actix::middleware::auth::Auth;
-use quench_auth::actix::middleware::require_write::RequireWrite;
 use quench_auth::prelude::{Claims, JwtConfig, realm};
 use serde_json::json;
 
+pub mod authz;
+pub mod projects;
 pub mod repos;
 pub mod runs;
 pub mod secrets;
@@ -22,34 +23,36 @@ pub mod webhooks;
 /// Webhooks are deliberately outside it: a provider has no realm token, and its
 /// delivery is authenticated by its signature instead.
 ///
-/// Every other scope has a clean method shape - registering, enabling,
-/// deleting a repo; writing or deleting a secret; starting or cancelling a
-/// run - all POST/PUT/DELETE, with every GET a genuine read. `RequireWrite`
-/// needs no route-level exceptions here, so it stacks on `Auth` the same way
-/// every other service in the estate does it.
+/// `RequireWrite` is *not* mounted here, unlike every scope-that-only-needs-
+/// coarse-write in the estate: once a repo or project can be scoped to a
+/// specific grant (`conveyor:project:<id>:write`), the generic "holds `write`
+/// on `conveyor`" check it does is both too strict (a resource-scoped grant
+/// with no blanket `write` would 403 before reaching the route) and not
+/// specific enough (it can't tell "write repo A" from "write repo B"). This is
+/// exactly the situation `RequireWrite`'s own doc comment calls out - guard the
+/// route directly with `Claims::can` (here, via `authz::can_on_project`)
+/// instead of stretching the middleware. `Auth` alone still gates every route:
+/// a verified identity with `conveyor` as an audience.
 ///
 /// Registration order is load-bearing. Actix picks the first service whose path
 /// matches and does not fall through to the next, so the concrete webhook route
-/// comes first, then `/repos`, and the catch-all `scope("")` that holds the run
-/// routes comes last - anything after it would be unreachable.
+/// comes first, then `/repos` and `/projects`, and the catch-all `scope("")`
+/// that holds the run routes comes last - anything after it would be
+/// unreachable.
 pub fn scope(jwt_config: JwtConfig) -> actix_web::Scope {
     web::scope("/api/v1")
         .service(webhooks::receive)
-        .service(
-            secrets::scope()
-                .wrap(RequireWrite::new(jwt_config.clone()))
-                .wrap(Auth::new(jwt_config.clone())),
-        )
-        .service(
-            repos::scope()
-                .wrap(RequireWrite::new(jwt_config.clone()))
-                .wrap(Auth::new(jwt_config.clone())),
-        )
-        .service(
-            runs::scope()
-                .wrap(RequireWrite::new(jwt_config.clone()))
-                .wrap(Auth::new(jwt_config)),
-        )
+        .service(secrets::scope().wrap(Auth::new(jwt_config.clone())))
+        .service(projects::scope().wrap(Auth::new(jwt_config.clone())))
+        .service(repos::scope().wrap(Auth::new(jwt_config.clone())))
+        .service(runs::scope().wrap(Auth::new(jwt_config)))
+}
+
+/// The verified identity behind this request, if any. `Auth` puts it in the
+/// request's extensions; every route that needs a resource-scoped check reads
+/// it from here rather than re-verifying anything.
+pub fn claims(request: &HttpRequest) -> Option<Claims> {
+    request.extensions().get::<Claims>().cloned()
 }
 
 /// Who is making this request, for the `registered_by` and `owner` columns.
@@ -111,18 +114,33 @@ impl ApiError {
 
 impl From<QueueError> for ApiError {
     fn from(error: QueueError) -> Self {
-        // A foreign key violation here is almost always one thing: the account
-        // making the request is not in the realm's `users` table. Raw, that
-        // reads as "repos_registered_by_fkey", which tells the caller nothing
-        // about what to do.
         if let QueueError::Sql(sqlx::Error::Database(database)) = &error
             && database.code().as_deref() == Some("23503")
         {
+            // `registered_by` is the one case that reads as something other
+            // than "the id you named does not exist" - it means the account
+            // making the request is not in the realm's `users` table at all.
+            let message = if database.constraint() == Some("repos_registered_by_fkey") {
+                "the account making this request is not in the realm; \
+                 sign in through gatehouse, which owns the estate's users"
+                    .to_string()
+            } else {
+                "the id given for a related record (project, repository, ...) \
+                 does not exist"
+                    .to_string()
+            };
             return Self {
                 status: StatusCode::BAD_REQUEST,
-                message: "the account making this request is not in the realm; \
-                          sign in through gatehouse, which owns the estate's users"
-                    .to_string(),
+                message,
+            };
+        }
+
+        if let QueueError::Sql(sqlx::Error::Database(database)) = &error
+            && database.code().as_deref() == Some("23505")
+        {
+            return Self {
+                status: StatusCode::CONFLICT,
+                message: "a record with that identity already exists".to_string(),
             };
         }
 

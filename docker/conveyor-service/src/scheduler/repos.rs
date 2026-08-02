@@ -22,6 +22,8 @@ pub struct NewRepo {
     pub clone_url: String,
     pub default_branch: String,
     pub registered_by: String,
+    /// The project node this repo attaches to.
+    pub project_id: String,
 }
 
 pub async fn create(db: &Db, new: &NewRepo) -> Result<Repo, QueueError> {
@@ -31,8 +33,8 @@ pub async fn create(db: &Db, new: &NewRepo) -> Result<Repo, QueueError> {
 
     let sql = format!(
         "INSERT INTO {schema}.repos \
-         (id, provider, owner, name, clone_url, default_branch, registered_by) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7) \
+         (id, provider, owner, name, clone_url, default_branch, registered_by, project_id) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) \
          RETURNING {COLUMNS}"
     );
 
@@ -44,6 +46,7 @@ pub async fn create(db: &Db, new: &NewRepo) -> Result<Repo, QueueError> {
         .bind(&new.clone_url)
         .bind(&new.default_branch)
         .bind(&new.registered_by)
+        .bind(&new.project_id)
         .fetch_one(pool)
         .await?;
 
@@ -154,7 +157,7 @@ pub async fn delete(db: &Db, id: &str) -> Result<bool, QueueError> {
 }
 
 const COLUMNS: &str = "id, provider, owner, name, clone_url, default_branch, \
-                       registered_by, enabled, created_at, updated_at";
+                       registered_by, project_id, enabled, created_at, updated_at";
 
 fn from_row(row: &sqlx::postgres::PgRow) -> Result<Repo, QueueError> {
     let provider: String = row.try_get("provider")?;
@@ -168,6 +171,7 @@ fn from_row(row: &sqlx::postgres::PgRow) -> Result<Repo, QueueError> {
         clone_url: row.try_get("clone_url")?,
         default_branch: row.try_get("default_branch")?,
         registered_by: row.try_get("registered_by")?,
+        project_id: row.try_get("project_id")?,
         enabled: row.try_get("enabled")?,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
         updated_at: row.try_get::<DateTime<Utc>, _>("updated_at")?,
