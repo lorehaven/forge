@@ -259,17 +259,69 @@ pub fn project_tree_panel(
         repos_of.entry(repo.project_id.as_str()).or_default().push(repo);
     }
 
+    let roots = children_of.get(&None).cloned().unwrap_or_default();
     let mut tree = div().class("project-tree");
-    for root in children_of.get(&None).into_iter().flatten() {
-        tree = tree.child(project_node(root, &children_of, &repos_of, scans));
+    for element in render_level(&roots, &children_of, &repos_of, scans) {
+        tree = tree.child(element);
     }
 
     panel.child(tree)
 }
 
-/// One node: a native disclosure holding whatever is nested under it and the
-/// repository attached to it, if any. `<details>` gives collapse and expand
-/// with no script at all, same as the run page's job list.
+/// One level of the tree: every child of some node (or the roots), sorted
+/// into what actually needs a disclosure and what does not.
+///
+/// A project with no projects of its own nested under it is a leaf, whatever
+/// it holds - and a leaf gets no `<details>` of its own. Expanding it would
+/// only ever reveal the one table row it already is; that is not a level to
+/// step into, it is the repository itself. So every leaf's repo (if it has
+/// one) folds straight into one shared table at this level, the way flat rows
+/// already worked before there was a tree at all - only a node with its own
+/// children still needs the fold-out treatment, because that is the one case
+/// where there is somewhere further to go.
+fn render_level(
+    nodes: &[&Project],
+    children_of: &HashMap<Option<&str>, Vec<&Project>>,
+    repos_of: &HashMap<&str, Vec<&Repo>>,
+    scans: &HashMap<String, ScanSummary>,
+) -> Vec<Element> {
+    let mut leaf_repos = Vec::new();
+    let mut empty_leaves = Vec::new();
+    let mut containers = Vec::new();
+
+    for &node in nodes {
+        let is_container = children_of
+            .get(&Some(node.id.as_str()))
+            .is_some_and(|children| !children.is_empty());
+
+        if is_container {
+            containers.push(project_node(node, children_of, repos_of, scans));
+        } else if let Some(repos) = repos_of.get(node.id.as_str()) {
+            leaf_repos.extend(repos.iter().copied());
+        } else {
+            // A registered project with nothing in it yet - still worth
+            // showing, since it exists, but with no repo to tabulate and
+            // nothing nested to disclose, it is just its name.
+            empty_leaves.push(node);
+        }
+    }
+
+    let mut elements = Vec::new();
+    if !leaf_repos.is_empty() {
+        elements.push(repo_table(&leaf_repos, scans));
+    }
+    for empty in empty_leaves {
+        elements.push(div().class("muted").text(&empty.name));
+    }
+    elements.extend(containers);
+    elements
+}
+
+/// A container node: a native disclosure holding whatever is nested under it.
+/// Only called for a project that actually has children - `render_level` is
+/// what decides that, so by the time this runs there is always something to
+/// fold out. `<details>` gives collapse and expand with no script at all,
+/// same as the run page's job list.
 fn project_node(
     project: &Project,
     children_of: &HashMap<Option<&str>, Vec<&Project>>,
@@ -282,19 +334,23 @@ fn project_node(
             .child(span().class("project-name").text(&project.name)),
     );
 
-    if let Some(children) = children_of.get(&Some(project.id.as_str())) {
-        let mut nested = div().class("project-children");
-        for child in children {
-            nested = nested.child(project_node(child, children_of, repos_of, scans));
-        }
-        node = node.child(nested);
-    }
-
+    // Rare: a container holding a repository of its own, directly, rather
+    // than through a child - the schema allows it even though nothing in this
+    // tree's example data does.
     if let Some(repos) = repos_of.get(project.id.as_str()) {
         node = node.child(repo_table(repos, scans));
     }
 
-    node
+    let children = children_of
+        .get(&Some(project.id.as_str()))
+        .cloned()
+        .unwrap_or_default();
+    let mut nested = div().class("project-children");
+    for element in render_level(&children, children_of, repos_of, scans) {
+        nested = nested.child(element);
+    }
+
+    node.child(nested)
 }
 
 fn repo_table(repos: &[&Repo], scans: &HashMap<String, ScanSummary>) -> Element {
@@ -315,11 +371,11 @@ fn repo_table(repos: &[&Repo], scans: &HashMap<String, ScanSummary>) -> Element 
     table
 }
 
-/// The repo's own registered identity - `owner/name`, as its provider names it
-/// - shown as the row's label. Deliberately not the project name above it:
-/// the tree nesting is conveyor's own organisational placement, independent of
-/// what a webhook slug names, and showing both is what makes that visible
-/// rather than implied.
+/// Just `repo.name` - the tree nesting is what shows where it sits (down to
+/// its owner, if that owner is itself part of the tree), so repeating the
+/// full `owner/name` slug in every row would only say the same thing twice.
+/// The link's `href` still needs the full identity, since that is what
+/// resolves a specific repository regardless of where in the tree it is.
 fn repo_row(repo: &Repo, scan: Option<&ScanSummary>) -> Element {
     element("tr")
         .child(
@@ -328,7 +384,7 @@ fn repo_row(repo: &Repo, scan: Option<&ScanSummary>) -> Element {
                     "href",
                     ui_path(&format!("/repos/{}/{}/scan", repo.owner, repo.name)),
                 )
-                .text(repo.slug()),
+                .text(&repo.name),
             ),
         )
         .child(element("td").class("muted").text(repo.provider.to_string()))

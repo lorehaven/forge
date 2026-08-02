@@ -129,7 +129,7 @@ fn a_disabled_repo_gets_no_run_button() {
 }
 
 #[test]
-fn a_nested_project_renders_as_a_nested_details_element() {
+fn a_leaf_child_folds_into_its_parents_table_with_no_details_of_its_own() {
     let root = project("root-1", "root-group", None);
     let child = project("child-1", "child-project", Some("root-1"));
     let mut leaf_repo = repo(true);
@@ -137,21 +137,68 @@ fn a_nested_project_renders_as_a_nested_details_element() {
 
     let html = project_tree_panel(&[root, child], &[leaf_repo], &HashMap::new()).render();
 
-    // One disclosure per node - a container is not a different element from a
-    // leaf, it just has different children.
-    assert_eq!(html.matches(r#"class="project-node""#).count(), 2);
-    // The container comes before what is nested inside it, textually as well
-    // as structurally.
-    let root_at = html.find("root-group").expect("root node");
-    let child_at = html.find("child-project").expect("child node");
-    let repo_at = html.find("lorehaven/palantir").expect("the repo row");
-    assert!(root_at < child_at && child_at < repo_at, "got: {html}");
+    // `child-project` has no children of its own, so it is a leaf: expanding
+    // it would only ever reveal the one repo it already is. Only the root -
+    // which has something nested under it - gets a disclosure.
+    assert_eq!(html.matches(r#"class="project-node""#).count(), 1);
+    assert!(html.contains("root-group"));
+    // The leaf's own name is not shown at all - its repo row stands in for it.
+    assert!(!html.contains("child-project"));
+    assert!(html.contains("palantir"));
 }
 
 #[test]
-fn a_repo_appears_under_its_own_project_and_nowhere_else() {
+fn a_container_with_its_own_children_still_gets_a_nested_details() {
+    let root = project("root-1", "root-group", None);
+    let mid = project("mid-1", "mid-group", Some("root-1"));
+    let leaf = project("leaf-1", "leaf-project", Some("mid-1"));
+    let mut leaf_repo = repo(true);
+    leaf_repo.project_id = "leaf-1".to_string();
+
+    let html = project_tree_panel(&[root, mid, leaf], &[leaf_repo], &HashMap::new()).render();
+
+    // `mid-group` has a child (`leaf-project`) even though it holds no repo
+    // itself, so it is a container and keeps its own disclosure - only
+    // `leaf-project`, which has nothing further nested under it, folds away.
+    assert_eq!(html.matches(r#"class="project-node""#).count(), 2);
+    let root_at = html.find("root-group").expect("root node");
+    let mid_at = html.find("mid-group").expect("mid node");
+    let repo_at = html.find("palantir").expect("the repo row");
+    assert!(root_at < mid_at && mid_at < repo_at, "got: {html}");
+    assert!(!html.contains("leaf-project"));
+}
+
+#[test]
+fn a_repo_appears_under_its_own_branch_and_nowhere_else() {
     let a = project("a", "project-a", None);
+    let a_child = project("a-child", "a-child", Some("a"));
     let b = project("b", "project-b", None);
+    let b_child = project("b-child", "b-child", Some("b"));
+    let mut repo_a = repo(true);
+    repo_a.id = "repo-a".to_string();
+    repo_a.name = "in-a".to_string();
+    repo_a.project_id = "a-child".to_string();
+    let mut repo_b = repo(true);
+    repo_b.id = "repo-b".to_string();
+    repo_b.name = "in-b".to_string();
+    repo_b.project_id = "b-child".to_string();
+
+    let html = project_tree_panel(&[a, a_child, b, b_child], &[repo_a, repo_b], &HashMap::new())
+        .render();
+
+    // Split on the second root's own summary: everything before it is
+    // project-a's whole subtree, so repo-b cannot have leaked into it.
+    let (a_section, b_section) = html.split_once("project-b").expect("project-b's node");
+    assert!(a_section.contains("in-a"));
+    assert!(!a_section.contains("in-b"));
+    assert!(b_section.contains("in-b"));
+}
+
+#[test]
+fn two_leaf_repos_under_the_same_parent_share_one_table() {
+    let root = project("root-1", "root-group", None);
+    let a = project("a", "child-a", Some("root-1"));
+    let b = project("b", "child-b", Some("root-1"));
     let mut repo_a = repo(true);
     repo_a.id = "repo-a".to_string();
     repo_a.name = "in-a".to_string();
@@ -161,14 +208,15 @@ fn a_repo_appears_under_its_own_project_and_nowhere_else() {
     repo_b.name = "in-b".to_string();
     repo_b.project_id = "b".to_string();
 
-    let html = project_tree_panel(&[a, b], &[repo_a, repo_b], &HashMap::new()).render();
+    let html =
+        project_tree_panel(&[root, a, b], &[repo_a, repo_b], &HashMap::new()).render();
 
-    // Split on the second root's own summary: everything before it is
-    // project-a's whole subtree, so repo-b cannot have leaked into it.
-    let (a_section, b_section) = html.split_once("project-b").expect("project-b's node");
-    assert!(a_section.contains("lorehaven/in-a"));
-    assert!(!a_section.contains("lorehaven/in-b"));
-    assert!(b_section.contains("lorehaven/in-b"));
+    // Neither leaf child needs its own details, and there is exactly one
+    // repository table for the two of them to share - not one apiece.
+    assert_eq!(html.matches(r#"class="project-node""#).count(), 1);
+    assert_eq!(html.matches("<table").count(), 1);
+    assert!(html.contains("in-a"));
+    assert!(html.contains("in-b"));
 }
 
 #[test]
