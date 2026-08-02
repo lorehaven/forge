@@ -79,6 +79,21 @@ pub async fn list_children(db: &Db, parent_id: Option<&str>) -> Result<Vec<Proje
     rows.iter().map(from_row).collect()
 }
 
+/// Every node in the tree, in one query - for a caller building the whole
+/// hierarchy in memory (the UI's project tree) rather than walking it one
+/// level at a time.
+pub async fn list_all(db: &Db) -> Result<Vec<Project>, QueueError> {
+    let pool = pool(db)?;
+    let schema = schema();
+    let sql = format!("SELECT {COLUMNS} FROM {schema}.projects ORDER BY name");
+
+    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+        .fetch_all(pool)
+        .await?;
+
+    rows.iter().map(from_row).collect()
+}
+
 pub async fn rename(db: &Db, id: &str, name: &str) -> Result<Option<Project>, QueueError> {
     let pool = pool(db)?;
     let schema = schema();

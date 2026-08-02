@@ -6,9 +6,12 @@
 //! everything else is the same table-row plumbing `runs.rs` already covers.
 
 use chrono::Utc;
-use conveyor_service::domain::{Provider, Repo};
-use conveyor_service::routers::ui::pages::home::{check_chips, chip, run_button};
+use conveyor_service::domain::{Project, Provider, Repo};
+use conveyor_service::routers::ui::pages::home::{
+    check_chips, chip, project_tree_panel, run_button,
+};
 use conveyor_service::scan::{CheckKind, CheckResult, Finding, ScanSummary};
+use std::collections::HashMap;
 
 fn repo(enabled: bool) -> Repo {
     Repo {
@@ -21,6 +24,16 @@ fn repo(enabled: bool) -> Repo {
         registered_by: "admin".to_string(),
         project_id: "project-1".to_string(),
         enabled,
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+    }
+}
+
+fn project(id: &str, name: &str, parent_id: Option<&str>) -> Project {
+    Project {
+        id: id.to_string(),
+        name: name.to_string(),
+        parent_id: parent_id.map(str::to_string),
         created_at: Utc::now(),
         updated_at: Utc::now(),
     }
@@ -113,4 +126,63 @@ fn a_disabled_repo_gets_no_run_button() {
     let html = run_button(&repo(false)).render();
     assert!(!html.contains("<button"));
     assert!(!html.contains("hx-post"));
+}
+
+#[test]
+fn a_nested_project_renders_as_a_nested_details_element() {
+    let root = project("root-1", "root-group", None);
+    let child = project("child-1", "child-project", Some("root-1"));
+    let mut leaf_repo = repo(true);
+    leaf_repo.project_id = "child-1".to_string();
+
+    let html = project_tree_panel(&[root, child], &[leaf_repo], &HashMap::new()).render();
+
+    // One disclosure per node - a container is not a different element from a
+    // leaf, it just has different children.
+    assert_eq!(html.matches(r#"class="project-node""#).count(), 2);
+    // The container comes before what is nested inside it, textually as well
+    // as structurally.
+    let root_at = html.find("root-group").expect("root node");
+    let child_at = html.find("child-project").expect("child node");
+    let repo_at = html.find("lorehaven/palantir").expect("the repo row");
+    assert!(root_at < child_at && child_at < repo_at, "got: {html}");
+}
+
+#[test]
+fn a_repo_appears_under_its_own_project_and_nowhere_else() {
+    let a = project("a", "project-a", None);
+    let b = project("b", "project-b", None);
+    let mut repo_a = repo(true);
+    repo_a.id = "repo-a".to_string();
+    repo_a.name = "in-a".to_string();
+    repo_a.project_id = "a".to_string();
+    let mut repo_b = repo(true);
+    repo_b.id = "repo-b".to_string();
+    repo_b.name = "in-b".to_string();
+    repo_b.project_id = "b".to_string();
+
+    let html = project_tree_panel(&[a, b], &[repo_a, repo_b], &HashMap::new()).render();
+
+    // Split on the second root's own summary: everything before it is
+    // project-a's whole subtree, so repo-b cannot have leaked into it.
+    let (a_section, b_section) = html.split_once("project-b").expect("project-b's node");
+    assert!(a_section.contains("lorehaven/in-a"));
+    assert!(!a_section.contains("lorehaven/in-b"));
+    assert!(b_section.contains("lorehaven/in-b"));
+}
+
+#[test]
+fn a_project_with_no_repo_and_no_children_is_still_a_valid_leaf() {
+    let empty = project("solo", "just-a-group", None);
+    let html = project_tree_panel(&[empty], &[], &HashMap::new()).render();
+
+    assert!(html.contains("just-a-group"));
+    assert!(!html.contains("<table"));
+}
+
+#[test]
+fn no_projects_at_all_shows_the_empty_message() {
+    let html = project_tree_panel(&[], &[], &HashMap::new()).render();
+    assert!(html.contains("ui_repos_empty"));
+    assert!(!html.contains("project-node"));
 }

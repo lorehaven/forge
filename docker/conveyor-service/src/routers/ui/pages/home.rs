@@ -1,12 +1,12 @@
 //! Conveyor's front page: what has run lately, and what is registered.
 
-use crate::domain::{Repo, Run};
+use crate::domain::{Project, Repo, Run};
 use crate::routers::ui::common::{
     UiPageKind, format, is_ui_authenticated, render_page, status_pill, ui_login_redirect_for,
     ui_path,
 };
 use crate::scan::{CheckKind, CheckResult, ScanSummary};
-use crate::scheduler::{queue, repos};
+use crate::scheduler::{projects, queue, repos};
 use actix_web::{HttpResponse, Responder, get, http::header::ContentType, post, web};
 use futures_util::future::join_all;
 use quench_auth::prelude::JwtConfig;
@@ -52,6 +52,7 @@ async fn render(
     // everything it needs; an unauthenticated caller is redirected either way
     // and the reads are cheap.
     let repositories = repos::list(&db).await.unwrap_or_default();
+    let all_projects = projects::list_all(&db).await.unwrap_or_default();
     let runs = queue::list_runs(&db, None, RECENT)
         .await
         .unwrap_or_default();
@@ -62,7 +63,7 @@ async fn render(
             HttpResponse::Ok(),
             content()
                 .class("home-content")
-                .child(page(&runs, &repositories, &scans)),
+                .child(page(&runs, &repositories, &all_projects, &scans)),
             UiPageKind::Home,
         )
     })
@@ -80,7 +81,12 @@ async fn scan_summaries(db: &Db, repositories: &[Repo]) -> HashMap<String, ScanS
     join_all(fetches).await.into_iter().collect()
 }
 
-fn page(runs: &[Run], repositories: &[Repo], scans: &HashMap<String, ScanSummary>) -> Element {
+fn page(
+    runs: &[Run],
+    repositories: &[Repo],
+    all_projects: &[Project],
+    scans: &HashMap<String, ScanSummary>,
+) -> Element {
     div()
         .class("home-container")
         .child(
@@ -92,20 +98,26 @@ fn page(runs: &[Run], repositories: &[Repo], scans: &HashMap<String, ScanSummary
                         .attr("data-i18n", "ui_home_subtitle"),
                 ),
         )
-        .child(sections(runs, repositories, scans))
+        .child(runs_section(runs, repositories))
+        .child(project_tree_panel(all_projects, repositories, scans))
 }
 
-/// Both panels, and the element that asks for them again. Rendered by the page
-/// and by the fragment alike, so the swap cannot drift from the first paint.
-fn sections(runs: &[Run], repositories: &[Repo], scans: &HashMap<String, ScanSummary>) -> Element {
+/// The runs panel, and the element that asks for it again. Rendered by the
+/// page and by the fragment alike, so the swap cannot drift from the first
+/// paint.
+///
+/// The project tree used to live in here too. It does not any more: nothing
+/// about a project's shape or a repository's scan results changes on the
+/// timescale a run does, and re-rendering the tree every few seconds would
+/// only throw away whatever a visitor had expanded - `<details>` gives that
+/// for free for as long as nothing keeps replacing it out from under itself.
+fn runs_section(runs: &[Run], repositories: &[Repo]) -> Element {
     div()
         .attr("id", "home-state")
-        .class("home-sections")
         .attr("hx-get", ui_path("/home/state"))
         .attr("hx-trigger", POLL_INTERVAL)
         .attr("hx-swap", "outerHTML")
         .child(runs_panel(runs, repositories))
-        .child(repos_panel(repositories, scans))
 }
 
 /// The polled half of the front page.
@@ -123,11 +135,10 @@ pub(super) async fn home_state(
     let runs = queue::list_runs(&db, None, RECENT)
         .await
         .unwrap_or_default();
-    let scans = scan_summaries(&db, &repositories).await;
 
     HttpResponse::Ok()
         .content_type(ContentType::html())
-        .body(sections(&runs, &repositories, &scans).render())
+        .body(runs_section(&runs, &repositories).render())
 }
 
 /// Starts a run for one repository by hand, then hands back the same fragment
@@ -153,11 +164,10 @@ pub(super) async fn run_now(
     let runs = queue::list_runs(&db, None, RECENT)
         .await
         .unwrap_or_default();
-    let scans = scan_summaries(&db, &repositories).await;
 
     HttpResponse::Ok()
         .content_type(ContentType::html())
-        .body(sections(&runs, &repositories, &scans).render())
+        .body(runs_section(&runs, &repositories).render())
 }
 
 fn runs_panel(runs: &[Run], repositories: &[Repo]) -> Element {
@@ -214,17 +224,80 @@ fn runs_panel(runs: &[Run], repositories: &[Repo]) -> Element {
     panel.child(table)
 }
 
-fn repos_panel(repositories: &[Repo], scans: &HashMap<String, ScanSummary>) -> Element {
+/// The registered projects, as the tree they actually form. A project may
+/// contain other projects (nesting is unbounded), a repository (zero or one),
+/// both, or neither - a leaf and a container are the same element, they just
+/// end up with different children.
+///
+/// Rendered once per page load rather than polled - see `runs_section` for
+/// why that split exists.
+pub fn project_tree_panel(
+    all_projects: &[Project],
+    repositories: &[Repo],
+    scans: &HashMap<String, ScanSummary>,
+) -> Element {
     let panel = div().class("panel").child(
         div()
             .class("panel-title")
             .attr("data-i18n", "ui_repos_title"),
     );
 
-    if repositories.is_empty() {
+    if all_projects.is_empty() {
         return panel.child(div().class("empty").attr("data-i18n", "ui_repos_empty"));
     }
 
+    let mut children_of: HashMap<Option<&str>, Vec<&Project>> = HashMap::new();
+    for project in all_projects {
+        children_of
+            .entry(project.parent_id.as_deref())
+            .or_default()
+            .push(project);
+    }
+
+    let mut repos_of: HashMap<&str, Vec<&Repo>> = HashMap::new();
+    for repo in repositories {
+        repos_of.entry(repo.project_id.as_str()).or_default().push(repo);
+    }
+
+    let mut tree = div().class("project-tree");
+    for root in children_of.get(&None).into_iter().flatten() {
+        tree = tree.child(project_node(root, &children_of, &repos_of, scans));
+    }
+
+    panel.child(tree)
+}
+
+/// One node: a native disclosure holding whatever is nested under it and the
+/// repository attached to it, if any. `<details>` gives collapse and expand
+/// with no script at all, same as the run page's job list.
+fn project_node(
+    project: &Project,
+    children_of: &HashMap<Option<&str>, Vec<&Project>>,
+    repos_of: &HashMap<&str, Vec<&Repo>>,
+    scans: &HashMap<String, ScanSummary>,
+) -> Element {
+    let mut node = element("details").class("project-node").attr("open", "open").child(
+        element("summary")
+            .class("project-head")
+            .child(span().class("project-name").text(&project.name)),
+    );
+
+    if let Some(children) = children_of.get(&Some(project.id.as_str())) {
+        let mut nested = div().class("project-children");
+        for child in children {
+            nested = nested.child(project_node(child, children_of, repos_of, scans));
+        }
+        node = node.child(nested);
+    }
+
+    if let Some(repos) = repos_of.get(project.id.as_str()) {
+        node = node.child(repo_table(repos, scans));
+    }
+
+    node
+}
+
+fn repo_table(repos: &[&Repo], scans: &HashMap<String, ScanSummary>) -> Element {
     let mut table = element("table").class("run-table").child(
         element("tr")
             .child(element("th").attr("data-i18n", "ui_col_repository"))
@@ -235,35 +308,42 @@ fn repos_panel(repositories: &[Repo], scans: &HashMap<String, ScanSummary>) -> E
             .child(element("th").attr("data-i18n", "ui_col_actions")),
     );
 
-    for repo in repositories {
-        table = table.child(
-            element("tr")
-                .child(
-                    element("td").child(
-                        a().attr(
-                            "href",
-                            ui_path(&format!("/repos/{}/{}/scan", repo.owner, repo.name)),
-                        )
-                        .text(repo.slug()),
-                    ),
-                )
-                .child(element("td").class("muted").text(repo.provider.to_string()))
-                .child(element("td").class("mono").text(&repo.default_branch))
-                .child(element("td").child(if repo.enabled {
-                    span()
-                        .class("status status-success")
-                        .attr("data-i18n", "ui_repo_enabled")
-                } else {
-                    span()
-                        .class("status status-skipped")
-                        .attr("data-i18n", "ui_repo_disabled")
-                }))
-                .child(element("td").child(check_chips(scans.get(&repo.id))))
-                .child(element("td").child(run_button(repo))),
-        );
+    for repo in repos {
+        table = table.child(repo_row(repo, scans.get(&repo.id)));
     }
 
-    panel.child(table)
+    table
+}
+
+/// The repo's own registered identity - `owner/name`, as its provider names it
+/// - shown as the row's label. Deliberately not the project name above it:
+/// the tree nesting is conveyor's own organisational placement, independent of
+/// what a webhook slug names, and showing both is what makes that visible
+/// rather than implied.
+fn repo_row(repo: &Repo, scan: Option<&ScanSummary>) -> Element {
+    element("tr")
+        .child(
+            element("td").child(
+                a().attr(
+                    "href",
+                    ui_path(&format!("/repos/{}/{}/scan", repo.owner, repo.name)),
+                )
+                .text(repo.slug()),
+            ),
+        )
+        .child(element("td").class("muted").text(repo.provider.to_string()))
+        .child(element("td").class("mono").text(&repo.default_branch))
+        .child(element("td").child(if repo.enabled {
+            span()
+                .class("status status-success")
+                .attr("data-i18n", "ui_repo_enabled")
+        } else {
+            span()
+                .class("status status-skipped")
+                .attr("data-i18n", "ui_repo_disabled")
+        }))
+        .child(element("td").child(check_chips(scan)))
+        .child(element("td").child(run_button(repo)))
 }
 
 /// One small chip per check this page knows about, coloured by what the most
