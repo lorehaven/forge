@@ -166,6 +166,14 @@ pub fn build(config: &config::Config, package: &str) -> Result<()> {
     cmd.arg("build")
         .arg("-f")
         .arg(&dockerfile)
+        // Some Docker daemons (rootless setups, sandboxed CI hosts) cannot
+        // create a veth pair for the default bridge network a build step's
+        // container would otherwise get - "operation not supported" from
+        // dockerd, before a single instruction runs. `host` needs no new
+        // network namespace, so it sidesteps that entirely; a build has no
+        // business publishing ports or isolating its network from the host
+        // it's running on anyway.
+        .arg("--network=host")
         // BuildKit cache mount support
         .arg("--progress=plain")
         .arg("--build-arg")
