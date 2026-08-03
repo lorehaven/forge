@@ -1,23 +1,32 @@
 //! Conveyor's front page: what has run lately, and what is registered.
+//!
+//! Also, in scoped form, one project's own branch of both: `/projects/{id}`
+//! renders the exact same layout with the tree rooted at that project and the
+//! run list filtered to what sits under it, rather than a second page that
+//! could drift from this one.
 
+use super::shared;
+use crate::config::ConveyorConfig;
 use crate::domain::{Project, Repo, Run};
 use crate::routers::ui::common::{
-    UiPageKind, format, is_ui_authenticated, render_page, status_pill, ui_login_redirect_for,
-    ui_path,
+    UiPageKind, is_ui_authenticated, render_page, ui_login_redirect_for, ui_path,
 };
 use crate::scan::{CheckKind, CheckResult, ScanSummary};
 use crate::scheduler::{projects, queue, repos};
 use actix_web::{HttpResponse, Responder, get, http::header::ContentType, post, web};
-use futures_util::future::join_all;
 use quench_auth::prelude::JwtConfig;
 use quench_db::prelude::Db;
 use quench_starter::actix::routers::ui::pages::home::handle_home;
 use quench_web::prelude::*;
+use serde::Deserialize;
 use std::collections::HashMap;
 
-/// How many runs the front page shows. Enough to see what is happening now,
-/// short enough that the page does not become a database export.
-const RECENT: i64 = 25;
+/// How many of the newest runs are pulled from the database before the
+/// per-repository cap ([`ConveyorConfig::home_max_runs_per_repo`]) is applied.
+/// Generous enough that a handful of quiet repositories are not crowded off
+/// the front page by one noisy one, without pulling the run table's whole
+/// history for a page that only ever shows a few rows of it.
+const FETCH: i64 = 200;
 
 /// Slower than the run page's, and it never stops: this is a dashboard with no
 /// resting state to reach, where a run appearing a few seconds late costs
@@ -25,81 +34,110 @@ const RECENT: i64 = 25;
 /// them, so the swap can take the lot.
 const POLL_INTERVAL: &str = "every 5s";
 
+/// What a fragment or action route needs to know to answer for the right
+/// page: unscoped (the front page) or scoped to one project's branch.
+#[derive(Deserialize)]
+pub(super) struct ScopeQuery {
+    #[serde(default)]
+    project: Option<String>,
+}
+
 #[get("/home")]
 pub(super) async fn home(
     request: actix_web::HttpRequest,
     config: web::Data<JwtConfig>,
+    conveyor_config: web::Data<ConveyorConfig>,
     db: web::Data<Db>,
 ) -> impl Responder {
-    render(request, config, db).await
+    render(request, config, conveyor_config, db, None).await
 }
 
 #[get("/home/")]
 pub(super) async fn home_slash(
     request: actix_web::HttpRequest,
     config: web::Data<JwtConfig>,
+    conveyor_config: web::Data<ConveyorConfig>,
     db: web::Data<Db>,
 ) -> impl Responder {
-    render(request, config, db).await
+    render(request, config, conveyor_config, db, None).await
+}
+
+/// A project's own branch of the front page: the same layout, rooted at one
+/// node instead of the whole tree. What node is clicked in the tree - see
+/// `project_node` - is what lands here.
+#[get("/projects/{id}")]
+pub(super) async fn project_page(
+    request: actix_web::HttpRequest,
+    path: web::Path<String>,
+    config: web::Data<JwtConfig>,
+    conveyor_config: web::Data<ConveyorConfig>,
+    db: web::Data<Db>,
+) -> impl Responder {
+    render(
+        request,
+        config,
+        conveyor_config,
+        db,
+        Some(path.into_inner()),
+    )
+    .await
 }
 
 async fn render(
     request: actix_web::HttpRequest,
     config: web::Data<JwtConfig>,
+    conveyor_config: web::Data<ConveyorConfig>,
     db: web::Data<Db>,
+    scope_id: Option<String>,
 ) -> HttpResponse {
     // Read before the auth check so the closure `handle_home` takes has
     // everything it needs; an unauthenticated caller is redirected either way
     // and the reads are cheap.
-    let repositories = repos::list(&db).await.unwrap_or_default();
     let all_projects = projects::list_all(&db).await.unwrap_or_default();
-    let runs = queue::list_runs(&db, None, RECENT)
+
+    let scope = match &scope_id {
+        Some(id) => match all_projects.iter().find(|project| &project.id == id) {
+            Some(project) => Some(project.clone()),
+            // Same treatment as an unauthenticated request: the closure
+            // decides what to render, `handle_home` only gates whether it
+            // runs at all - a caller with no session learns nothing about
+            // whether the id exists either way.
+            None => return handle_home(request, config, not_found).await,
+        },
+        None => None,
+    };
+
+    let repositories = repos::list(&db).await.unwrap_or_default();
+    let scans = shared::scan_summaries(&db, &repositories).await;
+
+    let repo_scope = scope.as_ref().map(|project| {
+        let descendants = shared::descendant_project_ids(&project.id, &all_projects);
+        shared::repo_ids_under(&descendants, &repositories)
+    });
+
+    let runs = queue::list_runs_page(&db, repo_scope.as_deref(), FETCH, 0)
         .await
         .unwrap_or_default();
-    let scans = scan_summaries(&db, &repositories).await;
+    let runs = shared::cap_per_repo(
+        &runs,
+        conveyor_config.home_recent_runs,
+        conveyor_config.home_max_runs_per_repo,
+    );
 
     handle_home(request, config, || {
         render_page(
             HttpResponse::Ok(),
-            content()
-                .class("home-content")
-                .child(page(&runs, &repositories, &all_projects, &scans)),
+            content().class("home-content").child(page(
+                &runs,
+                &repositories,
+                &all_projects,
+                &scans,
+                scope.as_ref(),
+            )),
             UiPageKind::Home,
         )
     })
     .await
-}
-
-/// One lookup per repository, run concurrently - `scan::latest` is several
-/// sequential DB round trips on its own, and the front page has no other use
-/// for waiting on them one repository at a time.
-async fn scan_summaries(db: &Db, repositories: &[Repo]) -> HashMap<String, ScanSummary> {
-    let fetches = repositories.iter().map(|repo| async move {
-        let summary = crate::scan::latest(db, &repo.id).await.unwrap_or_default();
-        (repo.id.clone(), summary)
-    });
-    join_all(fetches).await.into_iter().collect()
-}
-
-fn page(
-    runs: &[Run],
-    repositories: &[Repo],
-    all_projects: &[Project],
-    scans: &HashMap<String, ScanSummary>,
-) -> Element {
-    div()
-        .class("home-container")
-        .child(
-            div()
-                .class("home-header")
-                .child(h3().attr("data-i18n", "ui_home_title"))
-                .child(
-                    p().class("home-subtitle")
-                        .attr("data-i18n", "ui_home_subtitle"),
-                ),
-        )
-        .child(runs_section(runs, repositories))
-        .child(project_tree_panel(all_projects, repositories, scans))
 }
 
 /// The runs panel, and the element that asks for it again. Rendered by the
@@ -111,20 +149,51 @@ fn page(
 /// timescale a run does, and re-rendering the tree every few seconds would
 /// only throw away whatever a visitor had expanded - `<details>` gives that
 /// for free for as long as nothing keeps replacing it out from under itself.
-fn runs_section(runs: &[Run], repositories: &[Repo]) -> Element {
+fn runs_section(runs: &[Run], repositories: &[Repo], scope: Option<&str>) -> Element {
     div()
         .attr("id", "home-state")
-        .attr("hx-get", ui_path("/home/state"))
+        .attr("hx-get", state_href(scope))
         .attr("hx-trigger", POLL_INTERVAL)
         .attr("hx-swap", "outerHTML")
-        .child(runs_panel(runs, repositories))
+        .child(runs_panel(runs, repositories, scope))
 }
 
-/// The polled half of the front page.
+fn state_href(scope: Option<&str>) -> String {
+    match scope {
+        Some(project) => ui_path(&format!("/home/state?project={project}")),
+        None => ui_path("/home/state"),
+    }
+}
+
+fn view_all_href(scope: Option<&str>) -> String {
+    match scope {
+        Some(project) => ui_path(&format!("/runs?project={project}")),
+        None => ui_path("/runs"),
+    }
+}
+
+/// Resolves the scoped repository set a fragment or action route was asked
+/// to answer for. `Some(&[])` when the query names a project that no longer
+/// exists - an empty, clearly-scoped result rather than silently falling back
+/// to the unscoped view of everything.
+async fn resolve_scope(db: &Db, project: Option<&str>) -> Option<Vec<String>> {
+    let project_id = project?;
+    let all_projects = projects::list_all(db).await.unwrap_or_default();
+    if !all_projects.iter().any(|p| p.id == project_id) {
+        return Some(Vec::new());
+    }
+    let repositories = repos::list(db).await.unwrap_or_default();
+    let descendants = shared::descendant_project_ids(project_id, &all_projects);
+    Some(shared::repo_ids_under(&descendants, &repositories))
+}
+
+/// The polled half of the front page - and of any project's own branch of it.
 #[get("/home/state")]
 pub(super) async fn home_state(
     request: actix_web::HttpRequest,
+    query: web::Query<ScopeQuery>,
     config: web::Data<JwtConfig>,
+    conveyor_config: web::Data<ConveyorConfig>,
     db: web::Data<Db>,
 ) -> impl Responder {
     if !is_ui_authenticated(&request, &config).await {
@@ -132,13 +201,19 @@ pub(super) async fn home_state(
     }
 
     let repositories = repos::list(&db).await.unwrap_or_default();
-    let runs = queue::list_runs(&db, None, RECENT)
+    let repo_scope = resolve_scope(&db, query.project.as_deref()).await;
+    let runs = queue::list_runs_page(&db, repo_scope.as_deref(), FETCH, 0)
         .await
         .unwrap_or_default();
+    let runs = shared::cap_per_repo(
+        &runs,
+        conveyor_config.home_recent_runs,
+        conveyor_config.home_max_runs_per_repo,
+    );
 
     HttpResponse::Ok()
         .content_type(ContentType::html())
-        .body(runs_section(&runs, &repositories).render())
+        .body(runs_section(&runs, &repositories, query.project.as_deref()).render())
 }
 
 /// Starts a run for one repository by hand, then hands back the same fragment
@@ -148,7 +223,9 @@ pub(super) async fn home_state(
 pub(super) async fn run_now(
     request: actix_web::HttpRequest,
     path: web::Path<String>,
+    query: web::Query<ScopeQuery>,
     config: web::Data<JwtConfig>,
+    conveyor_config: web::Data<ConveyorConfig>,
     db: web::Data<Db>,
 ) -> impl Responder {
     if !is_ui_authenticated(&request, &config).await {
@@ -161,67 +238,90 @@ pub(super) async fn run_now(
     }
 
     let repositories = repos::list(&db).await.unwrap_or_default();
-    let runs = queue::list_runs(&db, None, RECENT)
+    let repo_scope = resolve_scope(&db, query.project.as_deref()).await;
+    let runs = queue::list_runs_page(&db, repo_scope.as_deref(), FETCH, 0)
         .await
         .unwrap_or_default();
+    let runs = shared::cap_per_repo(
+        &runs,
+        conveyor_config.home_recent_runs,
+        conveyor_config.home_max_runs_per_repo,
+    );
 
     HttpResponse::Ok()
         .content_type(ContentType::html())
-        .body(runs_section(&runs, &repositories).render())
+        .body(runs_section(&runs, &repositories, query.project.as_deref()).render())
 }
 
-fn runs_panel(runs: &[Run], repositories: &[Repo]) -> Element {
-    let by_id: HashMap<&str, &Repo> = repositories
-        .iter()
-        .map(|repo| (repo.id.as_str(), repo))
-        .collect();
+fn not_found() -> HttpResponse {
+    render_page(
+        HttpResponse::NotFound(),
+        content().class("home-content").child(
+            div().class("home-container").child(
+                div()
+                    .class("empty")
+                    .attr("data-i18n", "ui_project_not_found"),
+            ),
+        ),
+        UiPageKind::Home,
+    )
+}
 
-    let panel = div().class("panel").child(
-        div()
-            .class("panel-title")
-            .attr("data-i18n", "ui_runs_title"),
-    );
+fn page(
+    runs: &[Run],
+    repositories: &[Repo],
+    all_projects: &[Project],
+    scans: &HashMap<String, ScanSummary>,
+    scope: Option<&Project>,
+) -> Element {
+    let scope_id = scope.map(|project| project.id.as_str());
 
-    if runs.is_empty() {
-        return panel.child(div().class("empty").attr("data-i18n", "ui_runs_empty"));
-    }
+    div()
+        .class("home-container")
+        .child(header_row(all_projects, scope))
+        .child(runs_section(runs, repositories, scope_id))
+        .child(project_tree_panel_scoped(
+            all_projects,
+            repositories,
+            scans,
+            scope_id,
+        ))
+}
 
-    let mut table = element("table").class("run-table").child(
-        element("tr")
-            .child(element("th").attr("data-i18n", "ui_col_status"))
-            .child(element("th").attr("data-i18n", "ui_col_repository"))
-            .child(element("th").attr("data-i18n", "ui_col_ref"))
-            .child(element("th").attr("data-i18n", "ui_col_commit"))
-            .child(element("th").attr("data-i18n", "ui_col_trigger"))
-            .child(element("th").attr("data-i18n", "ui_col_when")),
-    );
+fn header_row(all_projects: &[Project], scope: Option<&Project>) -> Element {
+    let Some(project) = scope else {
+        return div()
+            .class("home-header")
+            .child(h3().attr("data-i18n", "ui_home_title"))
+            .child(
+                p().class("home-subtitle")
+                    .attr("data-i18n", "ui_home_subtitle"),
+            );
+    };
 
-    for run in runs {
-        let slug = by_id
-            .get(run.repo_id.as_str())
-            .map_or_else(|| "-".to_string(), |repo| repo.slug());
+    div()
+        .class("home-header")
+        .child(shared::breadcrumb(all_projects, project))
+        .child(
+            p().class("home-subtitle")
+                .attr("data-i18n", "ui_project_subtitle"),
+        )
+}
 
-        table = table.child(
-            element("tr")
-                .child(element("td").child(status_pill(run.status)))
+fn runs_panel(runs: &[Run], repositories: &[Repo], scope: Option<&str>) -> Element {
+    div()
+        .class("panel")
+        .child(
+            div()
+                .class("panel-title panel-title-row")
+                .child(span().attr("data-i18n", "ui_runs_title"))
                 .child(
-                    element("td").child(
-                        a().attr("href", ui_path(&format!("/runs/{}", run.id)))
-                            .text(slug),
-                    ),
-                )
-                .child(element("td").class("mono").text(run.ref_name()))
-                .child(element("td").class("mono muted").text(run.short_sha()))
-                .child(element("td").class("muted").text(run.trigger.to_string()))
-                .child(
-                    element("td")
-                        .class("muted")
-                        .text(format::relative(run.queued_at)),
+                    a().class("panel-title-link")
+                        .attr("href", view_all_href(scope))
+                        .attr("data-i18n", "ui_runs_view_all"),
                 ),
-        );
-    }
-
-    panel.child(table)
+        )
+        .child(shared::runs_table(runs, repositories))
 }
 
 /// The registered projects, as the tree they actually form. A project may
@@ -236,15 +336,24 @@ pub fn project_tree_panel(
     repositories: &[Repo],
     scans: &HashMap<String, ScanSummary>,
 ) -> Element {
+    project_tree_panel_scoped(all_projects, repositories, scans, None)
+}
+
+/// `project_tree_panel`, rooted somewhere other than the top of the tree.
+/// `root_id`'s own directly-attached repository (if it has one) and its
+/// children are shown; `root_id` itself is not, since a scoped page's header
+/// already says where it is - see `breadcrumb`.
+pub fn project_tree_panel_scoped(
+    all_projects: &[Project],
+    repositories: &[Repo],
+    scans: &HashMap<String, ScanSummary>,
+    root_id: Option<&str>,
+) -> Element {
     let panel = div().class("panel").child(
         div()
             .class("panel-title")
             .attr("data-i18n", "ui_repos_title"),
     );
-
-    if all_projects.is_empty() {
-        return panel.child(div().class("empty").attr("data-i18n", "ui_repos_empty"));
-    }
 
     let mut children_of: HashMap<Option<&str>, Vec<&Project>> = HashMap::new();
     for project in all_projects {
@@ -256,12 +365,34 @@ pub fn project_tree_panel(
 
     let mut repos_of: HashMap<&str, Vec<&Repo>> = HashMap::new();
     for repo in repositories {
-        repos_of.entry(repo.project_id.as_str()).or_default().push(repo);
+        repos_of
+            .entry(repo.project_id.as_str())
+            .or_default()
+            .push(repo);
     }
 
-    let roots = children_of.get(&None).cloned().unwrap_or_default();
+    let mut elements = Vec::new();
+    if let Some(id) = root_id
+        && let Some(repos) = repos_of.get(id)
+    {
+        elements.push(repo_table(repos, scans, root_id));
+    }
+
+    let roots = children_of.get(&root_id).cloned().unwrap_or_default();
+    elements.extend(render_level(
+        &roots,
+        &children_of,
+        &repos_of,
+        scans,
+        root_id,
+    ));
+
+    if elements.is_empty() {
+        return panel.child(div().class("empty").attr("data-i18n", "ui_repos_empty"));
+    }
+
     let mut tree = div().class("project-tree");
-    for element in render_level(&roots, &children_of, &repos_of, scans) {
+    for element in elements {
         tree = tree.child(element);
     }
 
@@ -284,6 +415,7 @@ fn render_level(
     children_of: &HashMap<Option<&str>, Vec<&Project>>,
     repos_of: &HashMap<&str, Vec<&Repo>>,
     scans: &HashMap<String, ScanSummary>,
+    scope: Option<&str>,
 ) -> Vec<Element> {
     let mut leaf_repos = Vec::new();
     let mut empty_leaves = Vec::new();
@@ -295,26 +427,41 @@ fn render_level(
             .is_some_and(|children| !children.is_empty());
 
         if is_container {
-            containers.push(project_node(node, children_of, repos_of, scans));
+            containers.push(project_node(node, children_of, repos_of, scans, scope));
         } else if let Some(repos) = repos_of.get(node.id.as_str()) {
             leaf_repos.extend(repos.iter().copied());
         } else {
             // A registered project with nothing in it yet - still worth
             // showing, since it exists, but with no repo to tabulate and
-            // nothing nested to disclose, it is just its name.
+            // nothing nested to disclose, it is just its own link.
             empty_leaves.push(node);
         }
     }
 
     let mut elements = Vec::new();
     if !leaf_repos.is_empty() {
-        elements.push(repo_table(&leaf_repos, scans));
+        elements.push(repo_table(&leaf_repos, scans, scope));
     }
     for empty in empty_leaves {
-        elements.push(div().class("muted").text(&empty.name));
+        // Muted rather than bold: this is still a plain leaf, just one with
+        // nothing to tabulate - the link is what makes it worth having a row
+        // for at all now, not a promotion to looking like a container.
+        elements.push(
+            a().class("muted project-leaf-link")
+                .attr("href", ui_path(&format!("/projects/{}", empty.id)))
+                .text(&empty.name),
+        );
     }
     elements.extend(containers);
     elements
+}
+
+/// A link to a project's own branch of this page - the tree's whole reason
+/// for making container nodes clickable in the first place.
+fn project_link(project: &Project) -> Element {
+    a().class("project-name")
+        .attr("href", ui_path(&format!("/projects/{}", project.id)))
+        .text(&project.name)
 }
 
 /// A container node: a native disclosure holding whatever is nested under it.
@@ -327,18 +474,22 @@ fn project_node(
     children_of: &HashMap<Option<&str>, Vec<&Project>>,
     repos_of: &HashMap<&str, Vec<&Repo>>,
     scans: &HashMap<String, ScanSummary>,
+    scope: Option<&str>,
 ) -> Element {
-    let mut node = element("details").class("project-node").attr("open", "open").child(
-        element("summary")
-            .class("project-head")
-            .child(span().class("project-name").text(&project.name)),
-    );
+    let mut node = element("details")
+        .class("project-node")
+        .attr("open", "open")
+        .child(
+            element("summary")
+                .class("project-head")
+                .child(project_link(project)),
+        );
 
     // Rare: a container holding a repository of its own, directly, rather
     // than through a child - the schema allows it even though nothing in this
     // tree's example data does.
     if let Some(repos) = repos_of.get(project.id.as_str()) {
-        node = node.child(repo_table(repos, scans));
+        node = node.child(repo_table(repos, scans, scope));
     }
 
     let children = children_of
@@ -346,14 +497,18 @@ fn project_node(
         .cloned()
         .unwrap_or_default();
     let mut nested = div().class("project-children");
-    for element in render_level(&children, children_of, repos_of, scans) {
+    for element in render_level(&children, children_of, repos_of, scans, scope) {
         nested = nested.child(element);
     }
 
     node.child(nested)
 }
 
-fn repo_table(repos: &[&Repo], scans: &HashMap<String, ScanSummary>) -> Element {
+fn repo_table(
+    repos: &[&Repo],
+    scans: &HashMap<String, ScanSummary>,
+    scope: Option<&str>,
+) -> Element {
     let mut table = element("table").class("run-table").child(
         element("tr")
             .child(element("th").attr("data-i18n", "ui_col_repository"))
@@ -365,7 +520,7 @@ fn repo_table(repos: &[&Repo], scans: &HashMap<String, ScanSummary>) -> Element 
     );
 
     for repo in repos {
-        table = table.child(repo_row(repo, scans.get(&repo.id)));
+        table = table.child(repo_row(repo, scans.get(&repo.id), scope));
     }
 
     table
@@ -376,7 +531,7 @@ fn repo_table(repos: &[&Repo], scans: &HashMap<String, ScanSummary>) -> Element 
 /// full `owner/name` slug in every row would only say the same thing twice.
 /// The link's `href` still needs the full identity, since that is what
 /// resolves a specific repository regardless of where in the tree it is.
-fn repo_row(repo: &Repo, scan: Option<&ScanSummary>) -> Element {
+fn repo_row(repo: &Repo, scan: Option<&ScanSummary>, scope: Option<&str>) -> Element {
     element("tr")
         .child(
             element("td").child(
@@ -399,7 +554,7 @@ fn repo_row(repo: &Repo, scan: Option<&ScanSummary>) -> Element {
                 .attr("data-i18n", "ui_repo_disabled")
         }))
         .child(element("td").child(check_chips(scan)))
-        .child(element("td").child(run_button(repo)))
+        .child(element("td").child(run_button(repo, scope)))
 }
 
 /// One small chip per check this page knows about, coloured by what the most
@@ -452,16 +607,21 @@ pub fn chip(kind: CheckKind, check: Option<&CheckResult>) -> Element {
 /// get no button at all - the same request would just come back with a 409
 /// from the API this calls, and a button that always fails is worse than no
 /// button.
-pub fn run_button(repo: &Repo) -> Element {
+pub fn run_button(repo: &Repo, scope: Option<&str>) -> Element {
     if !repo.enabled {
         return span();
     }
+
+    let href = match scope {
+        Some(project) => format!("/home/repos/{}/run?project={project}", repo.id),
+        None => format!("/home/repos/{}/run", repo.id),
+    };
 
     button()
         .attr("type", "button")
         .class("run-button")
         .attr("data-i18n", "ui_repo_run_now")
-        .attr("hx-post", ui_path(&format!("/home/repos/{}/run", repo.id)))
+        .attr("hx-post", ui_path(&href))
         .attr("hx-target", "#home-state")
         .attr("hx-swap", "outerHTML")
 }

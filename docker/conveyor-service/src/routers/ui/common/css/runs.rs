@@ -252,5 +252,39 @@ pub fn runs_rules() -> Vec<CssRule> {
                     .property("opacity", "0.5")
                     .property("cursor", "default"),
             ),
+        // ---------------------------------------------------------------
+        // The "view all" link beside a panel's title, and the pager below
+        // the full pipeline history's own table.
+        // ---------------------------------------------------------------
+        CssRule::new(".panel-title-row")
+            .property("display", "flex")
+            .property("align-items", "center")
+            .property("justify-content", "space-between")
+            .property("gap", "1rem"),
+        CssRule::new(".panel-title-link")
+            .property("font-size", "0.8rem")
+            .property("font-weight", "400")
+            .property("text-transform", "none")
+            .property("letter-spacing", "normal")
+            .property("color", "var(--bs-gray-400)")
+            .property("text-decoration", "none")
+            .child(CssRule::new("&:hover").property("text-decoration", "underline")),
+        CssRule::new(".pager")
+            .property("display", "flex")
+            .property("align-items", "center")
+            .property("justify-content", "center")
+            .property("gap", "1.25rem")
+            .property("padding", "0.9rem")
+            .property("border-top", "0.1rem solid var(--bs-gray-800)"),
+        CssRule::new(".pager-status")
+            .property("color", "var(--bs-gray-400)")
+            .property("font-size", "0.9rem"),
+        CssRule::new(".pager-link")
+            .property("font-size", "0.9rem")
+            .property("text-decoration", "none")
+            .child(CssRule::new("&:hover").property("text-decoration", "underline")),
+        CssRule::new(".pager-link-disabled")
+            .property("color", "var(--bs-gray-600)")
+            .property("cursor", "default"),
     ]
 }

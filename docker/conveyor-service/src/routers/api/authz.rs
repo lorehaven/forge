@@ -35,7 +35,12 @@ fn auth_disabled(request: &HttpRequest) -> bool {
 /// Whether the caller behind `request` may perform `action` ("read" or
 /// "write") on `project_id`, through either the unscoped `conveyor:<action>`
 /// grant or a resource-scoped grant on `project_id` or one of its ancestors.
-pub async fn can_on_project(request: &HttpRequest, db: &Db, project_id: &str, action: &str) -> bool {
+pub async fn can_on_project(
+    request: &HttpRequest,
+    db: &Db,
+    project_id: &str,
+    action: &str,
+) -> bool {
     if auth_disabled(request) {
         return true;
     }
@@ -47,7 +52,12 @@ pub async fn can_on_project(request: &HttpRequest, db: &Db, project_id: &str, ac
     can_on_project_claims(&claims, db, project_id, action).await
 }
 
-pub async fn can_on_project_claims(claims: &Claims, db: &Db, project_id: &str, action: &str) -> bool {
+pub async fn can_on_project_claims(
+    claims: &Claims,
+    db: &Db,
+    project_id: &str,
+    action: &str,
+) -> bool {
     if claims.can("conveyor", action) {
         return true;
     }

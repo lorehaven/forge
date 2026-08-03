@@ -20,6 +20,18 @@ ui_repos_empty = No repositories are registered yet.
 
 ui_runs_title = Recent runs
 ui_runs_empty = Nothing has run yet.
+ui_runs_view_all = View all pipelines
+
+ui_project_subtitle = Repositories and pipelines under this node.
+ui_project_not_found = No such project.
+
+# ── Pipelines ────────────────────────────────────────────────────────────────
+
+ui_pipelines_title = All pipelines
+ui_pipelines_subtitle = Every run, newest first.
+ui_pager_prev = Previous
+ui_pager_next = Next
+ui_pager_page = Page {$page} of {$total}
 
 # ── Runs ─────────────────────────────────────────────────────────────────────
 

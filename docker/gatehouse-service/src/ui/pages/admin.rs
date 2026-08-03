@@ -243,7 +243,11 @@ pub(super) async fn save_user(
             .map(String::as_str)
             .filter(|_| actor_is_admin)
             .map(|value| vec![parse_role(Some(value))]),
-        permissions: Some(permissions_from_form(&catalog, &form, &existing_permissions)),
+        permissions: Some(permissions_from_form(
+            &catalog,
+            &form,
+            &existing_permissions,
+        )),
     };
 
     match realm::update(
@@ -996,7 +1000,10 @@ mod tests {
         let conveyor = result.get("conveyor").expect("conveyor grants survive");
 
         assert!(conveyor.contains("read"), "the checked box is honoured");
-        assert!(!conveyor.contains("write"), "the unchecked plain box is dropped");
+        assert!(
+            !conveyor.contains("write"),
+            "the unchecked plain box is dropped"
+        );
         assert!(
             conveyor.contains("project:abc-123:write"),
             "the resource-scoped grant this form has no box for is preserved"
@@ -1007,7 +1014,10 @@ mod tests {
     fn a_plain_grant_can_still_be_revoked() {
         let catalog = catalog();
         let mut existing = Permissions::new();
-        existing.insert("conveyor".to_string(), ["read".to_string()].into_iter().collect());
+        existing.insert(
+            "conveyor".to_string(),
+            ["read".to_string()].into_iter().collect(),
+        );
 
         // Nothing checked at all - unchecking every box should still clear a
         // plain grant, not treat it as "unknown, so preserve it".
@@ -1015,7 +1025,9 @@ mod tests {
 
         let result = permissions_from_form(&catalog, &form, &existing);
         assert!(
-            result.get("conveyor").is_none_or(|actions| !actions.contains("read")),
+            result
+                .get("conveyor")
+                .is_none_or(|actions| !actions.contains("read")),
             "an unchecked plain action is actually revoked"
         );
     }

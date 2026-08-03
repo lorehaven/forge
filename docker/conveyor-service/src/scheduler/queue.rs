@@ -594,6 +594,75 @@ pub async fn list_runs(db: &Db, repo_id: Option<&str>, limit: i64) -> Result<Vec
     rows.iter().map(run_from_row).collect()
 }
 
+/// A page of runs, newest first, optionally scoped to a set of repositories -
+/// the "view all pipelines" page's own read, distinct from `list_runs`'s
+/// bounded-but-unpaged front-page one.
+pub async fn list_runs_page(
+    db: &Db,
+    repo_ids: Option<&[String]>,
+    limit: i64,
+    offset: i64,
+) -> Result<Vec<Run>, QueueError> {
+    let pool = pool(db)?;
+    let schema = schema();
+    let limit = limit.clamp(1, 500);
+    let offset = offset.max(0);
+
+    let rows = match repo_ids {
+        Some(ids) => {
+            let sql = format!(
+                "SELECT {RUN_COLUMNS} FROM {schema}.runs \
+                 WHERE repo_id = ANY($1) ORDER BY queued_at DESC LIMIT $2 OFFSET $3"
+            );
+            sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+                .bind(ids)
+                .bind(limit)
+                .bind(offset)
+                .fetch_all(pool)
+                .await?
+        }
+        None => {
+            let sql = format!(
+                "SELECT {RUN_COLUMNS} FROM {schema}.runs \
+                 ORDER BY queued_at DESC LIMIT $1 OFFSET $2"
+            );
+            sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+                .bind(limit)
+                .bind(offset)
+                .fetch_all(pool)
+                .await?
+        }
+    };
+
+    rows.iter().map(run_from_row).collect()
+}
+
+/// How many runs `list_runs_page` would find in total for the same scope, so
+/// a caller can work out how many pages there are.
+pub async fn count_runs(db: &Db, repo_ids: Option<&[String]>) -> Result<i64, QueueError> {
+    let pool = pool(db)?;
+    let schema = schema();
+
+    let row = match repo_ids {
+        Some(ids) => {
+            let sql =
+                format!("SELECT COUNT(*) AS count FROM {schema}.runs WHERE repo_id = ANY($1)");
+            sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+                .bind(ids)
+                .fetch_one(pool)
+                .await?
+        }
+        None => {
+            let sql = format!("SELECT COUNT(*) AS count FROM {schema}.runs");
+            sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+                .fetch_one(pool)
+                .await?
+        }
+    };
+
+    row.try_get::<i64, _>("count").map_err(QueueError::from)
+}
+
 pub async fn list_jobs(db: &Db, run_id: &str) -> Result<Vec<Job>, QueueError> {
     let pool = pool(db)?;
     let schema = schema();

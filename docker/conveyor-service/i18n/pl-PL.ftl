@@ -20,6 +20,18 @@ ui_repos_empty = Nie zarejestrowano jeszcze żadnych repozytoriów.
 
 ui_runs_title = Ostatnie przebiegi
 ui_runs_empty = Nic jeszcze nie zostało uruchomione.
+ui_runs_view_all = Zobacz wszystkie potoki
+
+ui_project_subtitle = Repozytoria i potoki w tym węźle.
+ui_project_not_found = Nie znaleziono takiego projektu.
+
+# ── Pipelines ────────────────────────────────────────────────────────────────
+
+ui_pipelines_title = Wszystkie potoki
+ui_pipelines_subtitle = Każdy przebieg, od najnowszego.
+ui_pager_prev = Poprzednia
+ui_pager_next = Następna
+ui_pager_page = Strona {$page} z {$total}
 
 # ── Runs ─────────────────────────────────────────────────────────────────────
 

@@ -212,6 +212,9 @@ See `.env` for the full set. The ones worth knowing:
 | `CONVEYOR_CHECKOUT_TIMEOUT_SECS` | `600` | Ceiling on the checkout. |
 | `CONVEYOR_CLAIM_STALE_AFTER_SECS` | `300` | When a silent worker's run is requeued. |
 | `CONVEYOR_ALLOW_FORK_PR` | `false` | Whether a fork's pipeline may run. |
+| `CONVEYOR_HOME_RECENT_RUNS` | `5` | Pipelines shown on the front page. |
+| `CONVEYOR_HOME_MAX_RUNS_PER_REPO` | `1` | Of those, at most this many from one repository. |
+| `CONVEYOR_RUNS_PAGE_SIZE` | `25` | Rows per page on the full pipeline history (`/ui/runs`). |
 | `CONVEYOR_SECRET_KEY` | — | 32 bytes, hex or base64, sealing the secret store. |
 | `CONVEYOR_WEBHOOK_SECRET` | — | Estate-wide signing secret, for repositories with no `WEBHOOK_SECRET`. |
 | `CONVEYOR_GITHUB_TOKEN` | — | Token with `repo:status`. Without it, builds happen but are not reported. |

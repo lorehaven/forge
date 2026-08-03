@@ -23,7 +23,16 @@ pub fn projects_rules() -> Vec<CssRule> {
             .property("background-color", "var(--bs-gray-800)")
             .property("cursor", "pointer")
             .property("user-select", "none"),
-        CssRule::new(".project-name").property("font-weight", "600"),
+        CssRule::new(".project-name")
+            .property("font-weight", "600")
+            .property("text-decoration", "none")
+            .child(CssRule::new("&:hover").property("text-decoration", "underline")),
+        // An empty leaf's own link - same muted colour it had before it was
+        // clickable, just without the browser's default underline until it is
+        // actually hovered.
+        CssRule::new(".project-leaf-link")
+            .property("text-decoration", "none")
+            .child(CssRule::new("&:hover").property("text-decoration", "underline")),
         // `<details>` gives collapse and expand with no script; the marker is
         // removed the same way `details.job` removes it.
         CssRule::new("details.project-node > summary")
@@ -40,5 +49,24 @@ pub fn projects_rules() -> Vec<CssRule> {
                     .property("border-color", "var(--bs-gray-700)"),
             ),
         CssRule::new(".project-tree > .project-node:last-child").property("margin-bottom", "0"),
+        // ---------------------------------------------------------------
+        // Breadcrumb - a scoped page's own header, in place of the plain
+        // title the unscoped front page and pipeline list use.
+        // ---------------------------------------------------------------
+        CssRule::new(".breadcrumb")
+            .property("display", "flex")
+            .property("align-items", "baseline")
+            .property("flex-wrap", "wrap")
+            .property("gap", "0.5rem")
+            .property("margin", "0")
+            .child(
+                CssRule::new("a")
+                    .property("text-decoration", "none")
+                    .child(CssRule::new("&:hover").property("text-decoration", "underline")),
+            ),
+        CssRule::new(".breadcrumb-sep")
+            .property("color", "var(--bs-gray-600)")
+            .property("font-weight", "400"),
+        CssRule::new(".breadcrumb-current").property("color", "var(--bs-gray-400)"),
     ]
 }

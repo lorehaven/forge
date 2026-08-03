@@ -8,8 +8,8 @@
 use crate::domain::Project;
 use crate::scheduler::queue::{QueueError, pool, schema};
 use chrono::{DateTime, Utc};
-use sqlx::Row;
 use quench_db::prelude::Db;
+use sqlx::Row;
 use uuid::Uuid;
 
 #[derive(Clone, Debug)]
@@ -59,8 +59,9 @@ pub async fn list_children(db: &Db, parent_id: Option<&str>) -> Result<Vec<Proje
 
     let rows = match parent_id {
         Some(parent_id) => {
-            let sql =
-                format!("SELECT {COLUMNS} FROM {schema}.projects WHERE parent_id = $1 ORDER BY name");
+            let sql = format!(
+                "SELECT {COLUMNS} FROM {schema}.projects WHERE parent_id = $1 ORDER BY name"
+            );
             sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
                 .bind(parent_id)
                 .fetch_all(pool)
@@ -118,7 +119,11 @@ pub enum MoveOutcome {
     WouldCycle,
 }
 
-pub async fn move_to(db: &Db, id: &str, parent_id: Option<&str>) -> Result<MoveOutcome, QueueError> {
+pub async fn move_to(
+    db: &Db,
+    id: &str,
+    parent_id: Option<&str>,
+) -> Result<MoveOutcome, QueueError> {
     if let Some(parent_id) = parent_id {
         if parent_id == id {
             return Ok(MoveOutcome::WouldCycle);

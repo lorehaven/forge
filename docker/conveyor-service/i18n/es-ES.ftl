@@ -20,6 +20,18 @@ ui_repos_empty = Aún no hay repositorios registrados.
 
 ui_runs_title = Ejecuciones recientes
 ui_runs_empty = Todavía no se ha ejecutado nada.
+ui_runs_view_all = Ver todas las canalizaciones
+
+ui_project_subtitle = Repositorios y canalizaciones bajo este nodo.
+ui_project_not_found = No existe ese proyecto.
+
+# ── Pipelines ────────────────────────────────────────────────────────────────
+
+ui_pipelines_title = Todas las canalizaciones
+ui_pipelines_subtitle = Cada ejecución, la más reciente primero.
+ui_pager_prev = Anterior
+ui_pager_next = Siguiente
+ui_pager_page = Página {$page} de {$total}
 
 # ── Runs ─────────────────────────────────────────────────────────────────────
 

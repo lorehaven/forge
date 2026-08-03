@@ -8,7 +8,7 @@
 use chrono::Utc;
 use conveyor_service::domain::{Project, Provider, Repo};
 use conveyor_service::routers::ui::pages::home::{
-    check_chips, chip, project_tree_panel, run_button,
+    check_chips, chip, project_tree_panel, project_tree_panel_scoped, run_button,
 };
 use conveyor_service::scan::{CheckKind, CheckResult, Finding, ScanSummary};
 use std::collections::HashMap;
@@ -112,7 +112,7 @@ fn a_repo_with_no_summary_at_all_shows_three_unrun_chips() {
 
 #[test]
 fn an_enabled_repo_gets_a_run_button_that_posts_to_its_own_id() {
-    let html = run_button(&repo(true)).render();
+    let html = run_button(&repo(true), None).render();
     assert!(html.contains("<button"));
     assert!(html.contains(r#"hx-post"#));
     assert!(html.contains("repos/repo-1/run"));
@@ -123,9 +123,17 @@ fn an_enabled_repo_gets_a_run_button_that_posts_to_its_own_id() {
 fn a_disabled_repo_gets_no_run_button() {
     // The API rejects a manual run on a disabled repository with a 409; a
     // button that only ever fails is worse than no button at all.
-    let html = run_button(&repo(false)).render();
+    let html = run_button(&repo(false), None).render();
     assert!(!html.contains("<button"));
     assert!(!html.contains("hx-post"));
+}
+
+#[test]
+fn a_run_button_on_a_scoped_page_carries_the_scope_along() {
+    // Clicking "run now" from a project's own branch of the page has to come
+    // back to that same branch, not silently jump to the unscoped front page.
+    let html = run_button(&repo(true), Some("project-9")).render();
+    assert!(html.contains("repos/repo-1/run?project=project-9"));
 }
 
 #[test]
@@ -183,8 +191,12 @@ fn a_repo_appears_under_its_own_branch_and_nowhere_else() {
     repo_b.name = "in-b".to_string();
     repo_b.project_id = "b-child".to_string();
 
-    let html = project_tree_panel(&[a, a_child, b, b_child], &[repo_a, repo_b], &HashMap::new())
-        .render();
+    let html = project_tree_panel(
+        &[a, a_child, b, b_child],
+        &[repo_a, repo_b],
+        &HashMap::new(),
+    )
+    .render();
 
     // Split on the second root's own summary: everything before it is
     // project-a's whole subtree, so repo-b cannot have leaked into it.
@@ -208,8 +220,7 @@ fn two_leaf_repos_under_the_same_parent_share_one_table() {
     repo_b.name = "in-b".to_string();
     repo_b.project_id = "b".to_string();
 
-    let html =
-        project_tree_panel(&[root, a, b], &[repo_a, repo_b], &HashMap::new()).render();
+    let html = project_tree_panel(&[root, a, b], &[repo_a, repo_b], &HashMap::new()).render();
 
     // Neither leaf child needs its own details, and there is exactly one
     // repository table for the two of them to share - not one apiece.
@@ -233,4 +244,72 @@ fn no_projects_at_all_shows_the_empty_message() {
     let html = project_tree_panel(&[], &[], &HashMap::new()).render();
     assert!(html.contains("ui_repos_empty"));
     assert!(!html.contains("project-node"));
+}
+
+#[test]
+fn a_container_node_name_is_a_link_to_its_own_project_page() {
+    let root = project("root-1", "root-group", None);
+    let child = project("child-1", "child-project", Some("root-1"));
+    let mut leaf_repo = repo(true);
+    leaf_repo.project_id = "child-1".to_string();
+
+    let html = project_tree_panel(&[root, child], &[leaf_repo], &HashMap::new()).render();
+
+    // Attribute order in the rendered tag is not guaranteed, so each of these
+    // is checked independently rather than as one literal fragment.
+    assert!(html.contains(r#"class="project-name""#));
+    assert!(html.contains(r#"href="/ui/projects/root-1""#));
+    assert!(html.contains(">root-group<"));
+}
+
+#[test]
+fn an_empty_leaf_is_still_a_link_to_its_own_project_page() {
+    let empty = project("solo", "just-a-group", None);
+    let html = project_tree_panel(&[empty], &[], &HashMap::new()).render();
+
+    assert!(html.contains(r#"href="/ui/projects/solo""#));
+    assert!(html.contains("just-a-group"));
+}
+
+#[test]
+fn scoping_to_a_root_shows_only_that_branch_and_hides_the_root_itself() {
+    let root = project("root-1", "root-group", None);
+    let child = project("child-1", "child-project", Some("root-1"));
+    let sibling_root = project("other-root", "other-group", None);
+    let mut repo_a = repo(true);
+    repo_a.id = "repo-a".to_string();
+    repo_a.name = "in-root".to_string();
+    repo_a.project_id = "child-1".to_string();
+    let mut repo_b = repo(true);
+    repo_b.id = "repo-b".to_string();
+    repo_b.name = "in-other".to_string();
+    repo_b.project_id = "other-root".to_string();
+
+    let html = project_tree_panel_scoped(
+        &[root, child, sibling_root],
+        &[repo_a, repo_b],
+        &HashMap::new(),
+        Some("root-1"),
+    )
+    .render();
+
+    // The scoped root's own descendants show up...
+    assert!(html.contains("in-root"));
+    // ...but the root's own name is not repeated (the page header says where
+    // we are), and nothing from outside the scope leaks in.
+    assert!(!html.contains("root-group"));
+    assert!(!html.contains("other-group"));
+    assert!(!html.contains("in-other"));
+}
+
+#[test]
+fn a_root_with_its_own_direct_repo_shows_it_even_with_no_children() {
+    let root = project("root-1", "root-group", None);
+    let mut direct_repo = repo(true);
+    direct_repo.project_id = "root-1".to_string();
+
+    let html = project_tree_panel_scoped(&[root], &[direct_repo], &HashMap::new(), Some("root-1"))
+        .render();
+
+    assert!(html.contains("palantir"));
 }

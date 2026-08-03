@@ -20,7 +20,9 @@ async fn repo_access(
     action: &str,
 ) -> Result<Option<bool>, QueueError> {
     match repos::read(db, repo_id).await? {
-        Some(repo) => Ok(Some(can_on_project(request, db, &repo.project_id, action).await)),
+        Some(repo) => Ok(Some(
+            can_on_project(request, db, &repo.project_id, action).await,
+        )),
         None => Ok(None),
     }
 }
@@ -176,7 +178,11 @@ pub struct ListQuery {
 }
 
 #[get("/runs")]
-pub async fn list(request: HttpRequest, query: web::Query<ListQuery>, db: web::Data<Db>) -> impl Responder {
+pub async fn list(
+    request: HttpRequest,
+    query: web::Query<ListQuery>,
+    db: web::Data<Db>,
+) -> impl Responder {
     if let Some(repo_id) = &query.repo_id {
         match repo_access(&request, &db, repo_id, "read").await {
             Ok(Some(true)) => {}
@@ -187,7 +193,8 @@ pub async fn list(request: HttpRequest, query: web::Query<ListQuery>, db: web::D
             Err(error) => return ApiError::from(error).into_response(),
         }
 
-        return match queue::list_runs(&db, Some(repo_id.as_str()), query.limit.unwrap_or(50)).await {
+        return match queue::list_runs(&db, Some(repo_id.as_str()), query.limit.unwrap_or(50)).await
+        {
             Ok(runs) => HttpResponse::Ok().json(runs),
             Err(error) => ApiError::from(error).into_response(),
         };
@@ -238,7 +245,11 @@ struct RunDetail {
 }
 
 #[get("/runs/{id}")]
-pub async fn read(request: HttpRequest, path: web::Path<String>, db: web::Data<Db>) -> impl Responder {
+pub async fn read(
+    request: HttpRequest,
+    path: web::Path<String>,
+    db: web::Data<Db>,
+) -> impl Responder {
     let run = match queue::read_run(&db, &path).await {
         Ok(Some(run)) => run,
         Ok(None) => return json_error(StatusCode::NOT_FOUND, "no such run"),
@@ -273,7 +284,11 @@ pub async fn read(request: HttpRequest, path: web::Path<String>, db: web::Data<D
 }
 
 #[get("/jobs/{id}/logs")]
-pub async fn logs(request: HttpRequest, path: web::Path<String>, db: web::Data<Db>) -> impl Responder {
+pub async fn logs(
+    request: HttpRequest,
+    path: web::Path<String>,
+    db: web::Data<Db>,
+) -> impl Responder {
     match job_access(&request, &db, &path, "read").await {
         Ok(Some(true)) => {}
         Ok(Some(false)) => {
@@ -310,7 +325,11 @@ async fn job_access(
 /// Accepted rather than OK: whichever replica holds the run notices on its next
 /// poll, so the run is still winding down when this returns.
 #[post("/runs/{id}/cancel")]
-pub async fn cancel(request: HttpRequest, path: web::Path<String>, db: web::Data<Db>) -> impl Responder {
+pub async fn cancel(
+    request: HttpRequest,
+    path: web::Path<String>,
+    db: web::Data<Db>,
+) -> impl Responder {
     let run = match queue::read_run(&db, &path).await {
         Ok(Some(run)) => run,
         Ok(None) => return json_error(StatusCode::NOT_FOUND, "no such run"),

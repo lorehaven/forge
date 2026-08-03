@@ -128,15 +128,24 @@ pub async fn list(request: HttpRequest, db: web::Data<Db>) -> impl Responder {
 }
 
 #[get("/{id}")]
-pub async fn read(request: HttpRequest, path: web::Path<String>, db: web::Data<Db>) -> impl Responder {
+pub async fn read(
+    request: HttpRequest,
+    path: web::Path<String>,
+    db: web::Data<Db>,
+) -> impl Responder {
     let repo = match repos::read(&db, &path).await {
         Ok(Some(repo)) => repo,
-        Ok(None) => return json_error(actix_web::http::StatusCode::NOT_FOUND, "no such repository"),
+        Ok(None) => {
+            return json_error(actix_web::http::StatusCode::NOT_FOUND, "no such repository");
+        }
         Err(error) => return ApiError::from(error).into_response(),
     };
 
     if !can_on_project(&request, &db, &repo.project_id, "read").await {
-        return json_error(actix_web::http::StatusCode::FORBIDDEN, "no read access to this repository");
+        return json_error(
+            actix_web::http::StatusCode::FORBIDDEN,
+            "no read access to this repository",
+        );
     }
 
     HttpResponse::Ok().json(repo)
@@ -158,12 +167,17 @@ pub async fn set_enabled(
 ) -> impl Responder {
     let repo = match repos::read(&db, &path).await {
         Ok(Some(repo)) => repo,
-        Ok(None) => return json_error(actix_web::http::StatusCode::NOT_FOUND, "no such repository"),
+        Ok(None) => {
+            return json_error(actix_web::http::StatusCode::NOT_FOUND, "no such repository");
+        }
         Err(error) => return ApiError::from(error).into_response(),
     };
 
     if !can_on_project(&request, &db, &repo.project_id, "write").await {
-        return json_error(actix_web::http::StatusCode::FORBIDDEN, "no write access to this repository");
+        return json_error(
+            actix_web::http::StatusCode::FORBIDDEN,
+            "no write access to this repository",
+        );
     }
 
     match repos::set_enabled(&db, &path, body.enabled).await {
@@ -174,15 +188,24 @@ pub async fn set_enabled(
 }
 
 #[delete("/{id}")]
-pub async fn remove(request: HttpRequest, path: web::Path<String>, db: web::Data<Db>) -> impl Responder {
+pub async fn remove(
+    request: HttpRequest,
+    path: web::Path<String>,
+    db: web::Data<Db>,
+) -> impl Responder {
     let repo = match repos::read(&db, &path).await {
         Ok(Some(repo)) => repo,
-        Ok(None) => return json_error(actix_web::http::StatusCode::NOT_FOUND, "no such repository"),
+        Ok(None) => {
+            return json_error(actix_web::http::StatusCode::NOT_FOUND, "no such repository");
+        }
         Err(error) => return ApiError::from(error).into_response(),
     };
 
     if !can_on_project(&request, &db, &repo.project_id, "write").await {
-        return json_error(actix_web::http::StatusCode::FORBIDDEN, "no write access to this repository");
+        return json_error(
+            actix_web::http::StatusCode::FORBIDDEN,
+            "no write access to this repository",
+        );
     }
 
     match repos::delete(&db, &path).await {

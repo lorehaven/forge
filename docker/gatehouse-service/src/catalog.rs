@@ -142,7 +142,11 @@ impl PermissionCatalog {
     /// that does not exist just grants access to nothing, the same safe
     /// direction an unparseable permissions row already fails in.
     pub fn is_known_action(&self, service: &str, action: &str) -> bool {
-        if self.actions_for(service).iter().any(|known| known == action) {
+        if self
+            .actions_for(service)
+            .iter()
+            .any(|known| known == action)
+        {
             return true;
         }
 

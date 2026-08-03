@@ -41,7 +41,10 @@ pub async fn put_global(
     db: web::Data<Db>,
 ) -> impl Responder {
     if !can_unscoped(&request, "write") {
-        return json_error(StatusCode::FORBIDDEN, "no write access to estate-wide secrets");
+        return json_error(
+            StatusCode::FORBIDDEN,
+            "no write access to estate-wide secrets",
+        );
     }
     let actor = actor(&request).await;
     write(&db, Scope::Global, &path, &body.value, &actor).await
@@ -50,15 +53,25 @@ pub async fn put_global(
 #[get("")]
 pub async fn list_global(request: HttpRequest, db: web::Data<Db>) -> impl Responder {
     if !can_unscoped(&request, "read") {
-        return json_error(StatusCode::FORBIDDEN, "no read access to estate-wide secrets");
+        return json_error(
+            StatusCode::FORBIDDEN,
+            "no read access to estate-wide secrets",
+        );
     }
     read_names(&db, Scope::Global).await
 }
 
 #[delete("/{name}")]
-pub async fn delete_global(request: HttpRequest, path: web::Path<String>, db: web::Data<Db>) -> impl Responder {
+pub async fn delete_global(
+    request: HttpRequest,
+    path: web::Path<String>,
+    db: web::Data<Db>,
+) -> impl Responder {
     if !can_unscoped(&request, "write") {
-        return json_error(StatusCode::FORBIDDEN, "no write access to estate-wide secrets");
+        return json_error(
+            StatusCode::FORBIDDEN,
+            "no write access to estate-wide secrets",
+        );
     }
     remove(&db, Scope::Global, &path).await
 }
@@ -94,7 +107,11 @@ pub async fn put_repo(
 }
 
 #[get("/{repo_id}/secrets")]
-pub async fn list_repo(request: HttpRequest, path: web::Path<String>, db: web::Data<Db>) -> impl Responder {
+pub async fn list_repo(
+    request: HttpRequest,
+    path: web::Path<String>,
+    db: web::Data<Db>,
+) -> impl Responder {
     match repo_scope(&request, &db, &path, "read").await {
         Ok(scope) => read_names(&db, scope).await,
         Err(response) => response,

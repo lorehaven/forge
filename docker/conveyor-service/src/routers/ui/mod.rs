@@ -51,6 +51,8 @@ pub fn scope(_jwt_config: JwtConfig) -> impl HttpServiceFactory {
         .service(pages::home::home_slash)
         .service(pages::home::home_state)
         .service(pages::home::run_now)
+        .service(pages::home::project_page)
+        .service(pages::pipelines::runs_list_page)
         .service(pages::runs::run_page)
         .service(pages::runs::run_state)
         .service(pages::jobs::log)

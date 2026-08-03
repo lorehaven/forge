@@ -20,6 +20,18 @@ ui_repos_empty = Aucun dépôt n'est encore enregistré.
 
 ui_runs_title = Exécutions récentes
 ui_runs_empty = Rien n'a encore été exécuté.
+ui_runs_view_all = Voir tous les pipelines
+
+ui_project_subtitle = Dépôts et pipelines sous ce nœud.
+ui_project_not_found = Aucun projet de ce type.
+
+# ── Pipelines ────────────────────────────────────────────────────────────────
+
+ui_pipelines_title = Tous les pipelines
+ui_pipelines_subtitle = Chaque exécution, la plus récente en premier.
+ui_pager_prev = Précédent
+ui_pager_next = Suivant
+ui_pager_page = Page {$page} sur {$total}
 
 # ── Runs ─────────────────────────────────────────────────────────────────────
 

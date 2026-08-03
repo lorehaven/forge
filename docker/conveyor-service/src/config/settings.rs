@@ -73,6 +73,17 @@ pub struct ConveyorConfig {
     /// written by someone outside the estate, and the native executor would run
     /// it with this service's privileges.
     pub allow_fork_pr: bool,
+
+    /// How many runs the front page's pipeline panel shows at once.
+    pub home_recent_runs: usize,
+
+    /// At most this many of those runs may come from the same repository - the
+    /// front page is meant to show what is happening across the estate, and one
+    /// noisy repository should not push every other one off it.
+    pub home_max_runs_per_repo: usize,
+
+    /// How many runs a page of the full pipeline history shows.
+    pub runs_page_size: usize,
 }
 
 impl Default for ConveyorConfig {
@@ -85,6 +96,9 @@ impl Default for ConveyorConfig {
             checkout_timeout_secs: 600,
             claim_stale_after_secs: 300,
             allow_fork_pr: false,
+            home_recent_runs: 5,
+            home_max_runs_per_repo: 1,
+            runs_page_size: 25,
         }
     }
 }
@@ -116,6 +130,12 @@ impl ConveyorConfig {
                 defaults.claim_stale_after_secs as usize,
             ) as u64,
             allow_fork_pr: envmnt::is_or("CONVEYOR_ALLOW_FORK_PR", false),
+            home_recent_runs: positive("CONVEYOR_HOME_RECENT_RUNS", defaults.home_recent_runs),
+            home_max_runs_per_repo: positive(
+                "CONVEYOR_HOME_MAX_RUNS_PER_REPO",
+                defaults.home_max_runs_per_repo,
+            ),
+            runs_page_size: positive("CONVEYOR_RUNS_PAGE_SIZE", defaults.runs_page_size),
         };
 
         if config.allow_fork_pr && config.executor == ExecutorKind::Native {

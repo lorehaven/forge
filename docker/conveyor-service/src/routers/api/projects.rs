@@ -45,7 +45,10 @@ pub async fn create(
     }
 
     if !can_write_under(&request, &db, body.parent_id.as_deref()).await {
-        return json_error(actix_web::http::StatusCode::FORBIDDEN, "no write access here");
+        return json_error(
+            actix_web::http::StatusCode::FORBIDDEN,
+            "no write access here",
+        );
     }
 
     let new = NewProject {
@@ -80,7 +83,10 @@ pub async fn read(
     db: web::Data<Db>,
 ) -> impl Responder {
     if !can_on_project(&request, &db, &path, "read").await {
-        return json_error(actix_web::http::StatusCode::FORBIDDEN, "no read access here");
+        return json_error(
+            actix_web::http::StatusCode::FORBIDDEN,
+            "no read access here",
+        );
     }
 
     match projects::read(&db, &path).await {
@@ -122,12 +128,18 @@ pub async fn update(
     db: web::Data<Db>,
 ) -> impl Responder {
     if !can_on_project(&request, &db, &path, "write").await {
-        return json_error(actix_web::http::StatusCode::FORBIDDEN, "no write access here");
+        return json_error(
+            actix_web::http::StatusCode::FORBIDDEN,
+            "no write access here",
+        );
     }
 
     if let Some(name) = &body.name {
         if name.trim().is_empty() {
-            return json_error(actix_web::http::StatusCode::BAD_REQUEST, "name cannot be empty");
+            return json_error(
+                actix_web::http::StatusCode::BAD_REQUEST,
+                "name cannot be empty",
+            );
         }
         match projects::rename(&db, &path, name.trim()).await {
             Ok(None) => {
@@ -181,7 +193,10 @@ pub async fn remove(
     db: web::Data<Db>,
 ) -> impl Responder {
     if !can_on_project(&request, &db, &path, "write").await {
-        return json_error(actix_web::http::StatusCode::FORBIDDEN, "no write access here");
+        return json_error(
+            actix_web::http::StatusCode::FORBIDDEN,
+            "no write access here",
+        );
     }
 
     match projects::delete(&db, &path).await {
