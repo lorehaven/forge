@@ -205,6 +205,12 @@ impl CacheStore {
 
 /// One server or a cluster.
 ///
+/// The single-server case holds a [`redis::aio::ConnectionManager`] rather
+/// than a bare `MultiplexedConnection`: the latter never recovers once its
+/// socket dies, so a Redis pod restart would wedge every holder of one until
+/// their process restarted too. `ConnectionManager` wraps the same
+/// multiplexed connection but reconnects in the background on I/O errors.
+///
 /// Implementing `ConnectionLike` over the pair is what keeps the commands below
 /// written once: `AsyncCommands` is blanket-implemented for anything that is
 /// `ConnectionLike`, so `get`/`set`/`del` do not care which we hold. Only
@@ -212,7 +218,7 @@ impl CacheStore {
 #[cfg(feature = "redis")]
 #[derive(Clone)]
 enum Connection {
-    Single(redis::aio::MultiplexedConnection),
+    Single(redis::aio::ConnectionManager),
     Cluster(redis::cluster_async::ClusterConnection),
 }
 
@@ -293,9 +299,9 @@ impl RedisStore {
             } else {
                 let client = redis::Client::open(seeds[0])
                     .map_err(|err| CacheError::Backend(format!("invalid Redis URL: {err}")))?;
-                Connection::Single(client.get_multiplexed_async_connection().await.map_err(
-                    |err| CacheError::Backend(format!("Redis connection failed: {err}")),
-                )?)
+                Connection::Single(client.get_connection_manager().await.map_err(|err| {
+                    CacheError::Backend(format!("Redis connection failed: {err}"))
+                })?)
             };
 
         Ok(Self {

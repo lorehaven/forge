@@ -64,7 +64,7 @@ quench-config = { path = "libs/quench-config", registry = "ennor", version = "0.
 quench-db = { path = "libs/quench-db", registry = "ennor", version = "0.2.0" }
 quench-starter = { path = "libs/quench-starter", registry = "ennor", version = "0.3.0" }
 quench-web = { path = "libs/quench-web", registry = "ennor", version = "0.1.6" }
-redis = { version = "0.32", features = ["tokio-comp", "cluster-async"] }
+redis = { version = "0.32", features = ["tokio-comp", "cluster-async", "connection-manager"] }
 regex = { version = "1.12" }
 reqwest = { version = "0.13", default-features = false, features = [
   "json",
