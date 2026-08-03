@@ -42,9 +42,11 @@ envmnt = { version = "0.10" }
 fluent-syntax = { version = "0.12" }
 futures-util = { version = "0.3" }
 gguf = { version = "0.1" }
+grep = { version = "0.4" }
 hex = { version = "0.4" }
 hmac = { version = "0.13" }
 html5ever = { version = "0.39" }
+ignore = { version = "0.4" }
 jsonwebtoken = { version = "11.0", features = ["aws_lc_rs"] }
 kube = { version = "4.0", features = ["runtime", "derive"] }
 libc = { version = "0.2" }

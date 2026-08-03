@@ -1,4 +1,8 @@
 use anyhow::{Context, Result, anyhow, bail};
+use grep::regex::RegexMatcher;
+use grep::searcher::Searcher;
+use grep::searcher::sinks::UTF8;
+use ignore::WalkBuilder;
 use serde_json::Value;
 use std::fmt::Write as _;
 use std::fs;
@@ -149,41 +153,54 @@ fn search(args: &Value) -> Result<String> {
     let path = args.get("path").and_then(Value::as_str).unwrap_or(".");
     let safe = safe_rel_path(path)?;
 
-    let output = Command::new("rg")
-        .arg("-n")
-        .arg(pattern)
-        .arg(safe.as_os_str())
-        .output()
-        .context("failed to execute rg")?;
+    let matcher =
+        RegexMatcher::new(pattern).with_context(|| format!("invalid pattern: {pattern}"))?;
+    let mut out = String::new();
 
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if stderr.trim().is_empty() {
-            Ok(String::new())
-        } else {
-            bail!("search failed: {stderr}");
+    for entry in WalkBuilder::new(safe).build() {
+        let entry = entry.context("failed to walk directory")?;
+        if !entry.file_type().is_some_and(|ft| ft.is_file()) {
+            continue;
+        }
+
+        let display = entry.path().display().to_string();
+        let mut searcher = Searcher::new();
+        let search_result = searcher.search_path(
+            &matcher,
+            entry.path(),
+            UTF8(|line_num, line| {
+                write!(&mut out, "{display}:{line_num}:{line}").map_err(std::io::Error::other)?;
+                Ok(true)
+            }),
+        );
+
+        // Binary/unreadable files are skipped rather than failing the whole
+        // search, matching how `rg` quietly moves past them.
+        if let Err(err) = search_result
+            && err.kind() != std::io::ErrorKind::InvalidData
+        {
+            bail!("search failed on {display}: {err}");
         }
     }
+
+    Ok(out)
 }
 
 fn index_project(args: &Value) -> Result<String> {
     let path = args.get("path").and_then(Value::as_str).unwrap_or(".");
     let safe = safe_rel_path(path)?;
 
-    let output = Command::new("rg")
-        .arg("--files")
-        .arg(safe.as_os_str())
-        .output()
-        .context("failed to execute rg --files")?;
+    let mut out = String::new();
 
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("index_project failed: {stderr}");
+    for entry in WalkBuilder::new(safe).build() {
+        let entry = entry.context("failed to walk directory")?;
+        if entry.file_type().is_some_and(|ft| ft.is_file()) {
+            writeln!(&mut out, "{}", entry.path().display())
+                .expect("writing to String should not fail");
+        }
     }
+
+    Ok(out)
 }
 
 fn run_cmd(args: &Value, run_cmd_allowlist: &[String]) -> Result<String> {
