@@ -79,3 +79,33 @@ ui_status_success = Zaliczony
 ui_status_failed = Niepowodzenie
 ui_status_cancelled = Anulowany
 ui_status_skipped = Pominięty
+
+# ── Zarządzanie repozytoriami ───────────────────────────────────────────────
+
+ui_repos_manage = Zarządzaj repozytoriami
+ui_repos_back = Powrót do repozytoriów
+ui_repos_back_home = Powrót do strony głównej
+ui_repos_add_title = Dodaj repozytorium
+ui_repos_owner = Właściciel
+ui_repos_name = Nazwa
+ui_repos_clone_url = Adres URL klonowania
+ui_repos_branch = Gałąź domyślna
+ui_repos_project = Projekt
+ui_repos_provider = Dostawca
+ui_repos_create = Zarejestruj repozytorium
+ui_repos_save = Zapisz zmiany
+ui_repos_edit = Edytuj
+ui_repos_view_only = Nie masz uprawnień do zapisu w projekcie tego repozytorium; te pola są tylko do odczytu.
+ui_repos_delete_title = Strefa zagrożenia
+ui_repos_delete_hint = Usunięcie repozytorium kasuje historię jego przebiegów. Tej operacji nie można cofnąć.
+ui_repos_delete = Usuń repozytorium
+ui_repos_not_found = Nie ma takiego repozytorium.
+ui_repos_ok_created = Repozytorium zarejestrowane.
+ui_repos_ok_saved = Zmiany zapisane.
+ui_repos_ok_deleted = Repozytorium usunięte.
+ui_repos_err_owner_name_empty = Właściciel i nazwa są wymagane.
+ui_repos_err_project_required = Wybierz projekt dla tego repozytorium.
+ui_repos_err_bad_clone_url = Ten adres URL klonowania jest nieprawidłowy.
+ui_repos_err_forbidden = Nie masz uprawnień do zapisu w tym projekcie.
+ui_repos_err_not_found = Nie ma takiego repozytorium.
+ui_repos_err_write_failed = Nie udało się tego zapisać. Może już istnieć.

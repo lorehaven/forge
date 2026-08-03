@@ -79,3 +79,33 @@ ui_status_success = Passed
 ui_status_failed = Failed
 ui_status_cancelled = Cancelled
 ui_status_skipped = Skipped
+
+# ── Repositories admin ──────────────────────────────────────────────────────
+
+ui_repos_manage = Manage repositories
+ui_repos_back = Back to repositories
+ui_repos_back_home = Back to home
+ui_repos_add_title = Add a repository
+ui_repos_owner = Owner
+ui_repos_name = Name
+ui_repos_clone_url = Clone URL
+ui_repos_branch = Default branch
+ui_repos_project = Project
+ui_repos_provider = Provider
+ui_repos_create = Register repository
+ui_repos_save = Save changes
+ui_repos_edit = Edit
+ui_repos_view_only = You do not have write access to this repository's project; these fields are read-only.
+ui_repos_delete_title = Danger zone
+ui_repos_delete_hint = Removing a repository deletes its run history. This cannot be undone.
+ui_repos_delete = Delete repository
+ui_repos_not_found = No such repository.
+ui_repos_ok_created = Repository registered.
+ui_repos_ok_saved = Changes saved.
+ui_repos_ok_deleted = Repository deleted.
+ui_repos_err_owner_name_empty = Owner and name are required.
+ui_repos_err_project_required = Choose a project for this repository.
+ui_repos_err_bad_clone_url = That clone URL is not valid.
+ui_repos_err_forbidden = You do not have write access to that project.
+ui_repos_err_not_found = No such repository.
+ui_repos_err_write_failed = That could not be saved. It may already exist.

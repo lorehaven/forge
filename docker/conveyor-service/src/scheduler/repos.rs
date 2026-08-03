@@ -123,6 +123,47 @@ pub async fn list(db: &Db) -> Result<Vec<Repo>, QueueError> {
     rows.iter().map(from_row).collect()
 }
 
+/// What an edit form supplies to replace a repository's fields wholesale -
+/// everything but the provider, which stays fixed once a repository exists
+/// (switching github↔generic on an existing row isn't a meaningful edit, it's
+/// a different repository).
+#[derive(Clone, Debug)]
+pub struct RepoUpdate {
+    pub owner: String,
+    pub name: String,
+    pub clone_url: String,
+    pub default_branch: String,
+    pub project_id: String,
+    pub enabled: bool,
+}
+
+pub async fn update(
+    db: &Db,
+    id: &str,
+    changes: &RepoUpdate,
+) -> Result<Option<Repo>, QueueError> {
+    let pool = pool(db)?;
+    let schema = schema();
+    let sql = format!(
+        "UPDATE {schema}.repos SET owner = $2, name = $3, clone_url = $4, \
+         default_branch = $5, project_id = $6, enabled = $7, updated_at = NOW() \
+         WHERE id = $1 RETURNING {COLUMNS}"
+    );
+
+    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+        .bind(id)
+        .bind(&changes.owner)
+        .bind(&changes.name)
+        .bind(&changes.clone_url)
+        .bind(&changes.default_branch)
+        .bind(&changes.project_id)
+        .bind(changes.enabled)
+        .fetch_optional(pool)
+        .await?;
+
+    row.as_ref().map(from_row).transpose()
+}
+
 /// Turns a repository on or off. Disabling keeps its history and stops it
 /// accepting triggers, which is what you want for a repository that has gone
 /// bad rather than gone away.

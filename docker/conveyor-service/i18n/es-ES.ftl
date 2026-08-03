@@ -79,3 +79,33 @@ ui_status_success = Correcta
 ui_status_failed = Fallida
 ui_status_cancelled = Cancelada
 ui_status_skipped = Omitida
+
+# ── Administración de repositorios ──────────────────────────────────────────
+
+ui_repos_manage = Gestionar repositorios
+ui_repos_back = Volver a los repositorios
+ui_repos_back_home = Volver al inicio
+ui_repos_add_title = Añadir un repositorio
+ui_repos_owner = Propietario
+ui_repos_name = Nombre
+ui_repos_clone_url = URL de clonado
+ui_repos_branch = Rama por defecto
+ui_repos_project = Proyecto
+ui_repos_provider = Proveedor
+ui_repos_create = Registrar repositorio
+ui_repos_save = Guardar cambios
+ui_repos_edit = Editar
+ui_repos_view_only = No tienes acceso de escritura al proyecto de este repositorio; estos campos son de solo lectura.
+ui_repos_delete_title = Zona de peligro
+ui_repos_delete_hint = Eliminar un repositorio borra su historial de ejecuciones. Esto no se puede deshacer.
+ui_repos_delete = Eliminar repositorio
+ui_repos_not_found = No existe ese repositorio.
+ui_repos_ok_created = Repositorio registrado.
+ui_repos_ok_saved = Cambios guardados.
+ui_repos_ok_deleted = Repositorio eliminado.
+ui_repos_err_owner_name_empty = El propietario y el nombre son obligatorios.
+ui_repos_err_project_required = Elige un proyecto para este repositorio.
+ui_repos_err_bad_clone_url = Esa URL de clonado no es válida.
+ui_repos_err_forbidden = No tienes acceso de escritura a ese proyecto.
+ui_repos_err_not_found = No existe ese repositorio.
+ui_repos_err_write_failed = No se pudo guardar. Puede que ya exista.

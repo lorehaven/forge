@@ -79,3 +79,33 @@ ui_status_success = Erfolgreich
 ui_status_failed = Fehlgeschlagen
 ui_status_cancelled = Abgebrochen
 ui_status_skipped = Übersprungen
+
+# ── Repository-Verwaltung ────────────────────────────────────────────────────
+
+ui_repos_manage = Repositorys verwalten
+ui_repos_back = Zurück zu den Repositorys
+ui_repos_back_home = Zurück zur Startseite
+ui_repos_add_title = Repository hinzufügen
+ui_repos_owner = Besitzer
+ui_repos_name = Name
+ui_repos_clone_url = Clone-URL
+ui_repos_branch = Standard-Branch
+ui_repos_project = Projekt
+ui_repos_provider = Anbieter
+ui_repos_create = Repository registrieren
+ui_repos_save = Änderungen speichern
+ui_repos_edit = Bearbeiten
+ui_repos_view_only = Du hast keinen Schreibzugriff auf das Projekt dieses Repositorys; diese Felder sind schreibgeschützt.
+ui_repos_delete_title = Gefahrenzone
+ui_repos_delete_hint = Das Löschen eines Repositorys entfernt auch dessen Lauf-Historie. Dies kann nicht rückgängig gemacht werden.
+ui_repos_delete = Repository löschen
+ui_repos_not_found = Kein solches Repository.
+ui_repos_ok_created = Repository registriert.
+ui_repos_ok_saved = Änderungen gespeichert.
+ui_repos_ok_deleted = Repository gelöscht.
+ui_repos_err_owner_name_empty = Besitzer und Name sind erforderlich.
+ui_repos_err_project_required = Wähle ein Projekt für dieses Repository.
+ui_repos_err_bad_clone_url = Diese Clone-URL ist ungültig.
+ui_repos_err_forbidden = Du hast keinen Schreibzugriff auf dieses Projekt.
+ui_repos_err_not_found = Kein solches Repository.
+ui_repos_err_write_failed = Das konnte nicht gespeichert werden. Es existiert möglicherweise bereits.

@@ -351,8 +351,13 @@ pub fn project_tree_panel_scoped(
 ) -> Element {
     let panel = div().class("panel").child(
         div()
-            .class("panel-title")
-            .attr("data-i18n", "ui_repos_title"),
+            .class("panel-title panel-title-row")
+            .child(span().attr("data-i18n", "ui_repos_title"))
+            .child(
+                a().class("panel-title-link")
+                    .attr("href", ui_path("/repos"))
+                    .attr("data-i18n", "ui_repos_manage"),
+            ),
     );
 
     let mut children_of: HashMap<Option<&str>, Vec<&Project>> = HashMap::new();

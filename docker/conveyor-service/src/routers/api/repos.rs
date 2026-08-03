@@ -8,8 +8,8 @@ use crate::domain::Provider;
 use crate::routers::api::authz::{can_on_project, granted_project_ids};
 use crate::routers::api::{ApiError, actor, claims, json_error};
 use crate::scheduler::projects;
-use crate::scheduler::repos::{self, NewRepo};
-use actix_web::{HttpRequest, HttpResponse, Responder, delete, get, post, web};
+use crate::scheduler::repos::{self, NewRepo, RepoUpdate};
+use actix_web::{HttpRequest, HttpResponse, Responder, delete, get, patch, post, web};
 use quench_db::prelude::Db;
 use serde::Deserialize;
 
@@ -152,6 +152,119 @@ pub async fn read(
 }
 
 #[derive(Deserialize)]
+pub struct UpdateRepo {
+    #[serde(default)]
+    pub owner: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub clone_url: Option<String>,
+    #[serde(default)]
+    pub default_branch: Option<String>,
+    #[serde(default)]
+    pub project_id: Option<String>,
+    #[serde(default)]
+    pub enabled: Option<bool>,
+}
+
+/// A partial update: every field is optional, and an absent one is left
+/// exactly as it was - the same shape `UpdateProject` already gives `PATCH
+/// /projects/{id}`, and what tells this apart from a `PUT` a caller could
+/// only ever safely send by first reading the whole repository back. The
+/// provider is not among the editable fields at all; it identifies what kind
+/// of repository this is, not a property of it that an edit should flip.
+#[patch("/{id}")]
+pub async fn update(
+    request: HttpRequest,
+    path: web::Path<String>,
+    body: web::Json<UpdateRepo>,
+    db: web::Data<Db>,
+) -> impl Responder {
+    let repo = match repos::read(&db, &path).await {
+        Ok(Some(repo)) => repo,
+        Ok(None) => {
+            return json_error(actix_web::http::StatusCode::NOT_FOUND, "no such repository");
+        }
+        Err(error) => return ApiError::from(error).into_response(),
+    };
+
+    if body.owner.as_deref().is_some_and(|owner| owner.trim().is_empty())
+        || body.name.as_deref().is_some_and(|name| name.trim().is_empty())
+    {
+        return json_error(
+            actix_web::http::StatusCode::BAD_REQUEST,
+            "owner and name cannot be empty",
+        );
+    }
+
+    if body
+        .project_id
+        .as_deref()
+        .is_some_and(|project_id| project_id.trim().is_empty())
+    {
+        return json_error(
+            actix_web::http::StatusCode::BAD_REQUEST,
+            "project_id cannot be empty",
+        );
+    }
+
+    if let Some(clone_url) = &body.clone_url
+        && let Err(error) = crate::workspace::checkout::validate_url(clone_url)
+    {
+        return json_error(actix_web::http::StatusCode::BAD_REQUEST, &error.to_string());
+    }
+
+    if !can_on_project(&request, &db, &repo.project_id, "write").await {
+        return json_error(
+            actix_web::http::StatusCode::FORBIDDEN,
+            "no write access to this repository",
+        );
+    }
+
+    let target_project = body.project_id.as_deref().unwrap_or(&repo.project_id);
+
+    // Moving a repository to a different project needs write on both ends,
+    // the same as a project move does - otherwise a write grant on one
+    // project alone would let it pull a repository in from a project the
+    // caller has no access to.
+    if target_project != repo.project_id
+        && !can_on_project(&request, &db, target_project, "write").await
+    {
+        return json_error(
+            actix_web::http::StatusCode::FORBIDDEN,
+            "no write access to the destination project",
+        );
+    }
+
+    let changes = RepoUpdate {
+        owner: body
+            .owner
+            .as_deref()
+            .map_or_else(|| repo.owner.clone(), |owner| owner.trim().to_string()),
+        name: body
+            .name
+            .as_deref()
+            .map_or_else(|| repo.name.clone(), |name| name.trim().to_string()),
+        clone_url: body
+            .clone_url
+            .as_deref()
+            .map_or_else(|| repo.clone_url.clone(), |url| url.trim().to_string()),
+        default_branch: body
+            .default_branch
+            .clone()
+            .unwrap_or_else(|| repo.default_branch.clone()),
+        project_id: target_project.to_string(),
+        enabled: body.enabled.unwrap_or(repo.enabled),
+    };
+
+    match repos::update(&db, &path, &changes).await {
+        Ok(Some(repo)) => HttpResponse::Ok().json(repo),
+        Ok(None) => json_error(actix_web::http::StatusCode::NOT_FOUND, "no such repository"),
+        Err(error) => ApiError::from(error).into_response(),
+    }
+}
+
+#[derive(Deserialize)]
 pub struct SetEnabled {
     pub enabled: bool,
 }
@@ -220,6 +333,7 @@ pub fn scope() -> actix_web::Scope {
         .service(register)
         .service(list)
         .service(read)
+        .service(update)
         .service(set_enabled)
         .service(remove)
         // Triggering lives here because the URL does. Declared beside this

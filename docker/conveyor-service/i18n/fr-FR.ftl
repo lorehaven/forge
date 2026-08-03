@@ -79,3 +79,33 @@ ui_status_success = Réussie
 ui_status_failed = Échouée
 ui_status_cancelled = Annulée
 ui_status_skipped = Ignorée
+
+# ── Administration des dépôts ────────────────────────────────────────────────
+
+ui_repos_manage = Gérer les dépôts
+ui_repos_back = Retour aux dépôts
+ui_repos_back_home = Retour à l'accueil
+ui_repos_add_title = Ajouter un dépôt
+ui_repos_owner = Propriétaire
+ui_repos_name = Nom
+ui_repos_clone_url = URL de clonage
+ui_repos_branch = Branche par défaut
+ui_repos_project = Projet
+ui_repos_provider = Fournisseur
+ui_repos_create = Enregistrer le dépôt
+ui_repos_save = Enregistrer les modifications
+ui_repos_edit = Modifier
+ui_repos_view_only = Vous n'avez pas d'accès en écriture au projet de ce dépôt ; ces champs sont en lecture seule.
+ui_repos_delete_title = Zone de danger
+ui_repos_delete_hint = Supprimer un dépôt efface son historique d'exécutions. Cette action est irréversible.
+ui_repos_delete = Supprimer le dépôt
+ui_repos_not_found = Aucun dépôt de ce type.
+ui_repos_ok_created = Dépôt enregistré.
+ui_repos_ok_saved = Modifications enregistrées.
+ui_repos_ok_deleted = Dépôt supprimé.
+ui_repos_err_owner_name_empty = Le propriétaire et le nom sont requis.
+ui_repos_err_project_required = Choisissez un projet pour ce dépôt.
+ui_repos_err_bad_clone_url = Cette URL de clonage n'est pas valide.
+ui_repos_err_forbidden = Vous n'avez pas d'accès en écriture à ce projet.
+ui_repos_err_not_found = Aucun dépôt de ce type.
+ui_repos_err_write_failed = Impossible d'enregistrer. Il existe peut-être déjà.

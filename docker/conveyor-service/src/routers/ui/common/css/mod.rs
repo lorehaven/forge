@@ -6,6 +6,7 @@ use quench_starter::actix::routers::ui::common::css;
 use quench_web::prelude::CssRule;
 
 pub mod projects;
+pub mod repos;
 pub mod runs;
 pub mod status;
 
@@ -29,5 +30,6 @@ fn conveyor_css_rules() -> Vec<CssRule> {
     rules.extend(status::status_rules());
     rules.extend(runs::runs_rules());
     rules.extend(projects::projects_rules());
+    rules.extend(repos::repos_rules());
     rules
 }

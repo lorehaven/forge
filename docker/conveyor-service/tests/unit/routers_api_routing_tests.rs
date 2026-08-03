@@ -69,6 +69,12 @@ fn authenticated_routes() -> Vec<(&'static str, test::TestRequest)> {
             test::TestRequest::get().uri("/api/v1/repos/abc"),
         ),
         (
+            "PATCH /repos/{id}",
+            test::TestRequest::patch()
+                .uri("/api/v1/repos/abc")
+                .set_json(serde_json::json!({ "enabled": true })),
+        ),
+        (
             "POST /repos/{id}/enabled",
             test::TestRequest::post()
                 .uri("/api/v1/repos/abc/enabled")
