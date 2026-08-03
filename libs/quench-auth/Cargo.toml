@@ -1,6 +1,6 @@
 [package]
 name = "quench-auth"
-version = "0.3.3"
+version = "0.3.4"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Quench - authentication and JWT handling"

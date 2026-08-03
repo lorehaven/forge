@@ -1001,7 +1001,7 @@ dependencies = [
 
 [[package]]
 name = "conveyor-service"
-version = "0.5.9"
+version = "0.5.10"
 dependencies = [
  "actix-web",
  "async-trait",
@@ -3866,7 +3866,7 @@ dependencies = [
 
 [[package]]
 name = "quench-auth"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -3896,7 +3896,7 @@ dependencies = [
 
 [[package]]
 name = "quench-cache"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "dashmap",
  "redis",
@@ -3981,7 +3981,7 @@ dependencies = [
 
 [[package]]
 name = "quench-starter"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "actix-service",
  "actix-web",
