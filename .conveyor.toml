@@ -12,7 +12,7 @@ steps = [{ anvil = "format --check" }]
 
 [[stage.job]]
 name  = "lint"
-image = "ossiriand.arda:8080/forge/ci/rust-builder:latest"0
+image = "ossiriand.arda:8080/forge/ci/rust-builder:latest"
 steps = [{ anvil = "lint --all-targets --deny-warnings" }]
 
 [[stage.job]]
