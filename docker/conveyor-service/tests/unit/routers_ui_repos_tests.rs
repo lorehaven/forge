@@ -117,10 +117,7 @@ fn edit_fields_offer_only_writable_projects_when_editable() {
 
 #[test]
 fn only_known_error_slugs_translate_to_a_notice() {
-    assert_eq!(
-        known_error_key("forbidden"),
-        Some("ui_repos_err_forbidden")
-    );
+    assert_eq!(known_error_key("forbidden"), Some("ui_repos_err_forbidden"));
     // A hand-crafted `?err=` cannot smuggle an arbitrary translation key onto
     // the page - anything not on the allowlist renders no banner at all.
     assert_eq!(known_error_key("<script>alert(1)</script>"), None);

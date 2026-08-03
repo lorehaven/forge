@@ -137,11 +137,7 @@ pub struct RepoUpdate {
     pub enabled: bool,
 }
 
-pub async fn update(
-    db: &Db,
-    id: &str,
-    changes: &RepoUpdate,
-) -> Result<Option<Repo>, QueueError> {
+pub async fn update(db: &Db, id: &str, changes: &RepoUpdate) -> Result<Option<Repo>, QueueError> {
     let pool = pool(db)?;
     let schema = schema();
     let sql = format!(

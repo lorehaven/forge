@@ -153,12 +153,28 @@ fn handle_repl_command(input: &str) -> anyhow::Result<bool> {
             }
         }
 
+        "images" => repl_images(&args)?,
+
         _ => {
             warn("unknown command — type `help`");
         }
     }
 
     Ok(false)
+}
+
+fn repl_images(args: &[&str]) -> anyhow::Result<()> {
+    let update = args.contains(&"--update");
+    let registry_auth = args
+        .windows(2)
+        .filter(|pair| pair[0] == "--registry-auth")
+        .map(|pair| pair[1].to_string())
+        .collect::<Vec<_>>();
+    crate::image_updates::check_image_updates(
+        std::path::Path::new(crate::env::OVERLAY_DIR),
+        update,
+        &registry_auth,
+    )
 }
 
 fn error(msg: &str) {

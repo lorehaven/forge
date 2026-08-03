@@ -188,8 +188,14 @@ pub async fn update(
         Err(error) => return ApiError::from(error).into_response(),
     };
 
-    if body.owner.as_deref().is_some_and(|owner| owner.trim().is_empty())
-        || body.name.as_deref().is_some_and(|name| name.trim().is_empty())
+    if body
+        .owner
+        .as_deref()
+        .is_some_and(|owner| owner.trim().is_empty())
+        || body
+            .name
+            .as_deref()
+            .is_some_and(|name| name.trim().is_empty())
     {
         return json_error(
             actix_web::http::StatusCode::BAD_REQUEST,

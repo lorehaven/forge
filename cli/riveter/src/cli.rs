@@ -108,6 +108,19 @@ pub enum Cmd {
         #[arg(value_name = "TARGET", help = TARGET_HELP)]
         targets: Vec<String>,
     },
+    /// Check overlay deployment image tags for newer registry tags
+    Images {
+        /// Rewrite deployment templates in place to the newest compatible tag found
+        #[arg(long)]
+        update: bool,
+        /// Overlay directory to scan
+        #[arg(long, value_name = "DIR")]
+        overlays_dir: Option<std::path::PathBuf>,
+        /// Registry credentials, repeatable; prefer `RIVETER_REGISTRY_AUTH` or
+        /// Docker config to avoid shell history
+        #[arg(long = "registry-auth", value_name = "REGISTRY=USER:PASS")]
+        registry_auth: Vec<String>,
+    },
     /// Start the interactive REPL (also the default with no arguments)
     Repl,
     /// Show help, or detail for one command

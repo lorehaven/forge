@@ -206,6 +206,37 @@ pub const COMMANDS: &[CommandHelp] = &[
         targets: true,
     },
     CommandHelp {
+        name: "images",
+        surface: Surface::Both,
+        aliases: &[],
+        usage: "[options]",
+        summary: "Check overlay image tags for newer registry tags",
+        detail: "Scans every deployment*.yaml.j2 template under overlays/ for `image:`\n\
+                 lines, and checks each one's registry for a newer tag with the same\n\
+                 prefix/suffix and at least as many version components. A floating tag\n\
+                 (latest, stable, edge, main, master, dev, nightly) is reported but never\n\
+                 compared.",
+        subcommands: &[],
+        options: &[
+            (
+                "--update",
+                "Rewrite templates in place to the newest tag found",
+            ),
+            (
+                "--registry-auth <REGISTRY=USER:PASS>",
+                "Credentials for one registry; repeatable",
+            ),
+        ],
+        examples: &[
+            ("images", "list available updates"),
+            (
+                "images --update",
+                "rewrite templates to the newest compatible tag",
+            ),
+        ],
+        targets: false,
+    },
+    CommandHelp {
         name: "help",
         surface: Surface::Both,
         aliases: &["h"],

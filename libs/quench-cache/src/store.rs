@@ -288,21 +288,21 @@ impl RedisStore {
             return Err(CacheError::Backend("no Redis URL configured".into()));
         }
 
-        let connection =
-            if cluster || seeds.len() > 1 {
-                let client = redis::cluster::ClusterClient::new(seeds).map_err(|err| {
-                    CacheError::Backend(format!("invalid Redis cluster URL: {err}"))
-                })?;
-                Connection::Cluster(client.get_async_connection().await.map_err(|err| {
-                    CacheError::Backend(format!("Redis cluster connection failed: {err}"))
-                })?)
-            } else {
-                let client = redis::Client::open(seeds[0])
-                    .map_err(|err| CacheError::Backend(format!("invalid Redis URL: {err}")))?;
-                Connection::Single(client.get_connection_manager().await.map_err(|err| {
+        let connection = if cluster || seeds.len() > 1 {
+            let client = redis::cluster::ClusterClient::new(seeds)
+                .map_err(|err| CacheError::Backend(format!("invalid Redis cluster URL: {err}")))?;
+            Connection::Cluster(client.get_async_connection().await.map_err(|err| {
+                CacheError::Backend(format!("Redis cluster connection failed: {err}"))
+            })?)
+        } else {
+            let client = redis::Client::open(seeds[0])
+                .map_err(|err| CacheError::Backend(format!("invalid Redis URL: {err}")))?;
+            Connection::Single(
+                client.get_connection_manager().await.map_err(|err| {
                     CacheError::Backend(format!("Redis connection failed: {err}"))
-                })?)
-            };
+                })?,
+            )
+        };
 
         Ok(Self {
             connection,

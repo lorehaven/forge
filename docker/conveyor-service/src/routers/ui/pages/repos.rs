@@ -70,7 +70,9 @@ async fn writable_project_ids(db: &Db, claims: &Claims, all_projects: &[Project]
         return all_projects.iter().map(|p| p.id.clone()).collect();
     }
     let granted = granted_project_ids(claims, "write");
-    projects::descendant_ids(db, &granted).await.unwrap_or_default()
+    projects::descendant_ids(db, &granted)
+        .await
+        .unwrap_or_default()
 }
 
 /// `root/.../leaf`, read out of an in-memory project list rather than a
@@ -404,7 +406,9 @@ pub fn create_panel(writable_projects: &[&Project], all_projects: &[Project]) ->
         return None;
     }
 
-    let mut project_select = select().attr("id", "new-project").attr("name", "project_id");
+    let mut project_select = select()
+        .attr("id", "new-project")
+        .attr("name", "project_id");
     for project in writable_projects {
         project_select = project_select.child(
             option()
@@ -707,14 +711,11 @@ pub fn edit_fields(
         )
         .child(project_select)
         .child(
-            div()
-                .class("repos-checkbox-row")
-                .child(enabled_box)
-                .child(
-                    label()
-                        .attr("for", "enabled")
-                        .attr("data-i18n", "ui_repo_enabled"),
-                ),
+            div().class("repos-checkbox-row").child(enabled_box).child(
+                label()
+                    .attr("for", "enabled")
+                    .attr("data-i18n", "ui_repo_enabled"),
+            ),
         )
 }
 
@@ -722,11 +723,9 @@ fn not_found() -> HttpResponse {
     render_page(
         HttpResponse::NotFound(),
         content().class("repos-content").child(
-            div().class("repos-container").child(
-                div()
-                    .class("empty")
-                    .attr("data-i18n", "ui_repos_not_found"),
-            ),
+            div()
+                .class("repos-container")
+                .child(div().class("empty").attr("data-i18n", "ui_repos_not_found")),
         ),
         UiPageKind::Home,
     )

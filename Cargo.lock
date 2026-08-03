@@ -4295,6 +4295,7 @@ dependencies = [
  "bytes",
  "cookie 0.18.1",
  "cookie_store",
+ "futures-channel",
  "futures-core",
  "futures-util",
  "http 1.4.2",
@@ -4348,14 +4349,20 @@ name = "riveter"
 version = "0.2.1"
 dependencies = [
  "anyhow",
+ "base64 0.23.0",
  "clap",
+ "dotenvy",
  "minijinja",
  "quench-cli",
  "regex",
+ "reqwest",
  "rustyline",
  "serde",
+ "serde_json",
  "serde_yaml",
  "toml",
+ "urlencoding",
+ "walkdir",
 ]
 
 [[package]]

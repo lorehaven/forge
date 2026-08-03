@@ -106,6 +106,14 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
+        Some(Cmd::Images {
+            update,
+            overlays_dir,
+            registry_auth,
+        }) => {
+            let overlays_dir = overlays_dir.unwrap_or_else(|| riveter::env::OVERLAY_DIR.into());
+            riveter::image_updates::check_image_updates(&overlays_dir, update, &registry_auth)
+        }
         Some(Cmd::Help { command }) => print_help(command.as_deref()),
         Some(Cmd::Repl) | None => repl(),
     }
