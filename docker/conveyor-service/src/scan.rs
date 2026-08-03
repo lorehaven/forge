@@ -231,14 +231,19 @@ impl CheckResult {
 
         // The tool's output did not look like anything this module knows how
         // to read - fall back to what the step itself already recorded.
-        self.headline = if self.passed {
-            "passed".to_string()
-        } else {
-            match exit_code {
-                Some(code) => format!("failed (exit {code})"),
-                None => "failed".to_string(),
-            }
+        if self.passed {
+            self.headline = "passed".to_string();
+            return self;
+        }
+
+        self.headline = match exit_code {
+            Some(code) => format!("failed (exit {code})"),
+            None => "failed".to_string(),
         };
+        // A failure with unparseable output has nothing else to summarise -
+        // the tail of the log is the closest thing to a "finding" available,
+        // so surface it. A passing step's tail (e.g. "10 modules scanned")
+        // is not a finding and must not inflate the chip count above.
         self.findings = stripped
             .iter()
             .rev()
@@ -472,6 +477,41 @@ mod tests {
     #[test]
     fn parses_clean_lint() {
         assert!(parse_lint(&["Checking foo v0.1.0", "Finished"]).is_none());
+    }
+
+    /// Regression: a passed lint step whose output doesn't match cargo's
+    /// `warning:`/`error:` shape (e.g. anvil's own "N modules scanned"
+    /// summary) must not have its log tail treated as findings - that
+    /// previously made a clean run's chip show the line count instead of 0.
+    #[test]
+    fn passed_check_with_unparseable_output_has_no_findings() {
+        let result = CheckResult {
+            kind: CheckKind::Lint,
+            job_name: "check/lint".to_string(),
+            headline: String::new(),
+            findings: Vec::new(),
+            passed: true,
+        }
+        .parsed(&["10 modules scanned, 0 lint errors"], Some(0));
+
+        assert_eq!(result.headline, "passed");
+        assert!(result.findings.is_empty());
+    }
+
+    #[test]
+    fn failed_check_with_unparseable_output_falls_back_to_log_tail() {
+        let result = CheckResult {
+            kind: CheckKind::Lint,
+            job_name: "check/lint".to_string(),
+            headline: String::new(),
+            findings: Vec::new(),
+            passed: false,
+        }
+        .parsed(&["thread panicked", "some other diagnostic"], Some(101));
+
+        assert_eq!(result.headline, "failed (exit 101)");
+        assert_eq!(result.findings.len(), 2);
+        assert_eq!(result.findings[0].title, "thread panicked");
     }
 
     #[test]
