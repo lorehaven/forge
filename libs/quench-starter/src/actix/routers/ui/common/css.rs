@@ -15,9 +15,7 @@ pub fn layout_rules() -> Vec<CssRule> {
                         .property("text-overflow", "ellipsis"),
                 ),
         ),
-        CssRule::new(".content")
-            .property("overflow-y", "hidden")
-            .property("padding", "1rem"),
+        CssRule::new(".content").property("padding", "1rem"),
         CssRule::new(".content-inner")
             .property("min-height", "unset")
             .property("width", "100%")

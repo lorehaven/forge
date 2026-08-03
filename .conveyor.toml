@@ -1,12 +1,7 @@
-# Every push to master, and every pull request. Naming any event turns the
-# others off, so a tag push does not build here.
+# Every push to master, and every pull request.
 on = { push = ["master"], pull_request = ["*"] }
 
 # ---------------------------------------------------------------- check
-# Formatting, clippy, unused dependencies and a vulnerability audit. Separate
-# jobs in one stage, so they run together and one failure does not hide the
-# other three - and so the repo scan page (/conveyor/ui/repos/.../scan) has
-# lint, machete and audit to read back from.
 [[stage]]
 name = "check"
 
@@ -17,9 +12,7 @@ steps = [{ anvil = "format --check" }]
 
 [[stage.job]]
 name  = "lint"
-image = "ossiriand.arda:8080/forge/ci/rust-builder:latest"
-# Matches the workspace's own lint policy - see anvil lint --all-targets
-# --deny-warnings used everywhere else in this repo.
+image = "ossiriand.arda:8080/forge/ci/rust-builder:latest"0
 steps = [{ anvil = "lint --all-targets --deny-warnings" }]
 
 [[stage.job]]
