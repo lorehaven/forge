@@ -1,11 +1,5 @@
 # Quench Basic Example
 
-Sample Quench application demonstrating a minimal setup.
+The smallest possible Quench application (`quench-example-basic`) — a minimal `axum` server built with `quench-web`'s `AppShellBuilder`, serving as a smoke test and starting point for a service's UI.
 
-## Run
-
-```bash
-cargo run -p quench-example-basic
-```
-
-This boots the sample web shell (`header`, `nav`, `content`, `footer`, `modal`) with the shared Quench UI style.
+See [docs/examples/basic.md](../../docs/examples/basic.md) for full documentation.
