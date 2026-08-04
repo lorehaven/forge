@@ -79,7 +79,7 @@ pub const ALLOWED_UPLOAD_TYPES: &[(&str, &str)] = &[
     ("scss", "text/css"),
 ];
 
-/// Map a file name to its stored MIME type. Returns None for unsupported formats.
+/// Map a file name to its stored MIME type; `None` if the extension is unsupported.
 pub fn allowed_mime_type(file_name: &str) -> Option<&'static str> {
     let ext = file_name.rsplit('.').next()?.to_lowercase();
     ALLOWED_UPLOAD_TYPES
@@ -106,16 +106,14 @@ pub struct FileUploadForm {
     pub project_id: Option<Text<String>>,
 }
 
-/// Log the underlying error and answer with the generic i18n error code. The
-/// UI resolves `api_error_*` codes through the i18n dictionary.
+/// Log the underlying error and return the generic `api_error_*` code the UI resolves via i18n.
 fn internal_error<E: std::fmt::Display>(e: E) -> HttpResponse {
     tracing::error!("Internal error: {}", e);
     HttpResponse::InternalServerError().body("api_error_internal")
 }
 
-/// Validate and store an uploaded file, then start background processing.
-/// Shared by the JSON API and the UI upload endpoint; errors come back as
-/// ready-to-return HTTP responses.
+/// Validate and store an uploaded file, then start background processing. Shared by the JSON
+/// API and the UI upload endpoint; errors come back as ready-to-return HTTP responses.
 pub async fn create_uploaded_file(
     db: &Db,
     switchboard: &SwitchboardClient,
@@ -185,8 +183,7 @@ pub async fn create_uploaded_file(
         }
     }
 
-    // Images are not text-extracted: they are ready as soon as the blob is
-    // stored and never enter the chunk/embed pipeline.
+    // Images are not text-extracted: ready as soon as the blob is stored, never enter the chunk/embed pipeline.
     let is_image = crate::files::is_image_mime(mime_type);
     let now = Utc::now().to_rfc3339();
     let file = File {
@@ -345,9 +342,8 @@ pub async fn list_files(
     }
 }
 
-/// Files visible in a conversation: attached to it directly, or — when it
-/// belongs to a project — attached to the project or to any of the project's
-/// conversations.
+/// Files visible in a conversation: attached directly, or — if it belongs to a project —
+/// attached to the project or any of the project's conversations.
 pub async fn visible_files_for_conversation(
     db: &Db,
     conversation: &Conversation,
@@ -402,8 +398,7 @@ pub async fn visible_files_for_conversation(
     }
 }
 
-/// Files visible in a project: attached to it directly or to any of its
-/// conversations.
+/// Files visible in a project: attached to it directly or to any of its conversations.
 pub async fn visible_files_for_project(db: &Db, project_id: &str) -> Result<Vec<File>, String> {
     match db {
         Db::Postgres(pg_db) => {
@@ -574,8 +569,7 @@ pub async fn download_file(
                         .chars()
                         .filter(|c| !c.is_control() && *c != '"' && *c != '\\')
                         .collect();
-                    // Images render inline (thumbnails, opening in a tab);
-                    // everything else stays a download.
+                    // Images render inline (thumbnails, opening in a tab); everything else stays a download.
                     let disposition = if crate::files::is_image_mime(&file.mime_type) {
                         "inline"
                     } else {

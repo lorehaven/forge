@@ -1,13 +1,8 @@
 # Pulley Backup Configuration Example
 #
-# Global configs: Place in ~/.config/pulley/*.toml for shared jobs
-#                 Examples: personal.toml, servers.toml, work.toml
-#
-# Local configs:  Place in the current directory as *.pulley.toml
-#                 Examples: project.pulley.toml, home.pulley.toml
-#
-# Multiple config files are supported and merged alphabetically.
-# Local jobs override global jobs with matching IDs.
+# Global configs (~/.config/pulley/*.toml, e.g. personal.toml) and local configs
+# (*.pulley.toml in the current directory) merge alphabetically; local jobs
+# override global jobs with matching IDs.
 
 # Local backup example
 [[jobs]]

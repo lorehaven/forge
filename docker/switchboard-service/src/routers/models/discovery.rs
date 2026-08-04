@@ -369,8 +369,7 @@ pub fn infer_params_from_name(name: &str) -> Option<f64> {
 pub fn infer_architecture(path: &str) -> Option<(usize, usize, usize)> {
     let mut file = File::open(path).ok()?;
 
-    // Read only GGUF header + metadata region.
-    // Reduced from 16MB to 1MB as suggested in the plan.
+    // Read only the GGUF header + metadata region (1MB, down from 16MB).
     let mut bytes = vec![0u8; 1024 * 1024];
 
     let read = file.read(&mut bytes).ok()?;

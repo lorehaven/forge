@@ -25,9 +25,8 @@ impl RagConfig {
     }
 }
 
-/// Default instruction wrapped around a search query for instruction-tuned
-/// embedding models (Qwen3-Embedding et al.). Set the env var to an empty
-/// string to embed queries verbatim for plain embedding models.
+/// Default instruction wrapped around a search query for instruction-tuned embedding models
+/// (Qwen3-Embedding et al.); set the env var empty to embed queries verbatim for plain models.
 const DEFAULT_QUERY_INSTRUCTION: &str =
     "Given a search query, retrieve relevant passages from the uploaded documents";
 
@@ -83,13 +82,10 @@ fn detail_from_metadata(metadata: &Option<serde_json::Value>) -> Option<String> 
     None
 }
 
-/// Cosine-search the embedded chunks visible to a conversation (its own
-/// files, its project's files, and files of sibling conversations in the
-/// same project).
-///
-/// `project_id_hint` scopes the search when the conversation row does not exist
-/// yet (e.g. the first message of a project chat, persisted only after tools
-/// run). When the conversation exists its own project link takes precedence.
+/// Cosine-search the embedded chunks visible to a conversation (its own files, its project's
+/// files, and files of sibling conversations in the same project). `project_id_hint` scopes the
+/// search when the conversation row doesn't exist yet (first message of a project chat); when
+/// the conversation exists, its own project link takes precedence.
 pub async fn search_chunks(
     db: &Db,
     switchboard: &SwitchboardClient,
@@ -103,8 +99,7 @@ pub async fn search_chunks(
         return Err("file search requires a Postgres database".to_string());
     };
 
-    // A missing conversation is not fatal: the query then relies on the project
-    // scope (see the WHERE clause below), which the hint supplies.
+    // A missing conversation is not fatal: the query falls back to the project scope the hint supplies.
     let conversation = db
         .repository::<Conversation>()
         .read(conversation_id)
@@ -173,8 +168,7 @@ pub struct RagSource {
     pub similarity: Option<f64>,
 }
 
-/// Persist which chunks fed a message's answer, for UI source attribution.
-/// `source` is "auto" (injected into the prompt) or "tool" (file_search).
+/// Persist which chunks fed a message's answer, for UI source attribution; `source` is "auto" (injected into the prompt) or "tool" (file_search).
 pub async fn record_rag_contexts(
     db: &Db,
     message_id: &str,
@@ -254,11 +248,9 @@ pub async fn load_sources_for_messages(
     map
 }
 
-/// Build the system-prompt addition for a conversation with uploaded files:
-/// a list of available files plus, when enabled, excerpts relevant to the
-/// current user message. Returns the prompt text and the hits that were
-/// injected (for source attribution). Returns None when the conversation has
-/// no ready files.
+/// Build the system-prompt addition for a conversation with uploaded files: a list of available
+/// files plus, when enabled, excerpts relevant to the current message. Returns the prompt text
+/// and injected hits (for source attribution), or `None` if the conversation has no ready files.
 pub async fn augment_system_prompt(
     db: &Db,
     switchboard: &SwitchboardClient,
@@ -275,8 +267,7 @@ pub async fn augment_system_prompt(
     let files = crate::routers::files::visible_files_for_conversation(db, &conversation)
         .await
         .ok()?;
-    // Images have no chunks to search; they reach the model as message
-    // content parts instead of RAG excerpts.
+    // Images have no chunks to search; they reach the model as message content parts instead.
     let ready_files: Vec<_> = files
         .iter()
         .filter(|f| f.status == STATUS_READY && !crate::files::is_image_mime(&f.mime_type))

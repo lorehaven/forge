@@ -64,8 +64,7 @@ pub async fn handle(query: web::Query<SearchQuery>) -> impl Responder {
     let per_page = query.per_page.clamp(1, 100);
     let page = query.page.max(1);
 
-    // Collect all matching crates by scanning the storage directory.
-    // Each crate lives at <root>/<name>/ ; we match names containing `q`.
+    // Scan the storage directory (`<root>/<name>/`) for names containing `q`.
     let crate_root = std::path::PathBuf::from(CRATES_STORAGE_ROOT.as_str());
     let mut matches: Vec<SearchCrate> = Vec::new();
 
@@ -83,8 +82,7 @@ pub async fn handle(query: web::Query<SearchQuery>) -> impl Responder {
                 continue;
             }
 
-            // The max version is the lexicographically greatest version
-            // sub-directory present — good enough for a private registry.
+            // The highest version sub-directory present — good enough for a private registry.
             let max_version = find_max_version(&entry.path()).await;
 
             if let Some(version) = max_version {
@@ -134,8 +132,7 @@ async fn find_max_version(crate_dir: &std::path::Path) -> Option<String> {
     versions.into_iter().last()
 }
 
-/// Compares two version strings using semver semantics when both parse
-/// successfully, otherwise falls back to lexicographic comparison.
+/// Compares by semver when both strings parse; otherwise falls back to lexicographic order.
 fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
     match (parse_semver(a), parse_semver(b)) {
         (Some(av), Some(bv)) => av.cmp(&bv),
@@ -143,8 +140,7 @@ fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
     }
 }
 
-/// Parses a `major.minor.patch[-pre][+build]` string into a comparable tuple.
-/// Returns `None` for anything that doesn't fit the pattern.
+/// Parses `major.minor.patch[-pre][+build]` into a comparable tuple; `None` if it doesn't fit.
 fn parse_semver(v: &str) -> Option<(u64, u64, u64, String)> {
     // Strip build metadata before parsing
     let v = v.split('+').next()?;

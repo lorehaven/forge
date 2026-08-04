@@ -8,15 +8,13 @@ fn db_schema() -> String {
     envmnt::get_or("DB_SCHEMA", "sage")
 }
 
-/// Upper bound on images sent to the model in one request, across the current
-/// message and history. Must not exceed the vLLM instance's
-/// `--limit-mm-per-prompt` image limit or requests with images will fail.
+/// Upper bound on images sent per request, across the current message and history. Must not
+/// exceed the vLLM instance's `--limit-mm-per-prompt`, or requests with images will fail.
 pub fn max_images_per_request() -> usize {
     envmnt::get_u64("SAGE_MAX_IMAGES_PER_REQUEST", 2) as usize
 }
 
-/// Rough prompt-budget cost of one image. Actual vision token counts depend
-/// on model and resolution; this is deliberately conservative.
+/// Rough prompt-budget cost of one image; deliberately conservative since actual vision token counts depend on model and resolution.
 pub fn image_token_estimate() -> usize {
     envmnt::get_u64("SAGE_IMAGE_TOKEN_ESTIMATE", 1024) as usize
 }
@@ -47,8 +45,7 @@ async fn load_blob(db: &Db, file_id: &str) -> Option<Vec<u8>> {
     }
 }
 
-/// Data URIs of the image files among `file_ids` owned by `username`, in the
-/// given order. Non-image and foreign files are silently skipped.
+/// Data URIs of the image files among `file_ids` owned by `username`, in order; non-image and foreign files are silently skipped.
 pub async fn load_staged_images(db: &Db, file_ids: &[String], username: &str) -> Vec<String> {
     let mut images = Vec::new();
     let repo = db.repository::<File>();
@@ -64,8 +61,7 @@ pub async fn load_staged_images(db: &Db, file_ids: &[String], username: &str) ->
     images
 }
 
-/// Image data URIs attached to each of the given message ids, in attachment
-/// order. Messages without image attachments have no entry.
+/// Image data URIs attached to each message id, in attachment order; messages with no images have no entry.
 pub async fn load_images_for_messages(
     db: &Db,
     message_ids: &[String],
@@ -104,8 +100,7 @@ pub async fn load_images_for_messages(
     map
 }
 
-/// Enforce the per-request image cap, preferring the newest messages: walk the
-/// request back-to-front and drop any images beyond `max`.
+/// Enforce the per-request image cap, preferring the newest messages: walk back-to-front, dropping any images beyond `max`.
 pub fn cap_images(messages: &mut [ChatMessage], max: usize) {
     let mut remaining = max;
     for msg in messages.iter_mut().rev() {

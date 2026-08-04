@@ -62,7 +62,6 @@ impl ConfigLoader {
         env_var: &str,
         default: Option<T>,
     ) -> Result<T> {
-        // Try file first
         if let Some(path) = file_path
             && Path::new(path).exists()
         {
@@ -75,14 +74,12 @@ impl ConfigLoader {
             }
         }
 
-        // Try environment variable
         if let Ok(content) = std::env::var(env_var)
             && let Ok(config) = serde_json::from_str::<T>(&content)
         {
             return Ok(config);
         }
 
-        // Use default or error
         default.ok_or_else(|| {
             ConfigError::MissingValue(format!("No config found in file or env var {}", env_var))
         })

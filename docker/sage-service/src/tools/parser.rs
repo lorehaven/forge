@@ -1,8 +1,7 @@
 use super::ToolCall;
 use regex::Regex;
 
-/// Matches either spelling of a tool-call opening tag (`<tool_call>` or
-/// `<toolcall>`). Reused by parsing and stripping.
+/// Matches either spelling of a tool-call opening tag (`<tool_call>` or `<toolcall>`).
 fn tool_tag_regex() -> Regex {
     Regex::new(r"(?s)<tool_?call>").unwrap()
 }
@@ -61,8 +60,7 @@ pub fn parse_tool_calls(content: &str) -> Vec<ToolCall> {
         content.len()
     );
 
-    // Absolute offset past the last consumed JSON object, so a tag appearing
-    // inside an already-parsed object is not treated as a new call.
+    // Absolute offset past the last consumed JSON object, so a tag inside it isn't treated as a new call.
     let mut consumed_until = 0;
     for m in tool_tag_regex().find_iter(content) {
         if m.end() < consumed_until {
@@ -150,10 +148,9 @@ fn normalize_tool_name(name: &str) -> String {
     }
 }
 
-/// Remove tool call syntax from content to get clean display text. For each
-/// opening tag we drop the tag, the balanced JSON object that follows, any
-/// trailing punctuation/whitespace (e.g. a stray `;`), and the closing tag when
-/// present. Residual bare tags (with no JSON) are stripped last.
+/// Remove tool call syntax from content to get clean display text: for each opening tag, drop the
+/// tag, its balanced JSON object, trailing punctuation/whitespace, and the closing tag if present.
+/// Residual bare tags (with no JSON) are stripped last.
 pub fn strip_tool_calls(content: &str) -> String {
     // Removes optional trailing junk then a closing tag right after the object.
     let close_re = Regex::new(r"(?s)^[;,\s]*</tool_?call>").unwrap();

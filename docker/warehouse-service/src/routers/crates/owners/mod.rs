@@ -47,8 +47,7 @@ async fn crate_exists(name: &str) -> bool {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Owner {
-    /// Numeric id (monotonically assigned on add; stable for the lifetime of
-    /// the entry – purely informational for Cargo).
+    /// Numeric id, monotonically assigned on add; stable for the entry's lifetime and purely informational for Cargo.
     pub id: u64,
     /// The login / username string Cargo uses to identify the owner.
     pub login: String,
@@ -114,8 +113,7 @@ pub async fn add(path: web::Path<String>, body: web::Json<OwnersRequest>) -> imp
 
     let mut owners = load_owners(&name).await.unwrap_or_default();
 
-    // Assign IDs sequentially based on current max; keeps IDs stable for
-    // existing entries.
+    // Assign IDs sequentially from the current max, so existing entries keep theirs.
     let mut next_id = owners.iter().map(|o| o.id).max().unwrap_or(0) + 1;
 
     for login in &body.users {

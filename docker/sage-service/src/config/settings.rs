@@ -9,23 +9,19 @@ pub struct DefaultModel {
     pub gpu_memory_utilization: Option<f32>,
     #[serde(rename = "context_len")]
     pub max_model_len: Option<u32>,
-    /// vLLM quantization method (passed as `--quantization`, e.g. "awq" for
-    /// AWQ 4-bit checkpoints). None = vLLM infers from the checkpoint config.
+    /// vLLM quantization method (`--quantization`, e.g. "awq"); None lets vLLM infer from the checkpoint.
     #[serde(rename = "quant", default)]
     pub quantization: Option<String>,
-    /// vLLM dtype (passed as `--dtype`, e.g. "float16" for models that fail
-    /// with the default bfloat16). None = vLLM "auto".
+    /// vLLM dtype (`--dtype`, e.g. "float16" for models that fail under default bfloat16); None = vLLM "auto".
     #[serde(default)]
     pub dtype: Option<String>,
-    /// Multimodal input limit for vision models, passed verbatim as
-    /// `--limit-mm-per-prompt` (e.g. `{"image": 4}`). Should cover
-    /// SAGE_MAX_IMAGES_PER_REQUEST. None = vLLM default (1 per modality).
+    /// Multimodal input limit for vision models, passed verbatim as `--limit-mm-per-prompt`
+    /// (e.g. `{"image": 4}`); should cover SAGE_MAX_IMAGES_PER_REQUEST. None = vLLM default (1 per modality).
     #[serde(rename = "limit_mm", default)]
     pub limit_mm_per_prompt: Option<String>,
     #[serde(default)]
     pub enable_tool_calling: bool,
-    /// vLLM task, e.g. "embed" for embedding models (passed to switchboard
-    /// so vLLM serves /v1/embeddings instead of chat completions).
+    /// vLLM task, e.g. "embed", so switchboard serves /v1/embeddings instead of chat completions.
     #[serde(default)]
     pub task: Option<String>,
 }
@@ -74,9 +70,8 @@ pub struct SageConfig {
     pub default_search_provider: String,
     pub available_search_providers: Vec<String>,
     pub capability_profile: crate::tools::CapabilityProfile,
-    /// When true, the default models launched at startup are gracefully
-    /// stopped (SIGTERM via switchboard) when the service shuts down.
-    /// Controlled by `SAGE_STOP_MODELS_ON_SHUTDOWN` (default: false).
+    /// When true, default models launched at startup are gracefully stopped (SIGTERM via
+    /// switchboard) on shutdown. Controlled by `SAGE_STOP_MODELS_ON_SHUTDOWN` (default: false).
     pub stop_models_on_shutdown: bool,
 }
 

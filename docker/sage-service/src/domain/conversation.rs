@@ -52,8 +52,7 @@ impl ConversationContext {
             images: None,
         });
 
-        // Add messages in reverse chronological order (newest first)
-        // but insert them in chronological order
+        // Walk newest-first to respect the token budget, then reverse into chronological order.
         let mut messages_to_include = Vec::new();
         for msg in self.messages.iter().rev() {
             let msg_tokens = Self::estimate_tokens(&msg.content);
@@ -84,9 +83,8 @@ impl ConversationContext {
     /// Get conversation summary (for display)
     pub fn get_messages_by_id(&self, message_id: Option<&str>) -> Vec<&ConversationMessage> {
         if let Some(id) = message_id {
-            // Collect the message and all of its ancestors, ordered root-first.
-            // This mirrors the branch semantics used when switching threads:
-            // a "branch" is the path from the root down to the selected message.
+            // Collect the message and its ancestors, root-first: a "branch" is the path
+            // from the root down to the selected message, mirroring thread-switch semantics.
             let mut result = Vec::new();
             let mut visited = std::collections::HashSet::new();
             let mut current = Some(id);

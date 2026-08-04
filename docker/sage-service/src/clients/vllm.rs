@@ -20,15 +20,13 @@ pub struct ChatMessage {
     pub content: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCall>>,
-    /// Image attachments as data URIs (`data:image/png;base64,...`). When
-    /// present, the message is serialized as an OpenAI content-parts array so
-    /// vision models receive the images alongside the text.
+    /// Image attachments as data URIs. When present, the message serializes as an OpenAI
+    /// content-parts array so vision models receive the images alongside the text.
     #[serde(default)]
     pub images: Option<Vec<String>>,
 }
 
-/// Serialize to the OpenAI chat format: plain string `content` for text-only
-/// messages, an array of `text` / `image_url` parts when images are attached.
+/// Serialize to OpenAI chat format: plain string `content` for text-only messages, an array of `text`/`image_url` parts when images are attached.
 impl Serialize for ChatMessage {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
@@ -117,10 +115,9 @@ pub struct StreamingFunction {
     pub arguments: Option<String>,
 }
 
-/// Convert accumulated streamed tool calls into `<tool_call>` text lines that
-/// the text-based tool parser understands, so native OpenAI function calling
-/// flows through the same downstream pipeline as tag-formatted calls. Drains
-/// the accumulator; entries without a name are skipped.
+/// Convert accumulated streamed tool calls into `<tool_call>` text lines the text-based parser
+/// understands, so native OpenAI function calling flows through the same pipeline as tag-formatted
+/// calls. Drains the accumulator; entries without a name are skipped.
 pub fn flush_streamed_tool_calls(
     accum: &mut std::collections::BTreeMap<usize, (String, String)>,
 ) -> Vec<String> {
@@ -129,8 +126,7 @@ pub fn flush_streamed_tool_calls(
         if name.is_empty() {
             continue;
         }
-        // Arguments arrive as a JSON string (e.g. "{}" or "{\"q\":\"x\"}");
-        // embed verbatim, defaulting to an empty object when absent.
+        // Arguments arrive as a JSON string; embed verbatim, defaulting to an empty object when absent.
         let args = if args.trim().is_empty() {
             "{}".to_string()
         } else {
@@ -256,8 +252,7 @@ impl VllmClient {
 
         let output_stream = async_stream::try_stream! {
             let mut buffer = Vec::new();
-            // Accumulates native (OpenAI) streamed tool calls by index until the
-            // model signals completion, then re-emits them as <tool_call> text.
+            // Accumulates native (OpenAI) streamed tool calls by index until the model signals completion, then re-emits them as <tool_call> text.
             let mut tool_accum: std::collections::BTreeMap<usize, (String, String)> =
                 std::collections::BTreeMap::new();
 
@@ -305,8 +300,7 @@ impl VllmClient {
                                     }
                                 }
 
-                                // A non-null finish_reason ends this turn; emit
-                                // any tool calls the model accumulated.
+                                // A non-null finish_reason ends this turn; emit any accumulated tool calls.
                                 if choice.finish_reason.is_some() {
                                     for synth in flush_streamed_tool_calls(&mut tool_accum) {
                                         yield synth;
@@ -330,8 +324,7 @@ impl VllmClient {
         Ok(Box::pin(output_stream))
     }
 
-    /// Generate embeddings for a batch of inputs. Returns one vector per
-    /// input, in input order.
+    /// Generate embeddings for a batch of inputs; returns one vector per input, in input order.
     pub async fn embeddings(
         &self,
         host: &str,

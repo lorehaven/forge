@@ -17,9 +17,8 @@ pub struct VllmInstance {
     pub max_model_len: Option<u32>,
     pub gpu_memory_utilization: Option<f32>,
     pub enable_prefix_caching: bool,
-    /// vLLM task the instance was launched with (e.g. "embed" for embedding
-    /// models). Embedding instances serve /v1/embeddings only, not chat
-    /// completions, so they must be excluded from the chat model selector.
+    /// vLLM task the instance was launched with (e.g. "embed"); embedding instances serve
+    /// /v1/embeddings only, so they must be excluded from the chat model selector.
     #[serde(default)]
     pub task: Option<String>,
     pub started_at: DateTime<Utc>,
@@ -27,8 +26,7 @@ pub struct VllmInstance {
 }
 
 impl VllmInstance {
-    /// Whether this instance can serve chat completions. Embedding
-    /// (pooling) instances cannot — routing chat to them yields a 404.
+    /// Whether this instance can serve chat completions; embedding (pooling) instances yield a 404 if routed chat.
     pub fn is_chat_capable(&self) -> bool {
         !matches!(self.task.as_deref(), Some("embed") | Some("embedding"))
     }
@@ -145,9 +143,8 @@ impl SwitchboardClient {
         result.map_err(|e| anyhow::anyhow!("{}", e))
     }
 
-    /// Request a graceful stop of a running vLLM instance. Switchboard sends
-    /// the underlying process a SIGTERM so vLLM can drain and shut down
-    /// cleanly. The endpoint returns an HTML fragment, so the body is ignored.
+    /// Request a graceful stop of a running vLLM instance (switchboard sends SIGTERM so it can
+    /// drain and shut down cleanly). The endpoint returns an HTML fragment, so the body is ignored.
     pub async fn stop_instance(&self, id: &str) -> Result<()> {
         if !self.circuit_breaker.is_available() {
             tracing::warn!("Switchboard circuit breaker is open");

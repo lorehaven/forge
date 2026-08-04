@@ -85,10 +85,7 @@ async fn garbage_collect() -> std::io::Result<CratesGcReport> {
         }
 
         // ------------------------------------------------------------------
-        // 1. Read the index file to learn which versions exist and which are
-        //    yanked.  Build two sets:
-        //      • indexed_versions  – every version mentioned in the index
-        //      • yanked_versions   – versions whose entry has yanked=true
+        // 1. Learn which versions are indexed and which are yanked
         // ------------------------------------------------------------------
         let (indexed_versions, yanked_versions, index_path, index_lines) =
             read_index_state(&crate_name).await;
@@ -217,8 +214,7 @@ async fn read_index_state(
     (indexed, yanked, Some(path), lines)
 }
 
-/// Removes index entries whose `.crate` tarball no longer exists on disk.
-/// Returns the number of entries removed.
+/// Removes index entries whose `.crate` tarball no longer exists; returns the count removed.
 async fn repair_index(index_path: &Path, lines: &[String], crate_name: &str) -> usize {
     let mut removed = 0usize;
     let mut kept_lines: Vec<&str> = Vec::new();

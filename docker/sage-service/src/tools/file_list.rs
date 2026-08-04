@@ -29,9 +29,8 @@ pub fn get_definition() -> ToolDefinition {
 pub struct FileListExecutor {
     db: Db,
     conversation_id: Option<String>,
-    /// The request's project scope, used to list project files when the
-    /// conversation row does not exist yet (e.g. the first message in a
-    /// project, where the conversation is persisted only after tools run).
+    /// The request's project scope, used to list project files when the conversation row
+    /// doesn't exist yet (first message in a project, before tools run and it's persisted).
     project_id: Option<String>,
 }
 
@@ -76,9 +75,8 @@ impl ToolExecutor for FileListExecutor {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        // Prefer the conversation's view (its own files plus its project's).
-        // The conversation may not be persisted yet on the first message of a
-        // project chat, so fall back to the request's project scope.
+        // Prefer the conversation's view (its own files plus its project's); fall back to the
+        // request's project scope if the conversation isn't persisted yet (first message of a project chat).
         let files_result = match self
             .db
             .repository::<Conversation>()

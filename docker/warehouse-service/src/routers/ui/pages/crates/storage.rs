@@ -54,8 +54,7 @@ pub fn list_crates() -> Vec<String> {
     let root = PathBuf::from(CRATES_STORAGE_ROOT.as_str()).join("index");
     let mut names: Vec<String> = Vec::new();
 
-    // The index tree is <root>/index/<prefix>/<name> — we walk recursively and
-    // collect leaf files (which are the index files, one per crate name).
+    // Recursively walks <root>/index/<prefix>/<name>, collecting leaf files (one index file per crate).
     collect_index_names(&root, &mut names);
     names.sort();
     names
@@ -77,8 +76,7 @@ fn collect_index_names(dir: &std::path::Path, out: &mut Vec<String>) {
     }
 }
 
-/// Reads all version records for a crate from its index file.
-/// Returns them in published order (oldest first, as written to the file).
+/// Reads all version records for a crate's index file, in published order (oldest first).
 pub fn list_versions(crate_name: &str) -> Vec<IndexRecord> {
     let Some(path) = crate::routers::crates::index_file_path(crate_name) else {
         return Vec::new();

@@ -58,8 +58,7 @@ async fn validate_search_providers(config: &SageConfig) -> Result<()> {
         config.available_search_providers.join(", ")
     );
 
-    // This is a placeholder for more detailed validation
-    // Different providers may need different checks
+    // Placeholder for more detailed, provider-specific validation.
     for provider in &config.available_search_providers {
         match provider.as_str() {
             "brave" => {

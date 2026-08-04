@@ -490,8 +490,7 @@ pub async fn stream_message(
         images: None,
     };
 
-    // Attach staged image uploads to the outgoing message so vision models
-    // can see them. Non-image attachments flow through RAG instead.
+    // Attach staged image uploads so vision models can see them; non-image attachments flow through RAG instead.
     if !req.skip_user_message {
         let staged_images =
             crate::files::images::load_staged_images(db.get_ref(), &req.file_id_list(), &username)
@@ -555,8 +554,7 @@ pub async fn stream_message(
         messages.push(current_user_message);
     }
 
-    // Stay within the vLLM instance's per-prompt image limit, preferring the
-    // newest images.
+    // Stay within the vLLM instance's per-prompt image limit, preferring the newest images.
     crate::files::images::cap_images(
         &mut messages,
         crate::files::images::max_images_per_request(),
@@ -564,8 +562,7 @@ pub async fn stream_message(
 
     let max_tokens = reserved_for_generation as u32;
 
-    // Convert tool definitions to OpenAI format for vLLM
-    // OpenAI format requires: {"type": "function", "function": {name, description, parameters}}
+    // Convert tool definitions to OpenAI format: {"type": "function", "function": {name, description, parameters}}
     let tool_definitions = tool_registry.get_definitions();
     let tools_json: Option<Vec<serde_json::Value>> = if !tool_definitions.is_empty() {
         let mut openai_tools = Vec::new();
@@ -619,9 +616,7 @@ pub async fn stream_message(
         let tool_registry = tool_registry_clone;
         let mut stream = stream;
 
-        // =============================================================================
         // PHASE 1: Stream response chunks in real-time (accumulated)
-        // =============================================================================
         tracing::info!("[STREAM_REFACTOR] Phase 1: Streaming response");
         while let Some(res) = stream.next().await {
             match res {
@@ -653,9 +648,7 @@ pub async fn stream_message(
 
         tracing::info!("[STREAM_REFACTOR] Phase 1 complete: {} chars collected", full_content.len());
 
-        // =============================================================================
         // PHASE 2: Parse tool calls and check for meta-questions
-        // =============================================================================
         tracing::info!("[STREAM_REFACTOR] Phase 2: Parsing tool calls from {} chars", full_content.len());
 
         // Debug: show if tool call tags are present
@@ -670,8 +663,7 @@ pub async fn stream_message(
                 &full_content[..full_content.len().min(500)]);
         }
 
-        // Suppress if meta-question
-        // Check if the user is asking meta-questions about tools
+        // Suppress tool calls if the user is asking a meta-question about tools rather than invoking one.
         let user_question_lower = req.message.to_lowercase();
         let is_meta_question = user_question_lower.contains("what tools")
             || user_question_lower.contains("what capabilities")
@@ -685,9 +677,7 @@ pub async fn stream_message(
             tool_calls.clear();
         }
 
-        // =============================================================================
         // PHASE 3: Execute all tools and collect results with markers
-        // =============================================================================
         tracing::info!("[STREAM_REFACTOR] Phase 3: Executing {} tools", tool_calls.len());
         let search_provider = req.search_provider.as_deref()
             .unwrap_or(&config.default_search_provider);
@@ -695,8 +685,7 @@ pub async fn stream_message(
         // Map of marker string → formatted HTML result
         let mut tool_results_with_markers: Vec<(String, String)> = Vec::new();
 
-        // Compile regex to match all tool call formats (same as parser supports)
-        // Matches: <tool_call>...</tool_call>, <toolcall>...</toolcall>, mismatched tags, unclosed
+        // Matches all tool call tag variants the parser supports: <tool_call>/<toolcall>, mismatched, unclosed.
         let tool_result_re = regex::Regex::new(r"(?s)<(?:tool_call|toolcall)>\s*(\{.*?\})\s*</(?:tool_call|toolcall)>").ok();
 
         for tool_call in &tool_calls {
@@ -766,14 +755,12 @@ pub async fn stream_message(
                 render_tool_result(tool_call, &result)
             };
 
-            // Find the tool call marker in the response
-            // We need to locate the exact <toolcall>...</toolcall> string
+            // Locate the exact <toolcall>...</toolcall> marker in the response.
             if let Some(re) = &tool_result_re {
                 // Find ALL tool call markers in the response
                 for marker_match in re.find_iter(&full_content) {
                     let marker_text = marker_match.as_str();
-                    // Check if this marker matches our current tool call
-                    // Match by tool name first, then by any content that appears in the arguments
+                    // Match this marker to the current tool call: by tool name first, then by argument content.
                     let mut matches = marker_text.contains(&tool_call.name);
 
                     // Also try to match by the query/parameter value if available
@@ -803,9 +790,7 @@ pub async fn stream_message(
 
         tracing::info!("[STREAM_REFACTOR] Phase 3 complete: {} tool results collected", tool_results_with_markers.len());
 
-        // =============================================================================
         // PHASE 4: Embed tool results into response
-        // =============================================================================
         tracing::info!("[STREAM_REFACTOR] Phase 4: Embedding results into response");
 
         // First, strip tool call markers from the raw response for storage
@@ -824,14 +809,11 @@ pub async fn stream_message(
 
         tracing::info!("[STREAM_REFACTOR] Phase 4 complete: Response ready for database");
 
-        // =============================================================================
-        // PHASE 5: Database operations (unchanged from original)
-        // =============================================================================
+        // PHASE 5: Database operations
         use quench_db::prelude::Crud;
         let conv_repo = db_clone.repository::<crate::domain::models::Conversation>();
         let updated_at = chrono::Utc::now().to_rfc3339();
-        // A blank existing title means the conversation was created lazily (e.g.
-        // by attaching a file before sending), so derive it from the message.
+        // A blank existing title means the conversation was created lazily (e.g. by attaching a file first), so derive it from the message.
         let title = match existing_title {
             Some(t) if !t.trim().is_empty() => t,
             _ => {
@@ -848,9 +830,8 @@ pub async fn stream_message(
             title,
             active_message_id: active_message_id.clone(),
             owner: username.clone(),
-            // Keep the stored project link when the request does not carry
-            // one, so a message without project_id cannot detach the
-            // conversation from its project.
+            // Keep the stored project link if the request doesn't carry one, so a message without
+            // project_id can't detach the conversation from its project.
             project_id: req.project_id.clone().or(existing_project_id),
             updated_at,
         };
@@ -937,9 +918,7 @@ pub async fn stream_message(
             tracing::error!("Failed to update conversation tip: {}", err);
         }
 
-        // =============================================================================
         // PHASE 6: Prepare final response with tool results embedded
-        // =============================================================================
         tracing::info!("[STREAM_REFACTOR] Phase 6: Finalizing response with tools");
 
         // Format everything as HTML - format_message now handles tool result blocks
@@ -1079,8 +1058,7 @@ pub async fn stream_message(
                     .class("branch-controls")
                     .child(edit_btn);
 
-                // Re-render must keep the attachment chips the send echo showed;
-                // otherwise this OOB swap would wipe them mid-stream.
+                // Re-render must keep the attachment chips the send echo showed, or this OOB swap wipes them mid-stream.
                 let staged_ids = req.file_id_list();
                 let user_attachments_opt = if staged_ids.is_empty() {
                     None
@@ -1195,10 +1173,8 @@ pub async fn stream_message(
                     );
                     projects_content = projects_content.child(item);
 
-                    // Mirror the home page: the open project's uploaded files
-                    // live above its conversations. Without this the OOB sidebar
-                    // swap on a conversation update would drop the Files section
-                    // until a full page reload.
+                    // Mirror the home page's file section here too, or the OOB sidebar swap on a
+                    // conversation update would drop it until a full page reload.
                     if is_active {
                         let files = crate::routers::files::visible_files_for_project(
                             &db_clone,
@@ -1553,8 +1529,7 @@ pub async fn get_conversation_messages(
                     .fetch_all(pg_db.pool())
                     .await?;
 
-            // Re-attach image uploads to their messages so vision models keep
-            // seeing them in follow-up turns.
+            // Re-attach image uploads to their messages so vision models keep seeing them in follow-up turns.
             let message_ids: Vec<String> = rows.iter().map(|(id, _, _)| id.clone()).collect();
             let mut images_by_message =
                 crate::files::images::load_images_for_messages(db, &message_ids).await;
@@ -1995,8 +1970,7 @@ pub async fn handle_edit(
         let _ = conv_repo.update(&conv).await;
     }
 
-    // Redirect to home page which will now detect the user message at tip and auto-respond
-    // We use HX-Redirect to tell HTMX to do a full page transition
+    // HX-Redirect to home, which will detect the user message at tip and auto-respond.
     let target_url = with_base_path(&format!("/ui/home?conversation_id={}", msg.conversation_id));
     HttpResponse::Ok()
         .append_header(("HX-Redirect", target_url))

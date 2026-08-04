@@ -37,10 +37,8 @@ fn status_label(status: &str) -> &str {
     }
 }
 
-/// A compact file chip. `staged` chips (in the composer, above the prompt)
-/// carry a `data-file-id` for form submission, a remove/cancel button, a retry
-/// on failure, and self-poll while still processing so the status badge stays
-/// live. Non-staged chips are read-only attachments shown under a sent message.
+/// A compact file chip. `staged` chips (in the composer) carry a `data-file-id`, remove/retry
+/// buttons, and self-poll while processing; non-staged chips are read-only, shown under a sent message.
 pub fn render_attachment_chip(file: &File, staged: bool) -> Element {
     // `data-file-id` lets the composer collect staged ids at submit time (see
     // the chat form's htmx:config-request handler). We deliberately avoid a
@@ -57,8 +55,7 @@ pub fn render_attachment_chip(file: &File, staged: bool) -> Element {
             format!("{} · {}", file.file_name, format_size(file.file_size)),
         );
 
-    // Poll for status while the file is still being extracted/embedded, so the
-    // badge updates from queued → processing → ready/failed without a reload.
+    // Poll for status while extracting/embedding, so the badge updates queued → processing → ready/failed without a reload.
     if staged && in_progress {
         chip = chip
             .attr(
@@ -94,8 +91,7 @@ pub fn render_attachment_chip(file: &File, staged: bool) -> Element {
                 .text(format_size(file.file_size)),
         );
 
-    // Status badge. The data-i18n key follows the raw status so every state
-    // resolves to a localized label; the English text stays as fallback.
+    // Status badge: the data-i18n key follows the raw status, with the English text as fallback.
     let mut badge = span()
         .class(format!(
             "attachment-status attachment-status-{}",
@@ -157,9 +153,8 @@ pub fn render_attachment_chip(file: &File, staged: bool) -> Element {
     chip
 }
 
-/// A single file row in a project's sidebar "Files" section. The name is a
-/// download link (cookie auth works on the API scope) and the three-dot menu
-/// offers deletion, mirroring the conversation history rows.
+/// A single file row in a project's sidebar "Files" section: the name is a download link
+/// (cookie auth works on the API scope), and the three-dot menu offers deletion, mirroring the conversation history rows.
 pub fn render_project_file_row(file: &File) -> Element {
     let item_id = format!("file-item-{}", file.id);
 
@@ -185,8 +180,7 @@ pub fn render_project_file_row(file: &File) -> Element {
         }))
         .child(span().class("file-item-name").text(&file.file_name));
 
-    // Surface a status badge for anything not yet searchable so the user can
-    // see processing / failed files at a glance.
+    // Surface a status badge for anything not yet searchable, so processing/failed files are visible at a glance.
     if file.status != STATUS_READY {
         name_link = name_link.child(
             span()
@@ -228,10 +222,8 @@ pub fn render_project_file_row(file: &File) -> Element {
         )
 }
 
-/// The collapsible "Files" section for a project's sidebar, listing every file
-/// visible to the project (attached to it or to any of its conversations).
-/// Returns a container holding the header and its (collapsed) content so the
-/// header's `nextElementSibling` toggle finds the content.
+/// The collapsible "Files" section for a project's sidebar, listing every file visible to the
+/// project. Returns header + (collapsed) content as siblings so the header's `nextElementSibling` toggle finds it.
 pub fn render_project_files_section(files: &[File]) -> Element {
     let header = div()
         .class("history-section-header collapsible files-section-header")
@@ -263,8 +255,7 @@ pub fn render_project_files_section(files: &[File]) -> Element {
     div().child(header).child(content)
 }
 
-/// A read-only row of attachment chips shown inside a sent user message.
-/// Returns None when there are no attachments.
+/// A read-only row of attachment chips shown inside a sent user message; `None` if there are none.
 pub fn render_attachments_row(files: &[File]) -> Option<Element> {
     if files.is_empty() {
         return None;
@@ -276,8 +267,7 @@ pub fn render_attachments_row(files: &[File]) -> Option<Element> {
     Some(row)
 }
 
-/// Load the caller's files by id (used to render chips for a message being
-/// sent, before they are linked). Silently skips ids the user does not own.
+/// Load the caller's files by id for rendering chips before they're linked; silently skips ids the user doesn't own.
 pub async fn load_owned_files(db: &Db, file_ids: &[String], username: &str) -> Vec<File> {
     let mut files = Vec::new();
     let repo = db.repository::<File>();
@@ -291,10 +281,9 @@ pub async fn load_owned_files(db: &Db, file_ids: &[String], username: &str) -> V
     files
 }
 
-/// Upload a file from the chat composer. Ensures the (possibly not-yet-sent)
-/// conversation row exists so the file's FK is valid, stores the file staged
-/// (message_id NULL), and returns a chip to append to the composer's staging
-/// area. The chip is linked to the user message when the message is sent.
+/// Upload a file from the chat composer. Ensures the (possibly not-yet-sent) conversation row
+/// exists so the file's FK is valid, stores it staged (message_id NULL), and returns a chip
+/// for the composer's staging area; it's linked to the message once that message is sent.
 #[post("/attach")]
 pub async fn attach(
     req: actix_web::HttpRequest,
@@ -315,8 +304,7 @@ pub async fn attach(
     };
     let project_id = form.project_id.as_ref().map(|t| t.0.clone());
 
-    // The conversation may not be persisted yet (fresh chat): create it so the
-    // file's conversation_id FK holds. A later message send updates it in place.
+    // The conversation may not be persisted yet (fresh chat): create it so the file's conversation_id FK holds.
     let conv_repo = db.repository::<Conversation>();
     match conv_repo.read(&conversation_id).await {
         Ok(Some(c)) if c.owner != username => return HttpResponse::Forbidden().finish(),
@@ -325,8 +313,7 @@ pub async fn attach(
             let now = Utc::now().to_rfc3339();
             let conv = Conversation {
                 id: conversation_id.clone(),
-                // Blank until the first message is sent (see title logic in
-                // stream_message), so the message text becomes the title.
+                // Blank until the first message is sent (see title logic in stream_message), so that text becomes the title.
                 title: String::new(),
                 active_message_id: None,
                 owner: username.clone(),
@@ -356,9 +343,8 @@ pub async fn attach(
     }
 }
 
-/// Remove a staged (not-yet-sent) attachment. Only deletes files still owned by
-/// the user and not yet linked to a message. Returns an empty body so the chip
-/// is swapped out.
+/// Remove a staged (not-yet-sent) attachment owned by the user and not yet linked to a message.
+/// Returns an empty body so the chip is swapped out.
 #[post("/detach/{file_id}")]
 pub async fn detach(
     req: actix_web::HttpRequest,
@@ -387,8 +373,7 @@ pub async fn detach(
     HttpResponse::Ok().content_type("text/html").body("")
 }
 
-/// Return the current chip for a staged file. Polled by the composer while the
-/// file is still processing; an empty body (file gone) removes the chip.
+/// Return the current chip for a staged file, polled while processing; an empty body (file gone) removes the chip.
 #[get("/chip/{file_id}")]
 pub async fn chip_status(
     req: actix_web::HttpRequest,
@@ -415,8 +400,7 @@ pub async fn chip_status(
     }
 }
 
-/// Retry processing a failed staged file. Returns a chip in the processing
-/// state so the composer resumes polling for the new status.
+/// Retry processing a failed staged file; returns a chip in the processing state so the composer resumes polling.
 #[post("/reprocess/{file_id}")]
 pub async fn reprocess(
     req: actix_web::HttpRequest,
@@ -461,8 +445,7 @@ pub async fn reprocess(
     }
 }
 
-/// Confirmation modal for deleting a project file from the sidebar. Mirrors the
-/// conversation delete modal so both flows look and behave identically.
+/// Confirmation modal for deleting a project file from the sidebar, mirroring the conversation delete modal.
 #[get("/delete-modal/{file_id}")]
 pub async fn delete_modal(
     req: actix_web::HttpRequest,
@@ -572,8 +555,8 @@ pub async fn delete_modal(
         .body(modal.render())
 }
 
-/// Delete a project file from the sidebar. Returns a closed modal plus an
-/// out-of-band swap that removes the file's row. Blobs and chunks cascade.
+/// Delete a project file from the sidebar; returns a closed modal plus an out-of-band swap
+/// that removes the file's row. Blobs and chunks cascade.
 #[post("/delete/{file_id}")]
 pub async fn delete_file_ui(
     req: actix_web::HttpRequest,

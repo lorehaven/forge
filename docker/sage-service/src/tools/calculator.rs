@@ -80,8 +80,7 @@ impl ToolExecutor for CalculatorExecutor {
 pub fn eval_expression(expr: &str) -> Result<f64, String> {
     let expr = expr.trim().to_lowercase();
 
-    // Simple mathematical expression evaluator
-    // Supports: +, -, *, /, %, ^, sqrt(), abs(), sin(), cos(), tan(), ln(), log()
+    // Simple expression evaluator; supports +, -, *, /, %, ^, sqrt(), abs(), sin(), cos(), tan(), ln(), log()
     eval_expr(&expr)
 }
 

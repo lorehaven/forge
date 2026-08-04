@@ -70,7 +70,6 @@ impl Database for PostgresDb {
         let table = Self::migration_table();
 
         for migration in migrations {
-            // Check if migration already applied
             let query = format!("SELECT EXISTS(SELECT 1 FROM {} WHERE id = $1)", table);
             let exists: (bool,) = sqlx::query_as(sqlx::AssertSqlSafe(query.as_str()))
                 .bind(&migration.id)

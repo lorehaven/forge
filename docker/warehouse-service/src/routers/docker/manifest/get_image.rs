@@ -109,8 +109,7 @@ pub(super) async fn resolve_manifest_response(
         .and_then(|h| h.to_str().ok())
         .unwrap_or("");
 
-    // Docker clients use several manifest probe patterns across HEAD/GET requests.
-    // Prefer serving the stored manifest over failing the pull with a strict 406.
+    // Docker clients probe with varying Accept headers; prefer serving what's stored over a strict 406.
     let chosen = negotiate_media_type(accept, &[stored_media_type]).unwrap_or(stored_media_type);
 
     Ok(ResolvedManifestResponse {

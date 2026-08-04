@@ -11,8 +11,7 @@ fn db_schema() -> String {
     envmnt::get_or("DB_SCHEMA", "sage")
 }
 
-/// Run extraction, chunking, and embedding for an uploaded file in the
-/// background.
+/// Run extraction, chunking, and embedding for an uploaded file in the background.
 pub fn spawn_processing(db: Db, switchboard: SwitchboardClient, vllm: VllmClient, file_id: String) {
     tokio::spawn(async move {
         match process_file(&db, &switchboard, &vllm, &file_id).await {
@@ -70,8 +69,7 @@ pub async fn process_file(
             tracing::info!("Embedded {} chunks for file {}", count, file_id);
         }
         EmbedOutcome::Skipped(reason) => {
-            // The file is still usable without vectors; a later reprocess
-            // fills them in once an embedding model is available.
+            // The file is still usable without vectors; a later reprocess fills them in.
             tracing::warn!(
                 "Chunks of file {} stored without embeddings: {}",
                 file_id,

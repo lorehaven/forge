@@ -91,8 +91,7 @@ fn test_chunk_segments_carry_metadata() {
         .filter(|c| c.metadata.get("heading") == Some(&json!("Intro")))
         .collect();
     assert!(intro.len() > 1);
-    // The second segment's single chunk keeps its page metadata and never
-    // mixes with the first segment's heading.
+    // The second segment's single chunk keeps its page metadata and never mixes with the first segment's heading.
     let paged: Vec<_> = chunks
         .iter()
         .filter(|c| c.metadata.get("page") == Some(&json!(2)))

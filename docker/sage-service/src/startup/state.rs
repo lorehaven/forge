@@ -16,8 +16,7 @@ use crate::routers::ui::chat::ChatState;
 use crate::runtime::rate_limiter::RateLimiter;
 use crate::tools;
 
-/// Everything the HTTP layer needs, built once at startup and cloned into each
-/// actix worker.
+/// Everything the HTTP layer needs, built once at startup and cloned into each actix worker.
 #[derive(Clone)]
 pub struct AppState {
     pub switchboard: SwitchboardClient,
@@ -36,8 +35,7 @@ pub struct AppState {
 }
 
 impl AppState {
-    /// Build every shared value the service needs. The returned `DbWrapper` is
-    /// handed to `serve`, which owns migrations and health reporting.
+    /// Build every shared value the service needs; the returned `DbWrapper` goes to `serve`, which owns migrations and health reporting.
     pub async fn init() -> (Self, Arc<DbWrapper>) {
         let db_wrapper = DbWrapper::init_env().await;
         let switchboard = SwitchboardClient::new();
@@ -165,8 +163,7 @@ fn init_tool_registry(
         Box::new(tools::file_ops::FileOpsExecutor::from_env()),
     );
 
-    // Registered without a conversation context; the chat flow builds a
-    // request-scoped registry that carries the actual conversation id.
+    // Registered without a conversation context; the chat flow builds a request-scoped registry that carries the actual conversation id.
     registry.register(
         "file_search".to_string(),
         Box::new(tools::file_search::FileSearchExecutor::new(
@@ -178,8 +175,7 @@ fn init_tool_registry(
         )),
     );
 
-    // Registered without a conversation context; the chat flow builds a
-    // request-scoped registry that carries the actual conversation id.
+    // Registered without a conversation context; the chat flow builds a request-scoped registry that carries the actual conversation id.
     registry.register(
         "file_list".to_string(),
         Box::new(tools::file_list::FileListExecutor::new(db, None, None)),

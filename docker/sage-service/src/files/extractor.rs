@@ -1,8 +1,7 @@
 use serde_json::{Map, Value};
 
-/// A contiguous piece of a document together with metadata describing where it
-/// came from (a Markdown heading, a PDF page, etc.). Chunks never span two
-/// segments, so every chunk inherits exactly one segment's metadata.
+/// A contiguous piece of a document with metadata describing where it came from (heading, page,
+/// etc.). Chunks never span two segments, so every chunk inherits exactly one segment's metadata.
 #[derive(Debug, Clone)]
 pub struct Segment {
     pub text: String,
@@ -63,10 +62,8 @@ pub fn extract_text(mime_type: &str, data: &[u8]) -> Result<String, String> {
         .join("\n\n"))
 }
 
-/// MIME types ingested verbatim as plain text: everything textual plus the
-/// structured formats whose raw source is already readable (JSON, YAML, ...).
-/// `text/csv`, `text/markdown` and `text/html` are matched before this guard
-/// and get dedicated extractors.
+/// MIME types ingested verbatim as plain text: everything textual plus structured formats whose
+/// raw source is readable (JSON, YAML, ...). `text/csv`, `text/markdown` and `text/html` get dedicated extractors instead.
 fn is_plain_text_mime(mime: &str) -> bool {
     mime.starts_with("text/")
         || matches!(
@@ -79,8 +76,7 @@ fn is_plain_text_mime(mime: &str) -> bool {
         )
 }
 
-/// Language label for source code and structured data MIME types, used to tag
-/// chunks so retrieval hits can name the language. None for generic text.
+/// Language label for source code and structured data MIME types, so retrieval hits can name the language; `None` for generic text.
 fn language_for_mime(mime: &str) -> Option<&'static str> {
     Some(match mime {
         "application/json" => "json",
@@ -117,8 +113,7 @@ fn extract_pdf(data: &[u8]) -> Result<Vec<Segment>, String> {
         .collect())
 }
 
-/// Render CSV rows as "header: value" lines so each record stays readable and
-/// self-describing after chunking.
+/// Render CSV rows as "header: value" lines so each record stays readable and self-describing after chunking.
 fn extract_csv(data: &[u8]) -> Result<Segment, String> {
     let mut reader = csv::ReaderBuilder::new().flexible(true).from_reader(data);
 
@@ -156,10 +151,9 @@ fn extract_csv(data: &[u8]) -> Result<Segment, String> {
     Ok(segment)
 }
 
-/// Flatten an HTML document into readable plain text: block-level elements
-/// become paragraphs (so the chunker can split on `\n\n`), inline markup is
-/// dropped, and non-content subtrees (scripts, styles, head) are skipped.
-/// The document title, when present, is kept as segment metadata.
+/// Flatten an HTML document into readable plain text: block-level elements become paragraphs
+/// (so the chunker can split on `\n\n`), inline markup is dropped, and non-content subtrees
+/// (scripts, styles, head) are skipped. The title, when present, is kept as segment metadata.
 fn extract_html(html: &str) -> Segment {
     use scraper::{Html, Node, Selector};
 
@@ -209,8 +203,7 @@ fn extract_html(html: &str) -> Segment {
         .filter(|t| !t.is_empty());
 
     let mut out = String::new();
-    // Whether the source had whitespace between the last emitted text and the
-    // next one; inline markup ("a<b>b</b>") must not introduce spaces.
+    // Whether the source had whitespace before the next text node; inline markup ("a<b>b</b>") must not introduce spaces.
     let mut pending_space = false;
     for node in document.root_element().descendants() {
         match node.value() {
@@ -250,8 +243,7 @@ fn extract_html(html: &str) -> Segment {
     }
 }
 
-/// Split Markdown into segments delimited by ATX headings (`#` .. `######`),
-/// tagging each with its nearest heading so retrieval hits can name a section.
+/// Split Markdown into segments delimited by ATX headings, tagging each with its nearest heading so retrieval hits can name a section.
 fn extract_markdown(text: &str) -> Vec<Segment> {
     let mut segments = Vec::new();
     let mut current_heading: Option<String> = None;

@@ -4,39 +4,29 @@
 # Model choices (all available via `ollama pull <model>`):
 #
 #  coding_lead        qwen2.5:14b
-#    General-purpose Qwen2.5 instruct. Strong instruction-following and
-#    structured output discipline — important for the router role where
-#    the model must emit a single name and nothing else. 14B is the sweet
-#    spot: fast enough to use as a lightweight coordinator, capable enough
-#    not to mis-route. Alternatively drop to qwen2.5:7b on tighter hardware.
+#    General-purpose Qwen2.5 instruct — strong instruction-following for the
+#    router role, which must emit a single name and nothing else. 14B balances
+#    speed and accuracy; drop to qwen2.5:7b on tighter hardware.
 #
 #  repo_analyst       qwen2.5-coder:7b
-#    Code-specific Qwen2.5 variant. Understands project structure, symbol
-#    relationships, and Rust/TS/Python idioms natively. Tool-call discipline
-#    is solid at 7B — it follows the JSON protocol reliably without the
-#    hallucination issues seen with llama3.1:8b.
-#    Alternatives: deepseek-coder-v2:16b (heavier, better on large codebases)
+#    Code-specific Qwen2.5 variant with native Rust/TS/Python understanding;
+#    reliable tool-call JSON at 7B, unlike the hallucinations seen with
+#    llama3.1:8b. Alternative: deepseek-coder-v2:16b for large codebases.
 #
 #  implementation_engineer   qwen2.5-coder:14b
-#    The 14B coder variant has GPT-4o-competitive scores on Aider (code repair
-#    benchmark) and EvalPlus. It handles multi-file context well and produces
-#    minimal, correct diffs. If you have the VRAM, qwen2.5-coder:32b is the
-#    strongest open-weight option currently available on Ollama.
-#    Alternatives: deepseek-coder-v2:16b, codellama:13b
+#    GPT-4o-competitive on Aider and EvalPlus; handles multi-file context with
+#    minimal, correct diffs. Upgrade to qwen2.5-coder:32b if VRAM allows.
+#    Alternatives: deepseek-coder-v2:16b, codellama:13b.
 #
 #  refactor_engineer  deepseek-coder-v2:16b
-#    DeepSeek-Coder-V2 (MoE, 16B active params) excels at understanding
-#    existing code before changing it — the "debugging partner" quality
-#    developers describe. Its chain-of-thought reasoning makes it less likely
-#    to introduce subtle call-site breakage during structural edits.
-#    Alternatives: qwen2.5-coder:14b, codellama:13b
+#    MoE, 16B active params — strong at understanding existing code before
+#    changing it, and less prone to subtle call-site breakage during
+#    structural edits. Alternatives: qwen2.5-coder:14b, codellama:13b.
 #
 #  qa_engineer        deepseek-r1:8b (or qwen2.5-coder:7b)
-#    QA is mostly about reading command output and drawing conclusions — a
-#    reasoning-focused model fits better here than a pure coder. DeepSeek-R1
-#    distilled at 8B has strong chain-of-thought for spotting failure patterns.
-#    If R1 is too slow on your hardware, qwen2.5-coder:7b is a fine substitute.
-#    Alternatives: qwen2.5:7b, phi4:14b
+#    QA is mostly reading command output and spotting failure patterns, which
+#    favors a reasoning model over a pure coder. Substitute qwen2.5-coder:7b
+#    if R1 is too slow. Alternatives: qwen2.5:7b, phi4:14b.
 #
 # Hardware guide (approximate VRAM needed at Q4_K_M):
 #   8GB  → use :7b variants everywhere

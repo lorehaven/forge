@@ -57,8 +57,7 @@ impl Model for Conversation {
     }
 }
 
-/// File statuses: "uploaded" (stored, not yet processed), "processing",
-/// "ready" (chunks + embeddings available), "failed".
+/// File statuses: "uploaded" (stored, not yet processed), "processing", "ready" (chunks + embeddings available), "failed".
 #[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
 pub struct File {
     pub id: String,
@@ -68,8 +67,7 @@ pub struct File {
     pub file_size: i64,
     pub conversation_id: Option<String>,
     pub project_id: Option<String>,
-    /// The user message this file was attached to, once the message is sent.
-    /// NULL while the file is still staged in the composer.
+    /// The user message this file was attached to; NULL while still staged in the composer.
     pub message_id: Option<String>,
     pub status: String,
     pub error_message: Option<String>,
@@ -105,8 +103,7 @@ impl Model for File {
     }
 }
 
-/// The `embedding` vector column is intentionally not part of this model;
-/// it is written and queried through raw SQL against pgvector.
+/// The `embedding` vector column is intentionally not part of this model; it's written and queried through raw SQL against pgvector.
 #[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
 pub struct FileChunk {
     pub id: String,

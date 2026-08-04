@@ -16,16 +16,14 @@ impl ChunkerConfig {
     }
 }
 
-/// A chunk of text ready to embed, carrying the metadata of the segment it came
-/// from (heading, page, etc.).
+/// A chunk of text ready to embed, carrying the metadata of the segment it came from (heading, page, etc.).
 #[derive(Debug, Clone)]
 pub struct Chunk {
     pub content: String,
     pub metadata: Map<String, Value>,
 }
 
-/// Chunk each segment independently so a chunk never spans two segments, and
-/// tag every chunk with its segment's metadata.
+/// Chunk each segment independently so a chunk never spans two segments, tagging every chunk with its segment's metadata.
 pub fn chunk_segments(segments: &[Segment], config: &ChunkerConfig) -> Vec<Chunk> {
     let mut chunks = Vec::new();
     for segment in segments {
@@ -39,9 +37,8 @@ pub fn chunk_segments(segments: &[Segment], config: &ChunkerConfig) -> Vec<Chunk
     chunks
 }
 
-/// Split text into chunks of roughly `max_tokens`, preferring paragraph
-/// boundaries. Consecutive chunks share an overlap so that context spanning
-/// a boundary is not lost.
+/// Split text into chunks of roughly `max_tokens`, preferring paragraph boundaries. Consecutive
+/// chunks share an overlap so context spanning a boundary isn't lost.
 pub fn chunk_text(text: &str, config: &ChunkerConfig) -> Vec<String> {
     let max_tokens = config.max_tokens.max(1);
     let paragraphs: Vec<&str> = text
@@ -75,8 +72,7 @@ pub fn chunk_text(text: &str, config: &ChunkerConfig) -> Vec<String> {
     chunks
 }
 
-/// Break a paragraph that alone exceeds the chunk size into whitespace-aligned
-/// pieces; smaller paragraphs pass through unchanged.
+/// Break a paragraph that alone exceeds the chunk size into whitespace-aligned pieces; smaller paragraphs pass through unchanged.
 fn split_oversized(paragraph: &str, max_tokens: u32) -> Vec<String> {
     if TokenCounter::count_tokens(paragraph) <= max_tokens {
         return vec![paragraph.to_string()];
@@ -101,8 +97,7 @@ fn split_oversized(paragraph: &str, max_tokens: u32) -> Vec<String> {
     pieces
 }
 
-/// The trailing portion of a chunk carried into the next one, cut at a
-/// whitespace boundary and capped at `overlap_tokens`.
+/// The trailing portion of a chunk carried into the next one, cut at a whitespace boundary and capped at `overlap_tokens`.
 fn tail_overlap(chunk: &str, overlap_tokens: u32) -> String {
     if overlap_tokens == 0 {
         return String::new();

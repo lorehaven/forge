@@ -65,8 +65,7 @@ impl SearchProvider for DuckDuckGoProvider {
         let mut results = Vec::new();
         const MAX_RESULTS: usize = 5;
 
-        // Parse search results from HTML
-        // DuckDuckGo HTML response uses <div class="result"> for each result
+        // DuckDuckGo's HTML response uses <div class="result"> for each result.
         let result_selector = Selector::parse(".result")
             .map_err(|e| format!("Failed to parse HTML selector: {:?}", e))?;
 

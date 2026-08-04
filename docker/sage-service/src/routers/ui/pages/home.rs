@@ -35,9 +35,8 @@ async fn handle_home_page(
 
     let instances = switchboard.get_vllm_instances().await;
 
-    // Every configured default model must be running before the chat UI is
-    // usable. Until then, send the user to the initializing screen which shows
-    // per-model launch progress and redirects back here once all are up.
+    // Every configured default model must be running before the chat UI is usable; until then,
+    // redirect to the initializing screen, which shows launch progress and sends the user back here.
     let models_ready = matches!(
         &instances,
         Ok(insts)
@@ -88,8 +87,7 @@ async fn handle_home_page(
         }
     }
 
-    // AUTO-TRIGGER LOGIC:
-    // If the last message is from a user, we need to auto-trigger an AI response.
+    // Auto-trigger an AI response if the last message is from the user.
     let mut auto_trigger_ai = None;
     if let Some((last_msg, _)) = active_messages.last()
         && last_msg.role == "user"
@@ -133,9 +131,7 @@ async fn handle_home_page(
         .collect();
     let attachments_by_message = crate::routers::files::files_by_message(&db, &user_ids).await;
 
-    // Files uploaded across the active project (attached to it or any of its
-    // conversations) power the sidebar "Files" section. Only load when an owned
-    // project is open.
+    // Files across the active project power the sidebar "Files" section; only load when an owned project is open.
     let project_files = match &query.project_id {
         Some(pid) if projects.iter().any(|p| &p.id == pid) => {
             crate::routers::files::visible_files_for_project(&db, pid)
@@ -208,9 +204,8 @@ pub(super) async fn home_slash(
     .await
 }
 
-/// Sidebar conversation link, falling back to a localized "New chat" label for
-/// conversations created lazily by attaching a file before the first message is
-/// sent (blank stored title).
+/// Sidebar conversation link, falling back to a localized "New chat" label for conversations
+/// created lazily by attaching a file before the first message is sent (blank stored title).
 fn conv_title_link(link: Element, title: &str) -> Element {
     if title.trim().is_empty() {
         link.attr("data-i18n", "ui_chat_untitled").text("New chat")
@@ -238,8 +233,7 @@ fn render_home_page(
 ) -> HttpResponse {
     let mut model_select = select().class("model-selector").attr("id", "model-select");
 
-    // Only chat-capable instances belong in the selector; embedding instances
-    // serve /v1/embeddings only and would 404 on chat completions.
+    // Only chat-capable instances belong in the selector; embedding instances would 404 on chat completions.
     let chat_instances: Vec<&VllmInstance> = match &instances_res {
         Ok(instances) => instances.iter().filter(|i| i.is_chat_capable()).collect(),
         Err(_) => Vec::new(),
@@ -303,8 +297,7 @@ fn render_home_page(
     }
 
     input_area_container = input_area_container
-        // Staging area for files attached to the next message. Chips carry
-        // hidden `file_ids` inputs that submit with the chat form.
+        // Staging area for files attached to the next message.
         .child(
             div()
                 .attr("id", "pending-attachments")
@@ -350,10 +343,8 @@ fn render_home_page(
                 provider_select = provider_select.child(opt);
             }
 
-            // Paperclip upload control, on the left of the search/model
-            // selectors. The hidden file input POSTs to /ui/files/attach and
-            // appends a chip to #pending-attachments; hx-include pulls the
-            // conversation/project scope from the composer's hidden inputs.
+            // Paperclip upload control: the hidden file input POSTs to /ui/files/attach and appends
+            // a chip to #pending-attachments; hx-include pulls scope from the composer's hidden inputs.
             let attach_input = input()
                 .attr("type", "file")
                 .attr("id", "composer-file-input")
@@ -481,8 +472,7 @@ fn render_home_page(
         );
         projects_content = projects_content.child(item);
 
-        // For the open project, list its uploaded files above its conversations
-        // so they can be previewed (downloaded) and deleted from the sidebar.
+        // For the open project, list its uploaded files above its conversations.
         if is_active {
             projects_content = projects_content.child(
                 crate::routers::ui::pages::files::render_project_files_section(&project_files),

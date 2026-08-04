@@ -15,8 +15,7 @@ pub fn init_vllm_status_publisher(broadcaster: Sender<String>, engine: Arc<dyn V
         loop {
             tokio::time::sleep(Duration::from_secs(2)).await;
             if let Ok(instances) = engine.list_instances().await {
-                // We assume admin view for the broadcast for now,
-                // as the management dashboard is primarily for admins.
+                // Assumes admin view for now; the dashboard is primarily for admins.
                 let html = render_instances_grid(instances, true);
                 let _ = broadcaster.send(html);
             }

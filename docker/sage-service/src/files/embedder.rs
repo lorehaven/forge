@@ -21,8 +21,7 @@ impl EmbedderConfig {
 }
 
 pub enum EmbedOutcome {
-    /// Embedding is disabled or no embedding model instance is running;
-    /// chunks stay without vectors and can be filled in via reprocess.
+    /// Embedding is disabled or no embedding model instance is running; chunks stay without vectors until a reprocess fills them in.
     Skipped(String),
     Embedded(usize),
 }
@@ -45,8 +44,7 @@ async fn find_running_instance(
         .ok_or_else(|| format!("no running instance of embedding model '{}'", model))
 }
 
-/// Embed arbitrary texts with the configured embedding model. Errors when
-/// embedding is disabled or no model instance is running.
+/// Embed arbitrary texts with the configured embedding model; errors if embedding is disabled or no model instance is running.
 pub async fn embed_texts(
     switchboard: &SwitchboardClient,
     vllm: &VllmClient,

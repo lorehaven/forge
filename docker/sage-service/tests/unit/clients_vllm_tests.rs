@@ -85,8 +85,7 @@ fn streamed_tool_call_chunks_deserialize() {
     );
 }
 
-/// Accumulated tool calls flush to a `<tool_call>` line that the text parser
-/// turns back into a concrete tool call.
+/// Accumulated tool calls flush to a `<tool_call>` line the text parser turns back into a concrete tool call.
 #[test]
 fn flush_produces_parseable_tool_call() {
     let mut accum = std::collections::BTreeMap::new();

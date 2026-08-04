@@ -7,9 +7,8 @@ use quench_auth::prelude::JwtConfig;
 use quench_starter::prelude::with_base_path;
 use quench_web::prelude::*;
 
-/// Launch state of a single configured default model, derived from the
-/// switchboard instance list. Every default model is required for Sage to
-/// function, so the initializing screen blocks until all of them are `Running`.
+/// Launch state of a configured default model; the initializing screen blocks until every
+/// model reaches `Running`, since all of them are required for Sage to function.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ModelState {
     Running,
@@ -22,9 +21,8 @@ pub enum ModelState {
     Unknown,
 }
 
-/// Resolve a model's state from the instances switchboard reported. When more
-/// than one instance matches (e.g. a stale failed one alongside a fresh
-/// starting one) the healthiest state wins.
+/// Resolve a model's state from switchboard's instances; if more than one matches (e.g. a
+/// stale failed one alongside a fresh starting one), the healthiest state wins.
 pub fn model_state(model: &DefaultModel, instances: &[VllmInstance]) -> ModelState {
     let mut state = ModelState::Pending;
     for inst in instances.iter().filter(|i| i.model == model.name) {
@@ -48,16 +46,14 @@ pub fn model_state(model: &DefaultModel, instances: &[VllmInstance]) -> ModelSta
     state
 }
 
-/// True when every configured default model has a running instance. Used both
-/// to gate the home page and to decide when the initializing screen is done.
+/// True when every configured default model has a running instance; gates the home page and the initializing screen.
 pub fn all_models_running(defaults: &[DefaultModel], instances: &[VllmInstance]) -> bool {
     defaults
         .iter()
         .all(|m| model_state(m, instances) == ModelState::Running)
 }
 
-/// Human-friendly label for a model, tagging embedding models so it is obvious
-/// why a non-chat model is in the list.
+/// Human-friendly label for a model, tagging embedding models so it's obvious why a non-chat model is in the list.
 fn model_label(model: &DefaultModel) -> Element {
     let name = span().text(&model.name);
     match model.task.as_deref() {
@@ -103,8 +99,7 @@ fn state_presentation(
     }
 }
 
-/// Render the list of model status rows. Shared between the initial full-page
-/// render and the polling fragment so the markup stays identical.
+/// Render the model status rows; shared between the full-page render and the polling fragment so markup stays identical.
 fn render_model_rows(
     defaults: &[DefaultModel],
     instances_res: &anyhow::Result<Vec<VllmInstance>>,
@@ -159,8 +154,7 @@ fn render_initializing_page(
                 .attr("data-i18n", "ui_init_subtitle")
                 .text("Launching the models Sage needs before you can start chatting."),
         )
-        // Poll the status fragment; it swaps these rows and issues an
-        // HX-Redirect to /ui/home once every model is running.
+        // Poll the status fragment; it swaps these rows and issues an HX-Redirect to /ui/home once every model is running.
         .child(
             div()
                 .attr("id", "model-status-list")

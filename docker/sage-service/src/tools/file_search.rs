@@ -35,8 +35,7 @@ pub struct FileSearchExecutor {
     switchboard: SwitchboardClient,
     vllm: VllmClient,
     conversation_id: Option<String>,
-    /// Request project scope, used to search project files when the
-    /// conversation row does not exist yet (first message of a project chat).
+    /// Request project scope, used to search project files when the conversation row doesn't exist yet (first message of a project chat).
     project_id: Option<String>,
 }
 

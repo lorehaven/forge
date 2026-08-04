@@ -4,8 +4,7 @@ use serde_json::json;
 /// Get metrics endpoint
 #[get("/metrics")]
 async fn get_metrics() -> HttpResponse {
-    // This is a placeholder - in a real implementation, you would collect
-    // metrics from all services and return them in Prometheus format
+    // Placeholder: a real implementation would collect metrics from all services in Prometheus format
     let metrics_text = r#"# HELP service_up Service is up and running
 # TYPE service_up gauge
 service_up{} 1

@@ -46,8 +46,7 @@ fn every_accepted_mime_is_handled_downstream() {
         if sage_service::files::is_image_mime(mime) {
             continue;
         }
-        // Empty/dummy input still fails (no content), but it must not fail
-        // with the "unsupported type" error.
+        // Empty/dummy input still fails (no content), but not with the "unsupported type" error.
         if let Err(err) = sage_service::files::extractor::extract_text(mime, b"probe") {
             assert!(
                 !err.starts_with("Unsupported MIME type"),

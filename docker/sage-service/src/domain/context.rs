@@ -70,13 +70,11 @@ impl ContextStatus {
     }
 }
 
-/// Simple token counter - estimates tokens based on character count
-/// Real implementation would use tiktoken or similar
+/// Simple token counter estimating tokens from character count; a real implementation would use tiktoken or similar.
 pub struct TokenCounter;
 
 impl TokenCounter {
-    /// Rough estimation: ~1 token per 4 characters (varies by model)
-    /// For accuracy, use actual tokenizer (tiktoken for OpenAI)
+    /// Rough estimation: ~1 token per 4 characters (varies by model); use a real tokenizer for accuracy.
     pub fn count_tokens(text: &str) -> u32 {
         (text.len() as u32).div_ceil(4)
     }
@@ -138,8 +136,7 @@ impl ContextManager {
         }
     }
 
-    /// Prune old messages to make room
-    /// Returns number of tokens freed
+    /// Prune old messages to make room; returns the number of tokens freed.
     pub fn prune_messages(messages: &mut Vec<(String, String)>, target_tokens: u32) -> u32 {
         let mut freed_tokens = 0;
 

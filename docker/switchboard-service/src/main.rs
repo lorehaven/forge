@@ -31,10 +31,6 @@ async fn main() -> std::io::Result<()> {
     let init_vllm_engine = vllm_engine.clone();
     let gatehouse_health_url = gatehouse_health_url();
     let init = async move {
-        // Gatehouse readiness gates this service's own readiness (every
-        // incoming request verifies against its JWKS), but it is unrelated to
-        // the model cache/sync/publisher setup below, so the two run
-        // concurrently rather than one delaying the other.
         tokio::join!(
             wait_for_services("switchboard-service", vec![gatehouse_health_url.as_str()]),
             async {

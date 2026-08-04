@@ -2,8 +2,7 @@
 use tracing::{subscriber::set_global_default, Level};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
-/// Initialize tracing with OpenTelemetry exports
-/// Configures both console logging and optional Jaeger export
+/// Initialize tracing with OpenTelemetry exports: console logging plus optional Jaeger export
 pub fn init_tracing() {
     let env_filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("info"));
@@ -16,8 +15,7 @@ pub fn init_tracing() {
         .expect("Failed to set tracing subscriber");
 }
 
-/// Initialize OpenTelemetry with Jaeger exporter for distributed tracing
-/// Requires JAEGER_ENDPOINT environment variable (e.g., http://localhost:14268/api/traces)
+/// Initialize OpenTelemetry with a Jaeger exporter for distributed tracing; requires JAEGER_ENDPOINT (e.g. http://localhost:14268/api/traces)
 #[cfg(feature = "jaeger")]
 pub fn init_jaeger_tracing(service_name: &str) {
     use opentelemetry::sdk::trace::{self, Sampler};
@@ -53,8 +51,7 @@ pub fn init_jaeger_tracing(service_name: &str) {
 /// Configuration for trace sampling
 #[derive(Debug, Clone)]
 pub struct TracingConfig {
-    /// Sample rate: 0.0 to 1.0
-    /// 0.0 = no sampling, 1.0 = sample all traces
+    /// Sample rate from 0.0 (no sampling) to 1.0 (sample all traces)
     pub sample_rate: f64,
     /// Enable Jaeger export
     pub jaeger_enabled: bool,

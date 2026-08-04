@@ -68,8 +68,7 @@ fn is_horizontal_rule(line: &str) -> bool {
     trimmed.chars().all(|c| c == first_char)
 }
 
-/// Render a "Sources" block listing the uploaded-file excerpts that fed an
-/// assistant answer. Returns None when there are no sources.
+/// Render a "Sources" block listing the uploaded-file excerpts that fed an assistant answer; `None` if there are none.
 pub fn render_sources(sources: &[crate::files::rag::RagSource]) -> Option<Element> {
     if sources.is_empty() {
         return None;
@@ -261,8 +260,7 @@ fn format_text_part_internal(text: &str) -> String {
         let trimmed = line.trim();
 
         if trimmed.is_empty() {
-            // Empty line: close Paragraph/Table.
-            // We keep list active so consecutive list items separated by blank lines group together.
+            // Empty line closes Paragraph/Table, but list stays active so items separated by blank lines still group together.
             match state {
                 BlockState::Paragraph(_) | BlockState::Table(_) => {
                     emit(&mut state, &mut html);

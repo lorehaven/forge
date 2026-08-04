@@ -44,8 +44,7 @@ impl RequestCost {
     }
 
     pub fn estimate_cost(&self) -> f64 {
-        // Simple cost estimation based on tokens and API calls
-        // Adjust multipliers based on your actual pricing
+        // Simple cost estimate; adjust multipliers below to your actual pricing.
         let token_cost = self.total_tokens_used as f64 * 0.000002; // $2 per 1M tokens (OpenAI GPT-4 pricing)
         let api_call_cost = self.total_api_calls as f64 * 0.001; // $0.001 per API call (example)
         token_cost + api_call_cost

@@ -7,10 +7,8 @@ use tokio::sync::Mutex;
 use crate::clients::switchboard::{SwitchboardClient, VllmInstance};
 use crate::config::{DefaultModel, SageConfig};
 
-/// How many times the monitor retries a default model that never reaches
-/// `running` before it gives up and moves on to the next one. Without this a
-/// single unlaunchable model would block every model behind it forever, since
-/// launches are serialized.
+/// How many times the monitor retries a default model that never reaches `running` before giving
+/// up and moving to the next one; without this, one unlaunchable model would block every model behind it, since launches are serialized.
 pub const MAX_LAUNCH_ATTEMPTS: u32 = 3;
 
 /// Instances this process's own monitor has launched, keyed by instance id
@@ -58,8 +56,7 @@ impl LaunchedInstances {
     }
 }
 
-/// Keep the configured default models running: every 10s the monitor asks
-/// switchboard which instances are up and launches the next missing one.
+/// Keep configured default models running: every 10s, ask switchboard what's up and launch the next missing one.
 pub fn spawn_monitor(
     switchboard: SwitchboardClient,
     config: SageConfig,
@@ -67,8 +64,7 @@ pub fn spawn_monitor(
 ) {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
-        // Consecutive launch attempts per model, kept across ticks so a model
-        // that keeps failing does not stall the rest of the queue.
+        // Consecutive launch attempts per model, kept across ticks so a failing model doesn't stall the rest of the queue.
         let mut attempts: HashMap<String, u32> = HashMap::new();
         loop {
             interval.tick().await;
@@ -87,10 +83,8 @@ fn is_active(status: &str) -> bool {
     status == "running" || is_starting(status)
 }
 
-/// Pick the next default model to launch. Models are launched **one at a
-/// time**: while any instance is still starting this returns `None`, so the
-/// next launch waits until the current one has finished loading (or failed)
-/// rather than having several models contend for GPU memory at once.
+/// Pick the next default model to launch. Models are launched **one at a time**: while any
+/// instance is still starting this returns `None`, so models don't contend for GPU memory at once.
 pub fn next_model_to_launch<'a>(
     config: &'a SageConfig,
     instances: &[VllmInstance],
@@ -147,8 +141,7 @@ async fn monitor_default_models(
             );
             continue;
         }
-        // A model that came up successfully starts over with a clean slate, so
-        // a later restart is retried rather than treated as exhausted.
+        // A model that came up successfully starts over with a clean slate, so a later restart is retried rather than treated as exhausted.
         if instances
             .iter()
             .any(|inst| inst.model == model.name && inst.status == "running")
@@ -219,12 +212,9 @@ async fn request_model_launch(
     }
 }
 
-/// Gracefully stop the default models on service shutdown. Fetches the active
-/// instances and asks switchboard to SIGTERM each one that corresponds to a
-/// configured default model *and* that this process itself launched (see
-/// `LaunchedInstances`) - never one a newer sage replica already relaunched
-/// after this process's own launch. Best-effort: failures are logged, not
-/// fatal. Does nothing unless `stop_models_on_shutdown` is enabled.
+/// Gracefully stop the default models on shutdown: SIGTERM each active instance that matches a
+/// configured model *and* that this process itself launched (see `LaunchedInstances`), never one
+/// a newer sage replica already relaunched. Best-effort; no-op unless `stop_models_on_shutdown` is enabled.
 pub async fn shutdown(
     switchboard: &SwitchboardClient,
     config: &SageConfig,
