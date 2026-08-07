@@ -1,6 +1,6 @@
 [package]
 name = "foreman"
-version = "0.1.0"
+version = "0.1.1"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Foreman - run a project's local development estate from one TOML file"
