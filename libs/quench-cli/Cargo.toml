@@ -17,3 +17,4 @@ path = "src/lib.rs"
 
 [dependencies]
 crossterm = { workspace = true }
+which = { workspace = true }

@@ -16,6 +16,7 @@ name = "pulley"
 path = "src/main.rs"
 
 [dependencies]
+clap = { workspace = true }
 quench-cli = { workspace = true }
 rustyline = { workspace = true }
 serde = { workspace = true }

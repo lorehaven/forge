@@ -107,6 +107,9 @@ impl Repl {
             if job.no_confirm {
                 println!("    no-confirm: true");
             }
+            if let Some(interval) = job.interval {
+                println!("    interval: {interval}s (daemon-eligible)");
+            }
             println!();
         }
     }

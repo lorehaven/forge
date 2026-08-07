@@ -1,17 +1,47 @@
+mod cli;
 mod config;
+mod daemon;
 mod repl;
 mod rsync;
+mod service;
 
+use clap::Parser;
+use cli::{Cli, Command, ServiceAction};
 use config::Config;
-use quench_cli::prelude::{Tone, print_status};
+use quench_cli::prelude::{Tone, print_status, require_binary};
 use repl::Repl;
 
+const RSYNC_HINT: &str = "pulley shells out to it for every sync job; install it (e.g. `apt install rsync` / `pacman -S rsync`)";
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    if handle_version_flag() {
-        return Ok(());
+    let cli = Cli::parse();
+
+    match cli.command {
+        Some(Command::Service { action }) => {
+            return match action {
+                ServiceAction::Install => service::install(),
+                ServiceAction::Uninstall => service::uninstall(),
+                ServiceAction::Status => service::status(),
+            };
+        }
+        Some(Command::Daemon) => {
+            require_binary("rsync", RSYNC_HINT)?;
+            let config = load_config_or_exit();
+            return daemon::run(&config);
+        }
+        None => {}
     }
 
-    let config = match Config::load_merged() {
+    require_binary("rsync", RSYNC_HINT)?;
+    let config = load_config_or_exit();
+    let mut repl = Repl::new(config);
+    repl.run()?;
+
+    Ok(())
+}
+
+fn load_config_or_exit() -> Config {
+    match Config::load_merged() {
         Ok(config) => {
             print_status(
                 Tone::Success,
@@ -41,21 +71,5 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("no-confirm = false");
             std::process::exit(1);
         }
-    };
-
-    let mut repl = Repl::new(config);
-    repl.run()?;
-
-    Ok(())
-}
-
-fn handle_version_flag() -> bool {
-    let mut args = std::env::args().skip(1);
-    if let Some(arg) = args.next()
-        && (arg == "--version" || arg == "-V")
-    {
-        println!("pulley {}", env!("CARGO_PKG_VERSION"));
-        return true;
     }
-    false
 }

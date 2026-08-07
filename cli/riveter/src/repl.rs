@@ -4,7 +4,7 @@ use crate::render::{
     RenderedManifest, ResourceRef, ResourceScope, Selector, generate_manifests_selected,
     list_resources,
 };
-use quench_cli::prelude::{Tone, print_box_banner, print_status, repl_prompt};
+use quench_cli::prelude::{Tone, print_box_banner, print_status, repl_prompt, require_binary};
 use std::process::Command;
 
 pub fn ok(msg: &str) {
@@ -401,6 +401,7 @@ pub fn kubectl_apply(
     selector: &Selector,
     wait: WaitPolicy,
 ) -> anyhow::Result<RenderedManifest> {
+    require_binary("kubectl", "riveter shells out to it to touch the cluster")?;
     let rendered = generate_manifests_selected(env, scope, selector)?;
     if rendered.resource_count == 0 {
         return Ok(rendered);
@@ -438,6 +439,7 @@ pub fn kubectl_diff(
     scope: ResourceScope,
     selector: &Selector,
 ) -> anyhow::Result<(RenderedManifest, bool)> {
+    require_binary("kubectl", "riveter shells out to it to touch the cluster")?;
     let rendered = generate_manifests_selected(env, scope, selector)?;
     if rendered.resource_count == 0 {
         return Ok((rendered, false));
@@ -461,6 +463,7 @@ pub fn kubectl_delete(
     scope: ResourceScope,
     selector: &Selector,
 ) -> anyhow::Result<RenderedManifest> {
+    require_binary("kubectl", "riveter shells out to it to touch the cluster")?;
     let rendered = generate_manifests_selected(env, scope, selector)?;
     if rendered.resource_count == 0 {
         return Ok(rendered);
@@ -554,6 +557,7 @@ pub fn find_orphans(env: &str, rendered: &RenderedManifest) -> anyhow::Result<Ve
 /// forever: `delete` only ever removes what the overlay still renders, so the
 /// resource becomes invisible to every riveter command.
 pub fn prune(env: &str, dry_run: bool) -> anyhow::Result<Vec<LiveResource>> {
+    require_binary("kubectl", "riveter shells out to it to touch the cluster")?;
     // The full overlay, so a resource excluded only by scope is not mistaken
     // for one the overlay has dropped.
     let rendered = generate_manifests_selected(env, ResourceScope::All, &Selector::default())?;

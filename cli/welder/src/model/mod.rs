@@ -4,6 +4,7 @@ pub mod vllm_client;
 
 use crate::config::is_verbose;
 use anyhow::Result;
+use quench_cli::require::require_binary;
 use std::collections::HashMap;
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
@@ -127,6 +128,10 @@ impl ModelManager {
     }
 
     fn start_vllm_instance(&self, config: &ModelInstanceConfig) -> Result<()> {
+        require_binary(
+            "vllm",
+            "backend.kind = \"vllm\" needs the vllm CLI on PATH to serve local models",
+        )?;
         let host_port = extract_host_port(&config.url)?;
 
         // Determine model argument: use model_path if provided, otherwise use model name

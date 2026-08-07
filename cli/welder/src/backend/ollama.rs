@@ -1,6 +1,7 @@
 use crate::backend::Backend;
 use crate::config::CONFIG;
 use crate::ui;
+use quench_cli::require::require_binary;
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 
@@ -32,6 +33,11 @@ impl Backend for OllamaBackend {
         if self.is_running() {
             return Ok(());
         }
+
+        require_binary(
+            "ollama",
+            "backend.kind = \"ollama\" needs the ollama daemon; install it from https://ollama.com or switch backend.kind",
+        )?;
 
         let child = Command::new("ollama")
             .arg("serve")

@@ -7,7 +7,7 @@ use crossterm::style::Stylize;
 use crossterm::terminal::{
     Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
-use quench_cli::prelude::{Tone, print_status};
+use quench_cli::prelude::{Tone, print_status, require_binary};
 use semver::Version;
 use std::collections::HashMap;
 use std::io::{Write, stdout};
@@ -129,6 +129,10 @@ impl Drop for TerminalGuard {
 
 fn main() -> Result<()> {
     let _ = Cli::parse();
+    require_binary(
+        "cargo",
+        "toolbox drives cargo search/install against the workspace registry",
+    )?;
     print_status(Tone::Info, "toolbox", "launching interactive monitor");
     run_repl()
 }

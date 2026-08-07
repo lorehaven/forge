@@ -27,6 +27,10 @@ pub struct Job {
     #[serde(default)]
     #[serde(rename = "no-confirm")]
     pub no_confirm: bool,
+    /// Seconds between runs under `pulley daemon`; jobs without this are
+    /// REPL-only and invisible to the daemon.
+    #[serde(default)]
+    pub interval: Option<u64>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

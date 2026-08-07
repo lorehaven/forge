@@ -4,7 +4,9 @@
 # (*.pulley.toml in the current directory) merge alphabetically; local jobs
 # override global jobs with matching IDs.
 
-# Local backup example
+# Local backup example. `interval` (seconds) makes this job daemon-eligible:
+# `pulley daemon` will only pick up jobs that set it, and re-runs this one
+# every 5 minutes. Jobs without `interval` stay REPL-only.
 [[jobs]]
 id = "documents"
 desc = "Backup documents folder"
@@ -13,6 +15,7 @@ dest = "/tmp/documents"
 delete = true
 skip = ["temp", "cache"]
 no-confirm = false
+interval = 300
 
 # Remote backup example (via SSH)
 [[jobs]]
