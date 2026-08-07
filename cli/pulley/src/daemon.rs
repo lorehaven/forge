@@ -7,7 +7,11 @@ use std::time::{Duration, Instant};
 const TICK: Duration = Duration::from_secs(1);
 
 pub fn run(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
-    let jobs: Vec<&Job> = config.jobs.iter().filter(|j| j.interval.is_some()).collect();
+    let jobs: Vec<&Job> = config
+        .jobs
+        .iter()
+        .filter(|j| j.interval.is_some())
+        .collect();
 
     if jobs.is_empty() {
         print_status(

@@ -13,7 +13,13 @@ const FAILURE_TAIL_LINES: usize = 80;
 fn log_file_path(operation: &str) -> PathBuf {
     let slug: String = operation
         .chars()
-        .map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
         .collect();
     let slug = slug.trim_matches('-');
     let slug = if slug.is_empty() { "operation" } else { slug };
