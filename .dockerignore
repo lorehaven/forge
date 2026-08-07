@@ -2,9 +2,14 @@
 .cargo/
 .dockerignore
 .gitignore
+.git/
 docker/Dockerfile*
 **/target/
 **/dist/
 **/storage/
 **/*.pem
 **/*.sh
+/vllm/
+/ci/
+/docs/
+/plans/

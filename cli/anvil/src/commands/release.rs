@@ -514,15 +514,33 @@ fn bump_patch(version: &str) -> Result<String> {
 }
 
 fn run_build_for_bumped_packages(plan: &[ReleasePlanItem]) -> Result<()> {
-    for item in plan {
-        if !item.bump_version {
-            continue;
-        }
-        let mut cmd = Command::new("cargo");
-        cmd.arg("build").arg("--package").arg(&item.package);
-        run_command(cmd, &format!("build ({})", item.package))?;
+    let packages: Vec<&str> = plan
+        .iter()
+        .filter(|item| item.bump_version)
+        .map(|item| item.package.as_str())
+        .collect();
+
+    if packages.is_empty() {
+        return Ok(());
     }
-    Ok(())
+
+    // One cargo invocation for every bumped package rather than one per
+    // package: a single call lets cargo's own scheduler build the shared
+    // dependency graph once and parallelize independent packages itself,
+    // instead of anvil serializing N separate `cargo build` processes that
+    // each re-resolve the unit graph from scratch.
+    let mut cmd = Command::new("cargo");
+    cmd.arg("build");
+    for package in &packages {
+        cmd.arg("--package").arg(package);
+    }
+
+    let label = if let [only] = packages[..] {
+        format!("build ({only})")
+    } else {
+        format!("build ({} packages)", packages.len())
+    };
+    run_command(cmd, &label)
 }
 
 fn create_version_commit(
