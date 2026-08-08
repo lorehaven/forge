@@ -17,7 +17,8 @@ pub enum Command {
     /// Run continuous sync in the foreground, polling every job's `interval`
     Daemon,
 
-    /// Manage the systemd --user service that runs `pulley daemon`
+    /// Manage the background service that runs `pulley daemon`
+    /// (systemd --user on Linux, a logon Scheduled Task on Windows)
     Service {
         #[command(subcommand)]
         action: ServiceAction,

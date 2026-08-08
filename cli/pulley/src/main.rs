@@ -11,7 +11,10 @@ use config::Config;
 use quench_cli::prelude::{Tone, print_status, require_binary};
 use repl::Repl;
 
+#[cfg(unix)]
 const RSYNC_HINT: &str = "pulley shells out to it for every sync job; install it (e.g. `apt install rsync` / `pacman -S rsync`)";
+#[cfg(windows)]
+const RSYNC_HINT: &str = "pulley shells out to it for every sync job; install it via WSL, MSYS2 (`pacman -S rsync`), or cwRsync, and make sure it's on PATH";
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();

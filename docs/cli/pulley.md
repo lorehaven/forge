@@ -9,12 +9,12 @@ Pulley is an interactive, REPL-based backup/sync tool built on `rsync`, configur
 - Dry-run preview (via `rsync --dry-run --itemize-changes`) showing creates/modifies/deletes before anything happens, with a confirmation prompt unless `no-confirm` is set.
 - Local and remote (`user@host:/path`) sources, since `src`/`dest` are passed straight to `rsync`.
 - Per-job directory exclusion (`skip`) and optional deletion sync (`delete`, applied to `rsync --delete` on the real run).
-- A constant sync mode (`pulley daemon`) that polls jobs on their own interval, unattended, and a `pulley service` subcommand to run it as a systemd user service from boot.
+- A constant sync mode (`pulley daemon`) that polls jobs on their own interval, unattended, and a `pulley service` subcommand to run it as a background service (a systemd user unit on Linux, a Scheduled Task on Windows).
 
 ## Requirements
 
 - Rust (stable), to build it.
-- `rsync` on `PATH`.
+- `rsync` on `PATH`. On Windows, pulley doesn't ship one itself — install it via WSL, MSYS2 (`pacman -S rsync`), or cwRsync, and make sure it's on `PATH`.
 - `ssh` on `PATH` for remote sources.
 
 ## Usage
@@ -43,7 +43,7 @@ Each `run` first does an `rsync --dry-run` pass and prints a summary; if it find
 
 ## Configuration
 
-Pulley reads every `*.toml` file in `~/.config/pulley/` (global) and every `*.pulley.toml` file in the current directory (local), sorted alphabetically within each group. Local configs are merged after (and so override) global ones; jobs are matched and overwritten by `id`, otherwise appended. At least one job must be found across all files or Pulley exits with an error explaining where it looked.
+Pulley reads every `*.toml` file in `~/.config/pulley/` (global — `$HOME` on Linux, `%USERPROFILE%` on Windows) and every `*.pulley.toml` file in the current directory (local), sorted alphabetically within each group. Local configs are merged after (and so override) global ones; jobs are matched and overwritten by `id`, otherwise appended. At least one job must be found across all files or Pulley exits with an error explaining where it looked.
 
 ```toml
 [[jobs]]
@@ -70,7 +70,9 @@ pulley daemon
 
 ### Running it as a service
 
-`pulley service` manages a systemd **user** unit that runs `pulley daemon`:
+`pulley service` manages a background job that runs `pulley daemon`, via whichever mechanism its platform uses:
+
+**Linux** — a systemd **user** unit:
 
 | Command | Purpose |
 |---|---|
@@ -87,5 +89,15 @@ loginctl enable-linger $USER
 ```
 
 `pulley service install` checks this and prints the exact command if lingering isn't already on.
+
+**Windows** — a Scheduled Task (`schtasks.exe`, ships with Windows), triggered at logon:
+
+| Command | Purpose |
+|---|---|
+| `pulley service install` | Register a task named `Pulley` (`schtasks /Create ... /SC ONLOGON`) and start it immediately |
+| `pulley service uninstall` | End and delete the task |
+| `pulley service status` | `schtasks /Query /TN Pulley /V /FO LIST` |
+
+The task's action points at whichever `pulley` binary ran `install`. There's no restart-on-crash equivalent to systemd's `Restart=on-failure` here — the task simply re-runs at each logon.
 
 [Home](../README.md)

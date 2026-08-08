@@ -50,9 +50,7 @@ impl Config {
     }
 
     pub fn global_config_dir() -> Option<PathBuf> {
-        std::env::var("HOME")
-            .ok()
-            .map(|home| PathBuf::from(format!("{}/.config/pulley", home)))
+        home_dir().map(|home| home.join(".config/pulley"))
     }
 
     pub fn find_global_configs() -> Vec<PathBuf> {
@@ -175,4 +173,12 @@ impl Config {
 
         Ok(Config { jobs: merged_jobs })
     }
+}
+
+/// `HOME` is unset by default in many Windows shells; `USERPROFILE` is its
+/// equivalent there.
+fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
 }
