@@ -1,4 +1,5 @@
 use crate::config::{Config, Job};
+use crate::job_log;
 use crate::rsync;
 use quench_cli::prelude::{Tone, print_status};
 use std::collections::HashMap;
@@ -60,8 +61,27 @@ pub fn run(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
 
 fn run_job(job: &Job) -> Result<(), Box<dyn std::error::Error>> {
     print_status(Tone::Info, "daemon", &format!("running job `{}`", job.id));
-    if rsync::dry_run(job)? {
-        rsync::update(job)?;
+    job_log::append(&job.id, "running job");
+
+    let has_changes = match rsync::dry_run(job) {
+        Ok(has_changes) => has_changes,
+        Err(e) => {
+            job_log::append(&job.id, &format!("dry-run failed: {e}"));
+            return Err(e);
+        }
+    };
+
+    if !has_changes {
+        job_log::append(&job.id, "no changes");
+        return Ok(());
     }
+
+    job_log::append(&job.id, "changes detected, syncing");
+    if let Err(e) = rsync::update(job) {
+        job_log::append(&job.id, &format!("sync failed: {e}"));
+        return Err(e);
+    }
+
+    job_log::append(&job.id, "sync completed");
     Ok(())
 }

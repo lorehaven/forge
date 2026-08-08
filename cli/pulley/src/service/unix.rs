@@ -5,6 +5,10 @@ use std::process::Command;
 const UNIT_NAME: &str = "pulley.service";
 const SYSTEMCTL_HINT: &str = "pulley service management needs a systemd user session";
 
+/// No-op here: journald already captures a systemd service's output, so
+/// there's no console window to hide.
+pub fn hide_console_window() {}
+
 pub fn install() -> Result<(), Box<dyn std::error::Error>> {
     require_binary("systemctl", SYSTEMCTL_HINT)?;
     let exe = std::env::current_exe()?;

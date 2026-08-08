@@ -71,20 +71,34 @@ pub fn update(job: &Job) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn run_command(command: &mut Command) -> Result<Vec<String>, Box<dyn std::error::Error>> {
-    let process = command
+    let mut process = command
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
 
-    let stdout = process.stdout.unwrap();
-    let reader = BufReader::new(stdout);
+    let stdout = process.stdout.take().unwrap();
+    let stderr = process.stderr.take().unwrap();
 
-    let result: Vec<String> = reader
-        .lines()
-        .map_while(Result::ok)
-        .map(|line| line.trim().to_string())
-        .filter(|file_name| !file_name.ends_with('/'))
-        .collect();
+    let stdout_handle = std::thread::spawn(move || {
+        BufReader::new(stdout)
+            .lines()
+            .map_while(Result::ok)
+            .map(|line| line.trim().to_string())
+            .filter(|file_name| !file_name.ends_with('/'))
+            .collect::<Vec<String>>()
+    });
+
+    let stderr_handle =
+        std::thread::spawn(move || BufReader::new(stderr).lines().map_while(Result::ok).collect::<Vec<String>>());
+
+    let status = process.wait()?;
+    let result = stdout_handle.join().unwrap();
+    let stderr_lines = stderr_handle.join().unwrap();
+
+    if !status.success() {
+        return Err(format!("rsync exited with {status}: {}", stderr_lines.join(" | ")).into());
+    }
+
     Ok(result)
 }
 
@@ -129,12 +143,16 @@ pub fn run_command_async(command: &mut Command) -> Result<(), Box<dyn std::error
         }
     });
 
-    process.wait()?;
+    let status = process.wait()?;
 
     stdout_handle.join().unwrap();
     stderr_handle.join().unwrap();
     stdout_thread.join().unwrap();
     stderr_thread.join().unwrap();
+
+    if !status.success() {
+        return Err(format!("rsync exited with {status}").into());
+    }
 
     Ok(())
 }

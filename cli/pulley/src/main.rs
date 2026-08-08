@@ -1,6 +1,7 @@
 mod cli;
 mod config;
 mod daemon;
+mod job_log;
 mod repl;
 mod rsync;
 mod service;
@@ -30,6 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(Command::Daemon) => {
             require_binary("rsync", RSYNC_HINT)?;
             let config = load_config_or_exit();
+            service::hide_console_window();
             return daemon::run(&config);
         }
         None => {}

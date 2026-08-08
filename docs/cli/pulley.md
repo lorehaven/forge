@@ -68,6 +68,10 @@ An example file ships at `cli/pulley/example.pulley.toml`.
 pulley daemon
 ```
 
+On Windows, `pulley daemon` hides its own console window on startup (the `ONLOGON` scheduled task would otherwise pop a visible cmd window at every logon). On Linux, running it under `pulley service install` already has no window to hide — journald captures its output.
+
+Since the console output is no longer generally visible, each daemon-triggered run also appends timestamped status lines (job started, no changes / changes detected, sync completed, or the error if the dry-run or sync failed) to `~/.config/pulley/logs/<job_id>/<YYYY-MM-DD>.log` — one file per job per day, so a fast `interval` can't grow a single file without bound. Files older than 7 days are pruned automatically on each write. REPL-triggered runs (`run`) still only print to the console, since that's already an interactive session.
+
 ### Running it as a service
 
 `pulley service` manages a background job that runs `pulley daemon`, via whichever mechanism its platform uses:

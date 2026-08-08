@@ -1,9 +1,9 @@
 #[cfg(unix)]
 mod unix;
 #[cfg(unix)]
-pub use unix::{install, status, uninstall};
+pub use unix::{hide_console_window, install, status, uninstall};
 
 #[cfg(windows)]
 mod windows;
 #[cfg(windows)]
-pub use windows::{install, status, uninstall};
+pub use windows::{hide_console_window, install, status, uninstall};
