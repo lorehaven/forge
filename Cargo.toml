@@ -48,11 +48,11 @@ hmac = { version = "0.13" }
 html5ever = { version = "0.39" }
 ignore = { version = "0.4" }
 jsonwebtoken = { version = "11.0", features = ["aws_lc_rs"] }
-kube = { version = "4.0", features = ["runtime", "derive"] }
+kube = { version = "4.2", features = ["runtime", "derive"] }
 libc = { version = "0.2" }
 k8s-openapi = { version = "0.28", features = ["latest"] }
 markup5ever_rcdom = { version = "0.39" }
-minijinja = { version = "2.21", features = ["loader", "serde"] }
+minijinja = { version = "2.23", features = ["loader", "serde"] }
 pdf-extract = { version = "0.12" }
 predicates = { version = "3.1" }
 pulldown-cmark = { version = "0.13" }
@@ -64,8 +64,8 @@ quench-config = { path = "libs/quench-config", registry = "ennor", version = "0.
 quench-db = { path = "libs/quench-db", registry = "ennor", version = "0.2.0" }
 quench-starter = { path = "libs/quench-starter", registry = "ennor", version = "0.3.0" }
 quench-web = { path = "libs/quench-web", registry = "ennor", version = "0.1.6" }
-redis = { version = "0.32", features = ["tokio-comp", "cluster-async", "connection-manager"] }
-regex = { version = "1.12" }
+redis = { version = "1.5", features = ["tokio-comp", "cluster-async", "connection-manager"] }
+regex = { version = "1.13" }
 reqwest = { version = "0.13", default-features = false, features = [
   "json",
   "stream",
@@ -88,14 +88,14 @@ strum = { version = "0.28" }
 strum_macros = { version = "0.28" }
 tempfile = { version = "3.27" }
 thiserror = { version = "2.0" }
-tokio = { version = "1.52", features = ["full"] }
+tokio = { version = "1.53", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 toml = { version = "1.1" }
 toml_edit = { version = "0.25" }
 tower-http = { version = "0.7", features = ["fs"] }
 tracing = { version = "0.1" }
 tracing-subscriber = { version = "0.3" }
-uuid = { version = "1.23", features = ["v4"] }
+uuid = { version = "1.24", features = ["v4"] }
 urlencoding = { version = "2.1" }
 walkdir = { version = "2.5" }
 which = { version = "8.0" }

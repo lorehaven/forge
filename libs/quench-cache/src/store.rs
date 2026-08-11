@@ -477,7 +477,7 @@ impl RedisStore {
                 (Connection::Cluster(cluster), Some((host, port))) => {
                     let value = cluster
                         .route_command(
-                            &scan,
+                            scan,
                             redis::cluster_routing::RoutingInfo::SingleNode(
                                 redis::cluster_routing::SingleNodeRoutingInfo::ByAddress {
                                     host,
@@ -487,7 +487,7 @@ impl RedisStore {
                         )
                         .await
                         .map_err(|err| CacheError::Backend(err.to_string()))?;
-                    redis::from_owned_redis_value(value)
+                    redis::from_redis_value(value)
                         .map_err(|err| CacheError::Backend(err.to_string()))?
                 }
                 (connection, _) => scan
@@ -519,9 +519,11 @@ impl RedisStore {
     async fn primaries(
         cluster: &mut redis::cluster_async::ClusterConnection,
     ) -> Result<Vec<(String, u16)>, CacheError> {
+        let mut cmd = redis::cmd("CLUSTER");
+        cmd.arg("NODES");
         let value = cluster
             .route_command(
-                redis::cmd("CLUSTER").arg("NODES"),
+                cmd,
                 redis::cluster_routing::RoutingInfo::SingleNode(
                     redis::cluster_routing::SingleNodeRoutingInfo::RandomPrimary,
                 ),
@@ -529,7 +531,7 @@ impl RedisStore {
             .await
             .map_err(|err| CacheError::Backend(format!("CLUSTER NODES failed: {err}")))?;
 
-        let raw: String = redis::from_owned_redis_value(value)
+        let raw: String = redis::from_redis_value(value)
             .map_err(|err| CacheError::Backend(err.to_string()))?;
 
         Ok(raw.lines().filter_map(parse_primary).collect())
