@@ -1,6 +1,6 @@
 [package]
 name = "forge-toolbox"
-version = "0.1.5"
+version = "0.1.6"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Forge Toolbox - monitor and self-update Forge installables"
