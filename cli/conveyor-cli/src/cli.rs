@@ -183,3 +183,82 @@ pub struct ValidateArgs {
     #[arg(default_value = ".conveyor.toml")]
     pub path: String,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn repo_add_defaults_provider_and_branch() {
+        let cli = Cli::try_parse_from([
+            "conveyor",
+            "repo",
+            "add",
+            "owner/name",
+            "https://example.com/owner/name.git",
+        ])
+        .unwrap();
+        let Commands::Repo {
+            command: RepoCommands::Add(args),
+        } = cli.command
+        else {
+            panic!("expected RepoCommands::Add");
+        };
+        assert_eq!(args.provider, "github");
+        assert_eq!(args.default_branch, "master");
+    }
+
+    #[test]
+    fn runs_defaults_limit_to_twenty() {
+        let cli = Cli::try_parse_from(["conveyor", "runs"]).unwrap();
+        let Commands::Runs(args) = cli.command else {
+            panic!("expected Commands::Runs");
+        };
+        assert_eq!(args.limit, 20);
+        assert_eq!(args.repo, None);
+    }
+
+    #[test]
+    fn validate_defaults_path_to_conveyor_toml() {
+        let cli = Cli::try_parse_from(["conveyor", "validate"]).unwrap();
+        let Commands::Validate(args) = cli.command else {
+            panic!("expected Commands::Validate");
+        };
+        assert_eq!(args.path, ".conveyor.toml");
+    }
+
+    #[test]
+    fn global_flags_are_readable_after_a_subcommand_is_parsed() {
+        let cli = Cli::try_parse_from([
+            "conveyor",
+            "--url",
+            "https://localhost:9443/conveyor",
+            "--insecure",
+            "repo",
+            "list",
+        ])
+        .unwrap();
+        assert_eq!(cli.url.as_deref(), Some("https://localhost:9443/conveyor"));
+        assert!(cli.insecure);
+    }
+
+    #[test]
+    fn run_requires_a_repo_argument() {
+        let result = Cli::try_parse_from(["conveyor", "run"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn secret_set_value_is_optional_so_it_can_be_read_from_stdin() {
+        let cli = Cli::try_parse_from(["conveyor", "secret", "set", "API_KEY"]).unwrap();
+        let Commands::Secret {
+            command: SecretCommands::Set(args),
+        } = cli.command
+        else {
+            panic!("expected SecretCommands::Set");
+        };
+        assert_eq!(args.name, "API_KEY");
+        assert_eq!(args.value, None);
+    }
+}

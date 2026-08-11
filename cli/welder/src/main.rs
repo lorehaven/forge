@@ -95,11 +95,11 @@ const BACKEND_READY_TIMEOUT_SECS: u64 = 30;
 
 async fn init_runtime() -> anyhow::Result<()> {
     std::sync::LazyLock::force(&config::CONFIG);
-    std::sync::LazyLock::force(&backend::BACKEND);
+    backend::init()?;
 
     let max_attempts = BACKEND_READY_TIMEOUT_SECS * 2; // 2 attempts per second (500ms each)
     let mut attempts = 0u64;
-    while !backend::BACKEND.is_running() {
+    while !backend::get().is_running() {
         if attempts >= max_attempts {
             return Err(anyhow::anyhow!(
                 "backend '{}' did not become reachable within {BACKEND_READY_TIMEOUT_SECS}s; check [backend] in .welder/config.toml",
@@ -110,7 +110,7 @@ async fn init_runtime() -> anyhow::Result<()> {
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
 
-    backend::BACKEND.initialized();
+    backend::get().initialized();
     dotenvy::dotenv().ok();
 
     Ok(())
@@ -338,7 +338,7 @@ async fn build_switchboard_agents(
         .backend
         .switchboard_url
         .clone()
-        .expect("config error: backend.switchboard_url must be set");
+        .ok_or_else(|| anyhow::anyhow!("config error: backend.switchboard_url must be set"))?;
     let client =
         SwitchboardClient::new(&base_url, config::CONFIG.backend.switchboard_tls_verify).await?;
 
@@ -546,5 +546,191 @@ mod tests {
         );
 
         assert!(resolve_model_configs(&workflow).unwrap().is_empty());
+    }
+
+    #[test]
+    fn resolve_model_configs_errors_when_models_table_is_missing_entirely() {
+        let workflow = parse(
+            r#"
+            [root]
+            name = "a"
+
+            [[agent]]
+            name = "a"
+            model = "m"
+            instruction = "do things"
+            vllm_model = "m"
+            "#,
+        );
+
+        let err = resolve_model_configs(&workflow).unwrap_err();
+        assert!(err.to_string().contains("no [models] table is defined"));
+    }
+
+    #[test]
+    fn resolve_model_configs_uses_the_inline_agent_vllm_block() {
+        let workflow = parse(
+            r#"
+            [root]
+            name = "a"
+
+            [[agent]]
+            name = "a"
+            model = "m"
+            instruction = "do things"
+
+            [agent.vllm]
+            url = "127.0.0.1:9000"
+            "#,
+        );
+
+        let resolved = resolve_model_configs(&workflow).unwrap();
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(resolved[0].1.url.as_deref(), Some("127.0.0.1:9000"));
+    }
+
+    #[test]
+    fn extract_vllm_instances_dedupes_by_model_and_url() {
+        let workflow = parse(
+            r#"
+            [root]
+            name = "a"
+
+            [[agent]]
+            name = "a"
+            model = "shared"
+            instruction = "do things"
+            vllm_model = "shared"
+            children = ["b"]
+
+            [[agent]]
+            name = "b"
+            model = "shared"
+            instruction = "do things"
+            vllm_model = "shared"
+
+            [models.shared]
+            url = "127.0.0.1:8000"
+            "#,
+        );
+
+        let instances = extract_vllm_instances(&workflow).unwrap();
+        assert_eq!(instances.len(), 1);
+    }
+
+    #[test]
+    fn extract_vllm_instances_keeps_separate_urls_for_the_same_model_name() {
+        let workflow = parse(
+            r#"
+            [root]
+            name = "a"
+
+            [[agent]]
+            name = "a"
+            model = "m"
+            instruction = "do things"
+
+            [agent.vllm]
+            url = "127.0.0.1:8000"
+
+            [[agent]]
+            name = "b"
+            model = "m"
+            instruction = "do things"
+
+            [agent.vllm]
+            url = "127.0.0.1:8001"
+            "#,
+        );
+
+        let instances = extract_vllm_instances(&workflow).unwrap();
+        assert_eq!(instances.len(), 2);
+    }
+
+    #[derive(Debug)]
+    struct NoopLlm;
+
+    #[async_trait::async_trait]
+    impl llm::Llm for NoopLlm {
+        fn name(&self) -> &'static str {
+            "noop"
+        }
+
+        async fn generate_content(
+            &self,
+            _request: llm::LlmRequest,
+        ) -> anyhow::Result<llm::LlmResponse> {
+            unreachable!("not exercised by these tests")
+        }
+    }
+
+    #[test]
+    fn build_agents_applies_defaults_when_the_workflow_omits_them() {
+        let workflow = parse(
+            r#"
+            [root]
+            name = "a"
+
+            [[agent]]
+            name = "a"
+            model = "m"
+            instruction = "do things"
+            "#,
+        );
+
+        let agents = build_agents(&workflow, |_cfg| Ok(Arc::new(NoopLlm) as Arc<dyn Llm>)).unwrap();
+        let agent = &agents["a"];
+        assert_eq!(agent.max_tool_steps, 8);
+        assert!(agent.children.is_empty());
+        assert!(agent.tools.is_empty());
+        assert!(agent.run_cmd_allowlist.is_empty());
+        assert!((agent.temperature - llm::DEFAULT_TEMPERATURE).abs() < f32::EPSILON);
+        assert_eq!(agent.max_tokens, llm::DEFAULT_MAX_TOKENS);
+    }
+
+    #[test]
+    fn build_agents_keeps_explicit_overrides() {
+        let workflow = parse(
+            r#"
+            [root]
+            name = "a"
+
+            [[agent]]
+            name = "a"
+            model = "m"
+            instruction = "do things"
+            children = ["b"]
+            tools = ["read_file"]
+            max_tool_steps = 3
+            temperature = 0.2
+            max_tokens = 512
+            "#,
+        );
+
+        let agents = build_agents(&workflow, |_cfg| Ok(Arc::new(NoopLlm) as Arc<dyn Llm>)).unwrap();
+        let agent = &agents["a"];
+        assert_eq!(agent.max_tool_steps, 3);
+        assert_eq!(agent.children, vec!["b".to_string()]);
+        assert_eq!(agent.tools, vec!["read_file".to_string()]);
+        assert!((agent.temperature - 0.2).abs() < f32::EPSILON);
+        assert_eq!(agent.max_tokens, 512);
+    }
+
+    #[test]
+    fn build_agents_propagates_a_model_construction_error() {
+        let workflow = parse(
+            r#"
+            [root]
+            name = "a"
+
+            [[agent]]
+            name = "a"
+            model = "m"
+            instruction = "do things"
+            "#,
+        );
+
+        let err = build_agents(&workflow, |_cfg| Err(anyhow::anyhow!("boom"))).unwrap_err();
+        assert!(err.to_string().contains("boom"));
     }
 }

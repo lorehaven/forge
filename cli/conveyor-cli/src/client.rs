@@ -227,3 +227,44 @@ fn non_empty(key: &str) -> Option<String> {
     let value = envmnt::get_or(key, "");
     (!value.trim().is_empty()).then(|| value.trim().to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn explain_prefers_the_error_field_from_a_json_body() {
+        let status = reqwest::StatusCode::BAD_REQUEST;
+        let body = r#"{"error": "missing field `owner`"}"#;
+        assert_eq!(explain(status, body), "missing field `owner`");
+    }
+
+    #[test]
+    fn explain_falls_back_to_the_raw_body_when_not_json() {
+        let status = reqwest::StatusCode::INTERNAL_SERVER_ERROR;
+        assert_eq!(explain(status, "  boom  \n"), "boom");
+    }
+
+    #[test]
+    fn explain_falls_back_to_the_status_when_the_body_is_empty() {
+        let status = reqwest::StatusCode::NOT_FOUND;
+        assert_eq!(explain(status, ""), "conveyor answered 404 Not Found");
+    }
+
+    #[test]
+    fn explain_adds_a_credentials_hint_on_401() {
+        let status = reqwest::StatusCode::UNAUTHORIZED;
+        let body = r#"{"error": "invalid token"}"#;
+        assert_eq!(
+            explain(status, body),
+            "invalid token (set CONVEYOR_USERNAME and CONVEYOR_PASSWORD)"
+        );
+    }
+
+    #[test]
+    fn explain_ignores_json_without_an_error_field() {
+        let status = reqwest::StatusCode::BAD_REQUEST;
+        let body = r#"{"detail": "nope"}"#;
+        assert_eq!(explain(status, body), r#"{"detail": "nope"}"#);
+    }
+}

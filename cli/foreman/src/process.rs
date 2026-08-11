@@ -203,3 +203,87 @@ pub fn follow(path: &Path) -> Result<()> {
     let _ = status;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "foreman-process-test-{name}-{}",
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn read_pid_round_trips_through_write_pid() {
+        let path = scratch("roundtrip.pid");
+        write_pid(&path, 4242).unwrap();
+        assert_eq!(read_pid(&path), Some(4242));
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn read_pid_is_none_for_a_missing_file() {
+        let path = scratch("does-not-exist.pid");
+        assert_eq!(read_pid(&path), None);
+    }
+
+    #[test]
+    fn read_pid_is_none_for_malformed_content() {
+        let path = scratch("malformed.pid");
+        std::fs::write(&path, "not-a-pid\n").unwrap();
+        assert_eq!(read_pid(&path), None);
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn read_pid_trims_whitespace() {
+        let path = scratch("padded.pid");
+        std::fs::write(&path, "  99  \n").unwrap();
+        assert_eq!(read_pid(&path), Some(99));
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn tail_returns_only_the_last_n_lines() {
+        let path = scratch("tail.log");
+        std::fs::write(&path, "one\ntwo\nthree\nfour\nfive\n").unwrap();
+        assert_eq!(tail(&path, 2), "four\nfive");
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn tail_returns_the_whole_file_when_it_has_fewer_lines_than_asked() {
+        let path = scratch("short-tail.log");
+        std::fs::write(&path, "one\ntwo\n").unwrap();
+        assert_eq!(tail(&path, 5), "one\ntwo");
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn tail_of_a_missing_file_is_empty_rather_than_an_error() {
+        let path = scratch("missing-tail.log");
+        assert_eq!(tail(&path, 5), "");
+    }
+
+    #[test]
+    fn wait_for_returns_ready_as_soon_as_the_check_passes() {
+        let waited = wait_for(None, Duration::from_secs(5), || true);
+        assert!(matches!(waited, Wait::Ready));
+    }
+
+    #[test]
+    fn wait_for_times_out_when_the_check_never_passes() {
+        let waited = wait_for(None, Duration::from_millis(50), || false);
+        assert!(matches!(waited, Wait::Timeout));
+    }
+
+    #[test]
+    fn wait_for_reports_died_when_the_pid_is_no_longer_alive() {
+        // pid 1 always exists; an out-of-range pid never does, without needing
+        // to spawn and kill a real process just to test this branch.
+        let waited = wait_for(Some(i32::MAX), Duration::from_secs(5), || false);
+        assert!(matches!(waited, Wait::Died));
+    }
+}

@@ -15,6 +15,10 @@ readme = { workspace = true }
 name = "forge-toolbox"
 path = "src/main.rs"
 
+[lib]
+name = "forge_toolbox"
+path = "src/lib.rs"
+
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true }

@@ -1,5 +1,4 @@
 use crate::backend::Backend;
-use crate::config::CONFIG;
 use crate::ui;
 use quench_cli::require::require_binary;
 use std::process::{Child, Command, Stdio};
@@ -51,13 +50,7 @@ impl Backend for OllamaBackend {
     }
 
     fn initialized(&self) {
-        let url = CONFIG
-            .backend
-            .ollama_url
-            .clone()
-            .expect("config error: backend.ollama_url must be set");
-
-        ui::print_backend_banner("ollama", &url);
+        ui::print_backend_banner("ollama", &self.base_url);
     }
 
     fn is_running(&self) -> bool {

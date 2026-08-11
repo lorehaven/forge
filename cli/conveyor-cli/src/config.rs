@@ -56,3 +56,175 @@ fn config_path() -> Option<PathBuf> {
 fn non_empty_env(key: &str) -> Option<String> {
     std::env::var(key).ok().filter(|v| !v.is_empty())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    // `config_path` and `non_empty_env` read real process environment
+    // variables, which every #[test] in this binary shares. This lock keeps
+    // the tests below from interleaving their `set_var`/`remove_var` calls
+    // with each other; it does not (and cannot) protect against another
+    // module's tests touching the same names, so it's only safe because
+    // XDG_CONFIG_HOME/HOME aren't touched anywhere else in this crate.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct EnvGuard {
+        key: &'static str,
+        previous: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let previous = std::env::var(key).ok();
+            // SAFETY: serialized by ENV_LOCK, held for the guard's lifetime.
+            unsafe { std::env::set_var(key, value) };
+            Self { key, previous }
+        }
+
+        fn unset(key: &'static str) -> Self {
+            let previous = std::env::var(key).ok();
+            // SAFETY: serialized by ENV_LOCK, held for the guard's lifetime.
+            unsafe { std::env::remove_var(key) };
+            Self { key, previous }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            // SAFETY: serialized by ENV_LOCK, held for the guard's lifetime.
+            unsafe {
+                match &self.previous {
+                    Some(value) => std::env::set_var(self.key, value),
+                    None => std::env::remove_var(self.key),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn non_empty_env_is_none_for_a_missing_var() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _guard = EnvGuard::unset("CONVEYOR_CONFIG_TEST_MISSING");
+        assert_eq!(non_empty_env("CONVEYOR_CONFIG_TEST_MISSING"), None);
+    }
+
+    #[test]
+    fn non_empty_env_is_none_for_an_empty_var() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _guard = EnvGuard::set("CONVEYOR_CONFIG_TEST_EMPTY", "");
+        assert_eq!(non_empty_env("CONVEYOR_CONFIG_TEST_EMPTY"), None);
+    }
+
+    #[test]
+    fn non_empty_env_returns_a_set_value() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _guard = EnvGuard::set("CONVEYOR_CONFIG_TEST_SET", "hello");
+        assert_eq!(
+            non_empty_env("CONVEYOR_CONFIG_TEST_SET"),
+            Some("hello".to_string())
+        );
+    }
+
+    #[test]
+    fn config_path_prefers_xdg_config_home_over_home() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _xdg = EnvGuard::set("XDG_CONFIG_HOME", "/xdg-root");
+        let _home = EnvGuard::set("HOME", "/home-root");
+
+        assert_eq!(
+            config_path(),
+            Some(PathBuf::from("/xdg-root/conveyor/config.toml"))
+        );
+    }
+
+    #[test]
+    fn config_path_falls_back_to_home_without_xdg() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _xdg = EnvGuard::unset("XDG_CONFIG_HOME");
+        let _home = EnvGuard::set("HOME", "/home-root");
+
+        assert_eq!(
+            config_path(),
+            Some(PathBuf::from("/home-root/.config/conveyor/config.toml"))
+        );
+    }
+
+    #[test]
+    fn config_path_is_none_without_either_variable() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _xdg = EnvGuard::unset("XDG_CONFIG_HOME");
+        let _home = EnvGuard::unset("HOME");
+
+        assert_eq!(config_path(), None);
+    }
+
+    #[test]
+    fn config_path_treats_an_empty_xdg_as_unset() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _xdg = EnvGuard::set("XDG_CONFIG_HOME", "");
+        let _home = EnvGuard::set("HOME", "/home-root");
+
+        assert_eq!(
+            config_path(),
+            Some(PathBuf::from("/home-root/.config/conveyor/config.toml"))
+        );
+    }
+
+    #[test]
+    fn load_returns_defaults_when_no_config_file_exists() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let dir = std::env::temp_dir().join(format!(
+            "conveyor-config-test-missing-{}",
+            std::process::id()
+        ));
+        let _xdg = EnvGuard::set("XDG_CONFIG_HOME", &dir.display().to_string());
+
+        let config = FileConfig::load().unwrap();
+        assert_eq!(config.url, None);
+        assert!(!config.insecure);
+    }
+
+    #[test]
+    fn load_parses_a_valid_config_file() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let dir =
+            std::env::temp_dir().join(format!("conveyor-config-test-valid-{}", std::process::id()));
+        let conveyor_dir = dir.join("conveyor");
+        std::fs::create_dir_all(&conveyor_dir).unwrap();
+        std::fs::write(
+            conveyor_dir.join("config.toml"),
+            "url = \"https://localhost:9443/conveyor\"\ninsecure = true\n",
+        )
+        .unwrap();
+        let _xdg = EnvGuard::set("XDG_CONFIG_HOME", &dir.display().to_string());
+
+        let config = FileConfig::load().unwrap();
+        assert_eq!(
+            config.url.as_deref(),
+            Some("https://localhost:9443/conveyor")
+        );
+        assert!(config.insecure);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn load_errors_on_malformed_toml() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let dir = std::env::temp_dir().join(format!(
+            "conveyor-config-test-malformed-{}",
+            std::process::id()
+        ));
+        let conveyor_dir = dir.join("conveyor");
+        std::fs::create_dir_all(&conveyor_dir).unwrap();
+        std::fs::write(conveyor_dir.join("config.toml"), "not = [valid").unwrap();
+        let _xdg = EnvGuard::set("XDG_CONFIG_HOME", &dir.display().to_string());
+
+        let err = FileConfig::load().unwrap_err();
+        assert!(err.to_string().contains("failed to parse"));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+}
