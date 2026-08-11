@@ -1,3 +1,4 @@
+use crate::cargo_meta;
 use crate::config::Config;
 use crate::util::run_command;
 use anyhow::{Context, Result};
@@ -6,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 pub fn install(config: &Config, package: Option<String>, all: bool) -> Result<()> {
-    let metadata = cargo_metadata()?;
+    let metadata = cargo_meta::cargo_metadata()?;
     let targets = resolve_install_targets(config, &metadata, package, all)?;
 
     for (name, path) in targets {
@@ -16,21 +17,6 @@ pub fn install(config: &Config, package: Option<String>, all: bool) -> Result<()
     }
 
     Ok(())
-}
-
-fn cargo_metadata() -> Result<Value> {
-    let output = Command::new("cargo")
-        .arg("metadata")
-        .arg("--no-deps")
-        .arg("--format-version=1")
-        .output()
-        .context("Failed to execute cargo metadata")?;
-
-    if !output.status.success() {
-        anyhow::bail!("cargo metadata failed");
-    }
-
-    serde_json::from_slice(&output.stdout).context("Failed to parse cargo metadata")
 }
 
 fn resolve_workspace_install_targets(

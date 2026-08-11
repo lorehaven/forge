@@ -1,8 +1,8 @@
+use crate::cargo_meta;
 use crate::config;
 use crate::util::run_command;
 use anyhow::{Context, Result};
 use std::collections::BTreeMap;
-use std::fs;
 use std::process::Command;
 
 fn find_module_for_package<'a>(config: &'a config::Config, package: &str) -> Result<&'a str> {
@@ -24,22 +24,6 @@ fn find_module_name_overwrite(config: &config::Config, package: &str) -> Result<
         .get(package)
         .and_then(|override_cfg| override_cfg.module_name.as_ref())
         .map_or_else(|| module.to_string(), Clone::clone))
-}
-
-fn get_package_version(module: &str, package: &str) -> Result<String> {
-    let path = format!("{module}/{package}/Cargo.toml");
-    let content = fs::read_to_string(&path)
-        .with_context(|| format!("Failed to read Cargo.toml at {path}"))?;
-
-    let value: toml::Value = toml::from_str(&content)
-        .with_context(|| format!("Failed to parse Cargo.toml at {path}"))?;
-
-    value
-        .get("package")
-        .and_then(|p| p.get("version"))
-        .and_then(toml::Value::as_str)
-        .map(ToString::to_string)
-        .with_context(|| format!("Version not found in {path}"))
 }
 
 fn get_dockerfile_for_package(config: &config::Config, package: &str) -> Result<String> {
@@ -133,10 +117,9 @@ fn ennor_registry_index() -> String {
 
 fn full_tags_for_package(config: &config::Config, package: &str) -> Result<Vec<String>> {
     let registries = get_registries_for_package(config, package)?;
-    let module = find_module_for_package(config, package)?;
     let module_name = find_module_name_overwrite(config, package)?;
     let image_name = get_image_name_for_package(config, package)?;
-    let version = get_package_version(module, package)?;
+    let version = cargo_meta::resolve_package(package)?.version;
 
     Ok(registries
         .iter()
@@ -147,9 +130,22 @@ fn full_tags_for_package(config: &config::Config, package: &str) -> Result<Vec<S
 pub fn build(config: &config::Config, package: &str) -> Result<()> {
     let dockerfile = get_dockerfile_for_package(config, package)?;
     let image_name = get_image_name_for_package(config, package)?;
-    let module = find_module_for_package(config, package)?;
-    let resources_path = format!("{module}/{package}");
     let build_args = get_build_args_for_package(config, package)?;
+
+    // The package's own directory, relative to the workspace root - not an
+    // anvil module name assumed to double as a path prefix, so this works
+    // regardless of whether the workspace nests packages under a module
+    // directory (forge's own docker/<service>/ convention) or not.
+    let metadata = cargo_meta::cargo_metadata()?;
+    let workspace_root = cargo_meta::workspace_root(&metadata)?;
+    let pkg = cargo_meta::workspace_packages(&metadata)?
+        .into_iter()
+        .find(|pkg| pkg.name == package)
+        .with_context(|| format!("Package '{package}' not found in workspace metadata"))?;
+    let resources_path = pkg.relative_dir(&workspace_root)?;
+    let resources_path = resources_path
+        .to_str()
+        .with_context(|| format!("Package '{package}' path is not valid UTF-8"))?;
     println!("Building Docker image for package: {package} using {dockerfile}");
     if !build_args.is_empty() {
         // Worth printing: these are the whole reason two packages that build

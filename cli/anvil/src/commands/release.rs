@@ -1,3 +1,4 @@
+use crate::cargo_meta;
 use crate::commands::{docker, install};
 use crate::config::Config;
 use crate::util::run_command;
@@ -9,13 +10,6 @@ use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use toml_edit::{DocumentMut, value};
-
-#[derive(Debug)]
-struct WorkspacePackage {
-    name: String,
-    dir: PathBuf,
-    manifest: PathBuf,
-}
 
 #[derive(Debug, Clone, Copy)]
 enum ReleaseKind {
@@ -36,7 +30,7 @@ struct ReleasePlanItem {
 }
 
 pub fn release(config: &Config, package: Option<String>, all: bool, dry_run: bool) -> Result<()> {
-    let metadata = cargo_metadata()?;
+    let metadata = cargo_meta::cargo_metadata()?;
     let targets = resolve_release_targets(config, &metadata, package, all)?;
     let mut plan = build_release_plan(config, &metadata, &targets)?;
 
@@ -113,60 +107,13 @@ pub fn release(config: &Config, package: Option<String>, all: bool, dry_run: boo
     Ok(())
 }
 
-fn cargo_metadata() -> Result<Value> {
-    let output = Command::new("cargo")
-        .arg("metadata")
-        .arg("--no-deps")
-        .arg("--format-version=1")
-        .output()
-        .context("Failed to execute cargo metadata")?;
-
-    if !output.status.success() {
-        anyhow::bail!("cargo metadata failed");
-    }
-
-    serde_json::from_slice(&output.stdout).context("Failed to parse cargo metadata")
-}
-
-fn workspace_packages(metadata: &Value) -> Result<Vec<WorkspacePackage>> {
-    let member_ids = metadata["workspace_members"]
-        .as_array()
-        .map_or_else(Vec::new, |members| {
-            members
-                .iter()
-                .filter_map(|v| v.as_str())
-                .map(ToOwned::to_owned)
-                .collect()
-        });
-
-    let packages = metadata["packages"]
-        .as_array()
-        .context("Invalid cargo metadata: missing packages")?;
-
-    Ok(member_ids
-        .iter()
-        .filter_map(|id| {
-            let pkg = packages
-                .iter()
-                .find(|pkg| pkg["id"].as_str().unwrap_or_default() == id)?;
-            let manifest = PathBuf::from(pkg["manifest_path"].as_str()?);
-            let dir = manifest.parent()?.to_path_buf();
-            Some(WorkspacePackage {
-                name: pkg["name"].as_str()?.to_string(),
-                dir,
-                manifest,
-            })
-        })
-        .collect())
-}
-
 fn resolve_release_targets(
     config: &Config,
     metadata: &Value,
     package: Option<String>,
     all: bool,
 ) -> Result<Vec<String>> {
-    let members: HashSet<String> = workspace_packages(metadata)?
+    let members: HashSet<String> = cargo_meta::workspace_packages(metadata)?
         .into_iter()
         .map(|pkg| pkg.name)
         .collect();
@@ -214,7 +161,7 @@ fn resolve_release_targets(
 fn resolve_single_package(metadata: &Value) -> Result<String> {
     let cwd = std::env::current_dir().context("Failed to read current directory")?;
     let cwd_canon = cwd.canonicalize().context("Failed to canonicalize cwd")?;
-    let packages = workspace_packages(metadata)?;
+    let packages = cargo_meta::workspace_packages(metadata)?;
 
     if let Some(pkg) = packages.iter().find(|pkg| {
         pkg.dir
@@ -237,12 +184,8 @@ fn build_release_plan(
     metadata: &Value,
     targets: &[String],
 ) -> Result<Vec<ReleasePlanItem>> {
-    let workspace = workspace_packages(metadata)?;
-    let workspace_root = PathBuf::from(
-        metadata["workspace_root"]
-            .as_str()
-            .context("Invalid cargo metadata: missing workspace_root")?,
-    );
+    let workspace = cargo_meta::workspace_packages(metadata)?;
+    let workspace_root = cargo_meta::workspace_root(metadata)?;
     let dep_graph = build_dependency_graph(metadata)?;
 
     // Include transitive dependencies of targets
@@ -309,12 +252,22 @@ fn build_release_plan(
             .iter()
             .find(|pkg| &pkg.name == package_name)
             .with_context(|| format!("Package '{package_name}' not found in workspace metadata"))?;
-        let current_version = read_manifest_version(&pkg.manifest)?;
         let kind = if is_docker_package(config, package_name) {
             ReleaseKind::Docker
         } else {
             ReleaseKind::Cargo
         };
+
+        // A `publish = false` package is real (a docker package's own
+        // private dependency, say) and still counts for change-detection -
+        // its dependents above have already been flagged for release if it
+        // changed - but there is nothing for `cargo publish` to do with it.
+        if matches!(kind, ReleaseKind::Cargo) && pkg.publish_disabled() {
+            println!("Skipping {package_name}: `publish = false`, not cargo-publishable");
+            continue;
+        }
+
+        let current_version = pkg.version.clone();
         let install_after_publish = should_install_package(config, package_name);
         let current_version_tag = package_tag_name(package_name, &current_version);
         let current_version_tag_exists = tag_exists(&current_version_tag)?;
@@ -427,20 +380,6 @@ fn ensure_release_plan_non_empty(all: bool, plan: &[ReleasePlanItem], dry_run: b
     anyhow::bail!("Target package has no changes since its last tag");
 }
 
-fn read_manifest_version(path: &Path) -> Result<String> {
-    let content = fs::read_to_string(path)
-        .with_context(|| format!("Failed to read manifest at {}", path.display()))?;
-    let value: toml::Value = toml::from_str(&content)
-        .with_context(|| format!("Failed to parse manifest at {}", path.display()))?;
-    value
-        .get("package")
-        .and_then(toml::Value::as_table)
-        .and_then(|table| table.get("version"))
-        .and_then(toml::Value::as_str)
-        .map(ToOwned::to_owned)
-        .context("Manifest missing package.version")
-}
-
 const fn release_action_label(item: &ReleasePlanItem) -> &'static str {
     match item.kind {
         ReleaseKind::Docker => "docker release",
@@ -450,7 +389,7 @@ const fn release_action_label(item: &ReleasePlanItem) -> &'static str {
 }
 
 fn bump_patch_versions(metadata: &Value, plan: &[ReleasePlanItem]) -> Result<Vec<PathBuf>> {
-    let workspace = workspace_packages(metadata)?;
+    let workspace = cargo_meta::workspace_packages(metadata)?;
     let mut manifests = Vec::new();
 
     for item in plan {
@@ -549,11 +488,7 @@ fn create_version_commit(
     plan: &[ReleasePlanItem],
 ) -> Result<()> {
     let mut commit_paths = manifests.to_vec();
-    let workspace_root = PathBuf::from(
-        metadata["workspace_root"]
-            .as_str()
-            .context("Invalid cargo metadata: missing workspace_root")?,
-    );
+    let workspace_root = cargo_meta::workspace_root(metadata)?;
     let cargo_lock = workspace_root.join("Cargo.lock");
     if cargo_lock.exists() {
         commit_paths.push(cargo_lock);
@@ -635,7 +570,7 @@ fn should_install_package(config: &Config, package: &str) -> bool {
 }
 
 fn build_dependency_graph(metadata: &Value) -> Result<HashMap<String, Vec<String>>> {
-    let packages = workspace_packages(metadata)?;
+    let packages = cargo_meta::workspace_packages(metadata)?;
     let mut graph: HashMap<String, Vec<String>> = HashMap::new();
 
     for pkg in &packages {
