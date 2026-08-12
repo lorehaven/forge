@@ -20,9 +20,15 @@ RUN apk add --no-cache musl-dev pkgconfig build-base ca-certificates git curl op
 
 RUN rustup component add clippy rustfmt
 
+# `anvil format` runs `cargo +nightly fmt` - some workspaces' rustfmt.toml
+# rely on unstable options (e.g. `group_imports`) that stable rustfmt
+# silently ignores instead of applying, which would make `--check` disagree
+# with how the code was actually formatted.
+RUN rustup toolchain install nightly --component rustfmt --no-self-update
+
 # Same private registry alias every workspace Cargo.toml expects - without it,
 # every `quench-*`/`conveyor-pipeline` dependency fails to resolve.
-ARG CARGO_REGISTRIES_ENNOR_INDEX=sparse+https://ennor.ddns.net/index/
+ARG CARGO_REGISTRIES_ENNOR_INDEX=sparse+https://ennor.ddns.net/warehouse/index/
 ARG CARGO_REGISTRIES_ENNOR_TOKEN=
 RUN mkdir -p /usr/local/cargo && \
     printf "[registries.ennor]\nindex = \"%s\"\n" "${CARGO_REGISTRIES_ENNOR_INDEX}" > /usr/local/cargo/config.toml && \
