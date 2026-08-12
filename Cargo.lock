@@ -1019,7 +1019,7 @@ dependencies = [
 
 [[package]]
 name = "conveyor-service"
-version = "0.5.11"
+version = "0.5.12"
 dependencies = [
  "actix-web",
  "async-trait",
@@ -2023,7 +2023,7 @@ dependencies = [
 
 [[package]]
 name = "gatehouse-service"
-version = "0.2.10"
+version = "0.2.11"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -3863,7 +3863,7 @@ dependencies = [
 
 [[package]]
 name = "quench-auth"
-version = "0.3.5"
+version = "0.3.6"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -3893,7 +3893,7 @@ dependencies = [
 
 [[package]]
 name = "quench-cache"
-version = "0.1.6"
+version = "0.1.7"
 dependencies = [
  "dashmap",
  "redis",
@@ -3979,7 +3979,7 @@ dependencies = [
 
 [[package]]
 name = "quench-starter"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "actix-service",
  "actix-web",
@@ -4002,7 +4002,7 @@ dependencies = [
 
 [[package]]
 name = "quench-web"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "anyhow",
  "fluent-syntax",
@@ -4015,7 +4015,7 @@ dependencies = [
 
 [[package]]
 name = "quench-web-components"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "quench-web",
  "strum",
@@ -4327,7 +4327,7 @@ dependencies = [
 
 [[package]]
 name = "riveter"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -4486,7 +4486,7 @@ checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
 name = "sage-service"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "actix-multipart",
  "actix-web",
@@ -5284,7 +5284,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "switchboard-service"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "actix-web",
  "async-trait",
@@ -6021,7 +6021,7 @@ dependencies = [
 
 [[package]]
 name = "warehouse-service"
-version = "0.4.4"
+version = "0.4.5"
 dependencies = [
  "actix-web",
  "base64 0.23.1",
