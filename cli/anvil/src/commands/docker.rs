@@ -154,7 +154,12 @@ fn cargo_registry_index(config: &config::Config, name: &str) -> Option<String> {
     if let Ok(index) = std::env::var(env_var_name_for_registry(name, "INDEX")) {
         return Some(index);
     }
-    if let Some(index) = config.docker.cargo_registry_index.as_ref().filter(|s| !s.trim().is_empty()) {
+    if let Some(index) = config
+        .docker
+        .cargo_registry_index
+        .as_ref()
+        .filter(|s| !s.trim().is_empty())
+    {
         return Some(index.clone());
     }
     private_registry_config(name)?

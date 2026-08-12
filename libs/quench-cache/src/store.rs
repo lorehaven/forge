@@ -531,8 +531,8 @@ impl RedisStore {
             .await
             .map_err(|err| CacheError::Backend(format!("CLUSTER NODES failed: {err}")))?;
 
-        let raw: String = redis::from_redis_value(value)
-            .map_err(|err| CacheError::Backend(err.to_string()))?;
+        let raw: String =
+            redis::from_redis_value(value).map_err(|err| CacheError::Backend(err.to_string()))?;
 
         Ok(raw.lines().filter_map(parse_primary).collect())
     }
