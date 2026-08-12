@@ -16,7 +16,7 @@
 
 FROM rust:1.94-alpine3.22
 
-RUN apk add --no-cache musl-dev pkgconfig build-base ca-certificates git curl openssl openssl-dev perl
+RUN apk add --no-cache musl-dev pkgconfig build-base ca-certificates git curl openssl openssl-dev openssl-libs-static perl
 
 RUN rustup component add clippy rustfmt
 
