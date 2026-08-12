@@ -1,6 +1,7 @@
 use crate::env::{OUTPUT_DIR, OVERLAY_DIR, manifest_path};
 use anyhow::Context;
-use minijinja::{Environment, Value, context};
+use minijinja::value::ValueKind;
+use minijinja::{Environment, Output, State, Value, context, escape_formatter};
 use regex::Regex;
 use serde_yaml::Value as YamlValue;
 use std::collections::{BTreeMap, HashMap};
@@ -430,6 +431,7 @@ fn overlay_data<S: std::hash::BuildHasher>(
     let mut overlay_jinja = Environment::new();
     overlay_jinja.set_loader(minijinja::path_loader(OVERLAY_DIR));
     overlay_jinja.add_global("env", env_name);
+    overlay_jinja.set_formatter(yaml_bool_formatter);
 
     let rendered_overlay = overlay_jinja.render_str(overlay_src, Value::UNDEFINED)?;
     let mut data: YamlValue = serde_yaml::from_str(&rendered_overlay).map_err(|e| {
@@ -555,6 +557,7 @@ fn render_resources(
     load_embedded_templates(&mut tpl_env)?;
     tpl_env.add_global("env", env_name);
     tpl_env.add_filter("to_yaml", to_yaml);
+    tpl_env.set_formatter(yaml_bool_formatter);
 
     let mut out = Vec::new();
     for (res, res_ref) in resources.iter().zip(refs) {
@@ -807,6 +810,23 @@ pub fn check_embedded_templates() -> anyhow::Result<Vec<&'static str>> {
     load_embedded_templates(&mut env)?;
 
     Ok(TEMPLATES.iter().map(|(name, _)| *name).collect())
+}
+
+/// minijinja mirrors Jinja2/Python and prints bools as `True`/`False`, which
+/// YAML treats as a plain string rather than a boolean — Kubernetes then
+/// rejects the field as the wrong type. Every other value keeps the default
+/// formatting.
+fn yaml_bool_formatter(
+    out: &mut Output<'_>,
+    state: &State<'_, '_>,
+    value: &Value,
+) -> Result<(), minijinja::Error> {
+    if value.kind() == ValueKind::Bool {
+        return out
+            .write_str(if value.is_true() { "true" } else { "false" })
+            .map_err(|e| minijinja::Error::new(minijinja::ErrorKind::WriteFailure, e.to_string()));
+    }
+    escape_formatter(out, state, value)
 }
 
 /// Renders a value as YAML at column 0, for overlay fields that are passed
