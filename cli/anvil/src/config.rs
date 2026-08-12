@@ -20,6 +20,17 @@ pub struct Config {
 pub struct DockerConfig {
     #[serde(default)]
     pub registry: String,
+    /// Name of a private cargo registry the Dockerfile build needs (e.g. one
+    /// declared in `~/.cargo/config.toml`'s `[registries.<name>]`). Anvil
+    /// forwards it as `CARGO_REGISTRIES_<NAME>_INDEX`/`_TOKEN` build-args
+    /// when set; unset means the build has no private registry to see.
+    #[serde(default)]
+    pub cargo_registry: Option<String>,
+    /// Optional literal override for that registry's index URL. Falls back
+    /// to the `CARGO_REGISTRIES_<NAME>_INDEX` env var, then to the host's own
+    /// `~/.cargo/config.toml`, if unset.
+    #[serde(default)]
+    pub cargo_registry_index: Option<String>,
     /// Mapping from module name to Docker module configuration
     #[serde(default)]
     pub modules: HashMap<String, DockerModuleConfig>,

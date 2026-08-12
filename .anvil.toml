@@ -1,5 +1,6 @@
 [docker]
 registry = "ennor.ddns.net/forge"
+cargo_registry = "ennor"
 
 [docker.modules.docker]
 dockerfile = "docker/Dockerfile.alpine"

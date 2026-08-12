@@ -3,6 +3,7 @@ use crate::config;
 use crate::util::run_command;
 use anyhow::{Context, Result};
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::process::Command;
 
 fn find_module_for_package<'a>(config: &'a config::Config, package: &str) -> Result<&'a str> {
@@ -110,9 +111,68 @@ fn get_registries_for_package(config: &config::Config, package: &str) -> Result<
     Ok(filtered)
 }
 
-fn ennor_registry_index() -> String {
-    std::env::var("CARGO_REGISTRIES_ENNOR_INDEX")
-        .unwrap_or_else(|_| "sparse+https://ennor.ddns.net/index/".to_string())
+/// Cargo's own config search root - `CARGO_HOME` if set, otherwise `~/.cargo`
+/// (`HOME` on Unix, `USERPROFILE` on Windows). Same resolution real `cargo`
+/// invocations already use.
+fn cargo_home() -> Option<PathBuf> {
+    if let Ok(dir) = std::env::var("CARGO_HOME") {
+        return Some(PathBuf::from(dir));
+    }
+    std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok()
+        .map(|home| PathBuf::from(home).join(".cargo"))
+}
+
+/// The `[registries.<name>]` table from the host's own `~/.cargo/config.toml`,
+/// if present - the same file real `cargo` commands already resolve
+/// index/token from, so this is a fallback of last resort, not a guess.
+fn private_registry_config(name: &str) -> Option<toml::Value> {
+    let path = cargo_home()?.join("config.toml");
+    let content = std::fs::read_to_string(path).ok()?;
+    let parsed: toml::Value = toml::from_str(&content).ok()?;
+    Some(parsed.get("registries")?.get(name)?.clone())
+}
+
+/// `cargo`'s own name -> env-var mangling: hyphens become underscores, the
+/// name is upper-cased. See `CARGO_REGISTRIES_<NAME>_INDEX`/`_TOKEN` in the
+/// cargo reference.
+fn env_var_name_for_registry(name: &str, suffix: &str) -> String {
+    format!(
+        "CARGO_REGISTRIES_{}_{suffix}",
+        name.to_uppercase().replace('-', "_")
+    )
+}
+
+/// The private cargo registry's index URL, if `[docker].cargo_registry` names
+/// one in `.anvil.toml`. Resolution order: the matching env var (an explicit
+/// override, e.g. from CI) > `.anvil.toml`'s own `cargo_registry_index` > the
+/// host's `~/.cargo/config.toml`. Anvil itself has no opinion on what
+/// registry a workspace uses or where it lives - that's entirely the
+/// workspace's own `.anvil.toml` and cargo config to say.
+fn cargo_registry_index(config: &config::Config, name: &str) -> Option<String> {
+    if let Ok(index) = std::env::var(env_var_name_for_registry(name, "INDEX")) {
+        return Some(index);
+    }
+    if let Some(index) = config.docker.cargo_registry_index.as_ref().filter(|s| !s.trim().is_empty()) {
+        return Some(index.clone());
+    }
+    private_registry_config(name)?
+        .get("index")?
+        .as_str()
+        .map(str::to_string)
+}
+
+fn cargo_registry_token(name: &str) -> Option<String> {
+    if let Ok(token) = std::env::var(env_var_name_for_registry(name, "TOKEN"))
+        && !token.trim().is_empty()
+    {
+        return Some(token);
+    }
+    private_registry_config(name)?
+        .get("token")?
+        .as_str()
+        .map(str::to_string)
 }
 
 fn full_tags_for_package(config: &config::Config, package: &str) -> Result<Vec<String>> {
@@ -175,14 +235,31 @@ pub fn build(config: &config::Config, package: &str) -> Result<()> {
         .arg("--build-arg")
         .arg("BUILDKIT_INLINE_CACHE=1")
         .arg("--build-arg")
-        .arg(format!(
-            "CARGO_REGISTRIES_ENNOR_INDEX={}",
-            ennor_registry_index()
-        ))
-        .arg("--build-arg")
         .arg(format!("PROJECT_NAME={package}"))
         .arg("--build-arg")
         .arg(format!("RESOURCES_PATH={resources_path}"));
+
+    // A private cargo registry the Dockerfile needs to see is entirely a
+    // workspace concern - anvil only forwards it if `.anvil.toml` names one.
+    if let Some(registry_name) = config
+        .docker
+        .cargo_registry
+        .as_ref()
+        .filter(|s| !s.trim().is_empty())
+    {
+        if let Some(index) = cargo_registry_index(config, registry_name) {
+            cmd.arg("--build-arg").arg(format!(
+                "{}={index}",
+                env_var_name_for_registry(registry_name, "INDEX")
+            ));
+        }
+        if let Some(token) = cargo_registry_token(registry_name) {
+            cmd.arg("--build-arg").arg(format!(
+                "{}={token}",
+                env_var_name_for_registry(registry_name, "TOKEN")
+            ));
+        }
+    }
 
     // After the ones anvil derives, so a package that genuinely needs a
     // different `RESOURCES_PATH` can say so - docker takes the last value for a
@@ -192,13 +269,6 @@ pub fn build(config: &config::Config, package: &str) -> Result<()> {
     }
 
     cmd.arg("-t").arg(image_name).arg(".");
-
-    if let Ok(token) = std::env::var("CARGO_REGISTRIES_ENNOR_TOKEN")
-        && !token.trim().is_empty()
-    {
-        cmd.arg("--build-arg")
-            .arg(format!("CARGO_REGISTRIES_ENNOR_TOKEN={token}"));
-    }
 
     // Enable BuildKit with all caching optimizations
     cmd.env("DOCKER_BUILDKIT", "1");
