@@ -2,10 +2,10 @@
 //! over. There is deliberately no local login form - gatehouse owns the
 //! credentials, the session and the realm cookie.
 
-use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
+use actix_web::{HttpRequest, HttpResponse, Responder, get, post, web};
 use quench_auth::actix::domain::sso_client::SsoConfig;
 use quench_auth::actix::routers::ui::pages::auth::{
-    auth_callback, login_delegation, logout_delegation,
+    auth_callback, login_delegation, logout_delegation, refresh_delegation,
 };
 use quench_auth::prelude::JwtConfig;
 use serde::Serialize;
@@ -28,6 +28,11 @@ pub(super) async fn callback(req: HttpRequest, sso: web::Data<SsoConfig>) -> imp
 #[get("/logout")]
 pub(super) async fn logout(req: HttpRequest) -> impl Responder {
     logout_delegation(&req)
+}
+
+#[post("/refresh")]
+pub(super) async fn refresh(req: HttpRequest) -> impl Responder {
+    refresh_delegation(&req).await
 }
 
 #[derive(Serialize)]

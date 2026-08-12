@@ -39,6 +39,7 @@ pub fn scope() -> actix_web::Scope {
         .service(pages::auth::login_submit)
         .service(pages::auth::logout)
         .service(pages::auth::status)
+        .service(pages::auth::refresh)
         .service(pages::register::register_page)
         .service(pages::register::register_page_slash)
         .service(pages::register::register_submit)

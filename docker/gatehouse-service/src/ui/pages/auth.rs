@@ -7,7 +7,7 @@ use crate::api::auth::issue_token_pair;
 use crate::ui::common::{UiPageKind, render_page, supported_locales, ui_path};
 use actix_web::{HttpRequest, HttpResponse, Responder, get, post, web};
 use quench_auth::actix::routers::ui::pages::auth::{
-    LoginQuery, redirect_target, validated_redirect,
+    LoginQuery, redirect_target, refresh_delegation, validated_redirect,
 };
 use quench_auth::prelude::realm;
 use quench_auth::prelude::{JwtConfig, SessionDb, UserDb};
@@ -107,6 +107,11 @@ pub(super) async fn login_submit(
 #[get("/status")]
 pub(super) async fn status(request: HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
     quench_auth::actix::routers::ui::pages::auth::auth_status(&request, &config).await
+}
+
+#[post("/refresh")]
+pub(super) async fn refresh(request: HttpRequest) -> impl Responder {
+    refresh_delegation(&request).await
 }
 
 /// Realm-wide logout: revokes the session and clears the shared cookie, so

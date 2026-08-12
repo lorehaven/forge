@@ -162,22 +162,24 @@ window.getLocale = getLocale;
     )
 }
 
-/// Watches the realm session and sends the browser to login when it ends.
+/// Watches the realm session, silently refreshes an expired access token, and
+/// only sends the browser to login when the refresh itself fails.
 ///
 /// Every page in the estate is server-rendered behind an authentication check,
 /// which settles the question once, at render time, and never again. A tab left
 /// open then goes on looking signed in for as long as nobody touches it - past
-/// the session's expiry, and past a logout performed in another tab or by an
-/// administrator revoking it. The first anyone learns of it is a click that
-/// lands on a login page, having lost whatever was on screen.
+/// the access token's expiry. Rather than treat that as the end of the session,
+/// the watcher spends the long-lived refresh token it is still holding: only
+/// when gatehouse also rejects that does the tab actually need the login page.
 ///
 /// Deliberately narrow about what counts as evidence. Only a well-formed answer
-/// saying `authenticated: false` redirects. A 404 - a service that serves no
-/// `/ui/status` - a network blip, or a body that will not parse are all left
-/// alone: throwing somebody out of a working page because one request failed
-/// would be a worse bug than the one this closes.
+/// saying `authenticated: false` triggers a refresh attempt. A 404 - a service
+/// that serves no `/ui/status` - a network blip, or a body that will not parse
+/// are all left alone: throwing somebody out of a working page because one
+/// request failed would be a worse bug than the one this closes.
 pub fn session_script(resources_prefix: &str, interval_secs: u64) -> Script {
     let status_url = format!("{resources_prefix}/status");
+    let refresh_url = format!("{resources_prefix}/refresh");
     let login_url = format!("{resources_prefix}/login");
     let interval_ms = interval_secs * 1000;
 
@@ -186,10 +188,27 @@ pub fn session_script(resources_prefix: &str, interval_secs: u64) -> Script {
 // ---- Session Watch ----
 
 const SESSION_STATUS_URL = "{status_url}";
+const SESSION_REFRESH_URL = "{refresh_url}";
 const SESSION_LOGIN_URL = "{login_url}";
 const SESSION_INTERVAL_MS = {interval_ms};
 
 let sessionCheckInFlight = false;
+
+// Best-effort: any failure to reach or renew through this just means the
+// caller falls back to the login redirect, same as before this existed.
+async function tryRefresh() {{
+    try {{
+        const response = await fetch(SESSION_REFRESH_URL, {{
+            method: "POST",
+            credentials: "same-origin",
+            headers: {{ "Accept": "application/json" }},
+            cache: "no-store",
+        }});
+        return response.ok;
+    }} catch (error) {{
+        return false;
+    }}
+}}
 
 async function checkSession() {{
     // A hidden tab is not showing anybody stale state, and polling from every
@@ -213,7 +232,10 @@ async function checkSession() {{
         // `=== false` rather than falsy: a body without the field says nothing
         // about the session, and must not be read as a denial.
         if (status && status.authenticated === false) {{
-            window.location.href = SESSION_LOGIN_URL;
+            const refreshed = await tryRefresh();
+            if (!refreshed) {{
+                window.location.href = SESSION_LOGIN_URL;
+            }}
         }}
     }} catch (error) {{
         // Offline, or a service restarting. Not evidence the session ended.
@@ -225,13 +247,14 @@ async function checkSession() {{
 setInterval(checkSession, SESSION_INTERVAL_MS);
 
 // The case the interval alone is bad at: a tab left for an hour and come back
-// to. Checking on the way in means the redirect happens before the first click
-// rather than because of it.
+// to. Checking on the way in means the refresh (or redirect) happens before
+// the first click rather than because of it.
 document.addEventListener("visibilitychange", () => {{
     if (!document.hidden) checkSession();
 }});
         "#,
         status_url = status_url,
+        refresh_url = refresh_url,
         login_url = login_url,
         interval_ms = interval_ms
     )

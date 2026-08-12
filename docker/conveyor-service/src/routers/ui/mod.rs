@@ -46,6 +46,7 @@ pub fn scope(_jwt_config: JwtConfig) -> impl HttpServiceFactory {
         .service(pages::auth::callback)
         .service(pages::auth::logout)
         .service(pages::auth::auth_status)
+        .service(pages::auth::refresh)
         // Home checks the session itself and redirects when there is none.
         .service(pages::home::home)
         .service(pages::home::home_slash)
