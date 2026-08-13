@@ -23,7 +23,7 @@ Forge runs six Actix Web services (`docker/*`), each owning its own Postgres sch
 
 ## Identity: Gatehouse is the one source of truth
 
-[Gatehouse](./docker/gatehouse-service.md) holds the only user table in the realm (`auth.users`) and the only login page. It issues Ed25519-signed JWTs; every other service verifies those tokens **locally**, against Gatehouse's published JWKS — there is no per-request call back to Gatehouse on the hot path. [Quench Auth](./libs/quench-auth.md) is the library that gives each relying-party service that verification logic, its actix middleware, and the permission-check helpers (`Claims::can(service, action)`); Gatehouse itself depends on it too, to verify its own tokens.
+[Gatehouse](./docker/gatehouse-service.md) holds the only user table in the realm (`auth.users`) and the only login page. It issues Ed25519-signed JWTs; every other service verifies those tokens **locally**, against Gatehouse's published JWKS — there is no per-request call back to Gatehouse on the hot path. [Quench Auth](https://github.com/lorehaven/quench/blob/master/docs/quench-auth.md) is the library that gives each relying-party service that verification logic, its actix middleware, and the permission-check helpers (`Claims::can(service, action)`); Gatehouse itself depends on it too, to verify its own tokens.
 
 Two related points worth knowing if you're integrating a new service:
 - **Actions, not read/write levels.** There is no `Access::Read`/`Access::Write` ordering — a `"write"` grant does not imply `"read"`. Permissions are checked per action string (`can(service, "write")`, or a service-specific action like `switchboard`'s `"launch"`/`"stop"`/`"delete-model"`).
@@ -31,7 +31,7 @@ Two related points worth knowing if you're integrating a new service:
 
 ## Schema: Foundry runs once, ahead of everything
 
-[Foundry](./docker/foundry-service.md) is not a long-running peer of the other five services — it's a run-to-completion job that owns the migration files for **all** of them (`conveyor/`, `gatehouse/`, `warehouse/`, `sage/`, `switchboard/`, plus shared `pgvector/` and `quench-core/` modules), each versioned independently with its own dependency graph. It runs as a Kubernetes `Job` (or init container) ahead of a rollout, or as a `foreman` task ahead of starting services locally, and exits non-zero if the database doesn't match the declared plan. [Quench DB](./libs/quench-db.md) is the library underneath both Foundry's migration runner and every service's own CRUD access.
+[Foundry](./docker/foundry-service.md) is not a long-running peer of the other five services — it's a run-to-completion job that owns the migration files for **all** of them (`conveyor/`, `gatehouse/`, `warehouse/`, `sage/`, `switchboard/`, plus shared `pgvector/` and `quench-core/` modules), each versioned independently with its own dependency graph. It runs as a Kubernetes `Job` (or init container) ahead of a rollout, or as a `foreman` task ahead of starting services locally, and exits non-zero if the database doesn't match the declared plan. [Quench DB](https://github.com/lorehaven/quench/blob/master/docs/quench-db.md) is the library underneath both Foundry's migration runner and every service's own CRUD access.
 
 ## The AI stack: Switchboard serves, Sage talks to users
 
@@ -47,7 +47,7 @@ Warehouse itself mounts three addressing schemes side by side behind one service
 
 ## Shared plumbing
 
-Every `docker/*` service is built on [Quench Starter](./libs/quench-starter.md) (TLS/plain HTTP setup, base-path scoping, health checks, DB bootstrap) and renders its UI with [Quench Web](./libs/quench-web.md) (a templating-engine-free `Element`/`PageBuilder` HTML builder). [Quench Cache](./libs/quench-cache.md), [Quench Client](./libs/quench-client.md), and [Quench Config](./libs/quench-config.md) round out the shared layer — caching, authenticated HTTP calls between services, and config/env loading, respectively. [Quench Web Components](./libs/quench-web-components.md) exists in the workspace but currently has no consumers; see its page for details.
+Every `docker/*` service is built on [Quench Starter](https://github.com/lorehaven/quench/blob/master/docs/quench-starter.md) (TLS/plain HTTP setup, base-path scoping, health checks, DB bootstrap) and renders its UI with [Quench Web](https://github.com/lorehaven/quench/blob/master/docs/quench-web.md) (a templating-engine-free `Element`/`PageBuilder` HTML builder). [Quench Cache](https://github.com/lorehaven/quench/blob/master/docs/quench-cache.md), [Quench Client](https://github.com/lorehaven/quench/blob/master/docs/quench-client.md), and [Quench Config](https://github.com/lorehaven/quench/blob/master/docs/quench-config.md) round out the shared layer — caching, authenticated HTTP calls between services, and config/env loading, respectively. [Quench Web Components](https://github.com/lorehaven/quench/blob/master/docs/quench-web-components.md) exists in that workspace but currently has no consumers; see its page for details. These libraries all live in the sibling [quench](https://github.com/lorehaven/quench) repository, pulled in from the `ennor` cargo registry.
 
 ## See also
 

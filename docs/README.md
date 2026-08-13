@@ -25,19 +25,8 @@ docs/
 │   ├── switchboard-service.md
 │   └── warehouse-service.md
 ├── libs/                   # libs/* shared crates
-│   ├── conveyor-pipeline.md
-│   ├── quench-auth.md
-│   ├── quench-cache.md
-│   ├── quench-cli.md
-│   ├── quench-client.md
-│   ├── quench-config.md
-│   ├── quench-db.md
-│   ├── quench-starter.md
-│   ├── quench-web-components.md
-│   └── quench-web.md
+│   └── conveyor-pipeline.md
 ├── examples/                # examples/* runnable references
-│   ├── basic.md
-│   ├── db_example.md
 │   └── vllm_cluster_test.md
 └── tests/                   # tests/* suites
     └── forge-bdd.md
@@ -69,21 +58,12 @@ Long-running Actix Web services, each with its own Postgres schema, started loca
 
 ## Shared Libraries (`libs/*`)
 
-- [Quench Auth](./libs/quench-auth.md) — relying-party token/session verification for services behind Gatehouse
-- [Quench Starter](./libs/quench-starter.md) — Actix service bootstrap (TLS, base-path scoping, health, DB wiring)
-- [Quench Web](./libs/quench-web.md) — dependency-light server-rendered HTML/CSS/JS page builder
-- [Quench Web Components](./libs/quench-web-components.md) — higher-level UI builders on top of Quench Web (currently unused workspace-wide)
-- [Quench DB](./libs/quench-db.md) — ORM/CRUD abstraction plus the migration catalog engine Foundry drives
-- [Quench Cache](./libs/quench-cache.md) — shared in-process/Redis caching layer
-- [Quench Client](./libs/quench-client.md) — shared authenticated HTTP client wrappers
-- [Quench Config](./libs/quench-config.md) — typed config/env loading helper
-- [Quench CLI](./libs/quench-cli.md) — shared terminal UI styling for the CLI tools
 - [Conveyor Pipeline](./libs/conveyor-pipeline.md) — `.conveyor.toml` parser/planner shared by Conveyor Service and Conveyor CLI
+
+The `quench-*` crates (auth, starter, web, web-components, db, cache, client, config, cli) that every `docker/*` service and several `cli/*` tools depend on now live in the sibling [quench](https://github.com/lorehaven/quench) repository and are pulled in from the `ennor` cargo registry like any other dependency — see that repo's own docs for per-crate reference.
 
 ## Examples & Tests
 
-- [Example: Basic](./examples/basic.md) — minimal Quench Web smoke-test app
-- [Example: DB](./examples/db_example.md) — runnable reference for Quench DB's migrations and CRUD
 - [Example: vLLM Cluster Test](./examples/vllm_cluster_test.md) — standalone Docker/K8s connectivity smoke test
 - [Forge BDD](./tests/forge-bdd.md) — the workspace's single Cucumber BDD suite, run via `foreman test`
 
@@ -101,12 +81,9 @@ Long-running Actix Web services, each with its own Postgres schema, started loca
 cargo build --release
 ```
 
-### Quench UI Smoke Tests
+### Smoke Tests
 
 ```bash
-# quench web example
-cargo run -p quench-example-basic
-
 # anvil cli
 cargo run -p anvil -- --help
 
@@ -187,8 +164,8 @@ services.
 │                  #           toolbox, warehouse-cli, welder
 ├── docker/        # services: conveyor, foundry, gatehouse, sage,
 │                  #           switchboard, warehouse (each its own image)
-├── libs/          # shared crates: conveyor-pipeline, quench-*
-├── examples/      # runnable references: basic, db_example, vllm_cluster_test
+├── libs/          # shared crates: conveyor-pipeline
+├── examples/      # runnable references: vllm_cluster_test
 ├── tests/         # forge-bdd, the cross-service Cucumber suite
 ├── ci/            # CI-only images (e.g. rust-builder)
 ├── docs/          # this documentation tree

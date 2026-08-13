@@ -1,6 +1,0 @@
-[[migrations]]
-id = "0002-add-priority"
-author = "forge-team"
-
-[[migrations.changes]]
-sql = "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS priority INT DEFAULT 0"
