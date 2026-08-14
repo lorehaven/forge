@@ -251,13 +251,11 @@ fn build_release_plan(
                 workspace_dep_changes_by_tag.insert(last_tag.clone(), changed);
             }
             let changed_workspace_deps = &workspace_dep_changes_by_tag[&last_tag];
-            let external_dep_changed = package_deps
-                .get(package_name)
-                .is_some_and(|deps| {
-                    deps.external_workspace_deps
-                        .iter()
-                        .any(|dep| changed_workspace_deps.contains(dep))
-                });
+            let external_dep_changed = package_deps.get(package_name).is_some_and(|deps| {
+                deps.external_workspace_deps
+                    .iter()
+                    .any(|dep| changed_workspace_deps.contains(dep))
+            });
 
             if dir_changed || external_dep_changed {
                 packages_to_release.insert(package_name.clone());
