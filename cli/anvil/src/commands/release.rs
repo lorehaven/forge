@@ -17,6 +17,34 @@ enum ReleaseKind {
     Cargo,
 }
 
+/// Extensions that can actually affect what gets built or published.
+/// A file diff restricted to this allowlist ignores docs, licenses, and
+/// other metadata-only edits, so a README-only commit doesn't trigger a
+/// release.
+const RELEASE_RELEVANT_EXTENSIONS: &[&str] = &[
+    "rs", "toml", "j2", "feature", "ftl", "yaml", "yml", "sh", "py", "sql", "json", "proto",
+];
+
+fn is_release_relevant_file(path: &str) -> bool {
+    Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| RELEASE_RELEVANT_EXTENSIONS.contains(&ext))
+}
+
+/// A package's dependencies, split by how a change in them would be
+/// detected.
+struct PackageDependencies {
+    /// Workspace-member names, used for release-order layering and to
+    /// propagate "needs release" to dependents when a member changed.
+    member_deps: Vec<String>,
+    /// Non-member dependency names pulled in via `{ workspace = true }`.
+    /// Their real version lives in the root `[workspace.dependencies]`
+    /// table, not in this package's own manifest, so a diff over this
+    /// package's directory alone can never see them change.
+    external_workspace_deps: HashSet<String>,
+}
+
 #[derive(Debug, Clone)]
 struct ReleasePlanItem {
     package: String,
@@ -186,7 +214,11 @@ fn build_release_plan(
 ) -> Result<Vec<ReleasePlanItem>> {
     let workspace = cargo_meta::workspace_packages(metadata)?;
     let workspace_root = cargo_meta::workspace_root(metadata)?;
-    let dep_graph = build_dependency_graph(metadata)?;
+    let package_deps = collect_package_dependencies(metadata)?;
+    let dep_graph: HashMap<String, Vec<String>> = package_deps
+        .iter()
+        .map(|(name, deps)| (name.clone(), deps.member_deps.clone()))
+        .collect();
 
     // Include transitive dependencies of targets
     let mut all_targets: HashSet<String> = targets.iter().cloned().collect();
@@ -200,6 +232,10 @@ fn build_release_plan(
     // Identify which packages actually need release (have changes or dependencies changed)
     let mut packages_to_release: HashSet<String> = HashSet::new();
     let mut packages_with_changes: HashSet<String> = HashSet::new();
+    // Diffing the root Cargo.toml against a tag is shared work across every
+    // package still tagged from that same point, so cache it per tag rather
+    // than re-running `git show` + reparsing once per package.
+    let mut workspace_dep_changes_by_tag: HashMap<String, HashSet<String>> = HashMap::new();
 
     for package_name in &all_targets {
         let pkg = workspace
@@ -208,7 +244,22 @@ fn build_release_plan(
             .with_context(|| format!("Package '{package_name}' not found in workspace metadata"))?;
 
         if let Some(last_tag) = latest_package_tag(package_name)? {
-            if package_changed_since_tag(&workspace_root, &pkg.dir, &last_tag)? {
+            let dir_changed = package_changed_since_tag(&workspace_root, &pkg.dir, &last_tag)?;
+
+            if !workspace_dep_changes_by_tag.contains_key(&last_tag) {
+                let changed = changed_workspace_dependencies(&workspace_root, &last_tag)?;
+                workspace_dep_changes_by_tag.insert(last_tag.clone(), changed);
+            }
+            let changed_workspace_deps = &workspace_dep_changes_by_tag[&last_tag];
+            let external_dep_changed = package_deps
+                .get(package_name)
+                .is_some_and(|deps| {
+                    deps.external_workspace_deps
+                        .iter()
+                        .any(|dep| changed_workspace_deps.contains(dep))
+                });
+
+            if dir_changed || external_dep_changed {
                 packages_to_release.insert(package_name.clone());
                 packages_with_changes.insert(package_name.clone());
             }
@@ -357,11 +408,115 @@ fn package_changed_since_tag(workspace_root: &Path, package_dir: &Path, tag: &st
         anyhow::bail!("git diff --name-only {range} -- {pathspec} failed");
     }
 
-    let has_changes = !String::from_utf8(output.stdout)
+    let has_changes = String::from_utf8(output.stdout)
         .context("Invalid UTF-8 in git diff output")?
-        .trim()
-        .is_empty();
+        .lines()
+        .any(is_release_relevant_file);
     Ok(has_changes)
+}
+
+/// Reads `relative_path` as it existed at `tag`, via `git show`.
+fn git_show_file_at_tag(workspace_root: &Path, tag: &str, relative_path: &str) -> Result<String> {
+    let spec = format!("{tag}:{relative_path}");
+    let output = Command::new("git")
+        .args(["show", &spec])
+        .current_dir(workspace_root)
+        .output()
+        .with_context(|| format!("Failed to execute git show {spec}"))?;
+
+    if !output.status.success() {
+        anyhow::bail!("git show {spec} failed");
+    }
+
+    String::from_utf8(output.stdout).context("Invalid UTF-8 in git show output")
+}
+
+fn workspace_dependencies_table(content: &str) -> Result<HashMap<String, toml::Value>> {
+    let doc: toml::Value =
+        toml::from_str(content).context("Failed to parse workspace Cargo.toml")?;
+    Ok(doc
+        .get("workspace")
+        .and_then(|w| w.get("dependencies"))
+        .and_then(toml::Value::as_table)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .collect())
+}
+
+/// Names of `[workspace.dependencies]` entries whose version, features, or
+/// registry changed between `tag` and HEAD. Any package pulling one of
+/// these in via `{ workspace = true }` publishes a different dependency
+/// even though nothing in that package's own directory was touched.
+fn changed_workspace_dependencies(workspace_root: &Path, tag: &str) -> Result<HashSet<String>> {
+    let old_content = git_show_file_at_tag(workspace_root, tag, "Cargo.toml")?;
+    let new_content = fs::read_to_string(workspace_root.join("Cargo.toml")).with_context(|| {
+        format!(
+            "Failed to read {}",
+            workspace_root.join("Cargo.toml").display()
+        )
+    })?;
+
+    let old_deps = workspace_dependencies_table(&old_content)?;
+    let new_deps = workspace_dependencies_table(&new_content)?;
+
+    Ok(new_deps
+        .into_iter()
+        .filter(|(name, value)| old_deps.get(name) != Some(value))
+        .map(|(name, _)| name)
+        .collect())
+}
+
+/// Parses every workspace member's manifest once, splitting each package's
+/// dependencies into other members (tracked by source-code diff) and
+/// external crates pinned via `{ workspace = true }` (tracked by diffing
+/// the root `[workspace.dependencies]` table instead, since their version
+/// never lives inside the package's own directory).
+fn collect_package_dependencies(metadata: &Value) -> Result<HashMap<String, PackageDependencies>> {
+    let packages = cargo_meta::workspace_packages(metadata)?;
+    let member_names: HashSet<&str> = packages.iter().map(|pkg| pkg.name.as_str()).collect();
+    let mut result = HashMap::new();
+
+    for pkg in &packages {
+        let manifest_content = fs::read_to_string(&pkg.manifest)
+            .with_context(|| format!("Failed to read manifest at {}", pkg.manifest.display()))?;
+        let manifest_value: toml::Value = toml::from_str(&manifest_content)
+            .with_context(|| format!("Failed to parse manifest at {}", pkg.manifest.display()))?;
+
+        let mut member_deps = Vec::new();
+        let mut external_workspace_deps = HashSet::new();
+
+        for table_name in ["dependencies", "dev-dependencies", "build-dependencies"] {
+            let Some(table) = manifest_value.get(table_name).and_then(|d| d.as_table()) else {
+                continue;
+            };
+            for (dep_name, dep_value) in table {
+                if member_names.contains(dep_name.as_str()) {
+                    if !member_deps.contains(dep_name) {
+                        member_deps.push(dep_name.clone());
+                    }
+                    continue;
+                }
+                let is_workspace_true = dep_value
+                    .get("workspace")
+                    .and_then(toml::Value::as_bool)
+                    .unwrap_or(false);
+                if is_workspace_true {
+                    external_workspace_deps.insert(dep_name.clone());
+                }
+            }
+        }
+
+        result.insert(
+            pkg.name.clone(),
+            PackageDependencies {
+                member_deps,
+                external_workspace_deps,
+            },
+        );
+    }
+
+    Ok(result)
 }
 
 fn ensure_release_plan_non_empty(all: bool, plan: &[ReleasePlanItem], dry_run: bool) -> Result<()> {
@@ -567,43 +722,6 @@ fn is_docker_package(config: &Config, package: &str) -> bool {
 
 fn should_install_package(config: &Config, package: &str) -> bool {
     config.install.packages.iter().any(|p| p == package)
-}
-
-fn build_dependency_graph(metadata: &Value) -> Result<HashMap<String, Vec<String>>> {
-    let packages = cargo_meta::workspace_packages(metadata)?;
-    let mut graph: HashMap<String, Vec<String>> = HashMap::new();
-
-    for pkg in &packages {
-        let manifest_content = fs::read_to_string(&pkg.manifest)
-            .with_context(|| format!("Failed to read manifest at {}", pkg.manifest.display()))?;
-        let manifest_value: toml::Value = toml::from_str(&manifest_content)
-            .with_context(|| format!("Failed to parse manifest at {}", pkg.manifest.display()))?;
-
-        let mut deps = Vec::new();
-        if let Some(dependencies) = manifest_value
-            .get("dependencies")
-            .and_then(|d| d.as_table())
-        {
-            for dep_name in dependencies.keys() {
-                if packages.iter().any(|p| &p.name == dep_name) {
-                    deps.push(dep_name.clone());
-                }
-            }
-        }
-        if let Some(dev_dependencies) = manifest_value
-            .get("dev-dependencies")
-            .and_then(|d| d.as_table())
-        {
-            for dep_name in dev_dependencies.keys() {
-                if packages.iter().any(|p| &p.name == dep_name) && !deps.contains(dep_name) {
-                    deps.push(dep_name.clone());
-                }
-            }
-        }
-        graph.insert(pkg.name.clone(), deps);
-    }
-
-    Ok(graph)
 }
 
 fn get_transitive_dependencies(
