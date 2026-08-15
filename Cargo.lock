@@ -401,7 +401,7 @@ dependencies = [
 
 [[package]]
 name = "anvil"
-version = "0.1.26"
+version = "0.1.27"
 dependencies = [
  "anyhow",
  "clap",
@@ -939,7 +939,7 @@ dependencies = [
 
 [[package]]
 name = "conveyor-cli"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "anyhow",
  "clap",
@@ -967,7 +967,7 @@ dependencies = [
 
 [[package]]
 name = "conveyor-service"
-version = "0.5.13"
+version = "0.5.14"
 dependencies = [
  "actix-web",
  "async-trait",
@@ -1841,7 +1841,7 @@ dependencies = [
 
 [[package]]
 name = "foundry-service"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "anyhow",
  "clap",
