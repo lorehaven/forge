@@ -14,6 +14,7 @@ use quench_starter::prelude::*;
 
 pub mod artifacts;
 pub mod config;
+pub mod credentials;
 pub mod domain;
 pub mod executors;
 // The pipeline language is its own crate, so `conveyor validate` can link the

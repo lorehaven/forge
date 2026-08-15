@@ -127,6 +127,15 @@ impl Client {
         decode(response, path).await
     }
 
+    pub async fn patch<T: DeserializeOwned>(&self, path: &str, body: &Value) -> Result<T> {
+        let response = self
+            .authenticated(self.http.patch(self.url(path)).json(body))
+            .send()
+            .await
+            .with_context(|| format!("PATCH {path}"))?;
+        decode(response, path).await
+    }
+
     /// For endpoints that answer with no body.
     pub async fn send_empty(&self, method: reqwest::Method, path: &str) -> Result<()> {
         let response = self

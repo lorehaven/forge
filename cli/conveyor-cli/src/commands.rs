@@ -29,6 +29,7 @@ pub async fn repo(client: &Client, command: &RepoCommands) -> Result<()> {
                         "name": name,
                         "clone_url": args.clone_url,
                         "default_branch": args.default_branch,
+                        "project_id": resolve_project(&args.project),
                     }),
                 )
                 .await?;
@@ -67,6 +68,18 @@ pub async fn repo(client: &Client, command: &RepoCommands) -> Result<()> {
         RepoCommands::Enable(args) => set_enabled(client, &args.repo, true).await,
         RepoCommands::Disable(args) => set_enabled(client, &args.repo, false).await,
 
+        RepoCommands::Move(args) => {
+            let id = resolve_repo(client, &args.repo).await?;
+            let _: Value = client
+                .patch(
+                    &format!("/repos/{id}"),
+                    &json!({ "project_id": resolve_project(&args.project) }),
+                )
+                .await?;
+            print_status(Tone::Success, "moved", &args.repo);
+            Ok(())
+        }
+
         RepoCommands::Remove(args) => {
             let id = resolve_repo(client, &args.repo).await?;
             client
@@ -93,6 +106,94 @@ async fn set_enabled(client: &Client, repo: &str, enabled: bool) -> Result<()> {
         repo,
     );
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Projects
+// ---------------------------------------------------------------------------
+
+pub async fn project(client: &Client, command: &ProjectCommands) -> Result<()> {
+    match command {
+        ProjectCommands::Add(args) => {
+            let created: Value = client
+                .post(
+                    "/projects",
+                    &json!({ "name": args.name, "parent_id": args.parent }),
+                )
+                .await?;
+            print_status(
+                Tone::Success,
+                "created",
+                &format!("{} ({})", args.name, string(&created, "id")),
+            );
+            Ok(())
+        }
+
+        ProjectCommands::List(args) => {
+            let mut path = "/projects".to_string();
+            if let Some(parent) = &args.parent {
+                path.push_str(&format!("?parent_id={parent}"));
+            }
+            let projects: Vec<Value> = client.get(&path).await?;
+            if projects.is_empty() {
+                print_status(Tone::Info, "projects", "none");
+                return Ok(());
+            }
+            for project in &projects {
+                println!("{:<30}  {}", string(project, "name"), string(project, "id"));
+            }
+            Ok(())
+        }
+
+        ProjectCommands::Show(args) => {
+            let project: Value = client.get(&format!("/projects/{}", args.project)).await?;
+            print_status(Tone::Info, "project", &string(&project, "path"));
+            println!("id:      {}", string(&project, "id"));
+            match project.get("parent_id").and_then(Value::as_str) {
+                Some(parent_id) => println!("parent:  {parent_id}"),
+                None => println!("parent:  (root)"),
+            }
+            Ok(())
+        }
+
+        ProjectCommands::Rename(args) => {
+            let _: Value = client
+                .patch(
+                    &format!("/projects/{}", args.project),
+                    &json!({ "name": args.name }),
+                )
+                .await?;
+            print_status(Tone::Success, "renamed", &args.name);
+            Ok(())
+        }
+
+        ProjectCommands::Move(args) => {
+            if !args.to_root && args.parent.is_none() {
+                bail!("pass --parent or --to-root");
+            }
+            let body = if args.to_root {
+                json!({ "to_root": true })
+            } else {
+                json!({ "parent_id": args.parent })
+            };
+            let _: Value = client
+                .patch(&format!("/projects/{}", args.project), &body)
+                .await?;
+            print_status(Tone::Success, "moved", &args.project);
+            Ok(())
+        }
+
+        ProjectCommands::Remove(args) => {
+            client
+                .send_empty(
+                    reqwest::Method::DELETE,
+                    &format!("/projects/{}", args.project),
+                )
+                .await?;
+            print_status(Tone::Success, "removed", &args.project);
+            Ok(())
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -386,6 +487,98 @@ async fn secret_path(client: &Client, repo: Option<&str>, name: Option<&str>) ->
         Some(name) => format!("{base}/{name}"),
         None => base,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Credentials
+// ---------------------------------------------------------------------------
+
+pub async fn credential(client: &Client, command: &CredentialCommands) -> Result<()> {
+    match command {
+        CredentialCommands::Set(args) => {
+            let token = match &args.token {
+                Some(token) => token.clone(),
+                // Same reasoning as `secret set`: keeps it out of shell
+                // history and out of the process list.
+                None => {
+                    let mut input = String::new();
+                    std::io::stdin()
+                        .read_to_string(&mut input)
+                        .context("reading the token from stdin")?;
+                    input.trim_end_matches('\n').to_string()
+                }
+            };
+
+            let path =
+                credential_path(client, args.repo.as_deref(), args.project.as_deref()).await?;
+            let credential: Value = client
+                .put(
+                    &path,
+                    &json!({ "name": args.name, "username": args.username, "token": token }),
+                )
+                .await?;
+            print_status(
+                Tone::Success,
+                "set",
+                &format!("{} ({})", args.name, string(&credential, "preview")),
+            );
+            Ok(())
+        }
+
+        CredentialCommands::Show(args) => {
+            let path =
+                credential_path(client, args.repo.as_deref(), args.project.as_deref()).await?;
+            let credential: Value = client.get(&path).await?;
+            if credential.is_null() {
+                print_status(Tone::Info, "credential", "none set");
+                return Ok(());
+            }
+            println!(
+                "{:<20}  {} as {}, set by {}",
+                string(&credential, "name"),
+                string(&credential, "preview"),
+                string(&credential, "username"),
+                string(&credential, "created_by"),
+            );
+            Ok(())
+        }
+
+        CredentialCommands::Remove(args) => {
+            let path =
+                credential_path(client, args.repo.as_deref(), args.project.as_deref()).await?;
+            client.send_empty(reqwest::Method::DELETE, &path).await?;
+            print_status(Tone::Success, "removed", "the credential");
+            Ok(())
+        }
+    }
+}
+
+async fn credential_path(
+    client: &Client,
+    repo: Option<&str>,
+    project: Option<&str>,
+) -> Result<String> {
+    match (repo, project) {
+        (Some(_), Some(_)) => bail!("pass --repo or --project, not both"),
+        (Some(repo), None) => Ok(format!(
+            "/repos/{}/credentials",
+            resolve_repo(client, repo).await?
+        )),
+        (None, Some(project)) => Ok(format!(
+            "/projects/{}/credentials",
+            resolve_project(project)
+        )),
+        (None, None) => bail!("a credential needs a scope: pass --repo or --project"),
+    }
+}
+
+/// Unlike `resolve_repo`, no name-style lookup: a project's name is only
+/// unique among its own siblings (`conveyor project list` is how you find an
+/// id from a name), not across the whole tree the way a repository's
+/// `owner/name` is, so there is no single unambiguous string to resolve
+/// against here. A project reference is its id, taken as given.
+fn resolve_project(reference: &str) -> String {
+    reference.to_string()
 }
 
 // ---------------------------------------------------------------------------

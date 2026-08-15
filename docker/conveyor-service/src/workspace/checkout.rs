@@ -54,6 +54,15 @@ pub enum CheckoutError {
     Spawn(#[from] std::io::Error),
 }
 
+/// What to authenticate a fetch with. `username`/`token` become an HTTP Basic
+/// `Authorization` header - this module doesn't know or care where they came
+/// from, only how to use them.
+#[derive(Clone, Copy, Debug)]
+pub struct HttpCredential<'a> {
+    pub username: &'a str,
+    pub token: &'a str,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct CheckoutRequest<'a> {
     pub clone_url: &'a str,
@@ -63,6 +72,10 @@ pub struct CheckoutRequest<'a> {
     /// ref, which can move while the run is queued.
     pub sha: &'a str,
     pub timeout: Duration,
+    /// `None` for a repository conveyor has no credential for - the clone is
+    /// attempted unauthenticated, exactly as before this existed, which is
+    /// the right behaviour for a public repository.
+    pub credential: Option<HttpCredential<'a>>,
 }
 
 /// Checks `request` out into a directory of its own beneath `work_dir`.
@@ -103,11 +116,12 @@ pub async fn checkout(
     let workspace = Workspace::new(root);
     let root = workspace.root().to_path_buf();
 
-    git(&root, &["init", "--quiet"], request.timeout).await?;
+    git(&root, &["init", "--quiet"], request.timeout, &[]).await?;
     git(
         &root,
         &["remote", "add", "origin", request.clone_url],
         request.timeout,
+        &[],
     )
     .await?;
 
@@ -121,6 +135,7 @@ pub async fn checkout(
         &root,
         &["checkout", "--quiet", "--detach", request.sha],
         request.timeout,
+        &[],
     )
     .await?;
 
@@ -135,7 +150,16 @@ pub async fn checkout(
 /// default - so the fallback fetches the ref in full. Shallow-fetching the ref
 /// instead is not an option: the ref may have moved on since the webhook, and
 /// the depth-1 tip would be the wrong commit.
+///
+/// The only step that talks to the network, so the only one that needs
+/// `request.credential` - `init`, `remote add` and the final `checkout` never
+/// see it.
 async fn fetch(root: &Path, request: &CheckoutRequest<'_>) -> Result<(), CheckoutError> {
+    let header = request
+        .credential
+        .map(|credential| basic_auth_header(credential.username, credential.token));
+    let extra_env = credential_env(header.as_deref());
+
     let shallow = git(
         root,
         &[
@@ -148,6 +172,7 @@ async fn fetch(root: &Path, request: &CheckoutRequest<'_>) -> Result<(), Checkou
             request.sha,
         ],
         request.timeout,
+        &extra_env,
     )
     .await;
 
@@ -164,13 +189,47 @@ async fn fetch(root: &Path, request: &CheckoutRequest<'_>) -> Result<(), Checkou
                 root,
                 &["fetch", "--quiet", "--no-tags", "origin", request.git_ref],
                 request.timeout,
+                &extra_env,
             )
             .await
         }
     }
 }
 
-async fn git(root: &Path, args: &[&str], timeout: Duration) -> Result<(), CheckoutError> {
+/// `Authorization: Basic ...`, built once so both fetch attempts (shallow,
+/// then full) send the same header.
+///
+/// `pub` for the same reason `validate_sha`/`validate_ref`/`validate_url`
+/// are: so a test can check what this builds without driving a real git
+/// server through it.
+pub fn basic_auth_header(username: &str, token: &str) -> String {
+    use base64::Engine;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(format!("{username}:{token}"));
+    format!("Authorization: Basic {encoded}")
+}
+
+/// The env pairs that hand a fetch its credential, via `http.extraheader`
+/// supplied through `GIT_CONFIG_*` rather than argv or an on-disk
+/// `.git/config` entry - so the header never shows up in a process listing
+/// (`ps`) and a later build step reading `git config --list` in the
+/// checked-out workspace can't echo it back.
+pub fn credential_env(header: Option<&str>) -> Vec<(&str, &str)> {
+    match header {
+        Some(header) => vec![
+            ("GIT_CONFIG_COUNT", "1"),
+            ("GIT_CONFIG_KEY_0", "http.extraheader"),
+            ("GIT_CONFIG_VALUE_0", header),
+        ],
+        None => Vec::new(),
+    }
+}
+
+async fn git(
+    root: &Path,
+    args: &[&str],
+    timeout: Duration,
+    extra_env: &[(&str, &str)],
+) -> Result<(), CheckoutError> {
     let mut command = Command::new("git");
     command
         .args(args)
@@ -182,10 +241,14 @@ async fn git(root: &Path, args: &[&str], timeout: Duration) -> Result<(), Checko
         // Without these, a private repository with no usable credentials makes
         // git ask for a password. There is no terminal to ask on, so it would
         // hang until the checkout timeout rather than failing immediately.
+        // Deliberately not a contradiction with `extra_env` below: a
+        // credential conveyor holds is supplied explicitly, as config, not
+        // fished for interactively.
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_ASKPASS", "")
         .env("SSH_ASKPASS", "")
-        .env("GIT_CONFIG_NOSYSTEM", "1");
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .envs(extra_env.iter().copied());
 
     let described = args.first().copied().unwrap_or("git").to_string();
 

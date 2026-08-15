@@ -6,7 +6,7 @@ use conveyor_service::secrets::crypto::CryptoError;
 const HEX_KEY: &str = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
 
 fn key() -> SecretKey {
-    SecretKey::parse(HEX_KEY).expect("a 32-byte hex key")
+    SecretKey::parse("CONVEYOR_SECRET_KEY", HEX_KEY).expect("a 32-byte hex key")
 }
 
 #[test]
@@ -66,7 +66,7 @@ fn a_value_will_not_open_under_a_different_name() {
 #[test]
 fn another_key_cannot_open_it() {
     let (nonce, ciphertext) = key().seal("global:TOKEN", "a token").expect("seal");
-    let other = SecretKey::parse(&"ab".repeat(32)).expect("another key");
+    let other = SecretKey::parse("CONVEYOR_SECRET_KEY", &"ab".repeat(32)).expect("another key");
 
     assert!(matches!(
         other.open("global:TOKEN", &nonce, &ciphertext),
@@ -129,8 +129,8 @@ fn a_value_with_awkward_bytes_round_trips() {
 
 #[test]
 fn a_hex_key_is_accepted() {
-    assert!(SecretKey::parse(HEX_KEY).is_ok());
-    assert!(SecretKey::parse(&format!("  {HEX_KEY}  ")).is_ok());
+    assert!(SecretKey::parse("CONVEYOR_SECRET_KEY", HEX_KEY).is_ok());
+    assert!(SecretKey::parse("CONVEYOR_SECRET_KEY", &format!("  {HEX_KEY}  ")).is_ok());
 }
 
 #[test]
@@ -139,22 +139,22 @@ fn a_base64_key_is_accepted() {
     use base64::Engine;
     let bytes = hex::decode(HEX_KEY).expect("hex");
     let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
-    assert!(SecretKey::parse(&encoded).is_ok());
+    assert!(SecretKey::parse("CONVEYOR_SECRET_KEY", &encoded).is_ok());
 }
 
 #[test]
 fn a_key_of_the_wrong_length_is_refused() {
     assert!(matches!(
-        SecretKey::parse("00112233"),
+        SecretKey::parse("CONVEYOR_SECRET_KEY", "00112233"),
         Err(CryptoError::BadKey { .. })
     ));
-    assert!(SecretKey::parse(&"ab".repeat(64)).is_err());
+    assert!(SecretKey::parse("CONVEYOR_SECRET_KEY", &"ab".repeat(64)).is_err());
 }
 
 #[test]
 fn a_key_that_is_neither_hex_nor_base64_is_refused() {
     assert!(matches!(
-        SecretKey::parse("this is not a key at all!!!"),
+        SecretKey::parse("CONVEYOR_SECRET_KEY", "this is not a key at all!!!"),
         Err(CryptoError::BadKey { .. })
     ));
 }
@@ -165,8 +165,8 @@ fn hex_and_base64_of_the_same_bytes_produce_the_same_key() {
     let bytes = hex::decode(HEX_KEY).expect("hex");
     let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
 
-    let from_hex = SecretKey::parse(HEX_KEY).expect("hex key");
-    let from_base64 = SecretKey::parse(&encoded).expect("base64 key");
+    let from_hex = SecretKey::parse("CONVEYOR_SECRET_KEY", HEX_KEY).expect("hex key");
+    let from_base64 = SecretKey::parse("CONVEYOR_SECRET_KEY", &encoded).expect("base64 key");
 
     let (nonce, ciphertext) = from_hex.seal("global:TOKEN", "value").expect("seal");
     assert_eq!(
@@ -175,4 +175,30 @@ fn hex_and_base64_of_the_same_bytes_produce_the_same_key() {
             .unwrap(),
         "value"
     );
+}
+
+#[test]
+fn from_env_reads_the_secret_key_variable_by_name() {
+    // `from_env()` is `from_env_named("CONVEYOR_SECRET_KEY")` under a fixed
+    // name; this pins that down so the two cannot drift apart.
+    // SAFETY: this test does not run concurrently with anything else that
+    // reads or writes this variable.
+    unsafe {
+        std::env::remove_var("CONVEYOR_SECRET_KEY");
+    }
+    assert!(SecretKey::from_env().expect("unset is Ok(None)").is_none());
+
+    unsafe {
+        std::env::set_var("CONVEYOR_SECRET_KEY", HEX_KEY);
+    }
+    assert!(SecretKey::from_env().expect("a valid key").is_some());
+    assert!(
+        SecretKey::from_env_named("CONVEYOR_SECRET_KEY")
+            .expect("a valid key")
+            .is_some()
+    );
+
+    unsafe {
+        std::env::remove_var("CONVEYOR_SECRET_KEY");
+    }
 }

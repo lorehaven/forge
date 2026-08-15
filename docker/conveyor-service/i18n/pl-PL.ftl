@@ -8,6 +8,7 @@ theme_label = Motyw
 
 ui_header_home = Conveyor
 ui_home_button = Strona główna
+ui_nav_credentials = Poświadczenia
 ui_logout = Wyloguj się
 
 # ── Home ─────────────────────────────────────────────────────────────────────
@@ -109,3 +110,8 @@ ui_repos_err_bad_clone_url = Ten adres URL klonowania jest nieprawidłowy.
 ui_repos_err_forbidden = Nie masz uprawnień do zapisu w tym projekcie.
 ui_repos_err_not_found = Nie ma takiego repozytorium.
 ui_repos_err_write_failed = Nie udało się tego zapisać. Może już istnieć.
+
+# ── Credentials ──────────────────────────────────────────────────────────────
+
+ui_credentials_title = Poświadczenia
+ui_credentials_empty = Brak poświadczeń widocznych dla Ciebie.

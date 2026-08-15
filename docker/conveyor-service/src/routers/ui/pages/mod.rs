@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod credentials;
 pub mod home;
 pub mod jobs;
 pub mod pipelines;

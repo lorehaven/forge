@@ -349,4 +349,7 @@ pub fn scope() -> actix_web::Scope {
         .service(super::secrets::list_repo)
         .service(super::secrets::put_repo)
         .service(super::secrets::delete_repo)
+        .service(super::credentials::show_repo)
+        .service(super::credentials::put_repo)
+        .service(super::credentials::delete_repo)
 }

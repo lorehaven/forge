@@ -5,8 +5,12 @@
 //! the four commands conveyor issues actually produce the commit on disk, and
 //! a mocked `git` would only confirm that the arguments match themselves.
 
-use conveyor_service::workspace::checkout::{validate_ref, validate_sha, validate_url};
-use conveyor_service::workspace::{CheckoutError, CheckoutRequest, Workspace, checkout};
+use conveyor_service::workspace::checkout::{
+    basic_auth_header, credential_env, validate_ref, validate_sha, validate_url,
+};
+use conveyor_service::workspace::{
+    CheckoutError, CheckoutRequest, HttpCredential, Workspace, checkout,
+};
 use std::path::Path;
 use std::process::Command;
 use std::time::Duration;
@@ -220,6 +224,7 @@ fn request<'a>(url: &'a str, git_ref: &'a str, sha: &'a str) -> CheckoutRequest<
         git_ref,
         sha,
         timeout: Duration::from_secs(60),
+        credential: None,
     }
 }
 
@@ -342,6 +347,7 @@ async fn a_hostile_ref_never_reaches_git() {
         git_ref: "--upload-pack=/tmp/pwned",
         sha: "0123456789abcdef0123456789abcdef01234567",
         timeout: Duration::from_secs(5),
+        credential: None,
     };
 
     let error = checkout(work.path(), "run-1", &req)
@@ -367,6 +373,7 @@ async fn a_missing_origin_fails_rather_than_hanging() {
         git_ref: "refs/heads/master",
         sha: "0123456789abcdef0123456789abcdef01234567",
         timeout: Duration::from_secs(30),
+        credential: None,
     };
 
     let error = checkout(work.path(), "run-1", &req)
@@ -376,4 +383,61 @@ async fn a_missing_origin_fails_rather_than_hanging() {
         matches!(error, CheckoutError::Git { .. }),
         "expected a git failure, got {error:?}"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Credentials
+// ---------------------------------------------------------------------------
+
+#[test]
+fn the_auth_header_base64_encodes_username_and_token() {
+    use base64::Engine;
+    let header = basic_auth_header("x-access-token", "s3cr3t");
+    let expected = base64::engine::general_purpose::STANDARD.encode("x-access-token:s3cr3t");
+    assert_eq!(header, format!("Authorization: Basic {expected}"));
+}
+
+#[test]
+fn no_header_means_no_extra_env() {
+    assert!(credential_env(None).is_empty());
+}
+
+#[test]
+fn a_header_becomes_the_three_git_config_env_vars() {
+    let env = credential_env(Some("Authorization: Basic abc123"));
+    assert_eq!(
+        env,
+        vec![
+            ("GIT_CONFIG_COUNT", "1"),
+            ("GIT_CONFIG_KEY_0", "http.extraheader"),
+            ("GIT_CONFIG_VALUE_0", "Authorization: Basic abc123"),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn a_credential_does_not_break_a_checkout_that_did_not_need_one() {
+    // `file://` never reads `http.*` config, so a credential handed to a
+    // checkout that does not need one is inert rather than an error - the
+    // same tolerance an unauthenticated clone of a public repository needs
+    // to keep working once this existed.
+    let origin = Origin::create();
+    let url = origin.url();
+    let work = tempfile::tempdir().expect("temp dir");
+
+    let req = CheckoutRequest {
+        clone_url: &url,
+        git_ref: "refs/heads/master",
+        sha: &origin.sha,
+        timeout: Duration::from_secs(60),
+        credential: Some(HttpCredential {
+            username: "x-access-token",
+            token: "does-not-matter-here",
+        }),
+    };
+
+    let workspace = checkout(work.path(), "run-1", &req)
+        .await
+        .expect("checkout should still succeed");
+    assert_eq!(git(workspace.root(), &["rev-parse", "HEAD"]), origin.sha);
 }

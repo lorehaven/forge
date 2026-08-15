@@ -7,6 +7,7 @@
 
 use crate::artifacts::{self, WarehouseStore};
 use crate::config::ConveyorConfig;
+use crate::credentials::store as credential_store;
 use crate::domain::{Repo, Run, Status};
 use crate::executors::{JobExecutor, JobSpec, SourceSpec};
 use crate::pipeline::{self, Decision, EvalContext, PIPELINE_FILE};
@@ -14,7 +15,7 @@ use crate::providers::{CommitStatusReport, Providers};
 use crate::scheduler::queue::{self, PlannedJob};
 use crate::scheduler::repos;
 use crate::secrets::{Redactor, SecretKey, store as secret_store};
-use crate::workspace::{self, CheckoutRequest, Workspace};
+use crate::workspace::{self, CheckoutRequest, HttpCredential, Workspace};
 use quench_db::prelude::Db;
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
@@ -44,6 +45,11 @@ pub struct Worker {
     /// `None` when `CONVEYOR_SECRET_KEY` is unset. A pipeline that declares no
     /// secrets does not need one; one that does fails with a message saying so.
     key: Arc<Option<SecretKey>>,
+    /// `None` when `CONVEYOR_CREDENTIAL_KEY` is unset. A repository or project
+    /// with no credential registered checks out unauthenticated either way;
+    /// one that does have a credential fails to check out with a message
+    /// saying why, the same shape `key`'s absence gives pipeline secrets.
+    credential_key: Arc<Option<SecretKey>>,
     /// `None` when no warehouse is configured, in which case declared
     /// artifacts are reported as produced-and-not-kept rather than recorded.
     artifacts: Arc<Option<WarehouseStore>>,
@@ -83,6 +89,18 @@ pub fn spawn_pool(
         }
     });
 
+    let credential_key = Arc::new(match SecretKey::from_env_named(credential_store::KEY_VAR) {
+        Ok(key) => key,
+        Err(error) => {
+            // Not fatal, for the same reason `key` above is not: a public
+            // repository builds fine with no credential key configured at
+            // all. One that needs a credential fails at checkout with this
+            // same message.
+            tracing::error!("git credentials are unavailable: {error}");
+            None
+        }
+    });
+
     let host = envmnt::get_or("HOSTNAME", "conveyor");
     for index in 0..config.max_concurrent_runs {
         let worker = Worker {
@@ -92,6 +110,7 @@ pub fn spawn_pool(
             executor: executor.clone(),
             providers: providers.clone(),
             key: key.clone(),
+            credential_key: credential_key.clone(),
             artifacts: artifacts.clone(),
         };
         tokio::spawn(worker.run_loop());
@@ -308,6 +327,26 @@ impl Worker {
     }
 
     async fn checkout(&self, run: &Run, repo: &Repo) -> Result<Workspace, WorkerError> {
+        let resolved =
+            credential_store::resolve(&self.db, self.credential_key.as_ref().as_ref(), repo)
+                .await
+                .map_err(|error| WorkerError::Checkout(error.to_string()))?;
+
+        let credential = resolved.as_ref().map(|resolved| HttpCredential {
+            username: &resolved.username,
+            token: &resolved.token,
+        });
+
+        // A backstop, not a guarantee - same reasoning as the redactor built
+        // from a job's declared secrets. Applied here because a failed clone's
+        // git stderr is the one place a credential's token could otherwise
+        // reach the run page, which the checkout path itself never shows one
+        // to on success.
+        let redactor = resolved
+            .as_ref()
+            .map(|resolved| Redactor::new([resolved.token.clone()]))
+            .unwrap_or_else(Redactor::none);
+
         workspace::checkout(
             &self.config.work_dir,
             &run.id,
@@ -316,10 +355,11 @@ impl Worker {
                 git_ref: &run.git_ref,
                 sha: &run.sha,
                 timeout: Duration::from_secs(self.config.checkout_timeout_secs),
+                credential,
             },
         )
         .await
-        .map_err(|error| WorkerError::Checkout(error.to_string()))
+        .map_err(|error| WorkerError::Checkout(redactor.apply(&error.to_string())))
     }
 
     /// Runs the jobs the plan allowed, stage by stage.

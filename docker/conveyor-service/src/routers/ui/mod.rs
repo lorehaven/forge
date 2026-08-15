@@ -64,4 +64,5 @@ pub fn scope(_jwt_config: JwtConfig) -> impl HttpServiceFactory {
         .service(pages::repos::edit_page)
         .service(pages::repos::save_repo)
         .service(pages::repos::delete_repo)
+        .service(pages::credentials::list_page)
 }

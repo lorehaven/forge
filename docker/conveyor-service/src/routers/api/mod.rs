@@ -11,6 +11,7 @@ use quench_auth::prelude::{Claims, JwtConfig, realm};
 use serde_json::json;
 
 pub mod authz;
+pub mod credentials;
 pub mod projects;
 pub mod repos;
 pub mod runs;

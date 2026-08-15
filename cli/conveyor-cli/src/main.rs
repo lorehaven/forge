@@ -50,7 +50,9 @@ async fn run() -> Result<()> {
         cli::Commands::Show(args) => commands::show(&client, args).await,
         cli::Commands::Logs(args) => commands::logs(&client, args).await,
         cli::Commands::Cancel(args) => commands::cancel(&client, args).await,
+        cli::Commands::Project { command } => commands::project(&client, command).await,
         cli::Commands::Secret { command } => commands::secret(&client, command).await,
+        cli::Commands::Credential { command } => commands::credential(&client, command).await,
         cli::Commands::Validate(_) => unreachable!("handled above"),
     }
 }

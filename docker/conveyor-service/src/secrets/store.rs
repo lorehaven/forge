@@ -183,7 +183,9 @@ pub async fn resolve(
         return Ok(BTreeMap::new());
     }
 
-    let key = key.ok_or(CryptoError::NoKey)?;
+    let key = key.ok_or(CryptoError::NoKey {
+        var: "CONVEYOR_SECRET_KEY",
+    })?;
     let repo_scope = Scope::Repo(repo_id.to_string());
 
     let mut resolved = BTreeMap::new();

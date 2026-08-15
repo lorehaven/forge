@@ -23,17 +23,17 @@ const KEY_BYTES: usize = 32;
 #[derive(Debug, thiserror::Error)]
 pub enum CryptoError {
     #[error(
-        "CONVEYOR_SECRET_KEY is not set: conveyor cannot read or write secrets. \
+        "{var} is not set: conveyor cannot read or write secrets. \
          Generate one with `openssl rand -hex 32`."
     )]
-    NoKey,
+    NoKey { var: &'static str },
 
-    #[error("CONVEYOR_SECRET_KEY is not {KEY_BYTES} bytes of hex or base64: {reason}")]
-    BadKey { reason: String },
+    #[error("{var} is not {KEY_BYTES} bytes of hex or base64: {reason}")]
+    BadKey { var: &'static str, reason: String },
 
     #[error(
-        "a secret could not be decrypted. Either CONVEYOR_SECRET_KEY has changed \
-         since it was written, or the row has been altered."
+        "a value could not be decrypted. Either the key it was sealed with has \
+         changed since it was written, or the row has been altered."
     )]
     CannotOpen,
 
@@ -57,24 +57,35 @@ impl SecretKey {
     /// feature it may never use. Reading or writing a secret without it is an
     /// error at that point, which is where it can be reported usefully.
     pub fn from_env() -> Result<Option<Self>, CryptoError> {
-        let raw = envmnt::get_or("CONVEYOR_SECRET_KEY", "");
+        Self::from_env_named("CONVEYOR_SECRET_KEY")
+    }
+
+    /// [`from_env`](Self::from_env), reading a differently-named variable.
+    ///
+    /// Lets a value sealed for a different purpose - git credentials, say -
+    /// use its own key and be rotated or compromised independently, without a
+    /// second copy of the cipher wiring below.
+    pub fn from_env_named(var: &'static str) -> Result<Option<Self>, CryptoError> {
+        let raw = envmnt::get_or(var, "");
         let raw = raw.trim();
         if raw.is_empty() {
             return Ok(None);
         }
-        Self::parse(raw).map(Some)
+        Self::parse(var, raw).map(Some)
     }
 
-    pub fn parse(raw: &str) -> Result<Self, CryptoError> {
-        let bytes = decode_key(raw.trim())?;
+    pub fn parse(var: &'static str, raw: &str) -> Result<Self, CryptoError> {
+        let bytes = decode_key(var, raw.trim())?;
         if bytes.len() != KEY_BYTES {
             return Err(CryptoError::BadKey {
+                var,
                 reason: format!("decoded to {} bytes", bytes.len()),
             });
         }
 
         Ok(Self {
             cipher: XChaCha20Poly1305::new_from_slice(&bytes).map_err(|_| CryptoError::BadKey {
+                var,
                 reason: "not a usable key".to_string(),
             })?,
         })
@@ -130,7 +141,7 @@ impl SecretKey {
 /// Hex first, then base64. Both are things people paste out of a password
 /// manager, and telling them apart by trying is kinder than making them say
 /// which they have.
-fn decode_key(raw: &str) -> Result<Vec<u8>, CryptoError> {
+fn decode_key(var: &'static str, raw: &str) -> Result<Vec<u8>, CryptoError> {
     if raw.len() == KEY_BYTES * 2
         && let Ok(bytes) = hex::decode(raw)
     {
@@ -141,6 +152,7 @@ fn decode_key(raw: &str) -> Result<Vec<u8>, CryptoError> {
         .decode(raw)
         .or_else(|_| base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(raw))
         .map_err(|_| CryptoError::BadKey {
+            var,
             reason: "not hex, and not base64".to_string(),
         })
 }

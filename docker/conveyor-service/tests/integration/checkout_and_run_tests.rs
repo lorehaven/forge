@@ -75,6 +75,7 @@ async fn perform_run(origin: &Origin, git_ref: &str, work: &Path) -> (Workspace,
             git_ref,
             sha: &origin.sha,
             timeout: Duration::from_secs(60),
+            credential: None,
         },
     )
     .await
@@ -201,6 +202,7 @@ async fn a_ref_the_pipeline_does_not_want_is_not_triggered() {
             git_ref: "refs/heads/master",
             sha: &origin.sha,
             timeout: Duration::from_secs(60),
+            credential: None,
         },
     )
     .await
@@ -228,6 +230,7 @@ async fn a_failing_stage_stops_the_run() {
             git_ref: "refs/heads/master",
             sha: &origin.sha,
             timeout: Duration::from_secs(60),
+            credential: None,
         },
     )
     .await

@@ -16,7 +16,7 @@ use std::time::Duration;
 const HEX_KEY: &str = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
 
 fn key() -> SecretKey {
-    SecretKey::parse(HEX_KEY).expect("key")
+    SecretKey::parse("CONVEYOR_SECRET_KEY", HEX_KEY).expect("key")
 }
 
 /// The key the worker reads from the environment. Set under the database

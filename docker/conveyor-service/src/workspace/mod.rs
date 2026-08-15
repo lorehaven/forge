@@ -2,7 +2,7 @@
 
 pub mod checkout;
 
-pub use checkout::{CheckoutError, CheckoutRequest, checkout};
+pub use checkout::{CheckoutError, CheckoutRequest, HttpCredential, checkout};
 
 use std::path::{Path, PathBuf};
 

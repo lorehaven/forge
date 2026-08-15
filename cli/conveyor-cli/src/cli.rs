@@ -51,10 +51,20 @@ pub enum Commands {
     Logs(LogsArgs),
     /// Ask a run to stop
     Cancel(CancelArgs),
+    /// Manage the organisational tree repositories sit in
+    Project {
+        #[command(subcommand)]
+        command: ProjectCommands,
+    },
     /// Manage secrets
     Secret {
         #[command(subcommand)]
         command: SecretCommands,
+    },
+    /// Manage the git credential a project or a repository checks out with
+    Credential {
+        #[command(subcommand)]
+        command: CredentialCommands,
     },
     /// Check a `.conveyor.toml` without sending it anywhere
     Validate(ValidateArgs),
@@ -70,6 +80,8 @@ pub enum RepoCommands {
     Enable(RepoEnableArgs),
     /// Turn a repository off, keeping its history
     Disable(RepoEnableArgs),
+    /// Move a repository to a different project
+    Move(RepoMoveArgs),
     /// Remove a repository and everything it built
     Remove(RepoRefArgs),
 }
@@ -80,11 +92,24 @@ pub struct RepoAddArgs {
     pub slug: String,
     /// Where to clone from
     pub clone_url: String,
+    /// The project to register it under - conveyor has no "unfiled"
+    /// repositories, so create one first with `conveyor project add` if this
+    /// is the first repository going into it
+    #[arg(long, value_name = "PROJECT")]
+    pub project: String,
     /// `github` or `generic`
     #[arg(long, default_value = "github")]
     pub provider: String,
     #[arg(long, default_value = "master")]
     pub default_branch: String,
+}
+
+#[derive(Args, Debug)]
+pub struct RepoMoveArgs {
+    /// `owner/name`, or the repository's id
+    pub repo: String,
+    #[arg(long, value_name = "PROJECT")]
+    pub project: String,
 }
 
 #[derive(Args, Debug)]
@@ -97,6 +122,62 @@ pub struct RepoRefArgs {
 pub struct RepoEnableArgs {
     /// `owner/name`, or the repository's id
     pub repo: String,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ProjectCommands {
+    /// Create a project node
+    Add(ProjectAddArgs),
+    /// List a project's children, or every root project
+    List(ProjectListArgs),
+    /// Show one project and its full path
+    Show(ProjectRefArgs),
+    /// Rename a project
+    Rename(ProjectRenameArgs),
+    /// Move a project under a different parent, or to the root
+    Move(ProjectMoveArgs),
+    /// Remove a project - it must have no children and no repository
+    /// attached
+    Remove(ProjectRefArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct ProjectAddArgs {
+    pub name: String,
+    /// Its parent. Omit to create a root project.
+    #[arg(long, value_name = "PARENT")]
+    pub parent: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct ProjectListArgs {
+    /// Only this project's direct children. Omit to list root projects.
+    #[arg(long, value_name = "PARENT")]
+    pub parent: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct ProjectRefArgs {
+    /// A project's id - there is no `owner/name`-style lookup for a project
+    /// the way there is for a repository
+    pub project: String,
+}
+
+#[derive(Args, Debug)]
+pub struct ProjectRenameArgs {
+    pub project: String,
+    pub name: String,
+}
+
+#[derive(Args, Debug)]
+pub struct ProjectMoveArgs {
+    pub project: String,
+    /// The new parent
+    #[arg(long, value_name = "PARENT", conflicts_with = "to_root")]
+    pub parent: Option<String>,
+    /// Move it to the root instead of under another project
+    #[arg(long, conflicts_with = "parent")]
+    pub to_root: bool,
 }
 
 #[derive(Args, Debug)]
@@ -177,6 +258,47 @@ pub struct SecretRemoveArgs {
     pub repo: Option<String>,
 }
 
+#[derive(Subcommand, Debug)]
+pub enum CredentialCommands {
+    /// Write the credential for a project or a repository, replacing
+    /// whatever was there
+    Set(CredentialSetArgs),
+    /// Show the credential set for a project or a repository. The token is
+    /// never returned, only a preview.
+    Show(CredentialScopeArgs),
+    /// Remove a credential
+    Remove(CredentialScopeArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct CredentialSetArgs {
+    /// A label for this credential - shown back in `show`, not looked up by
+    pub name: String,
+    /// The token. Omit to read it from stdin, which keeps it out of shell
+    /// history and out of the process list.
+    pub token: Option<String>,
+    /// The username git authenticates as - `x-access-token` for a GitHub
+    /// fine-grained personal access token, `oauth2` for a GitLab one, or
+    /// whatever the host in question expects.
+    #[arg(long)]
+    pub username: String,
+    /// Scope it to one repository
+    #[arg(long, value_name = "REPO")]
+    pub repo: Option<String>,
+    /// Scope it to one project, covering every repository under it that has
+    /// no more specific credential of its own
+    #[arg(long, value_name = "PROJECT")]
+    pub project: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct CredentialScopeArgs {
+    #[arg(long, value_name = "REPO")]
+    pub repo: Option<String>,
+    #[arg(long, value_name = "PROJECT")]
+    pub project: Option<String>,
+}
+
 #[derive(Args, Debug)]
 pub struct ValidateArgs {
     /// The file to check. Defaults to `.conveyor.toml` here.
@@ -197,6 +319,8 @@ mod tests {
             "add",
             "owner/name",
             "https://example.com/owner/name.git",
+            "--project",
+            "proj-1",
         ])
         .unwrap();
         let Commands::Repo {
@@ -207,6 +331,46 @@ mod tests {
         };
         assert_eq!(args.provider, "github");
         assert_eq!(args.default_branch, "master");
+        assert_eq!(args.project, "proj-1");
+    }
+
+    #[test]
+    fn repo_add_requires_a_project() {
+        let result = Cli::try_parse_from([
+            "conveyor",
+            "repo",
+            "add",
+            "owner/name",
+            "https://example.com/owner/name.git",
+        ]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn project_add_parent_is_optional() {
+        let cli = Cli::try_parse_from(["conveyor", "project", "add", "forge"]).unwrap();
+        let Commands::Project {
+            command: ProjectCommands::Add(args),
+        } = cli.command
+        else {
+            panic!("expected ProjectCommands::Add");
+        };
+        assert_eq!(args.name, "forge");
+        assert_eq!(args.parent, None);
+    }
+
+    #[test]
+    fn project_move_parent_and_to_root_are_mutually_exclusive() {
+        let result = Cli::try_parse_from([
+            "conveyor",
+            "project",
+            "move",
+            "proj-1",
+            "--parent",
+            "proj-2",
+            "--to-root",
+        ]);
+        assert!(result.is_err());
     }
 
     #[test]
@@ -260,5 +424,44 @@ mod tests {
         };
         assert_eq!(args.name, "API_KEY");
         assert_eq!(args.value, None);
+    }
+
+    #[test]
+    fn credential_set_token_is_optional_so_it_can_be_read_from_stdin() {
+        let cli = Cli::try_parse_from([
+            "conveyor",
+            "credential",
+            "set",
+            "GITHUB_TOKEN",
+            "--username",
+            "x-access-token",
+            "--repo",
+            "owner/name",
+        ])
+        .unwrap();
+        let Commands::Credential {
+            command: CredentialCommands::Set(args),
+        } = cli.command
+        else {
+            panic!("expected CredentialCommands::Set");
+        };
+        assert_eq!(args.name, "GITHUB_TOKEN");
+        assert_eq!(args.token, None);
+        assert_eq!(args.username, "x-access-token");
+        assert_eq!(args.repo.as_deref(), Some("owner/name"));
+        assert_eq!(args.project, None);
+    }
+
+    #[test]
+    fn credential_set_requires_a_username() {
+        let result = Cli::try_parse_from([
+            "conveyor",
+            "credential",
+            "set",
+            "TOKEN",
+            "--repo",
+            "owner/name",
+        ]);
+        assert!(result.is_err());
     }
 }

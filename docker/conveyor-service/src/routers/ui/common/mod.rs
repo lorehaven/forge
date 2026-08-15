@@ -5,11 +5,13 @@ use actix_web::{HttpResponse, Responder, get, http::header::ContentType, web};
 pub use quench_starter::actix::routers::ui::{
     is_ui_authenticated, ui_asset_path, ui_login_redirect, ui_login_redirect_for, ui_path,
 };
+use quench_web::nav_button;
 use quench_web::prelude::*;
 use std::sync::LazyLock;
 
 pub mod css;
 pub mod format;
+pub mod nav;
 
 const SUPPORTED_LOCALES: [&str; 5] = ["en-US", "pl-PL", "es-ES", "de-DE", "fr-FR"];
 
@@ -42,12 +44,12 @@ fn ui_header(title_key: &str, show_home: bool) -> Element {
         .child(
             div()
                 .class("left-panel")
+                .child(nav_button())
                 .child(h2().attr("data-i18n", title_key)),
         )
         .child(
             div()
                 .class("right-panel")
-                .child(locale_switch(Some(supported_locales()), None))
                 .child_opt(show_home.then(|| {
                     a().attr("href", ui_path("/home"))
                         .class("button")
@@ -59,6 +61,7 @@ fn ui_header(title_key: &str, show_home: bool) -> Element {
                         .attr("data-i18n", "ui_logout"),
                 ),
         )
+        .child(nav::panel())
 }
 
 /// Writes `dist/assets` before the first request. Left to the first page

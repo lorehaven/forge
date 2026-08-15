@@ -163,7 +163,10 @@ async fn write(db: &Db, scope: Scope, name: &str, value: &str, by: &str) -> Http
         Ok(None) => {
             return json_error(
                 StatusCode::SERVICE_UNAVAILABLE,
-                &CryptoError::NoKey.to_string(),
+                &CryptoError::NoKey {
+                    var: "CONVEYOR_SECRET_KEY",
+                }
+                .to_string(),
             );
         }
         Err(error) => return json_error(StatusCode::SERVICE_UNAVAILABLE, &error.to_string()),

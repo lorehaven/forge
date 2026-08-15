@@ -8,6 +8,7 @@ theme_label = Thème
 
 ui_header_home = Conveyor
 ui_home_button = Accueil
+ui_nav_credentials = Identifiants
 ui_logout = Se déconnecter
 
 # ── Home ─────────────────────────────────────────────────────────────────────
@@ -109,3 +110,8 @@ ui_repos_err_bad_clone_url = Cette URL de clonage n'est pas valide.
 ui_repos_err_forbidden = Vous n'avez pas d'accès en écriture à ce projet.
 ui_repos_err_not_found = Aucun dépôt de ce type.
 ui_repos_err_write_failed = Impossible d'enregistrer. Il existe peut-être déjà.
+
+# ── Credentials ──────────────────────────────────────────────────────────────
+
+ui_credentials_title = Identifiants
+ui_credentials_empty = Aucun identifiant visible pour vous.

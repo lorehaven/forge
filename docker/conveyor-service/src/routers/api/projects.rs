@@ -223,4 +223,7 @@ pub fn scope() -> actix_web::Scope {
         .service(read)
         .service(update)
         .service(remove)
+        .service(super::credentials::show_project)
+        .service(super::credentials::put_project)
+        .service(super::credentials::delete_project)
 }
