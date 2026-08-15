@@ -939,7 +939,7 @@ dependencies = [
 
 [[package]]
 name = "conveyor-cli"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "anyhow",
  "clap",
@@ -967,7 +967,7 @@ dependencies = [
 
 [[package]]
 name = "conveyor-service"
-version = "0.5.14"
+version = "0.5.15"
 dependencies = [
  "actix-web",
  "async-trait",

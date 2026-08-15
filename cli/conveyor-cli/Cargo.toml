@@ -1,6 +1,6 @@
 [package]
 name = "conveyor-cli"
-version = "0.3.4"
+version = "0.3.5"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Conveyor CLI - drive the Forge CI/CD service from a terminal"
