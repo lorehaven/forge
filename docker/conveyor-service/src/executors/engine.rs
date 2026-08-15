@@ -28,6 +28,22 @@ pub struct SourceSpec {
     pub clone_url: String,
     pub git_ref: String,
     pub sha: String,
+    /// The same credential `workspace::checkout` would use for this
+    /// repository, if any - the kubernetes executor's own checkout (an init
+    /// container, not this process) needs its own copy of it, since it
+    /// fetches the commit independently rather than reusing conveyor's.
+    /// Never given to the step container that runs the pipeline's own
+    /// commands, only to the init container that clones ahead of it.
+    pub credential: Option<JobCredential>,
+}
+
+/// A resolved credential, owned rather than borrowed like
+/// `workspace::checkout::HttpCredential` - a `JobSpec` is built once and
+/// handed to an executor that may hold onto it past the resolving call.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JobCredential {
+    pub username: String,
+    pub token: String,
 }
 
 /// One job, as the executor needs it.

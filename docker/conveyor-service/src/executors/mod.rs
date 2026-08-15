@@ -14,8 +14,8 @@ pub mod mock;
 pub mod native;
 
 pub use engine::{
-    ExecError, Handle, JobExecutor, JobSpec, JobState, LogChunk, LogTail, SourceSpec, StepState,
-    Stream,
+    ExecError, Handle, JobCredential, JobExecutor, JobSpec, JobState, LogChunk, LogTail,
+    SourceSpec, StepState, Stream,
 };
 pub use kubernetes::KubernetesExecutor;
 pub use mock::{MockExecutor, MockOutcome};

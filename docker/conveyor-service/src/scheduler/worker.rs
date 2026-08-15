@@ -9,7 +9,7 @@ use crate::artifacts::{self, WarehouseStore};
 use crate::config::ConveyorConfig;
 use crate::credentials::store as credential_store;
 use crate::domain::{Repo, Run, Status};
-use crate::executors::{JobExecutor, JobSpec, SourceSpec};
+use crate::executors::{JobCredential, JobExecutor, JobSpec, SourceSpec};
 use crate::pipeline::{self, Decision, EvalContext, PIPELINE_FILE};
 use crate::providers::{CommitStatusReport, Providers};
 use crate::scheduler::queue::{self, PlannedJob};
@@ -477,7 +477,23 @@ impl Worker {
             }
         };
 
-        let redactor = Redactor::new(secrets.values().cloned());
+        // The same credential `checkout()` would use for this repository -
+        // an executor running off this machine (kubernetes) fetches the
+        // commit for itself, in an init container that never runs the
+        // pipeline's own commands, and needs its own copy to do it.
+        let credential =
+            credential_store::resolve(&self.db, self.credential_key.as_ref().as_ref(), repo)
+                .await
+                .unwrap_or_else(|error| {
+                    tracing::warn!("could not resolve a credential for {}: {error}", repo.id);
+                    None
+                });
+
+        let mut redacted = secrets.values().cloned().collect::<Vec<_>>();
+        if let Some(credential) = &credential {
+            redacted.push(credential.token.clone());
+        }
+        let redactor = Redactor::new(redacted);
 
         let mut env = self.job_environment(run, repo, stage, job, workspace);
         // Last, so a pipeline cannot shadow a secret with a plain `env` entry
@@ -500,6 +516,10 @@ impl Worker {
                 clone_url: repo.clone_url.clone(),
                 git_ref: run.git_ref.clone(),
                 sha: run.sha.clone(),
+                credential: credential.map(|c| JobCredential {
+                    username: c.username,
+                    token: c.token,
+                }),
             }),
             redactor,
         };

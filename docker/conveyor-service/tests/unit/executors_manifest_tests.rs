@@ -5,7 +5,7 @@
 //! live. Running against a real cluster is a manual step, written up in the
 //! service README.
 
-use conveyor_service::executors::engine::{JobSpec, SourceSpec};
+use conveyor_service::executors::engine::{JobCredential, JobSpec, SourceSpec};
 use conveyor_service::executors::manifest::{self, STEP_MARKER, Settings, WORKSPACE_PATH};
 use conveyor_service::pipeline::Step;
 use conveyor_service::secrets::Redactor;
@@ -24,6 +24,7 @@ fn spec() -> JobSpec {
             clone_url: "https://example.invalid/thing.git".to_string(),
             git_ref: "refs/heads/master".to_string(),
             sha: "a".repeat(40),
+            credential: None,
         }),
         redactor: Redactor::none(),
     }
@@ -228,6 +229,55 @@ fn a_job_with_no_source_gets_no_init_container() {
     let built = build(&spec);
     let pod = built.job.spec.unwrap().template.spec.expect("pod spec");
     assert!(pod.init_containers.is_none());
+}
+
+#[test]
+fn a_credential_reaches_the_checkout_container_as_a_git_config_header() {
+    // The same mechanism `workspace::checkout` uses for the local clone:
+    // `http.extraheader` supplied through `GIT_CONFIG_*` env, never embedded
+    // in the checkout script's own text.
+    let mut spec = spec();
+    spec.source.as_mut().unwrap().credential = Some(JobCredential {
+        username: "x-access-token".to_string(),
+        token: "s3cr3t-token".to_string(),
+    });
+
+    let built = build(&spec);
+    let pod = built.job.spec.unwrap().template.spec.expect("pod spec");
+    let init = &pod.init_containers.expect("an init container")[0];
+    let env = init.env.as_ref().expect("env");
+
+    let value_of = |name: &str| {
+        env.iter()
+            .find(|var| var.name == name)
+            .and_then(|var| var.value.clone())
+    };
+
+    assert_eq!(value_of("GIT_CONFIG_COUNT").as_deref(), Some("1"));
+    assert_eq!(
+        value_of("GIT_CONFIG_KEY_0").as_deref(),
+        Some("http.extraheader")
+    );
+    let header = value_of("GIT_CONFIG_VALUE_0").expect("a header value");
+    assert!(header.starts_with("Authorization: Basic "), "{header}");
+
+    // Never in the script's own text - that would put it in argv, and a
+    // Job's pod spec is retained by the API server for its TTL.
+    let script = init.args.as_ref().expect("args")[0].clone();
+    assert!(!script.contains("s3cr3t-token"), "{script}");
+
+    // Never on the step container - only the checkout container clones the
+    // repo; the pipeline's own commands get a job's declared secrets and
+    // nothing else.
+    assert!(pod.containers[0].env.is_none());
+}
+
+#[test]
+fn no_credential_means_no_extra_env_on_the_checkout_container() {
+    let built = build(&spec());
+    let pod = built.job.spec.unwrap().template.spec.expect("pod spec");
+    let init = &pod.init_containers.expect("an init container")[0];
+    assert!(init.env.is_none());
 }
 
 // ---------------------------------------------------------------------------

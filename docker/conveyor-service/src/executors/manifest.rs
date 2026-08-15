@@ -9,10 +9,11 @@
 //! is copied in from conveyor's own disk and a fork's pipeline never touches
 //! this service's filesystem or its network identity.
 
-use crate::executors::engine::JobSpec;
+use crate::executors::engine::{JobCredential, JobSpec};
+use crate::workspace::checkout::basic_auth_header;
 use k8s_openapi::api::batch::v1::{Job, JobSpec as K8sJobSpec};
 use k8s_openapi::api::core::v1::{
-    Container, EmptyDirVolumeSource, EnvFromSource, PodSpec, PodTemplateSpec, Secret,
+    Container, EmptyDirVolumeSource, EnvFromSource, EnvVar, PodSpec, PodTemplateSpec, Secret,
     SecretEnvSource, SecurityContext, Volume, VolumeMount,
 };
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
@@ -165,6 +166,10 @@ pub fn build(
             )]),
             working_dir: Some(WORKSPACE_PATH.to_string()),
             volume_mounts: Some(vec![volume_mount.clone()]),
+            // Only the checkout container ever sees this - the step
+            // container below gets a job's declared secrets and nothing
+            // else, never conveyor's own git credential.
+            env: credential_env_vars(source.credential.as_ref()),
             security_context: Some(hardened()),
             ..Container::default()
         }]
@@ -234,6 +239,36 @@ pub fn build(
     };
 
     Manifest { name, job, secret }
+}
+
+/// The env that hands the checkout container its credential, via
+/// `http.extraheader` supplied through `GIT_CONFIG_*` - the same mechanism
+/// and the same header `workspace::checkout` builds for the local clone, so
+/// a header value never has to be embedded in `checkout_script`'s text
+/// (which would put it in argv and, since a Job's pod spec is retained by
+/// the API server for its TTL, in `kubectl get job -o yaml` too - `env`
+/// isn't better on that front, but it's one leak surface, not two).
+fn credential_env_vars(credential: Option<&JobCredential>) -> Option<Vec<EnvVar>> {
+    let credential = credential?;
+    let header = basic_auth_header(&credential.username, &credential.token);
+
+    Some(vec![
+        EnvVar {
+            name: "GIT_CONFIG_COUNT".to_string(),
+            value: Some("1".to_string()),
+            ..EnvVar::default()
+        },
+        EnvVar {
+            name: "GIT_CONFIG_KEY_0".to_string(),
+            value: Some("http.extraheader".to_string()),
+            ..EnvVar::default()
+        },
+        EnvVar {
+            name: "GIT_CONFIG_VALUE_0".to_string(),
+            value: Some(header),
+            ..EnvVar::default()
+        },
+    ])
 }
 
 /// What the init container runs, mirroring what `workspace::checkout` does
