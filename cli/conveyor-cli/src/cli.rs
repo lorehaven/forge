@@ -82,6 +82,8 @@ pub enum RepoCommands {
     Disable(RepoEnableArgs),
     /// Move a repository to a different project
     Move(RepoMoveArgs),
+    /// Change which branch a trigger with no explicit ref builds
+    SetBranch(RepoSetBranchArgs),
     /// Remove a repository and everything it built
     Remove(RepoRefArgs),
 }
@@ -102,6 +104,16 @@ pub struct RepoAddArgs {
     pub provider: String,
     #[arg(long, default_value = "master")]
     pub default_branch: String,
+}
+
+#[derive(Args, Debug)]
+pub struct RepoSetBranchArgs {
+    /// `owner/name`, or the repository's id
+    pub repo: String,
+    /// Does not have to exist yet at the remote - only resolved when
+    /// something actually asks for it (a trigger with no ref, a webhook
+    /// naming it)
+    pub branch: String,
 }
 
 #[derive(Args, Debug)]
@@ -352,6 +364,20 @@ mod tests {
             "https://example.com/owner/name.git",
         ]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn repo_set_branch_parses_repo_and_branch() {
+        let cli = Cli::try_parse_from(["conveyor", "repo", "set-branch", "owner/name", "master"])
+            .unwrap();
+        let Commands::Repo {
+            command: RepoCommands::SetBranch(args),
+        } = cli.command
+        else {
+            panic!("expected RepoCommands::SetBranch");
+        };
+        assert_eq!(args.repo, "owner/name");
+        assert_eq!(args.branch, "master");
     }
 
     #[test]

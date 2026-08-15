@@ -80,6 +80,18 @@ pub async fn repo(client: &Client, command: &RepoCommands) -> Result<()> {
             Ok(())
         }
 
+        RepoCommands::SetBranch(args) => {
+            let id = resolve_repo(client, &args.repo).await?;
+            let _: Value = client
+                .patch(
+                    &format!("/repos/{id}"),
+                    &json!({ "default_branch": args.branch }),
+                )
+                .await?;
+            print_status(Tone::Success, "default branch", &args.branch);
+            Ok(())
+        }
+
         RepoCommands::Remove(args) => {
             let id = resolve_repo(client, &args.repo).await?;
             client
