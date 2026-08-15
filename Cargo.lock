@@ -967,7 +967,7 @@ dependencies = [
 
 [[package]]
 name = "conveyor-service"
-version = "0.5.15"
+version = "0.5.16"
 dependencies = [
  "actix-web",
  "async-trait",
