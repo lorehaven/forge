@@ -1,10 +1,13 @@
 //! Triggering runs, and looking at what they did.
 
-use crate::domain::{Run, Trigger};
+use crate::credentials::store::{self as credential_store, ResolvedCredential};
+use crate::domain::{Repo, Run, Trigger};
 use crate::routers::api::authz::{can_on_project, granted_project_ids};
 use crate::routers::api::{ApiError, claims, json_error};
 use crate::scheduler::queue::{self, NewRun, QueueError};
 use crate::scheduler::{projects, repos};
+use crate::secrets::crypto::SecretKey;
+use crate::workspace::checkout::{basic_auth_header, credential_env};
 use actix_web::http::StatusCode;
 use actix_web::{HttpRequest, HttpResponse, Responder, get, post, web};
 use quench_db::prelude::Db;
@@ -111,9 +114,20 @@ pub(crate) async fn trigger_manual(
 
     let sha = match sha {
         Some(sha) => sha,
-        None => resolve_ref(&repo.clone_url, &git_ref)
-            .await
-            .map_err(TriggerError::ResolveFailed)?,
+        None => {
+            // The same credential a checkout would use - a private
+            // repository needs one here too, since this talks to the
+            // remote directly rather than through `workspace::checkout`.
+            let credential = resolve_credential(db, &repo).await;
+            let header = credential
+                .as_ref()
+                .map(|c| basic_auth_header(&c.username, &c.token));
+            let extra_env = credential_env(header.as_deref());
+
+            resolve_ref(&repo.clone_url, &git_ref, &extra_env)
+                .await
+                .map_err(TriggerError::ResolveFailed)?
+        }
     };
 
     crate::workspace::checkout::validate_sha(&sha)
@@ -355,13 +369,38 @@ pub async fn cancel(
     }
 }
 
+/// The credential a trigger's ref resolution should authenticate with, if
+/// any - same lookup `scheduler::worker`'s checkout does, but resolved
+/// fresh here rather than shared with it: this runs once per manual
+/// trigger, not per queued job, so there is no worker-held key to reuse.
+async fn resolve_credential(db: &Db, repo: &Repo) -> Option<ResolvedCredential> {
+    let key = match SecretKey::from_env_named(credential_store::KEY_VAR) {
+        Ok(key) => key,
+        Err(error) => {
+            tracing::warn!("git credentials are unavailable: {error}");
+            None
+        }
+    };
+    credential_store::resolve(db, key.as_ref(), repo)
+        .await
+        .unwrap_or_else(|error| {
+            tracing::warn!("could not resolve a credential for {}: {error}", repo.id);
+            None
+        })
+}
+
 /// Asks the remote what a ref currently points at, without cloning it.
-async fn resolve_ref(clone_url: &str, git_ref: &str) -> Result<String, String> {
+async fn resolve_ref(
+    clone_url: &str,
+    git_ref: &str,
+    extra_env: &[(&str, &str)],
+) -> Result<String, String> {
     let output = tokio::process::Command::new("git")
         .args(["ls-remote", "--exit-code", clone_url, git_ref])
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_ASKPASS", "")
         .env("SSH_ASKPASS", "")
+        .envs(extra_env.iter().copied())
         .kill_on_drop(true)
         .output()
         .await

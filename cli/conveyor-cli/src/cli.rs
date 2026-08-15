@@ -280,8 +280,16 @@ pub struct CredentialSetArgs {
     /// The username git authenticates as - `x-access-token` for a GitHub
     /// fine-grained personal access token, `oauth2` for a GitLab one, or
     /// whatever the host in question expects.
-    #[arg(long)]
-    pub username: String,
+    ///
+    /// The field (not just the flag text) has to be named differently from
+    /// `Cli::username`: clap-derive keys a parsed value by the struct
+    /// field's identifier, not by its `long` text, so two fields both named
+    /// `username` share one matches entry even with different `long`
+    /// strings - the global `Cli::username` (the realm login account) and
+    /// this one would silently clobber each other, and gatehouse would
+    /// reject the token as a login username.
+    #[arg(long = "git-username")]
+    pub git_username: String,
     /// Scope it to one repository
     #[arg(long, value_name = "REPO")]
     pub repo: Option<String>,
@@ -433,7 +441,7 @@ mod tests {
             "credential",
             "set",
             "GITHUB_TOKEN",
-            "--username",
+            "--git-username",
             "x-access-token",
             "--repo",
             "owner/name",
@@ -447,7 +455,7 @@ mod tests {
         };
         assert_eq!(args.name, "GITHUB_TOKEN");
         assert_eq!(args.token, None);
-        assert_eq!(args.username, "x-access-token");
+        assert_eq!(args.git_username, "x-access-token");
         assert_eq!(args.repo.as_deref(), Some("owner/name"));
         assert_eq!(args.project, None);
     }
@@ -463,5 +471,34 @@ mod tests {
             "owner/name",
         ]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn credential_sets_git_username_does_not_clobber_the_login_username() {
+        // Regression test for the collision `--git-username` exists to avoid:
+        // before the rename, this same command line silently overwrote the
+        // global `--username` (the realm login account) instead of setting
+        // `CredentialSetArgs.username`.
+        let cli = Cli::try_parse_from([
+            "conveyor",
+            "--username",
+            "admin",
+            "credential",
+            "set",
+            "GITHUB_TOKEN",
+            "--git-username",
+            "x-access-token",
+            "--repo",
+            "owner/name",
+        ])
+        .unwrap();
+        assert_eq!(cli.username.as_deref(), Some("admin"));
+        let Commands::Credential {
+            command: CredentialCommands::Set(args),
+        } = cli.command
+        else {
+            panic!("expected CredentialCommands::Set");
+        };
+        assert_eq!(args.git_username, "x-access-token");
     }
 }

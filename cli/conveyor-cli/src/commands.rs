@@ -514,7 +514,7 @@ pub async fn credential(client: &Client, command: &CredentialCommands) -> Result
             let credential: Value = client
                 .put(
                     &path,
-                    &json!({ "name": args.name, "username": args.username, "token": token }),
+                    &json!({ "name": args.name, "username": args.git_username, "token": token }),
                 )
                 .await?;
             print_status(
