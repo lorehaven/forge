@@ -17,7 +17,7 @@ impl Backend for Runit {
     fn install(&self) -> Result<(), Box<dyn std::error::Error>> {
         require_binary("sv", SV_HINT)?;
         require_binary("chpst", SV_HINT)?;
-        require_root()?;
+        require_root("install")?;
 
         let scan_dir = scan_dir().ok_or(NO_SCAN_DIR)?;
         let link_path = scan_dir.join(SERVICE_NAME);
@@ -71,7 +71,7 @@ impl Backend for Runit {
 
     fn uninstall(&self) -> Result<(), Box<dyn std::error::Error>> {
         require_binary("sv", SV_HINT)?;
-        require_root()?;
+        require_root("uninstall")?;
 
         if let Some(scan_dir) = scan_dir() {
             let link_path = scan_dir.join(SERVICE_NAME);
@@ -134,14 +134,20 @@ fn set_executable(path: &Path) -> std::io::Result<()> {
 
 /// The service file lives under `/etc`, and the scan-dir symlink activates a
 /// process running as root unless dropped via `chpst -u`, so both need root.
-fn require_root() -> Result<(), Box<dyn std::error::Error>> {
+fn require_root(action: &str) -> Result<(), Box<dyn std::error::Error>> {
     let output = Command::new("id").arg("-u").output()?;
     if String::from_utf8_lossy(&output.stdout).trim() != "0" {
-        return Err(
+        // `sudo` resets PATH by default, so a plain `sudo pulley` often
+        // fails with "command not found" for a user-locally-installed
+        // binary; hand back the resolved path so the retry just works.
+        let exe = std::env::current_exe()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| "pulley".to_string());
+        return Err(format!(
             "pulley service management on runit writes system-wide service files under \
-             /etc/sv and needs root; re-run with sudo"
-                .into(),
-        );
+             /etc/sv and needs root; re-run as: sudo {exe} service {action}"
+        )
+        .into());
     }
     Ok(())
 }
