@@ -1081,7 +1081,12 @@ async fn submit_force_disable_mfa(world: &mut ForgeWorld, username: String) {
 #[when(expr = "I attempt to log in with username {string} and the wrong password {int} times")]
 async fn attempt_wrong_password(world: &mut ForgeWorld, username: String, times: u32) {
     for _ in 0..times {
-        login(world, username.clone(), "definitely-not-the-password".to_string()).await;
+        login(
+            world,
+            username.clone(),
+            "definitely-not-the-password".to_string(),
+        )
+        .await;
     }
 }
 

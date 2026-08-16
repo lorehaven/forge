@@ -477,8 +477,10 @@ pub async fn delete(
 pub enum AuthOutcome {
     /// Password (and, if this account has MFA, the code) checked out.
     /// Carries the updated row - `last_login_at` stamped,
-    /// `failed_login_attempts` reset.
-    Success(User),
+    /// `failed_login_attempts` reset. Boxed: `User` is large enough next to
+    /// this enum's other, data-free variants that clippy's
+    /// `large_enum_variant` flags it otherwise.
+    Success(Box<User>),
     NotFound,
     Disabled,
     Locked,
@@ -488,7 +490,9 @@ pub enum AuthOutcome {
     /// (`mfa::sign_pending`) proving this step already happened; the caller
     /// carries it through the code-entry form and back to
     /// [`authenticate_mfa`].
-    MfaRequired { pending: String },
+    MfaRequired {
+        pending: String,
+    },
 }
 
 /// How many wrong passwords in a row locks an account, and for how long.
@@ -558,7 +562,7 @@ pub async fn authenticate(db: &Db, username: &str, password: &str) -> RealmResul
         .update(&user)
         .await
         .map_err(|err| internal("failed to record a successful login", err))?;
-    Ok(AuthOutcome::Success(updated))
+    Ok(AuthOutcome::Success(Box::new(updated)))
 }
 
 /// The second step of a login when MFA is enabled - `pending` proves the
@@ -610,7 +614,7 @@ pub async fn authenticate_mfa(db: &Db, pending: &str, code: &str) -> RealmResult
         .update(&user)
         .await
         .map_err(|err| internal("failed to record a successful login", err))?;
-    Ok(AuthOutcome::Success(updated))
+    Ok(AuthOutcome::Success(Box::new(updated)))
 }
 
 // ---------------------------------------------------------------------------
@@ -636,8 +640,8 @@ pub async fn enable_mfa(db: &Db, username: &str, secret: &str, code: &str) -> Re
     }
     let repo = repo(db);
     let mut user = get(db, username).await?;
-    let encrypted =
-        crate::mfa::encrypt_secret(secret).map_err(|err| internal("failed to encrypt MFA secret", err))?;
+    let encrypted = crate::mfa::encrypt_secret(secret)
+        .map_err(|err| internal("failed to encrypt MFA secret", err))?;
     user.mfa_enabled = true;
     user.mfa_secret = Some(encrypted);
     repo.update(&user)

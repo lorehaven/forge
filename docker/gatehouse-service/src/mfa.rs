@@ -104,9 +104,7 @@ pub fn sign_pending(username: &str) -> anyhow::Result<String> {
 /// The username a pending token was signed for, if the signature checks out
 /// and it has not expired.
 pub fn verify_pending(token: &str) -> Option<String> {
-    let mut parts = token.rsplitn(2, ':');
-    let signature = parts.next()?;
-    let payload = parts.next()?;
+    let (payload, signature) = token.rsplit_once(':')?;
     let (username, expires_at) = payload.rsplit_once(':')?;
 
     let key = pending_key().ok()?;

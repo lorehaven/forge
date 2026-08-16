@@ -37,7 +37,7 @@ pub fn decrypt(cipher: &ChaCha20Poly1305, data: &[u8]) -> anyhow::Result<Vec<u8>
     let (nonce_bytes, ciphertext) = data.split_at(12);
     let nonce_bytes: [u8; 12] = nonce_bytes.try_into().expect("checked above");
     let nonce = Nonce::from(nonce_bytes);
-    cipher
-        .decrypt(&nonce, ciphertext)
-        .map_err(|_| anyhow::anyhow!("decryption failed - is GATEHOUSE_KEY_ENCRYPTION_KEY unchanged?"))
+    cipher.decrypt(&nonce, ciphertext).map_err(|_| {
+        anyhow::anyhow!("decryption failed - is GATEHOUSE_KEY_ENCRYPTION_KEY unchanged?")
+    })
 }

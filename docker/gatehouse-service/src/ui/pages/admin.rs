@@ -871,7 +871,11 @@ fn status_panel(user: &User, can_edit: bool, allow_self_action: bool) -> Element
             allow_self_action.then(|| {
                 mfa_action_form(
                     &user.username,
-                    if user.is_disabled() { "enable" } else { "disable" },
+                    if user.is_disabled() {
+                        "enable"
+                    } else {
+                        "disable"
+                    },
                     if user.is_disabled() {
                         "ui_admin_action_enable"
                     } else {

@@ -112,7 +112,10 @@ fn non_empty(form: &std::collections::HashMap<String, String>, key: &str) -> Opt
 // ---------------------------------------------------------------------------
 
 #[get("/account/mfa/enroll")]
-pub(super) async fn mfa_enroll_page(req: HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
+pub(super) async fn mfa_enroll_page(
+    req: HttpRequest,
+    config: web::Data<JwtConfig>,
+) -> impl Responder {
     let actor = match actor_or_redirect(&req, &config).await {
         Ok(actor) => actor,
         Err(response) => return response,
@@ -188,10 +191,26 @@ fn render_account_page(user: &User, notice: &Notice) -> HttpResponse {
     let mut profile_form = form()
         .attr("method", "post")
         .attr("action", ui_path("/account"))
-        .child(labeled_text("display_name", "ui_account_display_name", user.display_name.as_deref()))
-        .child(labeled_text("avatar_url", "ui_account_avatar_url", user.avatar_url.as_deref()))
-        .child(labeled_text("title", "ui_account_title_field", user.title.as_deref()))
-        .child(labeled_text("timezone", "ui_account_timezone", user.timezone.as_deref()))
+        .child(labeled_text(
+            "display_name",
+            "ui_account_display_name",
+            user.display_name.as_deref(),
+        ))
+        .child(labeled_text(
+            "avatar_url",
+            "ui_account_avatar_url",
+            user.avatar_url.as_deref(),
+        ))
+        .child(labeled_text(
+            "title",
+            "ui_account_title_field",
+            user.title.as_deref(),
+        ))
+        .child(labeled_text(
+            "timezone",
+            "ui_account_timezone",
+            user.timezone.as_deref(),
+        ))
         .child(labeled_text(
             "preferred_locale",
             "ui_account_preferred_locale",
@@ -241,19 +260,22 @@ fn render_account_page(user: &User, notice: &Notice) -> HttpResponse {
                     .attr("data-i18n", "ui_account_mfa_title"),
             )
             .child(
-                div().class("meta-list").child(
-                    p().class("admin-hint")
-                        .attr("data-i18n", "ui_account_mfa_enabled"),
-                ).child(
-                    form()
-                        .attr("method", "post")
-                        .attr("action", ui_path("/account/mfa/disable"))
-                        .child(
-                            button()
-                                .attr("type", "submit")
-                                .attr("data-i18n", "ui_account_mfa_disable"),
-                        ),
-                ),
+                div()
+                    .class("meta-list")
+                    .child(
+                        p().class("admin-hint")
+                            .attr("data-i18n", "ui_account_mfa_enabled"),
+                    )
+                    .child(
+                        form()
+                            .attr("method", "post")
+                            .attr("action", ui_path("/account/mfa/disable"))
+                            .child(
+                                button()
+                                    .attr("type", "submit")
+                                    .attr("data-i18n", "ui_account_mfa_disable"),
+                            ),
+                    ),
             )
     } else {
         div()
@@ -264,14 +286,17 @@ fn render_account_page(user: &User, notice: &Notice) -> HttpResponse {
                     .attr("data-i18n", "ui_account_mfa_title"),
             )
             .child(
-                div().class("meta-list").child(
-                    p().class("admin-hint")
-                        .attr("data-i18n", "ui_account_mfa_disabled"),
-                ).child(
-                    a().class("button")
-                        .attr("href", ui_path("/account/mfa/enroll"))
-                        .attr("data-i18n", "ui_account_mfa_enable"),
-                ),
+                div()
+                    .class("meta-list")
+                    .child(
+                        p().class("admin-hint")
+                            .attr("data-i18n", "ui_account_mfa_disabled"),
+                    )
+                    .child(
+                        a().class("button")
+                            .attr("href", ui_path("/account/mfa/enroll"))
+                            .attr("data-i18n", "ui_account_mfa_enable"),
+                    ),
             )
     };
 
@@ -301,15 +326,18 @@ fn render_mfa_enroll_page(secret: &str, uri: &str, error: bool) -> HttpResponse 
             p().class("admin-hint")
                 .attr("data-i18n", "ui_account_mfa_enroll_hint"),
         )
-        .child(
-            p().class("admin-mono").text(uri),
-        )
+        .child(p().class("admin-mono").text(uri))
         .child(
             label()
                 .attr("for", "mfa-secret")
                 .attr("data-i18n", "ui_account_mfa_secret"),
         )
-        .child(span().attr("id", "mfa-secret").class("admin-mono").text(secret))
+        .child(
+            span()
+                .attr("id", "mfa-secret")
+                .class("admin-mono")
+                .text(secret),
+        )
         .child(
             label()
                 .attr("for", "code")

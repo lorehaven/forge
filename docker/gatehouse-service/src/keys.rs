@@ -196,4 +196,3 @@ impl KeySigner for SigningKeys {
             .map(|key| (key.kid.clone(), encoding_key(&key.private_key_der)))
     }
 }
-

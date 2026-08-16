@@ -40,9 +40,11 @@ fn detect() -> Result<Box<dyn Backend>, Box<dyn std::error::Error>> {
     if is_pid1("runit") {
         return Ok(Box::new(runit::Runit));
     }
-    Err("no supported init system detected (looked for systemd at /run/systemd/system, \
+    Err(
+        "no supported init system detected (looked for systemd at /run/systemd/system, \
          runit as PID 1); pulley service management currently supports systemd and runit"
-        .into())
+            .into(),
+    )
 }
 
 fn is_pid1(name: &str) -> bool {

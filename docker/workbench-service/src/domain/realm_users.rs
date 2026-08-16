@@ -35,8 +35,7 @@ impl RealmUser {
 pub async fn list_users(db: &Db) -> Result<Vec<RealmUser>, WorkbenchError> {
     let pool = pool(db)?;
     let auth_schema = realm::auth_schema();
-    let sql =
-        format!("SELECT username, display_name FROM {auth_schema}.users ORDER BY username");
+    let sql = format!("SELECT username, display_name FROM {auth_schema}.users ORDER BY username");
 
     let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
         .fetch_all(pool)

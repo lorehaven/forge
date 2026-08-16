@@ -457,10 +457,7 @@ fn render_mfa_page(pending: &str, redirect: Option<&str>, error: bool) -> HttpRe
     }
 
     if error {
-        mfa_form = mfa_form.child(
-            p().class("error")
-                .attr("data-i18n", "ui_login_mfa_invalid"),
-        );
+        mfa_form = mfa_form.child(p().class("error").attr("data-i18n", "ui_login_mfa_invalid"));
     }
 
     render_auth_page("ui_login_mfa_title", mfa_form)

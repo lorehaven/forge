@@ -29,10 +29,7 @@ impl Backend for Runit {
         let run_path = source_dir.join("run");
         std::fs::write(
             &run_path,
-            format!(
-                "#!/bin/sh\nexec chpst -u {user} {} daemon\n",
-                exe.display()
-            ),
+            format!("#!/bin/sh\nexec chpst -u {user} {} daemon\n", exe.display()),
         )?;
         set_executable(&run_path)?;
         print_status(
@@ -89,7 +86,10 @@ impl Backend for Runit {
                 print_status(
                     Tone::Warn,
                     "service",
-                    &format!("`{SERVICE_NAME}` was not linked into {}", scan_dir.display()),
+                    &format!(
+                        "`{SERVICE_NAME}` was not linked into {}",
+                        scan_dir.display()
+                    ),
                 );
             }
         }
@@ -155,5 +155,6 @@ fn require_root(action: &str) -> Result<(), Box<dyn std::error::Error>> {
 /// The user the daemon should actually run as (root only owns the service
 /// definition; `chpst -u` drops to this user so it reads their own config).
 fn target_user() -> String {
-    std::env::var("SUDO_USER").unwrap_or_else(|_| std::env::var("USER").unwrap_or_else(|_| "root".to_string()))
+    std::env::var("SUDO_USER")
+        .unwrap_or_else(|_| std::env::var("USER").unwrap_or_else(|_| "root".to_string()))
 }
