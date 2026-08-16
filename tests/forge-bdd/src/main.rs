@@ -91,6 +91,7 @@ async fn main() {
                 Target::Warehouse => format!("{}/health", probe.warehouse_url),
                 Target::Gatehouse => format!("{}/ui/login", probe.gatehouse_url),
                 Target::Conveyor => format!("{}/health", probe.conveyor_url),
+                Target::Workbench => format!("{}/health", probe.workbench_url),
             };
             (*target, url)
         })

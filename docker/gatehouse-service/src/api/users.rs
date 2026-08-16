@@ -322,6 +322,7 @@ async fn update_user(
         password: request.password,
         roles: request.roles,
         permissions: request.permissions,
+        ..UserChanges::default()
     };
 
     match realm::update(

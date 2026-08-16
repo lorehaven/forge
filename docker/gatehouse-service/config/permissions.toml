@@ -49,6 +49,16 @@ resource_types = ["project"]
 label = "Switchboard"
 actions = ["read", "launch", "stop", "delete-model"]
 
+[services.workbench]
+label = "Workbench"
+actions = ["read", "write"]
+# Lets a grant name one project instead of only "every project workbench
+# holds" - see `workbench:project:<id>:<action>` in quench-auth's
+# `Permissions`. Workbench's projects are flat (no tree, unlike conveyor's),
+# so unlike conveyor's entry this covers exactly the named project - no
+# ancestor walk.
+resource_types = ["project"]
+
 # Gatehouse administers itself through the same catalog it hands to every
 # other service. This is what lets user administration be delegated below
 # full admin: creating, editing and deleting users, and granting them
@@ -77,12 +87,14 @@ sage = ["read"]
 warehouse = ["read"]
 switchboard = ["read"]
 conveyor = ["read"]
+workbench = ["read"]
 
 [templates.editor]
 sage = ["read", "write"]
 warehouse = ["read", "write"]
 switchboard = ["read", "launch", "stop"]
 conveyor = ["read", "write"]
+workbench = ["read", "write"]
 
 # Everything short of assigning roles: create, edit, delete a user, and grant
 # them catalog permissions (including this template itself). What "avoid

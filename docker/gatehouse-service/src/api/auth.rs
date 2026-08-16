@@ -2,9 +2,11 @@
 //! because only gatehouse serves it: a relying party verifies tokens, it never
 //! issues them.
 
+use crate::realm::{self as gh_realm, AuthOutcome};
 use actix_web::{HttpRequest, HttpResponse, Responder, cookie::Cookie, get, post, web};
 use quench_auth::prelude::realm;
 use quench_auth::prelude::{Claims, JwtConfig, Permissions, Session, SessionDb, User, UserDb};
+use quench_db::prelude::Db;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
@@ -26,15 +28,43 @@ pub struct TokenResponse {
     pub expires_in: i64,
 }
 
+/// Machine-facing login has no code-entry step of its own, so an
+/// `MfaRequired` outcome is reported as a distinct error rather than issuing
+/// tokens - a caller that owns a pending token has nowhere to redeem it
+/// through this endpoint (that's `ui/pages/auth.rs`'s `/login/mfa`).
+#[derive(Serialize)]
+struct LoginError {
+    error: &'static str,
+}
+
+impl LoginError {
+    fn response(error: &'static str) -> HttpResponse {
+        HttpResponse::Unauthorized().json(LoginError { error })
+    }
+}
+
 #[post("/login")]
 async fn login(
     request: web::Json<LoginRequest>,
     config: web::Data<JwtConfig>,
-    users: web::Data<std::sync::Arc<UserDb>>,
+    db: web::Data<Db>,
     sessions: web::Data<SessionDb>,
 ) -> impl Responder {
-    let Some(user) = users.validate(&request.username, &request.password).await else {
-        return HttpResponse::Unauthorized().finish();
+    let outcome = match gh_realm::authenticate(&db, &request.username, &request.password).await {
+        Ok(outcome) => outcome,
+        Err(err) => {
+            tracing::error!("Failed to authenticate {}: {:?}", request.username, err);
+            return HttpResponse::InternalServerError().finish();
+        }
+    };
+    let user = match outcome {
+        AuthOutcome::Success(user) => user,
+        AuthOutcome::MfaRequired { .. } => return LoginError::response("mfa_required"),
+        AuthOutcome::Disabled => return LoginError::response("account_disabled"),
+        AuthOutcome::Locked => return LoginError::response("account_locked"),
+        AuthOutcome::NotFound | AuthOutcome::WrongPassword => {
+            return LoginError::response("invalid_credentials");
+        }
     };
     match issue_token_pair(&config, &sessions, &user).await {
         Ok(tokens) => HttpResponse::Ok().json(tokens),

@@ -1,5 +1,6 @@
 header_label = Gatehouse
 ui_home_button = Strona główna
+ui_account_button = Moje konto
 ui_logout = Wyloguj
 
 ui_login_sign_in = Zaloguj się
@@ -15,6 +16,13 @@ ui_login_verify_invalid = Ten link weryfikacyjny jest nieprawidłowy lub wygasł
 ui_login_reset_requested_ok = Jeśli takie konto istnieje, link do resetowania hasła już wkrótce dotrze.
 ui_login_reset_ok = Twoje hasło zostało zresetowane. Zaloguj się nowym hasłem.
 ui_login_reset_invalid = Ten link do resetowania jest nieprawidłowy lub wygasł.
+ui_login_account_disabled = To konto zostało dezaktywowane.
+ui_login_account_locked = Zbyt wiele nieudanych prób. Spróbuj ponownie za kilka minut.
+ui_login_mfa_title = Kod weryfikacyjny
+ui_login_mfa_code = Kod
+ui_login_mfa_hint = Wpisz 6-cyfrowy kod z aplikacji uwierzytelniającej.
+ui_login_mfa_submit = Zweryfikuj
+ui_login_mfa_invalid = Ten kod jest nieprawidłowy. Spróbuj ponownie.
 
 ui_register_title = Utwórz konto
 ui_register_email = E-mail
@@ -82,6 +90,20 @@ ui_admin_delete_title = Usuń
 ui_admin_delete_hint = Usunięcie konta natychmiast kończy jego sesje.
 ui_admin_delete = Usuń tego użytkownika
 
+ui_admin_status_title = Status
+ui_admin_status_created = Utworzono
+ui_admin_status_last_login = Ostatnie logowanie
+ui_admin_status_never = Nigdy
+ui_admin_status_disabled = Dezaktywowane
+ui_admin_status_locked = Zablokowane
+ui_admin_status_mfa = Uwierzytelnianie dwuskładnikowe
+ui_admin_status_yes = Tak
+ui_admin_status_no = Nie
+ui_admin_action_disable = Dezaktywuj
+ui_admin_action_enable = Aktywuj
+ui_admin_action_unlock = Odblokuj
+ui_admin_action_mfa_disable = Wymuś wyłączenie
+
 ui_admin_ok_created = Użytkownik utworzony.
 ui_admin_ok_saved = Zmiany zapisane.
 ui_admin_ok_deleted = Użytkownik usunięty.
@@ -97,6 +119,34 @@ ui_admin_error_unknown_service = Ta usługa nie należy do tego wdrożenia.
 ui_admin_error_last_admin = W domenie musi pozostać co najmniej jeden administrator.
 ui_admin_error_self_demote = Nie możesz odebrać sobie roli administratora.
 ui_admin_error_self_delete = Nie możesz usunąć własnego konta.
+ui_admin_error_self_disable = Nie możesz dezaktywować własnego konta.
 ui_admin_error_unknown_template = Nie ma takiego szablonu uprawnień.
 ui_admin_error_roles_require_admin = Tylko administrator może przypisać rolę admin lub service.
+ui_admin_error_mfa_code_invalid = Ten kod jest nieprawidłowy - spróbuj ponownie.
 ui_admin_error_internal = Nie udało się zapisać zmiany.
+
+ui_account_title = Moje konto
+ui_account_profile_title = Profil
+ui_account_display_name = Wyświetlana nazwa
+ui_account_avatar_url = URL awatara
+ui_account_title_field = Tytuł
+ui_account_timezone = Strefa czasowa
+ui_account_preferred_locale = Preferowany język
+ui_account_new_password = Nowe hasło
+ui_account_password_hint = Zostaw puste, aby zachować obecne hasło.
+ui_account_save = Zapisz zmiany
+ui_account_ok_saved = Twoje konto zostało zaktualizowane.
+ui_account_ok_mfa_enabled = Uwierzytelnianie dwuskładnikowe jest teraz włączone.
+ui_account_ok_mfa_disabled = Uwierzytelnianie dwuskładnikowe zostało wyłączone.
+
+ui_account_mfa_title = Uwierzytelnianie dwuskładnikowe
+ui_account_mfa_enabled = Uwierzytelnianie dwuskładnikowe jest włączone na Twoim koncie.
+ui_account_mfa_disabled = Uwierzytelnianie dwuskładnikowe nie jest włączone.
+ui_account_mfa_enable = Skonfiguruj uwierzytelnianie dwuskładnikowe
+ui_account_mfa_disable = Wyłącz uwierzytelnianie dwuskładnikowe
+
+ui_account_mfa_enroll_title = Skonfiguruj uwierzytelnianie dwuskładnikowe
+ui_account_mfa_enroll_hint = Zeskanuj to aplikacją uwierzytelniającą lub wpisz poniższy sekret ręcznie.
+ui_account_mfa_secret = Sekret
+ui_account_mfa_code = Kod
+ui_account_mfa_verify = Zweryfikuj i włącz

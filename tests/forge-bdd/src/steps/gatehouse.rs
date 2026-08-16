@@ -1039,3 +1039,174 @@ fn extract_link(line: &str) -> String {
         .expect("link had no terminator")
         .to_string()
 }
+
+// ---------------------------------------------------------------------------
+// Account lifecycle: disable/enable, lockout, unlock
+// ---------------------------------------------------------------------------
+
+#[when(expr = "I submit the disable form for {string}")]
+async fn submit_disable(world: &mut ForgeWorld, username: String) {
+    post_form(world, &format!("/ui/admin/users/{username}/disable"), &[]).await;
+}
+
+#[when("I submit the disable form for myself")]
+async fn submit_disable_self(world: &mut ForgeWorld) {
+    let username = world.username.clone();
+    submit_disable(world, username).await;
+}
+
+#[when(expr = "I submit the enable form for {string}")]
+async fn submit_enable(world: &mut ForgeWorld, username: String) {
+    post_form(world, &format!("/ui/admin/users/{username}/enable"), &[]).await;
+}
+
+#[when(expr = "I submit the unlock form for {string}")]
+async fn submit_unlock(world: &mut ForgeWorld, username: String) {
+    post_form(world, &format!("/ui/admin/users/{username}/unlock"), &[]).await;
+}
+
+#[when(expr = "I submit the force-disable MFA form for {string}")]
+async fn submit_force_disable_mfa(world: &mut ForgeWorld, username: String) {
+    post_form(
+        world,
+        &format!("/ui/admin/users/{username}/mfa/disable"),
+        &[],
+    )
+    .await;
+}
+
+/// Drives the token API's own login, deliberately wrong, enough times to
+/// cross `GATEHOUSE_LOGIN_MAX_ATTEMPTS` (5 by default) - each call is a
+/// separate request, the same as a real attacker's would be.
+#[when(expr = "I attempt to log in with username {string} and the wrong password {int} times")]
+async fn attempt_wrong_password(world: &mut ForgeWorld, username: String, times: u32) {
+    for _ in 0..times {
+        login(world, username.clone(), "definitely-not-the-password".to_string()).await;
+    }
+}
+
+/// The JSON login endpoint's failure body is `{"error": "..."}` - see
+/// `docker/gatehouse-service/src/api/auth.rs`'s `LoginError`.
+#[then(expr = "the response body should report {string}")]
+async fn body_reports_error(world: &mut ForgeWorld, expected: String) {
+    let error = world
+        .last_json
+        .as_ref()
+        .and_then(|json| json.get("error"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    assert_eq!(error, expected, "body was {:?}", world.last_body);
+}
+
+// ---------------------------------------------------------------------------
+// MFA enrollment and login challenge
+// ---------------------------------------------------------------------------
+
+/// A TOTP code for `secret` (base32, as `/ui/account/mfa/enroll` renders it) -
+/// the same RFC 6238 parameters `docker/gatehouse-service/src/mfa.rs` builds
+/// its own `Totp` with, so a code computed here is one gatehouse will accept.
+fn totp_code(secret: &str) -> String {
+    let secret = totp_rs::Secret::try_from_base32(secret).expect("valid base32 MFA secret");
+    let totp = totp_rs::Builder::new()
+        .with_algorithm(totp_rs::Algorithm::SHA1)
+        .with_digits(6)
+        .with_skew(1)
+        .with_step_duration(30)
+        .with_secret(secret)
+        .build()
+        .expect("build TOTP from secret");
+    totp.generate_current().to_string()
+}
+
+/// Pulls a form field's `value="..."` out of rendered HTML - good enough for
+/// the one hidden `secret`/`pending` field these pages carry, without a real
+/// HTML parser. Scans the whole `<input ...>` tag containing `name="field"`
+/// rather than assuming `value` comes right after `name`: quench_web does not
+/// guarantee attribute order, and it is not always `name` then `value`.
+fn extract_form_value(body: &str, field: &str) -> Option<String> {
+    let name_pos = body.find(&format!("name=\"{field}\""))?;
+    let tag_start = body[..name_pos].rfind('<')?;
+    let tag_end = name_pos + body[name_pos..].find('>')?;
+    let tag = &body[tag_start..tag_end];
+
+    let marker = "value=\"";
+    let start = tag.find(marker)? + marker.len();
+    let rest = &tag[start..];
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
+}
+
+/// Enrolls the signed-in user (see `Given I am signed in to the realm as`):
+/// reads the not-yet-persisted secret off the enroll page, computes one valid
+/// code for it, and submits that - the same "prove you saved it" round trip
+/// `/ui/account/mfa/enroll`'s own page expects.
+#[when("I enroll two-factor authentication")]
+async fn enroll_mfa(world: &mut ForgeWorld) {
+    let url = format!("{}/ui/account/mfa/enroll", world.gatehouse_url);
+    let mut request = no_redirect_client().get(&url);
+    if let Some(cookie) = &world.session_cookie {
+        request = request.header(
+            reqwest::header::COOKIE,
+            format!("{SESSION_COOKIE}={cookie}"),
+        );
+    }
+    let res = request.send().await.expect("enroll page request failed");
+    let body = res.text().await.expect("enroll page body");
+    let secret = extract_form_value(&body, "secret").expect("no MFA secret on the enroll page");
+    world.mfa_secret = Some(secret.clone());
+
+    let code = totp_code(&secret);
+    post_form(
+        world,
+        "/ui/account/mfa/enroll",
+        &[("secret", secret.as_str()), ("code", code.as_str())],
+    )
+    .await;
+}
+
+/// The `pending` token `login_submit` redirected to `/ui/login/mfa` with,
+/// read back out of the `Location` header rather than re-derived, so this
+/// step proves the redirect itself carried a usable token.
+fn pending_from_redirect(world: &ForgeWorld) -> String {
+    let location = world
+        .last_response_headers
+        .get(reqwest::header::LOCATION)
+        .and_then(|value| value.to_str().ok())
+        .expect("no Location header - was the previous step a login attempt?");
+    let (_, after) = location
+        .split_once("pending=")
+        .expect("redirect did not carry a pending MFA token");
+    urlencoding::decode(after.split('&').next().unwrap_or(after))
+        .expect("pending token was not valid percent-encoding")
+        .into_owned()
+}
+
+#[when("I complete the MFA challenge with a valid code")]
+async fn complete_mfa_challenge(world: &mut ForgeWorld) {
+    let secret = world
+        .mfa_secret
+        .clone()
+        .expect("no MFA secret recorded - was two-factor authentication enrolled first?");
+    let code = totp_code(&secret);
+    complete_mfa_challenge_with(world, &code).await;
+}
+
+#[when(expr = "I complete the MFA challenge with code {string}")]
+async fn complete_mfa_challenge_with_code(world: &mut ForgeWorld, code: String) {
+    complete_mfa_challenge_with(world, &code).await;
+}
+
+async fn complete_mfa_challenge_with(world: &mut ForgeWorld, code: &str) {
+    let pending = pending_from_redirect(world);
+    let url = format!("{}/ui/login/mfa", world.gatehouse_url);
+    let res = no_redirect_client()
+        .post(&url)
+        .form(&[("pending", pending.as_str()), ("code", code)])
+        .send()
+        .await
+        .expect("MFA challenge submission failed");
+
+    world.session_cookie = cookie_value(res.headers(), SESSION_COOKIE);
+    world.refresh_cookie = cookie_value(res.headers(), REFRESH_COOKIE);
+    world.record_response(res).await;
+}

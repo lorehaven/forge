@@ -1,0 +1,15 @@
+[[migrations]]
+id = "0007-user-profile"
+author = "gatehouse-service"
+since = "0.2.1"
+
+# All nullable, same reasoning `email` already established: every account
+# seeded by bootstrap.rs today has none of these, and a realm that never
+# turns on self-service profile editing never needs them filled in.
+[[migrations.changes]]
+sql = """
+ALTER TABLE ${schema}.users
+    ADD COLUMN IF NOT EXISTS display_name TEXT,
+    ADD COLUMN IF NOT EXISTS avatar_url TEXT,
+    ADD COLUMN IF NOT EXISTS title TEXT;
+"""

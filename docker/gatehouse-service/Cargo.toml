@@ -23,6 +23,7 @@ chacha20poly1305 = { workspace = true }
 chrono = { workspace = true }
 futures-util = { workspace = true }
 hex = { workspace = true }
+hmac = { workspace = true }
 jsonwebtoken = { workspace = true }
 anyhow = { workspace = true }
 envmnt = { workspace = true }
@@ -38,6 +39,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 sqlx = { workspace = true }
+tokio = { workspace = true }
+totp-rs = { workspace = true }
 urlencoding = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }

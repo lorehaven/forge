@@ -56,13 +56,13 @@ minijinja = { version = "2.23", features = ["loader", "serde"] }
 pdf-extract = { version = "0.12" }
 predicates = { version = "3.1" }
 pulldown-cmark = { version = "0.13" }
-quench-auth = { registry = "ennor", version = "0.3.6" }
+quench-auth = { registry = "ennor", version = "0.3.7" }
 quench-cache = { registry = "ennor", version = "0.1.7" }
 quench-cli = { registry = "ennor", version = "0.1.2" }
 quench-client = { registry = "ennor", version = "0.2.2" }
 quench-config = { registry = "ennor", version = "0.1.2" }
 quench-db = { registry = "ennor", version = "0.2.1" }
-quench-starter = { registry = "ennor", version = "0.3.5" }
+quench-starter = { registry = "ennor", version = "0.3.6" }
 quench-web = { registry = "ennor", version = "0.1.11" }
 redis = { version = "1.5", features = ["tokio-comp", "cluster-async", "connection-manager"] }
 regex = { version = "1.13" }
@@ -92,6 +92,7 @@ tokio = { version = "1.53", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 toml = { version = "1.1" }
 toml_edit = { version = "0.25" }
+totp-rs = { version = "6.0", default-features = false, features = ["otpauth", "gen_secret", "std"] }
 tower-http = { version = "0.7", features = ["fs"] }
 tracing = { version = "0.1" }
 tracing-subscriber = { version = "0.3" }

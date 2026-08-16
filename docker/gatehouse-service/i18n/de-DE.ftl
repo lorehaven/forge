@@ -1,5 +1,6 @@
 header_label = Gatehouse
 ui_home_button = Startseite
+ui_account_button = Mein Konto
 ui_logout = Abmelden
 
 ui_login_sign_in = Anmelden
@@ -15,6 +16,13 @@ ui_login_verify_invalid = Dieser Bestätigungslink ist ungültig oder abgelaufen
 ui_login_reset_requested_ok = Falls dieses Konto existiert, ist ein Link zum Zurücksetzen des Passworts unterwegs.
 ui_login_reset_ok = Ihr Passwort wurde zurückgesetzt. Melden Sie sich mit dem neuen Passwort an.
 ui_login_reset_invalid = Dieser Link zum Zurücksetzen ist ungültig oder abgelaufen.
+ui_login_account_disabled = Dieses Konto wurde deaktiviert.
+ui_login_account_locked = Zu viele fehlgeschlagene Versuche. Versuchen Sie es in ein paar Minuten erneut.
+ui_login_mfa_title = Bestätigungscode
+ui_login_mfa_code = Code
+ui_login_mfa_hint = Geben Sie den 6-stelligen Code aus Ihrer Authenticator-App ein.
+ui_login_mfa_submit = Bestätigen
+ui_login_mfa_invalid = Der Code stimmt nicht überein. Versuchen Sie es erneut.
 
 ui_register_title = Konto erstellen
 ui_register_email = E-Mail
@@ -82,6 +90,20 @@ ui_admin_delete_title = Löschen
 ui_admin_delete_hint = Mit dem Konto enden auch dessen Sitzungen sofort.
 ui_admin_delete = Diesen Benutzer löschen
 
+ui_admin_status_title = Status
+ui_admin_status_created = Erstellt
+ui_admin_status_last_login = Letzte Anmeldung
+ui_admin_status_never = Nie
+ui_admin_status_disabled = Deaktiviert
+ui_admin_status_locked = Gesperrt
+ui_admin_status_mfa = Zwei-Faktor-Authentifizierung
+ui_admin_status_yes = Ja
+ui_admin_status_no = Nein
+ui_admin_action_disable = Deaktivieren
+ui_admin_action_enable = Aktivieren
+ui_admin_action_unlock = Entsperren
+ui_admin_action_mfa_disable = Erzwungen deaktivieren
+
 ui_admin_ok_created = Benutzer erstellt.
 ui_admin_ok_saved = Änderungen gespeichert.
 ui_admin_ok_deleted = Benutzer gelöscht.
@@ -97,6 +119,34 @@ ui_admin_error_unknown_service = Dieser Dienst gehört nicht zu dieser Installat
 ui_admin_error_last_admin = Im Realm muss mindestens ein Administrator bleiben.
 ui_admin_error_self_demote = Sie können sich die Administratorrolle nicht selbst entziehen.
 ui_admin_error_self_delete = Sie können Ihr eigenes Konto nicht löschen.
+ui_admin_error_self_disable = Sie können Ihr eigenes Konto nicht deaktivieren.
 ui_admin_error_unknown_template = Diese Berechtigungsvorlage gibt es nicht.
 ui_admin_error_roles_require_admin = Nur ein Administrator darf die Rolle „admin“ oder „service“ vergeben.
+ui_admin_error_mfa_code_invalid = Der Code stimmt nicht überein - versuchen Sie es erneut.
 ui_admin_error_internal = Die Änderung konnte nicht gespeichert werden.
+
+ui_account_title = Mein Konto
+ui_account_profile_title = Profil
+ui_account_display_name = Anzeigename
+ui_account_avatar_url = Avatar-URL
+ui_account_title_field = Titel
+ui_account_timezone = Zeitzone
+ui_account_preferred_locale = Bevorzugte Sprache
+ui_account_new_password = Neues Passwort
+ui_account_password_hint = Leer lassen, um Ihr aktuelles Passwort zu behalten.
+ui_account_save = Änderungen speichern
+ui_account_ok_saved = Ihr Konto wurde aktualisiert.
+ui_account_ok_mfa_enabled = Zwei-Faktor-Authentifizierung ist jetzt aktiviert.
+ui_account_ok_mfa_disabled = Zwei-Faktor-Authentifizierung wurde deaktiviert.
+
+ui_account_mfa_title = Zwei-Faktor-Authentifizierung
+ui_account_mfa_enabled = Zwei-Faktor-Authentifizierung ist für Ihr Konto aktiviert.
+ui_account_mfa_disabled = Zwei-Faktor-Authentifizierung ist nicht aktiviert.
+ui_account_mfa_enable = Zwei-Faktor-Authentifizierung einrichten
+ui_account_mfa_disable = Zwei-Faktor-Authentifizierung deaktivieren
+
+ui_account_mfa_enroll_title = Zwei-Faktor-Authentifizierung einrichten
+ui_account_mfa_enroll_hint = Scannen Sie dies mit Ihrer Authenticator-App oder geben Sie das Geheimnis unten manuell ein.
+ui_account_mfa_secret = Geheimnis
+ui_account_mfa_code = Code
+ui_account_mfa_verify = Verifizieren und aktivieren

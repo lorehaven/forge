@@ -7,7 +7,7 @@
 //! `docker/conveyor-service/tests/integration`, against a real Postgres.
 
 use crate::world::ForgeWorld;
-use cucumber::{given, then, when};
+use cucumber::{given, when};
 use serde_json::json;
 
 /// The secret `services.rs` starts conveyor with.
@@ -191,17 +191,4 @@ async fn unknown_provider(world: &mut ForgeWorld, provider: String) {
         .await
         .unwrap_or_else(|e| panic!("POST {url}: {e}"));
     world.record_response(response).await;
-}
-
-/// The inverse assertion, for the cases where the interesting thing is which
-/// answer did *not* come back - a webhook that must not be behind the realm's
-/// middleware, or a token that must have got past it.
-#[then(expr = "the response status should not be {int}")]
-async fn status_is_not(world: &mut ForgeWorld, unwanted: u16) {
-    assert_ne!(
-        world.last_status,
-        Some(unwanted),
-        "body was {:?}",
-        world.last_body
-    );
 }

@@ -11,18 +11,17 @@
 //! Private keys are encrypted at rest with a key derived (via SHA-256, so any
 //! passphrase-shaped string works) from `GATEHOUSE_KEY_ENCRYPTION_KEY`.
 
+use crate::crypto::{decrypt, encrypt, realm_cipher};
 use async_trait::async_trait;
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use chacha20poly1305::aead::{Aead, KeyInit};
-use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
+use chacha20poly1305::ChaCha20Poly1305;
 use chrono::{DateTime, Utc};
 use jsonwebtoken::{DecodingKey, EncodingKey};
 use quench_auth::actix::domain::jwt::{KeyResolver, KeySigner};
 use quench_auth::actix::domain::signing::{decoding_key, encoding_key, generate_signing_key};
 use quench_db::prelude::{Crud, Db, Model, Repository};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::sync::RwLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
@@ -85,7 +84,7 @@ pub struct SigningKeys {
 
 impl SigningKeys {
     pub async fn init(db: Db, retire_after_secs: i64) -> anyhow::Result<std::sync::Arc<Self>> {
-        let cipher = build_cipher()?;
+        let cipher = realm_cipher()?;
         let this = std::sync::Arc::new(Self {
             repo: db.repository::<SigningKeyRow>(),
             cipher,
@@ -116,6 +115,9 @@ impl SigningKeys {
                 private_key_der: decrypt(
                     &self.cipher,
                     &hex::decode(&row.private_key).unwrap_or_default(),
+                )
+                .expect(
+                    "signing key decryption failed - is GATEHOUSE_KEY_ENCRYPTION_KEY unchanged?",
                 ),
                 public_key: hex::decode(&row.public_key).unwrap_or_default(),
                 not_after: row.not_after,
@@ -195,30 +197,3 @@ impl KeySigner for SigningKeys {
     }
 }
 
-fn build_cipher() -> anyhow::Result<ChaCha20Poly1305> {
-    let material = envmnt::get_or_panic("GATEHOUSE_KEY_ENCRYPTION_KEY");
-    let derived: [u8; 32] = Sha256::digest(material.as_bytes()).into();
-    Ok(ChaCha20Poly1305::new(&Key::from(derived)))
-}
-
-fn encrypt(cipher: &ChaCha20Poly1305, plaintext: &[u8]) -> Vec<u8> {
-    use rand_core::RngCore;
-    let mut nonce_bytes = [0u8; 12];
-    rand_core::OsRng.fill_bytes(&mut nonce_bytes);
-    let nonce = Nonce::from(nonce_bytes);
-    let ciphertext = cipher
-        .encrypt(&nonce, plaintext)
-        .expect("signing key encryption failed");
-    let mut out = nonce_bytes.to_vec();
-    out.extend(ciphertext);
-    out
-}
-
-fn decrypt(cipher: &ChaCha20Poly1305, data: &[u8]) -> Vec<u8> {
-    let (nonce_bytes, ciphertext) = data.split_at(12);
-    let nonce_bytes: [u8; 12] = nonce_bytes.try_into().expect("nonce is always 12 bytes");
-    let nonce = Nonce::from(nonce_bytes);
-    cipher
-        .decrypt(&nonce, ciphertext)
-        .expect("signing key decryption failed - is GATEHOUSE_KEY_ENCRYPTION_KEY unchanged?")
-}

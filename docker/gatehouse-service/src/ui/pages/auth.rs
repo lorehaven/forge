@@ -4,13 +4,15 @@
 //! `quench-auth`: relying parties only ever redirect a browser to this page.
 
 use crate::api::auth::issue_token_pair;
+use crate::realm::{self as gh_realm, AuthOutcome};
 use crate::ui::common::{UiPageKind, render_page, supported_locales, ui_path};
 use actix_web::{HttpRequest, HttpResponse, Responder, get, post, web};
 use quench_auth::actix::routers::ui::pages::auth::{
     LoginQuery, redirect_target, refresh_delegation, validated_redirect,
 };
 use quench_auth::prelude::realm;
-use quench_auth::prelude::{JwtConfig, SessionDb, UserDb};
+use quench_auth::prelude::{JwtConfig, SessionDb};
+use quench_db::prelude::Db;
 use quench_web::prelude::*;
 use serde::Deserialize;
 use std::sync::Arc;
@@ -66,16 +68,49 @@ pub(super) async fn login_slash(
 pub(super) async fn login_submit(
     form: web::Form<LoginForm>,
     config: web::Data<JwtConfig>,
-    user_db: web::Data<Arc<UserDb>>,
+    db: web::Data<Db>,
     session_db: web::Data<Arc<SessionDb>>,
 ) -> impl Responder {
     tracing::info!("login attempt for {}", form.username);
 
-    let Some(user) = user_db.validate(&form.username, &form.password).await else {
-        tracing::warn!("invalid credentials for {}", form.username);
-        return HttpResponse::Found()
-            .append_header(("Location", ui_path("/login?err=1")))
-            .finish();
+    let outcome = match gh_realm::authenticate(&db, &form.username, &form.password).await {
+        Ok(outcome) => outcome,
+        Err(err) => {
+            tracing::error!("failed to authenticate {}: {:?}", form.username, err);
+            return HttpResponse::Found()
+                .append_header(("Location", ui_path("/login?err=1")))
+                .finish();
+        }
+    };
+
+    let user = match outcome {
+        AuthOutcome::Success(user) => user,
+        AuthOutcome::MfaRequired { pending } => {
+            return HttpResponse::Found()
+                .append_header((
+                    "Location",
+                    mfa_challenge_url(&pending, form.redirect.as_deref(), false),
+                ))
+                .finish();
+        }
+        AuthOutcome::Disabled => {
+            tracing::warn!("login attempt for disabled account {}", form.username);
+            return HttpResponse::Found()
+                .append_header(("Location", ui_path("/login?err=ui_login_account_disabled")))
+                .finish();
+        }
+        AuthOutcome::Locked => {
+            tracing::warn!("login attempt for locked account {}", form.username);
+            return HttpResponse::Found()
+                .append_header(("Location", ui_path("/login?err=ui_login_account_locked")))
+                .finish();
+        }
+        AuthOutcome::NotFound | AuthOutcome::WrongPassword => {
+            tracing::warn!("invalid credentials for {}", form.username);
+            return HttpResponse::Found()
+                .append_header(("Location", ui_path("/login?err=1")))
+                .finish();
+        }
     };
 
     let Ok(tokens) = issue_token_pair(&config, &session_db, &user).await else {
@@ -96,6 +131,113 @@ pub(super) async fn login_submit(
         .cookie(realm::refresh_cookie(tokens.refresh_token))
         .append_header(("Location", target))
         .finish()
+}
+
+#[derive(Deserialize)]
+pub struct MfaQuery {
+    pub pending: String,
+    #[serde(default)]
+    pub redirect: Option<String>,
+    #[serde(default)]
+    pub err: Option<String>,
+}
+
+#[get("/login/mfa")]
+pub(super) async fn login_mfa(query: web::Query<MfaQuery>) -> impl Responder {
+    render_mfa_page(
+        &query.pending,
+        query.redirect.as_deref(),
+        query.err.as_deref() == Some("1"),
+    )
+}
+
+#[derive(Deserialize)]
+pub struct MfaForm {
+    pub pending: String,
+    pub code: String,
+    #[serde(default)]
+    pub redirect: Option<String>,
+}
+
+/// The code-entry step of a login that `login_submit` found to require MFA.
+/// `pending` proves the password step already happened - see
+/// [`crate::realm::authenticate_mfa`].
+#[post("/login/mfa")]
+pub(super) async fn login_mfa_submit(
+    form: web::Form<MfaForm>,
+    config: web::Data<JwtConfig>,
+    db: web::Data<Db>,
+    session_db: web::Data<Arc<SessionDb>>,
+) -> impl Responder {
+    let outcome = match gh_realm::authenticate_mfa(&db, &form.pending, &form.code).await {
+        Ok(outcome) => outcome,
+        Err(err) => {
+            tracing::error!("failed to verify an MFA code: {:?}", err);
+            return HttpResponse::Found()
+                .append_header(("Location", ui_path("/login?err=1")))
+                .finish();
+        }
+    };
+
+    let user = match outcome {
+        AuthOutcome::Success(user) => user,
+        AuthOutcome::Disabled => {
+            return HttpResponse::Found()
+                .append_header(("Location", ui_path("/login?err=ui_login_account_disabled")))
+                .finish();
+        }
+        AuthOutcome::Locked => {
+            return HttpResponse::Found()
+                .append_header(("Location", ui_path("/login?err=ui_login_account_locked")))
+                .finish();
+        }
+        // `authenticate_mfa` never returns `MfaRequired` itself - it is the
+        // second step - and reports a stale/tampered pending token or a
+        // since-vanished account the same way as a wrong code, so an
+        // attacker cannot tell them apart.
+        AuthOutcome::MfaRequired { .. } | AuthOutcome::NotFound | AuthOutcome::WrongPassword => {
+            return HttpResponse::Found()
+                .append_header((
+                    "Location",
+                    mfa_challenge_url(&form.pending, form.redirect.as_deref(), true),
+                ))
+                .finish();
+        }
+    };
+
+    let Ok(tokens) = issue_token_pair(&config, &session_db, &user).await else {
+        tracing::error!("failed to issue tokens for {}", user.username);
+        return HttpResponse::Found()
+            .append_header(("Location", ui_path("/login?err=1")))
+            .finish();
+    };
+
+    let target = form
+        .redirect
+        .as_deref()
+        .and_then(validated_redirect)
+        .unwrap_or_else(|| ui_path("/home"));
+
+    HttpResponse::Found()
+        .cookie(realm::session_cookie(tokens.access_token))
+        .cookie(realm::refresh_cookie(tokens.refresh_token))
+        .append_header(("Location", target))
+        .finish()
+}
+
+fn mfa_challenge_url(pending: &str, redirect: Option<&str>, err: bool) -> String {
+    let mut url = format!(
+        "{}?pending={}",
+        ui_path("/login/mfa"),
+        urlencoding::encode(pending)
+    );
+    if let Some(target) = redirect.filter(|value| !value.is_empty()) {
+        url.push_str(&format!("&redirect={}", urlencoding::encode(target)));
+    }
+    if err {
+        url.push_str("&err=1");
+    }
+    url
 }
 
 /// What the page shell's session watcher polls.
@@ -247,6 +389,8 @@ fn login_error_key(notices: &LoginNotices) -> Option<&'static str> {
     match notices.err.as_deref() {
         Some("ui_login_verify_invalid") => Some("ui_login_verify_invalid"),
         Some("ui_login_reset_invalid") => Some("ui_login_reset_invalid"),
+        Some("ui_login_account_disabled") => Some("ui_login_account_disabled"),
+        Some("ui_login_account_locked") => Some("ui_login_account_locked"),
         _ => None,
     }
 }
@@ -266,6 +410,87 @@ fn login_ok_key(notices: &LoginNotices) -> Option<&'static str> {
     } else {
         None
     }
+}
+
+fn render_mfa_page(pending: &str, redirect: Option<&str>, error: bool) -> HttpResponse {
+    let mut mfa_form = form()
+        .attr("method", "post")
+        .attr("action", ui_path("/login/mfa"))
+        .child(
+            element("input")
+                .attr("type", "hidden")
+                .attr("name", "pending")
+                .attr("value", pending),
+        )
+        .child(
+            label()
+                .attr("for", "code")
+                .attr("data-i18n", "ui_login_mfa_code"),
+        )
+        .child(
+            element("input")
+                .attr("type", "text")
+                .attr("id", "code")
+                .attr("name", "code")
+                .attr("inputmode", "numeric")
+                .attr("autocomplete", "one-time-code")
+                .attr("autofocus", "autofocus")
+                .attr("required", "required"),
+        )
+        .child(
+            p().class("admin-hint")
+                .attr("data-i18n", "ui_login_mfa_hint"),
+        )
+        .child(
+            button()
+                .attr("type", "submit")
+                .attr("data-i18n", "ui_login_mfa_submit"),
+        );
+
+    if let Some(target) = redirect.filter(|value| !value.is_empty()) {
+        mfa_form = mfa_form.child(
+            element("input")
+                .attr("type", "hidden")
+                .attr("name", "redirect")
+                .attr("value", target),
+        );
+    }
+
+    if error {
+        mfa_form = mfa_form.child(
+            p().class("error")
+                .attr("data-i18n", "ui_login_mfa_invalid"),
+        );
+    }
+
+    render_auth_page("ui_login_mfa_title", mfa_form)
+}
+
+fn render_auth_page(title_key: &'static str, inner_form: Element) -> HttpResponse {
+    let bar = div()
+        .class("login-bar")
+        .child(
+            span()
+                .class("login-brand")
+                .attr("data-i18n", "header_label"),
+        )
+        .child(locale_switch(Some(supported_locales()), None));
+
+    let credentials = div()
+        .class("login-credentials")
+        .child(div().class("panel-title").attr("data-i18n", title_key))
+        .child(div().class("meta-list").child(inner_form));
+
+    render_page(
+        HttpResponse::Ok(),
+        content().class("container-fluid login-layout").child(
+            div()
+                .class("panel login-panel")
+                .child(bar)
+                .child(credentials),
+        ),
+        UiPageKind::Auth,
+    )
 }
 
 /// Anything under `/ui` that is not a page sends you to the login form.

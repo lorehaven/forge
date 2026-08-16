@@ -1,0 +1,21 @@
+[[migrations]]
+id = "0002-comments"
+author = "workbench-service"
+since = "0.1.0"
+
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.comments (
+    id TEXT PRIMARY KEY,
+    issue_id TEXT NOT NULL REFERENCES ${schema}.issues(id) ON DELETE CASCADE,
+    author TEXT NOT NULL REFERENCES ${auth_schema}.users(username) ON DELETE CASCADE,
+    body TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+"""
+
+# The issue detail page's own query: an issue's comments, oldest first.
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS comments_issue_idx ON ${schema}.comments (issue_id, created_at);
+"""

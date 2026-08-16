@@ -414,7 +414,15 @@ fn package_changed_since_tag(workspace_root: &Path, package_dir: &Path, tag: &st
 }
 
 /// Reads `relative_path` as it existed at `tag`, via `git show`.
-fn git_show_file_at_tag(workspace_root: &Path, tag: &str, relative_path: &str) -> Result<String> {
+///
+/// Returns `Ok(None)` when the path did not exist in the tree at `tag` (e.g.
+/// a tag inherited from before a workspace root manifest was introduced, as
+/// happens when a package's history was extracted from a larger repo).
+fn git_show_file_at_tag(
+    workspace_root: &Path,
+    tag: &str,
+    relative_path: &str,
+) -> Result<Option<String>> {
     let spec = format!("{tag}:{relative_path}");
     let output = Command::new("git")
         .args(["show", &spec])
@@ -423,10 +431,16 @@ fn git_show_file_at_tag(workspace_root: &Path, tag: &str, relative_path: &str) -
         .with_context(|| format!("Failed to execute git show {spec}"))?;
 
     if !output.status.success() {
-        anyhow::bail!("git show {spec} failed");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("does not exist in") || stderr.contains("exists on disk, but not in") {
+            return Ok(None);
+        }
+        anyhow::bail!("git show {spec} failed: {}", stderr.trim());
     }
 
-    String::from_utf8(output.stdout).context("Invalid UTF-8 in git show output")
+    String::from_utf8(output.stdout)
+        .context("Invalid UTF-8 in git show output")
+        .map(Some)
 }
 
 fn workspace_dependencies_table(content: &str) -> Result<HashMap<String, toml::Value>> {
@@ -447,7 +461,12 @@ fn workspace_dependencies_table(content: &str) -> Result<HashMap<String, toml::V
 /// these in via `{ workspace = true }` publishes a different dependency
 /// even though nothing in that package's own directory was touched.
 fn changed_workspace_dependencies(workspace_root: &Path, tag: &str) -> Result<HashSet<String>> {
-    let old_content = git_show_file_at_tag(workspace_root, tag, "Cargo.toml")?;
+    let Some(old_content) = git_show_file_at_tag(workspace_root, tag, "Cargo.toml")? else {
+        // No root manifest at `tag` to diff against (e.g. a tag from before
+        // this workspace's history was extracted into its own repo). Fall
+        // back to per-package directory diffing rather than failing outright.
+        return Ok(HashSet::new());
+    };
     let new_content = fs::read_to_string(workspace_root.join("Cargo.toml")).with_context(|| {
         format!(
             "Failed to read {}",

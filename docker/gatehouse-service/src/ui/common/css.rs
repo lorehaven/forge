@@ -89,6 +89,19 @@ fn admin_rules() -> Vec<CssRule> {
         CssRule::new(".admin-section-title")
             .property("margin-top", "0.5rem")
             .property("font-weight", "600"),
+        // Lifecycle/security status rows: a label, a value, and an optional
+        // action button pinned right - the same left/middle/right shape
+        // `.admin-row` uses for the user list, at a smaller scale.
+        CssRule::new(".admin-status-row")
+            .property("display", "flex")
+            .property("align-items", "center")
+            .property("gap", "0.75rem")
+            .property("padding", "0.3rem 0")
+            .child(
+                CssRule::new("form")
+                    .property("margin-left", "auto")
+                    .property("width", "auto"),
+            ),
         // The matrix: a label column that does not shrink, and a column of
         // action checkboxes that wraps rather than overflowing when a service
         // declares more of them than fit on one line.
@@ -136,6 +149,12 @@ fn admin_rules() -> Vec<CssRule> {
             .property("margin", "0")
             .child(CssRule::new("&.ok").property("background-color", "var(--bs-gray-800)"))
             .child(CssRule::new("&.error").property("background-color", "var(--bs-gray-700)")),
+        CssRule::new(".admin-mono")
+            .property("font-family", "monospace")
+            .property("word-break", "break-all")
+            .property("background-color", "var(--bs-gray-800)")
+            .property("padding", "0.5rem 0.75rem")
+            .property("border-radius", "0.3rem"),
         CssRule::new(".admin-danger").child(
             CssRule::new("button.admin-delete")
                 .property("background-color", "var(--bs-red, #b3261e)")

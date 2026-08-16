@@ -4,3 +4,4 @@ pub mod gatehouse;
 pub mod sage;
 pub mod switchboard;
 pub mod warehouse;
+pub mod workbench;

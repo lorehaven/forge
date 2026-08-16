@@ -21,3 +21,6 @@ module = "switchboard"
 
 [[install]]
 module = "warehouse"
+
+[[install]]
+module = "workbench"

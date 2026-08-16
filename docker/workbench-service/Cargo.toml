@@ -1,0 +1,38 @@
+[package]
+name = "workbench-service"
+version = "0.1.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "Workbench - task management service"
+keywords = ["development", "tools"]
+categories = ["development-tools"]
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+readme = { workspace = true }
+
+[lib]
+name = "workbench_service"
+path = "src/lib.rs"
+
+[[bin]]
+name = "workbench-service"
+path = "src/main.rs"
+
+[dependencies]
+actix-web = { workspace = true }
+chrono = { workspace = true }
+envmnt = { workspace = true }
+quench-auth = { workspace = true }
+quench-db = { workspace = true }
+quench-starter = { workspace = true }
+quench-web = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

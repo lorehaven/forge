@@ -1,0 +1,14 @@
+[[migrations]]
+id = "0010-user-locale"
+author = "gatehouse-service"
+since = "0.2.1"
+
+# Both nullable: absent means "no preference recorded", and every relying
+# party already has its own fallback (workbench's client-side locale switch,
+# the estate's `RUST_LOG`-style defaults) for exactly that case.
+[[migrations.changes]]
+sql = """
+ALTER TABLE ${schema}.users
+    ADD COLUMN IF NOT EXISTS timezone TEXT,
+    ADD COLUMN IF NOT EXISTS preferred_locale TEXT;
+"""

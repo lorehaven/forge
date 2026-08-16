@@ -248,6 +248,7 @@ pub(super) async fn save_user(
             &form,
             &existing_permissions,
         )),
+        ..UserChanges::default()
     };
 
     match realm::update(
@@ -331,6 +332,92 @@ pub(super) async fn delete_user(
             urlencoding::encode(&username),
             err.i18n_key()
         )),
+    }
+}
+
+/// Support recovery: disable/enable, unlock, and force-disable MFA. Gated on
+/// `edit-user` like `save_user` itself, rather than a new catalog action -
+/// each is a lighter-weight variant of the same "change this account"
+/// capability the save form already needs.
+#[post("/admin/users/{username}/disable")]
+pub(super) async fn disable_user(
+    req: HttpRequest,
+    path: web::Path<String>,
+    config: web::Data<JwtConfig>,
+    db: web::Data<Db>,
+) -> impl Responder {
+    let actor = actor!(req, config, "edit-user");
+    let username = path.into_inner();
+    if username == actor.sub {
+        return back_to_edit(&username, &RealmError::SelfDisable);
+    }
+
+    match realm::set_disabled(&db, &username, true).await {
+        Ok(_) => redirect(&format!(
+            "/admin/users/{}?ok=saved",
+            urlencoding::encode(&username)
+        )),
+        Err(err) => back_to_edit(&username, &err),
+    }
+}
+
+#[post("/admin/users/{username}/enable")]
+pub(super) async fn enable_user(
+    req: HttpRequest,
+    path: web::Path<String>,
+    config: web::Data<JwtConfig>,
+    db: web::Data<Db>,
+) -> impl Responder {
+    let _actor = actor!(req, config, "edit-user");
+    let username = path.into_inner();
+
+    match realm::set_disabled(&db, &username, false).await {
+        Ok(_) => redirect(&format!(
+            "/admin/users/{}?ok=saved",
+            urlencoding::encode(&username)
+        )),
+        Err(err) => back_to_edit(&username, &err),
+    }
+}
+
+#[post("/admin/users/{username}/unlock")]
+pub(super) async fn unlock_user(
+    req: HttpRequest,
+    path: web::Path<String>,
+    config: web::Data<JwtConfig>,
+    db: web::Data<Db>,
+) -> impl Responder {
+    let _actor = actor!(req, config, "edit-user");
+    let username = path.into_inner();
+
+    match realm::unlock(&db, &username).await {
+        Ok(_) => redirect(&format!(
+            "/admin/users/{}?ok=saved",
+            urlencoding::encode(&username)
+        )),
+        Err(err) => back_to_edit(&username, &err),
+    }
+}
+
+/// Recovery when a user has lost their authenticator - the admin never sees
+/// the secret, only whether MFA is on, and can turn it off so the user can
+/// sign in and re-enroll.
+#[post("/admin/users/{username}/mfa/disable")]
+pub(super) async fn disable_user_mfa(
+    req: HttpRequest,
+    path: web::Path<String>,
+    config: web::Data<JwtConfig>,
+    db: web::Data<Db>,
+) -> impl Responder {
+    let _actor = actor!(req, config, "edit-user");
+    let username = path.into_inner();
+
+    match realm::disable_mfa(&db, &username).await {
+        Ok(()) => redirect(&format!(
+            "/admin/users/{}?ok=saved",
+            urlencoding::encode(&username)
+        )),
+        Err(err) => back_to_edit(&username, &err),
     }
 }
 
@@ -693,6 +780,8 @@ fn render_edit(
             )
     };
 
+    let status = status_panel(user, can_edit, user.username != actor.sub);
+
     // No delete control for yourself: the realm would refuse it, and offering a
     // button that always fails is worse than not offering one. Also none
     // without `delete-user`, for the same reason.
@@ -741,10 +830,157 @@ fn render_edit(
                         .attr("data-i18n", "ui_admin_back"),
                 )
                 .child(details)
+                .child(status)
                 .child_opt(danger),
         ),
         UiPageKind::Admin,
     )
+}
+
+/// Lifecycle and security state: when the account was created, when it last
+/// signed in, and the three "an admin can undo this" states a locked-out or
+/// mis-enrolled user cannot fix themselves. Shown to anyone who can see the
+/// page; the action forms that touch it are omitted (not disabled) for a
+/// viewer who cannot edit, same reasoning `render_edit`'s own `details`
+/// branch gives.
+fn status_panel(user: &User, can_edit: bool, allow_self_action: bool) -> Element {
+    let mut rows = div()
+        .class("meta-list")
+        .child(status_row(
+            "ui_admin_status_created",
+            &format_timestamp(Some(user.created_at)),
+        ))
+        .child(match user.last_login_at {
+            Some(ts) => status_row("ui_admin_status_last_login", &format_timestamp(Some(ts))),
+            None => div()
+                .class("admin-status-row")
+                .child(
+                    span()
+                        .class("admin-hint")
+                        .attr("data-i18n", "ui_admin_status_last_login"),
+                )
+                .child(span().attr("data-i18n", "ui_admin_status_never")),
+        });
+
+    if can_edit {
+        rows = rows.child(status_action_row(
+            "ui_admin_status_disabled",
+            user.is_disabled(),
+            "ui_admin_status_yes",
+            "ui_admin_status_no",
+            allow_self_action.then(|| {
+                mfa_action_form(
+                    &user.username,
+                    if user.is_disabled() { "enable" } else { "disable" },
+                    if user.is_disabled() {
+                        "ui_admin_action_enable"
+                    } else {
+                        "ui_admin_action_disable"
+                    },
+                )
+            }),
+        ));
+
+        rows = rows.child(status_action_row(
+            "ui_admin_status_locked",
+            user.is_locked(),
+            "ui_admin_status_yes",
+            "ui_admin_status_no",
+            user.is_locked()
+                .then(|| mfa_action_form(&user.username, "unlock", "ui_admin_action_unlock")),
+        ));
+
+        rows = rows.child(status_action_row(
+            "ui_admin_status_mfa",
+            user.mfa_enabled,
+            "ui_admin_status_yes",
+            "ui_admin_status_no",
+            user.mfa_enabled.then(|| {
+                mfa_action_form(&user.username, "mfa/disable", "ui_admin_action_mfa_disable")
+            }),
+        ));
+    } else {
+        rows = rows
+            .child(status_row(
+                "ui_admin_status_disabled",
+                if user.is_disabled() {
+                    "ui_admin_status_yes"
+                } else {
+                    "ui_admin_status_no"
+                },
+            ))
+            .child(status_row(
+                "ui_admin_status_locked",
+                if user.is_locked() {
+                    "ui_admin_status_yes"
+                } else {
+                    "ui_admin_status_no"
+                },
+            ))
+            .child(status_row(
+                "ui_admin_status_mfa",
+                if user.mfa_enabled {
+                    "ui_admin_status_yes"
+                } else {
+                    "ui_admin_status_no"
+                },
+            ));
+    }
+
+    div()
+        .class("panel admin-panel")
+        .child(
+            div()
+                .class("panel-title")
+                .attr("data-i18n", "ui_admin_status_title"),
+        )
+        .child(rows)
+}
+
+fn status_row(label_key: &'static str, value: &str) -> Element {
+    div()
+        .class("admin-status-row")
+        .child(span().class("admin-hint").attr("data-i18n", label_key))
+        .child(span().text(value))
+}
+
+fn status_action_row(
+    label_key: &'static str,
+    active: bool,
+    yes_key: &'static str,
+    no_key: &'static str,
+    action: Option<Element>,
+) -> Element {
+    div()
+        .class("admin-status-row")
+        .child(span().class("admin-hint").attr("data-i18n", label_key))
+        .child(span().attr("data-i18n", if active { yes_key } else { no_key }))
+        .child_opt(action)
+}
+
+fn mfa_action_form(username: &str, path_suffix: &str, button_key: &'static str) -> Element {
+    form()
+        .attr("method", "post")
+        .attr(
+            "action",
+            ui_path(&format!(
+                "/admin/users/{}/{path_suffix}",
+                urlencoding::encode(username)
+            )),
+        )
+        .child(
+            button()
+                .attr("type", "submit")
+                .class("button")
+                .attr("data-i18n", button_key),
+        )
+}
+
+fn format_timestamp(value: Option<chrono::DateTime<chrono::Utc>>) -> String {
+    match value {
+        Some(ts) => ts.format("%Y-%m-%d %H:%M UTC").to_string(),
+        None => String::new(),
+    }
 }
 
 /// One service, one checkbox per action the catalog declares for it.
@@ -903,6 +1139,7 @@ fn known_error_key(candidate: &str) -> Option<&'static str> {
         RealmError::LastAdmin,
         RealmError::SelfDemote,
         RealmError::SelfDelete,
+        RealmError::SelfDisable,
         RealmError::UnknownTemplate,
         RealmError::RolesRequireAdmin,
         RealmError::Internal,
@@ -920,6 +1157,14 @@ fn redirect(path: &str) -> HttpResponse {
 
 fn back_to_list(err: &RealmError) -> HttpResponse {
     redirect(&format!("/admin/users?err={}", err.i18n_key()))
+}
+
+fn back_to_edit(username: &str, err: &RealmError) -> HttpResponse {
+    redirect(&format!(
+        "/admin/users/{}?err={}",
+        urlencoding::encode(username),
+        err.i18n_key()
+    ))
 }
 
 fn forbidden_page() -> HttpResponse {

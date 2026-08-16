@@ -1,0 +1,9 @@
+name = "workbench"
+version = "0.1.0"
+description = "Workbench - projects, issues, comments and labels"
+default_schema = "workbench"
+requires = ["auth@^0.2", "quench-core@^0.1"]
+
+[variables]
+# Realm schema that owns users; keep in sync with the auth module.
+auth_schema = "auth"

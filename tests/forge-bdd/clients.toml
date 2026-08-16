@@ -28,6 +28,12 @@ redirect_path = "/ui/auth/callback"
 allowed_scopes = ["conveyor"]
 secret_env = "CLIENT_SECRET_CONVEYOR"
 
+[[client]]
+client_id = "workbench"
+redirect_path = "/ui/auth/callback"
+allowed_scopes = ["workbench"]
+secret_env = "CLIENT_SECRET_WORKBENCH"
+
 # sage's machine identity toward switchboard - client_credentials only, no
 # redirect_path. allowed_scopes is the audience (switchboard), not a scope
 # entry; the token's actual scope is the fixed wildcard `service` role.

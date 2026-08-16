@@ -1,5 +1,6 @@
 header_label = Gatehouse
 ui_home_button = Accueil
+ui_account_button = Mon compte
 ui_logout = Se déconnecter
 
 ui_login_sign_in = Connexion
@@ -15,6 +16,13 @@ ui_login_verify_invalid = Ce lien de vérification est invalide ou a expiré.
 ui_login_reset_requested_ok = Si ce compte existe, un lien de réinitialisation est en route.
 ui_login_reset_ok = Votre mot de passe a été réinitialisé. Connectez-vous avec le nouveau.
 ui_login_reset_invalid = Ce lien de réinitialisation est invalide ou a expiré.
+ui_login_account_disabled = Ce compte a été désactivé.
+ui_login_account_locked = Trop de tentatives échouées. Réessayez dans quelques minutes.
+ui_login_mfa_title = Code de vérification
+ui_login_mfa_code = Code
+ui_login_mfa_hint = Saisissez le code à 6 chiffres de votre application d'authentification.
+ui_login_mfa_submit = Vérifier
+ui_login_mfa_invalid = Ce code est incorrect. Réessayez.
 
 ui_register_title = Créer un compte
 ui_register_email = E-mail
@@ -82,6 +90,20 @@ ui_admin_delete_title = Supprimer
 ui_admin_delete_hint = Supprimer le compte met fin à ses sessions immédiatement.
 ui_admin_delete = Supprimer cet utilisateur
 
+ui_admin_status_title = Statut
+ui_admin_status_created = Créé
+ui_admin_status_last_login = Dernière connexion
+ui_admin_status_never = Jamais
+ui_admin_status_disabled = Désactivé
+ui_admin_status_locked = Verrouillé
+ui_admin_status_mfa = Authentification à deux facteurs
+ui_admin_status_yes = Oui
+ui_admin_status_no = Non
+ui_admin_action_disable = Désactiver
+ui_admin_action_enable = Activer
+ui_admin_action_unlock = Déverrouiller
+ui_admin_action_mfa_disable = Forcer la désactivation
+
 ui_admin_ok_created = Utilisateur créé.
 ui_admin_ok_saved = Modifications enregistrées.
 ui_admin_ok_deleted = Utilisateur supprimé.
@@ -97,6 +119,34 @@ ui_admin_error_unknown_service = Ce service ne fait pas partie de ce déploiemen
 ui_admin_error_last_admin = Le domaine doit conserver au moins un administrateur.
 ui_admin_error_self_demote = Vous ne pouvez pas retirer votre propre rôle d'administrateur.
 ui_admin_error_self_delete = Vous ne pouvez pas supprimer votre propre compte.
+ui_admin_error_self_disable = Vous ne pouvez pas désactiver votre propre compte.
 ui_admin_error_unknown_template = Ce modèle de permissions n'existe pas.
 ui_admin_error_roles_require_admin = Seul un administrateur peut attribuer le rôle admin ou service.
+ui_admin_error_mfa_code_invalid = Ce code est incorrect - réessayez.
 ui_admin_error_internal = La modification n'a pas pu être enregistrée.
+
+ui_account_title = Mon compte
+ui_account_profile_title = Profil
+ui_account_display_name = Nom affiché
+ui_account_avatar_url = URL de l'avatar
+ui_account_title_field = Titre
+ui_account_timezone = Fuseau horaire
+ui_account_preferred_locale = Langue préférée
+ui_account_new_password = Nouveau mot de passe
+ui_account_password_hint = Laissez vide pour conserver votre mot de passe actuel.
+ui_account_save = Enregistrer les modifications
+ui_account_ok_saved = Votre compte a été mis à jour.
+ui_account_ok_mfa_enabled = L'authentification à deux facteurs est maintenant activée.
+ui_account_ok_mfa_disabled = L'authentification à deux facteurs a été désactivée.
+
+ui_account_mfa_title = Authentification à deux facteurs
+ui_account_mfa_enabled = L'authentification à deux facteurs est activée sur votre compte.
+ui_account_mfa_disabled = L'authentification à deux facteurs n'est pas activée.
+ui_account_mfa_enable = Configurer l'authentification à deux facteurs
+ui_account_mfa_disable = Désactiver l'authentification à deux facteurs
+
+ui_account_mfa_enroll_title = Configurer l'authentification à deux facteurs
+ui_account_mfa_enroll_hint = Scannez ceci avec votre application d'authentification, ou saisissez le secret manuellement ci-dessous.
+ui_account_mfa_secret = Secret
+ui_account_mfa_code = Code
+ui_account_mfa_verify = Vérifier et activer

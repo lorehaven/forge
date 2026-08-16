@@ -37,6 +37,8 @@ pub fn scope() -> actix_web::Scope {
         .service(pages::auth::login)
         .service(pages::auth::login_slash)
         .service(pages::auth::login_submit)
+        .service(pages::auth::login_mfa)
+        .service(pages::auth::login_mfa_submit)
         .service(pages::auth::logout)
         .service(pages::auth::status)
         .service(pages::auth::refresh)
@@ -52,6 +54,12 @@ pub fn scope() -> actix_web::Scope {
         // Requires a realm session; `handle_home` redirects when there is none.
         .service(pages::home::home)
         .service(pages::home::home_slash)
+        // Self-service account page - any signed-in user, no catalog action.
+        .service(pages::account::account_page)
+        .service(pages::account::save_account)
+        .service(pages::account::mfa_enroll_page)
+        .service(pages::account::mfa_enroll_submit)
+        .service(pages::account::mfa_disable)
         // Requires the admin role on top of a session; each handler checks, so a
         // route added here without the check is a compile-time-visible omission
         // rather than an open page.
@@ -62,6 +70,10 @@ pub fn scope() -> actix_web::Scope {
         // and `{username}` would otherwise swallow the delete/template paths'
         // parent.
         .service(pages::admin::delete_user)
+        .service(pages::admin::disable_user)
+        .service(pages::admin::enable_user)
+        .service(pages::admin::unlock_user)
+        .service(pages::admin::disable_user_mfa)
         .service(pages::admin::apply_template)
         .service(pages::admin::save_user)
         .service(pages::admin::edit_user)

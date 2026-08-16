@@ -1,0 +1,19 @@
+[[migrations]]
+id = "0008-user-lifecycle"
+author = "gatehouse-service"
+since = "0.2.1"
+
+# `created_at` backfills to the moment this migration runs for every existing
+# row - not the account's real creation date (nothing recorded that before
+# now), but a stand-in that's still monotonically useful from here on, rather
+# than leaving the column nullable for what should always have a value going
+# forward. The rest stay nullable: an account that has never been disabled,
+# never had its password changed, or never logged in has nothing to record.
+[[migrations.changes]]
+sql = """
+ALTER TABLE ${schema}.users
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS disabled_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS password_changed_at TIMESTAMPTZ;
+"""

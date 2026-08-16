@@ -28,10 +28,17 @@ pub enum RealmError {
     LastAdmin,
     SelfDemote,
     SelfDelete,
+    /// Disabling yourself would lock you out with no other admin able to
+    /// undo it from inside the realm - the same reasoning `SelfDelete` gives.
+    SelfDisable,
     UnknownTemplate,
     /// Assigning `admin` or `service` needs the literal `admin` role, not a
     /// catalog action - see `permissions.toml`'s comment on `[services.gatehouse]`.
     RolesRequireAdmin,
+    /// The code offered at MFA enrollment did not match the secret just
+    /// generated - enrollment does not turn MFA on until this succeeds once,
+    /// so a mistyped code just means try again, not a half-enabled account.
+    MfaCodeInvalid,
     Internal,
 }
 
@@ -43,10 +50,13 @@ impl RealmError {
             Self::UsernameEmpty | Self::PasswordEmpty | Self::UnknownGrants(_) => {
                 StatusCode::BAD_REQUEST
             }
-            Self::AlreadyExists | Self::LastAdmin | Self::SelfDemote | Self::SelfDelete => {
-                StatusCode::CONFLICT
-            }
+            Self::AlreadyExists
+            | Self::LastAdmin
+            | Self::SelfDemote
+            | Self::SelfDelete
+            | Self::SelfDisable => StatusCode::CONFLICT,
             Self::RolesRequireAdmin => StatusCode::FORBIDDEN,
+            Self::MfaCodeInvalid => StatusCode::BAD_REQUEST,
             Self::Internal => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -63,10 +73,12 @@ impl RealmError {
             Self::LastAdmin => "the realm must keep at least one admin".to_string(),
             Self::SelfDemote => "you cannot remove your own admin role".to_string(),
             Self::SelfDelete => "you cannot delete your own account".to_string(),
+            Self::SelfDisable => "you cannot disable your own account".to_string(),
             Self::UnknownTemplate => "no such permission template".to_string(),
             Self::RolesRequireAdmin => {
                 "only an admin may assign the admin or service role".to_string()
             }
+            Self::MfaCodeInvalid => "that code did not match - try again".to_string(),
             Self::Internal => "the change could not be saved".to_string(),
         }
     }
@@ -84,8 +96,10 @@ impl RealmError {
             Self::LastAdmin => "ui_admin_error_last_admin",
             Self::SelfDemote => "ui_admin_error_self_demote",
             Self::SelfDelete => "ui_admin_error_self_delete",
+            Self::SelfDisable => "ui_admin_error_self_disable",
             Self::UnknownTemplate => "ui_admin_error_unknown_template",
             Self::RolesRequireAdmin => "ui_admin_error_roles_require_admin",
+            Self::MfaCodeInvalid => "ui_admin_error_mfa_code_invalid",
             Self::Internal => "ui_admin_error_internal",
         }
     }
@@ -100,6 +114,17 @@ pub struct UserChanges {
     pub password: Option<String>,
     pub roles: Option<Vec<Role>>,
     pub permissions: Option<Permissions>,
+    // Profile - self-service and admin-editable alike go through this same
+    // struct, same reasoning the module doc gives for password/roles/
+    // permissions: one path, so the two callers can't disagree about what's
+    // allowed. Blank-to-clear isn't supported (matching `password`'s own
+    // "empty means leave alone" rule) - a real limitation, not an oversight,
+    // traded for not needing a second "explicitly clear this" signal.
+    pub display_name: Option<String>,
+    pub avatar_url: Option<String>,
+    pub title: Option<String>,
+    pub timezone: Option<String>,
+    pub preferred_locale: Option<String>,
 }
 
 impl UserChanges {
@@ -267,6 +292,23 @@ pub async fn update(
         }
         user.password = User::hash_password(password)
             .map_err(|err| internal("failed to hash password", err))?;
+        user.password_changed_at = Some(chrono::Utc::now());
+    }
+
+    if let Some(display_name) = &changes.display_name {
+        user.display_name = Some(display_name.clone());
+    }
+    if let Some(avatar_url) = &changes.avatar_url {
+        user.avatar_url = Some(avatar_url.clone());
+    }
+    if let Some(title) = &changes.title {
+        user.title = Some(title.clone());
+    }
+    if let Some(timezone) = &changes.timezone {
+        user.timezone = Some(timezone.clone());
+    }
+    if let Some(preferred_locale) = &changes.preferred_locale {
+        user.preferred_locale = Some(preferred_locale.clone());
     }
 
     // Any change to what someone may do ends their sessions, so the new answer
@@ -389,6 +431,7 @@ pub async fn reset_password(
     let mut user = get(db, username).await?;
     user.password = User::hash_password(new_password)
         .map_err(|err| internal("failed to hash password", err))?;
+    user.password_changed_at = Some(chrono::Utc::now());
     repo.update(&user)
         .await
         .map_err(|err| internal("failed to reset the password", err))?;
@@ -424,6 +467,238 @@ pub async fn delete(
     end_sessions(sessions, username).await;
     tracing::info!("deleted user {username}");
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Login
+// ---------------------------------------------------------------------------
+
+/// What happened when checking a login attempt.
+pub enum AuthOutcome {
+    /// Password (and, if this account has MFA, the code) checked out.
+    /// Carries the updated row - `last_login_at` stamped,
+    /// `failed_login_attempts` reset.
+    Success(User),
+    NotFound,
+    Disabled,
+    Locked,
+    WrongPassword,
+    /// The password was right, but this account has MFA enabled - a session
+    /// is not issued yet. `pending` is a short-lived signed token
+    /// (`mfa::sign_pending`) proving this step already happened; the caller
+    /// carries it through the code-entry form and back to
+    /// [`authenticate_mfa`].
+    MfaRequired { pending: String },
+}
+
+/// How many wrong passwords in a row locks an account, and for how long.
+/// Configurable (`GATEHOUSE_LOGIN_MAX_ATTEMPTS`, default 5;
+/// `GATEHOUSE_LOCKOUT_DURATION_SECS`, default 900) rather than fixed in
+/// `quench-auth` - `User::record_failed_login` takes both as plain
+/// parameters and has no opinion of its own about what they should be.
+fn lockout_policy() -> (i32, chrono::Duration) {
+    let max_attempts = envmnt::get_or("GATEHOUSE_LOGIN_MAX_ATTEMPTS", "5")
+        .parse()
+        .unwrap_or(5);
+    let lockout_secs = envmnt::get_or("GATEHOUSE_LOCKOUT_DURATION_SECS", "900")
+        .parse()
+        .unwrap_or(900);
+    (max_attempts, chrono::Duration::seconds(lockout_secs))
+}
+
+/// Checks a login attempt: existence, disabled/locked state, the password,
+/// and - if this account has MFA enabled - stops one step short of a session
+/// so the caller can send the browser to the code-entry page instead.
+///
+/// Distinct from `quench_auth::UserDb::validate`, which every relying party
+/// also uses for its own machine-to-machine Basic auth path: that one has no
+/// write access to track any of this with, by design - see its own doc
+/// comment. This is gatehouse's own interactive login, which does.
+pub async fn authenticate(db: &Db, username: &str, password: &str) -> RealmResult<AuthOutcome> {
+    let repo = repo(db);
+    let Some(mut user) = repo
+        .read(username)
+        .await
+        .map_err(|err| internal("failed to look up user for login", err))?
+    else {
+        return Ok(AuthOutcome::NotFound);
+    };
+
+    if user.is_disabled() {
+        return Ok(AuthOutcome::Disabled);
+    }
+    if user.is_locked() {
+        return Ok(AuthOutcome::Locked);
+    }
+
+    let verify_user = user.clone();
+    let plain_password = password.to_string();
+    let verified =
+        tokio::task::spawn_blocking(move || verify_user.verify_password(&plain_password))
+            .await
+            .unwrap_or(false);
+
+    if !verified {
+        let (max_attempts, lockout_duration) = lockout_policy();
+        user.record_failed_login(max_attempts, lockout_duration);
+        repo.update(&user)
+            .await
+            .map_err(|err| internal("failed to record a failed login", err))?;
+        return Ok(AuthOutcome::WrongPassword);
+    }
+
+    if user.mfa_enabled {
+        let pending = crate::mfa::sign_pending(&user.username)
+            .map_err(|err| internal("failed to sign a pending MFA token", err))?;
+        return Ok(AuthOutcome::MfaRequired { pending });
+    }
+
+    user.record_successful_login();
+    let updated = repo
+        .update(&user)
+        .await
+        .map_err(|err| internal("failed to record a successful login", err))?;
+    Ok(AuthOutcome::Success(updated))
+}
+
+/// The second step of a login when MFA is enabled - `pending` proves the
+/// password was already checked (see `authenticate`'s `MfaRequired`), so
+/// this only has to check the code and finish what `authenticate` started.
+/// A wrong code counts toward the same lockout a wrong password would.
+pub async fn authenticate_mfa(db: &Db, pending: &str, code: &str) -> RealmResult<AuthOutcome> {
+    let Some(username) = crate::mfa::verify_pending(pending) else {
+        // Expired or tampered - back to square one rather than a more
+        // specific error that would tell an attacker which.
+        return Ok(AuthOutcome::WrongPassword);
+    };
+
+    let repo = repo(db);
+    let Some(mut user) = repo
+        .read(&username)
+        .await
+        .map_err(|err| internal("failed to look up user for MFA check", err))?
+    else {
+        return Ok(AuthOutcome::NotFound);
+    };
+
+    if user.is_disabled() {
+        return Ok(AuthOutcome::Disabled);
+    }
+    if user.is_locked() {
+        return Ok(AuthOutcome::Locked);
+    }
+
+    let Some(secret) = user.mfa_secret.as_deref() else {
+        // MFA was turned off between the password step and this one - fail
+        // rather than silently skip a check that was already promised.
+        return Ok(AuthOutcome::WrongPassword);
+    };
+    let decrypted = crate::mfa::decrypt_secret(secret)
+        .map_err(|err| internal("failed to decrypt MFA secret", err))?;
+
+    if !crate::mfa::verify_code(&decrypted, code) {
+        let (max_attempts, lockout_duration) = lockout_policy();
+        user.record_failed_login(max_attempts, lockout_duration);
+        repo.update(&user)
+            .await
+            .map_err(|err| internal("failed to record a failed MFA attempt", err))?;
+        return Ok(AuthOutcome::WrongPassword);
+    }
+
+    user.record_successful_login();
+    let updated = repo
+        .update(&user)
+        .await
+        .map_err(|err| internal("failed to record a successful login", err))?;
+    Ok(AuthOutcome::Success(updated))
+}
+
+// ---------------------------------------------------------------------------
+// MFA enrollment
+// ---------------------------------------------------------------------------
+
+/// Starts enrollment: a fresh secret, not yet saved anywhere - the caller
+/// shows it (as an otpauth URI for a QR code, and the raw secret for manual
+/// entry) and asks for one correct code before [`enable_mfa`] actually turns
+/// it on. Nothing is persisted here, on purpose: an abandoned enrollment
+/// leaves no trace.
+pub fn begin_mfa_enrollment(username: &str) -> anyhow::Result<(String, String)> {
+    let secret = crate::mfa::generate_secret()?;
+    let uri = crate::mfa::provisioning_uri(&secret, username)?;
+    Ok((secret, uri))
+}
+
+/// Turns MFA on, once the caller has proven the user actually saved the
+/// secret by producing one correct code for it.
+pub async fn enable_mfa(db: &Db, username: &str, secret: &str, code: &str) -> RealmResult<()> {
+    if !crate::mfa::verify_code(secret, code) {
+        return Err(RealmError::MfaCodeInvalid);
+    }
+    let repo = repo(db);
+    let mut user = get(db, username).await?;
+    let encrypted =
+        crate::mfa::encrypt_secret(secret).map_err(|err| internal("failed to encrypt MFA secret", err))?;
+    user.mfa_enabled = true;
+    user.mfa_secret = Some(encrypted);
+    repo.update(&user)
+        .await
+        .map_err(|err| internal("failed to enable MFA", err))?;
+    tracing::info!("enabled MFA for {username}");
+    Ok(())
+}
+
+/// Turns MFA off - from the account's own self-service page (with a fresh
+/// code) or by an admin, for recovery when a user has lost their
+/// authenticator.
+pub async fn disable_mfa(db: &Db, username: &str) -> RealmResult<()> {
+    let repo = repo(db);
+    let mut user = get(db, username).await?;
+    user.mfa_enabled = false;
+    user.mfa_secret = None;
+    repo.update(&user)
+        .await
+        .map_err(|err| internal("failed to disable MFA", err))?;
+    tracing::info!("disabled MFA for {username}");
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Admin lifecycle actions
+// ---------------------------------------------------------------------------
+
+/// An admin turning an account on or off. Unlike `update`, this does not end
+/// the account's sessions - disabling only stops a *future* login, the same
+/// way `UserDb::validate`/`authenticate` check it, and re-enabling shouldn't
+/// need a fresh sign-in either.
+pub async fn set_disabled(db: &Db, username: &str, disabled: bool) -> RealmResult<User> {
+    let repo = repo(db);
+    let mut user = get(db, username).await?;
+    user.disabled_at = disabled.then(chrono::Utc::now);
+    let updated = repo
+        .update(&user)
+        .await
+        .map_err(|err| internal("failed to change disabled state", err))?;
+    tracing::info!(
+        "{} {username}",
+        if disabled { "disabled" } else { "enabled" }
+    );
+    Ok(updated)
+}
+
+/// A support "unlock" after a lockout - clears the counter and the lock
+/// together, so the next login attempt starts clean rather than one attempt
+/// away from re-locking.
+pub async fn unlock(db: &Db, username: &str) -> RealmResult<User> {
+    let repo = repo(db);
+    let mut user = get(db, username).await?;
+    user.locked_until = None;
+    user.failed_login_attempts = 0;
+    let updated = repo
+        .update(&user)
+        .await
+        .map_err(|err| internal("failed to unlock the user", err))?;
+    tracing::info!("unlocked {username}");
+    Ok(updated)
 }
 
 /// Whether `excluding` is the only admin left.

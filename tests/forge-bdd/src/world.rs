@@ -19,6 +19,7 @@ pub enum Target {
     Warehouse,
     Gatehouse,
     Conveyor,
+    Workbench,
 }
 
 impl Target {
@@ -30,15 +31,17 @@ impl Target {
             Target::Warehouse => "warehouse",
             Target::Gatehouse => "gatehouse",
             Target::Conveyor => "conveyor",
+            Target::Workbench => "workbench",
         }
     }
 
-    pub const ALL: [Target; 5] = [
+    pub const ALL: [Target; 6] = [
         Target::Sage,
         Target::Switchboard,
         Target::Warehouse,
         Target::Gatehouse,
         Target::Conveyor,
+        Target::Workbench,
     ];
 
     pub fn parse(value: &str) -> Option<Self> {
@@ -65,6 +68,8 @@ pub struct ForgeWorld {
     pub gatehouse_url: String,
     pub conveyor_base_url: String,
     pub conveyor_url: String,
+    pub workbench_base_url: String,
+    pub workbench_url: String,
 
     pub client: reqwest::Client,
 
@@ -106,6 +111,9 @@ pub struct ForgeWorld {
     /// Kept apart from `access_token` so a scenario can sign in as the user it
     /// just created and still administer the realm afterwards.
     pub admin_token: Option<String>,
+    /// The base32 secret from the last MFA enrollment, kept aside so a later
+    /// step can compute a fresh TOTP code from it for the login challenge.
+    pub mfa_secret: Option<String>,
 }
 
 impl ForgeWorld {
@@ -115,6 +123,7 @@ impl ForgeWorld {
         let warehouse_base_url = service_url("WAREHOUSE_API_URL", "https://127.0.0.1:8443");
         let gatehouse_base_url = service_url("GATEHOUSE_API_URL", "http://127.0.0.1:5443");
         let conveyor_base_url = service_url("CONVEYOR_API_URL", "http://127.0.0.1:9999");
+        let workbench_base_url = service_url("WORKBENCH_API_URL", "http://127.0.0.1:10443");
 
         let client = reqwest::Client::builder()
             .danger_accept_invalid_certs(true)
@@ -151,6 +160,8 @@ impl ForgeWorld {
             gatehouse_base_url,
             conveyor_url: format!("{conveyor_base_url}/conveyor"),
             conveyor_base_url,
+            workbench_url: format!("{workbench_base_url}/workbench"),
+            workbench_base_url,
             client,
             last_status: None,
             last_json: None,
@@ -173,6 +184,7 @@ impl ForgeWorld {
             access_token: None,
             refresh_token: None,
             admin_token: None,
+            mfa_secret: None,
         }
     }
 
@@ -184,6 +196,7 @@ impl ForgeWorld {
             Target::Warehouse => &self.warehouse_url,
             Target::Gatehouse => &self.gatehouse_url,
             Target::Conveyor => &self.conveyor_url,
+            Target::Workbench => &self.workbench_url,
         }
     }
 
@@ -195,6 +208,7 @@ impl ForgeWorld {
             Target::Warehouse => &self.warehouse_base_url,
             Target::Gatehouse => &self.gatehouse_base_url,
             Target::Conveyor => &self.conveyor_base_url,
+            Target::Workbench => &self.workbench_base_url,
         }
     }
 

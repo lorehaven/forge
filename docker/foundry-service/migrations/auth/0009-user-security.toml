@@ -1,0 +1,18 @@
+[[migrations]]
+id = "0009-user-security"
+author = "gatehouse-service"
+since = "0.2.1"
+
+# `mfa_enabled`/`failed_login_attempts` default to the "off"/"zero" state
+# every existing account is actually in, so login enforcement can start
+# reading these columns immediately without a separate backfill step.
+# `mfa_secret` is encrypted at rest the same way gatehouse's signing keys
+# already are (see `keys.rs`) - never stored in the clear.
+[[migrations.changes]]
+sql = """
+ALTER TABLE ${schema}.users
+    ADD COLUMN IF NOT EXISTS mfa_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    ADD COLUMN IF NOT EXISTS mfa_secret TEXT,
+    ADD COLUMN IF NOT EXISTS failed_login_attempts INTEGER NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ;
+"""

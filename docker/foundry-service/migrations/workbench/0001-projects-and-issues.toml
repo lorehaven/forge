@@ -1,0 +1,66 @@
+[[migrations]]
+id = "0001-projects-and-issues"
+author = "workbench-service"
+since = "0.1.0"
+
+# The container every issue lives in. Flat, unlike conveyor's project tree -
+# workbench has no need for nesting yet, and a flat list keeps the
+# resource-scoped permission check (workbench:project:<id>:<action>) a single
+# lookup instead of an ancestor walk.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.projects (
+    id TEXT PRIMARY KEY,
+    key TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+"""
+
+# The short code issue keys are built from (WB-1, WB-2, ...) - one project
+# cannot claim a key another already has.
+[[migrations.changes]]
+sql = """
+CREATE UNIQUE INDEX IF NOT EXISTS projects_key_idx ON ${schema}.projects (key);
+"""
+
+# `seq` is per-project and assigned by the writer (see the domain layer's
+# issue-creation transaction), not a database sequence - it is what makes an
+# issue's key (`{project.key}-{seq}`) readable without a join back to a global
+# counter table.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.issues (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES ${schema}.projects(id) ON DELETE CASCADE,
+    parent_id TEXT REFERENCES ${schema}.issues(id) ON DELETE CASCADE,
+    seq INTEGER NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'task',
+    title TEXT NOT NULL,
+    description TEXT,
+    status TEXT NOT NULL DEFAULT 'todo',
+    priority TEXT NOT NULL DEFAULT 'medium',
+    assignee TEXT REFERENCES ${auth_schema}.users(username) ON DELETE SET NULL,
+    reporter TEXT NOT NULL REFERENCES ${auth_schema}.users(username) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE UNIQUE INDEX IF NOT EXISTS issues_project_seq_idx ON ${schema}.issues (project_id, seq);
+"""
+
+# The board view's own query: issues in a project, grouped by status.
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS issues_project_status_idx ON ${schema}.issues (project_id, status);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS issues_parent_idx ON ${schema}.issues (parent_id) WHERE parent_id IS NOT NULL;
+"""

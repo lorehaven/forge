@@ -149,6 +149,7 @@ impl Fixture {
             Target::Warehouse => self.start_warehouse().await,
             Target::Gatehouse => self.start_gatehouse().await,
             Target::Conveyor => self.start_conveyor().await,
+            Target::Workbench => self.start_workbench().await,
         }
     }
 
@@ -186,6 +187,39 @@ impl Fixture {
         Service {
             target: Target::Conveyor,
             child: command.spawn().expect("failed to start conveyor-service"),
+        }
+    }
+
+    /// Workbench, with no database.
+    ///
+    /// Its domain layer needs Postgres and says so; the suite deliberately
+    /// runs on an in-memory store, so these scenarios cover what a database
+    /// cannot change: the UI shell, gatehouse delegation, and which routes
+    /// need a token. Everything that touches the tables is covered by
+    /// `docker/workbench-service/tests/integration`, against a real Postgres.
+    async fn start_workbench(&self) -> Service {
+        self.build("workbench-service").await;
+        println!("Starting workbench-service...");
+
+        let mut command = Command::new(self.binary("workbench-service"));
+        command
+            .current_dir(self.service_dir("workbench-service"))
+            .envs(std::env::vars());
+        self.common_env(&mut command, "workbench");
+        command
+            .env("SERVER_ADDR", "127.0.0.1:10443")
+            .env("SERVER_HTTP_REDIRECT_ADDR", "127.0.0.1:10080")
+            .env("BASE_PATH", "/workbench")
+            .env("DB_SCHEMA", "test_workbench")
+            .env("SERVICE_AUTH_ENABLED", "true")
+            // No TLS here: workbench ships no dev certificate of its own, and
+            // the suite has no reason to borrow one.
+            .env("SERVER_CERT_PATH", "missing.pem")
+            .env("SERVER_KEY_PATH", "missing.pem");
+
+        Service {
+            target: Target::Workbench,
+            child: command.spawn().expect("failed to start workbench-service"),
         }
     }
 
@@ -320,7 +354,7 @@ impl Fixture {
             // reading this env block for the old story.
             .env(
                 "SERVICE_AUDIENCES",
-                "sage,switchboard,warehouse,conveyor,gatehouse",
+                "sage,switchboard,warehouse,conveyor,workbench,gatehouse",
             )
             // Signing keys are encrypted at rest even in this throwaway
             // in-memory database - see `keys.rs`.
@@ -349,6 +383,7 @@ impl Fixture {
             .env("CLIENT_SECRET_SWITCHBOARD", "bdd-client-secret-switchboard")
             .env("CLIENT_SECRET_WAREHOUSE", "bdd-client-secret-warehouse")
             .env("CLIENT_SECRET_CONVEYOR", "bdd-client-secret-conveyor")
+            .env("CLIENT_SECRET_WORKBENCH", "bdd-client-secret-workbench")
             .env(
                 "CLIENT_SECRET_SAGE_SWITCHBOARD",
                 "bdd-client-secret-sage-switchboard",
@@ -371,6 +406,10 @@ impl Fixture {
                 "https://127.0.0.1:8443/warehouse/ui/home",
             )
             .env("CONVEYOR_UI_URL", "http://127.0.0.1:9999/conveyor/ui/home")
+            .env(
+                "WORKBENCH_UI_URL",
+                "http://127.0.0.1:10443/workbench/ui/home",
+            )
             .env("FEATURE_WAREHOUSE_ENABLED", "false")
             .stdout(Stdio::piped());
 

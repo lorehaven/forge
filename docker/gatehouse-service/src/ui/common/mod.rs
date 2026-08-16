@@ -38,12 +38,16 @@ fn shell(header: Option<Element>) -> AppShell {
 }
 
 static UI_SHELL_HOME: LazyLock<AppShell> =
-    LazyLock::new(|| shell(Some(ui_header("ui_home_title", true, false, true))));
+    LazyLock::new(|| shell(Some(ui_header("ui_home_title", true, false, true, true))));
 
 // The admin pages sit under the home page, so the header offers a way back to it
 // as well as a way out of the realm.
 static UI_SHELL_ADMIN: LazyLock<AppShell> =
-    LazyLock::new(|| shell(Some(ui_header("ui_admin_title", true, true, true))));
+    LazyLock::new(|| shell(Some(ui_header("ui_admin_title", true, true, true, true))));
+
+// The account page sits under the home page too, same as admin.
+static UI_SHELL_ACCOUNT: LazyLock<AppShell> =
+    LazyLock::new(|| shell(Some(ui_header("ui_account_title", true, true, false, true))));
 
 // The login page carries its own bar on the card, so the shell has no top
 // panel: there is nowhere to go home to and nothing to log out of either.
@@ -53,6 +57,7 @@ fn ui_header(
     title_key: &str,
     show_locale_switch: bool,
     show_home: bool,
+    show_account: bool,
     show_logout: bool,
 ) -> Element {
     let title = h2().attr("data-i18n", title_key);
@@ -70,6 +75,11 @@ fn ui_header(
                         .class("button")
                         .attr("data-i18n", "ui_home_button")
                 }))
+                .child_opt(show_account.then(|| {
+                    a().attr("href", ui_path("/account"))
+                        .class("button")
+                        .attr("data-i18n", "ui_account_button")
+                }))
                 .child_opt(show_logout.then(|| {
                     a().attr("href", ui_path("/logout"))
                         .class("button")
@@ -85,6 +95,7 @@ pub fn ensure_assets() {
     LazyLock::force(&UI_SHELL_HOME);
     LazyLock::force(&UI_SHELL_AUTH);
     LazyLock::force(&UI_SHELL_ADMIN);
+    LazyLock::force(&UI_SHELL_ACCOUNT);
 }
 
 #[get("/assets/{path:.*}")]
@@ -101,6 +112,7 @@ pub(super) fn render_page(
         UiPageKind::Home => &*UI_SHELL_HOME,
         UiPageKind::Auth => &*UI_SHELL_AUTH,
         UiPageKind::Admin => &*UI_SHELL_ADMIN,
+        UiPageKind::Account => &*UI_SHELL_ACCOUNT,
     };
     builder
         .content_type(ContentType::html())
@@ -111,4 +123,5 @@ pub(super) enum UiPageKind {
     Home,
     Auth,
     Admin,
+    Account,
 }

@@ -1,0 +1,38 @@
+[[migrations]]
+id = "0003-labels"
+author = "workbench-service"
+since = "0.1.0"
+
+# Scoped to a project, not global - a label named "urgent" in one project is a
+# different row from "urgent" in another, so deleting a project takes its
+# labels with it rather than leaving orphans other projects could collide with.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.labels (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES ${schema}.projects(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    color TEXT NOT NULL DEFAULT '#888888',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE UNIQUE INDEX IF NOT EXISTS labels_project_name_idx ON ${schema}.labels (project_id, name);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.issue_labels (
+    issue_id TEXT NOT NULL REFERENCES ${schema}.issues(id) ON DELETE CASCADE,
+    label_id TEXT NOT NULL REFERENCES ${schema}.labels(id) ON DELETE CASCADE,
+    PRIMARY KEY (issue_id, label_id)
+);
+"""
+
+# The label filter's own query: every issue carrying a given label.
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS issue_labels_label_idx ON ${schema}.issue_labels (label_id);
+"""

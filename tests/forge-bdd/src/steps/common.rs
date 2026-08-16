@@ -93,6 +93,19 @@ async fn check_status(world: &mut ForgeWorld, status: u16) {
     );
 }
 
+/// The inverse assertion, for the cases where the interesting thing is which
+/// answer did *not* come back - a route that must not be behind the realm's
+/// middleware, or a token that must have got past it.
+#[then(expr = "the response status should not be {int}")]
+async fn check_status_is_not(world: &mut ForgeWorld, unwanted: u16) {
+    assert_ne!(
+        world.last_status,
+        Some(unwanted),
+        "body was {:?}",
+        world.last_body
+    );
+}
+
 #[then("response should be a redirect")]
 async fn check_is_redirect(world: &mut ForgeWorld) {
     let status = world.last_status.expect("No response available");
