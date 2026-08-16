@@ -18,7 +18,8 @@ pub enum Command {
     Daemon,
 
     /// Manage the background service that runs `pulley daemon`
-    /// (systemd --user on Linux, a logon Scheduled Task on Windows)
+    /// (systemd --user or runit, auto-detected, on Linux; a logon
+    /// Scheduled Task on Windows)
     Service {
         #[command(subcommand)]
         action: ServiceAction,
@@ -27,11 +28,11 @@ pub enum Command {
 
 #[derive(Subcommand, Debug)]
 pub enum ServiceAction {
-    /// Write the unit file and enable + start it now
+    /// Write the service definition and enable + start it now
     Install,
-    /// Stop, disable and remove the unit file
+    /// Stop, disable and remove the service definition
     Uninstall,
-    /// Show `systemctl --user status pulley`
+    /// Show the service's status
     Status,
 }
 

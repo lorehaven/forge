@@ -9,7 +9,7 @@ Pulley is an interactive, REPL-based backup/sync tool built on `rsync`, configur
 - Dry-run preview (via `rsync --dry-run --itemize-changes`) showing creates/modifies/deletes before anything happens, with a confirmation prompt unless `no-confirm` is set.
 - Local and remote (`user@host:/path`) sources, since `src`/`dest` are passed straight to `rsync`.
 - Per-job directory exclusion (`skip`) and optional deletion sync (`delete`, applied to `rsync --delete` on the real run).
-- A constant sync mode (`pulley daemon`) that polls jobs on their own interval, unattended, and a `pulley service` subcommand to run it as a background service (a systemd user unit on Linux, a Scheduled Task on Windows).
+- A constant sync mode (`pulley daemon`) that polls jobs on their own interval, unattended, and a `pulley service` subcommand to run it as a background service (systemd user unit or runit, auto-detected, on Linux; a Scheduled Task on Windows).
 
 ## Requirements
 
@@ -68,15 +68,15 @@ An example file ships at `cli/pulley/example.pulley.toml`.
 pulley daemon
 ```
 
-On Windows, `pulley daemon` hides its own console window on startup (the `ONLOGON` scheduled task would otherwise pop a visible cmd window at every logon). On Linux, running it under `pulley service install` already has no window to hide — journald captures its output.
+On Windows, `pulley daemon` hides its own console window on startup (the `ONLOGON` scheduled task would otherwise pop a visible cmd window at every logon). On Linux, running it under `pulley service install` already has no window to hide — journald (systemd) or runit's own log chain captures its output.
 
 Since the console output is no longer generally visible, each daemon-triggered run also appends timestamped status lines (job started, no changes / changes detected, sync completed, or the error if the dry-run or sync failed) to `~/.config/pulley/logs/<job_id>/<YYYY-MM-DD>.log` — one file per job per day, so a fast `interval` can't grow a single file without bound. Files older than 7 days are pruned automatically on each write. REPL-triggered runs (`run`) still only print to the console, since that's already an interactive session.
 
 ### Running it as a service
 
-`pulley service` manages a background job that runs `pulley daemon`, via whichever mechanism its platform uses:
+`pulley service` manages a background job that runs `pulley daemon`, via whichever mechanism its platform uses. On Linux, `pulley service` detects the running init system (checking for `/run/systemd/system`, then whether PID 1's `comm` is `runit`) and picks the matching backend automatically — there's nothing to configure.
 
-**Linux** — a systemd **user** unit:
+**Linux (systemd)** — a systemd **user** unit:
 
 | Command | Purpose |
 |---|---|
@@ -93,6 +93,16 @@ loginctl enable-linger $USER
 ```
 
 `pulley service install` checks this and prints the exact command if lingering isn't already on.
+
+**Linux (runit)** — a system service under `/etc/sv`, since runit has no user-session equivalent of `systemd --user`:
+
+| Command | Purpose |
+|---|---|
+| `pulley service install` | Write `/etc/sv/pulley/run`, symlink it into the active scan directory, then `sv up` |
+| `pulley service uninstall` | `sv down`, remove the scan-dir symlink and `/etc/sv/pulley` |
+| `pulley service status` | `sv status` on the linked service |
+
+Because the service definition lives under `/etc`, `install`/`uninstall` need root (`sudo pulley service install`). The `run` script drops privileges back to the invoking user via `chpst -u` (preferring `$SUDO_USER`, so it reads that user's own `~/.config/pulley`, not root's). The scan directory — where `runsvdir` actually watches for enabled services — is auto-detected as the first of `/var/service` (Void), `/etc/service` (classic runit/Devuan), or `/run/runit/service` (Artix) that exists. Requires `sv` and `chpst`, which ship with runit.
 
 **Windows** — a Scheduled Task (`schtasks.exe`, ships with Windows), triggered at logon:
 
