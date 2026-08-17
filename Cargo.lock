@@ -1676,7 +1676,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2518,7 +2518,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "tokio",
  "tower-service",
  "tracing",
@@ -3356,7 +3356,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3814,9 +3814,9 @@ dependencies = [
 
 [[package]]
 name = "quench-auth"
-version = "0.3.7"
+version = "0.3.8"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "89ebb0202f609c0620e31663571bf7db6a7ecadbfce9d00f0466f67a7f7f484b"
+checksum = "4b19cc8518617ab279235e5d759c5984f6e6c9d15aa5a33104b7b59fa8d09260"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -3917,9 +3917,9 @@ dependencies = [
 
 [[package]]
 name = "quench-starter"
-version = "0.3.6"
+version = "0.3.7"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "7cde4aca6dd6cd854157d22d7da3e46061cbfa1a514db6585cc5c57c96c53e48"
+checksum = "94da586ce0019572ecdc61bc7a6bc050ae0d86250d020b6a57abe2b25ddf762a"
 dependencies = [
  "actix-service",
  "actix-web",
@@ -3968,7 +3968,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "thiserror",
  "tokio",
  "tracing",
@@ -4007,9 +4007,9 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "tracing",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4305,7 +4305,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4364,7 +4364,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5317,7 +5317,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5345,7 +5345,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "230a1b821ccbd75b185820a1f1ff7b14d21da1e442e22c0863ea5f08771a8874"
 dependencies = [
  "rustix",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6157,7 +6157,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
