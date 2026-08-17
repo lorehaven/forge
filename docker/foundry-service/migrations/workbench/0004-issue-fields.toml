@@ -1,0 +1,42 @@
+[[migrations]]
+id = "0004-issue-fields"
+author = "workbench-service"
+since = "0.1.0"
+
+# Story-point estimate. Nullable - most issues start unestimated, and there is
+# no v1 requirement that every issue carry one before it can move.
+[[migrations.changes]]
+sql = """
+ALTER TABLE ${schema}.issues ADD COLUMN IF NOT EXISTS estimate INTEGER;
+"""
+
+# Typed links between two issues, distinct from `parent_id`'s subtask
+# hierarchy. `kind` is 'blocks' (its inverse, "blocked by", is just the same
+# row read from the other end - see `issue_link::related`) or 'relates_to'
+# (symmetric, no directional meaning).
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.issue_links (
+    id TEXT PRIMARY KEY,
+    issue_id TEXT NOT NULL REFERENCES ${schema}.issues(id) ON DELETE CASCADE,
+    linked_issue_id TEXT NOT NULL REFERENCES ${schema}.issues(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT issue_links_kind_check CHECK (kind IN ('blocks', 'relates_to')),
+    CONSTRAINT issue_links_no_self_link CHECK (issue_id <> linked_issue_id)
+);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE UNIQUE INDEX IF NOT EXISTS issue_links_unique_idx
+    ON ${schema}.issue_links (issue_id, linked_issue_id, kind);
+"""
+
+# The reverse-direction lookup `issue_link::related` needs for "blocked by"
+# and for a 'relates_to' link read from its non-owning side.
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS issue_links_linked_issue_idx
+    ON ${schema}.issue_links (linked_issue_id);
+"""
