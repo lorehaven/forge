@@ -44,7 +44,9 @@ pub(super) async fn detail(
         .await
         .unwrap_or_default();
     let users = realm_users::list_users(&db).await.unwrap_or_default();
-    let related = issue_link::related(&db, &issue.id).await.unwrap_or_default();
+    let related = issue_link::related(&db, &issue.id)
+        .await
+        .unwrap_or_default();
 
     render_page(
         HttpResponse::Ok(),
@@ -262,10 +264,7 @@ fn link_section(issue_id: &str, title_key: &str, links: &[issue_link::LinkedIssu
                         .attr("method", "post")
                         .attr(
                             "action",
-                            ui_path(&format!(
-                                "/issues/{issue_id}/links/{}/delete",
-                                link.link_id
-                            )),
+                            ui_path(&format!("/issues/{issue_id}/links/{}/delete", link.link_id)),
                         )
                         // `display: contents` (see `link_rules` in `common/css.rs`) -
                         // otherwise the form's own block box, not the button
