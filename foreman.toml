@@ -125,6 +125,29 @@ command = [
 ]
 done = "database ready"
 
+# Local test data: extra users with a spread of permission sets, workbench
+# projects/issues, conveyor repos/runs/jobs, and sage projects/conversations -
+# so there is something to look at right after a fresh start instead of an
+# empty estate. Plain SQL rather than a foundry module - it is data, not
+# schema, and `ON CONFLICT DO NOTHING` throughout makes reapplying it a no-op.
+# Runs unconditionally, after `foundry` (alphabetical task order): a `foreman
+# start switchboard` still has no workbench/conveyor/sage schema to insert
+# into, so each service-specific file checks for its own schema first and
+# skips itself rather than failing the whole start (see 002-demo-workbench.sql
+# for the guard).
+#
+# `docker exec ... psql` rather than a host `psql`, so this does not depend on
+# a client being installed outside the postgres container foreman already runs.
+[tasks.seed]
+role = "migrate"
+description = "loading local test data"
+containers = ["postgres"]
+command = [
+  "bash", "-c",
+  "for f in ${project_root}/testdata/*.sql; do docker exec -i postgres psql -U postgres -v ON_ERROR_STOP=1 -f - < \"$f\" || exit 1; done",
+]
+done = "test data loaded"
+
 # Schema lifecycle belongs to foundry, so wiping the database for a fresh start
 # is its `reset` command rather than a flag on each service.
 [tasks.reset]
