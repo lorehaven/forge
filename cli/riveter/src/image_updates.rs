@@ -21,16 +21,24 @@ const FLOATING_TAGS: &[&str] = &[
     "latest", "stable", "edge", "main", "master", "dev", "nightly",
 ];
 
+/// How many of a Docker Hub image's newest tags to ask for. A popular Hub
+/// image can have thousands of tags across hundreds of pages, and crawling
+/// all of them is what trips Hub's anonymous rate limit (`HTTP 403` partway
+/// through) - so `docker_hub_tags` asks Hub to sort by recency and hand back
+/// only this many, in one request. `registry_v2_tags` does not use this: see
+/// its own doc comment for why capping it the same way is not safe.
+const MAX_TAGS_PER_IMAGE: u32 = 10;
+
 static IMAGE_LINE_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^(?P<indent>\s*)image:\s*(?P<image>\S+)\s*$").unwrap());
+
+static LINK_NEXT_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"<([^>]+)>;\s*rel="next""#).unwrap());
 
 static VERSION_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^(?P<prefix>[A-Za-z._-]*?)(?P<version>\d+(?:[._-]\d+)*)(?P<suffix>[A-Za-z._-]*)$")
         .unwrap()
 });
-
-static LINK_NEXT_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"<([^>]+)>;\s*rel="next""#).unwrap());
 
 /// A parsed `registry/repository:tag` reference.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -126,8 +134,14 @@ fn location(occurrence: &ImageOccurrence) -> String {
     format!("{}:{}", occurrence.path.display(), occurrence.line_number)
 }
 
-/// Walks `overlays_dir` for `deployment*.yaml.j2` templates and collects every
-/// `image:` line in them.
+/// Walks `overlays_dir` for every `*.yaml.j2` template - not just
+/// `deployment*.yaml.j2` - and collects every `image:` line found in them.
+///
+/// A `Job`, `CronJob`, `StatefulSet` or `DaemonSet` template carries an image
+/// just as much as a `Deployment` does (the foundry migration `Job` is what
+/// motivated widening this past deployments alone), and the `image:` line
+/// regex below is what actually decides what counts, so scanning a template
+/// with no such line is harmless besides the one extra file read.
 ///
 /// A line that does not parse as an image reference is reported to stderr
 /// and skipped rather than failing the scan - one malformed line should not
@@ -141,7 +155,7 @@ pub fn discover_images(overlays_dir: &Path) -> Result<Vec<ImageOccurrence>> {
         .filter(|path| {
             path.file_name()
                 .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with("deployment") && name.ends_with(".yaml.j2"))
+                .is_some_and(|name| name.ends_with(".yaml.j2"))
         })
         .collect();
     paths.sort();
@@ -363,41 +377,36 @@ impl std::fmt::Display for FetchError {
     }
 }
 
+/// One request, one page, capped at `MAX_TAGS_PER_IMAGE` and ordered newest
+/// first (`-last_updated`) - Docker Hub's tags endpoint supports both, so
+/// asking for exactly the newest handful up front is both correct and one
+/// round trip, rather than paging through everything and truncating after.
 fn docker_hub_tags(client: &Client, repository: &str) -> Result<Vec<String>, FetchError> {
-    let mut tags = Vec::new();
-    let mut url = format!(
-        "https://hub.docker.com/v2/repositories/{}/tags?page_size=100",
+    let url = format!(
+        "https://hub.docker.com/v2/repositories/{}/tags?page_size={MAX_TAGS_PER_IMAGE}&ordering=-last_updated",
         encode_repository_path(repository)
     );
 
-    loop {
-        let response = client
-            .get(&url)
-            .send()
-            .map_err(|err| FetchError::Unreachable(format!("failed to reach {url}: {err}")))?;
-        let status = response.status();
-        let body: serde_json::Value = response
-            .json()
-            .map_err(|err| FetchError::Other(format!("unexpected Docker Hub response: {err}")))?;
-        if !status.is_success() {
-            return Err(FetchError::Other(format!("HTTP {status} for {url}")));
-        }
-
-        if let Some(results) = body.get("results").and_then(serde_json::Value::as_array) {
-            for item in results {
-                if let Some(name) = item.get("name").and_then(serde_json::Value::as_str) {
-                    tags.push(name.to_string());
-                }
-            }
-        }
-
-        match body.get("next").and_then(serde_json::Value::as_str) {
-            Some(next) => url = next.to_string(),
-            None => break,
-        }
+    let response = client
+        .get(&url)
+        .send()
+        .map_err(|err| FetchError::Unreachable(format!("failed to reach {url}: {err}")))?;
+    let status = response.status();
+    let body: serde_json::Value = response
+        .json()
+        .map_err(|err| FetchError::Other(format!("unexpected Docker Hub response: {err}")))?;
+    if !status.is_success() {
+        return Err(FetchError::Other(format!("HTTP {status} for {url}")));
     }
 
-    Ok(tags)
+    Ok(body
+        .get("results")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|item| item.get("name").and_then(serde_json::Value::as_str))
+        .map(std::string::ToString::to_string)
+        .collect())
 }
 
 /// Requests a Bearer token from the realm a `WWW-Authenticate` challenge
@@ -443,12 +452,32 @@ fn bearer_token(
 /// Lists tags from a Docker Registry HTTP API V2 endpoint, handling the
 /// Bearer challenge/token dance and falling back to Basic auth when a
 /// registry accepts that instead.
+///
+/// Unlike `docker_hub_tags`, this still pages through `Link: rel="next"`
+/// rather than asking for just `MAX_TAGS_PER_IMAGE` up front: the V2 spec
+/// guarantees the `tags` array is sorted lexically, not by recency or by
+/// semantic version, so `1.10.0` sorts before `1.2.0`. Capping this to the
+/// first page would silently hand `newest_compatible_tag` a lexically-early
+/// (i.e. often *older*-looking) slice instead of the actual newest tags -
+/// verified against this estate's own registry, which returns tags exactly
+/// this way. `newest_compatible_tag` still refuses to report anything at or
+/// below the current tag, so this cannot suggest a downgrade even so; it can
+/// only fail to notice a real update if `PAGE_CAP` is reached first, which is
+/// the crawl-everything cost `MAX_TAGS_PER_IMAGE` exists to avoid - a cost
+/// this registry does not have Docker Hub's anonymous rate limit to justify
+/// paying, so it keeps the fuller crawl rather than the Docker Hub-specific
+/// shortcut.
 fn registry_v2_tags(
     client: &Client,
     image: &ImageRef,
     auth: &RegistryAuth,
     scheme: &str,
 ) -> Result<Vec<String>, FetchError> {
+    /// Total pages this will follow before giving up - not a realistic
+    /// count for anything in this estate, purely a circuit breaker against a
+    /// registry that never stops paginating.
+    const PAGE_CAP: usize = 50;
+
     let mut tags = Vec::new();
     let mut next_url = Some(format!(
         "{scheme}://{}/v2/{}/tags/list?n=100",
@@ -457,7 +486,11 @@ fn registry_v2_tags(
     ));
     let mut auth_header: Option<String> = None;
 
-    while let Some(url) = next_url.take() {
+    for _ in 0..PAGE_CAP {
+        let Some(url) = next_url.take() else {
+            break;
+        };
+
         let mut request = client.get(&url);
         if let Some(header) = &auth_header {
             request = request.header(
@@ -494,13 +527,13 @@ fn registry_v2_tags(
                 )));
             };
 
-            let mut retry = client.get(&url);
-            retry = retry.header(
-                AUTHORIZATION,
-                HeaderValue::from_str(&candidate)
-                    .map_err(|err| FetchError::Other(format!("invalid auth header: {err}")))?,
-            );
-            let retried = retry
+            let retried = client
+                .get(&url)
+                .header(
+                    AUTHORIZATION,
+                    HeaderValue::from_str(&candidate)
+                        .map_err(|err| FetchError::Other(format!("invalid auth header: {err}")))?,
+                )
                 .send()
                 .map_err(|err| FetchError::Unreachable(format!("failed to reach {url}: {err}")))?;
             if !retried.status().is_success() {
@@ -592,9 +625,16 @@ fn version_key(tag: &str) -> Option<(String, Vec<u64>, String)> {
 }
 
 /// The newest tag that is a plausible upgrade of `current`: same prefix and
-/// suffix, at least as many version components, and not a jump across a
+/// suffix, at least as many version components, not a jump across a
 /// three-digit epoch boundary (`9.x` -> `100.x` reads as a different
-/// versioning scheme, not a newer version).
+/// versioning scheme, not a newer version), and - critically, since `tags`
+/// is not guaranteed to be the *complete* tag list (`registry_v2_tags` caps
+/// pages fetched, `docker_hub_tags` asks for only the newest handful) -
+/// numerically greater than `current` itself. Without that last check, a
+/// `tags` slice that happens not to contain `current` at all would let
+/// `.max()` crown whatever it does contain, even a tag older than what is
+/// already deployed; `Vec<u64>`'s `Ord` compares element-wise like a tuple,
+/// so this is a numeric comparison, not the registry's lexical one.
 fn newest_compatible_tag(current: &str, tags: &[String]) -> Option<String> {
     if FLOATING_TAGS.contains(&current) {
         return None;
@@ -614,6 +654,9 @@ fn newest_compatible_tag(current: &str, tags: &[String]) -> Option<String> {
                 return None;
             }
             if current_numbers[0] < 100 && numbers[0] >= 100 {
+                return None;
+            }
+            if numbers <= current_numbers {
                 return None;
             }
             Some((numbers, tag.clone()))
