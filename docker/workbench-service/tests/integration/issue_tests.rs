@@ -14,6 +14,7 @@ fn new_issue(project_id: &str, title: &str) -> NewIssue {
         priority: "medium".to_string(),
         assignee: None,
         reporter: TEST_USER.to_string(),
+        estimate: None,
     }
 }
 
@@ -159,6 +160,7 @@ async fn update_replaces_editable_fields_but_not_status_or_seq() {
             kind: "bug".to_string(),
             priority: "high".to_string(),
             assignee: Some(TEST_USER.to_string()),
+            estimate: Some(5),
         },
     )
     .await
@@ -169,6 +171,7 @@ async fn update_replaces_editable_fields_but_not_status_or_seq() {
     assert_eq!(updated.kind, "bug");
     assert_eq!(updated.priority, "high");
     assert_eq!(updated.assignee.as_deref(), Some(TEST_USER));
+    assert_eq!(updated.estimate, Some(5));
     assert_eq!(updated.seq, created.seq);
     assert_eq!(updated.status, created.status);
 }

@@ -22,6 +22,8 @@ pub struct CreateIssue {
     pub priority: String,
     #[serde(default)]
     pub assignee: Option<String>,
+    #[serde(default)]
+    pub estimate: Option<i32>,
 }
 
 fn default_kind() -> String {
@@ -62,6 +64,7 @@ pub async fn create(
         priority: body.priority.clone(),
         assignee: body.assignee.clone(),
         reporter: actor(&request).await,
+        estimate: body.estimate,
     };
 
     match issue::create(&db, &new).await {
@@ -137,6 +140,8 @@ pub struct UpdateIssue {
     pub priority: String,
     #[serde(default)]
     pub assignee: Option<String>,
+    #[serde(default)]
+    pub estimate: Option<i32>,
 }
 
 #[put("/{id}")]
@@ -172,6 +177,7 @@ pub async fn update(
         kind: body.kind.clone(),
         priority: body.priority.clone(),
         assignee: body.assignee.clone(),
+        estimate: body.estimate,
     };
 
     match issue::update(&db, &path, &changes).await {
@@ -343,4 +349,5 @@ pub fn scope() -> actix_web::Scope {
         .service(attach_label)
         .service(detach_label)
         .service(super::comments::scope_under_issue())
+        .service(super::issue_links::scope_under_issue())
 }

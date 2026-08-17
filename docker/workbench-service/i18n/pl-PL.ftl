@@ -30,6 +30,12 @@ ui_issue_save_button = Zapisz
 ui_issue_comments = Komentarze
 ui_issue_empty_comments = Brak komentarzy.
 ui_issue_add_comment_button = Dodaj komentarz
+ui_issue_dependencies = Zależności
+ui_issue_blocks = Blokuje
+ui_issue_blocked_by = Zablokowane przez
+ui_issue_relates_to = Powiązane z
+ui_issue_no_links = Brak
+ui_issue_add_link_button = Dodaj powiązanie
 
 # ── Pola ─────────────────────────────────────────────────────────────────────
 
@@ -44,6 +50,9 @@ ui_field_status = Status
 ui_field_comment_body = Komentarz
 ui_field_unassigned = Nieprzypisane
 ui_assign_to_me = Przypisz do mnie
+ui_field_estimate = Szacunek
+ui_field_link_target = Powiąż z
+ui_field_link_kind = Typ powiązania
 
 # ── Logowanie ────────────────────────────────────────────────────────────────
 

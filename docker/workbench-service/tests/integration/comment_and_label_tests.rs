@@ -17,6 +17,7 @@ async fn new_issue_in(db: &quench_db::prelude::Db, project_id: &str) -> issue::I
             priority: "medium".to_string(),
             assignee: None,
             reporter: TEST_USER.to_string(),
+            estimate: None,
         },
     )
     .await

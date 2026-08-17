@@ -30,6 +30,12 @@ ui_issue_save_button = Enregistrer
 ui_issue_comments = Commentaires
 ui_issue_empty_comments = Aucun commentaire pour le moment.
 ui_issue_add_comment_button = Ajouter un commentaire
+ui_issue_dependencies = Dépendances
+ui_issue_blocks = Bloque
+ui_issue_blocked_by = Bloqué par
+ui_issue_relates_to = Lié à
+ui_issue_no_links = Aucune
+ui_issue_add_link_button = Ajouter un lien
 
 # ── Champs ───────────────────────────────────────────────────────────────────
 
@@ -44,6 +50,9 @@ ui_field_status = Statut
 ui_field_comment_body = Commentaire
 ui_field_unassigned = Non assigné
 ui_assign_to_me = M'assigner
+ui_field_estimate = Estimation
+ui_field_link_target = Lier à
+ui_field_link_kind = Type de lien
 
 # ── Connexion ────────────────────────────────────────────────────────────────
 

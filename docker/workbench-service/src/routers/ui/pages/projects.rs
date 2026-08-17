@@ -147,7 +147,11 @@ fn issue_card(project_id: &str, i: &issue::Issue) -> Element {
             div()
                 .class("wb-card-meta")
                 .child(span().text(i.kind.clone()))
-                .child(span().text(i.priority.clone())),
+                .child(span().text(i.priority.clone()))
+                .child_opt(
+                    i.estimate
+                        .map(|estimate| span().text(format!("{estimate} pt"))),
+                ),
         )
         .child(status_select)
 }
@@ -332,6 +336,7 @@ fn new_issue_modal_content(
                 .child(
                     button()
                         .attr("type", "submit")
+                        .class("wb-submit")
                         .attr("data-i18n", "ui_board_create_button"),
                 ),
         )
@@ -385,6 +390,7 @@ pub(super) async fn create_issue(
         priority: form.priority.clone(),
         assignee: (!form.assignee.trim().is_empty()).then(|| form.assignee.trim().to_string()),
         reporter: claims.sub.clone(),
+        estimate: None,
     };
 
     match issue::create(&db, &new).await {

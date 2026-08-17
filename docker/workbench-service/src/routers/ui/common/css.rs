@@ -14,6 +14,7 @@ pub fn ensure_workbench_css() {
 
 fn workbench_css_rules() -> Vec<CssRule> {
     let mut rules = Vec::new();
+    rules.extend(reset_rules());
     rules.extend(shared::layout_rules());
     rules.extend(shared::home_rules());
     rules.extend(shared::login_rules());
@@ -21,7 +22,18 @@ fn workbench_css_rules() -> Vec<CssRule> {
     rules.extend(form_rules());
     rules.extend(board_rules());
     rules.extend(modal_rules());
+    rules.extend(link_rules());
     rules
+}
+
+/// `quench-web`'s shared theme sets no `box-sizing`, so it defaults to the
+/// browser's own `content-box` - a `.wb-form`'s `padding: 1rem` (below) then
+/// adds on top of the shared `form { width: 100% }` rule instead of being cut
+/// out of it, rendering every form 2rem wider than its panel and pushing
+/// anything flush with its right edge (a right-aligned `.wb-submit` button,
+/// the last column in `.wb-form-row`) out past the panel's actual border.
+fn reset_rules() -> Vec<CssRule> {
+    vec![CssRule::new("*,\n*::before,\n*::after").property("box-sizing", "border-box")]
 }
 
 fn form_rules() -> Vec<CssRule> {
@@ -32,29 +44,38 @@ fn form_rules() -> Vec<CssRule> {
             .property("flex-direction", "column")
             .property("gap", "0.6rem")
             .property("padding", "1rem"),
+        // Block, not inline - every label sits on its own line above the
+        // control it labels (`wb-field-row`'s fields, and the bare
+        // label+control pairs `wb-form-row` wraps) rather than to its left,
+        // which is what frees up a field's full width for its control - the
+        // assignee picker's select-plus-button in particular needs it to
+        // stay on screen instead of overflowing the row.
         CssRule::new(".wb-form label")
+            .property("display", "block")
             .property("font-size", "0.85rem")
-            .property("color", "var(--bs-gray-400)"),
-        // One field per row, label on the left at a fixed width so every
-        // control's own left edge lines up regardless of how long its label
-        // text is, control filling the rest - about two-thirds of the modal
-        // at the modal's own width, since that's the budget left over once
-        // the label column and the row gap are spoken for.
+            .property("color", "var(--bs-gray-400)")
+            .property("margin-bottom", "0.3rem"),
         CssRule::new(".wb-field-row")
             .property("display", "flex")
-            .property("align-items", "center")
-            .property("gap", "1rem"),
-        CssRule::new(".wb-field-row label").property("flex", "0 0 8rem"),
-        CssRule::new(".wb-field-row input,\n.wb-field-row select,\n.wb-field-row textarea")
-            .property("flex", "1 1 auto")
-            .property("min-width", "0"),
+            .property("flex-direction", "column")
+            .property("gap", "0.3rem"),
         // The assignee picker's select + "assign to me" shortcut, sharing
         // the field row's control column rather than each taking their own.
         CssRule::new(".wb-field-control")
             .property("display", "flex")
             .property("flex", "1 1 auto")
+            .property("min-width", "0")
+            .property("flex-wrap", "wrap")
             .property("align-items", "center")
             .property("gap", "0.5rem"),
+        // Lets the select shrink below its content's width (e.g. a long
+        // username) instead of forcing `.wb-field-control` past its own
+        // container - the "assign to me" button next to it stays fixed-size
+        // (`flex: 0 0 auto` above) and wraps under it if there truly isn't
+        // room for both on one line.
+        CssRule::new(".wb-field-control select")
+            .property("flex", "1 1 auto")
+            .property("min-width", "0"),
         CssRule::new(".wb-assign-me")
             .property("flex", "0 0 auto")
             .property("padding", "0.6rem 0.8rem")
@@ -91,6 +112,16 @@ fn form_rules() -> Vec<CssRule> {
             .property("gap", "1rem")
             .property("flex-wrap", "wrap"),
         CssRule::new(".wb-form-row > *").property("flex", "1 1 12rem"),
+        // Every `.wb-form`'s own submit button - small and right-aligned
+        // rather than the shared `button { display: flex }` rule's full-width
+        // block-level default (`.wb-form`'s `display: flex; flex-direction:
+        // column` stretches children across the cross axis unless a child
+        // opts out via `align-self`, which also switches its own width back
+        // to content-based since it is no longer stretched).
+        CssRule::new(".wb-submit")
+            .property("align-self", "flex-end")
+            .property("padding", "0.6rem 1.2rem")
+            .property("font-size", "0.95rem"),
         CssRule::new(".wb-notice")
             .property("padding", "0.6rem 1rem")
             .property("border-radius", "0.3rem")
@@ -274,6 +305,63 @@ fn modal_rules() -> Vec<CssRule> {
             .property("line-height", "1")
             .property("cursor", "pointer")
             .property("padding", "0")
+            .child(CssRule::new("&:hover").property("color", "var(--bs-gray-100)")),
+    ]
+}
+
+/// The issue detail page's dependency lists (`blocks`/`blocked by`/
+/// `relates to`) and the add-link form under them.
+fn link_rules() -> Vec<CssRule> {
+    vec![
+        CssRule::new(".wb-link-section").property("padding", "0.5rem 1rem 0"),
+        CssRule::new(".wb-link-section-title")
+            .property("font-size", "0.8rem")
+            .property("font-weight", "600")
+            .property("text-transform", "uppercase")
+            .property("letter-spacing", "0.03em")
+            .property("color", "var(--bs-gray-500)")
+            .property("margin-bottom", "0.4rem"),
+        CssRule::new(".wb-link-list")
+            .property("display", "flex")
+            .property("flex-direction", "column")
+            .property("gap", "0.4rem"),
+        CssRule::new(".wb-link-row")
+            .property("display", "flex")
+            .property("align-items", "center")
+            .property("gap", "0.6rem")
+            .property("padding", "0.4rem 0.6rem")
+            .property("border", "0.1rem solid var(--bs-gray-700)")
+            .property("border-radius", "0.3rem")
+            .property("background-color", "var(--bs-gray-800)"),
+        CssRule::new(".wb-link-title")
+            .property("flex", "1 1 auto")
+            .property("min-width", "0")
+            .property("color", "var(--bs-gray-100)")
+            .property("text-decoration", "none")
+            .property("overflow", "hidden")
+            .property("text-overflow", "ellipsis")
+            .property("white-space", "nowrap")
+            .child(CssRule::new("&:hover").property("text-decoration", "underline")),
+        CssRule::new(".wb-link-status")
+            .property("flex", "0 0 auto")
+            .property("font-size", "0.75rem")
+            .property("color", "var(--bs-gray-500)"),
+        // Unwraps the delete form so `.wb-link-remove` itself, not its
+        // block-level form parent, is the flex item `.wb-link-row` sizes -
+        // otherwise the shared `button { display: flex }` rule's block-level
+        // sizing fills the form's full-width box instead of shrinking to fit
+        // the "×" glyph.
+        CssRule::new(".wb-link-remove-form").property("display", "contents"),
+        CssRule::new(".wb-link-remove")
+            .property("flex", "0 0 auto")
+            .property("width", "auto")
+            .property("border", "none")
+            .property("background", "none")
+            .property("color", "var(--bs-gray-500)")
+            .property("font-size", "1.1rem")
+            .property("line-height", "1")
+            .property("cursor", "pointer")
+            .property("padding", "0 0.2rem")
             .child(CssRule::new("&:hover").property("color", "var(--bs-gray-100)")),
     ]
 }

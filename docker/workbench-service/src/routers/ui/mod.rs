@@ -52,4 +52,6 @@ pub fn scope() -> impl HttpServiceFactory {
         .service(pages::issues::detail)
         .service(pages::issues::update)
         .service(pages::issues::create_comment)
+        .service(pages::issues::add_link)
+        .service(pages::issues::remove_link)
 }

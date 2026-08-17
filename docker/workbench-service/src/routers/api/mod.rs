@@ -12,6 +12,7 @@ use serde_json::json;
 
 pub mod authz;
 pub mod comments;
+pub mod issue_links;
 pub mod issues;
 pub mod labels;
 pub mod projects;
@@ -29,6 +30,7 @@ pub fn scope(jwt_config: JwtConfig) -> actix_web::Scope {
         .service(issues::scope().wrap(Auth::new(jwt_config.clone())))
         .service(labels::scope().wrap(Auth::new(jwt_config.clone())))
         .service(comments::scope().wrap(Auth::new(jwt_config.clone())))
+        .service(issue_links::scope().wrap(Auth::new(jwt_config.clone())))
         // Catches whatever the scopes above don't own. Registration order is
         // load-bearing (actix picks the first scope whose prefix matches), so
         // this comes last. It has no routes of its own, so anything reaching

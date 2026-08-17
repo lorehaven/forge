@@ -30,6 +30,12 @@ ui_issue_save_button = Save
 ui_issue_comments = Comments
 ui_issue_empty_comments = No comments yet.
 ui_issue_add_comment_button = Add comment
+ui_issue_dependencies = Dependencies
+ui_issue_blocks = Blocks
+ui_issue_blocked_by = Blocked by
+ui_issue_relates_to = Relates to
+ui_issue_no_links = None
+ui_issue_add_link_button = Add link
 
 # ── Fields ───────────────────────────────────────────────────────────────────
 
@@ -44,6 +50,9 @@ ui_field_status = Status
 ui_field_comment_body = Comment
 ui_field_unassigned = Unassigned
 ui_assign_to_me = Assign to me
+ui_field_estimate = Estimate
+ui_field_link_target = Link to
+ui_field_link_kind = Type
 
 # ── Auth ─────────────────────────────────────────────────────────────────────
 

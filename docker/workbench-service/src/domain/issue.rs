@@ -20,6 +20,9 @@ pub struct Issue {
     pub priority: String,
     pub assignee: Option<String>,
     pub reporter: String,
+    /// Story points. Nullable - not every issue is sized before it starts
+    /// moving through the workflow.
+    pub estimate: Option<i32>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -51,6 +54,7 @@ pub struct NewIssue {
     pub priority: String,
     pub assignee: Option<String>,
     pub reporter: String,
+    pub estimate: Option<i32>,
 }
 
 /// Assigns `seq` and inserts the issue in one transaction.
@@ -84,8 +88,8 @@ pub async fn create(db: &Db, new: &NewIssue) -> Result<Issue, WorkbenchError> {
 
     let insert_sql = format!(
         "INSERT INTO {schema}.issues \
-         (id, project_id, parent_id, seq, kind, title, description, priority, assignee, reporter) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) \
+         (id, project_id, parent_id, seq, kind, title, description, priority, assignee, reporter, estimate) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) \
          RETURNING {COLUMNS}"
     );
     let row = sqlx::query(sqlx::AssertSqlSafe(insert_sql.as_str()))
@@ -99,6 +103,7 @@ pub async fn create(db: &Db, new: &NewIssue) -> Result<Issue, WorkbenchError> {
         .bind(&new.priority)
         .bind(&new.assignee)
         .bind(&new.reporter)
+        .bind(new.estimate)
         .fetch_one(&mut *tx)
         .await?;
 
@@ -182,6 +187,7 @@ pub struct IssueUpdate {
     pub kind: String,
     pub priority: String,
     pub assignee: Option<String>,
+    pub estimate: Option<i32>,
 }
 
 pub async fn update(
@@ -193,7 +199,7 @@ pub async fn update(
     let schema = schema();
     let sql = format!(
         "UPDATE {schema}.issues SET title = $2, description = $3, kind = $4, \
-         priority = $5, assignee = $6, updated_at = NOW() \
+         priority = $5, assignee = $6, estimate = $7, updated_at = NOW() \
          WHERE id = $1 RETURNING {COLUMNS}"
     );
 
@@ -204,6 +210,7 @@ pub async fn update(
         .bind(&changes.kind)
         .bind(&changes.priority)
         .bind(&changes.assignee)
+        .bind(changes.estimate)
         .fetch_optional(pool)
         .await?;
 
@@ -246,7 +253,7 @@ pub async fn delete(db: &Db, id: &str) -> Result<bool, WorkbenchError> {
 }
 
 const COLUMNS: &str = "id, project_id, parent_id, seq, kind, title, description, \
-                       status, priority, assignee, reporter, created_at, updated_at";
+                       status, priority, assignee, reporter, estimate, created_at, updated_at";
 
 fn from_row(row: &sqlx::postgres::PgRow) -> Result<Issue, WorkbenchError> {
     Ok(Issue {
@@ -261,6 +268,7 @@ fn from_row(row: &sqlx::postgres::PgRow) -> Result<Issue, WorkbenchError> {
         priority: row.try_get("priority")?,
         assignee: row.try_get("assignee")?,
         reporter: row.try_get("reporter")?,
+        estimate: row.try_get("estimate")?,
         created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
         updated_at: row.try_get::<DateTime<Utc>, _>("updated_at")?,
     })

@@ -177,6 +177,7 @@ fn new_project_modal_content(toggle: &str) -> Element {
                 .child(
                     button()
                         .attr("type", "submit")
+                        .class("wb-submit")
                         .attr("data-i18n", "ui_home_create_button"),
                 ),
         )
