@@ -10,6 +10,7 @@ use actix_web::{HttpRequest, HttpResponse, Responder, get, post, web};
 use quench_auth::prelude::JwtConfig;
 use quench_starter::prelude::with_base_path;
 use quench_web::prelude::*;
+use quench_web_components::containers::empty_state;
 use std::collections::BTreeMap;
 
 #[derive(serde::Deserialize)]
@@ -340,9 +341,7 @@ fn render_metadata_panel(repo: Option<&str>, selected_meta: Option<&TagMetadata>
                         ),
                 ),
             ),
-        None => div()
-            .class("empty")
-            .attr("data-i18n", "ui_empty_select_tag"),
+        None => empty_state("ui_empty_select_tag"),
     };
 
     div()

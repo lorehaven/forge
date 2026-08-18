@@ -4,6 +4,7 @@ use actix_web::{HttpResponse, Responder, get, web};
 use quench_auth::prelude::JwtConfig;
 use quench_starter::actix::routers::ui::pages::home::{handle_home, service_card};
 use quench_web::prelude::*;
+use quench_web_components::containers::empty_state;
 
 #[get("/home")]
 pub(super) async fn home(
@@ -60,11 +61,7 @@ fn render_home_page() -> HttpResponse {
     }
 
     if !has_service_cards {
-        sections = sections.child(
-            div()
-                .class("empty")
-                .attr("data-i18n", "ui_home_no_services"),
-        );
+        sections = sections.child(empty_state("ui_home_no_services"));
     }
 
     render_page(

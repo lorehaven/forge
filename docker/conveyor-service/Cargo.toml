@@ -37,6 +37,7 @@ quench-auth = { workspace = true }
 quench-db = { workspace = true }
 quench-starter = { workspace = true }
 quench-web = { workspace = true }
+quench-web-components = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

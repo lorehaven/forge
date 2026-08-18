@@ -8,6 +8,7 @@ use actix_web::{HttpRequest, HttpResponse, Responder, get, post, web};
 use quench_auth::prelude::JwtConfig;
 use quench_starter::prelude::with_base_path;
 use quench_web::prelude::*;
+use quench_web_components::containers::empty_state;
 
 #[derive(serde::Deserialize)]
 pub(in crate::routers::ui::pages) struct CrateActionForm {
@@ -148,7 +149,7 @@ fn render_crate_tree(
     active_version: Option<&str>,
 ) -> Element {
     if crates.is_empty() {
-        return div().class("empty").attr("data-i18n", "ui_crates_empty");
+        return empty_state("ui_crates_empty");
     }
 
     let mut tree = ul().class("repo-tree");
@@ -271,9 +272,7 @@ fn render_metadata_panel(krate: Option<&str>, record: Option<&IndexRecord>) -> E
     };
 
     let body = match record {
-        None => div()
-            .class("empty")
-            .attr("data-i18n", "ui_empty_select_version"),
+        None => empty_state("ui_empty_select_version"),
         Some(r) => {
             let mut list = div().class("meta-list");
 

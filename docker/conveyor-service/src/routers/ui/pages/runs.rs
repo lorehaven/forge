@@ -24,6 +24,7 @@ use actix_web::{HttpRequest, HttpResponse, Responder, get, http::header::Content
 use quench_auth::prelude::JwtConfig;
 use quench_db::prelude::Db;
 use quench_web::prelude::*;
+use quench_web_components::containers::empty_state;
 use serde::Deserialize;
 
 /// How often a moving run is asked about. Fast enough that a job changing state
@@ -136,7 +137,7 @@ fn not_found() -> HttpResponse {
         content().class("home-content").child(
             div()
                 .class("home-container")
-                .child(div().class("empty").attr("data-i18n", "ui_run_not_found")),
+                .child(empty_state("ui_run_not_found")),
         ),
         UiPageKind::Home,
     )

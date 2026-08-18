@@ -16,6 +16,7 @@ use quench_auth::actix::routers::ui::get_user_from_req;
 use quench_auth::prelude::{Actions, Claims, JwtConfig, Permissions, Role, SessionDb, User};
 use quench_db::prelude::Db;
 use quench_web::prelude::*;
+use quench_web_components::containers::empty_state;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -492,7 +493,7 @@ async fn render_list(db: &web::Data<Db>, actor: &Claims, notice: &Notice) -> Htt
 
     let mut rows = div().class("meta-list");
     if people.is_empty() {
-        rows = rows.child(div().class("empty").attr("data-i18n", "ui_admin_no_users"));
+        rows = rows.child(empty_state("ui_admin_no_users"));
     }
     for user in &people {
         rows = rows.child(user_row(user, &actor.sub));

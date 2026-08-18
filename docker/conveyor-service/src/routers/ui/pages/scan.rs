@@ -17,6 +17,7 @@ use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
 use quench_auth::prelude::JwtConfig;
 use quench_db::prelude::Db;
 use quench_web::prelude::*;
+use quench_web_components::containers::empty_state;
 
 #[get("/repos/{owner}/{name}/scan")]
 pub(super) async fn scan_page(
@@ -115,11 +116,9 @@ fn not_found() -> HttpResponse {
     render_page(
         HttpResponse::NotFound(),
         content().class("home-content").child(
-            div().class("home-container").child(
-                div()
-                    .class("empty")
-                    .attr("data-i18n", "ui_scan_repo_not_found"),
-            ),
+            div()
+                .class("home-container")
+                .child(empty_state("ui_scan_repo_not_found")),
         ),
         UiPageKind::Home,
     )
@@ -148,19 +147,13 @@ fn header_row(repo: &Repo) -> Element {
 
 fn overview_body(repo: &Repo, summary: &ScanSummary) -> Element {
     let Some(run) = &summary.run else {
-        return div()
-            .class("panel")
-            .child(div().class("empty").attr("data-i18n", "ui_scan_no_runs"));
+        return div().class("panel").child(empty_state("ui_scan_no_runs"));
     };
 
     let mut container = div().child(run_row(run));
 
     if summary.is_empty() {
-        return container.child(
-            div()
-                .class("panel")
-                .child(div().class("empty").attr("data-i18n", "ui_scan_no_checks")),
-        );
+        return container.child(div().class("panel").child(empty_state("ui_scan_no_checks")));
     }
 
     let mut grid = div().class("scan-grid");
@@ -241,9 +234,7 @@ fn detail(repo: &Repo, kind: CheckKind, check: &CheckResult) -> Element {
 
 fn findings_list(findings: &[Finding]) -> Element {
     if findings.is_empty() {
-        return div()
-            .class("panel")
-            .child(div().class("empty").attr("data-i18n", "ui_scan_clean"));
+        return div().class("panel").child(empty_state("ui_scan_clean"));
     }
 
     let mut list = div().class("finding-list");

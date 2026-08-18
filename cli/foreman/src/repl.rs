@@ -5,9 +5,7 @@
 //! thing in one line once you know what you want.
 
 use anyhow::Result;
-use quench_cli::prelude::{DIM, GREEN, RESET, print_box_banner};
-use rustyline::DefaultEditor;
-use rustyline::error::ReadlineError;
+use quench_cli::prelude::{DIM, GREEN, RESET, ReplControl, print_box_banner, repl_run};
 
 use crate::commands;
 use crate::estate::Estate;
@@ -37,8 +35,6 @@ impl<'a> Picker<'a> {
     }
 
     pub fn run(&mut self) -> Result<()> {
-        let mut editor = DefaultEditor::new()?;
-
         print_box_banner(
             &format!("{} picker", self.estate.config.project.name),
             "pick services, then `up`",
@@ -46,42 +42,38 @@ impl<'a> Picker<'a> {
         ui::info("picker", "`help` for the rest, `quit` to leave");
         self.list()?;
 
-        loop {
-            let prompt = if self.picked.is_empty() {
-                "foreman> ".to_string()
-            } else {
-                format!("foreman ({})> ", self.picked.join(","))
-            };
-
-            let line = match editor.readline(&prompt) {
-                Ok(line) => line,
-                // Ctrl-C and Ctrl-D. Leaving without starting anything is a
-                // valid answer.
-                Err(ReadlineError::Interrupted | ReadlineError::Eof) => break,
-                Err(err) => return Err(err.into()),
-            };
-
-            let words: Vec<String> = line.split_whitespace().map(str::to_string).collect();
-            let Some(command) = words.first() else {
-                continue;
-            };
-            let _ = editor.add_history_entry(line.trim());
-
-            if matches!(command.as_str(), "quit" | "exit" | "q") {
-                break;
-            }
-
-            // A failing command should cost you the command, not the session.
-            if let Err(error) = self.dispatch(command, &words[1..]) {
-                ui::error("error", error.to_string());
-            }
-        }
+        repl_run(self.prompt(), |line| self.dispatch_line(line))?;
 
         ui::info(
             "picker",
             "left the picker; `foreman status` shows what is up",
         );
         Ok(())
+    }
+
+    fn prompt(&self) -> String {
+        if self.picked.is_empty() {
+            "foreman> ".to_string()
+        } else {
+            format!("foreman ({})> ", self.picked.join(","))
+        }
+    }
+
+    fn dispatch_line(&mut self, line: &str) -> ReplControl {
+        let words: Vec<String> = line.split_whitespace().map(str::to_string).collect();
+        let Some(command) = words.first() else {
+            return ReplControl::Continue(self.prompt());
+        };
+
+        if matches!(command.as_str(), "quit" | "exit" | "q") {
+            return ReplControl::Exit;
+        }
+
+        // A failing command should cost you the command, not the session.
+        if let Err(error) = self.dispatch(command, &words[1..]) {
+            ui::error("error", error.to_string());
+        }
+        ReplControl::Continue(self.prompt())
     }
 
     fn dispatch(&mut self, command: &str, args: &[String]) -> Result<()> {

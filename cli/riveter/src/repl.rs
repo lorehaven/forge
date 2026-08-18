@@ -4,7 +4,9 @@ use crate::render::{
     RenderedManifest, ResourceRef, ResourceScope, Selector, generate_manifests_selected,
     list_resources,
 };
-use quench_cli::prelude::{Tone, print_box_banner, print_status, repl_prompt, require_binary};
+use quench_cli::prelude::{
+    ReplControl, Tone, print_box_banner, print_status, repl_prompt, repl_run, require_binary,
+};
 use std::process::Command;
 
 pub fn ok(msg: &str) {
@@ -182,37 +184,17 @@ fn error(msg: &str) {
 }
 
 pub fn repl() -> anyhow::Result<()> {
-    use rustyline::{DefaultEditor, error::ReadlineError};
-
     print_box_banner("Riveter REPL", "env-aware manifest commands");
     print_status(Tone::Info, "hint", "type `help` to list commands");
 
-    let mut rl = DefaultEditor::new()?;
-
-    loop {
-        let prompt = prompt();
-        match rl.readline(&prompt) {
-            Ok(line) => {
-                let line = line.trim();
-                if line.is_empty() {
-                    continue;
-                }
-                rl.add_history_entry(line)?;
-                match handle_repl_command(line) {
-                    Ok(exit) => {
-                        if exit {
-                            break;
-                        }
-                    }
-                    Err(e) => {
-                        error(&format!("{e:#}"));
-                    }
-                }
-            }
-            Err(ReadlineError::Interrupted | ReadlineError::Eof) => break,
-            Err(e) => return Err(e.into()),
+    repl_run(prompt(), |line| match handle_repl_command(line) {
+        Ok(true) => ReplControl::Exit,
+        Ok(false) => ReplControl::Continue(prompt()),
+        Err(e) => {
+            error(&format!("{e:#}"));
+            ReplControl::Continue(prompt())
         }
-    }
+    })?;
 
     Ok(())
 }

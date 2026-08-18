@@ -998,6 +998,7 @@ dependencies = [
  "quench-db",
  "quench-starter",
  "quench-web",
+ "quench-web-components",
  "reqwest",
  "serde",
  "serde_json",
@@ -1681,9 +1682,9 @@ dependencies = [
 
 [[package]]
 name = "error-code"
-version = "3.3.2"
+version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dea2df4cf52843e0452895c455a1a2cfbb842a1e7329671acf418fdc53ed4c59"
+checksum = "0b5343afd4a8365a643ac588dab4cf234a190c7f6c88c9f6dd6ffe00837661b7"
 
 [[package]]
 name = "etcetera"
@@ -1802,7 +1803,6 @@ dependencies = [
  "clap",
  "libc",
  "quench-cli",
- "rustyline",
  "serde",
  "toml",
 ]
@@ -2003,6 +2003,7 @@ dependencies = [
  "quench-db",
  "quench-starter",
  "quench-web",
+ "quench-web-components",
  "rand 0.8.7",
  "rand_core 0.6.4",
  "serde",
@@ -3805,7 +3806,6 @@ dependencies = [
  "chrono",
  "clap",
  "quench-cli",
- "rustyline",
  "serde",
  "thiserror",
  "toml",
@@ -3814,9 +3814,9 @@ dependencies = [
 
 [[package]]
 name = "quench-auth"
-version = "0.3.9"
+version = "0.3.10"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "29874baf12c60deb755659a7fe30dfd37471dd30f661131a753028de06616b56"
+checksum = "a1c365fac9c91c5d8066312af5cad99158914ba51f5dc8e7c249424eb21299f6"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -3859,11 +3859,12 @@ dependencies = [
 
 [[package]]
 name = "quench-cli"
-version = "0.1.2"
+version = "0.1.3"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "ea1caca124095b887444101599fb42930ab0924e1438bdbb44346a243b306993"
+checksum = "0b98345e4d38492ac3c80dc77bf5c7ea5fd24343f117cd8266709aed69f4a494"
 dependencies = [
  "crossterm",
+ "rustyline",
  "which",
 ]
 
@@ -3917,9 +3918,9 @@ dependencies = [
 
 [[package]]
 name = "quench-starter"
-version = "0.3.8"
+version = "0.3.9"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "07f1198a013335b3c93e7397d0bdde51b6559b09c424b8a38c5c7dfa1cd1e19c"
+checksum = "d528b7f4c3015199978f4ca41aad09125f31e095b09957f2adb499dbb8bead64"
 dependencies = [
  "actix-service",
  "actix-web",
@@ -3953,6 +3954,16 @@ dependencies = [
  "serde_json",
  "strum",
  "strum_macros",
+]
+
+[[package]]
+name = "quench-web-components"
+version = "0.1.6"
+source = "sparse+https://ennor.ddns.net/warehouse/index/"
+checksum = "3ad70e4c8b969b2e4f8ceecf42a1c71701d5b0a95d868c5a6ee1440f2113c4a0"
+dependencies = [
+ "quench-web",
+ "strum",
 ]
 
 [[package]]
@@ -4271,7 +4282,6 @@ dependencies = [
  "quench-cli",
  "regex",
  "reqwest",
- "rustyline",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -5222,6 +5232,7 @@ dependencies = [
  "quench-db",
  "quench-starter",
  "quench-web",
+ "quench-web-components",
  "regex",
  "serde",
  "serde_json",
@@ -5951,6 +5962,7 @@ dependencies = [
  "quench-config",
  "quench-starter",
  "quench-web",
+ "quench-web-components",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -6342,8 +6354,8 @@ dependencies = [
  "quench-db",
  "quench-starter",
  "quench-web",
+ "quench-web-components",
  "serde",
- "serde_json",
  "sqlx",
  "thiserror",
  "tokio",

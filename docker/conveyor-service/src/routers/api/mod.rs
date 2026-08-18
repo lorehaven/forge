@@ -5,10 +5,11 @@
 
 use crate::scheduler::QueueError;
 use actix_web::http::StatusCode;
-use actix_web::{HttpMessage, HttpRequest, HttpResponse, web};
+use actix_web::{HttpMessage, HttpRequest, web};
 use quench_auth::actix::middleware::auth::Auth;
-use quench_auth::prelude::{Claims, JwtConfig, realm};
-use serde_json::json;
+use quench_auth::actix::routers::ui::get_user_from_req;
+use quench_auth::prelude::{Claims, JwtConfig};
+pub use quench_starter::prelude::{ApiError, json_error};
 
 pub mod authz;
 pub mod credentials;
@@ -62,55 +63,14 @@ pub fn claims(request: &HttpRequest) -> Option<Claims> {
 /// this only reads the name out of it. `unknown` is unreachable behind that
 /// middleware and is not a fallback anyone should rely on.
 pub async fn actor(request: &HttpRequest) -> String {
-    // The borrow is scoped deliberately. `extensions()` hands out a `Ref` that
-    // otherwise lives to the end of the statement, and `session_subject` reads
-    // a cookie - which makes actix take `extensions_mut()` to cache the parsed
-    // cookie jar. Both at once panics with "RefCell already borrowed".
-    let from_token = {
-        let extensions = request.extensions();
-        extensions.get::<Claims>().map(|claims| claims.sub.clone())
+    // No `JwtConfig` in app_data only happens if the app is misconfigured.
+    let Some(config) = request.app_data::<web::Data<JwtConfig>>() else {
+        return "dev".to_string();
     };
-
-    match from_token {
-        Some(sub) => sub,
-        None => session_subject(request)
-            .await
-            // `SERVICE_AUTH_ENABLED=false` lets the middleware through without
-            // an identity, which is the only way to get here. `dev` is what
-            // the rest of the estate calls that account.
-            .unwrap_or_else(|| "dev".to_string()),
-    }
-}
-
-/// The realm cookie, for a call that came from a browser rather than from a
-/// client sending a bearer token.
-async fn session_subject(request: &HttpRequest) -> Option<String> {
-    let cookie = request.cookie(&realm::session_cookie_name())?;
-    let config = request.app_data::<web::Data<JwtConfig>>()?;
-    config
-        .decode_claims(cookie.value())
+    get_user_from_req(request, config)
         .await
-        .ok()
-        .map(|c| c.sub)
-}
-
-pub fn json_error(status: StatusCode, message: &str) -> HttpResponse {
-    HttpResponse::build(status).json(json!({ "error": message }))
-}
-
-/// A queue error, translated into something a caller can act on.
-pub struct ApiError {
-    status: StatusCode,
-    message: String,
-}
-
-impl ApiError {
-    pub fn into_response(self) -> HttpResponse {
-        if self.status.is_server_error() {
-            tracing::error!("api error: {}", self.message);
-        }
-        json_error(self.status, &self.message)
-    }
+        .map(|claims| claims.sub)
+        .unwrap_or_else(|| "dev".to_string())
 }
 
 impl From<QueueError> for ApiError {
@@ -124,25 +84,20 @@ impl From<QueueError> for ApiError {
             let message = if database.constraint() == Some("repos_registered_by_fkey") {
                 "the account making this request is not in the realm; \
                  sign in through gatehouse, which owns the estate's users"
-                    .to_string()
             } else {
                 "the id given for a related record (project, repository, ...) \
                  does not exist"
-                    .to_string()
             };
-            return Self {
-                status: StatusCode::BAD_REQUEST,
-                message,
-            };
+            return ApiError::new(StatusCode::BAD_REQUEST, message);
         }
 
         if let QueueError::Sql(sqlx::Error::Database(database)) = &error
             && database.code().as_deref() == Some("23505")
         {
-            return Self {
-                status: StatusCode::CONFLICT,
-                message: "a record with that identity already exists".to_string(),
-            };
+            return ApiError::new(
+                StatusCode::CONFLICT,
+                "a record with that identity already exists",
+            );
         }
 
         let status = match &error {
@@ -153,9 +108,6 @@ impl From<QueueError> for ApiError {
             QueueError::BadRow(_) | QueueError::Sql(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
 
-        Self {
-            status,
-            message: error.to_string(),
-        }
+        ApiError::new(status, error.to_string())
     }
 }

@@ -18,6 +18,7 @@ use quench_auth::prelude::JwtConfig;
 use quench_db::prelude::Db;
 use quench_starter::actix::routers::ui::pages::home::handle_home;
 use quench_web::prelude::*;
+use quench_web_components::containers::empty_state;
 use serde::Deserialize;
 use std::collections::HashMap;
 
@@ -257,11 +258,9 @@ fn not_found() -> HttpResponse {
     render_page(
         HttpResponse::NotFound(),
         content().class("home-content").child(
-            div().class("home-container").child(
-                div()
-                    .class("empty")
-                    .attr("data-i18n", "ui_project_not_found"),
-            ),
+            div()
+                .class("home-container")
+                .child(empty_state("ui_project_not_found")),
         ),
         UiPageKind::Home,
     )
@@ -393,7 +392,7 @@ pub fn project_tree_panel_scoped(
     ));
 
     if elements.is_empty() {
-        return panel.child(div().class("empty").attr("data-i18n", "ui_repos_empty"));
+        return panel.child(empty_state("ui_repos_empty"));
     }
 
     let mut tree = div().class("project-tree");

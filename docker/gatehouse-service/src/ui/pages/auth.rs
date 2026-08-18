@@ -70,15 +70,8 @@ pub(super) async fn login_slash(
     }
 }
 
-/// Mirrors `quench_auth`'s relying-party `login_delegation`: a browser landing
-/// on this form while still holding a `forge_refresh` cookie good enough to
-/// renew does not need to see it. Without this, a token minted by gatehouse's
-/// own login (audience: every service, not just the relying party that sent
-/// the browser here) was just as exposed to the access token's short TTL as a
-/// relying party's own session, but had no equivalent fallback - the redirect
-/// here from `is_ui_authenticated` failing on `/ui/home`, `/ui/admin`, etc.
-/// went straight to the credential form even seconds after a refresh would
-/// have succeeded.
+/// Mirrors `quench_auth`'s `login_delegation`: skip the credential form if a
+/// `forge_refresh` cookie is still good enough to renew.
 async fn try_silent_refresh(request: &HttpRequest) -> Option<HttpResponse> {
     let refresh_token = request
         .cookie(&realm::refresh_cookie_name())

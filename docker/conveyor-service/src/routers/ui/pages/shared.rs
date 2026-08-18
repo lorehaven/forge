@@ -11,6 +11,7 @@ use crate::scan::ScanSummary;
 use futures_util::future::join_all;
 use quench_db::prelude::Db;
 use quench_web::prelude::*;
+use quench_web_components::containers::empty_state;
 use std::collections::{HashMap, HashSet};
 
 /// One lookup per repository, run concurrently - `scan::latest` is several
@@ -116,7 +117,7 @@ pub fn ancestor_chain<'a>(id: &str, all_projects: &'a [Project]) -> Vec<&'a Proj
 /// pipeline history page's paged one, so the columns cannot drift apart.
 pub fn runs_table(runs: &[Run], repositories: &[Repo]) -> Element {
     if runs.is_empty() {
-        return div().class("empty").attr("data-i18n", "ui_runs_empty");
+        return empty_state("ui_runs_empty");
     }
 
     let by_id: HashMap<&str, &Repo> = repositories

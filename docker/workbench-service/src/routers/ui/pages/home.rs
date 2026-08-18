@@ -10,6 +10,7 @@ use quench_auth::prelude::JwtConfig;
 use quench_db::prelude::Db;
 use quench_web::framework::dom::toggle_modal;
 use quench_web::prelude::*;
+use quench_web_components::containers::empty_state;
 use serde::Deserialize;
 
 #[get("/home")]
@@ -43,11 +44,7 @@ async fn render_home(db: &Db, notice: &Notice) -> HttpResponse {
 
     let mut grid = div().class("home-grid");
     if projects.is_empty() {
-        grid = grid.child(
-            div()
-                .class("empty")
-                .attr("data-i18n", "ui_home_no_projects"),
-        );
+        grid = grid.child(empty_state("ui_home_no_projects"));
     }
     for p in &projects {
         grid = grid.child(

@@ -9,22 +9,8 @@ use chrono::Utc;
 use quench_auth::actix::routers::ui::get_user_from_req;
 use quench_auth::prelude::JwtConfig;
 use quench_db::prelude::{Crud, Db};
-use quench_starter::prelude::with_base_path;
+use quench_starter::prelude::{human_bytes, with_base_path};
 use quench_web::prelude::*;
-
-/// Human-readable byte size for a chip label.
-fn format_size(bytes: i64) -> String {
-    const KB: f64 = 1024.0;
-    const MB: f64 = KB * 1024.0;
-    let b = bytes as f64;
-    if b >= MB {
-        format!("{:.1} MB", b / MB)
-    } else if b >= KB {
-        format!("{:.0} KB", b / KB)
-    } else {
-        format!("{} B", bytes)
-    }
-}
 
 /// Short label for a file's processing status.
 fn status_label(status: &str) -> &str {
@@ -52,7 +38,7 @@ pub fn render_attachment_chip(file: &File, staged: bool) -> Element {
         .attr("data-file-id", &file.id)
         .attr(
             "title",
-            format!("{} · {}", file.file_name, format_size(file.file_size)),
+            format!("{} · {}", file.file_name, human_bytes(file.file_size)),
         );
 
     // Poll for status while extracting/embedding, so the badge updates queued → processing → ready/failed without a reload.
@@ -88,7 +74,7 @@ pub fn render_attachment_chip(file: &File, staged: bool) -> Element {
         .child(
             span()
                 .class("attachment-size")
-                .text(format_size(file.file_size)),
+                .text(human_bytes(file.file_size)),
         );
 
     // Status badge: the data-i18n key follows the raw status, with the English text as fallback.
@@ -169,7 +155,7 @@ pub fn render_project_file_row(file: &File) -> Element {
             format!(
                 "{} · {} · {}",
                 file.file_name,
-                format_size(file.file_size),
+                human_bytes(file.file_size),
                 status_label(&file.status)
             ),
         )

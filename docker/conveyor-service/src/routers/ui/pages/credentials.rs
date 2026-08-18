@@ -20,6 +20,7 @@ use quench_auth::actix::routers::ui::get_user_from_req;
 use quench_auth::prelude::{Claims, JwtConfig};
 use quench_db::prelude::Db;
 use quench_web::prelude::*;
+use quench_web_components::containers::empty_state;
 use std::collections::{HashMap, HashSet};
 
 async fn actor(request: &HttpRequest, config: &JwtConfig) -> Option<Claims> {
@@ -80,11 +81,7 @@ async fn render_list(db: &Db, claims: &Claims) -> HttpResponse {
         rows = rows.child(credential_row(credential, &scope, &all_projects));
     }
     if shown == 0 {
-        rows = rows.child(
-            div()
-                .class("empty")
-                .attr("data-i18n", "ui_credentials_empty"),
-        );
+        rows = rows.child(empty_state("ui_credentials_empty"));
     }
 
     let panel = div()

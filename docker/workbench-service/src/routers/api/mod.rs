@@ -5,10 +5,11 @@
 
 use crate::domain::WorkbenchError;
 use actix_web::http::StatusCode;
-use actix_web::{HttpMessage, HttpRequest, HttpResponse, web};
+use actix_web::{HttpMessage, HttpRequest, web};
 use quench_auth::actix::middleware::auth::Auth;
-use quench_auth::prelude::{Claims, JwtConfig, realm};
-use serde_json::json;
+use quench_auth::actix::routers::ui::get_user_from_req;
+use quench_auth::prelude::{Claims, JwtConfig};
+pub use quench_starter::prelude::{ApiError, json_error};
 
 pub mod authz;
 pub mod comments;
@@ -49,67 +50,29 @@ pub fn claims(request: &HttpRequest) -> Option<Claims> {
 
 /// Who is making this request, for `reporter` and `author` columns.
 pub async fn actor(request: &HttpRequest) -> String {
-    // The borrow is scoped deliberately - see conveyor's `actor` for why:
-    // `extensions()` hands out a `Ref` that otherwise lives to the end of the
-    // statement, and `session_subject` takes `extensions_mut()` to cache the
-    // parsed cookie jar. Both at once panics with "RefCell already borrowed".
-    let from_token = {
-        let extensions = request.extensions();
-        extensions.get::<Claims>().map(|claims| claims.sub.clone())
+    let Some(config) = request.app_data::<web::Data<JwtConfig>>() else {
+        return "dev".to_string();
     };
-
-    match from_token {
-        Some(sub) => sub,
-        None => session_subject(request)
-            .await
-            .unwrap_or_else(|| "dev".to_string()),
-    }
-}
-
-async fn session_subject(request: &HttpRequest) -> Option<String> {
-    let cookie = request.cookie(&realm::session_cookie_name())?;
-    let config = request.app_data::<web::Data<JwtConfig>>()?;
-    config
-        .decode_claims(cookie.value())
+    get_user_from_req(request, config)
         .await
-        .ok()
-        .map(|c| c.sub)
-}
-
-pub fn json_error(status: StatusCode, message: &str) -> HttpResponse {
-    HttpResponse::build(status).json(json!({ "error": message }))
-}
-
-pub struct ApiError {
-    status: StatusCode,
-    message: String,
-}
-
-impl ApiError {
-    pub fn into_response(self) -> HttpResponse {
-        if self.status.is_server_error() {
-            tracing::error!("api error: {}", self.message);
-        }
-        json_error(self.status, &self.message)
-    }
+        .map(|claims| claims.sub)
+        .unwrap_or_else(|| "dev".to_string())
 }
 
 impl From<WorkbenchError> for ApiError {
     fn from(error: WorkbenchError) -> Self {
         if error.is_foreign_key_violation() {
-            return Self {
-                status: StatusCode::BAD_REQUEST,
-                message: "the id given for a related record (project, issue, ...) \
-                          does not exist"
-                    .to_string(),
-            };
+            return ApiError::new(
+                StatusCode::BAD_REQUEST,
+                "the id given for a related record (project, issue, ...) does not exist",
+            );
         }
 
         if error.is_unique_violation() {
-            return Self {
-                status: StatusCode::CONFLICT,
-                message: "a record with that identity already exists".to_string(),
-            };
+            return ApiError::new(
+                StatusCode::CONFLICT,
+                "a record with that identity already exists",
+            );
         }
 
         let status = match &error {
@@ -119,9 +82,6 @@ impl From<WorkbenchError> for ApiError {
             WorkbenchError::Sql(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
 
-        Self {
-            status,
-            message: error.to_string(),
-        }
+        ApiError::new(status, error.to_string())
     }
 }

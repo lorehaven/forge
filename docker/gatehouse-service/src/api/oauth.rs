@@ -294,7 +294,7 @@ fn random_code() -> String {
 }
 
 fn bad_request(message: &str) -> HttpResponse {
-    HttpResponse::BadRequest().json(serde_json::json!({ "error": message }))
+    quench_starter::prelude::json_error(actix_web::http::StatusCode::BAD_REQUEST, message)
 }
 
 fn internal_error() -> HttpResponse {

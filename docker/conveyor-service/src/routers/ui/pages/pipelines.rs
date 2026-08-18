@@ -13,6 +13,7 @@ use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
 use quench_auth::prelude::JwtConfig;
 use quench_db::prelude::Db;
 use quench_web::prelude::*;
+use quench_web_components::containers::empty_state;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -80,11 +81,9 @@ fn not_found() -> HttpResponse {
     render_page(
         HttpResponse::NotFound(),
         content().class("home-content").child(
-            div().class("home-container").child(
-                div()
-                    .class("empty")
-                    .attr("data-i18n", "ui_project_not_found"),
-            ),
+            div()
+                .class("home-container")
+                .child(empty_state("ui_project_not_found")),
         ),
         UiPageKind::Home,
     )

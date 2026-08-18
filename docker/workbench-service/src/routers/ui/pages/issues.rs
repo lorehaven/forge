@@ -13,6 +13,7 @@ use actix_web::{HttpRequest, HttpResponse, Responder, get, post, web};
 use quench_auth::prelude::JwtConfig;
 use quench_db::prelude::Db;
 use quench_web::prelude::*;
+use quench_web_components::containers::empty_state;
 use serde::Deserialize;
 
 #[get("/issues/{id}")]
@@ -244,7 +245,7 @@ fn dependencies_panel(issue_id: &str, related: &issue_link::RelatedIssues) -> El
 fn link_section(issue_id: &str, title_key: &str, links: &[issue_link::LinkedIssue]) -> Element {
     let mut list = div().class("wb-link-list");
     if links.is_empty() {
-        list = list.child(div().class("empty").attr("data-i18n", "ui_issue_no_links"));
+        list = list.child(empty_state("ui_issue_no_links"));
     }
     for link in links {
         list = list.child(
@@ -346,11 +347,7 @@ fn link_kind_select() -> Element {
 fn comments_panel(issue_id: &str, comments: &[comment::Comment]) -> Element {
     let mut list = div().class("meta-list");
     if comments.is_empty() {
-        list = list.child(
-            div()
-                .class("empty")
-                .attr("data-i18n", "ui_issue_empty_comments"),
-        );
+        list = list.child(empty_state("ui_issue_empty_comments"));
     }
     for c in comments {
         list = list.child(

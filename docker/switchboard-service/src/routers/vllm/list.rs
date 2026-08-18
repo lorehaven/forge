@@ -5,6 +5,7 @@ use actix_web::{HttpResponse, Responder, get, web};
 use quench_auth::prelude::JwtConfig;
 use quench_starter::prelude::with_base_path;
 use quench_web::prelude::*;
+use quench_web_components::containers::empty_state;
 use std::sync::Arc;
 
 #[get("/list")]
@@ -49,12 +50,7 @@ pub async fn handle_grid(
 pub fn render_instances_grid(instances: Vec<VllmInstance>, can_stop: bool) -> String {
     if instances.is_empty() {
         return instances_grid_shell()
-            .child(
-                div()
-                    .class("empty")
-                    .attr("data-i18n", "ui_vllm_no_instances")
-                    .text("No running instances"),
-            )
+            .child(empty_state("ui_vllm_no_instances").text("No running instances"))
             .render();
     }
 

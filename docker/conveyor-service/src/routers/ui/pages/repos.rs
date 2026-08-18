@@ -25,6 +25,7 @@ use quench_auth::actix::routers::ui::get_user_from_req;
 use quench_auth::prelude::{Claims, JwtConfig};
 use quench_db::prelude::Db;
 use quench_web::prelude::*;
+use quench_web_components::containers::empty_state;
 use serde::Deserialize;
 use std::collections::HashSet;
 
@@ -314,7 +315,7 @@ async fn render_list(db: &Db, claims: &Claims, notice: &Notice) -> HttpResponse 
 
     let mut rows = div().class("meta-list");
     if repositories.is_empty() {
-        rows = rows.child(div().class("empty").attr("data-i18n", "ui_repos_empty"));
+        rows = rows.child(empty_state("ui_repos_empty"));
     }
     for repo in &repositories {
         rows = rows.child(repo_row(
@@ -725,7 +726,7 @@ fn not_found() -> HttpResponse {
         content().class("repos-content").child(
             div()
                 .class("repos-container")
-                .child(div().class("empty").attr("data-i18n", "ui_repos_not_found")),
+                .child(empty_state("ui_repos_not_found")),
         ),
         UiPageKind::Home,
     )

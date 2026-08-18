@@ -2,6 +2,7 @@ use crate::domain::models::Conversation;
 use crate::files::STATUS_READY;
 use crate::tools::{ToolCall, ToolDefinition, ToolExecutor, ToolParameters, ToolResult};
 use quench_db::prelude::{Crud, Db};
+use quench_starter::prelude::human_bytes;
 
 pub fn get_definition() -> ToolDefinition {
     ToolDefinition {
@@ -41,20 +42,6 @@ impl FileListExecutor {
             conversation_id,
             project_id,
         }
-    }
-}
-
-/// Human-readable byte size for a file listing line.
-fn format_size(bytes: i64) -> String {
-    const KB: f64 = 1024.0;
-    const MB: f64 = KB * 1024.0;
-    let b = bytes as f64;
-    if b >= MB {
-        format!("{:.1} MB", b / MB)
-    } else if b >= KB {
-        format!("{:.0} KB", b / KB)
-    } else {
-        format!("{} B", bytes)
     }
 }
 
@@ -136,7 +123,7 @@ impl ToolExecutor for FileListExecutor {
                 "- {} ({}, {}) — {}\n",
                 file.file_name,
                 file.mime_type,
-                format_size(file.file_size),
+                human_bytes(file.file_size),
                 file.status
             ));
         }

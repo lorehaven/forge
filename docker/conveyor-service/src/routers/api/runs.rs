@@ -60,9 +60,6 @@ pub enum TriggerError {
     Queue(#[from] QueueError),
 }
 
-/// `ApiError`'s fields are private to `routers::api`, not `pub`, but this
-/// module is a descendant of it and so can still build one directly - the
-/// same way `queue::QueueError` already does two steps up.
 impl From<TriggerError> for ApiError {
     fn from(error: TriggerError) -> Self {
         let TriggerError::Queue(queue_error) = error else {
@@ -73,10 +70,7 @@ impl From<TriggerError> for ApiError {
                 TriggerError::ResolveFailed(_) => StatusCode::BAD_GATEWAY,
                 TriggerError::Queue(_) => unreachable!(),
             };
-            return Self {
-                status,
-                message: error.to_string(),
-            };
+            return ApiError::new(status, error.to_string());
         };
         Self::from(queue_error)
     }
