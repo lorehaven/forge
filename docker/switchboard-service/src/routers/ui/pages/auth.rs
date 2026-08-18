@@ -12,12 +12,12 @@ use serde::Serialize;
 
 #[get("/login")]
 pub(super) async fn login(req: HttpRequest, sso: web::Data<SsoConfig>) -> impl Responder {
-    login_delegation(&req, &sso)
+    login_delegation(&req, &sso).await
 }
 
 #[get("/login/")]
 pub(super) async fn login_slash(req: HttpRequest, sso: web::Data<SsoConfig>) -> impl Responder {
-    login_delegation(&req, &sso)
+    login_delegation(&req, &sso).await
 }
 
 #[get("/auth/callback")]

@@ -52,7 +52,10 @@ pub(super) async fn login(
     query: web::Query<LoginQuery>,
     notices: web::Query<LoginNotices>,
 ) -> impl Responder {
-    render_login_page(&request, query.err.as_deref() == Some("1"), &notices)
+    match try_silent_refresh(&request).await {
+        Some(refreshed) => refreshed,
+        None => render_login_page(&request, query.err.as_deref() == Some("1"), &notices),
+    }
 }
 
 #[get("/login/")]
@@ -61,7 +64,34 @@ pub(super) async fn login_slash(
     query: web::Query<LoginQuery>,
     notices: web::Query<LoginNotices>,
 ) -> impl Responder {
-    render_login_page(&request, query.err.as_deref() == Some("1"), &notices)
+    match try_silent_refresh(&request).await {
+        Some(refreshed) => refreshed,
+        None => render_login_page(&request, query.err.as_deref() == Some("1"), &notices),
+    }
+}
+
+/// Mirrors `quench_auth`'s relying-party `login_delegation`: a browser landing
+/// on this form while still holding a `forge_refresh` cookie good enough to
+/// renew does not need to see it. Without this, a token minted by gatehouse's
+/// own login (audience: every service, not just the relying party that sent
+/// the browser here) was just as exposed to the access token's short TTL as a
+/// relying party's own session, but had no equivalent fallback - the redirect
+/// here from `is_ui_authenticated` failing on `/ui/home`, `/ui/admin`, etc.
+/// went straight to the credential form even seconds after a refresh would
+/// have succeeded.
+async fn try_silent_refresh(request: &HttpRequest) -> Option<HttpResponse> {
+    let refresh_token = request
+        .cookie(&realm::refresh_cookie_name())
+        .map(|cookie| cookie.value().to_string())?;
+    let tokens = quench_auth::actix::domain::sso_client::refresh(&refresh_token).await?;
+    let target = redirect_target(request).unwrap_or_else(|| ui_path("/home"));
+    Some(
+        HttpResponse::Found()
+            .cookie(realm::session_cookie(tokens.access_token))
+            .cookie(realm::refresh_cookie(tokens.refresh_token))
+            .append_header(("Location", target))
+            .finish(),
+    )
 }
 
 #[post("/login")]
