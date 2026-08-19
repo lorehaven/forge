@@ -23,7 +23,9 @@ dotenvy = { workspace = true }
 futures-util = { workspace = true }
 hex = { workspace = true }
 hmac = { workspace = true }
-hyper = { version = "0.14", features = ["full"] }
+http-body-util = "0.1"
+hyper = { version = "1", features = ["full"] }
+hyper-util = { version = "0.1", features = ["tokio", "server", "server-auto"] }
 jsonwebtoken = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true }

@@ -1,0 +1,15 @@
+[advisories]
+ignore = [
+    # h2 unbounded empty DATA frames (low severity DoS), fixed only in h2 >=0.4.16.
+    # Pulled in transitively via actix-http 3.13.3 -> actix-web 4.14.1, which is
+    # the latest actix-web release and still pins h2 to the 0.3 line. No action
+    # possible on our side until actix-web ships a release on h2 0.4+/1.x.
+    # Re-check: https://rustsec.org/advisories/RUSTSEC-2026-0258
+    "RUSTSEC-2026-0258",
+    # ttf-parser is unmaintained (no CVE, informational only). Pulled in via
+    # pdf-extract 0.12.0 (latest) -> lopdf 0.42.0, which depends on it as a
+    # mandatory (non-optional) dependency. No newer pdf-extract/lopdf pairing
+    # is available to drop it.
+    # Re-check: https://rustsec.org/advisories/RUSTSEC-2026-0192
+    "RUSTSEC-2026-0192",
+]

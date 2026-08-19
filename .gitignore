@@ -3,7 +3,8 @@
 **/dist/
 **/target/
 .aider*
-.cargo/
+.cargo/*
+!.cargo/audit.toml
 .claude/
 .warehouse/
 .welder/

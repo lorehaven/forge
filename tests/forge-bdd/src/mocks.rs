@@ -12,11 +12,16 @@ pub async fn start() {
 }
 
 async fn start_mock_switchboard_server() {
-    use hyper::service::{make_service_fn, service_fn};
-    use hyper::{Body, Request, Response, Server, StatusCode};
+    use http_body_util::Full;
+    use hyper::body::{Bytes, Incoming};
+    use hyper::server::conn::http1;
+    use hyper::service::service_fn;
+    use hyper::{Request, Response, StatusCode};
+    use hyper_util::rt::TokioIo;
     use std::convert::Infallible;
+    use tokio::net::TcpListener;
 
-    async fn handle_request(req: Request<Body>) -> Result<Response<Body>, Infallible> {
+    async fn handle_request(req: Request<Incoming>) -> Result<Response<Full<Bytes>>, Infallible> {
         let path = req.uri().path();
 
         // sage authenticates with a gatehouse-issued bearer token now
@@ -39,7 +44,7 @@ async fn start_mock_switchboard_server() {
         if !has_auth {
             return Ok(Response::builder()
                 .status(StatusCode::UNAUTHORIZED)
-                .body(Body::from("Unauthorized"))
+                .body(Full::new(Bytes::from("Unauthorized")))
                 .unwrap());
         }
 
@@ -55,7 +60,7 @@ async fn start_mock_switchboard_server() {
             return Ok(Response::builder()
                 .status(StatusCode::OK)
                 .header("content-type", "text/html")
-                .body(Body::from("<div></div>"))
+                .body(Full::new(Bytes::from("<div></div>")))
                 .unwrap());
         }
 
@@ -77,33 +82,57 @@ async fn start_mock_switchboard_server() {
             return Ok(Response::builder()
                 .status(StatusCode::OK)
                 .header("content-type", "application/json")
-                .body(Body::from(response.to_string()))
+                .body(Full::new(Bytes::from(response.to_string())))
                 .unwrap());
         }
 
         Ok(Response::builder()
             .status(StatusCode::NOT_FOUND)
-            .body(Body::from("Not Found"))
+            .body(Full::new(Bytes::from("Not Found")))
             .unwrap())
     }
 
-    let make_svc =
-        make_service_fn(|_conn| async { Ok::<_, Infallible>(service_fn(handle_request)) });
-
-    let addr = ([127, 0, 0, 1], 19554).into();
+    let addr: std::net::SocketAddr = ([127, 0, 0, 1], 19554).into();
     eprintln!("Mock Switchboard server binding to {:?}", addr);
-    if let Err(e) = Server::bind(&addr).serve(make_svc).await {
-        eprintln!("Mock Switchboard server error: {}", e);
+    let listener = match TcpListener::bind(addr).await {
+        Ok(listener) => listener,
+        Err(e) => {
+            eprintln!("Mock Switchboard server failed to bind: {}", e);
+            return;
+        }
+    };
+
+    loop {
+        let (stream, _) = match listener.accept().await {
+            Ok(conn) => conn,
+            Err(e) => {
+                eprintln!("Mock Switchboard server accept error: {}", e);
+                continue;
+            }
+        };
+        let io = TokioIo::new(stream);
+        tokio::spawn(async move {
+            if let Err(e) = http1::Builder::new()
+                .serve_connection(io, service_fn(handle_request))
+                .await
+            {
+                eprintln!("Mock Switchboard server error: {}", e);
+            }
+        });
     }
-    eprintln!("Mock Switchboard server exited");
 }
 
 async fn start_mock_vllm_server() {
-    use hyper::service::{make_service_fn, service_fn};
-    use hyper::{Body, Request, Response, Server, StatusCode};
+    use http_body_util::Full;
+    use hyper::body::{Bytes, Incoming};
+    use hyper::server::conn::http1;
+    use hyper::service::service_fn;
+    use hyper::{Request, Response, StatusCode};
+    use hyper_util::rt::TokioIo;
     use std::convert::Infallible;
+    use tokio::net::TcpListener;
 
-    async fn handle_request(req: Request<Body>) -> Result<Response<Body>, Infallible> {
+    async fn handle_request(req: Request<Incoming>) -> Result<Response<Full<Bytes>>, Infallible> {
         let path = req.uri().path();
 
         if path == "/v1/chat/completions" {
@@ -130,21 +159,41 @@ async fn start_mock_vllm_server() {
             return Ok(Response::builder()
                 .status(StatusCode::OK)
                 .header("content-type", "application/json")
-                .body(Body::from(response.to_string()))
+                .body(Full::new(Bytes::from(response.to_string())))
                 .unwrap());
         }
 
         Ok(Response::builder()
             .status(StatusCode::NOT_FOUND)
-            .body(Body::from("Not Found"))
+            .body(Full::new(Bytes::from("Not Found")))
             .unwrap())
     }
 
-    let make_svc =
-        make_service_fn(|_conn| async { Ok::<_, Infallible>(service_fn(handle_request)) });
+    let addr: std::net::SocketAddr = ([127, 0, 0, 1], 18000).into();
+    let listener = match TcpListener::bind(addr).await {
+        Ok(listener) => listener,
+        Err(e) => {
+            eprintln!("Mock vLLM server failed to bind: {}", e);
+            return;
+        }
+    };
 
-    let addr = ([127, 0, 0, 1], 18000).into();
-    if let Err(e) = Server::bind(&addr).serve(make_svc).await {
-        eprintln!("Mock vLLM server error: {}", e);
+    loop {
+        let (stream, _) = match listener.accept().await {
+            Ok(conn) => conn,
+            Err(e) => {
+                eprintln!("Mock vLLM server accept error: {}", e);
+                continue;
+            }
+        };
+        let io = TokioIo::new(stream);
+        tokio::spawn(async move {
+            if let Err(e) = http1::Builder::new()
+                .serve_connection(io, service_fn(handle_request))
+                .await
+            {
+                eprintln!("Mock vLLM server error: {}", e);
+            }
+        });
     }
 }
