@@ -26,6 +26,10 @@ RUN rustup component add clippy rustfmt
 # with how the code was actually formatted.
 RUN rustup toolchain install nightly --component rustfmt --no-self-update
 
+# `anvil nextest`'s coverage counterpart isn't wired into anvil itself, but
+# `cargo llvm-cov` needs this component regardless of how it's invoked.
+RUN rustup component add llvm-tools-preview
+
 # Same private registry alias every workspace Cargo.toml expects - without it,
 # every `quench-*`/`conveyor-pipeline` dependency fails to resolve.
 ARG CARGO_REGISTRIES_ENNOR_INDEX=sparse+https://ennor.ddns.net/warehouse/index/
@@ -36,14 +40,15 @@ RUN mkdir -p /usr/local/cargo && \
       printf "token = \"%s\"\n" "${CARGO_REGISTRIES_ENNOR_TOKEN}" >> /usr/local/cargo/config.toml; \
     fi
 
-# `anvil machete` / `anvil audit` shell out to these. `--locked` uses each
-# crate's own shipped Cargo.lock rather than resolving fresh - without it,
-# cargo picks up whatever kstring (a cargo-audit dependency) is newest on
-# crates.io, and that has repeatedly required a newer rustc than this base
-# image ships.
+# `anvil machete` / `anvil audit` / `anvil deny` / `anvil nextest` /
+# `anvil semver-check` and the plain `cargo llvm-cov` step all shell out to
+# these. `--locked` uses each crate's own shipped Cargo.lock rather than
+# resolving fresh - without it, cargo picks up whatever kstring (a
+# cargo-audit dependency) is newest on crates.io, and that has repeatedly
+# required a newer rustc than this base image ships.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    cargo install --locked cargo-machete cargo-audit
+    cargo install --locked cargo-machete cargo-audit cargo-deny cargo-nextest cargo-llvm-cov cargo-semver-checks
 
 # `anvil` itself, built from this workspace rather than pinned to a published
 # version - a job wants the same anvil the commit it is testing was written

@@ -14,9 +14,23 @@ use crate::steps::StepError;
 /// binaries: a deployment can be running a conveyor built against a different
 /// anvil. An unknown command here is a warning-shaped error the author can act
 /// on, not a wrong answer.
-pub const COMMANDS: [&str; 13] = [
-    "audit", "build", "clean", "docker", "format", "install", "lint", "list", "machete", "release",
-    "run", "test", "upgrade",
+pub const COMMANDS: [&str; 16] = [
+    "audit",
+    "build",
+    "clean",
+    "deny",
+    "docker",
+    "format",
+    "install",
+    "lint",
+    "list",
+    "machete",
+    "nextest",
+    "release",
+    "run",
+    "semver-check",
+    "test",
+    "upgrade",
 ];
 
 /// `anvil docker`'s own subcommands.

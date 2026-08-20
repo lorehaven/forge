@@ -18,7 +18,20 @@ steps = [{ anvil = "lint --all-targets --deny-warnings" }]
 [[stage.job]]
 name  = "deps"
 image = "ossiriand.arda:8080/forge/ci/rust-builder:latest"
-steps = [{ anvil = "machete" }, { anvil = "audit" }]
+steps = [{ anvil = "machete" }, { anvil = "audit" }, { anvil = "deny" }]
+
+[[stage.job]]
+name  = "semver-check"
+image = "ossiriand.arda:8080/forge/ci/rust-builder:latest"
+steps = [
+  # conveyor's checkout is a shallow, single-commit clone (see
+  # workspace/checkout.rs) - `anvil semver-check`'s default baseline is the
+  # commit before conveyor-pipeline's last version bump, which isn't on disk
+  # yet at depth 1. If this job's origin fetch needs a credential the initial
+  # checkout didn't persist into .git/config, give it one via `secrets`.
+  { run = "git fetch --unshallow origin" },
+  { anvil = "semver-check -p conveyor-pipeline" },
+]
 
 # ---------------------------------------------------------------- build
 [[stage]]
@@ -39,4 +52,13 @@ needs = ["build"]
 name  = "unit"
 image = "ossiriand.arda:8080/forge/ci/rust-builder:latest"
 env   = { RUST_BACKTRACE = "1" }
-steps = [{ anvil = "test --all" }]
+# nextest for speed on the bulk of the suite; it doesn't run doctests, so
+# those still go through plain `cargo test --doc`.
+steps = [{ anvil = "nextest --all" }, { run = "cargo test --doc --workspace" }]
+
+[[stage.job]]
+name      = "coverage"
+image     = "ossiriand.arda:8080/forge/ci/rust-builder:latest"
+env       = { RUST_BACKTRACE = "1" }
+steps     = [{ run = "cargo llvm-cov --workspace --lcov --output-path lcov.info" }]
+artifacts = ["lcov.info"]
