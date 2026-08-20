@@ -591,19 +591,18 @@ pub fn chip(kind: CheckKind, check: Option<&CheckResult>) -> Element {
         CheckKind::Coverage => "C",
     };
 
+    let count = |check: &CheckResult| {
+        check
+            .metric
+            .clone()
+            .unwrap_or_else(|| check.findings.len().to_string())
+    };
+
     let (severity_class, label, title_key) = match check {
         None => ("chip-none", "-".to_string(), "ui_chip_not_run"),
-        Some(check) if check.findings.is_empty() => ("chip-clean", "0".to_string(), kind.label()),
-        Some(check) if check.passed => (
-            "chip-warning",
-            check.findings.len().to_string(),
-            kind.label(),
-        ),
-        Some(check) => (
-            "chip-danger",
-            check.findings.len().to_string(),
-            kind.label(),
-        ),
+        Some(check) if check.findings.is_empty() => ("chip-clean", count(check), kind.label()),
+        Some(check) if check.passed => ("chip-warning", count(check), kind.label()),
+        Some(check) => ("chip-danger", count(check), kind.label()),
     };
 
     span()

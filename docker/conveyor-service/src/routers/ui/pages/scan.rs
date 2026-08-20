@@ -195,9 +195,12 @@ fn card(repo: &Repo, check: &CheckResult) -> Element {
         .class(status_class)
         .attr("href", href)
         .child(
-            div()
-                .class("scan-card-count")
-                .text(check.findings.len().to_string()),
+            div().class("scan-card-count").text(
+                check
+                    .metric
+                    .clone()
+                    .unwrap_or_else(|| check.findings.len().to_string()),
+            ),
         )
         .child(
             div()
@@ -371,6 +374,7 @@ mod tests {
                     severity: Some("warning".to_string()),
                     ..Finding::default()
                 }],
+                metric: None,
             }),
             machete: None,
             audit: None,
@@ -391,6 +395,30 @@ mod tests {
     }
 
     #[test]
+    fn a_coverage_card_shows_its_metric_not_the_capped_finding_count() {
+        let check = CheckResult {
+            kind: CheckKind::Coverage,
+            job_name: "test/coverage".to_string(),
+            passed: true,
+            headline: "22.10% line coverage".to_string(),
+            // Capped at 50 the same way a real, mostly-uncovered workspace
+            // would be - the card must still show the percentage, not "50".
+            findings: (0..50)
+                .map(|_| Finding {
+                    title: "some/file.rs".to_string(),
+                    ..Finding::default()
+                })
+                .collect(),
+            metric: Some("22%".to_string()),
+        };
+
+        let html = card(&repo(), &check).render();
+
+        assert!(html.contains(">22%<"));
+        assert!(!html.contains(">50<"));
+    }
+
+    #[test]
     fn renders_finding_detail_fields() {
         let check = CheckResult {
             kind: CheckKind::Audit,
@@ -405,6 +433,7 @@ mod tests {
                 location: Some("rsa 0.9.10".to_string()),
                 extra: Some("Solution: No fixed upgrade is available!".to_string()),
             }],
+            metric: None,
         };
 
         let html = detail(&repo(), CheckKind::Audit, &check).render();
@@ -425,6 +454,7 @@ mod tests {
             passed: true,
             headline: "clean".to_string(),
             findings: vec![],
+            metric: None,
         };
 
         let html = detail(&repo(), CheckKind::Machete, &check).render();

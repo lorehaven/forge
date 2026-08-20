@@ -51,6 +51,7 @@ fn check(passed: bool, findings: usize) -> CheckResult {
                 ..Finding::default()
             })
             .collect(),
+        metric: None,
     }
 }
 
@@ -76,6 +77,22 @@ fn a_passing_check_with_findings_is_amber_not_red() {
     assert!(html.contains("chip-warning"));
     assert!(html.contains("L 3"));
     assert!(!html.contains("chip-danger"));
+}
+
+#[test]
+fn a_check_with_a_metric_shows_that_instead_of_the_capped_finding_count() {
+    // Coverage's finding count is "how many files have any gap at all",
+    // which hits the 50-finding cap on nearly any real codebase - that is
+    // not a number worth leading with. Its `metric` overrides the chip to
+    // show the coverage percentage instead, regardless of how many findings
+    // there actually are.
+    let mut result = check(true, 50);
+    result.kind = CheckKind::Coverage;
+    result.metric = Some("22%".to_string());
+
+    let html = chip(CheckKind::Coverage, Some(&result)).render();
+    assert!(html.contains("C 22%"));
+    assert!(!html.contains("C 50"));
 }
 
 #[test]

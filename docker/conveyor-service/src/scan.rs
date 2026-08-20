@@ -117,6 +117,15 @@ pub struct CheckResult {
     /// Capped at 50 - a job that failed this badly needs its own log, not a
     /// summary page trying to hold all of it.
     pub findings: Vec<Finding>,
+    /// What the overview card's big number should read, when the finding
+    /// count itself isn't it. `None` for lint/machete/audit, where the count
+    /// is the number worth leading with. `Some` for coverage: the count of
+    /// incompletely-covered files hits the 50-finding cap on nearly any
+    /// real codebase (that's the normal case, not a sign of trouble the way
+    /// 50 live lint warnings would be), so it would read as an arbitrary,
+    /// unexplained "50" instead of the coverage percentage the headline
+    /// already states.
+    pub metric: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -215,6 +224,7 @@ async fn collect_job_checks(
             job_name: job.qualified_name(),
             headline: String::new(),
             findings: Vec::new(),
+            metric: None,
             passed,
         }
         .parsed(&lines, step.exit_code);
@@ -245,16 +255,24 @@ impl CheckResult {
         let borrowed: Vec<&str> = stripped.iter().map(String::as_str).collect();
 
         let parsed = match self.kind {
-            CheckKind::Lint => parse_lint(&borrowed),
-            CheckKind::Machete => parse_machete(&borrowed),
-            CheckKind::Audit => parse_audit(&borrowed),
-            CheckKind::Coverage => parse_coverage(&borrowed),
+            CheckKind::Lint => {
+                parse_lint(&borrowed).map(|(headline, findings)| (headline, findings, None))
+            }
+            CheckKind::Machete => {
+                parse_machete(&borrowed).map(|(headline, findings)| (headline, findings, None))
+            }
+            CheckKind::Audit => {
+                parse_audit(&borrowed).map(|(headline, findings)| (headline, findings, None))
+            }
+            CheckKind::Coverage => parse_coverage(&borrowed)
+                .map(|(headline, findings, metric)| (headline, findings, Some(metric))),
         };
 
-        if let Some((headline, mut findings)) = parsed {
+        if let Some((headline, mut findings, metric)) = parsed {
             findings.truncate(MAX_FINDINGS);
             self.headline = headline;
             self.findings = findings;
+            self.metric = metric;
             return self;
         }
 
@@ -467,7 +485,7 @@ fn audit_block(block: &[&str]) -> Option<Finding> {
 /// `cargo-llvm-cov`'s column set (region/function/branch coverage too) has
 /// changed release to release, but lines has stayed the seventh data column
 /// through every version this has been checked against.
-fn parse_coverage(lines: &[&str]) -> Option<(String, Vec<Finding>)> {
+fn parse_coverage(lines: &[&str]) -> Option<(String, Vec<Finding>, String)> {
     let mut files = Vec::new();
     let mut total: Option<CoverageRow> = None;
 
@@ -510,7 +528,12 @@ fn parse_coverage(lines: &[&str]) -> Option<(String, Vec<Finding>)> {
         .collect();
 
     let headline = format!("{:.2}% line coverage", total.line_pct);
-    Some((headline, findings))
+    // A rounded, shorter form for the overview card's big number - the
+    // finding count itself would just be the (capped) count of files with any
+    // gap at all, which is 50 on nearly every real codebase and says nothing
+    // about how covered it actually is.
+    let metric = format!("{:.0}%", total.line_pct);
+    Some((headline, findings, metric))
 }
 
 /// One row of `cargo llvm-cov report`'s table - a file's, or the trailing
@@ -601,6 +624,7 @@ mod tests {
             job_name: "check/lint".to_string(),
             headline: String::new(),
             findings: Vec::new(),
+            metric: None,
             passed: true,
         }
         .parsed(&["10 modules scanned, 0 lint errors"], Some(0));
@@ -616,6 +640,7 @@ mod tests {
             job_name: "check/lint".to_string(),
             headline: String::new(),
             findings: Vec::new(),
+            metric: None,
             passed: false,
         }
         .parsed(&["thread panicked", "some other diagnostic"], Some(101));
@@ -738,8 +763,9 @@ mod tests {
             "-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------",
             "TOTAL                              179               104    41.90%          21                13    38.10%         133                71    46.62%           0                 0         -",
         ];
-        let (headline, findings) = parse_coverage(&lines).expect("should parse");
+        let (headline, findings, metric) = parse_coverage(&lines).expect("should parse");
         assert_eq!(headline, "46.62% line coverage");
+        assert_eq!(metric, "47%");
         // fully_covered.rs missed nothing - it is not a finding.
         assert_eq!(findings.len(), 2);
         // Worst first: 69 missed lines beats 2, regardless of percentage.
