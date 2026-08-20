@@ -43,6 +43,8 @@ pub const DOCKER_COMMANDS: [&str; 6] = [
     "tag",
 ];
 
+/// Checks an `anvil` step's command word (and, for `docker`, its subcommand)
+/// against [`COMMANDS`]/[`DOCKER_COMMANDS`].
 pub fn validate(argv: &[String]) -> Result<(), StepError> {
     let command = argv.first().map(String::as_str).unwrap_or_default();
 

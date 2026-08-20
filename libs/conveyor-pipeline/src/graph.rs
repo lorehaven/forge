@@ -10,19 +10,38 @@ use crate::condition::EvalContext;
 use crate::spec::{PipelineSpec, Stage};
 use std::collections::HashMap;
 
+/// Why a pipeline's stage graph is invalid.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum GraphError {
+    /// Two stages share a name.
     #[error("duplicate stage '{name}'")]
-    DuplicateStage { name: String },
+    DuplicateStage {
+        /// The name that was declared more than once.
+        name: String,
+    },
 
+    /// A stage's `needs` names something that isn't a stage.
     #[error("stage '{stage}' needs '{missing}', which is not a stage in this pipeline")]
-    UnknownNeeds { stage: String, missing: String },
+    UnknownNeeds {
+        /// The stage whose `needs` is invalid.
+        stage: String,
+        /// The name it named that doesn't exist.
+        missing: String,
+    },
 
+    /// A stage lists itself in its own `needs`.
     #[error("stage '{stage}' needs itself")]
-    SelfNeeds { stage: String },
+    SelfNeeds {
+        /// The stage that needs itself.
+        stage: String,
+    },
 
+    /// The `needs` edges form a cycle, so no valid order exists.
     #[error("stages form a cycle: {}", .path.join(" -> "))]
-    Cycle { path: Vec<String> },
+    Cycle {
+        /// The stage names in the cycle, in the order the cycle was found.
+        path: Vec<String>,
+    },
 }
 
 /// Orders stages so that a stage always follows everything it needs, and
@@ -165,16 +184,19 @@ fn find_cycle(stages: &[Stage], dependencies: &[Vec<usize>]) -> Vec<String> {
 /// Why a stage or job is, or is not, going to run.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Decision {
+    /// Nothing excludes or blocks it.
     Run,
     /// A `when` on this stage or job evaluated false.
     Excluded,
     /// Something this depends on is not running.
     Blocked {
+        /// The stage that didn't run, propagated from its own `Decision`.
         by: String,
     },
 }
 
 impl Decision {
+    /// Whether this stage or job will actually execute.
     pub const fn will_run(&self) -> bool {
         matches!(self, Self::Run)
     }
@@ -189,18 +211,23 @@ impl Decision {
     }
 }
 
+/// One job's outcome within a [`StagePlan`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct JobPlan {
     /// Index into the stage's `jobs`.
     pub index: usize,
+    /// Whether this job ran, and why not if it didn't.
     pub decision: Decision,
 }
 
+/// One stage's outcome within a [`plan`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StagePlan {
     /// Index into the spec's `stages`.
     pub index: usize,
+    /// Whether this stage ran, and why not if it didn't.
     pub decision: Decision,
+    /// Every job in the stage, in declaration order.
     pub jobs: Vec<JobPlan>,
 }
 

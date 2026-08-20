@@ -11,8 +11,10 @@ use std::collections::BTreeMap;
 /// The file conveyor looks for in a checkout.
 pub const PIPELINE_FILE: &str = ".conveyor.toml";
 
+/// A fully parsed and validated `.conveyor.toml`.
 #[derive(Clone, Debug)]
 pub struct PipelineSpec {
+    /// Which events this pipeline runs for.
     pub on: Triggers,
     /// Stages in declaration order, which is the order they are shown in.
     pub stages: Vec<Stage>,
@@ -35,10 +37,12 @@ impl PipelineSpec {
         self.order.iter().map(|&index| &self.stages[index])
     }
 
+    /// Looks up a stage by name.
     pub fn stage(&self, name: &str) -> Option<&Stage> {
         self.stages.iter().find(|stage| stage.name == name)
     }
 
+    /// The total number of jobs across every stage.
     pub fn job_count(&self) -> usize {
         self.stages.iter().map(|stage| stage.jobs.len()).sum()
     }
@@ -51,7 +55,9 @@ impl PipelineSpec {
 /// `master` and `release/*` rather than `refs/heads/master`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Triggers {
+    /// Matched against the branch name for a push to a branch.
     pub push: Vec<String>,
+    /// Matched against the target branch name for a pull request.
     pub pull_request: Vec<String>,
     /// Matched against the tag name when a push carries `refs/tags/...`.
     pub tag: Vec<String>,
@@ -138,18 +144,23 @@ pub fn glob_match(pattern: &str, value: &str) -> bool {
     pattern[p..].iter().all(|&c| c == '*')
 }
 
+/// One stage: a named group of jobs, gated on what came before it.
 #[derive(Clone, Debug)]
 pub struct Stage {
+    /// Unique within the pipeline.
     pub name: String,
     /// Stages that must finish before this one starts.
     pub needs: Vec<String>,
     /// When absent, the stage always runs.
     pub when: Option<Condition>,
+    /// The jobs in this stage, which run independently of each other.
     pub jobs: Vec<Job>,
 }
 
+/// One job: a container running a sequence of [`Step`]s.
 #[derive(Clone, Debug)]
 pub struct Job {
+    /// Unique within its stage.
     pub name: String,
     /// Evaluated on top of the stage's own condition: a job runs only if both
     /// its stage and it say so.
@@ -166,6 +177,7 @@ pub struct Job {
     pub image: Option<String>,
     /// Paths to collect once the job succeeds.
     pub artifacts: Vec<String>,
+    /// Commands to run, in order; the first failure stops the job.
     pub steps: Vec<Step>,
 }
 
@@ -176,9 +188,13 @@ pub struct Job {
 /// before anything is executed.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Step {
+    /// A shell command, run through `sh -c`.
     Run(String),
+    /// An `anvil` subcommand and its arguments.
     Anvil(String),
+    /// A `riveter` subcommand and its arguments.
     Riveter(String),
+    /// A `warehouse-cli` subcommand and its arguments.
     Warehouse(String),
 }
 
@@ -187,6 +203,7 @@ impl Step {
     /// error message when none of them matched.
     pub const KINDS: [&'static str; 4] = ["run", "anvil", "riveter", "warehouse"];
 
+    /// The tag this step was, or would be, written with in `.conveyor.toml`.
     pub const fn kind(&self) -> &'static str {
         match self {
             Self::Run(_) => "run",
@@ -196,6 +213,7 @@ impl Step {
         }
     }
 
+    /// The command text, regardless of which kind of step this is.
     pub fn command(&self) -> &str {
         match self {
             Self::Run(command)
@@ -205,6 +223,8 @@ impl Step {
         }
     }
 
+    /// Builds a step from its `.conveyor.toml` tag and command text, or `None`
+    /// if `kind` isn't one of [`Self::KINDS`].
     pub fn new(kind: &str, command: impl Into<String>) -> Option<Self> {
         let command = command.into();
         match kind {

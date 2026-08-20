@@ -13,10 +13,22 @@
 # (root Cargo.toml) expects every direct subdirectory of docker/ to be a
 # crate with its own Cargo.toml - a docker/ci/ with none broke `cargo` for the
 # whole workspace, not just this image's own build.
+#
+# glibc (Debian), not Alpine/musl: this image never ships anything, it only
+# runs CI checks, so there's no reason to pay musl's cost here. And it's a
+# real cost, not just size - cargo-semver-checks probes rustc for every
+# crate-type at once (bin/rlib/dylib/cdylib/staticlib/proc-macro) to learn
+# target file-naming conventions, and that combined query flat-out crashes
+# rustc on a musl host (SIGABRT) instead of erroring cleanly. Retargeting the
+# probe at gnu explicitly sidesteps the crash but then any crate with a
+# cc-rs build script fails for real, needing a gnu cross-compiler this image
+# doesn't have. glibc-native has neither problem.
 
-FROM rust:1.94-alpine3.22
+FROM rust:1.94-bookworm
 
-RUN apk add --no-cache musl-dev pkgconfig build-base ca-certificates git curl openssl openssl-dev openssl-libs-static perl
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential pkg-config ca-certificates git curl libssl-dev perl \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN rustup component add clippy rustfmt
 

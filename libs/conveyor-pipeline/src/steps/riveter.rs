@@ -17,6 +17,8 @@ pub const COMMANDS: [&str; 15] = [
 /// so a pipeline that asks for it hangs until the job's timeout.
 const INTERACTIVE: [&str; 1] = ["repl"];
 
+/// Checks a `riveter` step's command word against [`COMMANDS`], and rejects
+/// [`INTERACTIVE`] ones outright.
 pub fn validate(argv: &[String]) -> Result<(), StepError> {
     let command = argv.first().map(String::as_str).unwrap_or_default();
 

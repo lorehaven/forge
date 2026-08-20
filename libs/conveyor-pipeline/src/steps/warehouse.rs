@@ -36,6 +36,8 @@ const SUBCOMMANDS: [(&str, &[&str]); 4] = [
     ),
 ];
 
+/// Checks a `warehouse` step's command word, and for a two-word command its
+/// subcommand, against [`COMMANDS`]/[`SUBCOMMANDS`].
 pub fn validate(argv: &[String]) -> Result<(), StepError> {
     let command = argv.first().map(String::as_str).unwrap_or_default();
 

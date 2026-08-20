@@ -26,15 +26,21 @@ use std::fmt;
 /// natural way to write "only on a tag".
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Variable {
+    /// The branch a push or PR targets; empty on a tag build.
     Branch,
+    /// The tag a push targets; empty on a branch build.
     Tag,
+    /// The trigger kind: `push`, `pull_request`, or `manual`.
     Event,
+    /// The commit being built.
     Sha,
 }
 
 impl Variable {
+    /// Every variable a condition can name, in the order `known()` reports them.
     pub const ALL: [Self; 4] = [Self::Branch, Self::Tag, Self::Event, Self::Sha];
 
+    /// The identifier a condition source uses for this variable.
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Branch => "branch",
@@ -44,6 +50,7 @@ impl Variable {
         }
     }
 
+    /// Looks up a variable by the identifier a condition source used, if any variable is named that.
     pub fn parse(raw: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|v| v.as_str() == raw)
     }
@@ -63,9 +70,12 @@ impl fmt::Display for Variable {
     }
 }
 
+/// A comparison operator.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CompareOp {
+    /// `==`
     Eq,
+    /// `!=`
     Ne,
 }
 
@@ -81,9 +91,13 @@ impl CompareOp {
 /// Everything a condition can see about the run being planned.
 #[derive(Clone, Debug, Default)]
 pub struct EvalContext {
+    /// The branch being built; empty on a tag build.
     pub branch: String,
+    /// The tag being built; empty on a branch build.
     pub tag: String,
+    /// The trigger kind: `push`, `pull_request`, or `manual`.
     pub event: String,
+    /// The commit being built.
     pub sha: String,
 }
 
@@ -123,18 +137,26 @@ impl EvalContext {
     }
 }
 
+/// A parsed `when` expression.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Condition {
+    /// A single `variable op 'value'` test.
     Compare {
+        /// Which of the four variables is being tested.
         variable: Variable,
+        /// `==` or `!=`.
         op: CompareOp,
+        /// The literal on the right-hand side.
         value: String,
     },
+    /// Both sides must hold.
     And(Box<Condition>, Box<Condition>),
+    /// Either side may hold.
     Or(Box<Condition>, Box<Condition>),
 }
 
 impl Condition {
+    /// Parses a `when` expression, or fails with a position-aware [`ConditionError`].
     pub fn parse(source: &str) -> Result<Self, ConditionError> {
         let tokens = tokenize(source)?;
         if tokens.is_empty() {
@@ -151,6 +173,7 @@ impl Condition {
         }
     }
 
+    /// Whether this condition holds against a specific run.
     pub fn evaluate(&self, context: &EvalContext) -> bool {
         match self {
             Self::Compare {
@@ -188,31 +211,67 @@ impl fmt::Display for Condition {
 // Errors
 // ---------------------------------------------------------------------------
 
+/// Why a `when` expression failed to parse.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum ConditionError {
+    /// The `when` value was an empty string.
     #[error("condition is empty")]
     Empty,
 
+    /// An identifier isn't one of [`Variable::ALL`].
     #[error("unknown variable '{name}' (known: {known})")]
-    UnknownVariable { name: String, known: String },
+    UnknownVariable {
+        /// The identifier that was written.
+        name: String,
+        /// The variables that are actually valid, comma-joined.
+        known: String,
+    },
 
+    /// A comparison didn't start with a variable name.
     #[error("expected a variable, found {found}")]
-    ExpectedVariable { found: String },
+    ExpectedVariable {
+        /// What was found instead, already formatted for display.
+        found: String,
+    },
 
+    /// A variable wasn't followed by `==` or `!=`.
     #[error("expected '==' or '!=' after '{variable}', found {found}")]
-    ExpectedComparison { variable: String, found: String },
+    ExpectedComparison {
+        /// The variable the comparison operator was expected after.
+        variable: String,
+        /// What was found instead, already formatted for display.
+        found: String,
+    },
 
+    /// A comparison operator wasn't followed by a quoted literal.
     #[error("expected a quoted value after '{op}', found {found}")]
-    ExpectedValue { op: String, found: String },
+    ExpectedValue {
+        /// The operator the value was expected after.
+        op: String,
+        /// What was found instead, already formatted for display.
+        found: String,
+    },
 
+    /// Tokens remained after a complete expression was parsed.
     #[error("unexpected {token} at the end of the condition")]
-    Trailing { token: String },
+    Trailing {
+        /// The first leftover token, already formatted for display.
+        token: String,
+    },
 
+    /// A quoted literal had no matching closing quote.
     #[error("unterminated string: no closing {quote}")]
-    UnterminatedString { quote: char },
+    UnterminatedString {
+        /// The quote character (`'` or `"`) that was never closed.
+        quote: char,
+    },
 
+    /// A character doesn't start any valid token.
     #[error("unexpected character '{found}'{}", hint(*found))]
-    UnexpectedCharacter { found: char },
+    UnexpectedCharacter {
+        /// The offending character.
+        found: char,
+    },
 }
 
 /// Nudges the two mistakes people actually make: writing `=` for `==`, and

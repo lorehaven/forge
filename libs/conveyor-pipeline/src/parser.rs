@@ -16,67 +16,130 @@ use crate::spec::{Job, PipelineSpec, Stage, Step, Triggers};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
+/// Why a `.conveyor.toml` failed to parse or validate.
 #[derive(Debug, thiserror::Error)]
 pub enum SpecError {
+    /// The document isn't valid TOML, or doesn't match the expected shape.
     #[error("{0}")]
     Toml(#[from] toml::de::Error),
 
+    /// There isn't a single `[[stage]]`.
     #[error("pipeline has no stages: add a [[stage]]")]
     NoStages,
 
+    /// A `[[stage]]`'s `name` is blank.
     #[error("stage {position} has an empty name")]
-    EmptyStageName { position: usize },
+    EmptyStageName {
+        /// The stage's position in the `stage` array (0-based).
+        position: usize,
+    },
 
+    /// A stage has no `[[stage.job]]` at all.
     #[error("stage '{stage}' has no jobs: add a [[stage.job]]")]
-    NoJobs { stage: String },
+    NoJobs {
+        /// The stage with no jobs.
+        stage: String,
+    },
 
+    /// A `[[stage.job]]`'s `name` is blank.
     #[error("a job in stage '{stage}' has an empty name")]
-    EmptyJobName { stage: String },
+    EmptyJobName {
+        /// The stage the empty-named job is in.
+        stage: String,
+    },
 
+    /// Two jobs in the same stage share a name.
     #[error("duplicate job '{name}' in stage '{stage}'")]
-    DuplicateJob { stage: String, name: String },
+    DuplicateJob {
+        /// The stage the duplicate is in.
+        stage: String,
+        /// The name that was declared more than once.
+        name: String,
+    },
 
+    /// A job has no `steps` at all.
     #[error("job '{job}' in stage '{stage}' has no steps")]
-    NoSteps { stage: String, job: String },
+    NoSteps {
+        /// The stage the empty job is in.
+        stage: String,
+        /// The job with no steps.
+        job: String,
+    },
 
+    /// A job declares `needs`, which belongs on its stage instead.
     #[error(
         "job '{job}' in stage '{stage}' declares `needs`; \
          dependencies are between stages, so move it to the [[stage]]"
     )]
-    JobNeeds { stage: String, job: String },
+    JobNeeds {
+        /// The stage the offending job is in.
+        stage: String,
+        /// The job that declared `needs`.
+        job: String,
+    },
 
+    /// One of a job's steps couldn't be turned into a valid [`Step`].
     #[error("step {ordinal} of job '{job}' in stage '{stage}': {reason}")]
     BadStep {
+        /// The stage the offending job is in.
         stage: String,
+        /// The job the offending step is in.
         job: String,
+        /// The step's 1-based position within the job.
         ordinal: usize,
+        /// Why the step is invalid.
         reason: String,
     },
 
+    /// A stage's `when` failed to parse.
     #[error("`when` on stage '{stage}': {source}")]
     BadStageCondition {
+        /// The stage with the invalid `when`.
         stage: String,
+        /// Why the condition is invalid.
         #[source]
         source: ConditionError,
     },
 
+    /// A job's `when` failed to parse.
     #[error("`when` on job '{job}' in stage '{stage}': {source}")]
     BadJobCondition {
+        /// The stage the offending job is in.
         stage: String,
+        /// The job with the invalid `when`.
         job: String,
+        /// Why the condition is invalid.
         #[source]
         source: ConditionError,
     },
 
+    /// A job's `timeout` is `0`.
     #[error("job '{job}' in stage '{stage}' has a timeout of zero")]
-    ZeroTimeout { stage: String, job: String },
+    ZeroTimeout {
+        /// The stage the offending job is in.
+        stage: String,
+        /// The job with the zero timeout.
+        job: String,
+    },
 
+    /// A job's `secrets` list contains a blank name.
     #[error("job '{job}' in stage '{stage}' lists an empty secret name")]
-    EmptySecretName { stage: String, job: String },
+    EmptySecretName {
+        /// The stage the offending job is in.
+        stage: String,
+        /// The job with the blank secret name.
+        job: String,
+    },
 
+    /// An `on` trigger's pattern list contains a blank pattern.
     #[error("`on.{event}` contains an empty pattern; use \"*\" to match every ref")]
-    EmptyTriggerPattern { event: String },
+    EmptyTriggerPattern {
+        /// The trigger with the blank pattern (`push`, `pull_request`, or `tag`).
+        event: String,
+    },
 
+    /// The stage graph itself is invalid (duplicate names, missing `needs`,
+    /// a cycle - see [`GraphError`]).
     #[error("{0}")]
     Graph(#[from] GraphError),
 }

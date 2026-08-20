@@ -18,26 +18,48 @@ pub mod riveter;
 pub mod shell;
 pub mod warehouse;
 
+/// Why a step's command couldn't be turned into an argument vector, or failed
+/// validation.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum StepError {
+    /// The command text has unbalanced quotes and `shlex` couldn't split it.
     #[error("`{kind}` arguments are not quoted correctly: {command}")]
-    Unparseable { kind: &'static str, command: String },
+    Unparseable {
+        /// The step kind (`anvil`, `riveter`, `warehouse`).
+        kind: &'static str,
+        /// The command text that failed to split.
+        command: String,
+    },
 
+    /// The command text split into nothing but blank arguments.
     #[error("`{kind}` has no arguments")]
-    NoArguments { kind: &'static str },
+    NoArguments {
+        /// The step kind (`anvil`, `riveter`, `warehouse`).
+        kind: &'static str,
+    },
 
+    /// The first word isn't one of the tool's known subcommands.
     #[error("`{kind}` has no command `{command}` (known: {known})")]
     UnknownCommand {
+        /// The step kind (`anvil`, `riveter`, `warehouse`).
         kind: &'static str,
+        /// The unrecognized subcommand.
         command: String,
+        /// The subcommands that are actually valid, comma-joined.
         known: String,
     },
 
+    /// The command is one that blocks on stdin, which a job never provides.
     #[error(
         "`{kind} {command}` waits for input, which conveyor never sends; \
          the job would hang until its timeout"
     )]
-    Interactive { kind: &'static str, command: String },
+    Interactive {
+        /// The step kind (`anvil`, `riveter`, `warehouse`).
+        kind: &'static str,
+        /// The interactive subcommand.
+        command: String,
+    },
 }
 
 /// The program and arguments to spawn for `step`.

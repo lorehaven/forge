@@ -9,6 +9,7 @@
 /// where `/bin/sh` is busybox ash and bash is not installed.
 pub const SHELL: &str = "sh";
 
+/// The argv to spawn a `run` step's command text under [`SHELL`].
 pub fn argv(command: &str) -> Vec<String> {
     vec![
         SHELL.to_string(),
