@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use std::process::Command;
 
+use crate::cargo_meta::resolve_package;
 use crate::util::run_command;
 
 pub fn list(format: &str) -> Result<()> {
@@ -77,4 +78,70 @@ pub fn machete() -> Result<()> {
     cmd.arg("machete");
 
     run_command(cmd, "machete")
+}
+
+pub fn deny() -> Result<()> {
+    // Check if cargo-deny is installed
+    which::which("cargo-deny")
+        .context("cargo-deny not found. Install with: cargo install cargo-deny")?;
+
+    let mut cmd = Command::new("cargo");
+    cmd.arg("deny").arg("check");
+
+    run_command(cmd, "deny")
+}
+
+/// Finds the commit before the one that last touched a package's `Cargo.toml`.
+///
+/// That's the state just before its most recent version bump, used as a
+/// `cargo semver-checks` baseline when the package isn't fetchable from a
+/// public registry.
+fn previous_version_rev(manifest: &std::path::Path) -> Result<String> {
+    let output = Command::new("git")
+        .arg("log")
+        .arg("--skip=1")
+        .arg("-1")
+        .arg("--format=%H")
+        .arg("--")
+        .arg(manifest)
+        .output()
+        .context("Failed to run git log")?;
+
+    if !output.status.success() {
+        anyhow::bail!("git log failed for {}", manifest.display());
+    }
+
+    let rev = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+    if rev.is_empty() {
+        anyhow::bail!(
+            "No earlier commit found for {} - pass --baseline-rev explicitly",
+            manifest.display()
+        );
+    }
+
+    Ok(rev)
+}
+
+pub fn semver_check(package: &str, baseline_rev: Option<String>) -> Result<()> {
+    // Check if cargo-semver-checks is installed
+    which::which("cargo-semver-checks").context(
+        "cargo-semver-checks not found. Install with: cargo install cargo-semver-checks",
+    )?;
+
+    let rev = if let Some(rev) = baseline_rev {
+        rev
+    } else {
+        let pkg = resolve_package(package)?;
+        previous_version_rev(&pkg.manifest)?
+    };
+
+    let mut cmd = Command::new("cargo");
+    cmd.arg("semver-checks")
+        .arg("--package")
+        .arg(package)
+        .arg("--baseline-rev")
+        .arg(rev);
+
+    run_command(cmd, "semver-check")
 }

@@ -62,6 +62,21 @@ pub enum Commands {
     Audit,
     /// Find unused dependencies with cargo-machete
     Machete,
+    /// Check licenses, banned/duplicate crates, and registry sources with cargo-deny
+    Deny,
+    /// Check a library crate's public API for unflagged breaking changes with cargo-semver-checks
+    ///
+    /// Diffs against a git revision rather than a registry version, since the
+    /// crates this workspace publishes live on a private registry that
+    /// cargo-semver-checks can't query directly.
+    SemverCheck {
+        /// Package to check (must have a library target)
+        #[arg(short, long)]
+        package: String,
+        /// Git revision to diff against (defaults to the last commit that changed the package's Cargo.toml)
+        #[arg(long)]
+        baseline_rev: Option<String>,
+    },
     /// Test the workspace
     Test {
         /// Run tests for all packages
@@ -78,6 +93,20 @@ pub enum Commands {
         /// List available tests (same as cargo test -- --list)
         #[arg(long)]
         list: bool,
+    },
+    /// Test the workspace with cargo-nextest (faster, parallel-by-default runner)
+    Nextest {
+        /// Run tests for all packages
+        #[arg(long)]
+        all: bool,
+        /// Specific package to test
+        #[arg(short, long)]
+        package: Option<String>,
+        /// Optional test name filter
+        test_name: Option<String>,
+        /// Run only ignored tests
+        #[arg(long)]
+        ignored: bool,
     },
     /// Install a package binary with cargo install --path
     Install {

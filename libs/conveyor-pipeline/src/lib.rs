@@ -1,3 +1,4 @@
+#![warn(missing_docs)]
 //! The pipeline a commit declares, and what a given run makes of it.
 //!
 //! Nothing in here touches the network, the database or the filesystem. It

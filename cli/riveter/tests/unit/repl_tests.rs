@@ -79,7 +79,7 @@ fn a_near_miss_on_scope_names_the_real_flag() {
 #[test]
 fn scope_requires_a_value() {
     for line in ["list --scope", "list --scope="] {
-        let err = list(line).expect_err("`{line}` should be rejected");
+        let err = list(line).expect_err(&format!("`{line}` should be rejected"));
         assert!(
             err.to_string().contains("missing value for --scope"),
             "{line}"

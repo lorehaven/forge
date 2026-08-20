@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::process::Command;
 
 use crate::util::run_command;
@@ -66,4 +66,42 @@ pub fn test(
     }
 
     run_command(cmd, "test")
+}
+
+/// Same test selection as `test`, run through cargo-nextest instead of the
+/// built-in libtest harness.
+///
+/// Parallel-by-default, per-test timeouts, output that doesn't interleave
+/// across crates. Doesn't cover doctests (nextest doesn't run them) or
+/// `forge-bdd`'s cucumber suite (that's a binary target driven by
+/// `foreman test`, not a `#[test]`-based harness).
+pub fn nextest(
+    all: bool,
+    package: Option<String>,
+    test_name: Option<String>,
+    ignored: bool,
+) -> Result<()> {
+    which::which("cargo-nextest")
+        .context("cargo-nextest not found. Install with: cargo install cargo-nextest")?;
+
+    let mut cmd = Command::new("cargo");
+    cmd.arg("nextest").arg("run");
+
+    if all || package.is_none() {
+        cmd.arg("--workspace");
+    }
+
+    if let Some(pkg) = package {
+        cmd.arg("--package").arg(pkg);
+    }
+
+    if ignored {
+        cmd.arg("--run-ignored").arg("ignored-only");
+    }
+
+    if let Some(name) = test_name {
+        cmd.arg(name);
+    }
+
+    run_command(cmd, "nextest")
 }

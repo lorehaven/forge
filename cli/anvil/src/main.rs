@@ -30,6 +30,11 @@ fn main() -> Result<()> {
         Commands::Upgrade { incompatible } => commands::workspace::upgrade(incompatible)?,
         Commands::Audit => commands::workspace::audit()?,
         Commands::Machete => commands::workspace::machete()?,
+        Commands::Deny => commands::workspace::deny()?,
+        Commands::SemverCheck {
+            package,
+            baseline_rev,
+        } => commands::workspace::semver_check(&package, baseline_rev)?,
         Commands::Test {
             all,
             package,
@@ -37,6 +42,12 @@ fn main() -> Result<()> {
             ignored,
             list,
         } => commands::build::test(all, package, test_name, ignored, list)?,
+        Commands::Nextest {
+            all,
+            package,
+            test_name,
+            ignored,
+        } => commands::build::nextest(all, package, test_name, ignored)?,
         Commands::Install { all, package } => commands::install::install(&config, package, all)?,
         Commands::Release {
             all,

@@ -9,6 +9,10 @@ use riveter::repl::{
     print_resource_list, prune, repl, report_prune, warn,
 };
 
+// One match arm per subcommand, each a couple of lines that delegate straight
+// into `riveter::{render,repl,env}` - splitting it up would just add
+// indirection, not reduce the real complexity.
+#[allow(clippy::too_many_lines)]
 fn main() -> Result<()> {
     let cli = Cli::parse();
 

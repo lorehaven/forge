@@ -104,3 +104,21 @@ which = { version = "8.0" }
 
 [profile.release]
 strip = "debuginfo"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+cargo = { level = "deny", priority = -1 }
+complexity = { level = "deny", priority = -1 }
+correctness = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+perf = { level = "deny", priority = -1 }
+style = { level = "deny", priority = -1 }
+suspicious = { level = "deny", priority = -1 }
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+multiple_crate_versions = "allow"

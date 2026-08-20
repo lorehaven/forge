@@ -93,6 +93,75 @@ fn parse_test_supports_list_and_package_filter() {
 }
 
 #[test]
+fn parse_nextest_supports_package_name_and_ignored() {
+    let cli = Cli::parse_from([
+        "anvil",
+        "nextest",
+        "--package",
+        "ferrous",
+        "ui_web",
+        "--ignored",
+    ]);
+    match cli.command {
+        Commands::Nextest {
+            all,
+            package,
+            test_name,
+            ignored,
+        } => {
+            assert!(!all);
+            assert_eq!(package.as_deref(), Some("ferrous"));
+            assert_eq!(test_name.as_deref(), Some("ui_web"));
+            assert!(ignored);
+        }
+        _ => panic!("expected nextest command"),
+    }
+}
+
+#[test]
+fn parse_deny_takes_no_arguments() {
+    let cli = Cli::parse_from(["anvil", "deny"]);
+    assert!(matches!(cli.command, Commands::Deny));
+}
+
+#[test]
+fn parse_semver_check_supports_package_and_baseline_rev() {
+    let cli = Cli::parse_from([
+        "anvil",
+        "semver-check",
+        "--package",
+        "conveyor-pipeline",
+        "--baseline-rev",
+        "d69e26d",
+    ]);
+    match cli.command {
+        Commands::SemverCheck {
+            package,
+            baseline_rev,
+        } => {
+            assert_eq!(package, "conveyor-pipeline");
+            assert_eq!(baseline_rev.as_deref(), Some("d69e26d"));
+        }
+        _ => panic!("expected semver-check command"),
+    }
+}
+
+#[test]
+fn parse_semver_check_baseline_rev_is_optional() {
+    let cli = Cli::parse_from(["anvil", "semver-check", "--package", "conveyor-pipeline"]);
+    match cli.command {
+        Commands::SemverCheck {
+            package,
+            baseline_rev,
+        } => {
+            assert_eq!(package, "conveyor-pipeline");
+            assert!(baseline_rev.is_none());
+        }
+        _ => panic!("expected semver-check command"),
+    }
+}
+
+#[test]
 fn parse_install_supports_package_flag() {
     let cli = Cli::parse_from(["anvil", "install", "--package", "ferrous"]);
     match cli.command {

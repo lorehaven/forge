@@ -5,10 +5,12 @@ Anvil is the workspace build tool for the Forge Cargo workspace. It wraps `cargo
 ## Features
 
 - **Build/test/clean**: workspace-wide or single-package `build`, `test`, and `clean`, mirroring `cargo`'s own flags (`--all`, `--all-features`, `--release`, `-p/--package`).
+- **Faster test runner**: `nextest` runs the same package/test-name selection through `cargo-nextest` — parallel-by-default, per-test timeouts, non-interleaved output. Doesn't cover doctests or `forge-bdd`'s cucumber suite (a binary target, not a `#[test]` harness).
 - **Strict linting**: `lint` runs `cargo clippy` with `--all-targets`, `--all-features`, and warnings-as-errors all defaulting to on.
 - **Formatting**: `format [--check]` wraps `cargo fmt`.
 - **Workspace introspection**: `list [--format names|json]` enumerates workspace packages.
-- **Dependency maintenance**: `upgrade [--incompatible]`, `audit`, `machete` (unused-dependency detection via `cargo-machete`).
+- **Dependency maintenance**: `upgrade [--incompatible]`, `audit` (RustSec advisories via `cargo-audit`), `machete` (unused-dependency detection via `cargo-machete`), `deny` (licenses, banned/duplicate crates, and registry sources via `cargo-deny`, configured in `deny.toml`).
+- **API stability**: `semver-check -p <name> [--baseline-rev <rev>]` diffs a library crate's public API with `cargo-semver-checks` against a git revision (default: the commit before its last `Cargo.toml` version bump) rather than a registry version, since the crates this workspace publishes live on the private `ennor` registry that `cargo-semver-checks` can't query directly.
 - **Run/serve mode**: `run` builds and runs a package binary; with `--serve` it watches for file changes and rebuilds/restarts, with interactive hotkeys.
 - **Docker integration**: builds, tags, pushes, and releases Docker images for packages declared under `[docker.modules.*]` in `.anvil.toml`, including multi-registry pushes and per-package `build_args`.
 - **Release automation**: `release` bumps a package's patch version, commits, and then either runs the Docker release flow or `cargo publish` (+ `cargo install` when the package is also listed under `[install].packages`).
@@ -17,6 +19,9 @@ Anvil is the workspace build tool for the Forge Cargo workspace. It wraps `cargo
 
 - `cargo` and the standard Rust toolchain (`clippy`, `rustfmt` components for `lint`/`format`).
 - `cargo-machete` on `PATH` for `anvil machete`.
+- `cargo-deny` on `PATH` for `anvil deny`.
+- `cargo-nextest` on `PATH` for `anvil nextest`.
+- `cargo-semver-checks` on `PATH` for `anvil semver-check`.
 - `docker` on `PATH` for any `anvil docker ...` subcommand.
 - A `.anvil.toml` file at the workspace root for Docker/install/release package configuration (Anvil falls back to an empty config with a warning if it's missing or fails to parse).
 
@@ -35,6 +40,7 @@ cargo install --path .
 anvil build [--all] [--all-features] [--release] [-p|--package <name>]
 anvil clean
 anvil test [--all] [-p|--package <name>] [<test_name>] [--ignored] [--list]
+anvil nextest [--all] [-p|--package <name>] [<test_name>] [--ignored]
 anvil run [-p|--package <name>] [--serve] [--watch-interval-ms <ms>]
 anvil lint [--all-targets] [--all-features] [--deny-warnings]
 anvil format [--check]
@@ -42,6 +48,8 @@ anvil list [--format names|json]
 anvil upgrade [--incompatible]
 anvil audit
 anvil machete
+anvil deny
+anvil semver-check -p <name> [--baseline-rev <rev>]
 ```
 
 In `run --serve` mode: `r` rebuilds immediately, `R` toggles auto-rebuild-on-change, `q`/`Q`/`e`/`E` quit.
