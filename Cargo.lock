@@ -994,6 +994,7 @@ dependencies = [
  "hmac",
  "k8s-openapi",
  "kube",
+ "libc",
  "quench-auth",
  "quench-db",
  "quench-starter",

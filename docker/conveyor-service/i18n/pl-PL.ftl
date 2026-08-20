@@ -62,12 +62,13 @@ ui_log_loading = Ładowanie…
 
 # ── Scan ─────────────────────────────────────────────────────────────────────
 
-ui_scan_subtitle = Lint, nieużywane zależności i znane podatności, z ostatniego uruchomienia.
+ui_scan_subtitle = Lint, nieużywane zależności, znane podatności i pokrycie testami, z ostatniego uruchomienia.
 ui_scan_lint_title = Lint
 ui_scan_machete_title = Nieużywane zależności
 ui_scan_audit_title = Podatności
+ui_scan_coverage_title = Pokrycie testami
 ui_scan_no_runs = To repozytorium jeszcze się nie uruchomiło.
-ui_scan_no_checks = Ostatnie uruchomienie nie uruchomiło lint, machete ani audit. Dodaj `anvil lint`, `anvil machete` lub `anvil audit` jako kroki w .conveyor.toml, aby zobaczyć je tutaj.
+ui_scan_no_checks = Ostatnie uruchomienie nie uruchomiło lint, machete, audit ani coverage. Dodaj `anvil lint`, `anvil machete`, `anvil audit` lub krok `cargo llvm-cov` w .conveyor.toml, aby zobaczyć je tutaj.
 ui_scan_repo_not_found = Nie znaleziono takiego repozytorium.
 ui_scan_back = Powrót do przeglądu
 ui_scan_clean = Niczego nie znaleziono.

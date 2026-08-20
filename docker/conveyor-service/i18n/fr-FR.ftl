@@ -62,12 +62,13 @@ ui_log_loading = Chargement…
 
 # ── Scan ─────────────────────────────────────────────────────────────────────
 
-ui_scan_subtitle = Lint, dépendances inutilisées et vulnérabilités connues, à partir de la dernière exécution.
+ui_scan_subtitle = Lint, dépendances inutilisées, vulnérabilités connues et couverture de tests, à partir de la dernière exécution.
 ui_scan_lint_title = Lint
 ui_scan_machete_title = Dépendances inutilisées
 ui_scan_audit_title = Vulnérabilités
+ui_scan_coverage_title = Couverture de tests
 ui_scan_no_runs = Ce dépôt n'a pas encore été exécuté.
-ui_scan_no_checks = La dernière exécution n'a exécuté ni lint, ni machete, ni audit. Ajoutez `anvil lint`, `anvil machete` ou `anvil audit` comme étapes dans .conveyor.toml pour les voir ici.
+ui_scan_no_checks = La dernière exécution n'a exécuté ni lint, ni machete, ni audit, ni couverture. Ajoutez `anvil lint`, `anvil machete`, `anvil audit` ou une étape `cargo llvm-cov` dans .conveyor.toml pour les voir ici.
 ui_scan_repo_not_found = Dépôt introuvable.
 ui_scan_back = Retour à l'aperçu
 ui_scan_clean = Rien trouvé.

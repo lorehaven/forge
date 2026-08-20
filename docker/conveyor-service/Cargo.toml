@@ -33,6 +33,7 @@ hex = { workspace = true }
 hmac = { workspace = true }
 k8s-openapi = { workspace = true }
 kube = { workspace = true }
+libc = { workspace = true }
 quench-auth = { workspace = true }
 quench-db = { workspace = true }
 quench-starter = { workspace = true }

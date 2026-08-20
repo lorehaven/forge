@@ -160,6 +160,7 @@ fn overview_body(repo: &Repo, summary: &ScanSummary) -> Element {
     grid = grid.child_opt(summary.lint.as_ref().map(|c| card(repo, c)));
     grid = grid.child_opt(summary.machete.as_ref().map(|c| card(repo, c)));
     grid = grid.child_opt(summary.audit.as_ref().map(|c| card(repo, c)));
+    grid = grid.child_opt(summary.coverage.as_ref().map(|c| card(repo, c)));
     container = container.child(grid);
 
     container
@@ -373,6 +374,7 @@ mod tests {
             }),
             machete: None,
             audit: None,
+            coverage: None,
         };
 
         let html = overview(&repo(), &summary).render();
@@ -382,9 +384,10 @@ mod tests {
         assert!(html.contains(">1<"));
         assert!(html.contains("/ui/repos/lorehaven/palantir/scan/lint"));
         assert!(html.contains("status-failed"));
-        // machete/audit weren't configured - no cards for them at all.
+        // machete/audit/coverage weren't configured - no cards for them at all.
         assert!(!html.contains("ui_scan_machete_title"));
         assert!(!html.contains("ui_scan_audit_title"));
+        assert!(!html.contains("ui_scan_coverage_title"));
     }
 
     #[test]

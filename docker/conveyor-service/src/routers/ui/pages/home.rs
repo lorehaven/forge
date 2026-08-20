@@ -577,6 +577,10 @@ pub fn check_chips(summary: Option<&ScanSummary>) -> Element {
             CheckKind::Audit,
             summary.and_then(|s| s.audit.as_ref()),
         ))
+        .child(chip(
+            CheckKind::Coverage,
+            summary.and_then(|s| s.coverage.as_ref()),
+        ))
 }
 
 pub fn chip(kind: CheckKind, check: Option<&CheckResult>) -> Element {
@@ -584,6 +588,7 @@ pub fn chip(kind: CheckKind, check: Option<&CheckResult>) -> Element {
         CheckKind::Lint => "L",
         CheckKind::Machete => "M",
         CheckKind::Audit => "A",
+        CheckKind::Coverage => "C",
     };
 
     let (severity_class, label, title_key) = match check {

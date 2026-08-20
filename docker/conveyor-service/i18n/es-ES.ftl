@@ -62,12 +62,13 @@ ui_log_loading = Cargando…
 
 # ── Scan ─────────────────────────────────────────────────────────────────────
 
-ui_scan_subtitle = Lint, dependencias sin usar y vulnerabilidades conocidas, de la ejecución más reciente.
+ui_scan_subtitle = Lint, dependencias sin usar, vulnerabilidades conocidas y cobertura de pruebas, de la ejecución más reciente.
 ui_scan_lint_title = Lint
 ui_scan_machete_title = Dependencias sin usar
 ui_scan_audit_title = Vulnerabilidades
+ui_scan_coverage_title = Cobertura de pruebas
 ui_scan_no_runs = Este repositorio aún no se ha ejecutado.
-ui_scan_no_checks = La ejecución más reciente no ejecutó lint, machete ni audit. Añade `anvil lint`, `anvil machete` o `anvil audit` como pasos en .conveyor.toml para verlos aquí.
+ui_scan_no_checks = La ejecución más reciente no ejecutó lint, machete, audit ni coverage. Añade `anvil lint`, `anvil machete`, `anvil audit` o un paso `cargo llvm-cov` en .conveyor.toml para verlos aquí.
 ui_scan_repo_not_found = No existe ese repositorio.
 ui_scan_back = Volver al resumen
 ui_scan_clean = No se encontró nada.

@@ -86,28 +86,34 @@ fn a_failed_check_is_red() {
 }
 
 #[test]
-fn three_chips_come_out_in_a_fixed_order_regardless_of_which_checks_ran() {
+fn four_chips_come_out_in_a_fixed_order_regardless_of_which_checks_ran() {
     let summary = ScanSummary {
         run: None,
         lint: Some(check(true, 0)),
         machete: None,
         audit: Some(check(false, 2)),
+        coverage: None,
     };
 
     let html = check_chips(Some(&summary)).render();
     let lint_at = html.find("L 0").expect("lint chip");
     let machete_at = html.find("M -").expect("machete chip, unrun");
     let audit_at = html.find("A 2").expect("audit chip");
+    let coverage_at = html.find("C -").expect("coverage chip, unrun");
 
-    assert!(lint_at < machete_at && machete_at < audit_at, "got: {html}");
+    assert!(
+        lint_at < machete_at && machete_at < audit_at && audit_at < coverage_at,
+        "got: {html}"
+    );
 }
 
 #[test]
-fn a_repo_with_no_summary_at_all_shows_three_unrun_chips() {
+fn a_repo_with_no_summary_at_all_shows_four_unrun_chips() {
     let html = check_chips(None).render();
     assert!(html.contains("L -"));
     assert!(html.contains("M -"));
     assert!(html.contains("A -"));
+    assert!(html.contains("C -"));
 }
 
 #[test]

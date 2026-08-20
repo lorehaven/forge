@@ -2,11 +2,13 @@
 //!
 //! `anvil lint` (clippy), `anvil machete` (unused dependencies) and
 //! `anvil audit` (known vulnerabilities) already exist as ordinary pipeline
-//! steps - see `libs/conveyor-pipeline/src/steps/anvil.rs`. Nothing here
-//! triggers a run or shells out to anything: it reads the most recent run's
-//! own steps and parses whichever of the three it happened to execute. A
-//! repo whose `.conveyor.toml` never runs one of these simply has nothing to
-//! show for it.
+//! steps - see `libs/conveyor-pipeline/src/steps/anvil.rs`. `cargo llvm-cov`
+//! (test coverage) is a plain `run` step rather than an `anvil` one - there is
+//! no tool of its own to wrap - so it is matched on its command text instead
+//! of a step kind; see `CheckKind::from_command`. Nothing here triggers a run
+//! or shells out to anything: it reads the most recent run's own steps and
+//! parses whichever of the four it happened to execute. A repo whose
+//! `.conveyor.toml` never runs one of these simply has nothing to show for it.
 //!
 //! Parsing is deliberately forgiving. `anvil`'s own output format is not a
 //! contract conveyor owns, so every parser below falls back to "the step
@@ -21,15 +23,27 @@ use quench_db::prelude::Db;
 /// in `run_kind` below to teach the page about another `anvil` step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CheckKind {
+    /// `anvil lint` (clippy).
     Lint,
+    /// `anvil machete` (unused dependencies).
     Machete,
+    /// `anvil audit` (known vulnerabilities).
     Audit,
+    /// `cargo llvm-cov report` (test coverage).
+    Coverage,
 }
 
 impl CheckKind {
-    /// The first word of an `anvil` step's command, e.g. `anvil lint
-    /// --all-targets` is a `Lint` check regardless of the flags after it.
+    /// The first word of an `anvil` step's command identifies `Lint`,
+    /// `Machete` or `Audit`, e.g. `anvil lint --all-targets` regardless of the
+    /// flags after it. `Coverage` is a plain `run` step - there is no `anvil
+    /// coverage` - so it is matched on the command text containing
+    /// `llvm-cov` instead, regardless of which of `cargo-llvm-cov`'s
+    /// subcommands or flags produced this particular step.
     fn from_command(command: &str) -> Option<Self> {
+        if command.contains("llvm-cov") {
+            return Some(Self::Coverage);
+        }
         match command.split_whitespace().next()? {
             "lint" => Some(Self::Lint),
             "machete" => Some(Self::Machete),
@@ -43,6 +57,7 @@ impl CheckKind {
             Self::Lint => "ui_scan_lint_title",
             Self::Machete => "ui_scan_machete_title",
             Self::Audit => "ui_scan_audit_title",
+            Self::Coverage => "ui_scan_coverage_title",
         }
     }
 
@@ -52,6 +67,7 @@ impl CheckKind {
             Self::Lint => "lint",
             Self::Machete => "machete",
             Self::Audit => "audit",
+            Self::Coverage => "coverage",
         }
     }
 
@@ -60,6 +76,7 @@ impl CheckKind {
             "lint" => Some(Self::Lint),
             "machete" => Some(Self::Machete),
             "audit" => Some(Self::Audit),
+            "coverage" => Some(Self::Coverage),
             _ => None,
         }
     }
@@ -108,11 +125,15 @@ pub struct ScanSummary {
     pub lint: Option<CheckResult>,
     pub machete: Option<CheckResult>,
     pub audit: Option<CheckResult>,
+    pub coverage: Option<CheckResult>,
 }
 
 impl ScanSummary {
     pub fn is_empty(&self) -> bool {
-        self.lint.is_none() && self.machete.is_none() && self.audit.is_none()
+        self.lint.is_none()
+            && self.machete.is_none()
+            && self.audit.is_none()
+            && self.coverage.is_none()
     }
 
     pub fn get(&self, kind: CheckKind) -> Option<&CheckResult> {
@@ -120,13 +141,14 @@ impl ScanSummary {
             CheckKind::Lint => self.lint.as_ref(),
             CheckKind::Machete => self.machete.as_ref(),
             CheckKind::Audit => self.audit.as_ref(),
+            CheckKind::Coverage => self.coverage.as_ref(),
         }
     }
 }
 
-/// The most recent run for this repo, and whichever of the three checks its
+/// The most recent run for this repo, and whichever of the four checks its
 /// jobs happened to run. `Ok(ScanSummary::default())` (not an error) when the
-/// repo has never run, or has never run any of the three - both are "nothing
+/// repo has never run, or has never run any of the four - both are "nothing
 /// to show yet", not a failure.
 pub async fn latest(db: &Db, repo_id: &str) -> Result<ScanSummary, QueueError> {
     let Some(run) = queue::list_runs(db, Some(repo_id), 1)
@@ -201,6 +223,12 @@ async fn collect_job_checks(
             CheckKind::Lint => summary.lint = Some(result),
             CheckKind::Machete => summary.machete = Some(result),
             CheckKind::Audit => summary.audit = Some(result),
+            // A job may run several `llvm-cov` invocations (see .conveyor.toml's
+            // `coverage` job) - regenerating a report from already-collected
+            // profile data doesn't re-run anything, so whichever one parses is
+            // kept, and a later one overwrites an earlier one rather than the
+            // two being merged.
+            CheckKind::Coverage => summary.coverage = Some(result),
         }
     }
 
@@ -220,6 +248,7 @@ impl CheckResult {
             CheckKind::Lint => parse_lint(&borrowed),
             CheckKind::Machete => parse_machete(&borrowed),
             CheckKind::Audit => parse_audit(&borrowed),
+            CheckKind::Coverage => parse_coverage(&borrowed),
         };
 
         if let Some((headline, mut findings)) = parsed {
@@ -432,6 +461,88 @@ fn audit_block(block: &[&str]) -> Option<Finding> {
     Some(finding)
 }
 
+/// `cargo llvm-cov report`'s per-file table: a header row, a `---...` rule,
+/// one row per file, then a trailing `TOTAL` row. Only positions 0
+/// (filename), 7 (lines), 8 (missed lines) and 9 (line coverage %) are read -
+/// `cargo-llvm-cov`'s column set (region/function/branch coverage too) has
+/// changed release to release, but lines has stayed the seventh data column
+/// through every version this has been checked against.
+fn parse_coverage(lines: &[&str]) -> Option<(String, Vec<Finding>)> {
+    let mut files = Vec::new();
+    let mut total: Option<CoverageRow> = None;
+
+    for line in lines {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with("Filename") || trimmed.starts_with('-') {
+            continue;
+        }
+
+        let Some(row) = CoverageRow::parse(trimmed) else {
+            continue;
+        };
+
+        if row.filename == "TOTAL" {
+            total = Some(row);
+        } else if row.missed_lines > 0 {
+            // A fully-covered file is not a finding - nothing there needs a
+            // reader's attention.
+            files.push(row);
+        }
+    }
+
+    let total = total?;
+
+    // Worst first: the file with the most uncovered lines is the one most
+    // worth opening, regardless of how large or small its percentage looks.
+    files.sort_by_key(|row| std::cmp::Reverse(row.missed_lines));
+
+    let findings = files
+        .into_iter()
+        .map(|row| Finding {
+            title: row.filename,
+            severity: Some(format!("{:.2}%", row.line_pct)),
+            location: Some(format!(
+                "{} of {} lines missed",
+                row.missed_lines, row.lines
+            )),
+            ..Finding::default()
+        })
+        .collect();
+
+    let headline = format!("{:.2}% line coverage", total.line_pct);
+    Some((headline, findings))
+}
+
+/// One row of `cargo llvm-cov report`'s table - a file's, or the trailing
+/// `TOTAL`'s.
+struct CoverageRow {
+    filename: String,
+    lines: u64,
+    missed_lines: u64,
+    line_pct: f64,
+}
+
+impl CoverageRow {
+    fn parse(line: &str) -> Option<Self> {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        // Filename, regions, missed regions, region%, functions, missed
+        // functions, function% ("Executed" in the header), lines, missed
+        // lines, line%, branches, missed branches, branch% - thirteen
+        // columns when nothing is empty. `TOTAL` has no separate filename
+        // column, but is otherwise the same shape.
+        if fields.len() < 10 {
+            return None;
+        }
+
+        Some(Self {
+            filename: fields[0].to_string(),
+            lines: fields[7].parse().ok()?,
+            missed_lines: fields[8].parse().ok()?,
+            line_pct: fields[9].strip_suffix('%')?.parse().ok()?,
+        })
+    }
+}
+
 fn plural(count: usize) -> &'static str {
     if count == 1 { "" } else { "s" }
 }
@@ -614,5 +725,36 @@ mod tests {
         assert_eq!(findings[0].id.as_deref(), Some("RUSTSEC-2023-0071"));
         assert_eq!(findings[1].id.as_deref(), Some("RUSTSEC-2026-0173"));
         assert_eq!(findings[1].severity.as_deref(), Some("unmaintained"));
+    }
+
+    #[test]
+    fn parses_coverage_table_and_skips_fully_covered_files() {
+        let lines = [
+            "Filename                      Regions    Missed Regions     Cover   Functions  Missed Functions  Executed       Lines      Missed Lines     Cover    Branches   Missed Branches     Cover",
+            "-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------",
+            "src/lib.rs                        119                99    16.81%          15                12    20.00%          83                69    16.87%           0                 0         -",
+            "src/fully_covered.rs                10                 0   100.00%           2                 0   100.00%          10                 0   100.00%           0                 0         -",
+            "src/small_gap.rs                    50                 5    90.00%           4                 1    75.00%          40                 2    95.00%           0                 0         -",
+            "-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------",
+            "TOTAL                              179               104    41.90%          21                13    38.10%         133                71    46.62%           0                 0         -",
+        ];
+        let (headline, findings) = parse_coverage(&lines).expect("should parse");
+        assert_eq!(headline, "46.62% line coverage");
+        // fully_covered.rs missed nothing - it is not a finding.
+        assert_eq!(findings.len(), 2);
+        // Worst first: 69 missed lines beats 2, regardless of percentage.
+        assert_eq!(findings[0].title, "src/lib.rs");
+        assert_eq!(findings[0].severity.as_deref(), Some("16.87%"));
+        assert_eq!(
+            findings[0].location.as_deref(),
+            Some("69 of 83 lines missed")
+        );
+        assert_eq!(findings[1].title, "src/small_gap.rs");
+        assert_eq!(findings[1].severity.as_deref(), Some("95.00%"));
+    }
+
+    #[test]
+    fn a_coverage_report_with_no_recognisable_rows_does_not_parse() {
+        assert!(parse_coverage(&["error: no coverage data found"]).is_none());
     }
 }

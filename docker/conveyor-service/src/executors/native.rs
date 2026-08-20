@@ -336,7 +336,16 @@ async fn run_step(
         .stderr(Stdio::piped())
         // Without this a step survives the task being dropped, keeps the
         // checkout directory busy, and outlives the run that started it.
-        .kill_on_drop(true);
+        .kill_on_drop(true)
+        // A step is spawned as `sh -c "<command>"`, and not every `/bin/sh`
+        // execs directly into a single simple command the way bash does -
+        // dash (Debian's, and busybox's) forks a child to run it instead.
+        // Left as the default process group, cancelling or timing out this
+        // step would only kill `sh`, orphaning that child - which keeps
+        // running for however long it likes and keeps stdout/stderr's write
+        // end open, so the drain loop below never sees EOF. Leading its own
+        // process group lets `kill_group` below reach the whole tree.
+        .process_group(0);
 
     for (key, value) in env {
         command.env(key, value);
@@ -377,13 +386,13 @@ async fn run_step(
 
             _ = cancel.changed() => {
                 if *cancel.borrow() {
-                    let _ = child.kill().await;
+                    kill_group(&child);
                     break StepOutcome::Cancelled;
                 }
             }
 
             () = tokio::time::sleep_until(deadline) => {
-                let _ = child.kill().await;
+                kill_group(&child);
                 break StepOutcome::TimedOut;
             }
         }
@@ -394,6 +403,24 @@ async fn run_step(
     }
 
     outcome
+}
+
+/// Kills every process in a step's group, not just the `sh` it was spawned
+/// as - see the `process_group(0)` call above for why the direct child alone
+/// isn't enough.
+fn kill_group(child: &tokio::process::Child) {
+    let Some(pid) = child.id() else {
+        // Already reaped; nothing left to signal.
+        return;
+    };
+
+    // SAFETY: `pid` is this step's own child, spawned into its own process
+    // group (`process_group(0)`), so `-pid` names a real group this process
+    // just created - not a value read from anywhere untrusted. `kill` with an
+    // unmatched pid is a documented `ESRCH` return, not undefined behaviour.
+    unsafe {
+        libc::kill(-(pid as libc::pid_t), libc::SIGKILL);
+    }
 }
 
 async fn pump<R>(reader: R, stream: Stream, lines: mpsc::Sender<(Stream, String)>)
