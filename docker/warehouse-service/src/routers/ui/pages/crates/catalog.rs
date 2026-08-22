@@ -11,13 +11,13 @@ use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 
 #[derive(serde::Deserialize)]
-pub(in crate::routers::ui::pages) struct CrateActionForm {
+pub struct CrateActionForm {
     name: String,
     version: String,
 }
 
 #[get("/crates/catalog")]
-pub(super) async fn crates_index(
+pub async fn crates_index(
     req: HttpRequest,
     query: web::Query<PageQuery>,
     config: web::Data<JwtConfig>,
@@ -29,7 +29,7 @@ pub(super) async fn crates_index(
 }
 
 #[get("/crates/catalog/")]
-pub(super) async fn crates_index_slash(
+pub async fn crates_index_slash(
     req: HttpRequest,
     query: web::Query<PageQuery>,
     config: web::Data<JwtConfig>,
@@ -41,7 +41,7 @@ pub(super) async fn crates_index_slash(
 }
 
 #[post("/crates/yank")]
-pub(in crate::routers::ui::pages) async fn yank_version(
+pub async fn yank_version(
     req: HttpRequest,
     form: web::Form<CrateActionForm>,
     config: web::Data<JwtConfig>,
@@ -50,7 +50,7 @@ pub(in crate::routers::ui::pages) async fn yank_version(
 }
 
 #[post("/crates/unyank")]
-pub(in crate::routers::ui::pages) async fn unyank_version(
+pub async fn unyank_version(
     req: HttpRequest,
     form: web::Form<CrateActionForm>,
     config: web::Data<JwtConfig>,
@@ -86,7 +86,7 @@ async fn set_yank_state(
     }
 }
 
-fn render_crates_page(
+pub fn render_crates_page(
     selected_crate: Option<String>,
     selected_version: Option<String>,
 ) -> HttpResponse {

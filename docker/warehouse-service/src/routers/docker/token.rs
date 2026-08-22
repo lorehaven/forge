@@ -86,7 +86,7 @@ async fn validate_basic(
     validate_basic_encoded(encoded, user_db).await
 }
 
-async fn validate_basic_encoded(encoded: &str, user_db: &UserDb) -> Option<String> {
+pub async fn validate_basic_encoded(encoded: &str, user_db: &UserDb) -> Option<String> {
     let decoded = STANDARD.decode(encoded).ok()?;
     let creds = String::from_utf8(decoded).ok()?;
     let (username, password) = creds.split_once(':')?;

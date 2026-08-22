@@ -26,17 +26,17 @@ pub struct ForgotPasswordForm {
 }
 
 #[get("/forgot-password")]
-pub(super) async fn forgot_password_page() -> impl Responder {
+pub async fn forgot_password_page() -> impl Responder {
     render_forgot_password_page()
 }
 
 #[get("/forgot-password/")]
-pub(super) async fn forgot_password_page_slash() -> impl Responder {
+pub async fn forgot_password_page_slash() -> impl Responder {
     render_forgot_password_page()
 }
 
 #[post("/forgot-password")]
-pub(super) async fn forgot_password_submit(
+pub async fn forgot_password_submit(
     request: HttpRequest,
     form: web::Form<ForgotPasswordForm>,
     db: web::Data<quench_db::prelude::Db>,
@@ -84,7 +84,7 @@ pub struct ResetNotice {
 }
 
 #[get("/reset-password")]
-pub(super) async fn reset_password_page(
+pub async fn reset_password_page(
     query: web::Query<ResetPasswordQuery>,
     notice: web::Query<ResetNotice>,
 ) -> impl Responder {
@@ -98,7 +98,7 @@ pub struct ResetPasswordForm {
 }
 
 #[post("/reset-password")]
-pub(super) async fn reset_password_submit(
+pub async fn reset_password_submit(
     form: web::Form<ResetPasswordForm>,
     db: web::Data<quench_db::prelude::Db>,
     sessions: web::Data<Arc<quench_auth::prelude::SessionDb>>,
@@ -127,7 +127,7 @@ fn absolute_url(request: &HttpRequest, path: &str) -> String {
     format!("{}://{}{}", info.scheme(), info.host(), ui_path(path))
 }
 
-fn render_forgot_password_page() -> HttpResponse {
+pub fn render_forgot_password_page() -> HttpResponse {
     let request_form = form()
         .attr("method", "post")
         .attr("action", ui_path("/forgot-password"))
@@ -158,7 +158,7 @@ fn render_forgot_password_page() -> HttpResponse {
     render_auth_page("ui_forgot_password_title", request_form)
 }
 
-fn render_reset_password_page(token: &str, notice: &ResetNotice) -> HttpResponse {
+pub fn render_reset_password_page(token: &str, notice: &ResetNotice) -> HttpResponse {
     let mut reset_form = form()
         .attr("method", "post")
         .attr("action", ui_path("/reset-password"))

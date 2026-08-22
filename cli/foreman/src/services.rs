@@ -139,7 +139,7 @@ pub fn start(estate: &Estate, name: &str) -> Result<bool> {
 /// curl rather than a built-in HTTP client, because a development estate serves
 /// self-signed certificates and `-k` is one flag against a pile of TLS
 /// configuration that would only ever be used to ignore it.
-fn healthy(url: &str) -> bool {
+pub fn healthy(url: &str) -> bool {
     matches!(
         process::capture("curl", &["-sk", "-o", "/dev/null", "--max-time", "2", url],),
         Ok((true, _))
@@ -148,7 +148,7 @@ fn healthy(url: &str) -> bool {
 
 /// Anything a service spawned that it, not foreman, owns. Best effort: the
 /// service may already be down, and a hook that fails should not stop a stop.
-fn run_pre_stop_hooks(estate: &Estate, name: &str) -> Result<()> {
+pub fn run_pre_stop_hooks(estate: &Estate, name: &str) -> Result<()> {
     let service = estate.service(name)?;
     if service.pre_stop.is_empty() || !is_running(estate, name) {
         return Ok(());

@@ -30,12 +30,12 @@ pub struct RegisterForm {
 }
 
 #[get("/register")]
-pub(super) async fn register_page(query: web::Query<Notice>) -> impl Responder {
+pub async fn register_page(query: web::Query<Notice>) -> impl Responder {
     render_register_page(&query)
 }
 
 #[get("/register/")]
-pub(super) async fn register_page_slash(query: web::Query<Notice>) -> impl Responder {
+pub async fn register_page_slash(query: web::Query<Notice>) -> impl Responder {
     render_register_page(&query)
 }
 
@@ -46,7 +46,7 @@ pub struct Notice {
 }
 
 #[post("/register")]
-pub(super) async fn register_submit(
+pub async fn register_submit(
     request: HttpRequest,
     form: web::Form<RegisterForm>,
     catalog: web::Data<PermissionCatalog>,
@@ -93,7 +93,7 @@ pub(super) async fn register_submit(
 }
 
 #[get("/verify")]
-pub(super) async fn verify(
+pub async fn verify(
     query: web::Query<VerifyQuery>,
     db: web::Data<quench_db::prelude::Db>,
     tokens: web::Data<Arc<VerificationTokens>>,
@@ -123,12 +123,12 @@ pub struct VerifyQuery {
 /// Best-effort absolute URL for `path` on this service, so a link handed to
 /// an email client - which has no notion of "the current origin" to resolve a
 /// relative one against - actually goes somewhere.
-fn absolute_url(request: &HttpRequest, path: &str) -> String {
+pub fn absolute_url(request: &HttpRequest, path: &str) -> String {
     let info = request.connection_info().clone();
     format!("{}://{}{}", info.scheme(), info.host(), ui_path(path))
 }
 
-fn render_register_page(notice: &Notice) -> HttpResponse {
+pub fn render_register_page(notice: &Notice) -> HttpResponse {
     let mut register_form = form()
         .attr("method", "post")
         .attr("action", ui_path("/register"))
@@ -219,7 +219,7 @@ fn render_register_page(notice: &Notice) -> HttpResponse {
 
 /// Only keys `RealmError` or this page's own validation can produce are
 /// rendered - a hand-crafted `?err=` cannot put arbitrary text on the page.
-fn known_error_key(candidate: &str) -> Option<&'static str> {
+pub fn known_error_key(candidate: &str) -> Option<&'static str> {
     if candidate == "ui_register_error_email_invalid" {
         return Some("ui_register_error_email_invalid");
     }

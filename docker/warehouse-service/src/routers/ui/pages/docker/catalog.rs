@@ -14,16 +14,16 @@ use quench_web_components::containers::empty_state;
 use std::collections::BTreeMap;
 
 #[derive(serde::Deserialize)]
-pub(in crate::routers::ui::pages) struct DeleteImageForm {
-    repository: String,
-    digest: String,
+pub struct DeleteImageForm {
+    pub repository: String,
+    pub digest: String,
 }
 
 #[derive(serde::Deserialize)]
-pub(in crate::routers::ui::pages) struct DeleteImageModalQuery {
-    repository: String,
-    tag: Option<String>,
-    digest: String,
+pub struct DeleteImageModalQuery {
+    pub repository: String,
+    pub tag: Option<String>,
+    pub digest: String,
 }
 
 #[derive(Default)]
@@ -33,7 +33,7 @@ struct RepoTreeNode {
 }
 
 #[get("/docker/catalog")]
-pub(in crate::routers::ui::pages) async fn docker_catalog(
+pub async fn docker_catalog(
     req: HttpRequest,
     query: web::Query<PageQuery>,
     config: web::Data<JwtConfig>,
@@ -45,7 +45,7 @@ pub(in crate::routers::ui::pages) async fn docker_catalog(
 }
 
 #[get("/docker/catalog/")]
-pub(in crate::routers::ui::pages) async fn docker_catalog_slash(
+pub async fn docker_catalog_slash(
     req: HttpRequest,
     query: web::Query<PageQuery>,
     config: web::Data<JwtConfig>,
@@ -57,7 +57,7 @@ pub(in crate::routers::ui::pages) async fn docker_catalog_slash(
 }
 
 #[get("/docker/delete-image-modal")]
-pub(in crate::routers::ui::pages) async fn delete_image_modal(
+pub async fn delete_image_modal(
     req: HttpRequest,
     query: web::Query<DeleteImageModalQuery>,
     config: web::Data<JwtConfig>,
@@ -72,7 +72,7 @@ pub(in crate::routers::ui::pages) async fn delete_image_modal(
 }
 
 #[get("/docker/delete-image-modal/empty")]
-pub(in crate::routers::ui::pages) async fn empty_delete_image_modal(
+pub async fn empty_delete_image_modal(
     req: HttpRequest,
     config: web::Data<JwtConfig>,
 ) -> impl Responder {
@@ -86,7 +86,7 @@ pub(in crate::routers::ui::pages) async fn empty_delete_image_modal(
 }
 
 #[post("/docker/delete-image")]
-pub(in crate::routers::ui::pages) async fn delete_image(
+pub async fn delete_image(
     req: HttpRequest,
     form: web::Form<DeleteImageForm>,
     config: web::Data<JwtConfig>,
@@ -133,7 +133,7 @@ pub(in crate::routers::ui::pages) async fn delete_image(
         .finish()
 }
 
-fn render_delete_image_modal(query: &DeleteImageModalQuery) -> String {
+pub fn render_delete_image_modal(query: &DeleteImageModalQuery) -> String {
     let target = query
         .tag
         .as_deref()
@@ -223,7 +223,7 @@ fn render_delete_image_modal(query: &DeleteImageModalQuery) -> String {
         .render()
 }
 
-fn empty_delete_image_modal_html() -> String {
+pub fn empty_delete_image_modal_html() -> String {
     empty_delete_image_modal_element().render()
 }
 
@@ -231,7 +231,7 @@ fn empty_delete_image_modal_element() -> Element {
     div().attr("id", "confirm-delete-image-modal")
 }
 
-fn render_catalog_page(
+pub fn render_catalog_page(
     selected_repo: Option<String>,
     selected_tag: Option<String>,
 ) -> HttpResponse {

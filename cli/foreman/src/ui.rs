@@ -33,7 +33,7 @@ impl From<ToneName> for Tone {
 }
 
 impl Tone {
-    fn colour(self) -> &'static str {
+    pub fn colour(self) -> &'static str {
         match self {
             Tone::Info => CYAN,
             Tone::Ok => GREEN,

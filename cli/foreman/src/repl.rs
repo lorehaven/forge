@@ -51,7 +51,7 @@ impl<'a> Picker<'a> {
         Ok(())
     }
 
-    fn prompt(&self) -> String {
+    pub fn prompt(&self) -> String {
         if self.picked.is_empty() {
             "foreman> ".to_string()
         } else {
@@ -59,7 +59,7 @@ impl<'a> Picker<'a> {
         }
     }
 
-    fn dispatch_line(&mut self, line: &str) -> ReplControl {
+    pub fn dispatch_line(&mut self, line: &str) -> ReplControl {
         let words: Vec<String> = line.split_whitespace().map(str::to_string).collect();
         let Some(command) = words.first() else {
             return ReplControl::Continue(self.prompt());
@@ -76,7 +76,7 @@ impl<'a> Picker<'a> {
         ReplControl::Continue(self.prompt())
     }
 
-    fn dispatch(&mut self, command: &str, args: &[String]) -> Result<()> {
+    pub fn dispatch(&mut self, command: &str, args: &[String]) -> Result<()> {
         match command {
             "help" | "h" | "?" => help(),
             "list" | "ls" | "l" => self.list()?,
@@ -141,7 +141,7 @@ impl<'a> Picker<'a> {
         Ok(())
     }
 
-    fn toggle(&mut self, token: &str) -> Result<()> {
+    pub fn toggle(&mut self, token: &str) -> Result<()> {
         let names = self.estate.service_names();
 
         // A number is an index into the list as printed, which is the order the
@@ -172,7 +172,7 @@ impl<'a> Picker<'a> {
         Ok(())
     }
 
-    fn list(&self) -> Result<()> {
+    pub fn list(&self) -> Result<()> {
         ui::blank();
         for (index, name) in self.estate.service_names().iter().enumerate() {
             let mark = if self.picked.contains(name) {
@@ -194,7 +194,7 @@ impl<'a> Picker<'a> {
     }
 }
 
-fn help() {
+pub fn help() {
     println!("  <n> | <name>   toggle one (several at a time is fine: 1 5, sage conveyor)");
     println!("  all | none     select every service, or clear the selection");
     println!("  running        select whatever is up right now");

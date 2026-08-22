@@ -1,0 +1,13 @@
+[test-groups]
+# conveyor-service's and workbench-service's `tests/integration.rs` binaries
+# share one Postgres schema per crate (truncated between tests) and coordinate
+# with an in-process `tokio::sync::Mutex`. That only serializes tests running
+# as threads in one process - nextest runs every test as its own process, so
+# the lock does nothing there and concurrent tests race each other's
+# truncate/insert. Force this whole test binary to run one test at a time so
+# the DB fixture behaves the way its own doc comments assume.
+db-shared-schema = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'binary(integration)'
+test-group = 'db-shared-schema'

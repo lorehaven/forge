@@ -7,22 +7,19 @@ use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 
 #[get("/home")]
-pub(super) async fn home(
-    req: actix_web::HttpRequest,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
+pub async fn home(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
     handle_home(req, config, render_home_page).await
 }
 
 #[get("/home/")]
-pub(super) async fn home_slash(
+pub async fn home_slash(
     req: actix_web::HttpRequest,
     config: web::Data<JwtConfig>,
 ) -> impl Responder {
     handle_home(req, config, render_home_page).await
 }
 
-fn render_home_page() -> HttpResponse {
+pub fn render_home_page() -> HttpResponse {
     let mut service_cards = div().class("home-grid");
     let mut has_service_cards = false;
 

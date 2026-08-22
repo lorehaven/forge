@@ -54,7 +54,7 @@ pub fn dry_run(job: &Job) -> Result<bool, Box<dyn std::error::Error>> {
 /// doesn't report as a change (a directory entering sync unchanged, a
 /// progress line, etc).
 #[derive(Debug, PartialEq, Eq)]
-enum Change {
+pub enum Change {
     Delete(String),
     /// `None` when the line had no trailing path to show - still a change to
     /// count, just nothing to print.
@@ -62,7 +62,7 @@ enum Change {
     Modify(Option<String>),
 }
 
-fn classify_line(line: &str) -> Option<Change> {
+pub fn classify_line(line: &str) -> Option<Change> {
     if line.starts_with("*deleting") {
         return Some(Change::Delete(line.replace("*deleting ", "")));
     }
@@ -102,7 +102,7 @@ pub fn update(job: &Job) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn run_command(command: &mut Command) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+pub fn run_command(command: &mut Command) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let mut process = command
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -191,63 +191,4 @@ pub fn run_command_async(command: &mut Command) -> Result<(), Box<dyn std::error
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn classify_line_recognizes_a_deletion() {
-        let change = classify_line("*deleting old-file.txt");
-        assert_eq!(change, Some(Change::Delete("old-file.txt".to_string())));
-    }
-
-    #[test]
-    fn classify_line_recognizes_a_new_file() {
-        let change = classify_line(">f+++++++++ new-file.txt");
-        assert_eq!(
-            change,
-            Some(Change::Create(Some("new-file.txt".to_string())))
-        );
-    }
-
-    #[test]
-    fn classify_line_recognizes_a_new_file_received_from_the_other_side() {
-        let change = classify_line("<f+++++++++ new-file.txt");
-        assert_eq!(
-            change,
-            Some(Change::Create(Some("new-file.txt".to_string())))
-        );
-    }
-
-    #[test]
-    fn classify_line_recognizes_a_new_directory() {
-        let change = classify_line("cd+++++++++ new-dir/");
-        assert_eq!(change, Some(Change::Create(Some("new-dir/".to_string()))));
-    }
-
-    #[test]
-    fn classify_line_recognizes_a_modified_file() {
-        let change = classify_line(">f.st...... existing-file.txt");
-        assert_eq!(
-            change,
-            Some(Change::Modify(Some("existing-file.txt".to_string())))
-        );
-    }
-
-    #[test]
-    fn classify_line_counts_a_change_even_without_a_parseable_path() {
-        // No space in the line, so there's nothing after the itemize flags to
-        // print - but rsync still reported a change, so it must still count.
-        let change = classify_line(">f+++++++++");
-        assert_eq!(change, Some(Change::Create(None)));
-    }
-
-    #[test]
-    fn classify_line_ignores_unrelated_output() {
-        assert_eq!(classify_line("sending incremental file list"), None);
-        assert_eq!(classify_line(""), None);
-        assert_eq!(classify_line("total size is 1,234"), None);
-    }
 }

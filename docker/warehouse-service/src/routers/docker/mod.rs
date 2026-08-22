@@ -1,68 +1,68 @@
-use crate::routers::DOCKER_STORAGE_ROOT;
+use crate::routers::docker_storage_root;
 use actix_web::dev::HttpServiceFactory;
 use actix_web::web;
 use serde::Deserialize;
 use std::path::{Component, Path, PathBuf};
 
-mod blob;
-mod manifest;
-pub(crate) mod registry;
+pub mod blob;
+pub mod manifest;
+pub mod registry;
 pub mod token;
 
-fn upload_path(name: &str, uuid: &str) -> Option<PathBuf> {
+pub fn upload_path(name: &str, uuid: &str) -> Option<PathBuf> {
     let repo = repository_path(name)?;
     Some(repo.join("_uploads").join(uuid))
 }
 
-fn blob_path(digest: &str) -> Option<PathBuf> {
+pub fn blob_path(digest: &str) -> Option<PathBuf> {
     let hex = digest_hex(digest)?;
     Some(
-        PathBuf::from(DOCKER_STORAGE_ROOT.as_str())
+        PathBuf::from(docker_storage_root())
             .join("blobs")
             .join("sha256")
             .join(hex),
     )
 }
 
-pub(crate) fn manifest_path(digest: &str) -> Option<PathBuf> {
+pub fn manifest_path(digest: &str) -> Option<PathBuf> {
     let hex = digest_hex(digest)?;
     Some(
-        PathBuf::from(DOCKER_STORAGE_ROOT.as_str())
+        PathBuf::from(docker_storage_root())
             .join("manifests")
             .join("sha256")
             .join(hex),
     )
 }
 
-async fn blob_exists(digest: &str) -> bool {
+pub async fn blob_exists(digest: &str) -> bool {
     let Some(path) = blob_path(digest) else {
         return false;
     };
     tokio::fs::metadata(path).await.is_ok()
 }
 
-pub(crate) fn validate_digest(digest: &str) -> bool {
+pub fn validate_digest(digest: &str) -> bool {
     let Some(hex) = digest.strip_prefix("sha256:") else {
         return false;
     };
     hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
-fn digest_hex(digest: &str) -> Option<&str> {
+pub fn digest_hex(digest: &str) -> Option<&str> {
     if !validate_digest(digest) {
         return None;
     }
     digest.strip_prefix("sha256:")
 }
 
-pub(crate) fn repository_path(name: &str) -> Option<PathBuf> {
+pub fn repository_path(name: &str) -> Option<PathBuf> {
     if !validate_repository_name(name) {
         return None;
     }
-    Some(PathBuf::from(DOCKER_STORAGE_ROOT.as_str()).join(name))
+    Some(PathBuf::from(docker_storage_root()).join(name))
 }
 
-fn validate_repository_name(name: &str) -> bool {
+pub fn validate_repository_name(name: &str) -> bool {
     if name.is_empty() || name.contains('\\') {
         return false;
     }
@@ -72,7 +72,7 @@ fn validate_repository_name(name: &str) -> bool {
         .all(|c| matches!(c, Component::Normal(_)))
 }
 
-fn validate_tag_reference(reference: &str) -> bool {
+pub fn validate_tag_reference(reference: &str) -> bool {
     if reference.is_empty() || reference.contains('\\') {
         return false;
     }

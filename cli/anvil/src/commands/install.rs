@@ -19,7 +19,7 @@ pub fn install(config: &Config, package: Option<String>, all: bool) -> Result<()
     Ok(())
 }
 
-fn resolve_workspace_install_targets(
+pub fn resolve_workspace_install_targets(
     config: &Config,
     metadata: &Value,
 ) -> Result<Vec<(String, PathBuf)>> {
@@ -63,7 +63,7 @@ fn resolve_workspace_install_targets(
     Ok(out)
 }
 
-fn resolve_install_targets(
+pub fn resolve_install_targets(
     config: &Config,
     metadata: &Value,
     package: Option<String>,
@@ -85,7 +85,7 @@ fn resolve_install_targets(
     Ok(vec![(pkg_name, path)])
 }
 
-fn resolve_package_path(metadata: &Value, package_name: &str) -> Result<PathBuf> {
+pub fn resolve_package_path(metadata: &Value, package_name: &str) -> Result<PathBuf> {
     let packages = metadata["packages"]
         .as_array()
         .context("Invalid cargo metadata: missing packages")?;
@@ -103,7 +103,7 @@ fn resolve_package_path(metadata: &Value, package_name: &str) -> Result<PathBuf>
         .with_context(|| format!("Package '{package_name}' not found in cargo metadata"))
 }
 
-fn default_module_name(metadata: &Value) -> Result<String> {
+pub fn default_module_name(metadata: &Value) -> Result<String> {
     let cwd = std::env::current_dir().context("Failed to read current directory")?;
     let packages = metadata["packages"]
         .as_array()

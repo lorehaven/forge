@@ -1,4 +1,4 @@
-use crate::routers::crates::{CRATES_STORAGE_ROOT, validate_crate_name};
+use crate::routers::crates::{crates_storage_root, validate_crate_name};
 use actix_web::{HttpResponse, Responder, delete, get, put, web};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -11,7 +11,7 @@ use std::path::PathBuf;
 ///
 /// Layout: `<root>/<n>/owners.json`
 fn owners_path(name: &str) -> PathBuf {
-    PathBuf::from(CRATES_STORAGE_ROOT.as_str())
+    PathBuf::from(crates_storage_root())
         .join(name)
         .join("owners.json")
 }
@@ -34,7 +34,7 @@ async fn save_owners(name: &str, owners: &[Owner]) -> std::io::Result<()> {
 
 /// Returns `true` if the crate directory exists (i.e. the crate has been published).
 async fn crate_exists(name: &str) -> bool {
-    let path = PathBuf::from(CRATES_STORAGE_ROOT.as_str()).join(name);
+    let path = PathBuf::from(crates_storage_root()).join(name);
     tokio::fs::metadata(&path)
         .await
         .map(|m| m.is_dir())

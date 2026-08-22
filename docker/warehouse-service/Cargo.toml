@@ -42,5 +42,6 @@ tracing = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
+quench-db = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }

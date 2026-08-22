@@ -16,7 +16,7 @@ use crate::services;
 use crate::ui;
 
 /// The element of a task's `command` that the per-service arguments replace.
-const SELECTION_PLACEHOLDER: &str = "${selection}";
+pub const SELECTION_PLACEHOLDER: &str = "${selection}";
 
 pub fn run_named(estate: &Estate, name: &str, selection: &[String]) -> Result<()> {
     let task = estate.config.tasks.get(name).with_context(|| {

@@ -98,3 +98,25 @@ fn shrink_widths_to_fit_stops_at_minimums_and_does_not_underflow() {
     assert_eq!(widths.updatable, 9);
     assert!(widths.installed <= 12);
 }
+
+#[test]
+fn shrink_widths_to_fit_clamps_the_installed_column_once_it_is_the_widest() {
+    // "no (can install)" (17 chars) makes the installed column the widest,
+    // so an impossibly narrow terminal must shrink package and binary down
+    // to their floor *and then* clamp installed too.
+    let statuses = vec![CrateStatus {
+        package: "a",
+        binary: "b",
+        installed_version: None,
+        latest_version: Some(Version::parse("1.0.0").unwrap()),
+        installable: true,
+        updatable: false,
+        error: None,
+    }];
+    let mut widths = content_widths(&statuses);
+    assert!(widths.installed > 12);
+
+    shrink_widths_to_fit(&mut widths, 1);
+
+    assert_eq!(widths.installed, 12);
+}

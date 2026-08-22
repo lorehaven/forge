@@ -31,6 +31,13 @@ impl VerificationTokens {
         Ok(Self { store })
     }
 
+    /// An always-in-process store, for tests - no cache backend required.
+    pub fn in_memory() -> Self {
+        Self {
+            store: CacheStore::in_memory(),
+        }
+    }
+
     fn key(purpose: &str, token: &str) -> String {
         format!("{purpose}:{token}")
     }

@@ -5,12 +5,12 @@ pub use quench_starter::actix::routers::ui::{
 use quench_web::prelude::*;
 use std::sync::LazyLock;
 
-mod css;
+pub mod css;
 pub mod format;
 
-const SUPPORTED_LOCALES: [&str; 5] = ["en-US", "pl-PL", "es-ES", "de-DE", "fr-FR"];
+pub const SUPPORTED_LOCALES: [&str; 5] = ["en-US", "pl-PL", "es-ES", "de-DE", "fr-FR"];
 
-fn supported_locales() -> Vec<String> {
+pub fn supported_locales() -> Vec<String> {
     SUPPORTED_LOCALES.iter().map(|s| s.to_string()).collect()
 }
 
@@ -32,7 +32,7 @@ static UI_SHELL_HOME: LazyLock<AppShell> = LazyLock::new(|| {
         .build()
 });
 
-fn ui_header(
+pub fn ui_header(
     title_key: Option<&str>,
     show_locale_switch: bool,
     show_home: bool,
@@ -69,7 +69,7 @@ pub async fn assets(path: web::Path<String>) -> impl Responder {
     quench_starter::actix::routers::ui::serve_assets(path, "dist/assets").await
 }
 
-pub(super) fn render_page(
+pub fn render_page(
     mut builder: actix_web::HttpResponseBuilder,
     content: Element,
     page_kind: UiPageKind,
@@ -82,6 +82,6 @@ pub(super) fn render_page(
         .body(shell.page(div().class("page").child(content)))
 }
 
-pub(super) enum UiPageKind {
+pub enum UiPageKind {
     Home,
 }

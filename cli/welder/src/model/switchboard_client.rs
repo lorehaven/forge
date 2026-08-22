@@ -3,8 +3,11 @@ use quench_client::BearerAuthClient;
 use serde::{Deserialize, Serialize};
 
 /// A vLLM instance as reported by switchboard's `/api/v1/vllm/instances`.
-/// Trimmed to the fields welder needs to route chat completions.
-#[derive(Debug, Clone, Deserialize)]
+///
+/// Trimmed to the fields welder needs to route chat completions. `Serialize`
+/// is only for tests to build mock response bodies with - welder never
+/// sends this shape anywhere itself.
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct VllmInstance {
     pub model: String,
     pub host: String,
@@ -127,5 +130,17 @@ impl SwitchboardClient {
             .post("/api/v1/vllm/instances", &req)
             .await
             .map_err(|e| anyhow!("failed to launch switchboard vLLM instance for '{model}': {e}"))
+    }
+
+    /// Bypasses the real `gatehouse` login flow `new` performs, for tests
+    /// that only need to point `list_instances`/`launch_instance` at a
+    /// `wiremock` server. The bearer token is never checked by anything
+    /// other than a real gatehouse-issued middleware, which a mock server
+    /// doesn't run.
+    #[must_use]
+    pub fn for_tests(base_url: &str) -> Self {
+        let client = BearerAuthClient::with_tls_verify(base_url, "test-token", false)
+            .expect("build a test switchboard client");
+        Self { client }
     }
 }

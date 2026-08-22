@@ -220,7 +220,7 @@ impl FilesApi {
     }
 }
 
-fn filename_from_content_disposition(value: Option<&str>) -> Option<String> {
+pub fn filename_from_content_disposition(value: Option<&str>) -> Option<String> {
     let value = value?;
     for part in value.split(';') {
         let part = part.trim();
@@ -238,7 +238,7 @@ fn ensure_success(response: &reqwest::Response, url: &str) -> Result<()> {
     bail!("request failed: {} {}", response.status(), url)
 }
 
-fn base_url(registry: &RegistryConfig, endpoint: &str) -> Result<String> {
+pub fn base_url(registry: &RegistryConfig, endpoint: &str) -> Result<String> {
     let base = if !registry.files.url.trim().is_empty() {
         registry.files.url.as_str()
     } else if !registry.docker.url.trim().is_empty() {
@@ -251,7 +251,7 @@ fn base_url(registry: &RegistryConfig, endpoint: &str) -> Result<String> {
     service_url(base, &registry.base_path, endpoint)
 }
 
-fn url_encode(value: &str, keep_slash: bool) -> String {
+pub fn url_encode(value: &str, keep_slash: bool) -> String {
     let mut out = String::with_capacity(value.len());
     for b in value.bytes() {
         match b {

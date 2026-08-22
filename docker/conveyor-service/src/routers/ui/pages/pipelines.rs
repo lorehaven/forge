@@ -92,7 +92,7 @@ fn not_found() -> HttpResponse {
 /// How many pages `page_size` rows at a time makes of `total` rows - at least
 /// one, even when `total` is zero, so an empty history still has a "page 1 of
 /// 1" to land on rather than a division with nothing on either side of it.
-fn page_count(total: i64, page_size: i64) -> u32 {
+pub fn page_count(total: i64, page_size: i64) -> u32 {
     if total <= 0 {
         return 1;
     }
@@ -137,7 +137,7 @@ fn header(all_projects: &[Project], scope: Option<&Project>) -> Element {
     )
 }
 
-fn pager(scope: Option<&Project>, page: u32, total_pages: u32) -> Element {
+pub fn pager(scope: Option<&Project>, page: u32, total_pages: u32) -> Element {
     div()
         .class("pager")
         .child(pager_link(
@@ -180,64 +180,5 @@ fn page_href(scope: Option<&Project>, page: u32) -> String {
     match scope {
         Some(project) => ui_path(&format!("/runs?project={}&page={page}", project.id)),
         None => ui_path(&format!("/runs?page={page}")),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use chrono::Utc;
-
-    fn project(id: &str) -> Project {
-        Project {
-            id: id.to_string(),
-            name: id.to_string(),
-            parent_id: None,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
-        }
-    }
-
-    #[test]
-    fn an_empty_history_is_still_page_one_of_one() {
-        assert_eq!(page_count(0, 25), 1);
-    }
-
-    #[test]
-    fn a_partial_last_page_still_counts_as_a_whole_page() {
-        assert_eq!(page_count(26, 25), 2);
-        assert_eq!(page_count(25, 25), 1);
-        assert_eq!(page_count(50, 25), 2);
-    }
-
-    #[test]
-    fn the_first_page_has_no_previous_link() {
-        let html = pager(None, 1, 3).render();
-        assert!(html.contains("pager-link-disabled"));
-        assert!(!html.contains("page=0"));
-    }
-
-    #[test]
-    fn the_last_page_has_no_next_link() {
-        let html = pager(None, 3, 3).render();
-        let next_disabled = html.rfind("pager-link-disabled").expect("a disabled link");
-        // Only the trailing (next) control should be disabled on the last page.
-        assert!(html[..next_disabled].contains("page=2"));
-    }
-
-    #[test]
-    fn a_middle_page_links_both_ways() {
-        let html = pager(None, 2, 3).render();
-        assert!(html.contains("page=1"));
-        assert!(html.contains("page=3"));
-        assert!(!html.contains("pager-link-disabled"));
-    }
-
-    #[test]
-    fn a_scoped_pager_carries_the_project_along() {
-        let scope = project("lorehaven");
-        let html = pager(Some(&scope), 1, 2).render();
-        assert!(html.contains("project=lorehaven"));
-        assert!(html.contains("page=2"));
     }
 }

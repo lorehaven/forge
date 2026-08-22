@@ -23,7 +23,7 @@ pub fn ensure_gatehouse_css() {
 /// is what made these pages look like a different product. What is local is the
 /// user list and the permission matrix - layout for a table of people, which no
 /// other service in the estate has.
-fn gatehouse_css_rules() -> Vec<CssRule> {
+pub fn gatehouse_css_rules() -> Vec<CssRule> {
     let mut rules = Vec::new();
     rules.extend(css::layout_rules());
     rules.extend(css::meta_rules());
@@ -33,7 +33,7 @@ fn gatehouse_css_rules() -> Vec<CssRule> {
     rules
 }
 
-fn admin_rules() -> Vec<CssRule> {
+pub fn admin_rules() -> Vec<CssRule> {
     vec![
         CssRule::new(".admin-content").property("width", "100%"),
         CssRule::new(".admin-container")

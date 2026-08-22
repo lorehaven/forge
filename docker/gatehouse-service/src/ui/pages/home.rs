@@ -9,16 +9,13 @@ use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 
 #[get("/home")]
-pub(super) async fn home(
-    req: actix_web::HttpRequest,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
+pub async fn home(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
     let admin = is_admin(&req, &config).await;
     handle_home(req, config, move || render_home_page(admin)).await
 }
 
 #[get("/home/")]
-pub(super) async fn home_slash(
+pub async fn home_slash(
     req: actix_web::HttpRequest,
     config: web::Data<JwtConfig>,
 ) -> impl Responder {
@@ -36,7 +33,7 @@ async fn is_admin(req: &actix_web::HttpRequest, config: &JwtConfig) -> bool {
         .is_some_and(|claims| claims.has_role("admin"))
 }
 
-fn render_home_page(admin: bool) -> HttpResponse {
+pub fn render_home_page(admin: bool) -> HttpResponse {
     let services = enabled_services();
 
     let mut sections = div().class("home-sections");

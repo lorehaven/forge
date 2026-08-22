@@ -101,6 +101,7 @@ uuid = { version = "1.24", features = ["v4"] }
 urlencoding = { version = "2.1" }
 walkdir = { version = "2.5" }
 which = { version = "8.0" }
+wiremock = { version = "0.6" }
 
 [profile.release]
 strip = "debuginfo"

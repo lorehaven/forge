@@ -239,7 +239,7 @@ fn ensure_success(resp: &reqwest::Response, url: &str) -> Result<()> {
 
 /// Minimal percent-encoding for query string values (encodes everything except
 /// unreserved characters). We avoid pulling in an extra dependency for this.
-fn urlencoding_simple(s: &str) -> String {
+pub fn urlencoding_simple(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
         match b {

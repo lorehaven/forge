@@ -54,7 +54,7 @@ pub fn all_models_running(defaults: &[DefaultModel], instances: &[VllmInstance])
 }
 
 /// Human-friendly label for a model, tagging embedding models so it's obvious why a non-chat model is in the list.
-fn model_label(model: &DefaultModel) -> Element {
+pub fn model_label(model: &DefaultModel) -> Element {
     let name = span().text(&model.name);
     match model.task.as_deref() {
         Some("embed") | Some("embedding") => span().child(name).child(
@@ -67,7 +67,7 @@ fn model_label(model: &DefaultModel) -> Element {
 }
 
 /// (icon class, status text, i18n key, css modifier) for a model state.
-fn state_presentation(
+pub fn state_presentation(
     state: ModelState,
 ) -> (&'static str, &'static str, &'static str, &'static str) {
     match state {
@@ -100,7 +100,7 @@ fn state_presentation(
 }
 
 /// Render the model status rows; shared between the full-page render and the polling fragment so markup stays identical.
-fn render_model_rows(
+pub fn render_model_rows(
     defaults: &[DefaultModel],
     instances_res: &anyhow::Result<Vec<VllmInstance>>,
 ) -> Element {
@@ -134,7 +134,7 @@ fn render_model_rows(
     rows
 }
 
-fn render_initializing_page(
+pub fn render_initializing_page(
     defaults: &[DefaultModel],
     instances_res: &anyhow::Result<Vec<VllmInstance>>,
 ) -> HttpResponse {

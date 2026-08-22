@@ -1,23 +1,23 @@
-use crate::routers::DOCKER_STORAGE_ROOT;
 use crate::routers::docker::repository_path;
+use crate::routers::docker_storage_root;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TagListError {
+pub enum TagListError {
     InvalidName,
     NotFound,
 }
 
-pub(crate) fn list_repositories() -> Vec<String> {
+pub fn list_repositories() -> Vec<String> {
     let mut repos = Vec::new();
-    let root = PathBuf::from(DOCKER_STORAGE_ROOT.as_str());
+    let root = PathBuf::from(docker_storage_root());
     collect_repositories(&root, "", &mut repos);
     repos.sort();
     repos
 }
 
-pub(crate) fn list_tags_for_repository(name: &str) -> Result<Vec<String>, TagListError> {
+pub fn list_tags_for_repository(name: &str) -> Result<Vec<String>, TagListError> {
     let Some(repo_root) = repository_path(name) else {
         return Err(TagListError::InvalidName);
     };
@@ -41,16 +41,14 @@ pub(crate) fn list_tags_for_repository(name: &str) -> Result<Vec<String>, TagLis
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct TagMetadata {
+pub struct TagMetadata {
     pub tag: String,
     pub digest: String,
     pub media_type: Option<String>,
     pub size_bytes: Option<u64>,
 }
 
-pub(crate) fn list_tag_metadata_for_repository(
-    name: &str,
-) -> Result<Vec<TagMetadata>, TagListError> {
+pub fn list_tag_metadata_for_repository(name: &str) -> Result<Vec<TagMetadata>, TagListError> {
     let Some(repo_root) = repository_path(name) else {
         return Err(TagListError::InvalidName);
     };
@@ -60,7 +58,7 @@ pub(crate) fn list_tag_metadata_for_repository(
         return Err(TagListError::NotFound);
     }
 
-    let manifests_root = PathBuf::from(DOCKER_STORAGE_ROOT.as_str())
+    let manifests_root = PathBuf::from(docker_storage_root())
         .join("manifests")
         .join("sha256");
 
@@ -133,7 +131,7 @@ fn collect_repositories(dir: &Path, prefix: &str, repos: &mut Vec<String>) {
     }
 }
 
-fn detect_media_type(bytes: &[u8]) -> Option<String> {
+pub fn detect_media_type(bytes: &[u8]) -> Option<String> {
     let value: Value = serde_json::from_slice(bytes).ok()?;
     value
         .get("mediaType")
@@ -141,7 +139,7 @@ fn detect_media_type(bytes: &[u8]) -> Option<String> {
         .map(str::to_string)
 }
 
-fn compare_tags_desc(a: &str, b: &str) -> std::cmp::Ordering {
+pub fn compare_tags_desc(a: &str, b: &str) -> std::cmp::Ordering {
     match (parse_version_tag(a), parse_version_tag(b)) {
         (Some(va), Some(vb)) => compare_version_tags_desc(&va, &vb),
         _ => b.cmp(a),
@@ -149,14 +147,14 @@ fn compare_tags_desc(a: &str, b: &str) -> std::cmp::Ordering {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-struct VersionTag {
-    major: u64,
-    minor: u64,
-    patch: u64,
-    suffix: Option<String>,
+pub struct VersionTag {
+    pub major: u64,
+    pub minor: u64,
+    pub patch: u64,
+    pub suffix: Option<String>,
 }
 
-fn parse_version_tag(tag: &str) -> Option<VersionTag> {
+pub fn parse_version_tag(tag: &str) -> Option<VersionTag> {
     let (version, suffix) = match tag.split_once('-') {
         Some((version, suffix)) => (version, Some(suffix.to_string())),
         None => (tag, None),
@@ -178,7 +176,7 @@ fn parse_version_tag(tag: &str) -> Option<VersionTag> {
     })
 }
 
-fn compare_version_tags_desc(a: &VersionTag, b: &VersionTag) -> std::cmp::Ordering {
+pub fn compare_version_tags_desc(a: &VersionTag, b: &VersionTag) -> std::cmp::Ordering {
     b.major
         .cmp(&a.major)
         .then_with(|| b.minor.cmp(&a.minor))

@@ -10,7 +10,8 @@ use std::time::Instant;
 /// multi-thousand-line build log the way `Stdio::inherit()` used to.
 const FAILURE_TAIL_LINES: usize = 80;
 
-fn log_file_path(operation: &str) -> PathBuf {
+#[must_use]
+pub fn log_file_path(operation: &str) -> PathBuf {
     let slug: String = operation
         .chars()
         .map(|c| {
@@ -74,7 +75,7 @@ pub fn run_command(mut cmd: Command, operation: &str) -> Result<()> {
     Ok(())
 }
 
-fn print_log_tail(log_path: &PathBuf) {
+pub fn print_log_tail(log_path: &PathBuf) {
     let Ok(contents) = fs::read_to_string(log_path) else {
         return;
     };

@@ -29,7 +29,7 @@ impl Repl {
         Ok(())
     }
 
-    fn handle_command(&mut self, input: &str) -> ReplControl {
+    pub fn handle_command(&mut self, input: &str) -> ReplControl {
         let parts: Vec<&str> = input.split_whitespace().collect();
         let Some(command) = parts.first() else {
             return ReplControl::Continue(prompt());
@@ -104,7 +104,7 @@ impl Repl {
         }
     }
 
-    fn run_jobs(&self, args: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn run_jobs(&self, args: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
         if args.is_empty() {
             println!("Usage: run <job_id> [...] | run all");
             return Ok(());
@@ -164,7 +164,7 @@ impl Repl {
 /// Which jobs `run <args>` targets: every job for `run all`, or exactly the
 /// ones named, in whatever order they appear in `jobs` (not `args`) - so a
 /// `run c a` still runs them in the estate's configured order.
-fn select_jobs(jobs: &[Job], args: &[&str]) -> Vec<Job> {
+pub fn select_jobs(jobs: &[Job], args: &[&str]) -> Vec<Job> {
     if args.first() == Some(&"all") {
         return jobs.to_vec();
     }
@@ -174,62 +174,4 @@ fn select_jobs(jobs: &[Job], args: &[&str]) -> Vec<Job> {
         .filter(|j| job_ids.contains(&j.id.as_str()))
         .cloned()
         .collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn job(id: &str) -> Job {
-        Job {
-            id: id.to_string(),
-            desc: "desc".to_string(),
-            src: "/src".to_string(),
-            dest: "/dest".to_string(),
-            delete: false,
-            skip: Vec::new(),
-            no_confirm: false,
-            interval: None,
-        }
-    }
-
-    #[test]
-    fn select_jobs_all_returns_every_job() {
-        let jobs = vec![job("a"), job("b"), job("c")];
-        let selected = select_jobs(&jobs, &["all"]);
-        assert_eq!(selected.len(), 3);
-    }
-
-    #[test]
-    fn select_jobs_by_id_keeps_the_configured_order_not_the_argument_order() {
-        let jobs = vec![job("a"), job("b"), job("c")];
-        let selected = select_jobs(&jobs, &["c", "a"]);
-        let ids: Vec<&str> = selected.iter().map(|j| j.id.as_str()).collect();
-        assert_eq!(ids, vec!["a", "c"]);
-    }
-
-    #[test]
-    fn select_jobs_ignores_unknown_ids() {
-        let jobs = vec![job("a"), job("b")];
-        let selected = select_jobs(&jobs, &["a", "does-not-exist"]);
-        let ids: Vec<&str> = selected.iter().map(|j| j.id.as_str()).collect();
-        assert_eq!(ids, vec!["a"]);
-    }
-
-    #[test]
-    fn select_jobs_with_no_matches_is_empty() {
-        let jobs = vec![job("a"), job("b")];
-        let selected = select_jobs(&jobs, &["nope"]);
-        assert!(selected.is_empty());
-    }
-
-    #[test]
-    fn select_jobs_does_not_treat_all_as_a_literal_job_id() {
-        // A job actually named "all" is shadowed by the `run all` shorthand -
-        // documented behavior, exercised here so a future change to the
-        // precedence is a deliberate one.
-        let jobs = vec![job("all"), job("b")];
-        let selected = select_jobs(&jobs, &["all"]);
-        assert_eq!(selected.len(), 2);
-    }
 }

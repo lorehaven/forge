@@ -1,5 +1,5 @@
 #[cfg(unix)]
-mod unix;
+pub mod unix;
 #[cfg(unix)]
 pub use unix::{hide_console_window, install, status, uninstall};
 

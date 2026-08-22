@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process::Command;
 
-fn find_module_for_package<'a>(config: &'a config::Config, package: &str) -> Result<&'a str> {
+pub fn find_module_for_package<'a>(config: &'a config::Config, package: &str) -> Result<&'a str> {
     for (module, module_cfg) in &config.docker.modules {
         if module_cfg.packages.iter().any(|p| p == package) {
             return Ok(module);
@@ -16,7 +16,7 @@ fn find_module_for_package<'a>(config: &'a config::Config, package: &str) -> Res
     anyhow::bail!("Module not found for package: {package}")
 }
 
-fn find_module_name_overwrite(config: &config::Config, package: &str) -> Result<String> {
+pub fn find_module_name_overwrite(config: &config::Config, package: &str) -> Result<String> {
     let module = find_module_for_package(config, package)?;
     let module_cfg = &config.docker.modules[module];
 
@@ -27,7 +27,7 @@ fn find_module_name_overwrite(config: &config::Config, package: &str) -> Result<
         .map_or_else(|| module.to_string(), Clone::clone))
 }
 
-fn get_dockerfile_for_package(config: &config::Config, package: &str) -> Result<String> {
+pub fn get_dockerfile_for_package(config: &config::Config, package: &str) -> Result<String> {
     let module = find_module_for_package(config, package)?;
     let module_cfg = &config.docker.modules[module];
 
@@ -42,7 +42,7 @@ fn get_dockerfile_for_package(config: &config::Config, package: &str) -> Result<
 ///
 /// Empty for most packages: the Dockerfile's defaults describe a plain web
 /// service, and only a package that is not one has anything to say here.
-fn get_build_args_for_package(
+pub fn get_build_args_for_package(
     config: &config::Config,
     package: &str,
 ) -> Result<BTreeMap<String, String>> {
@@ -56,7 +56,7 @@ fn get_build_args_for_package(
         .unwrap_or_default())
 }
 
-fn get_image_name_for_package(config: &config::Config, package: &str) -> Result<String> {
+pub fn get_image_name_for_package(config: &config::Config, package: &str) -> Result<String> {
     let module = find_module_for_package(config, package)?;
     let module_cfg = &config.docker.modules[module];
 
@@ -67,7 +67,7 @@ fn get_image_name_for_package(config: &config::Config, package: &str) -> Result<
         .map_or_else(|| package.to_string(), Clone::clone))
 }
 
-fn get_registries_for_package(config: &config::Config, package: &str) -> Result<Vec<String>> {
+pub fn get_registries_for_package(config: &config::Config, package: &str) -> Result<Vec<String>> {
     let module = find_module_for_package(config, package)?;
     let module_cfg = &config.docker.modules[module];
 
@@ -114,7 +114,8 @@ fn get_registries_for_package(config: &config::Config, package: &str) -> Result<
 /// Cargo's own config search root - `CARGO_HOME` if set, otherwise `~/.cargo`
 /// (`HOME` on Unix, `USERPROFILE` on Windows). Same resolution real `cargo`
 /// invocations already use.
-fn cargo_home() -> Option<PathBuf> {
+#[must_use]
+pub fn cargo_home() -> Option<PathBuf> {
     if let Ok(dir) = std::env::var("CARGO_HOME") {
         return Some(PathBuf::from(dir));
     }
@@ -137,7 +138,8 @@ fn private_registry_config(name: &str) -> Option<toml::Value> {
 /// `cargo`'s own name -> env-var mangling: hyphens become underscores, the
 /// name is upper-cased. See `CARGO_REGISTRIES_<NAME>_INDEX`/`_TOKEN` in the
 /// cargo reference.
-fn env_var_name_for_registry(name: &str, suffix: &str) -> String {
+#[must_use]
+pub fn env_var_name_for_registry(name: &str, suffix: &str) -> String {
     format!(
         "CARGO_REGISTRIES_{}_{suffix}",
         name.to_uppercase().replace('-', "_")
@@ -145,12 +147,14 @@ fn env_var_name_for_registry(name: &str, suffix: &str) -> String {
 }
 
 /// The private cargo registry's index URL, if `[docker].cargo_registry` names
-/// one in `.anvil.toml`. Resolution order: the matching env var (an explicit
+/// one in `.anvil.toml`.
+///
+/// Resolution order: the matching env var (an explicit
 /// override, e.g. from CI) > `.anvil.toml`'s own `cargo_registry_index` > the
 /// host's `~/.cargo/config.toml`. Anvil itself has no opinion on what
 /// registry a workspace uses or where it lives - that's entirely the
 /// workspace's own `.anvil.toml` and cargo config to say.
-fn cargo_registry_index(config: &config::Config, name: &str) -> Option<String> {
+pub fn cargo_registry_index(config: &config::Config, name: &str) -> Option<String> {
     if let Ok(index) = std::env::var(env_var_name_for_registry(name, "INDEX")) {
         return Some(index);
     }
@@ -168,7 +172,7 @@ fn cargo_registry_index(config: &config::Config, name: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-fn cargo_registry_token(name: &str) -> Option<String> {
+pub fn cargo_registry_token(name: &str) -> Option<String> {
     if let Ok(token) = std::env::var(env_var_name_for_registry(name, "TOKEN"))
         && !token.trim().is_empty()
     {
@@ -180,7 +184,7 @@ fn cargo_registry_token(name: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-fn full_tags_for_package(config: &config::Config, package: &str) -> Result<Vec<String>> {
+pub fn full_tags_for_package(config: &config::Config, package: &str) -> Result<Vec<String>> {
     let registries = get_registries_for_package(config, package)?;
     let module_name = find_module_name_overwrite(config, package)?;
     let image_name = get_image_name_for_package(config, package)?;
@@ -329,7 +333,7 @@ pub fn build_all(config: &config::Config) -> Result<()> {
     process_all_packages(config, |package| build(config, package), "build")
 }
 
-fn process_all_packages<F>(config: &config::Config, mut op: F, op_name: &str) -> Result<()>
+pub fn process_all_packages<F>(config: &config::Config, mut op: F, op_name: &str) -> Result<()>
 where
     F: FnMut(&str) -> Result<()>,
 {

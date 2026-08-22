@@ -161,7 +161,7 @@ async fn handle_home_page(
 }
 
 #[get("/home")]
-pub(super) async fn home(
+pub async fn home(
     req: actix_web::HttpRequest,
     jwt_config: web::Data<JwtConfig>,
     switchboard: web::Data<SwitchboardClient>,
@@ -183,7 +183,7 @@ pub(super) async fn home(
 }
 
 #[get("/home/")]
-pub(super) async fn home_slash(
+pub async fn home_slash(
     req: actix_web::HttpRequest,
     jwt_config: web::Data<JwtConfig>,
     switchboard: web::Data<SwitchboardClient>,
@@ -206,7 +206,7 @@ pub(super) async fn home_slash(
 
 /// Sidebar conversation link, falling back to a localized "New chat" label for conversations
 /// created lazily by attaching a file before the first message is sent (blank stored title).
-fn conv_title_link(link: Element, title: &str) -> Element {
+pub fn conv_title_link(link: Element, title: &str) -> Element {
     if title.trim().is_empty() {
         link.attr("data-i18n", "ui_chat_untitled").text("New chat")
     } else {
@@ -215,7 +215,7 @@ fn conv_title_link(link: Element, title: &str) -> Element {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn render_home_page(
+pub fn render_home_page(
     instances_res: anyhow::Result<Vec<VllmInstance>>,
     projects: Vec<crate::domain::models::Project>,
     conversations: Vec<Conversation>,

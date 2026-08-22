@@ -439,7 +439,7 @@ impl VllmEngine for NativeVllmEngine {
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn extract_arg(parts: &[String], key: &str) -> Option<String> {
+pub fn extract_arg(parts: &[String], key: &str) -> Option<String> {
     parts
         .windows(2)
         .find(|window| window[0] == key)
@@ -453,7 +453,7 @@ fn process_started_at(pid: u32) -> Option<DateTime<Utc>> {
     Some(created.into())
 }
 
-fn instance_key(model: &str, port: u16) -> String {
+pub fn instance_key(model: &str, port: u16) -> String {
     format!("{}-{}", model.replace("/", "--"), port)
 }
 
@@ -491,7 +491,7 @@ fn find_available_port(host: &str, requested_port: u16) -> Result<u16, String> {
     ))
 }
 
-fn create_launch_log_path(model: &str, port: u16) -> String {
+pub fn create_launch_log_path(model: &str, port: u16) -> String {
     let log_dir = std::env::var("VLLM_LOG_DIR").unwrap_or_else(|_| "dist/vllm_logs".to_string());
     let _ = fs::create_dir_all(&log_dir);
     let safe_model = model.replace('/', "__");
@@ -504,14 +504,14 @@ fn create_launch_log_path(model: &str, port: u16) -> String {
     )
 }
 
-fn create_pid_log_path(base_log_path: &str, pid: u32) -> String {
+pub fn create_pid_log_path(base_log_path: &str, pid: u32) -> String {
     match base_log_path.strip_suffix(".log") {
         Some(prefix) => format!("{prefix}-pid-{pid}.log"),
         None => format!("{base_log_path}-pid-{pid}"),
     }
 }
 
-fn log_indicates_started(path: &str, pid: u32) -> bool {
+pub fn log_indicates_started(path: &str, pid: u32) -> bool {
     let contents = match fs::read_to_string(path) {
         Ok(contents) => contents,
         Err(_) => return false,
@@ -520,7 +520,7 @@ fn log_indicates_started(path: &str, pid: u32) -> bool {
     contents.contains(&format!("Started server process [{pid}]"))
 }
 
-fn read_log_tail(path: &str, max_lines: usize) -> Option<String> {
+pub fn read_log_tail(path: &str, max_lines: usize) -> Option<String> {
     let contents = fs::read_to_string(path).ok()?;
     let lines = contents.lines().collect::<Vec<_>>();
     let start = lines.len().saturating_sub(max_lines);

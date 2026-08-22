@@ -12,7 +12,7 @@ use std::process::Command;
 use toml_edit::{DocumentMut, value};
 
 #[derive(Debug, Clone, Copy)]
-enum ReleaseKind {
+pub enum ReleaseKind {
     Docker,
     Cargo,
 }
@@ -25,7 +25,8 @@ const RELEASE_RELEVANT_EXTENSIONS: &[&str] = &[
     "rs", "toml", "j2", "feature", "ftl", "yaml", "yml", "sh", "py", "sql", "json", "proto",
 ];
 
-fn is_release_relevant_file(path: &str) -> bool {
+#[must_use]
+pub fn is_release_relevant_file(path: &str) -> bool {
     Path::new(path)
         .extension()
         .and_then(|ext| ext.to_str())
@@ -34,27 +35,28 @@ fn is_release_relevant_file(path: &str) -> bool {
 
 /// A package's dependencies, split by how a change in them would be
 /// detected.
-struct PackageDependencies {
+#[derive(Debug)]
+pub struct PackageDependencies {
     /// Workspace-member names, used for release-order layering and to
     /// propagate "needs release" to dependents when a member changed.
-    member_deps: Vec<String>,
+    pub member_deps: Vec<String>,
     /// Non-member dependency names pulled in via `{ workspace = true }`.
     /// Their real version lives in the root `[workspace.dependencies]`
     /// table, not in this package's own manifest, so a diff over this
     /// package's directory alone can never see them change.
-    external_workspace_deps: HashSet<String>,
+    pub external_workspace_deps: HashSet<String>,
 }
 
 #[derive(Debug, Clone)]
-struct ReleasePlanItem {
-    package: String,
-    from_version: String,
-    to_version: String,
-    kind: ReleaseKind,
-    tag_to_create: String,
-    bump_version: bool,
-    install_after_publish: bool,
-    layer: usize,
+pub struct ReleasePlanItem {
+    pub package: String,
+    pub from_version: String,
+    pub to_version: String,
+    pub kind: ReleaseKind,
+    pub tag_to_create: String,
+    pub bump_version: bool,
+    pub install_after_publish: bool,
+    pub layer: usize,
 }
 
 pub fn release(config: &Config, package: Option<String>, all: bool, dry_run: bool) -> Result<()> {
@@ -135,7 +137,7 @@ pub fn release(config: &Config, package: Option<String>, all: bool, dry_run: boo
     Ok(())
 }
 
-fn resolve_release_targets(
+pub fn resolve_release_targets(
     config: &Config,
     metadata: &Value,
     package: Option<String>,
@@ -186,7 +188,7 @@ fn resolve_release_targets(
     Ok(vec![package_name])
 }
 
-fn resolve_single_package(metadata: &Value) -> Result<String> {
+pub fn resolve_single_package(metadata: &Value) -> Result<String> {
     let cwd = std::env::current_dir().context("Failed to read current directory")?;
     let cwd_canon = cwd.canonicalize().context("Failed to canonicalize cwd")?;
     let packages = cargo_meta::workspace_packages(metadata)?;
@@ -207,7 +209,7 @@ fn resolve_single_package(metadata: &Value) -> Result<String> {
 }
 
 #[allow(clippy::too_many_lines)]
-fn build_release_plan(
+pub fn build_release_plan(
     config: &Config,
     metadata: &Value,
     targets: &[String],
@@ -364,7 +366,7 @@ fn build_release_plan(
     Ok(plan)
 }
 
-fn latest_package_tag(package: &str) -> Result<Option<String>> {
+pub fn latest_package_tag(package: &str) -> Result<Option<String>> {
     let pattern = format!("{package}-v*");
     let output = Command::new("git")
         .args(["tag", "--list", &pattern, "--sort=-v:refname"])
@@ -384,7 +386,11 @@ fn latest_package_tag(package: &str) -> Result<Option<String>> {
     Ok(tag)
 }
 
-fn package_changed_since_tag(workspace_root: &Path, package_dir: &Path, tag: &str) -> Result<bool> {
+pub fn package_changed_since_tag(
+    workspace_root: &Path,
+    package_dir: &Path,
+    tag: &str,
+) -> Result<bool> {
     let relative_dir = package_dir.strip_prefix(workspace_root).with_context(|| {
         format!(
             "Package dir {} is not under workspace root {}",
@@ -418,7 +424,7 @@ fn package_changed_since_tag(workspace_root: &Path, package_dir: &Path, tag: &st
 /// Returns `Ok(None)` when the path did not exist in the tree at `tag` (e.g.
 /// a tag inherited from before a workspace root manifest was introduced, as
 /// happens when a package's history was extracted from a larger repo).
-fn git_show_file_at_tag(
+pub fn git_show_file_at_tag(
     workspace_root: &Path,
     tag: &str,
     relative_path: &str,
@@ -443,7 +449,7 @@ fn git_show_file_at_tag(
         .map(Some)
 }
 
-fn workspace_dependencies_table(content: &str) -> Result<HashMap<String, toml::Value>> {
+pub fn workspace_dependencies_table(content: &str) -> Result<HashMap<String, toml::Value>> {
     let doc: toml::Value =
         toml::from_str(content).context("Failed to parse workspace Cargo.toml")?;
     Ok(doc
@@ -457,10 +463,12 @@ fn workspace_dependencies_table(content: &str) -> Result<HashMap<String, toml::V
 }
 
 /// Names of `[workspace.dependencies]` entries whose version, features, or
-/// registry changed between `tag` and HEAD. Any package pulling one of
+/// registry changed between `tag` and HEAD.
+///
+/// Any package pulling one of
 /// these in via `{ workspace = true }` publishes a different dependency
 /// even though nothing in that package's own directory was touched.
-fn changed_workspace_dependencies(workspace_root: &Path, tag: &str) -> Result<HashSet<String>> {
+pub fn changed_workspace_dependencies(workspace_root: &Path, tag: &str) -> Result<HashSet<String>> {
     let Some(old_content) = git_show_file_at_tag(workspace_root, tag, "Cargo.toml")? else {
         // No root manifest at `tag` to diff against (e.g. a tag from before
         // this workspace's history was extracted into its own repo). Fall
@@ -485,11 +493,15 @@ fn changed_workspace_dependencies(workspace_root: &Path, tag: &str) -> Result<Ha
 }
 
 /// Parses every workspace member's manifest once, splitting each package's
-/// dependencies into other members (tracked by source-code diff) and
-/// external crates pinned via `{ workspace = true }` (tracked by diffing
+/// dependencies into other members and external workspace-pinned crates.
+///
+/// Member dependencies are tracked by source-code diff; external crates
+/// pinned via `{ workspace = true }` are tracked by diffing
 /// the root `[workspace.dependencies]` table instead, since their version
-/// never lives inside the package's own directory).
-fn collect_package_dependencies(metadata: &Value) -> Result<HashMap<String, PackageDependencies>> {
+/// never lives inside the package's own directory.
+pub fn collect_package_dependencies(
+    metadata: &Value,
+) -> Result<HashMap<String, PackageDependencies>> {
     let packages = cargo_meta::workspace_packages(metadata)?;
     let member_names: HashSet<&str> = packages.iter().map(|pkg| pkg.name.as_str()).collect();
     let mut result = HashMap::new();
@@ -536,7 +548,11 @@ fn collect_package_dependencies(metadata: &Value) -> Result<HashMap<String, Pack
     Ok(result)
 }
 
-fn ensure_release_plan_non_empty(all: bool, plan: &[ReleasePlanItem], dry_run: bool) -> Result<()> {
+pub fn ensure_release_plan_non_empty(
+    all: bool,
+    plan: &[ReleasePlanItem],
+    dry_run: bool,
+) -> Result<()> {
     if !plan.is_empty() {
         return Ok(());
     }
@@ -552,7 +568,8 @@ fn ensure_release_plan_non_empty(all: bool, plan: &[ReleasePlanItem], dry_run: b
     anyhow::bail!("Target package has no changes since its last tag");
 }
 
-const fn release_action_label(item: &ReleasePlanItem) -> &'static str {
+#[must_use]
+pub const fn release_action_label(item: &ReleasePlanItem) -> &'static str {
     match item.kind {
         ReleaseKind::Docker => "docker release",
         ReleaseKind::Cargo if item.install_after_publish => "cargo publish + install",
@@ -560,7 +577,7 @@ const fn release_action_label(item: &ReleasePlanItem) -> &'static str {
     }
 }
 
-fn bump_patch_versions(metadata: &Value, plan: &[ReleasePlanItem]) -> Result<Vec<PathBuf>> {
+pub fn bump_patch_versions(metadata: &Value, plan: &[ReleasePlanItem]) -> Result<Vec<PathBuf>> {
     let workspace = cargo_meta::workspace_packages(metadata)?;
     let mut manifests = Vec::new();
 
@@ -583,7 +600,7 @@ fn bump_patch_versions(metadata: &Value, plan: &[ReleasePlanItem]) -> Result<Vec
     Ok(manifests)
 }
 
-fn set_manifest_version(path: &Path, version: &str) -> Result<()> {
+pub fn set_manifest_version(path: &Path, version: &str) -> Result<()> {
     let content = fs::read_to_string(path)
         .with_context(|| format!("Failed to read manifest at {}", path.display()))?;
 
@@ -599,7 +616,7 @@ fn set_manifest_version(path: &Path, version: &str) -> Result<()> {
     Ok(())
 }
 
-fn bump_patch(version: &str) -> Result<String> {
+pub fn bump_patch(version: &str) -> Result<String> {
     let mut parts = version.split('.');
     let major = parts
         .next()
@@ -694,11 +711,12 @@ fn push_version_commit() -> Result<()> {
     run_command(push_cmd, "git push version update commit")
 }
 
-fn package_tag_name(package: &str, version: &str) -> String {
+#[must_use]
+pub fn package_tag_name(package: &str, version: &str) -> String {
     format!("{package}-v{version}")
 }
 
-fn tag_exists(tag: &str) -> Result<bool> {
+pub fn tag_exists(tag: &str) -> Result<bool> {
     let output = Command::new("git")
         .args(["tag", "-l", tag])
         .output()
@@ -713,7 +731,7 @@ fn tag_exists(tag: &str) -> Result<bool> {
     Ok(found)
 }
 
-fn ensure_release_tags_absent(plan: &[ReleasePlanItem]) -> Result<()> {
+pub fn ensure_release_tags_absent(plan: &[ReleasePlanItem]) -> Result<()> {
     for item in plan {
         if tag_exists(&item.tag_to_create)? {
             anyhow::bail!("Tag '{}' already exists", item.tag_to_create);
@@ -729,7 +747,8 @@ fn create_release_tag(item: &ReleasePlanItem) -> Result<()> {
     run_command(cmd, &format!("git tag {}", item.tag_to_create))
 }
 
-fn is_docker_package(config: &Config, package: &str) -> bool {
+#[must_use]
+pub fn is_docker_package(config: &Config, package: &str) -> bool {
     config
         .docker
         .modules
@@ -737,11 +756,16 @@ fn is_docker_package(config: &Config, package: &str) -> bool {
         .any(|module| module.packages.iter().any(|p| p == package))
 }
 
-fn should_install_package(config: &Config, package: &str) -> bool {
+#[must_use]
+pub fn should_install_package(config: &Config, package: &str) -> bool {
     config.install.packages.iter().any(|p| p == package)
 }
 
-fn get_transitive_dependencies(
+// Purely internal recursion over a graph this crate always builds with the
+// default hasher - genericizing over `BuildHasher` for a private call graph
+// like this buys nothing a caller would ever use.
+#[allow(clippy::implicit_hasher)]
+pub fn get_transitive_dependencies(
     package: &str,
     graph: &HashMap<String, Vec<String>>,
     visited: &mut HashSet<String>,
@@ -758,7 +782,9 @@ fn get_transitive_dependencies(
     }
 }
 
-fn compute_package_layers(
+#[must_use]
+#[allow(clippy::implicit_hasher)]
+pub fn compute_package_layers(
     packages: &[String],
     graph: &HashMap<String, Vec<String>>,
 ) -> HashMap<String, usize> {
@@ -802,7 +828,7 @@ fn compute_package_layers(
     layers
 }
 
-fn print_dry_run_plan_with_layers(plan: &[ReleasePlanItem]) {
+pub fn print_dry_run_plan_with_layers(plan: &[ReleasePlanItem]) {
     println!("Dry run: planned releases (organized by dependency layers)\n");
 
     let max_layer = plan.iter().map(|item| item.layer).max().unwrap_or(0);

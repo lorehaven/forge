@@ -17,20 +17,21 @@ pub fn warn(msg: &str) {
     print_status(Tone::Warn, "warn", msg);
 }
 
-fn prompt() -> String {
+#[must_use]
+pub fn prompt() -> String {
     let env = current_env().unwrap_or_else(|_| "unset".into());
     repl_prompt("riveter", &env)
 }
 
 /// Prints without panicking when stdout is a closed pipe (`help | head`).
-fn print_block(text: &str) {
+pub fn print_block(text: &str) {
     use std::io::Write;
 
     let stdout = std::io::stdout();
     let _ = writeln!(stdout.lock(), "{text}");
 }
 
-fn repl_help(topic: Option<&str>) {
+pub fn repl_help(topic: Option<&str>) {
     let Some(topic) = topic else {
         print_block(&help::overview());
         return;
@@ -45,7 +46,7 @@ fn repl_help(topic: Option<&str>) {
     }
 }
 
-fn handle_repl_command(input: &str) -> anyhow::Result<bool> {
+pub fn handle_repl_command(input: &str) -> anyhow::Result<bool> {
     let args = input.split_whitespace().collect::<Vec<_>>();
     if args.is_empty() {
         return Ok(false);
@@ -179,7 +180,7 @@ fn repl_images(args: &[&str]) -> anyhow::Result<()> {
     )
 }
 
-fn error(msg: &str) {
+pub fn error(msg: &str) {
     print_status(Tone::Error, "error", msg);
 }
 
@@ -201,7 +202,8 @@ pub fn repl() -> anyhow::Result<()> {
 
 /// A kubectl invocation bound to the overlay's context when it pins one, so the
 /// environment decides the cluster rather than the shell's ambient state.
-fn kubectl(rendered: &RenderedManifest) -> Command {
+#[must_use]
+pub fn kubectl(rendered: &RenderedManifest) -> Command {
     let mut cmd = Command::new("kubectl");
     if let Some(context) = &rendered.kube_context {
         cmd.args(["--context", context]);
@@ -210,7 +212,8 @@ fn kubectl(rendered: &RenderedManifest) -> Command {
 }
 
 /// The context kubectl would pick on its own.
-fn current_kube_context() -> Option<String> {
+#[must_use]
+pub fn current_kube_context() -> Option<String> {
     let out = Command::new("kubectl")
         .args(["config", "current-context"])
         .output()
@@ -230,7 +233,7 @@ fn current_kube_context() -> Option<String> {
 /// not is at the mercy of whatever `kubectl config current-context` happens to
 /// be — for a tool whose job is multi-environment deploys, that is worth saying
 /// out loud rather than discovering afterwards.
-fn announce_target(env: &str, rendered: &RenderedManifest) {
+pub fn announce_target(env: &str, rendered: &RenderedManifest) {
     if let Some(context) = &rendered.kube_context {
         print_status(Tone::Info, "context", &format!("{env} -> {context}"));
         return;
@@ -713,7 +716,7 @@ pub fn parse_args(
     })
 }
 
-fn parse_scope_value(raw: &str) -> anyhow::Result<ResourceScope> {
+pub fn parse_scope_value(raw: &str) -> anyhow::Result<ResourceScope> {
     match raw.to_ascii_lowercase().as_str() {
         "mutable" => Ok(ResourceScope::Mutable),
         "immutable" => Ok(ResourceScope::Immutable),
@@ -723,7 +726,8 @@ fn parse_scope_value(raw: &str) -> anyhow::Result<ResourceScope> {
 }
 
 /// Names what the command actually accepts, so the error carries the fix.
-fn unknown_option(arg: &str, allow_dry_run: bool) -> String {
+#[must_use]
+pub fn unknown_option(arg: &str, allow_dry_run: bool) -> String {
     let hint = if arg == "--dry-run" {
         " (only `apply` takes --dry-run)"
     } else {

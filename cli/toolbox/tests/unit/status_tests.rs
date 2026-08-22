@@ -1,5 +1,6 @@
 use forge_toolbox::{
-    PlannedAction, action_request, build_status, format_toolbox_note, planned_action,
+    ActionRequest, PlannedAction, action_request, build_status, format_toolbox_note,
+    planned_action, run_selected_action, spinner_frames,
 };
 use semver::Version;
 
@@ -134,4 +135,36 @@ fn format_toolbox_note_nothing_known() {
         note,
         "note: could not determine latest forge-toolbox version from registry"
     );
+}
+
+#[test]
+fn run_selected_action_refuses_when_not_installable() {
+    let req = ActionRequest {
+        package: "mystery".to_string(),
+        installable: false,
+        installed: false,
+        updatable: false,
+    };
+    let message = run_selected_action(req).unwrap();
+    assert!(message.contains("mystery"));
+    assert!(message.contains("not installable"));
+}
+
+#[test]
+fn run_selected_action_short_circuits_when_already_up_to_date() {
+    let req = ActionRequest {
+        package: "anvil".to_string(),
+        installable: true,
+        installed: true,
+        updatable: false,
+    };
+    let message = run_selected_action(req).unwrap();
+    assert_eq!(message, "anvil is already up to date");
+}
+
+#[test]
+fn spinner_frames_cycle_through_ten_glyphs() {
+    let frames = spinner_frames();
+    assert_eq!(frames.len(), 10);
+    assert_eq!(frames[0], "⠋");
 }

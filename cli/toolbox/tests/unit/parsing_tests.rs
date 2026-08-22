@@ -96,3 +96,77 @@ fn parse_installed_list_ignores_lines_without_trailing_colon() {
     let versions = parse_installed_list(stdout);
     assert!(versions.is_empty());
 }
+
+#[test]
+fn parse_installed_list_skips_a_bare_colon_line_with_no_package() {
+    let versions = parse_installed_list(":\n");
+    assert!(versions.is_empty());
+}
+
+#[test]
+fn parse_installed_list_skips_a_header_line_missing_the_version_token() {
+    let stdout = "anvil:\n    anvil\n";
+    let versions = parse_installed_list(stdout);
+    assert!(versions.is_empty());
+}
+
+#[test]
+fn parse_installed_output_parses_a_successful_listing() {
+    use forge_toolbox::parse_installed_output;
+    use std::os::unix::process::ExitStatusExt;
+    use std::process::{ExitStatus, Output};
+
+    let output = Output {
+        status: ExitStatus::from_raw(0),
+        stdout: b"anvil v0.1.22:\n    anvil\n".to_vec(),
+        stderr: Vec::new(),
+    };
+    let versions = parse_installed_output(output).unwrap();
+    assert_eq!(versions.len(), 1);
+    assert!(versions.contains_key("anvil"));
+}
+
+#[test]
+fn parse_installed_output_errors_with_stderr_when_the_command_fails() {
+    use forge_toolbox::parse_installed_output;
+    use std::os::unix::process::ExitStatusExt;
+    use std::process::{ExitStatus, Output};
+
+    let output = Output {
+        status: ExitStatus::from_raw(1),
+        stdout: Vec::new(),
+        stderr: b"no such registry\n".to_vec(),
+    };
+    let err = parse_installed_output(output).unwrap_err();
+    assert!(err.to_string().contains("no such registry"));
+}
+
+#[test]
+fn parse_search_output_finds_the_requested_package() {
+    use forge_toolbox::parse_search_output;
+    use std::os::unix::process::ExitStatusExt;
+    use std::process::{ExitStatus, Output};
+
+    let output = Output {
+        status: ExitStatus::from_raw(0),
+        stdout: b"anvil = \"0.1.22\"    # workspace build tools\n".to_vec(),
+        stderr: Vec::new(),
+    };
+    let version = parse_search_output("anvil", output).unwrap();
+    assert_eq!(version.unwrap().to_string(), "0.1.22");
+}
+
+#[test]
+fn parse_search_output_errors_with_stderr_when_the_command_fails() {
+    use forge_toolbox::parse_search_output;
+    use std::os::unix::process::ExitStatusExt;
+    use std::process::{ExitStatus, Output};
+
+    let output = Output {
+        status: ExitStatus::from_raw(1),
+        stdout: Vec::new(),
+        stderr: b"registry index not found\n".to_vec(),
+    };
+    let err = parse_search_output("anvil", output).unwrap_err();
+    assert!(err.to_string().contains("registry index not found"));
+}

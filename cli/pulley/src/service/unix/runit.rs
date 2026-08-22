@@ -27,10 +27,7 @@ impl Backend for Runit {
 
         std::fs::create_dir_all(&source_dir)?;
         let run_path = source_dir.join("run");
-        std::fs::write(
-            &run_path,
-            format!("#!/bin/sh\nexec chpst -u {user} {} daemon\n", exe.display()),
-        )?;
+        std::fs::write(&run_path, run_script_contents(&exe, &user))?;
         set_executable(&run_path)?;
         print_status(
             Tone::Success,
@@ -121,11 +118,18 @@ impl Backend for Runit {
 const NO_SCAN_DIR: &str =
     "no runit scan directory found (looked for /var/service, /etc/service, /run/runit/service)";
 
-fn scan_dir() -> Option<PathBuf> {
+/// The runit `run` script's contents - pulled out of `install` so it can be
+/// checked without actually writing a file or touching a real runit scan
+/// directory.
+pub fn run_script_contents(exe: &Path, user: &str) -> String {
+    format!("#!/bin/sh\nexec chpst -u {user} {} daemon\n", exe.display())
+}
+
+pub fn scan_dir() -> Option<PathBuf> {
     SCAN_DIRS.iter().map(PathBuf::from).find(|p| p.is_dir())
 }
 
-fn set_executable(path: &Path) -> std::io::Result<()> {
+pub fn set_executable(path: &Path) -> std::io::Result<()> {
     use std::os::unix::fs::PermissionsExt;
     let mut perms = std::fs::metadata(path)?.permissions();
     perms.set_mode(0o755);
@@ -134,7 +138,7 @@ fn set_executable(path: &Path) -> std::io::Result<()> {
 
 /// The service file lives under `/etc`, and the scan-dir symlink activates a
 /// process running as root unless dropped via `chpst -u`, so both need root.
-fn require_root(action: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn require_root(action: &str) -> Result<(), Box<dyn std::error::Error>> {
     let output = Command::new("id").arg("-u").output()?;
     if String::from_utf8_lossy(&output.stdout).trim() != "0" {
         // `sudo` resets PATH by default, so a plain `sudo pulley` often
@@ -154,7 +158,7 @@ fn require_root(action: &str) -> Result<(), Box<dyn std::error::Error>> {
 
 /// The user the daemon should actually run as (root only owns the service
 /// definition; `chpst -u` drops to this user so it reads their own config).
-fn target_user() -> String {
+pub fn target_user() -> String {
     std::env::var("SUDO_USER")
         .unwrap_or_else(|_| std::env::var("USER").unwrap_or_else(|_| "root".to_string()))
 }

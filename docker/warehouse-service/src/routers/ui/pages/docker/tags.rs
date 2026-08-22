@@ -4,7 +4,7 @@ use quench_auth::prelude::JwtConfig;
 use quench_starter::prelude::with_base_path;
 
 #[get("/docker/tags/{repository:.+}")]
-pub(in crate::routers::ui::pages) async fn docker_tags(
+pub async fn docker_tags(
     req: HttpRequest,
     path: web::Path<String>,
     config: web::Data<JwtConfig>,

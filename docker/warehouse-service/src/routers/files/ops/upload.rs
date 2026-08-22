@@ -165,7 +165,7 @@ async fn stream_to_disk(
 /// The process id and a counter keep two uploads of the same path from sharing
 /// a staging file, which would otherwise interleave their bytes and leave the
 /// loser's digest describing the winner's content.
-fn staging_path(target: &Path) -> PathBuf {
+pub fn staging_path(target: &Path) -> PathBuf {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
 

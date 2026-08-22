@@ -36,30 +36,36 @@ pub fn run(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
     let mut last_run: HashMap<String, Instant> = HashMap::new();
 
     loop {
-        let now = Instant::now();
-        for (job, interval) in &jobs {
-            if is_due(last_run.get(&job.id).copied(), now, *interval) {
-                last_run.insert(job.id.clone(), now);
-                if let Err(e) = run_job(job) {
-                    print_status(
-                        Tone::Error,
-                        "daemon",
-                        &format!("job `{}` failed: {e}", job.id),
-                    );
-                }
+        poll_once(&jobs, &mut last_run, Instant::now());
+        std::thread::sleep(TICK);
+    }
+}
+
+/// One pass over `jobs`, running whichever are due and recording when they
+/// ran - the loop body of [`run`], split out so a single pass can be tested
+/// without the surrounding infinite loop or a real `sleep`.
+pub fn poll_once(jobs: &[(&Job, Duration)], last_run: &mut HashMap<String, Instant>, now: Instant) {
+    for (job, interval) in jobs {
+        if is_due(last_run.get(&job.id).copied(), now, *interval) {
+            last_run.insert(job.id.clone(), now);
+            if let Err(e) = run_job(job) {
+                print_status(
+                    Tone::Error,
+                    "daemon",
+                    &format!("job `{}` failed: {e}", job.id),
+                );
             }
         }
-        std::thread::sleep(TICK);
     }
 }
 
 /// Whether a job with this interval, last run at `last_run` (never, if
 /// `None`), is due to run again as of `now`.
-fn is_due(last_run: Option<Instant>, now: Instant, interval: Duration) -> bool {
+pub fn is_due(last_run: Option<Instant>, now: Instant, interval: Duration) -> bool {
     last_run.is_none_or(|last| now.duration_since(last) >= interval)
 }
 
-fn run_job(job: &Job) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run_job(job: &Job) -> Result<(), Box<dyn std::error::Error>> {
     print_status(Tone::Info, "daemon", &format!("running job `{}`", job.id));
     job_log::append(&job.id, "running job");
 
@@ -84,41 +90,4 @@ fn run_job(job: &Job) -> Result<(), Box<dyn std::error::Error>> {
 
     job_log::append(&job.id, "sync completed");
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn is_due_when_never_run_before() {
-        assert!(is_due(None, Instant::now(), Duration::from_secs(10)));
-    }
-
-    #[test]
-    fn is_not_due_immediately_after_running() {
-        let now = Instant::now();
-        assert!(!is_due(Some(now), now, Duration::from_secs(10)));
-    }
-
-    #[test]
-    fn is_due_once_the_interval_has_fully_elapsed() {
-        let now = Instant::now();
-        let last = now.checked_sub(Duration::from_secs(20)).unwrap();
-        assert!(is_due(Some(last), now, Duration::from_secs(10)));
-    }
-
-    #[test]
-    fn is_not_due_just_before_the_interval_elapses() {
-        let now = Instant::now();
-        let last = now.checked_sub(Duration::from_secs(5)).unwrap();
-        assert!(!is_due(Some(last), now, Duration::from_secs(10)));
-    }
-
-    #[test]
-    fn is_due_exactly_at_the_interval_boundary() {
-        let now = Instant::now();
-        let last = now.checked_sub(Duration::from_secs(10)).unwrap();
-        assert!(is_due(Some(last), now, Duration::from_secs(10)));
-    }
 }

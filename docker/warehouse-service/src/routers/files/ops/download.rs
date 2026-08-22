@@ -81,7 +81,7 @@ pub async fn head(storage: web::Path<String>, query: web::Query<FileQuery>) -> i
 /// Quotes and control bytes are dropped rather than escaped: the name only has
 /// to be a usable suggestion, and a header that cannot be parsed is worse than
 /// one that suggests something slightly different.
-fn download_name(target: &std::path::Path) -> String {
+pub fn download_name(target: &std::path::Path) -> String {
     let name = target
         .file_name()
         .map(|name| name.to_string_lossy().to_string())

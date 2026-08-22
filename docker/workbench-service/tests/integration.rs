@@ -9,3 +9,7 @@ mod issue_tests;
 mod project_tests;
 #[path = "integration/realm_users_tests.rs"]
 mod realm_users_tests;
+#[path = "integration/routers_api_tests.rs"]
+mod routers_api_tests;
+#[path = "integration/routers_ui_pages_tests.rs"]
+mod routers_ui_pages_tests;

@@ -111,7 +111,8 @@ fn run_serve_mode(package: Option<&str>, watch_interval_ms: u64) -> Result<()> {
     }
 }
 
-fn build_command(package: Option<&str>, all_features: bool) -> Command {
+#[must_use]
+pub fn build_command(package: Option<&str>, all_features: bool) -> Command {
     let mut cmd = Command::new("cargo");
     cmd.arg("build");
     if all_features {
@@ -123,7 +124,8 @@ fn build_command(package: Option<&str>, all_features: bool) -> Command {
     cmd
 }
 
-fn run_command_for_package(package: Option<&str>) -> Command {
+#[must_use]
+pub fn run_command_for_package(package: Option<&str>) -> Command {
     let mut cmd = Command::new("cargo");
     cmd.arg("run");
     if let Some(pkg) = package {
@@ -135,7 +137,7 @@ fn run_command_for_package(package: Option<&str>) -> Command {
     cmd
 }
 
-fn resolve_package_dir(package_name: &str) -> Option<std::path::PathBuf> {
+pub fn resolve_package_dir(package_name: &str) -> Option<std::path::PathBuf> {
     let output = Command::new("cargo")
         .args(["metadata", "--format-version", "1", "--no-deps"])
         .output()
@@ -166,7 +168,7 @@ fn spawn_run_child(package: Option<&str>) -> Result<Child> {
     cmd.spawn().context("Failed to spawn cargo run process")
 }
 
-fn stop_child_if_running(child: &mut Option<Child>) -> Result<()> {
+pub fn stop_child_if_running(child: &mut Option<Child>) -> Result<()> {
     if let Some(proc) = child.as_mut()
         && proc.try_wait()?.is_none()
     {
@@ -256,13 +258,13 @@ fn read_hotkeys() -> Result<Vec<HotkeyEvent>> {
     Ok(events)
 }
 
-fn clear_echoed_hotkey() {
+pub fn clear_echoed_hotkey() {
     // If a key was echoed by terminal line discipline between polls, erase it.
     // This is best-effort and no-op when nothing was echoed.
     eprint!("\u{8} \u{8}");
 }
 
-fn file_snapshot(root: impl AsRef<Path>) -> Result<BTreeMap<String, u128>> {
+pub fn file_snapshot(root: impl AsRef<Path>) -> Result<BTreeMap<String, u128>> {
     let mut snapshot = BTreeMap::new();
     let walker = WalkDir::new(root)
         .into_iter()
@@ -293,7 +295,8 @@ fn file_snapshot(root: impl AsRef<Path>) -> Result<BTreeMap<String, u128>> {
     Ok(snapshot)
 }
 
-fn should_watch_path(path: &Path) -> bool {
+#[must_use]
+pub fn should_watch_path(path: &Path) -> bool {
     let ignored_dir_names = [
         ".git", "target", ".ferrous", ".idea", ".vscode", ".direnv", ".cache", "storage", "dist",
         "tmp", ".tmp",
@@ -303,7 +306,8 @@ fn should_watch_path(path: &Path) -> bool {
         .any(|c| ignored_dir_names.iter().any(|name| c.as_os_str() == *name))
 }
 
-fn should_watch_file(path: &Path) -> bool {
+#[must_use]
+pub fn should_watch_file(path: &Path) -> bool {
     let Some(file_name) = path.file_name().and_then(|s| s.to_str()) else {
         return false;
     };

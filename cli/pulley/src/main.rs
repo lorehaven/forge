@@ -1,16 +1,9 @@
-mod cli;
-mod config;
-mod daemon;
-mod job_log;
-mod repl;
-mod rsync;
-mod service;
-
 use clap::Parser;
-use cli::{Cli, Command, ServiceAction};
-use config::Config;
+use pulley::cli::{Cli, Command, ServiceAction};
+use pulley::config::Config;
+use pulley::repl::Repl;
+use pulley::{daemon, service};
 use quench_cli::prelude::{Tone, print_status, require_binary};
-use repl::Repl;
 
 #[cfg(unix)]
 const RSYNC_HINT: &str = "pulley shells out to it for every sync job; install it (e.g. `apt install rsync` / `pacman -S rsync`)";

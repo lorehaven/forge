@@ -5,8 +5,10 @@
 //! it must leave alone because a log stream is attached to them.
 
 use chrono::{Duration, Utc};
-use conveyor_service::domain::{Job, Run, Status, Trigger};
-use conveyor_service::routers::ui::pages::runs::{job_block, job_state, state_block};
+use conveyor_service::domain::{Artifact, Job, Run, Status, Trigger};
+use conveyor_service::routers::ui::pages::runs::{
+    artifacts_block, job_block, job_state, jobs_block, state_block,
+};
 
 fn run(status: Status) -> Run {
     Run {
@@ -120,4 +122,47 @@ fn the_polled_part_of_a_job_is_separable_from_its_log() {
 fn a_running_job_reports_how_long_it_has_been_going() {
     let html = job_state(&job(Status::Running)).render();
     assert!(html.contains("so far"), "got: {html}");
+}
+
+fn artifact(name: &str) -> Artifact {
+    Artifact {
+        id: "artifact-1".to_string(),
+        run_id: "run-1".to_string(),
+        job_id: "job-1".to_string(),
+        kind: "crate".to_string(),
+        name: name.to_string(),
+        version: Some("1.2.3".to_string()),
+        uri: "https://warehouse.example/crates/thing/1.2.3".to_string(),
+        digest: None,
+        created_at: Utc::now(),
+    }
+}
+
+#[test]
+fn jobs_block_carries_the_swap_target_id_and_every_job() {
+    let html = jobs_block(&[job(Status::Success), job(Status::Failed)]).render();
+    assert!(html.contains(r#"id="run-jobs""#));
+    assert_eq!(html.matches("class=\"job\"").count(), 2);
+}
+
+#[test]
+fn jobs_block_is_still_the_swap_target_with_no_jobs_at_all() {
+    let html = jobs_block(&[]).render();
+    assert!(html.contains(r#"id="run-jobs""#));
+}
+
+#[test]
+fn artifacts_block_is_present_but_empty_with_no_artifacts_yet() {
+    // Always rendered (per the doc comment on `artifacts_block`) so an
+    // out-of-band swap later has something to replace.
+    let html = artifacts_block(&[]).render();
+    assert!(html.contains(r#"id="run-artifacts""#));
+}
+
+#[test]
+fn artifacts_block_lists_every_artifact_once_they_exist() {
+    let html = artifacts_block(&[artifact("thing"), artifact("other-thing")]).render();
+    assert!(html.contains(r#"id="run-artifacts""#));
+    assert!(html.contains("thing"));
+    assert!(html.contains("other-thing"));
 }

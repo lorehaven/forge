@@ -47,7 +47,7 @@ pub struct LoginNotices {
 }
 
 #[get("/login")]
-pub(super) async fn login(
+pub async fn login(
     request: HttpRequest,
     query: web::Query<LoginQuery>,
     notices: web::Query<LoginNotices>,
@@ -59,7 +59,7 @@ pub(super) async fn login(
 }
 
 #[get("/login/")]
-pub(super) async fn login_slash(
+pub async fn login_slash(
     request: HttpRequest,
     query: web::Query<LoginQuery>,
     notices: web::Query<LoginNotices>,
@@ -88,7 +88,7 @@ async fn try_silent_refresh(request: &HttpRequest) -> Option<HttpResponse> {
 }
 
 #[post("/login")]
-pub(super) async fn login_submit(
+pub async fn login_submit(
     form: web::Form<LoginForm>,
     config: web::Data<JwtConfig>,
     db: web::Data<Db>,
@@ -166,7 +166,7 @@ pub struct MfaQuery {
 }
 
 #[get("/login/mfa")]
-pub(super) async fn login_mfa(query: web::Query<MfaQuery>) -> impl Responder {
+pub async fn login_mfa(query: web::Query<MfaQuery>) -> impl Responder {
     render_mfa_page(
         &query.pending,
         query.redirect.as_deref(),
@@ -186,7 +186,7 @@ pub struct MfaForm {
 /// `pending` proves the password step already happened - see
 /// [`crate::realm::authenticate_mfa`].
 #[post("/login/mfa")]
-pub(super) async fn login_mfa_submit(
+pub async fn login_mfa_submit(
     form: web::Form<MfaForm>,
     config: web::Data<JwtConfig>,
     db: web::Data<Db>,
@@ -248,7 +248,7 @@ pub(super) async fn login_mfa_submit(
         .finish()
 }
 
-fn mfa_challenge_url(pending: &str, redirect: Option<&str>, err: bool) -> String {
+pub fn mfa_challenge_url(pending: &str, redirect: Option<&str>, err: bool) -> String {
     let mut url = format!(
         "{}?pending={}",
         ui_path("/login/mfa"),
@@ -270,22 +270,19 @@ fn mfa_challenge_url(pending: &str, redirect: Option<&str>, err: bool) -> String
 /// The watcher does not turn the login page into a redirect loop, because it
 /// refuses to redirect from a `/login` path in the first place.
 #[get("/status")]
-pub(super) async fn status(request: HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
+pub async fn status(request: HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
     quench_auth::actix::routers::ui::pages::auth::auth_status(&request, &config).await
 }
 
 #[post("/refresh")]
-pub(super) async fn refresh(request: HttpRequest) -> impl Responder {
+pub async fn refresh(request: HttpRequest) -> impl Responder {
     refresh_delegation(&request).await
 }
 
 /// Realm-wide logout: revokes the session and clears the shared cookie, so
 /// every service sees the user as signed out.
 #[get("/logout")]
-pub(super) async fn logout(
-    request: HttpRequest,
-    session_db: web::Data<Arc<SessionDb>>,
-) -> impl Responder {
+pub async fn logout(request: HttpRequest, session_db: web::Data<Arc<SessionDb>>) -> impl Responder {
     if let Some(cookie) = request.cookie(&realm::refresh_cookie_name()) {
         let revoked = session_db.revoke_by_refresh_token(cookie.value()).await;
         tracing::debug!("logout revoke result: {revoked:?}");
@@ -300,7 +297,11 @@ pub(super) async fn logout(
         .finish()
 }
 
-fn render_login_page(request: &HttpRequest, error: bool, notices: &LoginNotices) -> HttpResponse {
+pub fn render_login_page(
+    request: &HttpRequest,
+    error: bool,
+    notices: &LoginNotices,
+) -> HttpResponse {
     // Carried through the form so a login that started at sage returns to sage.
     let redirect = redirect_target(request);
 
@@ -408,7 +409,7 @@ fn render_login_page(request: &HttpRequest, error: bool, notices: &LoginNotices)
 /// land here (`register.rs`'s `verify`, `reset.rs`'s reset submit) - checked
 /// against a fixed list rather than trusted from the query string, so a
 /// hand-crafted link cannot put arbitrary text on the page.
-fn login_error_key(notices: &LoginNotices) -> Option<&'static str> {
+pub fn login_error_key(notices: &LoginNotices) -> Option<&'static str> {
     match notices.err.as_deref() {
         Some("ui_login_verify_invalid") => Some("ui_login_verify_invalid"),
         Some("ui_login_reset_invalid") => Some("ui_login_reset_invalid"),
@@ -421,7 +422,7 @@ fn login_error_key(notices: &LoginNotices) -> Option<&'static str> {
 /// Which "ok" banner to show, checked in an order that matters: a successful
 /// reset is more specific news than "we sent a link" would be if somehow both
 /// were set.
-fn login_ok_key(notices: &LoginNotices) -> Option<&'static str> {
+pub fn login_ok_key(notices: &LoginNotices) -> Option<&'static str> {
     if notices.reset.is_some() {
         Some("ui_login_reset_ok")
     } else if notices.reset_requested.is_some() {
@@ -435,7 +436,7 @@ fn login_ok_key(notices: &LoginNotices) -> Option<&'static str> {
     }
 }
 
-fn render_mfa_page(pending: &str, redirect: Option<&str>, error: bool) -> HttpResponse {
+pub fn render_mfa_page(pending: &str, redirect: Option<&str>, error: bool) -> HttpResponse {
     let mut mfa_form = form()
         .attr("method", "post")
         .attr("action", ui_path("/login/mfa"))
@@ -514,7 +515,7 @@ fn render_auth_page(title_key: &'static str, inner_form: Element) -> HttpRespons
 }
 
 /// Anything under `/ui` that is not a page sends you to the login form.
-pub(crate) fn login_redirect() -> HttpResponse {
+pub fn login_redirect() -> HttpResponse {
     HttpResponse::Found()
         .append_header(("Location", ui_path("/login")))
         .finish()

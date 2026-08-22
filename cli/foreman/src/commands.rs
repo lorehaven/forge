@@ -56,7 +56,7 @@ pub fn start(estate: &Estate, names: &[String]) -> Result<()> {
     Ok(())
 }
 
-fn summary(estate: &Estate, selection: &[String]) -> Result<()> {
+pub fn summary(estate: &Estate, selection: &[String]) -> Result<()> {
     ui::blank();
 
     for note in &estate.config.notes {

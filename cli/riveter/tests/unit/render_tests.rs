@@ -428,3 +428,46 @@ fn kind_aliases_resolve_to_canonical_templates() {
         assert!(names.contains(&expected), "`{expected}` is not registered");
     }
 }
+
+use riveter::render::ResourceRef;
+
+fn resource_ref(kind: &str, name: &str, immutable: bool) -> ResourceRef {
+    ResourceRef {
+        kind: kind.to_string(),
+        name: name.to_string(),
+        immutable,
+    }
+}
+
+#[test]
+fn resource_scope_display_matches_its_flag_spelling() {
+    assert_eq!(ResourceScope::Mutable.to_string(), "mutable");
+    assert_eq!(ResourceScope::Immutable.to_string(), "immutable");
+    assert_eq!(ResourceScope::All.to_string(), "all");
+}
+
+#[test]
+fn resource_ref_display_is_kind_slash_name() {
+    assert_eq!(
+        resource_ref("Deployment", "web", false).to_string(),
+        "Deployment/web"
+    );
+}
+
+#[test]
+fn resource_ref_in_scope_all_always_matches() {
+    assert!(resource_ref("Deployment", "web", false).in_scope(ResourceScope::All));
+    assert!(resource_ref("Secret", "creds", true).in_scope(ResourceScope::All));
+}
+
+#[test]
+fn resource_ref_in_scope_mutable_excludes_immutable_resources() {
+    assert!(resource_ref("Deployment", "web", false).in_scope(ResourceScope::Mutable));
+    assert!(!resource_ref("Secret", "creds", true).in_scope(ResourceScope::Mutable));
+}
+
+#[test]
+fn resource_ref_in_scope_immutable_excludes_mutable_resources() {
+    assert!(!resource_ref("Deployment", "web", false).in_scope(ResourceScope::Immutable));
+    assert!(resource_ref("Secret", "creds", true).in_scope(ResourceScope::Immutable));
+}

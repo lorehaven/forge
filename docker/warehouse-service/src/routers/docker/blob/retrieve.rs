@@ -40,7 +40,7 @@ pub async fn handle(req: HttpRequest, path: web::Path<(String, String)>) -> impl
     serve_with_range(req, blob_path, digest).await
 }
 
-fn maybe_redirect(digest: &str) -> Option<HttpResponse> {
+pub fn maybe_redirect(digest: &str) -> Option<HttpResponse> {
     if !envmnt::get_or("ENABLE_REDIRECT", "false")
         .parse::<bool>()
         .unwrap_or(false)
@@ -158,7 +158,7 @@ async fn serve_full(mut file: File, total_size: u64, digest: &str) -> HttpRespon
         .body(buffer)
 }
 
-fn parse_range(header: &str, total: u64) -> Option<(u64, u64)> {
+pub fn parse_range(header: &str, total: u64) -> Option<(u64, u64)> {
     if !header.starts_with("bytes=") {
         return None;
     }

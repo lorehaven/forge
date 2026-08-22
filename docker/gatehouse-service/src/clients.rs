@@ -128,7 +128,7 @@ pub async fn seed_clients(db: &Db) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn upsert(repo: &Repository<ClientRow>, row: ClientRow) -> anyhow::Result<()> {
+pub async fn upsert(repo: &Repository<ClientRow>, row: ClientRow) -> anyhow::Result<()> {
     let existing = repo.read(&row.client_id).await?;
     if existing.is_some() {
         repo.update(&row).await?;
@@ -141,7 +141,7 @@ async fn upsert(repo: &Repository<ClientRow>, row: ClientRow) -> anyhow::Result<
 /// `<PREFIX>_UI_URL`/`<PREFIX>_URL`, uppercased from the client id, with any
 /// trailing `/ui/home` (what those vars point at today, for the home-page
 /// cards) trimmed back to the service's own base.
-fn redirect_base_url(client_id: &str) -> Option<String> {
+pub fn redirect_base_url(client_id: &str) -> Option<String> {
     let prefix = client_id.to_uppercase().replace('-', "_");
     for key in [format!("{prefix}_UI_URL"), format!("{prefix}_URL")] {
         let value = envmnt::get_or(&key, "");

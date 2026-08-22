@@ -4,8 +4,8 @@ pub use common::assets;
 use quench_auth::prelude::JwtConfig;
 use quench_starter::prelude::with_base_path;
 
-mod common;
-mod pages;
+pub mod common;
+pub mod pages;
 
 // ---------------------------------------------------------------------------
 // Root redirects

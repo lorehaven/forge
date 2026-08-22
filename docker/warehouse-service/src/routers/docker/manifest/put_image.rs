@@ -7,10 +7,11 @@ use actix_web::{HttpRequest, HttpResponse, Responder, put, web};
 use quench_starter::prelude::error;
 use serde_json::{Number, Value};
 
-const DOCKER_MANIFEST_V2: &str = "application/vnd.docker.distribution.manifest.v2+json";
-const DOCKER_MANIFEST_LIST_V2: &str = "application/vnd.docker.distribution.manifest.list.v2+json";
-const OCI_IMAGE_MANIFEST_V1: &str = "application/vnd.oci.image.manifest.v1+json";
-const OCI_IMAGE_INDEX_V1: &str = "application/vnd.oci.image.index.v1+json";
+pub const DOCKER_MANIFEST_V2: &str = "application/vnd.docker.distribution.manifest.v2+json";
+pub const DOCKER_MANIFEST_LIST_V2: &str =
+    "application/vnd.docker.distribution.manifest.list.v2+json";
+pub const OCI_IMAGE_MANIFEST_V1: &str = "application/vnd.oci.image.manifest.v1+json";
+pub const OCI_IMAGE_INDEX_V1: &str = "application/vnd.oci.image.index.v1+json";
 
 #[put("/{name:.+}/manifests/{reference}")]
 pub async fn handle(
@@ -110,7 +111,7 @@ pub async fn handle(
         .finish()
 }
 
-async fn normalize_manifest_body(body: &[u8]) -> Result<Vec<u8>, &'static str> {
+pub async fn normalize_manifest_body(body: &[u8]) -> Result<Vec<u8>, &'static str> {
     let mut value: Value = serde_json::from_slice(body).map_err(|_| "invalid manifest payload")?;
 
     if value.get("schemaVersion").and_then(Value::as_u64) != Some(2) {
@@ -136,12 +137,12 @@ async fn normalize_manifest_body(body: &[u8]) -> Result<Vec<u8>, &'static str> {
     serde_json::to_vec(&value).map_err(|_| "invalid manifest payload")
 }
 
-enum DescriptorKind {
+pub enum DescriptorKind {
     Blob,
     Manifest,
 }
 
-async fn populate_descriptor_size(
+pub async fn populate_descriptor_size(
     descriptor: &mut Value,
     kind: DescriptorKind,
 ) -> Result<(), &'static str> {
@@ -179,12 +180,12 @@ async fn populate_descriptor_size(
     Ok(())
 }
 
-fn normalize_media_type(raw: &str) -> Option<&str> {
+pub fn normalize_media_type(raw: &str) -> Option<&str> {
     let value = raw.split(';').next()?.trim();
     if value.is_empty() { None } else { Some(value) }
 }
 
-fn is_supported_manifest_media_type(media_type: &str) -> bool {
+pub fn is_supported_manifest_media_type(media_type: &str) -> bool {
     matches!(
         media_type,
         DOCKER_MANIFEST_V2 | DOCKER_MANIFEST_LIST_V2 | OCI_IMAGE_MANIFEST_V1 | OCI_IMAGE_INDEX_V1

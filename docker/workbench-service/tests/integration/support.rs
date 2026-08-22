@@ -57,6 +57,19 @@ pub async fn database() -> Option<(Db, MutexGuard<'static, ()>)> {
     .await
     .expect("seed the test user");
 
+    // `routers::ui::common::actor`'s auth bypass (`JwtConfig::for_tests()`)
+    // synthesizes an all-access identity literally named "admin" - any test
+    // that goes through an HTTP handler (rather than calling `domain::*`
+    // directly) attributes writes to that username, so it needs a real
+    // `auth.users` row too or a foreign key on `reporter`/`assignee`/etc.
+    // rejects it.
+    db.execute(
+        "INSERT INTO auth.users (username, password, roles) \
+         VALUES ('admin', 'x', '[]'::jsonb) ON CONFLICT DO NOTHING",
+    )
+    .await
+    .expect("seed the admin user");
+
     Some((db, guard))
 }
 

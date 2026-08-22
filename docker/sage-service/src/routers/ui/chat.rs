@@ -188,7 +188,7 @@ pub async fn send_message(
     ))
 }
 
-fn encode_sse(event: &str, data: &str) -> actix_web::web::Bytes {
+pub fn encode_sse(event: &str, data: &str) -> actix_web::web::Bytes {
     let mut sse = format!("event: {}\n", event);
     for line in data.split('\n') {
         sse.push_str("data: ");
@@ -200,7 +200,7 @@ fn encode_sse(event: &str, data: &str) -> actix_web::web::Bytes {
 }
 
 /// Embed tool results into the response by replacing tool call markers
-fn embed_tool_results_into_response(
+pub fn embed_tool_results_into_response(
     response: &str,
     tool_results_with_markers: Vec<(String, String)>, // (marker_text, result_html)
 ) -> String {
@@ -2032,7 +2032,7 @@ pub fn scope() -> actix_web::Scope {
         .service(handle_edit)
 }
 
-fn html_escape(s: &str) -> String {
+pub fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
@@ -2040,7 +2040,7 @@ fn html_escape(s: &str) -> String {
         .replace('\'', "&#39;")
 }
 
-fn render_tool_result(
+pub fn render_tool_result(
     tool_call: &crate::tools::ToolCall,
     result: &crate::tools::ToolResult,
 ) -> String {

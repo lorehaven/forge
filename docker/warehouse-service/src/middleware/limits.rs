@@ -92,7 +92,7 @@ where
     }
 }
 
-fn is_upload_mutation(req: &ServiceRequest) -> bool {
+pub fn is_upload_mutation(req: &ServiceRequest) -> bool {
     let is_write = matches!(
         *req.method(),
         actix_web::http::Method::POST

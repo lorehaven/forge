@@ -5,8 +5,8 @@ use quench_auth::prelude::JwtConfig;
 use quench_starter::prelude::with_base_path;
 use serde::Deserialize;
 
-mod common;
-mod pages;
+pub mod common;
+pub mod pages;
 
 #[derive(Deserialize)]
 pub(super) struct PageQuery {
@@ -21,7 +21,7 @@ pub(super) struct PageQuery {
 // ---------------------------------------------------------------------------
 
 #[get("")]
-async fn root(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
+pub async fn root(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
     if !common::is_ui_authenticated(&req, &config).await {
         return common::ui_login_redirect();
     }
@@ -31,7 +31,10 @@ async fn root(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -> impl
 }
 
 #[get("/")]
-async fn root_slash(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
+pub async fn root_slash(
+    req: actix_web::HttpRequest,
+    config: web::Data<JwtConfig>,
+) -> impl Responder {
     if !common::is_ui_authenticated(&req, &config).await {
         return common::ui_login_redirect();
     }
@@ -43,7 +46,10 @@ async fn root_slash(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -
 // Docker redirects
 
 #[get("/docker")]
-async fn docker_root(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
+pub async fn docker_root(
+    req: actix_web::HttpRequest,
+    config: web::Data<JwtConfig>,
+) -> impl Responder {
     if !common::is_ui_authenticated(&req, &config).await {
         return common::ui_login_redirect();
     }
@@ -53,7 +59,7 @@ async fn docker_root(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) 
 }
 
 #[get("/docker/")]
-async fn docker_root_slash(
+pub async fn docker_root_slash(
     req: actix_web::HttpRequest,
     config: web::Data<JwtConfig>,
 ) -> impl Responder {
@@ -68,7 +74,10 @@ async fn docker_root_slash(
 // Crates redirects
 
 #[get("/crates")]
-async fn crates_root(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
+pub async fn crates_root(
+    req: actix_web::HttpRequest,
+    config: web::Data<JwtConfig>,
+) -> impl Responder {
     if !common::is_ui_authenticated(&req, &config).await {
         return common::ui_login_redirect();
     }
@@ -78,7 +87,7 @@ async fn crates_root(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) 
 }
 
 #[get("/crates/")]
-async fn crates_root_slash(
+pub async fn crates_root_slash(
     req: actix_web::HttpRequest,
     config: web::Data<JwtConfig>,
 ) -> impl Responder {

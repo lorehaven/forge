@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
 pub struct DockerTokenConfig {
-    secret: Vec<u8>,
+    pub secret: Vec<u8>,
     pub service_name: String,
     pub realm: String,
     pub auth_enabled: bool,

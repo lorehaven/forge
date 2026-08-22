@@ -8,10 +8,7 @@ use anyhow::Result;
 use clap::Parser;
 use quench_cli::prelude::{Tone, print_status};
 
-mod cli;
-mod client;
-mod commands;
-mod config;
+use conveyor_cli::{cli, client, commands};
 
 #[tokio::main]
 async fn main() {

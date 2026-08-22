@@ -195,7 +195,7 @@ where
     })
 }
 
-fn repository_action(req: &ServiceRequest) -> Option<(String, &'static str)> {
+pub fn repository_action(req: &ServiceRequest) -> Option<(String, &'static str)> {
     let action = match *req.method() {
         actix_web::http::Method::GET | actix_web::http::Method::HEAD => "pull",
         actix_web::http::Method::POST
@@ -223,7 +223,7 @@ fn repository_action(req: &ServiceRequest) -> Option<(String, &'static str)> {
     None
 }
 
-fn scope_allows(scope: &str, repository: &str, action: &str) -> bool {
+pub fn scope_allows(scope: &str, repository: &str, action: &str) -> bool {
     scope.split_whitespace().any(|entry| {
         let mut parts = entry.splitn(3, ':');
         let scope_type = parts.next().unwrap_or_default();
@@ -279,7 +279,7 @@ fn client_key(req: &ServiceRequest) -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
-fn too_many_auth_failures(req: &ServiceRequest, max_failures: usize, window: Duration) -> bool {
+pub fn too_many_auth_failures(req: &ServiceRequest, max_failures: usize, window: Duration) -> bool {
     let key = client_key(req);
     let now = Instant::now();
     let mut map = match AUTH_FAILURES.lock() {
@@ -292,7 +292,7 @@ fn too_many_auth_failures(req: &ServiceRequest, max_failures: usize, window: Dur
     entries.len() >= max_failures
 }
 
-fn record_auth_failure(req: &ServiceRequest, window: Duration) {
+pub fn record_auth_failure(req: &ServiceRequest, window: Duration) {
     let key = client_key(req);
     let now = Instant::now();
     if let Ok(mut map) = AUTH_FAILURES.lock() {
@@ -302,7 +302,7 @@ fn record_auth_failure(req: &ServiceRequest, window: Duration) {
     }
 }
 
-fn clear_auth_failures(req: &ServiceRequest) {
+pub fn clear_auth_failures(req: &ServiceRequest) {
     let key = client_key(req);
     if let Ok(mut map) = AUTH_FAILURES.lock() {
         map.remove(&key);

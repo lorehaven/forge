@@ -1,4 +1,7 @@
-use anvil::config::Config;
+use anvil::config::{Config, load_config};
+
+use crate::support;
+use support::stable_cwd_lock;
 
 #[test]
 fn test_default_config() {
@@ -221,4 +224,63 @@ fn test_the_estates_own_config_needs_only_one_dockerfile() {
         Some("migrations"),
         "foundry ships a catalog where a web service ships translations"
     );
+}
+
+#[test]
+fn load_config_defaults_when_anvil_toml_is_missing() {
+    let _guard = stable_cwd_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let original = std::env::current_dir().unwrap();
+    let dir =
+        std::env::temp_dir().join(format!("anvil-config-test-missing-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::env::set_current_dir(&dir).unwrap();
+
+    let config = load_config().expect("falls back to default rather than erroring");
+    assert!(config.docker.modules.is_empty());
+
+    std::env::set_current_dir(&original).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn load_config_defaults_when_anvil_toml_is_invalid_toml() {
+    let _guard = stable_cwd_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let original = std::env::current_dir().unwrap();
+    let dir =
+        std::env::temp_dir().join(format!("anvil-config-test-invalid-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(".anvil.toml"), "not [ valid toml").unwrap();
+    std::env::set_current_dir(&dir).unwrap();
+
+    let config = load_config().expect("falls back to default rather than erroring");
+    assert!(config.docker.modules.is_empty());
+
+    std::env::set_current_dir(&original).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn load_config_parses_a_valid_anvil_toml() {
+    let _guard = stable_cwd_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let original = std::env::current_dir().unwrap();
+    let dir = std::env::temp_dir().join(format!("anvil-config-test-valid-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join(".anvil.toml"),
+        "[install]\npackages = [\"anvil\"]\n",
+    )
+    .unwrap();
+    std::env::set_current_dir(&dir).unwrap();
+
+    let config = load_config().expect("parses");
+    assert_eq!(config.install.packages, vec!["anvil".to_string()]);
+
+    std::env::set_current_dir(&original).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
 }

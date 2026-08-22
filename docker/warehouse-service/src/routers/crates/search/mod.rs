@@ -1,4 +1,4 @@
-use crate::routers::crates::CRATES_STORAGE_ROOT;
+use crate::routers::crates::crates_storage_root;
 use actix_web::{HttpResponse, Responder, get, web};
 use serde::{Deserialize, Serialize};
 
@@ -65,7 +65,7 @@ pub async fn handle(query: web::Query<SearchQuery>) -> impl Responder {
     let page = query.page.max(1);
 
     // Scan the storage directory (`<root>/<name>/`) for names containing `q`.
-    let crate_root = std::path::PathBuf::from(CRATES_STORAGE_ROOT.as_str());
+    let crate_root = std::path::PathBuf::from(crates_storage_root());
     let mut matches: Vec<SearchCrate> = Vec::new();
 
     if let Ok(mut entries) = tokio::fs::read_dir(&crate_root).await {
@@ -112,7 +112,7 @@ pub async fn handle(query: web::Query<SearchQuery>) -> impl Responder {
 // Helper: find the highest version sub-directory under a crate directory
 // ---------------------------------------------------------------------------
 
-async fn find_max_version(crate_dir: &std::path::Path) -> Option<String> {
+pub async fn find_max_version(crate_dir: &std::path::Path) -> Option<String> {
     let mut versions: Vec<String> = Vec::new();
 
     let mut entries = tokio::fs::read_dir(crate_dir).await.ok()?;
@@ -133,7 +133,7 @@ async fn find_max_version(crate_dir: &std::path::Path) -> Option<String> {
 }
 
 /// Compares by semver when both strings parse; otherwise falls back to lexicographic order.
-fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
+pub fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
     match (parse_semver(a), parse_semver(b)) {
         (Some(av), Some(bv)) => av.cmp(&bv),
         _ => a.cmp(b),
@@ -141,7 +141,7 @@ fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
 }
 
 /// Parses `major.minor.patch[-pre][+build]` into a comparable tuple; `None` if it doesn't fit.
-fn parse_semver(v: &str) -> Option<(u64, u64, u64, String)> {
+pub fn parse_semver(v: &str) -> Option<(u64, u64, u64, String)> {
     // Strip build metadata before parsing
     let v = v.split('+').next()?;
     let (numeric, pre) = if let Some(idx) = v.find('-') {

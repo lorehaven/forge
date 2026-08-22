@@ -20,9 +20,9 @@ struct TokenResponse {
 }
 
 #[derive(Debug)]
-struct BearerChallenge {
-    realm: String,
-    service: Option<String>,
+pub struct BearerChallenge {
+    pub realm: String,
+    pub service: Option<String>,
 }
 
 pub struct DockerApi {
@@ -230,7 +230,7 @@ impl DockerApi {
     }
 }
 
-fn parse_bearer_challenge(headers: &HeaderMap) -> Option<BearerChallenge> {
+pub fn parse_bearer_challenge(headers: &HeaderMap) -> Option<BearerChallenge> {
     let raw = headers.get(WWW_AUTHENTICATE)?.to_str().ok()?.trim();
     let raw = if let Some(rest) = raw.strip_prefix("Bearer ") {
         rest
@@ -257,11 +257,11 @@ fn parse_bearer_challenge(headers: &HeaderMap) -> Option<BearerChallenge> {
     })
 }
 
-fn should_try_https_fallback(url: &str, err: &reqwest::Error) -> bool {
+pub fn should_try_https_fallback(url: &str, err: &reqwest::Error) -> bool {
     url.starts_with("http://") && err.to_string().contains("invalid HTTP version parsed")
 }
 
-fn to_https_url(url: &str) -> Option<String> {
+pub fn to_https_url(url: &str) -> Option<String> {
     url.strip_prefix("http://")
         .map(|rest| format!("https://{rest}"))
 }

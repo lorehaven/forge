@@ -4,11 +4,19 @@ pub mod docker;
 pub mod files;
 pub mod ui;
 
-static CRATES_STORAGE_ROOT: std::sync::LazyLock<String> =
-    std::sync::LazyLock::new(|| envmnt::get_or("CRATES_STORAGE_PATH", "./storage/crates"));
+/// Read fresh on every call rather than cached in a `LazyLock` - a
+/// process-global cache initialized from whichever env var value happened to
+/// be set the first time anything touched it would make this untestable
+/// (every test in the binary would be stuck with whatever the first test set,
+/// or the real default). The cost is a `HashMap` lookup per storage-path
+/// resolution, negligible next to the filesystem I/O around it.
+pub fn crates_storage_root() -> String {
+    envmnt::get_or("CRATES_STORAGE_PATH", "./storage/crates")
+}
 
-static DOCKER_STORAGE_ROOT: std::sync::LazyLock<String> =
-    std::sync::LazyLock::new(|| envmnt::get_or("STORAGE_PATH", "./storage/docker"));
+pub fn docker_storage_root() -> String {
+    envmnt::get_or("STORAGE_PATH", "./storage/docker")
+}
 
 struct FeatureFlags {
     docker: bool,
@@ -23,7 +31,7 @@ static FEATURE_FLAGS: std::sync::LazyLock<FeatureFlags> =
         files: feature_enabled("FEATURE_FILES_ENABLED", false),
     });
 
-fn feature_enabled(name: &str, default: bool) -> bool {
+pub fn feature_enabled(name: &str, default: bool) -> bool {
     match envmnt::get_or(name, if default { "true" } else { "false" })
         .trim()
         .to_ascii_lowercase()

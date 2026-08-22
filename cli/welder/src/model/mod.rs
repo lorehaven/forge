@@ -123,7 +123,8 @@ impl ModelManager {
             .map(|c| c.url.clone())
     }
 
-    fn is_port_available(host: &str, port: u16) -> bool {
+    #[must_use]
+    pub fn is_port_available(host: &str, port: u16) -> bool {
         std::net::TcpListener::bind((host, port)).is_ok()
     }
 
@@ -223,7 +224,7 @@ impl Default for ModelManager {
     }
 }
 
-fn extract_host_port(url: &str) -> Result<(String, u16)> {
+pub fn extract_host_port(url: &str) -> Result<(String, u16)> {
     let parts: Vec<&str> = url.split(':').collect();
     if parts.len() != 2 {
         return Err(anyhow::anyhow!(
@@ -340,7 +341,7 @@ impl SwitchboardManager {
         self.resolved.get(model).cloned()
     }
 
-    async fn find_running(&self, model: &str) -> Result<Option<String>> {
+    pub async fn find_running(&self, model: &str) -> Result<Option<String>> {
         Ok(self
             .matching_instance(model)
             .await?
@@ -365,7 +366,7 @@ impl SwitchboardManager {
     /// instead of silently spinning until `timeout_seconds` runs out.
     const MAX_CONSECUTIVE_POLL_ERRORS: u32 = 10;
 
-    async fn wait_for_running(&self, model: &str) -> Result<String> {
+    pub async fn wait_for_running(&self, model: &str) -> Result<String> {
         let max_retries = self.timeout_seconds * 2; // 2 attempts per second (500ms each)
         let mut consecutive_errors = 0u32;
 

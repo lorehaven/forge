@@ -4,6 +4,35 @@ use std::process::Command;
 use crate::cargo_meta::resolve_package;
 use crate::util::run_command;
 
+/// `which::which`, turned into the "not found, here's how to fix it" error.
+///
+/// Every `pub fn` in this file needs this
+/// before shelling out to a cargo subcommand plugin - factored out once so
+/// the five call sites don't duplicate the same context-message shape.
+pub fn ensure_tool_installed(binary: &str, install_hint: &str) -> Result<()> {
+    which::which(binary)
+        .map(|_| ())
+        .with_context(|| format!("{binary} not found. Install with: {install_hint}"))
+}
+
+pub fn format_metadata(format: &str, metadata: &serde_json::Value) -> Result<String> {
+    match format {
+        "json" => Ok(serde_json::to_string_pretty(metadata)?),
+        "names" => {
+            let names = metadata["packages"]
+                .as_array()
+                .map(|pkgs| {
+                    pkgs.iter()
+                        .filter_map(|p| p["name"].as_str())
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            Ok(names.join("\n"))
+        }
+        _ => anyhow::bail!("Unknown format: {format}"),
+    }
+}
+
 pub fn list(format: &str) -> Result<()> {
     let mut cmd = Command::new("cargo");
     cmd.arg("metadata")
@@ -19,34 +48,16 @@ pub fn list(format: &str) -> Result<()> {
     let metadata: serde_json::Value =
         serde_json::from_slice(&output.stdout).context("Failed to parse cargo metadata")?;
 
-    match format {
-        "json" => {
-            println!("{}", serde_json::to_string_pretty(&metadata)?);
-        }
-        "names" => {
-            let names = metadata["packages"]
-                .as_array()
-                .map(|pkgs| {
-                    pkgs.iter()
-                        .filter_map(|p| p["name"].as_str())
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-
-            for name in names {
-                println!("{name}");
-            }
-        }
-        _ => anyhow::bail!("Unknown format: {format}"),
+    let rendered = format_metadata(format, &metadata)?;
+    if !rendered.is_empty() {
+        println!("{rendered}");
     }
 
     Ok(())
 }
 
 pub fn upgrade(incompatible: bool) -> Result<()> {
-    // Check if cargo-upgrade is installed
-    which::which("cargo-upgrade")
-        .context("cargo-upgrade not found. Install with: cargo install cargo-edit")?;
+    ensure_tool_installed("cargo-upgrade", "cargo install cargo-edit")?;
 
     let mut cmd = Command::new("cargo");
     cmd.arg("upgrade");
@@ -59,9 +70,7 @@ pub fn upgrade(incompatible: bool) -> Result<()> {
 }
 
 pub fn audit() -> Result<()> {
-    // Check if cargo-audit is installed
-    which::which("cargo-audit")
-        .context("cargo-audit not found. Install with: cargo install cargo-audit")?;
+    ensure_tool_installed("cargo-audit", "cargo install cargo-audit")?;
 
     let mut cmd = Command::new("cargo");
     cmd.arg("audit");
@@ -70,9 +79,7 @@ pub fn audit() -> Result<()> {
 }
 
 pub fn machete() -> Result<()> {
-    // Check if cargo-machete is installed
-    which::which("cargo-machete")
-        .context("cargo-machete not found. Install with: cargo install cargo-machete")?;
+    ensure_tool_installed("cargo-machete", "cargo install cargo-machete")?;
 
     let mut cmd = Command::new("cargo");
     cmd.arg("machete");
@@ -81,9 +88,7 @@ pub fn machete() -> Result<()> {
 }
 
 pub fn deny() -> Result<()> {
-    // Check if cargo-deny is installed
-    which::which("cargo-deny")
-        .context("cargo-deny not found. Install with: cargo install cargo-deny")?;
+    ensure_tool_installed("cargo-deny", "cargo install cargo-deny")?;
 
     let mut cmd = Command::new("cargo");
     cmd.arg("deny").arg("check");
@@ -96,7 +101,7 @@ pub fn deny() -> Result<()> {
 /// That's the state just before its most recent version bump, used as a
 /// `cargo semver-checks` baseline when the package isn't fetchable from a
 /// public registry.
-fn previous_version_rev(manifest: &std::path::Path) -> Result<String> {
+pub fn previous_version_rev(manifest: &std::path::Path) -> Result<String> {
     let output = Command::new("git")
         .arg("log")
         .arg("--skip=1")
@@ -124,10 +129,7 @@ fn previous_version_rev(manifest: &std::path::Path) -> Result<String> {
 }
 
 pub fn semver_check(package: &str, baseline_rev: Option<String>) -> Result<()> {
-    // Check if cargo-semver-checks is installed
-    which::which("cargo-semver-checks").context(
-        "cargo-semver-checks not found. Install with: cargo install cargo-semver-checks",
-    )?;
+    ensure_tool_installed("cargo-semver-checks", "cargo install cargo-semver-checks")?;
 
     let rev = if let Some(rev) = baseline_rev {
         rev

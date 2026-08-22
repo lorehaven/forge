@@ -103,7 +103,7 @@ pub async fn repo(client: &Client, command: &RepoCommands) -> Result<()> {
     }
 }
 
-async fn set_enabled(client: &Client, repo: &str, enabled: bool) -> Result<()> {
+pub async fn set_enabled(client: &Client, repo: &str, enabled: bool) -> Result<()> {
     let id = resolve_repo(client, repo).await?;
     let _: Value = client
         .post(
@@ -243,7 +243,7 @@ pub async fn run(client: &Client, args: &RunArgs) -> Result<()> {
 ///
 /// A non-zero exit for a failed run is the point: it makes `conveyor run --wait`
 /// usable as the last line of a script.
-async fn wait_for(client: &Client, run_id: &str) -> Result<()> {
+pub async fn wait_for(client: &Client, run_id: &str) -> Result<()> {
     let mut last = String::new();
 
     loop {
@@ -380,7 +380,7 @@ pub async fn logs(client: &Client, args: &LogsArgs) -> Result<()> {
     Ok(())
 }
 
-async fn print_stored(client: &Client, job_id: &str) -> Result<()> {
+pub async fn print_stored(client: &Client, job_id: &str) -> Result<()> {
     let chunks: Vec<Value> = client.get(&format!("/jobs/{job_id}/logs")).await?;
     for chunk in &chunks {
         write_line(&string(chunk, "stream"), &string(chunk, "line"));
@@ -389,7 +389,7 @@ async fn print_stored(client: &Client, job_id: &str) -> Result<()> {
 }
 
 /// Reads the server-sent event stream, printing lines as they arrive.
-async fn follow(client: &Client, job_id: &str) -> Result<()> {
+pub async fn follow(client: &Client, job_id: &str) -> Result<()> {
     let response = client.stream(&format!("/jobs/{job_id}/stream")).await?;
     let mut body = response.bytes_stream();
 
@@ -427,7 +427,7 @@ async fn follow(client: &Client, job_id: &str) -> Result<()> {
     Ok(())
 }
 
-fn write_line(stream: &str, line: &str) {
+pub fn write_line(stream: &str, line: &str) {
     // stderr to stderr, so `conveyor logs > build.txt` keeps the two apart the
     // way the build itself did.
     if stream == "stderr" {
@@ -490,7 +490,11 @@ pub async fn secret(client: &Client, command: &SecretCommands) -> Result<()> {
     }
 }
 
-async fn secret_path(client: &Client, repo: Option<&str>, name: Option<&str>) -> Result<String> {
+pub async fn secret_path(
+    client: &Client,
+    repo: Option<&str>,
+    name: Option<&str>,
+) -> Result<String> {
     let base = match repo {
         Some(repo) => format!("/repos/{}/secrets", resolve_repo(client, repo).await?),
         None => "/secrets".to_string(),
@@ -565,7 +569,7 @@ pub async fn credential(client: &Client, command: &CredentialCommands) -> Result
     }
 }
 
-async fn credential_path(
+pub async fn credential_path(
     client: &Client,
     repo: Option<&str>,
     project: Option<&str>,
@@ -589,7 +593,7 @@ async fn credential_path(
 /// id from a name), not across the whole tree the way a repository's
 /// `owner/name` is, so there is no single unambiguous string to resolve
 /// against here. A project reference is its id, taken as given.
-fn resolve_project(reference: &str) -> String {
+pub fn resolve_project(reference: &str) -> String {
     reference.to_string()
 }
 
@@ -642,7 +646,7 @@ pub fn validate(args: &ValidateArgs) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 /// Accepts `owner/name` or an id, because both are things people have to hand.
-async fn resolve_repo(client: &Client, reference: &str) -> Result<String> {
+pub async fn resolve_repo(client: &Client, reference: &str) -> Result<String> {
     if !reference.contains('/') {
         return Ok(reference.to_string());
     }
@@ -657,155 +661,25 @@ async fn resolve_repo(client: &Client, reference: &str) -> Result<String> {
         .with_context(|| format!("{reference} is not registered with conveyor"))
 }
 
-fn split_slug(slug: &str) -> Result<(String, String)> {
+pub fn split_slug(slug: &str) -> Result<(String, String)> {
     slug.split_once('/')
         .map(|(owner, name)| (owner.to_string(), name.to_string()))
         .with_context(|| format!("expected owner/name, got `{slug}`"))
 }
 
-fn string(value: &Value, key: &str) -> String {
+pub fn string(value: &Value, key: &str) -> String {
     value[key].as_str().unwrap_or_default().to_string()
 }
 
-fn short(run: &Value) -> String {
+pub fn short(run: &Value) -> String {
     let sha = string(run, "sha");
     sha.chars().take(7).collect()
 }
 
-const fn tone_for(status: &str) -> Tone {
+pub const fn tone_for(status: &str) -> Tone {
     match status.as_bytes() {
         b"success" => Tone::Success,
         b"failed" | b"cancelled" => Tone::Error,
         _ => Tone::Info,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn split_slug_splits_owner_and_name() {
-        let (owner, name) = split_slug("lorehaven/forge").unwrap();
-        assert_eq!(owner, "lorehaven");
-        assert_eq!(name, "forge");
-    }
-
-    #[test]
-    fn split_slug_rejects_a_bare_name() {
-        let err = split_slug("forge").unwrap_err();
-        assert!(err.to_string().contains("owner/name"));
-    }
-
-    #[test]
-    fn split_slug_takes_only_the_first_slash() {
-        let (owner, name) = split_slug("owner/name/extra").unwrap();
-        assert_eq!(owner, "owner");
-        assert_eq!(name, "name/extra");
-    }
-
-    #[test]
-    fn string_reads_a_present_key() {
-        let value = json!({ "id": "abc123" });
-        assert_eq!(string(&value, "id"), "abc123");
-    }
-
-    #[test]
-    fn string_defaults_to_empty_for_a_missing_key() {
-        let value = json!({ "id": "abc123" });
-        assert_eq!(string(&value, "missing"), "");
-    }
-
-    #[test]
-    fn string_defaults_to_empty_for_a_non_string_value() {
-        let value = json!({ "count": 5 });
-        assert_eq!(string(&value, "count"), "");
-    }
-
-    #[test]
-    fn short_takes_the_first_seven_characters_of_the_sha() {
-        let run = json!({ "sha": "abcdef1234567890" });
-        assert_eq!(short(&run), "abcdef1");
-    }
-
-    #[test]
-    fn short_of_a_shorter_sha_is_unchanged() {
-        let run = json!({ "sha": "abc" });
-        assert_eq!(short(&run), "abc");
-    }
-
-    #[test]
-    fn short_of_a_missing_sha_is_empty() {
-        let run = json!({});
-        assert_eq!(short(&run), "");
-    }
-
-    #[test]
-    fn tone_for_maps_terminal_statuses() {
-        assert!(matches!(tone_for("success"), Tone::Success));
-        assert!(matches!(tone_for("failed"), Tone::Error));
-        assert!(matches!(tone_for("cancelled"), Tone::Error));
-        assert!(matches!(tone_for("running"), Tone::Info));
-        assert!(matches!(tone_for("queued"), Tone::Info));
-    }
-
-    fn write_temp(name: &str, contents: &str) -> std::path::PathBuf {
-        let path = std::env::temp_dir().join(format!(
-            "conveyor-validate-test-{name}-{}",
-            std::process::id()
-        ));
-        std::fs::write(&path, contents).unwrap();
-        path
-    }
-
-    #[test]
-    fn validate_accepts_a_well_formed_pipeline() {
-        let path = write_temp(
-            "valid",
-            r#"
-            on = { push = ["master"] }
-
-            [[stage]]
-            name = "check"
-
-            [[stage.job]]
-            name = "format"
-            image = "rust:latest"
-            steps = [{ run = "cargo fmt --check" }]
-            "#,
-        );
-
-        let result = validate(&ValidateArgs {
-            path: path.display().to_string(),
-        });
-        assert!(result.is_ok(), "{result:?}");
-
-        std::fs::remove_file(&path).ok();
-    }
-
-    #[test]
-    fn validate_rejects_malformed_toml() {
-        let path = write_temp("malformed", "not = [valid");
-
-        let result = validate(&ValidateArgs {
-            path: path.display().to_string(),
-        });
-        assert!(result.is_err());
-
-        std::fs::remove_file(&path).ok();
-    }
-
-    #[test]
-    fn validate_reports_a_missing_file() {
-        let path = std::env::temp_dir().join(format!(
-            "conveyor-validate-test-missing-{}-does-not-exist",
-            std::process::id()
-        ));
-
-        let result = validate(&ValidateArgs {
-            path: path.display().to_string(),
-        });
-        let err = result.unwrap_err();
-        assert!(err.to_string().contains("could not read"));
     }
 }

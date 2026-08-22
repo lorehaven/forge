@@ -10,6 +10,7 @@ use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
+#[derive(Debug)]
 pub struct Client {
     base_url: String,
     token: Option<String>,
@@ -87,6 +88,39 @@ impl Client {
             token,
             http,
         })
+    }
+
+    /// A `Client` pointed at `base_url` with no token, bypassing the
+    /// login flow entirely - for other modules' tests (e.g.
+    /// `commands.rs`) that need a `Client` talking to a `wiremock` server
+    /// but can't reach the private fields `Client::new`'s tests use
+    /// directly, since they aren't in this module. Not `#[cfg(test)]`:
+    /// the `tests/` integration binary links this crate as an ordinary
+    /// dependency, where that flag is never set.
+    pub fn for_tests(base_url: String) -> Self {
+        Self::for_tests_with_token(base_url, None)
+    }
+
+    /// Like [`Client::for_tests`], but with an optional bearer token - for
+    /// tests exercising `authenticated`'s branch that adds the
+    /// `Authorization` header.
+    pub fn for_tests_with_token(base_url: String, token: Option<String>) -> Self {
+        Self {
+            base_url,
+            token,
+            http: reqwest::Client::new(),
+        }
+    }
+
+    /// Test-only accessor for `base_url` (private otherwise - callers go
+    /// through [`Client::url`]).
+    pub fn base_url_for_tests(&self) -> &str {
+        &self.base_url
+    }
+
+    /// Test-only accessor for `token` (private otherwise).
+    pub fn token_for_tests(&self) -> Option<&str> {
+        self.token.as_deref()
     }
 
     pub fn url(&self, path: &str) -> String {
@@ -216,7 +250,7 @@ async fn decode<T: DeserializeOwned>(response: reqwest::Response, path: &str) ->
 ///
 /// Conveyor answers errors as `{"error": "..."}`, so the message it went to the
 /// trouble of writing is what gets shown rather than the status code alone.
-fn explain(status: reqwest::StatusCode, body: &str) -> String {
+pub fn explain(status: reqwest::StatusCode, body: &str) -> String {
     let detail = serde_json::from_str::<Value>(body)
         .ok()
         .and_then(|value| value.get("error")?.as_str().map(str::to_string))
@@ -232,48 +266,7 @@ fn explain(status: reqwest::StatusCode, body: &str) -> String {
     }
 }
 
-fn non_empty(key: &str) -> Option<String> {
+pub fn non_empty(key: &str) -> Option<String> {
     let value = envmnt::get_or(key, "");
     (!value.trim().is_empty()).then(|| value.trim().to_string())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn explain_prefers_the_error_field_from_a_json_body() {
-        let status = reqwest::StatusCode::BAD_REQUEST;
-        let body = r#"{"error": "missing field `owner`"}"#;
-        assert_eq!(explain(status, body), "missing field `owner`");
-    }
-
-    #[test]
-    fn explain_falls_back_to_the_raw_body_when_not_json() {
-        let status = reqwest::StatusCode::INTERNAL_SERVER_ERROR;
-        assert_eq!(explain(status, "  boom  \n"), "boom");
-    }
-
-    #[test]
-    fn explain_falls_back_to_the_status_when_the_body_is_empty() {
-        let status = reqwest::StatusCode::NOT_FOUND;
-        assert_eq!(explain(status, ""), "conveyor answered 404 Not Found");
-    }
-
-    #[test]
-    fn explain_adds_a_credentials_hint_on_401() {
-        let status = reqwest::StatusCode::UNAUTHORIZED;
-        let body = r#"{"error": "invalid token"}"#;
-        assert_eq!(
-            explain(status, body),
-            "invalid token (set CONVEYOR_USERNAME and CONVEYOR_PASSWORD)"
-        );
-    }
-
-    #[test]
-    fn explain_ignores_json_without_an_error_field() {
-        let status = reqwest::StatusCode::BAD_REQUEST;
-        let body = r#"{"detail": "nope"}"#;
-        assert_eq!(explain(status, body), r#"{"detail": "nope"}"#);
-    }
 }

@@ -66,7 +66,7 @@ pub fn enabled_services() -> Vec<ServiceLink> {
 
 /// `<PREFIX>_UI_URL`, falling back to `<PREFIX>_URL` so a deployment that
 /// already points gatehouse at a service does not have to repeat itself.
-fn service_url(prefix: &str) -> Option<String> {
+pub fn service_url(prefix: &str) -> Option<String> {
     for key in [format!("{prefix}_UI_URL"), format!("{prefix}_URL")] {
         let value = envmnt::get_or(&key, "");
         let trimmed = value.trim();
@@ -78,7 +78,7 @@ fn service_url(prefix: &str) -> Option<String> {
 }
 
 /// Matches how the other services read their feature flags.
-fn feature_enabled(name: &str, default: bool) -> bool {
+pub fn feature_enabled(name: &str, default: bool) -> bool {
     match envmnt::get_or(name, if default { "true" } else { "false" })
         .trim()
         .to_ascii_lowercase()

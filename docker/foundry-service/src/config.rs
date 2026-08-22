@@ -174,13 +174,13 @@ impl RunConfig {
     }
 }
 
-fn pick(flag: Option<&str>, env: &str, file: Option<String>, default: &str) -> String {
+pub fn pick(flag: Option<&str>, env: &str, file: Option<String>, default: &str) -> String {
     flag.map(str::to_string)
         .or_else(|| env_value(env))
         .or(file)
         .unwrap_or_else(|| default.to_string())
 }
 
-fn env_value(key: &str) -> Option<String> {
+pub fn env_value(key: &str) -> Option<String> {
     std::env::var(key).ok().filter(|value| !value.is_empty())
 }

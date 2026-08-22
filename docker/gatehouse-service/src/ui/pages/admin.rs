@@ -103,7 +103,7 @@ macro_rules! actor {
 // ---------------------------------------------------------------------------
 
 #[get("/admin/users")]
-pub(super) async fn users_page(
+pub async fn users_page(
     req: HttpRequest,
     config: web::Data<JwtConfig>,
     db: web::Data<Db>,
@@ -114,7 +114,7 @@ pub(super) async fn users_page(
 }
 
 #[get("/admin/users/")]
-pub(super) async fn users_page_slash(
+pub async fn users_page_slash(
     req: HttpRequest,
     config: web::Data<JwtConfig>,
     db: web::Data<Db>,
@@ -125,7 +125,7 @@ pub(super) async fn users_page_slash(
 }
 
 #[get("/admin/users/{username}")]
-pub(super) async fn edit_user(
+pub async fn edit_user(
     req: HttpRequest,
     path: web::Path<String>,
     config: web::Data<JwtConfig>,
@@ -155,7 +155,7 @@ pub struct CreateForm {
 }
 
 #[post("/admin/users")]
-pub(super) async fn create_user(
+pub async fn create_user(
     req: HttpRequest,
     form: web::Form<CreateForm>,
     config: web::Data<JwtConfig>,
@@ -206,7 +206,7 @@ pub(super) async fn create_user(
 /// catalog defines them at runtime, so the permission controls are named
 /// `perm_<service>_<action>` and probed out of the map one at a time.
 #[post("/admin/users/{username}")]
-pub(super) async fn save_user(
+pub async fn save_user(
     req: HttpRequest,
     path: web::Path<String>,
     form: web::Form<HashMap<String, String>>,
@@ -281,7 +281,7 @@ pub struct ApplyTemplateForm {
 }
 
 #[post("/admin/users/{username}/template")]
-pub(super) async fn apply_template(
+pub async fn apply_template(
     req: HttpRequest,
     path: web::Path<String>,
     form: web::Form<ApplyTemplateForm>,
@@ -316,7 +316,7 @@ pub(super) async fn apply_template(
 }
 
 #[post("/admin/users/{username}/delete")]
-pub(super) async fn delete_user(
+pub async fn delete_user(
     req: HttpRequest,
     path: web::Path<String>,
     config: web::Data<JwtConfig>,
@@ -341,7 +341,7 @@ pub(super) async fn delete_user(
 /// each is a lighter-weight variant of the same "change this account"
 /// capability the save form already needs.
 #[post("/admin/users/{username}/disable")]
-pub(super) async fn disable_user(
+pub async fn disable_user(
     req: HttpRequest,
     path: web::Path<String>,
     config: web::Data<JwtConfig>,
@@ -363,7 +363,7 @@ pub(super) async fn disable_user(
 }
 
 #[post("/admin/users/{username}/enable")]
-pub(super) async fn enable_user(
+pub async fn enable_user(
     req: HttpRequest,
     path: web::Path<String>,
     config: web::Data<JwtConfig>,
@@ -382,7 +382,7 @@ pub(super) async fn enable_user(
 }
 
 #[post("/admin/users/{username}/unlock")]
-pub(super) async fn unlock_user(
+pub async fn unlock_user(
     req: HttpRequest,
     path: web::Path<String>,
     config: web::Data<JwtConfig>,
@@ -404,7 +404,7 @@ pub(super) async fn unlock_user(
 /// the secret, only whether MFA is on, and can turn it off so the user can
 /// sign in and re-enroll.
 #[post("/admin/users/{username}/mfa/disable")]
-pub(super) async fn disable_user_mfa(
+pub async fn disable_user_mfa(
     req: HttpRequest,
     path: web::Path<String>,
     config: web::Data<JwtConfig>,
@@ -438,7 +438,7 @@ pub(super) async fn disable_user_mfa(
 /// through the API today, has no checkbox here at all. Without this, saving
 /// any other change on this page - a password, a role - would rebuild the
 /// permissions map from checkboxes alone and silently erase it.
-fn permissions_from_form(
+pub fn permissions_from_form(
     catalog: &PermissionCatalog,
     form: &HashMap<String, String>,
     existing: &Permissions,
@@ -477,7 +477,7 @@ fn permissions_from_form(
 
 /// A missing or unrecognised role is an ordinary user. Never an admin: a mangled
 /// form should not be able to grant the realm away.
-fn parse_role(value: Option<&str>) -> Role {
+pub fn parse_role(value: Option<&str>) -> Role {
     value.and_then(Role::parse).unwrap_or(Role::User)
 }
 
@@ -485,7 +485,7 @@ fn parse_role(value: Option<&str>) -> Role {
 // Rendering
 // ---------------------------------------------------------------------------
 
-async fn render_list(db: &web::Data<Db>, actor: &Claims, notice: &Notice) -> HttpResponse {
+pub async fn render_list(db: &web::Data<Db>, actor: &Claims, notice: &Notice) -> HttpResponse {
     let people = match realm::list(db).await {
         Ok(people) => people,
         Err(err) => return error_page(&err),
@@ -526,7 +526,7 @@ async fn render_list(db: &web::Data<Db>, actor: &Claims, notice: &Notice) -> Htt
     )
 }
 
-fn user_row(user: &User, actor: &str) -> Element {
+pub fn user_row(user: &User, actor: &str) -> Element {
     let roles = user
         .get_roles()
         .iter()
@@ -592,7 +592,7 @@ fn user_row(user: &User, actor: &str) -> Element {
 /// created user is forced to `User` server-side regardless (see
 /// `create_user`), so offering the control at all would just be an invitation
 /// to a 403 the field's absence avoids entirely.
-fn create_panel(show_role_select: bool) -> Element {
+pub fn create_panel(show_role_select: bool) -> Element {
     let mut create_form = form()
         .attr("method", "post")
         .attr("action", ui_path("/admin/users"))
@@ -654,7 +654,7 @@ fn create_panel(show_role_select: bool) -> Element {
         .child(div().class("meta-list").child(create_form))
 }
 
-fn render_edit(
+pub fn render_edit(
     catalog: &PermissionCatalog,
     user: &User,
     actor: &Claims,
@@ -844,7 +844,7 @@ fn render_edit(
 /// page; the action forms that touch it are omitted (not disabled) for a
 /// viewer who cannot edit, same reasoning `render_edit`'s own `details`
 /// branch gives.
-fn status_panel(user: &User, can_edit: bool, allow_self_action: bool) -> Element {
+pub fn status_panel(user: &User, can_edit: bool, allow_self_action: bool) -> Element {
     let mut rows = div()
         .class("meta-list")
         .child(status_row(
@@ -1121,7 +1121,7 @@ fn primary_role(user: &User) -> Role {
 /// The error key is checked against the ones `RealmError` can produce rather than
 /// being trusted from the query string, so a hand-crafted link cannot put
 /// arbitrary text on the page.
-fn notice_banner(notice: &Notice) -> Option<Element> {
+pub fn notice_banner(notice: &Notice) -> Option<Element> {
     if let Some(key) = notice.err.as_deref().and_then(known_error_key) {
         return Some(p().class("admin-notice error").attr("data-i18n", key));
     }
@@ -1172,7 +1172,7 @@ fn back_to_edit(username: &str, err: &RealmError) -> HttpResponse {
     ))
 }
 
-fn forbidden_page() -> HttpResponse {
+pub fn forbidden_page() -> HttpResponse {
     render_page(
         HttpResponse::Forbidden(),
         content().class("admin-content").child(
@@ -1196,7 +1196,7 @@ fn forbidden_page() -> HttpResponse {
     )
 }
 
-fn error_page(err: &RealmError) -> HttpResponse {
+pub fn error_page(err: &RealmError) -> HttpResponse {
     render_page(
         HttpResponse::build(err.status()),
         content().class("admin-content").child(
@@ -1207,78 +1207,4 @@ fn error_page(err: &RealmError) -> HttpResponse {
         ),
         UiPageKind::Admin,
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn catalog() -> PermissionCatalog {
-        let dir = std::env::temp_dir().join(format!("admin-test-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("permissions.toml");
-        std::fs::write(
-            &path,
-            r#"
-            [services.conveyor]
-            actions = ["read", "write"]
-            resource_types = ["project"]
-            "#,
-        )
-        .unwrap();
-        let result = PermissionCatalog::load_from(&path.to_string_lossy()).unwrap();
-        let _ = std::fs::remove_dir_all(&dir);
-        result
-    }
-
-    #[test]
-    fn a_resource_scoped_grant_survives_a_plain_checkbox_save() {
-        let catalog = catalog();
-        let mut existing = Permissions::new();
-        existing.insert(
-            "conveyor".to_string(),
-            ["project:abc-123:write".to_string()].into_iter().collect(),
-        );
-
-        // The form checks conveyor's plain "read" box and leaves "write"
-        // unchecked - as if an admin were narrowing the blanket grant, with
-        // no idea the resource-scoped one even exists.
-        let mut form = HashMap::new();
-        form.insert("perm_conveyor_read".to_string(), "on".to_string());
-
-        let result = permissions_from_form(&catalog, &form, &existing);
-        let conveyor = result.get("conveyor").expect("conveyor grants survive");
-
-        assert!(conveyor.contains("read"), "the checked box is honoured");
-        assert!(
-            !conveyor.contains("write"),
-            "the unchecked plain box is dropped"
-        );
-        assert!(
-            conveyor.contains("project:abc-123:write"),
-            "the resource-scoped grant this form has no box for is preserved"
-        );
-    }
-
-    #[test]
-    fn a_plain_grant_can_still_be_revoked() {
-        let catalog = catalog();
-        let mut existing = Permissions::new();
-        existing.insert(
-            "conveyor".to_string(),
-            ["read".to_string()].into_iter().collect(),
-        );
-
-        // Nothing checked at all - unchecking every box should still clear a
-        // plain grant, not treat it as "unknown, so preserve it".
-        let form = HashMap::new();
-
-        let result = permissions_from_form(&catalog, &form, &existing);
-        assert!(
-            result
-                .get("conveyor")
-                .is_none_or(|actions| !actions.contains("read")),
-            "an unchecked plain action is actually revoked"
-        );
-    }
 }

@@ -16,23 +16,7 @@ impl Backend for Systemd {
         std::fs::create_dir_all(&unit_dir)?;
         let unit_path = unit_dir.join(UNIT_NAME);
 
-        let unit = format!(
-            "[Unit]\n\
-             Description=Pulley continuous sync daemon\n\
-             After=network-online.target\n\
-             Wants=network-online.target\n\
-             \n\
-             [Service]\n\
-             Type=simple\n\
-             ExecStart={} daemon\n\
-             Restart=on-failure\n\
-             RestartSec=5\n\
-             \n\
-             [Install]\n\
-             WantedBy=default.target\n",
-            exe.display()
-        );
-        std::fs::write(&unit_path, unit)?;
+        std::fs::write(&unit_path, unit_file_contents(&exe))?;
         print_status(
             Tone::Success,
             "service",
@@ -88,7 +72,29 @@ impl Backend for Systemd {
     }
 }
 
-fn run_systemctl(args: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
+/// The systemd unit file's contents - pulled out of `install` so it can be
+/// checked without actually writing a file or touching a real systemd
+/// session.
+pub fn unit_file_contents(exe: &std::path::Path) -> String {
+    format!(
+        "[Unit]\n\
+         Description=Pulley continuous sync daemon\n\
+         After=network-online.target\n\
+         Wants=network-online.target\n\
+         \n\
+         [Service]\n\
+         Type=simple\n\
+         ExecStart={} daemon\n\
+         Restart=on-failure\n\
+         RestartSec=5\n\
+         \n\
+         [Install]\n\
+         WantedBy=default.target\n",
+        exe.display()
+    )
+}
+
+pub fn run_systemctl(args: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
     let mut full_args = vec!["--user"];
     full_args.extend_from_slice(args);
     let status = Command::new("systemctl").args(&full_args).status()?;
@@ -98,12 +104,12 @@ fn run_systemctl(args: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn user_unit_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
+pub fn user_unit_dir() -> Result<PathBuf, Box<dyn std::error::Error>> {
     let home = std::env::var("HOME")?;
     Ok(PathBuf::from(home).join(".config/systemd/user"))
 }
 
-fn linger_enabled() -> Result<bool, Box<dyn std::error::Error>> {
+pub fn linger_enabled() -> Result<bool, Box<dyn std::error::Error>> {
     let user = whoami();
     let output = Command::new("loginctl")
         .args(["show-user", &user, "--property=Linger"])
@@ -111,6 +117,6 @@ fn linger_enabled() -> Result<bool, Box<dyn std::error::Error>> {
     Ok(String::from_utf8_lossy(&output.stdout).trim() == "Linger=yes")
 }
 
-fn whoami() -> String {
+pub fn whoami() -> String {
     std::env::var("USER").unwrap_or_else(|_| "$USER".to_string())
 }

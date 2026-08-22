@@ -3,11 +3,11 @@ pub use quench_starter::actix::routers::ui::{is_ui_authenticated, ui_asset_path,
 use quench_web::prelude::*;
 use std::sync::LazyLock;
 
-mod css;
+pub mod css;
 
 const SUPPORTED_LOCALES: [&str; 5] = ["en-US", "pl-PL", "es-ES", "de-DE", "fr-FR"];
 
-fn supported_locales() -> Vec<String> {
+pub fn supported_locales() -> Vec<String> {
     SUPPORTED_LOCALES.iter().map(|s| s.to_string()).collect()
 }
 
@@ -77,7 +77,7 @@ static UI_SHELL_VLLM_MANAGEMENT: LazyLock<AppShell> = LazyLock::new(|| {
         .build()
 });
 
-fn ui_header(
+pub fn ui_header(
     title_key: Option<&str>,
     show_locale_switch: bool,
     show_home: bool,
@@ -109,7 +109,7 @@ fn ui_header(
         )
 }
 
-fn ui_header_split(
+pub fn ui_header_split(
     title1_key: &str,
     title2_key: &str,
     show_locale_switch: bool,

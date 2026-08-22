@@ -35,6 +35,12 @@ fn lock() -> &'static Mutex<()> {
 async fn status_with_auth(auth: bool, request: test::TestRequest) -> StatusCode {
     let _guard = lock().lock().await;
 
+    // Every other test in this binary that builds a `JwtConfig` via
+    // `for_tests()` (which reads `SERVICE_AUTH_ENABLED` at construction, see
+    // `quench_auth::actix::domain::jwt::JwtConfig::from_parts`) expects auth
+    // to default off. Leaving `true` set here after this function returns
+    // would leak into whichever test the binary happens to run next.
+    let previous = std::env::var("SERVICE_AUTH_ENABLED").ok();
     unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", if auth { "true" } else { "false" }) };
 
     let db = Db::connect("").await.expect("in-memory database");
@@ -47,9 +53,16 @@ async fn status_with_auth(auth: bool, request: test::TestRequest) -> StatusCode 
     )
     .await;
 
-    test::call_service(&app, request.to_request())
+    let status = test::call_service(&app, request.to_request())
         .await
-        .status()
+        .status();
+
+    match previous {
+        Some(value) => unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", value) },
+        None => unsafe { std::env::remove_var("SERVICE_AUTH_ENABLED") },
+    }
+
+    status
 }
 
 /// Every route behind the realm's auth, and a request shaped to reach it.

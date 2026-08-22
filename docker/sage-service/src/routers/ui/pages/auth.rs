@@ -11,27 +11,27 @@ use quench_auth::prelude::JwtConfig;
 use serde::Serialize;
 
 #[get("/login")]
-pub(super) async fn login(req: HttpRequest, sso: web::Data<SsoConfig>) -> impl Responder {
+pub async fn login(req: HttpRequest, sso: web::Data<SsoConfig>) -> impl Responder {
     login_delegation(&req, &sso).await
 }
 
 #[get("/login/")]
-pub(super) async fn login_slash(req: HttpRequest, sso: web::Data<SsoConfig>) -> impl Responder {
+pub async fn login_slash(req: HttpRequest, sso: web::Data<SsoConfig>) -> impl Responder {
     login_delegation(&req, &sso).await
 }
 
 #[get("/auth/callback")]
-pub(super) async fn callback(req: HttpRequest, sso: web::Data<SsoConfig>) -> impl Responder {
+pub async fn callback(req: HttpRequest, sso: web::Data<SsoConfig>) -> impl Responder {
     auth_callback(&req, &sso).await
 }
 
 #[get("/logout")]
-pub(super) async fn logout(req: HttpRequest) -> impl Responder {
+pub async fn logout(req: HttpRequest) -> impl Responder {
     logout_delegation(&req)
 }
 
 #[post("/refresh")]
-pub(super) async fn refresh(req: HttpRequest) -> impl Responder {
+pub async fn refresh(req: HttpRequest) -> impl Responder {
     refresh_delegation(&req).await
 }
 
@@ -43,7 +43,7 @@ struct AuthStatus {
 }
 
 #[get("/status")]
-pub(super) async fn auth_status(
+pub async fn auth_status(
     req: actix_web::HttpRequest,
     config: web::Data<JwtConfig>,
 ) -> impl Responder {

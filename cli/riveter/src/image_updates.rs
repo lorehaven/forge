@@ -53,7 +53,8 @@ impl ImageRef {
     /// `repository`, prefixed with the registry unless it is Docker Hub -
     /// Docker Hub images are written bare (`redis`, not
     /// `registry-1.docker.io/library/redis`).
-    fn display_repository(&self) -> String {
+    #[must_use]
+    pub fn display_repository(&self) -> String {
         if self.registry == "registry-1.docker.io" {
             self.repository.clone()
         } else {
@@ -61,16 +62,18 @@ impl ImageRef {
         }
     }
 
-    fn with_tag(&self, tag: &str) -> String {
+    #[must_use]
+    pub fn with_tag(&self, tag: &str) -> String {
         format!("{}:{tag}", self.display_repository())
     }
 }
 
-/// Parses `value` as an image reference, applying the same registry/tag
-/// inference Docker itself uses: no dot, colon or `localhost` in the first
-/// path segment means Docker Hub, and a bare Docker Hub repository name gets
-/// `library/` inserted.
-fn parse_image_ref(value: &str) -> Result<ImageRef, &'static str> {
+/// Parses `value` as an image reference.
+///
+/// Applies the same registry/tag inference Docker itself uses: no dot, colon
+/// or `localhost` in the first path segment means Docker Hub, and a bare
+/// Docker Hub repository name gets `library/` inserted.
+pub fn parse_image_ref(value: &str) -> Result<ImageRef, &'static str> {
     if value.contains('@') {
         return Err("digest-pinned images are not supported");
     }
@@ -186,13 +189,14 @@ pub fn discover_images(overlays_dir: &Path) -> Result<Vec<ImageOccurrence>> {
 }
 
 #[derive(Debug, Clone)]
-struct RegistryCredentials {
-    username: String,
-    password: String,
+pub struct RegistryCredentials {
+    pub username: String,
+    pub password: String,
 }
 
 impl RegistryCredentials {
-    fn basic_auth_header(&self) -> String {
+    #[must_use]
+    pub fn basic_auth_header(&self) -> String {
         let token = base64::engine::general_purpose::STANDARD
             .encode(format!("{}:{}", self.username, self.password));
         format!("Basic {token}")
@@ -203,7 +207,7 @@ impl RegistryCredentials {
 /// fallback used when nothing more specific matches.
 #[derive(Debug, Default)]
 pub struct RegistryAuth {
-    credentials: BTreeMap<String, RegistryCredentials>,
+    pub credentials: BTreeMap<String, RegistryCredentials>,
 }
 
 impl RegistryAuth {
@@ -236,19 +240,21 @@ impl RegistryAuth {
         Self { credentials }
     }
 
-    fn get(&self, registry: &str) -> Option<&RegistryCredentials> {
+    #[must_use]
+    pub fn get(&self, registry: &str) -> Option<&RegistryCredentials> {
         self.credentials
             .get(registry)
             .or_else(|| self.credentials.get("*"))
     }
 
-    fn basic_header(&self, registry: &str) -> Option<String> {
+    pub fn basic_header(&self, registry: &str) -> Option<String> {
         self.get(registry)
             .map(RegistryCredentials::basic_auth_header)
     }
 }
 
-fn parse_username_password(value: &str) -> Option<RegistryCredentials> {
+#[must_use]
+pub fn parse_username_password(value: &str) -> Option<RegistryCredentials> {
     let (username, password) = value.split_once(':')?;
     if username.is_empty() {
         return None;
@@ -259,7 +265,8 @@ fn parse_username_password(value: &str) -> Option<RegistryCredentials> {
     })
 }
 
-fn parse_registry_auth_item(item: &str) -> Option<(String, RegistryCredentials)> {
+#[must_use]
+pub fn parse_registry_auth_item(item: &str) -> Option<(String, RegistryCredentials)> {
     let (registry, raw_credentials) = item.trim().split_once('=')?;
     if registry.is_empty() {
         return None;
@@ -268,14 +275,15 @@ fn parse_registry_auth_item(item: &str) -> Option<(String, RegistryCredentials)>
     Some((normalize_registry_key(registry), credentials))
 }
 
-fn parse_registry_auth_env(value: &str) -> BTreeMap<String, RegistryCredentials> {
+pub fn parse_registry_auth_env(value: &str) -> BTreeMap<String, RegistryCredentials> {
     value
         .split(';')
         .filter_map(parse_registry_auth_item)
         .collect()
 }
 
-fn normalize_registry_key(value: &str) -> String {
+#[must_use]
+pub fn normalize_registry_key(value: &str) -> String {
     if value == "*" {
         return value.to_string();
     }
@@ -291,7 +299,7 @@ fn normalize_registry_key(value: &str) -> String {
     }
 }
 
-fn docker_config_credentials() -> BTreeMap<String, RegistryCredentials> {
+pub fn docker_config_credentials() -> BTreeMap<String, RegistryCredentials> {
     let config_path = std::env::var("DOCKER_CONFIG").map_or_else(
         |_| {
             dirs_home()
@@ -344,10 +352,12 @@ fn docker_config_credentials() -> BTreeMap<String, RegistryCredentials> {
     credentials
 }
 
-/// Percent-encodes `repository` for use in a URL path, leaving `/` alone -
-/// a repository is a sequence of path segments, not one opaque piece, and a
+/// Percent-encodes `repository` for use in a URL path, leaving `/` alone.
+///
+/// A repository is a sequence of path segments, not one opaque piece, and a
 /// registry sees `foo%2Fbar` as a different repository than `foo/bar`.
-fn encode_repository_path(repository: &str) -> String {
+#[must_use]
+pub fn encode_repository_path(repository: &str) -> String {
     repository
         .split('/')
         .map(urlencoding::encode)
@@ -359,11 +369,13 @@ fn dirs_home() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
 }
 
-/// Why fetching a repository's tags failed - transport failures get a retry
-/// over plain HTTP (this estate's own registry serves that way), an auth
-/// denial does not, since the registry is reachable and simply said no.
+/// Why fetching a repository's tags failed.
+///
+/// Transport failures get a retry over plain HTTP (this estate's own
+/// registry serves that way), an auth denial does not, since the registry is
+/// reachable and simply said no.
 #[derive(Debug)]
-enum FetchError {
+pub enum FetchError {
     Unreachable(String),
     Denied(String),
     Other(String),
@@ -467,7 +479,7 @@ fn bearer_token(
 /// this registry does not have Docker Hub's anonymous rate limit to justify
 /// paying, so it keeps the fuller crawl rather than the Docker Hub-specific
 /// shortcut.
-fn registry_v2_tags(
+pub fn registry_v2_tags(
     client: &Client,
     image: &ImageRef,
     auth: &RegistryAuth,
@@ -609,10 +621,12 @@ fn list_tags(
     }
 }
 
-/// `(prefix, numeric components, suffix)` for a tag that looks versioned,
-/// e.g. `v1.2.3-alpine` -> `("v", [1, 2, 3], "-alpine")`. `None` for anything
+/// `(prefix, numeric components, suffix)` for a tag that looks versioned.
+///
+/// E.g. `v1.2.3-alpine` -> `("v", [1, 2, 3], "-alpine")`. `None` for anything
 /// that does not contain a run of dot/dash/underscore-separated numbers.
-fn version_key(tag: &str) -> Option<(String, Vec<u64>, String)> {
+#[must_use]
+pub fn version_key(tag: &str) -> Option<(String, Vec<u64>, String)> {
     let captures = VERSION_RE.captures(tag)?;
     let prefix = captures["prefix"].to_string();
     let suffix = captures["suffix"].to_string();
@@ -624,9 +638,10 @@ fn version_key(tag: &str) -> Option<(String, Vec<u64>, String)> {
     Some((prefix, numbers, suffix))
 }
 
-/// The newest tag that is a plausible upgrade of `current`: same prefix and
-/// suffix, at least as many version components, not a jump across a
-/// three-digit epoch boundary (`9.x` -> `100.x` reads as a different
+/// The newest tag that is a plausible upgrade of `current`.
+///
+/// Same prefix and suffix, at least as many version components, not a jump
+/// across a three-digit epoch boundary (`9.x` -> `100.x` reads as a different
 /// versioning scheme, not a newer version), and - critically, since `tags`
 /// is not guaranteed to be the *complete* tag list (`registry_v2_tags` caps
 /// pages fetched, `docker_hub_tags` asks for only the newest handful) -
@@ -635,7 +650,8 @@ fn version_key(tag: &str) -> Option<(String, Vec<u64>, String)> {
 /// `.max()` crown whatever it does contain, even a tag older than what is
 /// already deployed; `Vec<u64>`'s `Ord` compares element-wise like a tuple,
 /// so this is a numeric comparison, not the registry's lexical one.
-fn newest_compatible_tag(current: &str, tags: &[String]) -> Option<String> {
+#[must_use]
+pub fn newest_compatible_tag(current: &str, tags: &[String]) -> Option<String> {
     if FLOATING_TAGS.contains(&current) {
         return None;
     }
@@ -667,12 +683,12 @@ fn newest_compatible_tag(current: &str, tags: &[String]) -> Option<String> {
 
 #[derive(Debug)]
 pub struct UpdateCandidate {
-    occurrence: ImageOccurrence,
-    newest_tag: String,
+    pub occurrence: ImageOccurrence,
+    pub newest_tag: String,
 }
 
 #[derive(Debug)]
-enum ScanMessage {
+pub enum ScanMessage {
     Skip {
         occurrence: ImageOccurrence,
         detail: String,
@@ -686,7 +702,8 @@ enum ScanMessage {
 /// Checks every discovered image against its registry, reusing one tag
 /// listing per `(registry, repository)` pair across occurrences that share
 /// it.
-fn find_updates(
+#[must_use]
+pub fn find_updates(
     occurrences: Vec<ImageOccurrence>,
     auth: &RegistryAuth,
 ) -> (Vec<UpdateCandidate>, Vec<ScanMessage>) {
@@ -742,10 +759,11 @@ fn find_updates(
 }
 
 /// Rewrites each affected template's `image:` lines to the newest tag found.
+///
 /// Only unquoted `image:` lines are rewritten - the same limitation the
 /// script this was ported from had, and nothing in this estate's overlays
 /// quotes an image value.
-fn apply_updates(updates: &[UpdateCandidate]) -> Result<()> {
+pub fn apply_updates(updates: &[UpdateCandidate]) -> Result<()> {
     let mut by_path: BTreeMap<&Path, BTreeMap<&str, String>> = BTreeMap::new();
     for update in updates {
         by_path
@@ -789,7 +807,7 @@ fn apply_updates(updates: &[UpdateCandidate]) -> Result<()> {
     Ok(())
 }
 
-fn print_rows(title: &str, rows: &[[String; 4]]) {
+pub fn print_rows(title: &str, rows: &[[String; 4]]) {
     if rows.is_empty() {
         return;
     }
@@ -818,7 +836,7 @@ fn print_rows(title: &str, rows: &[[String; 4]]) {
     let _ = writeln!(out);
 }
 
-fn print_results(updates: &[UpdateCandidate], messages: &[ScanMessage]) {
+pub fn print_results(updates: &[UpdateCandidate], messages: &[ScanMessage]) {
     let skip_rows: Vec<[String; 4]> = messages
         .iter()
         .filter_map(|message| match message {

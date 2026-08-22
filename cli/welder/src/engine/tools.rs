@@ -238,9 +238,12 @@ fn run_cmd(args: &Value, run_cmd_allowlist: &[String]) -> Result<String> {
 }
 
 /// Whether `cmd_parts` (already shell-split) matches at least one allowlist
-/// entry by whitespace-tokenized prefix, e.g. allowlist entry "cargo check"
-/// matches `cmd_parts` of `["cargo", "check", "-p", "welder"]`.
-fn is_command_allowed(cmd_parts: &[String], run_cmd_allowlist: &[String]) -> bool {
+/// entry by whitespace-tokenized prefix.
+///
+/// E.g. allowlist entry "cargo check" matches `cmd_parts` of
+/// `["cargo", "check", "-p", "welder"]`.
+#[must_use]
+pub fn is_command_allowed(cmd_parts: &[String], run_cmd_allowlist: &[String]) -> bool {
     run_cmd_allowlist.iter().any(|pattern| {
         let tokens: Vec<&str> = pattern.split_whitespace().collect();
         !tokens.is_empty()
@@ -259,7 +262,7 @@ fn required_str<'a>(args: &'a Value, key: &str) -> Result<&'a str> {
         .ok_or_else(|| anyhow!("missing or invalid '{key}'"))
 }
 
-fn safe_rel_path(path: &str) -> Result<&Path> {
+pub fn safe_rel_path(path: &str) -> Result<&Path> {
     let p = Path::new(path);
 
     if p.is_absolute() {
@@ -310,88 +313,4 @@ fn ensure_no_symlink_escape(p: &Path) -> Result<()> {
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::sync::Mutex;
-
-    /// `safe_rel_path` reads the process's current directory, which is
-    /// global state shared across every test thread. Any test that reaches
-    /// the symlink check (i.e. doesn't bail out on the absolute/`..` checks
-    /// first) must hold this lock for its duration so it can't observe a
-    /// cwd another test is mid-way through changing.
-    static CWD_LOCK: Mutex<()> = Mutex::new(());
-
-    #[test]
-    fn rejects_absolute_paths() {
-        assert!(safe_rel_path("/etc/passwd").is_err());
-    }
-
-    #[test]
-    fn rejects_parent_dir_traversal() {
-        assert!(safe_rel_path("../secrets").is_err());
-        assert!(safe_rel_path("a/../../b").is_err());
-    }
-
-    #[test]
-    fn allows_plain_relative_paths() {
-        let _guard = CWD_LOCK.lock().unwrap();
-        assert!(safe_rel_path("src/main.rs").is_ok());
-        assert!(safe_rel_path(".").is_ok());
-    }
-
-    #[test]
-    fn allows_paths_that_do_not_exist_yet() {
-        let _guard = CWD_LOCK.lock().unwrap();
-        // A brand-new file under a directory that doesn't exist yet either
-        // (write_file creates parents) must still be allowed.
-        assert!(safe_rel_path("brand/new/file.txt").is_ok());
-    }
-
-    #[test]
-    #[cfg(unix)]
-    fn rejects_symlink_escape() {
-        let _guard = CWD_LOCK.lock().unwrap();
-
-        let tmp = tempfile::tempdir().unwrap();
-        let outside = tempfile::tempdir().unwrap();
-        fs::write(outside.path().join("secret.txt"), "hi").unwrap();
-        std::os::unix::fs::symlink(outside.path(), tmp.path().join("escape")).unwrap();
-
-        let original_cwd = std::env::current_dir().unwrap();
-        std::env::set_current_dir(tmp.path()).unwrap();
-        let result = safe_rel_path("escape/secret.txt");
-        std::env::set_current_dir(original_cwd).unwrap();
-
-        assert!(result.is_err(), "symlink escape should be rejected");
-    }
-
-    #[test]
-    fn allowlist_matches_by_whitespace_tokenized_prefix() {
-        let allowlist = vec!["cargo check".to_string(), "npm test".to_string()];
-
-        let allowed: Vec<String> = ["cargo", "check", "-p", "welder"]
-            .into_iter()
-            .map(String::from)
-            .collect();
-        assert!(is_command_allowed(&allowed, &allowlist));
-
-        let disallowed: Vec<String> = ["cargo", "publish"].into_iter().map(String::from).collect();
-        assert!(!is_command_allowed(&disallowed, &allowlist));
-    }
-
-    #[test]
-    fn allowlist_rejects_shorter_command_than_pattern() {
-        let allowlist = vec!["cargo check".to_string()];
-        let short: Vec<String> = vec!["cargo".to_string()];
-        assert!(!is_command_allowed(&short, &allowlist));
-    }
-
-    #[test]
-    fn allowlist_empty_matches_nothing() {
-        let cmd: Vec<String> = ["cargo", "check"].into_iter().map(String::from).collect();
-        assert!(!is_command_allowed(&cmd, &[]));
-    }
 }

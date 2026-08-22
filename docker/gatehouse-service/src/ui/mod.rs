@@ -4,7 +4,7 @@ use quench_auth::prelude::JwtConfig;
 use quench_starter::prelude::with_base_path;
 
 pub mod common;
-mod pages;
+pub mod pages;
 
 /// `/ui` is where the root redirects land: the service list when there is a
 /// session, the login form when there is not.

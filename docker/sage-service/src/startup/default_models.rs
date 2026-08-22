@@ -114,7 +114,7 @@ pub fn next_model_to_launch<'a>(
     })
 }
 
-async fn monitor_default_models(
+pub async fn monitor_default_models(
     switchboard: &SwitchboardClient,
     config: &SageConfig,
     attempts: &mut HashMap<String, u32>,
@@ -171,7 +171,7 @@ async fn monitor_default_models(
     }
 }
 
-async fn request_model_launch(
+pub async fn request_model_launch(
     switchboard: &SwitchboardClient,
     model: &DefaultModel,
     launched: &LaunchedInstances,

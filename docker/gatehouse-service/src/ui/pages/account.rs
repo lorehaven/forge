@@ -32,7 +32,7 @@ pub struct Notice {
 }
 
 #[get("/account")]
-pub(super) async fn account_page(
+pub async fn account_page(
     req: HttpRequest,
     config: web::Data<JwtConfig>,
     db: web::Data<Db>,
@@ -55,7 +55,7 @@ pub(super) async fn account_page(
 /// `admin.rs::save_user` does: not every field is always present, and a
 /// missing one means "leave alone", not "clear".
 #[post("/account")]
-pub(super) async fn save_account(
+pub async fn save_account(
     req: HttpRequest,
     form: web::Form<std::collections::HashMap<String, String>>,
     config: web::Data<JwtConfig>,
@@ -112,10 +112,7 @@ fn non_empty(form: &std::collections::HashMap<String, String>, key: &str) -> Opt
 // ---------------------------------------------------------------------------
 
 #[get("/account/mfa/enroll")]
-pub(super) async fn mfa_enroll_page(
-    req: HttpRequest,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
+pub async fn mfa_enroll_page(req: HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
     let actor = match actor_or_redirect(&req, &config).await {
         Ok(actor) => actor,
         Err(response) => return response,
@@ -137,7 +134,7 @@ pub struct MfaEnrollForm {
 }
 
 #[post("/account/mfa/enroll")]
-pub(super) async fn mfa_enroll_submit(
+pub async fn mfa_enroll_submit(
     req: HttpRequest,
     form: web::Form<MfaEnrollForm>,
     config: web::Data<JwtConfig>,
@@ -167,7 +164,7 @@ pub(super) async fn mfa_enroll_submit(
 }
 
 #[post("/account/mfa/disable")]
-pub(super) async fn mfa_disable(
+pub async fn mfa_disable(
     req: HttpRequest,
     config: web::Data<JwtConfig>,
     db: web::Data<Db>,
@@ -187,7 +184,7 @@ pub(super) async fn mfa_disable(
 // Rendering
 // ---------------------------------------------------------------------------
 
-fn render_account_page(user: &User, notice: &Notice) -> HttpResponse {
+pub fn render_account_page(user: &User, notice: &Notice) -> HttpResponse {
     let mut profile_form = form()
         .attr("method", "post")
         .attr("action", ui_path("/account"))
@@ -312,7 +309,7 @@ fn render_account_page(user: &User, notice: &Notice) -> HttpResponse {
     )
 }
 
-fn render_mfa_enroll_page(secret: &str, uri: &str, error: bool) -> HttpResponse {
+pub fn render_mfa_enroll_page(secret: &str, uri: &str, error: bool) -> HttpResponse {
     let mut enroll_form = form()
         .attr("method", "post")
         .attr("action", ui_path("/account/mfa/enroll"))
@@ -396,7 +393,7 @@ fn labeled_text(name: &str, key: &'static str, value: Option<&str>) -> Element {
         )
 }
 
-fn notice_banner(notice: &Notice) -> Option<Element> {
+pub fn notice_banner(notice: &Notice) -> Option<Element> {
     if let Some(key) = notice.err.as_deref().and_then(known_error_key) {
         return Some(p().class("admin-notice error").attr("data-i18n", key));
     }
@@ -412,7 +409,7 @@ fn notice_banner(notice: &Notice) -> Option<Element> {
 /// Same reasoning as `admin.rs`'s own allowlist: only a `RealmError::i18n_key`
 /// that could actually reach this page is trusted onto it, so a hand-crafted
 /// `?err=` cannot put arbitrary text on the page.
-fn known_error_key(candidate: &str) -> Option<&'static str> {
+pub fn known_error_key(candidate: &str) -> Option<&'static str> {
     [
         RealmError::PasswordEmpty,
         RealmError::NotFound,
@@ -430,7 +427,7 @@ fn redirect(path: &str) -> HttpResponse {
         .finish()
 }
 
-fn error_page(err: &RealmError) -> HttpResponse {
+pub fn error_page(err: &RealmError) -> HttpResponse {
     render_page(
         HttpResponse::build(err.status()),
         content().class("admin-content").child(

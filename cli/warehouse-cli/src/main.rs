@@ -1,12 +1,6 @@
-mod api;
-mod application;
-mod cli;
-mod config;
-mod domain;
-mod ui;
-
 use anyhow::Result;
 use clap::Parser;
+use warehouse_cli::{application, cli, ui};
 
 #[tokio::main]
 async fn main() -> Result<()> {

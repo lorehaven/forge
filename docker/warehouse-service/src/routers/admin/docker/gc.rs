@@ -1,4 +1,4 @@
-use crate::routers::DOCKER_STORAGE_ROOT;
+use crate::routers::docker_storage_root;
 use actix_web::{HttpResponse, Responder, post};
 use serde::Serialize;
 use serde_json::Value;
@@ -6,9 +6,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 
 #[derive(Serialize)]
-struct GcReport {
-    deleted: usize,
-    kept: usize,
+pub struct GcReport {
+    pub deleted: usize,
+    pub kept: usize,
 }
 
 #[post("/docker/gc")]
@@ -19,8 +19,8 @@ pub async fn handle() -> impl Responder {
     }
 }
 
-async fn garbage_collect() -> std::io::Result<GcReport> {
-    let root = PathBuf::from(DOCKER_STORAGE_ROOT.as_str());
+pub async fn garbage_collect() -> std::io::Result<GcReport> {
+    let root = PathBuf::from(docker_storage_root());
 
     let manifest_entries = collect_digest_files(&root, "manifests").await?;
     let blob_entries = collect_digest_files(&root, "blobs").await?;
@@ -98,7 +98,7 @@ async fn collect_digest_files(root: &Path, kind: &str) -> std::io::Result<Vec<(S
     Ok(files)
 }
 
-fn is_digest_file_path(path: &Path, kind: &str) -> bool {
+pub fn is_digest_file_path(path: &Path, kind: &str) -> bool {
     let Some(parent) = path.parent() else {
         return false;
     };
@@ -116,11 +116,11 @@ fn is_digest_file_path(path: &Path, kind: &str) -> bool {
     sha_dir == "sha256" && kind_dir == kind
 }
 
-fn is_sha256_hex(v: &str) -> bool {
+pub fn is_sha256_hex(v: &str) -> bool {
     v.len() == 64 && v.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
-fn mark_manifest_references(
+pub fn mark_manifest_references(
     manifest_data: &[u8],
     referenced_blobs: &mut HashSet<String>,
     manifests_to_visit: &mut VecDeque<String>,

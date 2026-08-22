@@ -14,8 +14,8 @@
 //! The index files themselves are never deleted; they are only repaired when
 //! they contain entries pointing to missing tarballs.
 
-use crate::routers::CRATES_STORAGE_ROOT;
 use crate::routers::crates::{crate_file_path, validate_crate_name, validate_version};
+use crate::routers::crates_storage_root;
 use actix_web::{HttpResponse, Responder, post};
 use serde::Serialize;
 use std::collections::HashSet;
@@ -58,8 +58,8 @@ pub async fn handle() -> impl Responder {
 // Core GC logic
 // ---------------------------------------------------------------------------
 
-async fn garbage_collect() -> std::io::Result<CratesGcReport> {
-    let root = PathBuf::from(CRATES_STORAGE_ROOT.as_str());
+pub async fn garbage_collect() -> std::io::Result<CratesGcReport> {
+    let root = PathBuf::from(crates_storage_root());
     let mut report = CratesGcReport::default();
 
     // Iterate over each crate directory  (<root>/<crate-name>/)

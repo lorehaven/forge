@@ -119,12 +119,13 @@ pub(super) async fn resolve_manifest_response(
     })
 }
 
-const DOCKER_MANIFEST_V2: &str = "application/vnd.docker.distribution.manifest.v2+json";
-const DOCKER_MANIFEST_LIST_V2: &str = "application/vnd.docker.distribution.manifest.list.v2+json";
-const OCI_IMAGE_MANIFEST_V1: &str = "application/vnd.oci.image.manifest.v1+json";
-const OCI_IMAGE_INDEX_V1: &str = "application/vnd.oci.image.index.v1+json";
+pub const DOCKER_MANIFEST_V2: &str = "application/vnd.docker.distribution.manifest.v2+json";
+pub const DOCKER_MANIFEST_LIST_V2: &str =
+    "application/vnd.docker.distribution.manifest.list.v2+json";
+pub const OCI_IMAGE_MANIFEST_V1: &str = "application/vnd.oci.image.manifest.v1+json";
+pub const OCI_IMAGE_INDEX_V1: &str = "application/vnd.oci.image.index.v1+json";
 
-fn detect_manifest_media_type(data: &[u8]) -> Option<&'static str> {
+pub fn detect_manifest_media_type(data: &[u8]) -> Option<&'static str> {
     let v: serde_json::Value = serde_json::from_slice(data).ok()?;
 
     if let Some(media_type) = v.get("mediaType").and_then(|m| m.as_str()) {
@@ -186,7 +187,7 @@ fn detect_manifest_media_type(data: &[u8]) -> Option<&'static str> {
     None
 }
 
-fn negotiate_media_type(accept: &str, available: &[&'static str]) -> Option<&'static str> {
+pub fn negotiate_media_type(accept: &str, available: &[&'static str]) -> Option<&'static str> {
     if accept.is_empty() {
         return available.first().copied();
     }
@@ -207,7 +208,7 @@ fn negotiate_media_type(accept: &str, available: &[&'static str]) -> Option<&'st
     None
 }
 
-fn media_match(range: &str, candidate: &str) -> bool {
+pub fn media_match(range: &str, candidate: &str) -> bool {
     if range == "*/*" {
         return true;
     }
@@ -241,12 +242,12 @@ fn equivalent_manifest_media_types(requested: &str, candidate: &str) -> bool {
 }
 
 #[derive(Debug)]
-struct MediaRange {
-    value: String,
-    q: f32,
+pub struct MediaRange {
+    pub value: String,
+    pub q: f32,
 }
 
-fn parse_accept(header: &str) -> Vec<MediaRange> {
+pub fn parse_accept(header: &str) -> Vec<MediaRange> {
     header
         .split(',')
         .filter_map(|part| {

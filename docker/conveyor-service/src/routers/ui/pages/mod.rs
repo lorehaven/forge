@@ -6,4 +6,4 @@ pub mod pipelines;
 pub mod repos;
 pub mod runs;
 pub mod scan;
-mod shared;
+pub mod shared;

@@ -6,7 +6,8 @@ const TARGET_HELP: &str = "Resources to act on as kind[/name], e.g. `deployment/
 
 /// Replaces clap's flat subcommand list with the same command tree the REPL's
 /// `help` prints, so both surfaces describe riveter identically.
-fn help_template() -> String {
+#[must_use]
+pub fn help_template() -> String {
     format!(
         "{{usage-heading}} {{usage}}\n\n{}\nOptions:\n{{options}}\n\n{}",
         crate::help::command_tree(crate::help::Surface::Cli),

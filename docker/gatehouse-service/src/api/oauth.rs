@@ -117,20 +117,20 @@ pub async fn authorize(
 }
 
 #[derive(Deserialize)]
-struct TokenRequest {
-    grant_type: String,
+pub struct TokenRequest {
+    pub grant_type: String,
     #[serde(default)]
-    code: Option<String>,
+    pub code: Option<String>,
     #[serde(default)]
-    redirect_uri: Option<String>,
+    pub redirect_uri: Option<String>,
     #[serde(default)]
-    code_verifier: Option<String>,
+    pub code_verifier: Option<String>,
     #[serde(default)]
-    client_id: Option<String>,
+    pub client_id: Option<String>,
     #[serde(default)]
-    client_secret: Option<String>,
+    pub client_secret: Option<String>,
     #[serde(default)]
-    refresh_token: Option<String>,
+    pub refresh_token: Option<String>,
 }
 
 #[post("/api/v1/token")]
@@ -151,7 +151,7 @@ pub async fn token(
     }
 }
 
-async fn authorization_code_grant(
+pub async fn authorization_code_grant(
     body: &TokenRequest,
     config: &JwtConfig,
     db: &Db,
@@ -214,7 +214,7 @@ async fn authorization_code_grant(
     }
 }
 
-async fn refresh_token_grant(
+pub async fn refresh_token_grant(
     body: &TokenRequest,
     config: &JwtConfig,
     users: &UserDb,
@@ -247,7 +247,7 @@ async fn refresh_token_grant(
     }
 }
 
-async fn client_credentials_grant(
+pub async fn client_credentials_grant(
     body: &TokenRequest,
     config: &JwtConfig,
     db: &Db,
@@ -272,7 +272,7 @@ async fn client_credentials_grant(
     }
 }
 
-async fn subject_from_cookie(
+pub async fn subject_from_cookie(
     request: &HttpRequest,
     config: &JwtConfig,
     sessions: &SessionDb,
@@ -287,7 +287,7 @@ async fn subject_from_cookie(
         .then_some(claims)
 }
 
-fn random_code() -> String {
+pub fn random_code() -> String {
     let mut buf = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut buf);
     URL_SAFE_NO_PAD.encode(buf)

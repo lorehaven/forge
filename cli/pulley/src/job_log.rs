@@ -30,7 +30,7 @@ pub fn append(job_id: &str, message: &str) {
     prune_old_logs(&dir, now.date_naive());
 }
 
-fn prune_old_logs(dir: &Path, today: NaiveDate) {
+pub fn prune_old_logs(dir: &Path, today: NaiveDate) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
@@ -46,84 +46,5 @@ fn prune_old_logs(dir: &Path, today: NaiveDate) {
         if is_old {
             let _ = fs::remove_file(&path);
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn scratch(name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("pulley-job-log-test-{name}-{}", std::process::id()))
-    }
-
-    fn date(y: i32, m: u32, d: u32) -> NaiveDate {
-        NaiveDate::from_ymd_opt(y, m, d).unwrap()
-    }
-
-    #[test]
-    fn prune_old_logs_removes_files_older_than_the_retention_window() {
-        let dir = scratch("prune-basic");
-        fs::create_dir_all(&dir).unwrap();
-        let today = date(2026, 1, 15);
-
-        // 2026-01-01 is 14 days before today: past the 7-day cutoff.
-        fs::write(dir.join("2026-01-01.log"), "old").unwrap();
-        // 2026-01-10 is 5 days before today: within the 7-day cutoff.
-        fs::write(dir.join("2026-01-10.log"), "recent").unwrap();
-
-        prune_old_logs(&dir, today);
-
-        assert!(!dir.join("2026-01-01.log").exists());
-        assert!(dir.join("2026-01-10.log").exists());
-
-        fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn prune_old_logs_keeps_a_file_exactly_at_the_cutoff() {
-        let dir = scratch("prune-boundary");
-        fs::create_dir_all(&dir).unwrap();
-        let today = date(2026, 1, 15);
-        // Exactly RETENTION_DAYS (7) days back: `date < cutoff` is false at
-        // the boundary, so this file survives one more day than a strict
-        // reading of "keep 7 days" might suggest.
-        let cutoff_date = today - Duration::days(RETENTION_DAYS);
-        fs::write(
-            dir.join(format!("{}.log", cutoff_date.format("%Y-%m-%d"))),
-            "boundary",
-        )
-        .unwrap();
-
-        prune_old_logs(&dir, today);
-
-        assert!(
-            dir.join(format!("{}.log", cutoff_date.format("%Y-%m-%d")))
-                .exists()
-        );
-
-        fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn prune_old_logs_ignores_files_that_are_not_dated_log_names() {
-        let dir = scratch("prune-ignore");
-        fs::create_dir_all(&dir).unwrap();
-        fs::write(dir.join("readme.txt"), "keep me").unwrap();
-        fs::write(dir.join("not-a-date.log"), "keep me too").unwrap();
-
-        prune_old_logs(&dir, date(2026, 1, 15));
-
-        assert!(dir.join("readme.txt").exists());
-        assert!(dir.join("not-a-date.log").exists());
-
-        fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn prune_old_logs_on_a_missing_directory_does_nothing() {
-        let dir = scratch("prune-missing");
-        // Deliberately not created - must not panic.
-        prune_old_logs(&dir, date(2026, 1, 15));
     }
 }

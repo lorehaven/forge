@@ -11,7 +11,7 @@ use crate::process;
 use crate::ui;
 use crate::vars::Scope;
 
-fn require_docker() -> Result<()> {
+pub fn require_docker() -> Result<()> {
     if process::capture("docker", &["version", "--format", "{{.Client.Version}}"]).is_err() {
         bail!("docker not found on PATH");
     }
@@ -66,7 +66,7 @@ pub fn start(container: &Container, scope: &Scope) -> Result<()> {
 /// A container with a published port is listening long before it is answering.
 /// The readiness command runs inside the container, so what it reports is the
 /// service's own opinion rather than the port's.
-fn wait_until_ready(container: &Container) -> Result<()> {
+pub fn wait_until_ready(container: &Container) -> Result<()> {
     let address = container.address.as_deref().unwrap_or("");
     let ready_message = if address.is_empty() {
         "ready".to_string()

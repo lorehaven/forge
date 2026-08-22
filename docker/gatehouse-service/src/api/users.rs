@@ -42,7 +42,7 @@ use std::sync::Arc;
 /// `Serialize` and reachable from elsewhere, so "the hash never leaves the
 /// service" should be a property of the type the route names, not of a
 /// derive attribute somebody could remove.
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct UserView {
     pub username: String,
     pub roles: Vec<Role>,
@@ -100,7 +100,7 @@ pub struct ReplacePermissionsRequest {
 /// literally says, which for an admin is `admin` and nothing else. This answers
 /// "which actions may I perform on sage" per service, which is what a UI needs
 /// to decide whether to render a control.
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct Me {
     pub username: String,
     pub roles: Vec<Role>,
@@ -471,9 +471,9 @@ pub fn me_scope() -> actix_web::Scope {
     web::scope("/api/v1/me").service(me)
 }
 
-#[derive(Serialize)]
-struct Problem {
-    error: String,
+#[derive(Serialize, Deserialize)]
+pub struct Problem {
+    pub error: String,
 }
 
 /// A machine-readable reason alongside the status, since "which rule did I

@@ -1,5 +1,5 @@
-use crate::routers::CRATES_STORAGE_ROOT;
 use crate::routers::crates::validate_crate_name;
+use crate::routers::crates_storage_root;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -51,7 +51,7 @@ pub struct IndexDep {
 
 /// Returns a sorted list of all crate names that have an index file.
 pub fn list_crates() -> Vec<String> {
-    let root = PathBuf::from(CRATES_STORAGE_ROOT.as_str()).join("index");
+    let root = PathBuf::from(crates_storage_root()).join("index");
     let mut names: Vec<String> = Vec::new();
 
     // Recursively walks <root>/index/<prefix>/<name>, collecting leaf files (one index file per crate).

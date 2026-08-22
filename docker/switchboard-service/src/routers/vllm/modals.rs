@@ -71,7 +71,7 @@ pub async fn empty_stop_modal() -> impl Responder {
     ))
 }
 
-fn render_launch_modal(
+pub fn render_launch_modal(
     models: Vec<crate::routers::models::Model>,
     query: &LaunchModalQuery,
     gpu: &crate::routers::gpu::monitor::GpuInfo,
@@ -499,7 +499,7 @@ fn close_launch_button() -> Element {
         .text("x")
 }
 
-fn render_stop_modal(id: &str, model: Option<&str>) -> String {
+pub fn render_stop_modal(id: &str, model: Option<&str>) -> String {
     div()
         .attr("id", "confirm-stop-instance-modal")
         .attr("data-testid", "stop-instance-modal")
@@ -583,7 +583,7 @@ fn render_stop_modal(id: &str, model: Option<&str>) -> String {
         .render()
 }
 
-fn launch_fit_note(
+pub fn launch_fit_note(
     model: Option<&crate::routers::models::Model>,
     quantization: &str,
     max_model_len: Option<u32>,
@@ -670,7 +670,7 @@ fn launch_fit_note(
     }
 }
 
-fn launch_gpu_util(
+pub fn launch_gpu_util(
     model: Option<&crate::routers::models::Model>,
     quantization: &str,
     max_model_len: Option<u32>,
@@ -693,7 +693,7 @@ fn launch_gpu_util(
     calculate_minimum_gpu_util(estimate, gpu.total_gb).unwrap_or(0.90)
 }
 
-fn calculate_minimum_gpu_util(
+pub fn calculate_minimum_gpu_util(
     estimate: &crate::routers::models::ModelEstimate,
     total_gpu_gb: f64,
 ) -> Option<f32> {
@@ -718,11 +718,11 @@ fn calculate_minimum_gpu_util(
     Some(round_gpu_util_up(raw).clamp(0.20, 1.0) as f32)
 }
 
-fn round_gpu_util_up(value: f64) -> f64 {
+pub fn round_gpu_util_up(value: f64) -> f64 {
     (value * 20.0).ceil() / 20.0
 }
 
-fn fit_note_icon_class(class: &str) -> &'static str {
+pub fn fit_note_icon_class(class: &str) -> &'static str {
     if class.contains("fit-no") {
         "fa-solid fa-circle-xmark"
     } else if class.contains("fit-warn") {
@@ -732,7 +732,7 @@ fn fit_note_icon_class(class: &str) -> &'static str {
     }
 }
 
-fn find_launch_estimate<'a>(
+pub fn find_launch_estimate<'a>(
     model: &'a crate::routers::models::Model,
     quantization: &str,
     context: Option<u32>,
@@ -766,7 +766,7 @@ fn find_launch_estimate<'a>(
     candidates.first().copied()
 }
 
-fn get_vllm_namespace() -> String {
+pub fn get_vllm_namespace() -> String {
     use crate::routers::vllm::engine::VllmManagementMode;
     match VllmManagementMode::from_env() {
         VllmManagementMode::Kubernetes => std::env::var("VLLM_K8S_NAMESPACE")
@@ -783,7 +783,7 @@ fn get_vllm_namespace() -> String {
     }
 }
 
-fn parse_optional_u32(value: Option<&str>) -> Option<u32> {
+pub fn parse_optional_u32(value: Option<&str>) -> Option<u32> {
     value.and_then(|value| {
         let value = value.trim();
         (!value.is_empty())
@@ -792,7 +792,7 @@ fn parse_optional_u32(value: Option<&str>) -> Option<u32> {
     })
 }
 
-fn parse_optional_f32(value: Option<&str>) -> Option<f32> {
+pub fn parse_optional_f32(value: Option<&str>) -> Option<f32> {
     value.and_then(|value| {
         let value = value.trim();
         (!value.is_empty())

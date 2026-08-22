@@ -104,7 +104,7 @@ pub async fn launch_instance_form(
     }
 }
 
-fn parse_optional_u16(value: Option<&str>) -> Option<u16> {
+pub fn parse_optional_u16(value: Option<&str>) -> Option<u16> {
     value.and_then(|value| {
         let value = value.trim();
         (!value.is_empty())
@@ -113,7 +113,7 @@ fn parse_optional_u16(value: Option<&str>) -> Option<u16> {
     })
 }
 
-fn parse_optional_u32(value: Option<&str>) -> Option<u32> {
+pub fn parse_optional_u32(value: Option<&str>) -> Option<u32> {
     value.and_then(|value| {
         let value = value.trim();
         (!value.is_empty())
@@ -122,7 +122,7 @@ fn parse_optional_u32(value: Option<&str>) -> Option<u32> {
     })
 }
 
-fn parse_optional_f32(value: Option<&str>) -> Option<f32> {
+pub fn parse_optional_f32(value: Option<&str>) -> Option<f32> {
     value.and_then(|value| {
         let value = value.trim();
         (!value.is_empty())

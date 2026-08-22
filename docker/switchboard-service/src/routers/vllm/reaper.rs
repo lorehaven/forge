@@ -20,7 +20,7 @@ pub fn spawn_reaper(engine: Arc<dyn VllmEngine>) {
     });
 }
 
-async fn reap_failed(engine: &Arc<dyn VllmEngine>) {
+pub async fn reap_failed(engine: &Arc<dyn VllmEngine>) {
     let instances = match engine.list_instances().await {
         Ok(instances) => instances,
         Err(err) => {
