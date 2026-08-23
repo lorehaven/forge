@@ -4,6 +4,9 @@ use anvil::cargo_meta::{
 use serde_json::json;
 use std::path::{Path, PathBuf};
 
+use crate::support;
+use support::stable_cwd_lock;
+
 fn package(publish: Option<Vec<String>>) -> WorkspacePackage {
     WorkspacePackage {
         name: "example".to_string(),
@@ -59,6 +62,11 @@ fn relative_dir_errors_when_the_package_is_not_under_the_given_root() {
 
 #[test]
 fn cargo_metadata_runs_real_cargo_and_returns_this_workspace() {
+    // Shells out to real `cargo metadata` with no explicit `--manifest-path`
+    // - see `stable_cwd_lock`'s docs.
+    let _guard = stable_cwd_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let metadata = cargo_metadata().expect("cargo metadata succeeds");
     assert!(metadata["packages"].is_array());
     assert!(metadata["workspace_root"].is_string());
@@ -150,6 +158,11 @@ fn workspace_packages_is_empty_when_workspace_members_is_missing() {
 
 #[test]
 fn resolve_package_finds_this_very_crate_in_the_real_workspace() {
+    // `resolve_package` shells out to real `cargo metadata` with no explicit
+    // `--manifest-path` - see `stable_cwd_lock`'s docs.
+    let _guard = stable_cwd_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let pkg = resolve_package("anvil").expect("anvil is in this workspace");
     assert_eq!(pkg.name, "anvil");
     assert!(pkg.manifest.ends_with("Cargo.toml"));
@@ -157,6 +170,9 @@ fn resolve_package_finds_this_very_crate_in_the_real_workspace() {
 
 #[test]
 fn resolve_package_errors_for_a_name_not_in_the_workspace() {
+    let _guard = stable_cwd_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let error = resolve_package("definitely-not-a-real-crate-name-xyz").unwrap_err();
     assert!(
         error

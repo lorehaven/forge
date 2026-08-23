@@ -71,7 +71,10 @@ pub fn cargo_metadata() -> Result<Value> {
         .context("Failed to execute cargo metadata")?;
 
     if !output.status.success() {
-        anyhow::bail!("cargo metadata failed");
+        anyhow::bail!(
+            "cargo metadata failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
     }
 
     serde_json::from_slice(&output.stdout).context("Failed to parse cargo metadata")
