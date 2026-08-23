@@ -401,7 +401,7 @@ dependencies = [
 
 [[package]]
 name = "anvil"
-version = "0.1.30"
+version = "0.1.31"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -965,7 +965,7 @@ dependencies = [
 
 [[package]]
 name = "conveyor-cli"
-version = "0.3.9"
+version = "0.3.10"
 dependencies = [
  "anyhow",
  "clap",
@@ -995,7 +995,7 @@ dependencies = [
 
 [[package]]
 name = "conveyor-service"
-version = "0.5.23"
+version = "0.5.24"
 dependencies = [
  "actix-web",
  "async-trait",
@@ -1832,7 +1832,7 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "foreman"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "clap",
@@ -1872,7 +1872,7 @@ dependencies = [
 
 [[package]]
 name = "forge-toolbox"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "anyhow",
  "clap",
@@ -1892,7 +1892,7 @@ dependencies = [
 
 [[package]]
 name = "foundry-service"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -2025,7 +2025,7 @@ dependencies = [
 
 [[package]]
 name = "gatehouse-service"
-version = "0.2.16"
+version = "0.2.17"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -3856,7 +3856,7 @@ checksum = "007d8adb5ddab6f8e3f491ac63566a7d5002cc7ed73901f72057943fa71ae1ae"
 
 [[package]]
 name = "pulley"
-version = "0.1.15"
+version = "0.1.16"
 dependencies = [
  "assert_cmd",
  "chrono",
@@ -4331,7 +4331,7 @@ dependencies = [
 
 [[package]]
 name = "riveter"
-version = "0.2.8"
+version = "0.2.9"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -4493,7 +4493,7 @@ checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
 name = "sage-service"
-version = "0.4.11"
+version = "0.4.12"
 dependencies = [
  "actix-multipart",
  "actix-web",
@@ -5272,7 +5272,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "switchboard-service"
-version = "0.4.10"
+version = "0.4.11"
 dependencies = [
  "actix-web",
  "async-trait",
@@ -5986,7 +5986,7 @@ dependencies = [
 
 [[package]]
 name = "warehouse-cli"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -6005,7 +6005,7 @@ dependencies = [
 
 [[package]]
 name = "warehouse-service"
-version = "0.4.10"
+version = "0.4.11"
 dependencies = [
  "actix-web",
  "base64 0.23.1",
@@ -6172,7 +6172,7 @@ checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
 
 [[package]]
 name = "welder"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6428,7 +6428,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "workbench-service"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "actix-web",
  "chrono",
