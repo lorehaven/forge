@@ -1,3 +1,21 @@
+[profile.default]
+# nextest's default test-threads is derived from the host's logical CPU
+# count (`num_cpus`), which on Linux does not read a container's cgroup CPU
+# quota - only the real number of cores the machine has. When the CI
+# container is throttled well below that (a common k8s/docker resource-limit
+# setup), nextest over-subscribes: every test process competes for far fewer
+# real cores than nextest thinks it has, and tokio's own worker-thread setup
+# starves under that contention and panics deep inside its own runtime
+# internals rather than in the test's app code - a different, unrelated test
+# each run, always passing cleanly in isolation. Several distinct services
+# have hit exactly that signature (foreman, conveyor-service,
+# warehouse-service) on the CI image, none of it reproducible locally where
+# the host's real core count matches what nextest sees. Capping this is a
+# provisional fix pending the container's actual CPU/quota numbers - raise it
+# if CI turns out to have more real cores than this, since a lower cap only
+# costs wall-clock time, not correctness.
+test-threads = 4
+
 [test-groups]
 # conveyor-service's and workbench-service's `tests/integration.rs` binaries
 # share one Postgres schema per crate (truncated between tests) and coordinate
