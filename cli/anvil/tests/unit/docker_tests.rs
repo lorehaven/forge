@@ -6,20 +6,17 @@ use anvil::commands::docker::{
 };
 use anvil::config::Config;
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
 
 use crate::support;
 use support::stable_cwd_lock;
 
-/// No other test in this crate's `tests/` suite touches `CARGO_HOME`,
-/// `HOME`, `USERPROFILE`, or `CARGO_REGISTRIES_*` right now, but this
-/// guards them anyway - the same class of cross-test race that broke
-/// other crates' test suites earlier in this effort, and cheap enough
-/// to prevent even where it isn't currently triggered.
-fn env_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-}
+// `CARGO_HOME`/`CARGO_REGISTRIES_*` are process-global just like cwd, and
+// real `cargo metadata` shell-outs elsewhere in this binary (see
+// `stable_cwd_lock`'s docs) depend on them - a test here setting
+// `CARGO_HOME` to a nonexistent path, or unsetting
+// `CARGO_REGISTRIES_ENNOR_INDEX`/`_TOKEN`, would break a concurrently
+// spawned `cargo metadata` child process if it weren't serialized against
+// the very same lock those tests hold.
 
 fn config_from_toml(toml_str: &str) -> Config {
     toml::from_str(toml_str).expect("valid config toml")
@@ -217,7 +214,7 @@ fn env_var_name_for_registry_uppercases_and_replaces_hyphens() {
 
 #[test]
 fn cargo_home_prefers_cargo_home_env_var() {
-    let _guard = env_lock()
+    let _guard = stable_cwd_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     envmnt::set("CARGO_HOME", "/explicit/cargo/home");
@@ -227,7 +224,7 @@ fn cargo_home_prefers_cargo_home_env_var() {
 
 #[test]
 fn cargo_home_falls_back_to_home_joined_with_dot_cargo() {
-    let _guard = env_lock()
+    let _guard = stable_cwd_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let real_home = std::env::var("HOME").ok();
@@ -244,7 +241,7 @@ fn cargo_home_falls_back_to_home_joined_with_dot_cargo() {
 
 #[test]
 fn cargo_registry_index_prefers_the_env_var_override() {
-    let _guard = env_lock()
+    let _guard = stable_cwd_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     envmnt::set(
@@ -261,7 +258,7 @@ fn cargo_registry_index_prefers_the_env_var_override() {
 
 #[test]
 fn cargo_registry_index_falls_back_to_anvil_toml_when_env_is_unset() {
-    let _guard = env_lock()
+    let _guard = stable_cwd_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     envmnt::remove("CARGO_REGISTRIES_ENNOR_INDEX");
@@ -279,7 +276,7 @@ fn cargo_registry_index_falls_back_to_anvil_toml_when_env_is_unset() {
 
 #[test]
 fn cargo_registry_index_is_none_when_nothing_resolves_it() {
-    let _guard = env_lock()
+    let _guard = stable_cwd_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     envmnt::remove("CARGO_REGISTRIES_UNKNOWNREG_INDEX");
@@ -291,7 +288,7 @@ fn cargo_registry_index_is_none_when_nothing_resolves_it() {
 
 #[test]
 fn cargo_registry_token_prefers_the_env_var_and_ignores_blank_values() {
-    let _guard = env_lock()
+    let _guard = stable_cwd_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     envmnt::set("CARGO_REGISTRIES_ENNOR_TOKEN", "   ");
