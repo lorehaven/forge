@@ -130,9 +130,9 @@ dependencies = [
 
 [[package]]
 name = "actix-rt"
-version = "2.11.0"
+version = "2.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92589714878ca59a7626ea19734f0e07a6a875197eec751bb5d3f99e64998c63"
+checksum = "c25da0441692de4ad67950cb7ed6c9ce4b669a6609525e547566c2e1ab4d695c"
 dependencies = [
  "futures-core",
  "tokio",
@@ -140,9 +140,9 @@ dependencies = [
 
 [[package]]
 name = "actix-server"
-version = "2.7.0"
+version = "2.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3716aae056e2f869b7b5cfd8a08fcf98890f8455bec61d69c7dff5d8576f9d2b"
+checksum = "cc8dcb6fa613d47c3b764a7dc672b4b31f25751dcbcf542f7b16f3e1f700044c"
 dependencies = [
  "actix-rt",
  "actix-service",
@@ -196,9 +196,9 @@ dependencies = [
 
 [[package]]
 name = "actix-web"
-version = "4.14.1"
+version = "4.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58356675d8c86d2e720480645a0316808471a62d0073f6a3b98810a5e0ca0e73"
+checksum = "bbacab3593b6b4f7be815076fc52d60a83c873426824675417e2abdd229e2e36"
 dependencies = [
  "actix-codec",
  "actix-http",
@@ -752,9 +752,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.4.3"
+version = "1.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "509591b7bcd67f4ef775afad7662703b4935daaa6ec0e5605cfb1090b32a2b6d"
+checksum = "0ad534f4357a5264cce5019c989cf66a4f0dc4e0d1b1d15f8aacec0ff7360273"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -1128,9 +1128,9 @@ checksum = "338089f42c427b86394a5ee60ff321da23a5c89c9d89514c829687b26359fcff"
 
 [[package]]
 name = "crc32fast"
-version = "1.5.0"
+version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9481c1c90cbf2ac953f07c8d4a58aa3945c425b7185c9154d67a65e4230da511"
+checksum = "8498c871161e1742aaa9d52551b2d6ebdd4c3d45a3be423e3728f33b955be550"
 dependencies = [
  "cfg-if",
 ]
@@ -1632,9 +1632,9 @@ checksum = "b04dc5a38e4f151a79d9f2451ae6037fb6eaf5cba34771f44781f80e508498e3"
 
 [[package]]
 name = "either"
-version = "1.17.0"
+version = "1.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e5e8f6c15a24b9a3ee5efec809ccd006d3b30e8b3bb63c39af737c7f87daa1d"
+checksum = "252afb9ae5eaa683babdc6a068b3f5726eb19e05070c731f9b2a23a7c3e8ed34"
 dependencies = [
  "serde",
 ]
@@ -1712,7 +1712,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2292,9 +2292,9 @@ dependencies = [
 
 [[package]]
 name = "h2"
-version = "0.4.16"
+version = "0.4.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a9f37a958b41b3b19ee2707c06439c0e9e547e847223eb791ecb0cb821c65e27"
+checksum = "839c0e8a181239723652be9062bb56ca5bf5f64011f73b623f6f4fc59086a228"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -2494,7 +2494,7 @@ dependencies = [
  "bytes",
  "futures-channel",
  "futures-core",
- "h2 0.4.16",
+ "h2 0.4.18",
  "http 1.5.0",
  "http-body",
  "httparse",
@@ -2653,9 +2653,9 @@ checksum = "e590f038c1464a96894fd6d10127e90a8be4509f56ff7ecef851b15cee0b7caa"
 
 [[package]]
 name = "icu_provider"
-version = "2.3.0"
+version = "2.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92a7ed671a6aad807a8651a2e1782a6598fda9ce5185dd8158549e95a91c6428"
+checksum = "d27bbb9d3abbefac45d55f647c9de1d44aafcd1186eb91879afef17c396c3e73"
 dependencies = [
  "displaydoc",
  "icu_locale_core",
@@ -3162,9 +3162,9 @@ dependencies = [
 
 [[package]]
 name = "log"
-version = "0.4.33"
+version = "0.4.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
+checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "lopdf"
@@ -3392,7 +3392,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3873,9 +3873,9 @@ dependencies = [
 
 [[package]]
 name = "quench-auth"
-version = "0.3.10"
+version = "0.3.11"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "a1c365fac9c91c5d8066312af5cad99158914ba51f5dc8e7c249424eb21299f6"
+checksum = "3840cb979f19d5b8d5fd5b828678a1f150b7f7fb314f67afec2a8180b5322ef4"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -3905,9 +3905,9 @@ dependencies = [
 
 [[package]]
 name = "quench-cache"
-version = "0.1.7"
+version = "0.1.8"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "7a77c828097460e192dd4872be6de99e6941742f7ac756a4ef34c09cefe7c23b"
+checksum = "5039c0e53a081390d74e646548c19abe5e05bb2562ab507af05dd50e9716d9fe"
 dependencies = [
  "dashmap",
  "redis",
@@ -3918,9 +3918,9 @@ dependencies = [
 
 [[package]]
 name = "quench-cli"
-version = "0.1.3"
+version = "0.1.4"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "0b98345e4d38492ac3c80dc77bf5c7ea5fd24343f117cd8266709aed69f4a494"
+checksum = "5f72db994f10c85fcf2ca447a7aa5faedb3fb890d225c8199284711acad53c5b"
 dependencies = [
  "crossterm",
  "rustyline",
@@ -3929,9 +3929,9 @@ dependencies = [
 
 [[package]]
 name = "quench-client"
-version = "0.2.2"
+version = "0.2.3"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "652ff99492043a377dba2e3bd18b28a70f4390e2d62debd2a0dd96786ea40da1"
+checksum = "033772f912d8ec6235f14e8cf18a72ea2d2c16f5fc24e29a3708e3f8e6c0eabc"
 dependencies = [
  "anyhow",
  "reqwest",
@@ -3943,9 +3943,9 @@ dependencies = [
 
 [[package]]
 name = "quench-config"
-version = "0.1.2"
+version = "0.1.3"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "ca18f3b2fc9af42bb8f4b3176300bad604604a65e51ab17b298e14726df9534f"
+checksum = "c1cfc5fb6b768d15821d0ceb32caad8c90c2c79c476f2081478c2662e2340074"
 dependencies = [
  "serde",
  "serde_json",
@@ -3956,9 +3956,9 @@ dependencies = [
 
 [[package]]
 name = "quench-db"
-version = "0.2.1"
+version = "0.2.2"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "290fc44004ecf8a18053e4060d09b84a6be40668b8d134d9ba882107e34e186a"
+checksum = "f82d220dcdc37f37cf235e62e530d03b961ad1e3acba468c0c3f2abb1c37f604"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3977,9 +3977,9 @@ dependencies = [
 
 [[package]]
 name = "quench-starter"
-version = "0.3.9"
+version = "0.3.10"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "d528b7f4c3015199978f4ca41aad09125f31e095b09957f2adb499dbb8bead64"
+checksum = "11798258be7b8e1942cdcbf18d22f94db08f70ef6685c5c80b7c9940f0efd26c"
 dependencies = [
  "actix-service",
  "actix-web",
@@ -4002,9 +4002,9 @@ dependencies = [
 
 [[package]]
 name = "quench-web"
-version = "0.1.11"
+version = "0.1.12"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "931f7a2a9be35987706a4c196e5dd1bdbd572b22407ada9ea845c8e23e300315"
+checksum = "cb6dabdb21b68ddb8a8d9130ac81206ef2d10c0e720d7e7d4c99ae0f2e8e7c66"
 dependencies = [
  "anyhow",
  "fluent-syntax",
@@ -4017,9 +4017,9 @@ dependencies = [
 
 [[package]]
 name = "quench-web-components"
-version = "0.1.6"
+version = "0.1.7"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "3ad70e4c8b969b2e4f8ceecf42a1c71701d5b0a95d868c5a6ee1440f2113c4a0"
+checksum = "6c3cca99d048519aa5f11e2c73637fc1d03cf3c90ad8547a5001a1a55013c8ad"
 dependencies = [
  "quench-web",
  "strum",
@@ -4079,7 +4079,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4378,7 +4378,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4437,7 +4437,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4448,9 +4448,9 @@ checksum = "f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f"
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.14"
+version = "0.103.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0527518605e68109d875e248ea259b6758801cf165e4b2c2733ae3b51f12535a"
+checksum = "f3c3cf1d8b1e7d4927e2d154c3fcb02979afb9939629c62cd9048d4f07b60ac2"
 dependencies = [
  "aws-lc-rs",
  "ring",
@@ -5381,10 +5381,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5412,7 +5412,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "230a1b821ccbd75b185820a1f1ff7b14d21da1e442e22c0863ea5f08771a8874"
 dependencies = [
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5929,9 +5929,9 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "uuid"
-version = "1.24.1"
+version = "1.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2cefc03fd367c0c6d4305de1b312cf00248c4114f4a0418ce6a6af769e3b0bd9"
+checksum = "f053576934f05a761a402421fbbe3d425d9366f75f978806a037b3ca481abecc"
 dependencies = [
  "getrandom 0.4.3",
  "js-sys",
@@ -6229,7 +6229,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6566,9 +6566,9 @@ dependencies = [
 
 [[package]]
 name = "zerovec"
-version = "0.11.7"
+version = "0.11.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94b5c6b5976d66c1d703c4fd17d3f5e43c8cedaacf604961b171adc7130896d8"
+checksum = "bb0464e17806c1d976d5cba29399c7f08e516e279e2ba493f63123b5fca67dd8"
 dependencies = [
  "yoke",
  "zerofrom",
@@ -6577,9 +6577,9 @@ dependencies = [
 
 [[package]]
 name = "zerovec-derive"
-version = "0.11.5"
+version = "0.11.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f212a141d820099d57ffafb9569be9617a6f27d3dc881fbee8fb56642f917a9"
+checksum = "34df6fc39dbd26ddc9c10e6a2984476e13acce22e64e4487636ef494369225da"
 dependencies = [
  "proc-macro2",
  "quote",
