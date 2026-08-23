@@ -8,7 +8,7 @@ use anvil::config::Config;
 use std::path::PathBuf;
 
 use crate::support;
-use support::stable_cwd_lock;
+use support::{EnvGuard, stable_cwd_lock};
 
 // `CARGO_HOME`/`CARGO_REGISTRIES_*` are process-global just like cwd, and
 // real `cargo metadata` shell-outs elsewhere in this binary (see
@@ -217,9 +217,8 @@ fn cargo_home_prefers_cargo_home_env_var() {
     let _guard = stable_cwd_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::set("CARGO_HOME", "/explicit/cargo/home");
+    let _env = EnvGuard::set("CARGO_HOME", "/explicit/cargo/home");
     assert_eq!(cargo_home(), Some(PathBuf::from("/explicit/cargo/home")));
-    envmnt::remove("CARGO_HOME");
 }
 
 #[test]
@@ -227,16 +226,10 @@ fn cargo_home_falls_back_to_home_joined_with_dot_cargo() {
     let _guard = stable_cwd_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let real_home = std::env::var("HOME").ok();
-    envmnt::remove("CARGO_HOME");
-    envmnt::set("HOME", "/home/example");
+    let _cargo_home = EnvGuard::unset("CARGO_HOME");
+    let _home = EnvGuard::set("HOME", "/home/example");
 
     assert_eq!(cargo_home(), Some(PathBuf::from("/home/example/.cargo")));
-
-    match real_home {
-        Some(home) => envmnt::set("HOME", home),
-        None => envmnt::remove("HOME"),
-    }
 }
 
 #[test]
@@ -244,7 +237,7 @@ fn cargo_registry_index_prefers_the_env_var_override() {
     let _guard = stable_cwd_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::set(
+    let _env = EnvGuard::set(
         "CARGO_REGISTRIES_ENNOR_INDEX",
         "sparse+https://env-wins/index/",
     );
@@ -253,7 +246,6 @@ fn cargo_registry_index_prefers_the_env_var_override() {
         cargo_registry_index(&config, "ennor"),
         Some("sparse+https://env-wins/index/".to_string())
     );
-    envmnt::remove("CARGO_REGISTRIES_ENNOR_INDEX");
 }
 
 #[test]
@@ -261,7 +253,7 @@ fn cargo_registry_index_falls_back_to_anvil_toml_when_env_is_unset() {
     let _guard = stable_cwd_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::remove("CARGO_REGISTRIES_ENNOR_INDEX");
+    let _env = EnvGuard::unset("CARGO_REGISTRIES_ENNOR_INDEX");
     let config = config_from_toml(
         r#"
         [docker]
@@ -279,11 +271,10 @@ fn cargo_registry_index_is_none_when_nothing_resolves_it() {
     let _guard = stable_cwd_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::remove("CARGO_REGISTRIES_UNKNOWNREG_INDEX");
-    envmnt::set("CARGO_HOME", "/does/not/exist/cargo/home");
+    let _unknownreg = EnvGuard::unset("CARGO_REGISTRIES_UNKNOWNREG_INDEX");
+    let _cargo_home = EnvGuard::set("CARGO_HOME", "/does/not/exist/cargo/home");
     let config = sample_config();
     assert_eq!(cargo_registry_index(&config, "unknownreg"), None);
-    envmnt::remove("CARGO_HOME");
 }
 
 #[test]
@@ -291,20 +282,18 @@ fn cargo_registry_token_prefers_the_env_var_and_ignores_blank_values() {
     let _guard = stable_cwd_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::set("CARGO_REGISTRIES_ENNOR_TOKEN", "   ");
-    envmnt::set("CARGO_HOME", "/does/not/exist/cargo/home");
-    // A blank env var is treated as unset, so this falls through to the
-    // (missing) private registry config file and resolves to None.
-    assert_eq!(cargo_registry_token("ennor"), None);
-
-    envmnt::set("CARGO_REGISTRIES_ENNOR_TOKEN", "real-token");
+    let _cargo_home = EnvGuard::set("CARGO_HOME", "/does/not/exist/cargo/home");
+    {
+        let _token = EnvGuard::set("CARGO_REGISTRIES_ENNOR_TOKEN", "   ");
+        // A blank env var is treated as unset, so this falls through to the
+        // (missing) private registry config file and resolves to None.
+        assert_eq!(cargo_registry_token("ennor"), None);
+    }
+    let _token = EnvGuard::set("CARGO_REGISTRIES_ENNOR_TOKEN", "real-token");
     assert_eq!(
         cargo_registry_token("ennor"),
         Some("real-token".to_string())
     );
-
-    envmnt::remove("CARGO_REGISTRIES_ENNOR_TOKEN");
-    envmnt::remove("CARGO_HOME");
 }
 
 #[test]
