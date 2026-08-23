@@ -69,15 +69,45 @@ fn ensure_tool_installed_errors_with_the_install_hint_for_a_missing_binary() {
 
 #[test]
 fn previous_version_rev_finds_the_commit_before_the_last_change_to_a_tracked_file() {
-    // `git log` (no `-C`/`current_dir` override) needs cwd inside this
-    // repo to find it at all - see `stable_cwd_lock`'s docs.
+    // `git log` (no `-C`/`current_dir` override) needs cwd inside a git
+    // repo to find it at all - see `stable_cwd_lock`'s docs. Built against
+    // its own throwaway repo rather than this checkout: conveyor clones
+    // shallow by default (see .conveyor.toml), so the real repo can have
+    // just one commit behind a given file, which `--skip=1` can't land on.
     let _guard = stable_cwd_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    // The workspace root Cargo.toml has multiple commits behind it in
-    // this repo's history, so `--skip=1` always has something to land on.
-    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../Cargo.toml");
-    let rev = previous_version_rev(&manifest).expect("has an earlier commit");
+
+    let dir = tempfile::tempdir().unwrap();
+    let git = |args: &[&str]| {
+        assert!(
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(dir.path())
+                .status()
+                .unwrap()
+                .success(),
+            "git {args:?} failed"
+        );
+    };
+    let manifest = dir.path().join("Cargo.toml");
+
+    git(&["init", "-q"]);
+    git(&["config", "user.email", "anvil-test@example.com"]);
+    git(&["config", "user.name", "anvil-test"]);
+    std::fs::write(&manifest, "[package]\nname = \"a\"\nversion = \"0.1.0\"\n").unwrap();
+    git(&["add", "Cargo.toml"]);
+    git(&["commit", "-q", "-m", "first"]);
+    std::fs::write(&manifest, "[package]\nname = \"a\"\nversion = \"0.2.0\"\n").unwrap();
+    git(&["add", "Cargo.toml"]);
+    git(&["commit", "-q", "-m", "bump"]);
+
+    let cwd = std::env::current_dir().unwrap();
+    std::env::set_current_dir(dir.path()).unwrap();
+    let rev = previous_version_rev(&manifest);
+    std::env::set_current_dir(cwd).unwrap();
+
+    let rev = rev.expect("has an earlier commit");
     assert_eq!(rev.len(), 40, "a full git SHA");
 }
 
