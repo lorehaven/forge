@@ -265,10 +265,19 @@ pub fn clear_echoed_hotkey() {
 }
 
 pub fn file_snapshot(root: impl AsRef<Path>) -> Result<BTreeMap<String, u128>> {
+    let root = root.as_ref();
     let mut snapshot = BTreeMap::new();
-    let walker = WalkDir::new(root)
-        .into_iter()
-        .filter_entry(|e| should_watch_path(e.path()));
+    // Filter on the path relative to `root`, not the absolute entry path -
+    // otherwise an ignored name sitting in an ancestor of `root` itself (e.g.
+    // a CI checkout under `/tmp/conveyor/...`) would match and exclude
+    // everything, rather than only the ignored directories within the tree
+    // actually being watched.
+    let walker = WalkDir::new(root).into_iter().filter_entry(|e| {
+        e.path()
+            .strip_prefix(root)
+            .map(should_watch_path)
+            .unwrap_or(true)
+    });
 
     for entry in walker {
         let entry = entry?;
