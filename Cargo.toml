@@ -62,7 +62,8 @@ quench-cli = { registry = "ennor", version = "0.1.4" }
 quench-client = { registry = "ennor", version = "0.2.3" }
 quench-config = { registry = "ennor", version = "0.1.3" }
 quench-db = { registry = "ennor", version = "0.2.2" }
-quench-starter = { registry = "ennor", version = "0.3.10" }
+quench-log = { registry = "ennor", version = "0.1.0" }
+quench-starter = { registry = "ennor", version = "0.3.11" }
 quench-web = { registry = "ennor", version = "0.1.12" }
 quench-web-components = { registry = "ennor", version = "0.1.7" }
 redis = { version = "1.6", features = ["tokio-comp", "cluster-async", "connection-manager"] }

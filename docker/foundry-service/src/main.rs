@@ -79,11 +79,7 @@ enum Command {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let log_level = std::env::var("RUST_LOG")
-        .ok()
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(tracing::Level::INFO);
-    tracing_subscriber::fmt().with_max_level(log_level).init();
+    quench_log::init();
 
     let cli = Cli::parse();
     let command = cli.command.unwrap_or_default();
