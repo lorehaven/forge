@@ -272,11 +272,9 @@ pub fn file_snapshot(root: impl AsRef<Path>) -> Result<BTreeMap<String, u128>> {
     // a CI checkout under `/tmp/conveyor/...`) would match and exclude
     // everything, rather than only the ignored directories within the tree
     // actually being watched.
-    let walker = WalkDir::new(root).into_iter().filter_entry(|e| {
-        e.path()
-            .strip_prefix(root)
-            .map_or(true, should_watch_path)
-    });
+    let walker = WalkDir::new(root)
+        .into_iter()
+        .filter_entry(|e| e.path().strip_prefix(root).map_or(true, should_watch_path));
 
     for entry in walker {
         let entry = entry?;
