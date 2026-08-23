@@ -13,13 +13,29 @@
 #![allow(dead_code)]
 
 use std::sync::OnceLock;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, MutexGuard};
 
 /// Guards `SERVICE_AUTH_ENABLED`, read by `JwtConfig`/`SubjectClaims` and
 /// toggled by `ui::tests` and `api::users::tests`.
 pub fn service_auth_env_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
+}
+
+/// Holds [`service_auth_env_lock`] and pins `SERVICE_AUTH_ENABLED` to
+/// "false" for the guard's lifetime.
+///
+/// Every module in this binary that builds a `JwtConfig::for_tests()` and
+/// relies on its bypass identity (auth disabled by default) must hold this
+/// guard, not just the modules that flip the var to "true" - the lock only
+/// protects against a race if every reader of the assumed default also
+/// takes it. Without this, a test elsewhere in the same process (they all
+/// share one env) can flip `SERVICE_AUTH_ENABLED` to "true" mid-request and
+/// turn an expected 200 into a login redirect at random.
+pub async fn auth_disabled_guard() -> MutexGuard<'static, ()> {
+    let guard = service_auth_env_lock().lock().await;
+    unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", "false") };
+    guard
 }
 
 /// `GATEHOUSE_KEY_ENCRYPTION_KEY` is a fixed env var name read by several

@@ -3,6 +3,7 @@ use actix_web::{App, HttpResponse, test as actix_test, web};
 use gatehouse_service::api::auth::user_scope;
 use gatehouse_service::catalog::PermissionCatalog;
 use gatehouse_service::realm::{self, RealmError};
+use gatehouse_service::test_support::auth_disabled_guard;
 use gatehouse_service::ui::pages::admin::*;
 use quench_auth::prelude::{Claims, JwtConfig, Permissions, Role, SessionDb, User};
 use quench_db::prelude::Db;
@@ -438,6 +439,7 @@ async fn users_page_redirects_to_login_when_not_signed_in() {
 
 #[actix_web::test]
 async fn users_page_renders_for_the_bypass_admin() {
+    let _guard = auth_disabled_guard().await;
     let db = db().await;
     seed_user(&db, "admin", vec![Role::Admin], &[]).await;
     let app = actix_test::init_service(
@@ -456,6 +458,7 @@ async fn users_page_renders_for_the_bypass_admin() {
 
 #[actix_web::test]
 async fn users_page_slash_renders_for_the_bypass_admin() {
+    let _guard = auth_disabled_guard().await;
     let db = db().await;
     seed_user(&db, "admin", vec![Role::Admin], &[]).await;
     let app = actix_test::init_service(
@@ -474,6 +477,7 @@ async fn users_page_slash_renders_for_the_bypass_admin() {
 
 #[actix_web::test]
 async fn edit_user_renders_a_known_user_and_404s_an_unknown_one() {
+    let _guard = auth_disabled_guard().await;
     let db = db().await;
     seed_user(&db, "admin", vec![Role::Admin], &[]).await;
     let app = actix_test::init_service(
@@ -499,6 +503,7 @@ async fn edit_user_renders_a_known_user_and_404s_an_unknown_one() {
 
 #[actix_web::test]
 async fn create_user_creates_a_user_and_redirects_to_its_editor() {
+    let _guard = auth_disabled_guard().await;
     let db = db().await;
     seed_user(&db, "admin", vec![Role::Admin], &[]).await;
     let app = actix_test::init_service(
@@ -531,6 +536,7 @@ async fn create_user_creates_a_user_and_redirects_to_its_editor() {
 
 #[actix_web::test]
 async fn create_user_reports_a_duplicate_username_via_the_list_redirect() {
+    let _guard = auth_disabled_guard().await;
     let db = db().await;
     seed_user(&db, "admin", vec![Role::Admin], &[]).await;
     seed_user(&db, "brandnew", vec![Role::User], &[]).await;
@@ -563,6 +569,7 @@ async fn create_user_reports_a_duplicate_username_via_the_list_redirect() {
 
 #[actix_web::test]
 async fn save_user_updates_permissions_via_the_checkbox_matrix() {
+    let _guard = auth_disabled_guard().await;
     let db = db().await;
     seed_user(&db, "admin", vec![Role::Admin], &[]).await;
     seed_user(&db, "target", vec![Role::User], &[]).await;
@@ -592,6 +599,7 @@ async fn save_user_updates_permissions_via_the_checkbox_matrix() {
 
 #[actix_web::test]
 async fn save_user_reports_not_found_for_an_unknown_target() {
+    let _guard = auth_disabled_guard().await;
     let db = db().await;
     seed_user(&db, "admin", vec![Role::Admin], &[]).await;
     let app = actix_test::init_service(
@@ -620,6 +628,7 @@ async fn save_user_reports_not_found_for_an_unknown_target() {
 
 #[actix_web::test]
 async fn apply_template_reports_an_unknown_template() {
+    let _guard = auth_disabled_guard().await;
     let db = db().await;
     seed_user(&db, "admin", vec![Role::Admin], &[]).await;
     seed_user(&db, "target", vec![Role::User], &[]).await;
@@ -642,6 +651,7 @@ async fn apply_template_reports_an_unknown_template() {
 
 #[actix_web::test]
 async fn disable_user_then_enable_user_round_trip() {
+    let _guard = auth_disabled_guard().await;
     let db = db().await;
     seed_user(&db, "admin", vec![Role::Admin], &[]).await;
     seed_user(&db, "target", vec![Role::User], &[]).await;
@@ -676,6 +686,7 @@ async fn disable_user_then_enable_user_round_trip() {
 
 #[actix_web::test]
 async fn disable_user_rejects_disabling_yourself() {
+    let _guard = auth_disabled_guard().await;
     let db = db().await;
     seed_user(&db, "admin", vec![Role::Admin], &[]).await;
     let app = actix_test::init_service(
@@ -701,6 +712,7 @@ async fn disable_user_rejects_disabling_yourself() {
 
 #[actix_web::test]
 async fn unlock_user_clears_a_lockout() {
+    let _guard = auth_disabled_guard().await;
     let db = db().await;
     seed_user(&db, "admin", vec![Role::Admin], &[]).await;
     seed_user(&db, "target", vec![Role::User], &[]).await;
@@ -732,6 +744,7 @@ async fn unlock_user_clears_a_lockout() {
 
 #[actix_web::test]
 async fn disable_user_mfa_turns_it_off() {
+    let _guard = auth_disabled_guard().await;
     let db = db().await;
     seed_user(&db, "admin", vec![Role::Admin], &[]).await;
     seed_user(&db, "target", vec![Role::User], &[]).await;
@@ -758,6 +771,7 @@ async fn disable_user_mfa_turns_it_off() {
 
 #[actix_web::test]
 async fn delete_user_removes_someone_else_but_not_yourself() {
+    let _guard = auth_disabled_guard().await;
     let db = db().await;
     seed_user(&db, "admin", vec![Role::Admin], &[]).await;
     seed_user(&db, "target", vec![Role::User], &[]).await;

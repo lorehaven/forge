@@ -2,7 +2,7 @@ use actix_web::body::to_bytes;
 use actix_web::{App, HttpResponse, test as actix_test, web};
 use gatehouse_service::catalog::PermissionCatalog;
 use gatehouse_service::realm::{self, RealmError, begin_mfa_enrollment};
-use gatehouse_service::test_support::TEST_KEY_MATERIAL;
+use gatehouse_service::test_support::{TEST_KEY_MATERIAL, auth_disabled_guard};
 use gatehouse_service::ui::pages::account::{
     Notice, account_page, error_page, known_error_key, mfa_disable, mfa_enroll_page,
     mfa_enroll_submit, notice_banner, render_account_page, render_mfa_enroll_page, save_account,
@@ -165,6 +165,7 @@ async fn account_page_redirects_to_login_when_not_signed_in() {
 
 #[actix_web::test]
 async fn account_page_renders_the_bypass_user_s_profile() {
+    let _guard = auth_disabled_guard().await;
     let db = db().await;
     seed_user(&db, "admin").await;
     let app = actix_test::init_service(
@@ -181,6 +182,7 @@ async fn account_page_renders_the_bypass_user_s_profile() {
 
 #[actix_web::test]
 async fn save_account_updates_the_profile_and_redirects() {
+    let _guard = auth_disabled_guard().await;
     let db = db().await;
     seed_user(&db, "admin").await;
     let app = actix_test::init_service(
@@ -209,6 +211,7 @@ async fn save_account_updates_the_profile_and_redirects() {
 
 #[actix_web::test]
 async fn mfa_enroll_page_renders_a_fresh_secret() {
+    let _guard = auth_disabled_guard().await;
     let app = actix_test::init_service(
         App::new()
             .app_data(web::Data::new(JwtConfig::for_tests()))
@@ -227,6 +230,7 @@ async fn mfa_enroll_page_renders_a_fresh_secret() {
 
 #[actix_web::test]
 async fn mfa_enroll_submit_rejects_a_wrong_code() {
+    let _guard = auth_disabled_guard().await;
     with_key();
     let db = db().await;
     seed_user(&db, "admin").await;
@@ -253,6 +257,7 @@ async fn mfa_enroll_submit_rejects_a_wrong_code() {
 
 #[actix_web::test]
 async fn mfa_enroll_submit_enables_mfa_with_the_right_code() {
+    let _guard = auth_disabled_guard().await;
     with_key();
     let db = db().await;
     seed_user(&db, "admin").await;
@@ -282,6 +287,7 @@ async fn mfa_enroll_submit_enables_mfa_with_the_right_code() {
 
 #[actix_web::test]
 async fn mfa_disable_turns_mfa_back_off() {
+    let _guard = auth_disabled_guard().await;
     let db = db().await;
     seed_user(&db, "admin").await;
     let app = actix_test::init_service(
