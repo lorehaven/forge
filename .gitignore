@@ -8,6 +8,8 @@
 .claude/
 .warehouse/
 .welder/
+!cli/welder/.welder/
+!cli/welder/.welder/config.toml
 /vllm/
 plans/
 
