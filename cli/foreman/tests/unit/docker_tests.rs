@@ -59,10 +59,28 @@ fn container_name_uses_the_override_when_set() {
 }
 
 #[test]
-fn require_docker_succeeds_when_docker_is_on_path() {
-    // This sandbox has a real docker daemon on PATH (used elsewhere in this
-    // workspace's own test setup), so this is safe to run for real.
-    require_docker().expect("docker on PATH");
+fn require_docker_agrees_with_whether_docker_is_actually_on_path() {
+    // Some dev sandboxes have a real docker daemon on PATH; the CI build
+    // image (`ci/rust-builder`) deliberately does not - it only compiles and
+    // tests the workspace, it never runs containers. So this can't assume
+    // either way; it checks `require_docker()` against the real environment
+    // instead, the same way `startup_validate_tests.rs` treats `which`
+    // lookups for optional tools.
+    let docker_on_path = std::process::Command::new("docker")
+        .arg("--version")
+        .output()
+        .is_ok_and(|o| o.status.success());
+
+    match require_docker() {
+        Ok(()) => assert!(
+            docker_on_path,
+            "require_docker() succeeded but docker isn't actually on PATH"
+        ),
+        Err(_) => assert!(
+            !docker_on_path,
+            "require_docker() failed but docker is actually on PATH"
+        ),
+    }
 }
 
 #[test]
