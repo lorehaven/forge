@@ -60,7 +60,7 @@ pub async fn entries(storage: web::Path<String>, query: web::Query<ListQuery>) -
     let storage_name = storage.into_inner();
     let storage = match storage_or_error(&storage_name) {
         Ok(storage) => storage,
-        Err(response) => return response,
+        Err(response) => return *response,
     };
 
     let prefix = query.prefix.clone().unwrap_or_default();

@@ -7,6 +7,12 @@ pub fn dry_run(job: &Job) -> Result<bool, Box<dyn std::error::Error>> {
     println!("Executing dry-run");
 
     let mut cmd = Command::new("rsync");
+    // Pinned rather than inherited: src and dest are already absolute-or-as-given
+    // in every argument below, so this is not for resolving them - it is so
+    // rsync's own `getcwd()` never depends on whatever this process's ambient
+    // working directory happens to be at the moment it is spawned. Two jobs
+    // never race on it, since each pins to its own source.
+    cmd.current_dir(&job.src);
     cmd.arg("-avz")
         .arg("--dry-run")
         .arg("--itemize-changes")
@@ -84,6 +90,8 @@ pub fn update(job: &Job) -> Result<(), Box<dyn std::error::Error>> {
     println!("Executing update");
 
     let mut cmd = Command::new("rsync");
+    // See the matching comment in `dry_run`.
+    cmd.current_dir(&job.src);
     cmd.arg("-avzu").arg("--progress");
 
     if job.delete {

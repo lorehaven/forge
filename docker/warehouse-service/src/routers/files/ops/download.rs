@@ -29,7 +29,7 @@ pub async fn handle(storage: web::Path<String>, query: web::Query<FileQuery>) ->
     let storage_name = storage.into_inner();
     let (_, target) = match target_or_error(&storage_name, &query.path).await {
         Ok(resolved) => resolved,
-        Err(response) => return response,
+        Err(response) => return *response,
     };
 
     let metadata = match tokio::fs::metadata(&target).await {
@@ -64,7 +64,7 @@ pub async fn head(storage: web::Path<String>, query: web::Query<FileQuery>) -> i
     let storage_name = storage.into_inner();
     let (_, target) = match target_or_error(&storage_name, &query.path).await {
         Ok(resolved) => resolved,
-        Err(response) => return response,
+        Err(response) => return *response,
     };
 
     match tokio::fs::metadata(&target).await {

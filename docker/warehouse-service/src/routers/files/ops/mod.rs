@@ -23,12 +23,18 @@ pub fn not_found(message: &str) -> HttpResponse {
 /// A disabled feature answers the same 404 as an unknown storage, deliberately:
 /// whether this deployment *could* serve files is not something an unauthorised
 /// caller learns by asking.
-pub fn storage_or_error(name: &str) -> Result<&'static Storage, HttpResponse> {
+///
+/// Boxed: `HttpResponse` grew past clippy's `result_large_err` threshold, and
+/// every caller already only moves the error once, straight into a `return` -
+/// boxing it costs one allocation on a path that was about to answer with an
+/// HTTP response anyway.
+pub fn storage_or_error(name: &str) -> Result<&'static Storage, Box<HttpResponse>> {
     if !crate::routers::files_enabled() {
-        return Err(not_found("file storage is not enabled"));
+        return Err(Box::new(not_found("file storage is not enabled")));
     }
 
-    super::storage(name).ok_or_else(|| not_found(&format!("no file storage named `{name}`")))
+    super::storage(name)
+        .ok_or_else(|| Box::new(not_found(&format!("no file storage named `{name}`"))))
 }
 
 /// The storage and the resolved on-disk path for a `?path=` request.
@@ -39,7 +45,7 @@ pub fn storage_or_error(name: &str) -> Result<&'static Storage, HttpResponse> {
 pub async fn target_or_error(
     storage_name: &str,
     path: &str,
-) -> Result<(&'static Storage, PathBuf), HttpResponse> {
+) -> Result<(&'static Storage, PathBuf), Box<HttpResponse>> {
     let storage = storage_or_error(storage_name)?;
 
     let target = super::resolve(storage, path).map_err(|why| {
@@ -49,7 +55,7 @@ pub async fn target_or_error(
             PathError::Empty => StatusCode::BAD_REQUEST,
             _ => StatusCode::FORBIDDEN,
         };
-        error(status, why.message())
+        Box::new(error(status, why.message()))
     })?;
 
     if !super::confined(&storage.root, &target).await {
@@ -57,10 +63,10 @@ pub async fn target_or_error(
             "refused `{path}` in storage `{}`: resolves outside the storage root",
             storage.name
         );
-        return Err(error(
+        return Err(Box::new(error(
             StatusCode::FORBIDDEN,
             "path resolves outside the storage",
-        ));
+        )));
     }
 
     Ok((storage, target))

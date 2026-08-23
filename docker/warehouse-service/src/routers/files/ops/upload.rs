@@ -35,7 +35,7 @@ pub async fn handle(
         // The body is deliberately not drained. A rejected upload should stop
         // costing bandwidth at the moment it is rejected, not after the client
         // has finished sending a file that is going nowhere.
-        Err(response) => return response,
+        Err(response) => return *response,
     };
 
     if let Some(parent) = target.parent()
