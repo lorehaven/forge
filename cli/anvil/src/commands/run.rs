@@ -275,8 +275,7 @@ pub fn file_snapshot(root: impl AsRef<Path>) -> Result<BTreeMap<String, u128>> {
     let walker = WalkDir::new(root).into_iter().filter_entry(|e| {
         e.path()
             .strip_prefix(root)
-            .map(should_watch_path)
-            .unwrap_or(true)
+            .map_or(true, should_watch_path)
     });
 
     for entry in walker {
