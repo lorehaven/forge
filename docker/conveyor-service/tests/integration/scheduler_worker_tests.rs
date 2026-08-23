@@ -67,6 +67,7 @@ async fn queue_run(db: &Db, repo_id: &str, git_ref: &str, sha: &str) -> String {
             sha: sha.to_string(),
             message: None,
             delivery_id: None,
+            resumed_from: None,
         },
     )
     .await
@@ -200,6 +201,186 @@ steps = ["echo should not happen"]
         "the skipped stage should name what failed: {:?}",
         deploy.error
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn stages_that_do_not_depend_on_each_other_run_at_the_same_time() {
+    let Some((db, _guard)) = database().await else {
+        return skipped("stages_that_do_not_depend_on_each_other_run_at_the_same_time");
+    };
+
+    let origin = Origin::with_pipeline(
+        r#"
+[[stage]]
+name = "left"
+[[stage.job]]
+steps = ["sleep 1"]
+
+[[stage]]
+name = "right"
+[[stage.job]]
+steps = ["sleep 1"]
+"#,
+    );
+    let repo = register_repo(&db, "e2e", &origin.url()).await;
+    let _work = start_scheduler(&db);
+
+    let run_id = queue_run(&db, &repo.id, "refs/heads/master", &origin.sha).await;
+    let run = settle(&db, &run_id).await;
+
+    assert_eq!(run.status, Status::Success, "error was {:?}", run.error);
+
+    let elapsed =
+        (run.finished_at.expect("finished") - run.started_at.expect("started")).num_milliseconds();
+    assert!(
+        elapsed < 1800,
+        "two independent one-second stages took {elapsed}ms; \
+         a scheduler that ran them one after another would take at least 2000ms"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn jobs_in_the_same_stage_run_at_the_same_time_too() {
+    // `needs` lives on the stage, not the job - a stage's own jobs never
+    // depend on each other, so they are exactly as independent as two jobs in
+    // two different stages that do not depend on each other. This is the
+    // shape most pipelines actually use for concurrency: one stage, several
+    // unrelated jobs (`check/format`, `check/lint`, `check/deps`, ...), not
+    // several single-job stages.
+    let Some((db, _guard)) = database().await else {
+        return skipped("jobs_in_the_same_stage_run_at_the_same_time_too");
+    };
+
+    let origin = Origin::with_pipeline(
+        r#"
+[[stage]]
+name = "check"
+[[stage.job]]
+name = "format"
+steps = ["sleep 1"]
+[[stage.job]]
+name = "lint"
+steps = ["sleep 1"]
+[[stage.job]]
+name = "deps"
+steps = ["sleep 1"]
+"#,
+    );
+    let repo = register_repo(&db, "e2e", &origin.url()).await;
+    let _work = start_scheduler(&db);
+
+    let run_id = queue_run(&db, &repo.id, "refs/heads/master", &origin.sha).await;
+    let run = settle(&db, &run_id).await;
+
+    assert_eq!(run.status, Status::Success, "error was {:?}", run.error);
+
+    let elapsed =
+        (run.finished_at.expect("finished") - run.started_at.expect("started")).num_milliseconds();
+    assert!(
+        elapsed < 1800,
+        "three one-second jobs in the same stage took {elapsed}ms; \
+         a scheduler that ran them one after another would take at least 3000ms"
+    );
+}
+
+/// A restart's `resumed_from`, and what a worker does with it, without going
+/// through the API handler that normally sets it - the same shortcut
+/// `queue_run` above takes for a first attempt.
+async fn restart(db: &Db, first_run: &Run) -> String {
+    queue::enqueue(
+        db,
+        &NewRun {
+            repo_id: first_run.repo_id.clone(),
+            trigger: first_run.trigger,
+            git_ref: first_run.git_ref.clone(),
+            sha: first_run.sha.clone(),
+            message: None,
+            delivery_id: None,
+            resumed_from: Some(first_run.id.clone()),
+        },
+    )
+    .await
+    .expect("enqueue restart")
+    .run()
+    .id
+    .clone()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_restart_carries_over_the_stage_that_already_passed() {
+    let Some((db, _guard)) = database().await else {
+        return skipped("a_restart_carries_over_the_stage_that_already_passed");
+    };
+
+    let origin = Origin::with_pipeline(
+        r#"
+[[stage]]
+name = "build"
+[[stage.job]]
+steps = ["echo building"]
+
+[[stage]]
+name  = "test"
+needs = ["build"]
+[[stage.job]]
+steps = ["exit 1"]
+
+[[stage]]
+name  = "deploy"
+needs = ["test"]
+[[stage.job]]
+steps = ["echo deploying"]
+"#,
+    );
+    let repo = register_repo(&db, "e2e", &origin.url()).await;
+    let _work = start_scheduler(&db);
+
+    let first_id = queue_run(&db, &repo.id, "refs/heads/master", &origin.sha).await;
+    let first = settle(&db, &first_id).await;
+    assert_eq!(first.status, Status::Failed);
+
+    let first_jobs = queue::list_jobs(&db, &first_id).await.expect("jobs");
+    let first_build = first_jobs
+        .iter()
+        .find(|job| job.stage == "build")
+        .expect("build job");
+    assert_eq!(first_build.status, Status::Success);
+
+    let restart_id = restart(&db, &first).await;
+    let restarted = settle(&db, &restart_id).await;
+    assert_eq!(
+        restarted.status,
+        Status::Failed,
+        "the stage that failed before still fails"
+    );
+
+    let jobs = queue::list_jobs(&db, &restart_id).await.expect("jobs");
+    let build = jobs.iter().find(|job| job.stage == "build").expect("build");
+    let test = jobs.iter().find(|job| job.stage == "test").expect("test");
+    let deploy = jobs
+        .iter()
+        .find(|job| job.stage == "deploy")
+        .expect("deploy");
+
+    // `build` passed last time, so this run carries it over rather than
+    // running it again.
+    assert_eq!(build.status, Status::Success);
+    assert_eq!(build.reused_from_run.as_deref(), Some(first_id.as_str()));
+    let logs = queue::read_logs(&db, &build.id, -1).await.expect("logs");
+    assert!(
+        logs.iter().any(|chunk| chunk.line.contains("building")),
+        "a reused job should still show the log it actually produced last time: {logs:?}"
+    );
+
+    // `test` failed last time, so a restart actually runs it again rather than
+    // reporting the same failure forever.
+    assert_eq!(test.status, Status::Failed);
+    assert!(test.reused_from_run.is_none());
+
+    // `deploy` never ran last time - it was blocked by `test` - so it is not
+    // "passed" either, and stays blocked here too.
+    assert_eq!(deploy.status, Status::Skipped);
+    assert!(deploy.reused_from_run.is_none());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

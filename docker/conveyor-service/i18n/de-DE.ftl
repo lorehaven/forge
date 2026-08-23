@@ -59,6 +59,10 @@ ui_meta_duration = Dauer
 ui_meta_attempt = Versuch
 ui_artifacts_title = Artefakte
 ui_log_loading = Wird geladen…
+ui_log_raw_tooltip = Rohes Protokoll öffnen
+ui_log_copy_tooltip = Protokoll kopieren
+ui_run_restart = Neu starten
+ui_job_reused = Von einem früheren Lauf übernommen
 
 # ── Scan ─────────────────────────────────────────────────────────────────────
 

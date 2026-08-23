@@ -76,6 +76,8 @@ pub struct NewRun {
     pub message: Option<String>,
     /// Provider delivery id, when a webhook started this.
     pub delivery_id: Option<String>,
+    /// The run being restarted, if this is a restart.
+    pub resumed_from: Option<String>,
 }
 
 /// What enqueueing did.
@@ -110,8 +112,8 @@ pub async fn enqueue(db: &Db, new: &NewRun) -> Result<Enqueued, QueueError> {
     // settle which of them wins.
     let sql = format!(
         "INSERT INTO {schema}.runs \
-         (id, repo_id, trigger, git_ref, sha, message, delivery_id, status) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'queued') \
+         (id, repo_id, trigger, git_ref, sha, message, delivery_id, status, resumed_from) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'queued', $8) \
          ON CONFLICT (delivery_id) WHERE delivery_id IS NOT NULL DO NOTHING \
          RETURNING {RUN_COLUMNS}"
     );
@@ -124,6 +126,7 @@ pub async fn enqueue(db: &Db, new: &NewRun) -> Result<Enqueued, QueueError> {
         .bind(&new.sha)
         .bind(&new.message)
         .bind(&new.delivery_id)
+        .bind(&new.resumed_from)
         .fetch_optional(pool)
         .await?;
 
@@ -331,10 +334,14 @@ pub struct PlannedJob {
     pub stage: String,
     pub name: String,
     pub needs: Vec<String>,
-    /// `Queued` for a job that will run, `Skipped` for one the plan excluded.
+    /// `Queued` for a job that will run, `Skipped` for one the plan excluded,
+    /// `Success` for one carried over from a restart's `resumed_from` run.
     pub status: Status,
     /// Why it was excluded, when it was.
     pub error: Option<String>,
+    /// Set instead of actually running this job: its stage passed in this
+    /// run, so its result was copied rather than rebuilt.
+    pub reused_from_run: Option<String>,
 }
 
 /// Writes the whole plan up front, skipped jobs included.
@@ -349,8 +356,8 @@ pub async fn create_jobs(
     let pool = pool(db)?;
     let schema = schema();
     let sql = format!(
-        "INSERT INTO {schema}.jobs (id, run_id, stage, name, needs, status, error) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING {JOB_COLUMNS}"
+        "INSERT INTO {schema}.jobs (id, run_id, stage, name, needs, status, error, reused_from_run) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING {JOB_COLUMNS}"
     );
 
     let mut jobs = Vec::with_capacity(planned.len());
@@ -366,6 +373,7 @@ pub async fn create_jobs(
             .bind(&needs)
             .bind(job.status.as_str())
             .bind(&job.error)
+            .bind(&job.reused_from_run)
             .fetch_one(pool)
             .await?;
 
@@ -518,6 +526,37 @@ pub async fn list_artifacts(db: &Db, run_id: &str) -> Result<Vec<Artifact>, Queu
 
     let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(run_id)
+        .fetch_all(pool)
+        .await?;
+
+    rows.iter()
+        .map(|row| {
+            Ok(Artifact {
+                id: row.try_get("id")?,
+                run_id: row.try_get("run_id")?,
+                job_id: row.try_get("job_id")?,
+                kind: row.try_get("kind")?,
+                name: row.try_get("name")?,
+                version: row.try_get("version")?,
+                uri: row.try_get("uri")?,
+                digest: row.try_get("digest")?,
+                created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
+            })
+        })
+        .collect()
+}
+
+/// One job's artifacts, for copying them onto a reused job on a restart.
+pub async fn list_artifacts_for_job(db: &Db, job_id: &str) -> Result<Vec<Artifact>, QueueError> {
+    let pool = pool(db)?;
+    let schema = schema();
+    let sql = format!(
+        "SELECT id, run_id, job_id, kind, name, version, uri, digest, created_at \
+         FROM {schema}.artifacts WHERE job_id = $1 ORDER BY created_at, name"
+    );
+
+    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+        .bind(job_id)
         .fetch_all(pool)
         .await?;
 
@@ -746,10 +785,10 @@ pub async fn list_steps(db: &Db, job_id: &str) -> Result<Vec<StepState>, QueueEr
 
 const RUN_COLUMNS: &str = "id, repo_id, trigger, git_ref, sha, message, delivery_id, status, \
                            queued_at, started_at, finished_at, claimed_by, claimed_at, attempt, \
-                           error";
+                           error, resumed_from";
 
 const JOB_COLUMNS: &str = "id, run_id, stage, name, needs, status, exit_code, started_at, \
-                           finished_at, error";
+                           finished_at, error, reused_from_run";
 
 fn run_from_row(row: &sqlx::postgres::PgRow) -> Result<Run, QueueError> {
     let trigger: String = row.try_get("trigger")?;
@@ -773,6 +812,7 @@ fn run_from_row(row: &sqlx::postgres::PgRow) -> Result<Run, QueueError> {
         claimed_at: row.try_get("claimed_at")?,
         attempt: row.try_get("attempt")?,
         error: row.try_get("error")?,
+        resumed_from: row.try_get("resumed_from")?,
     })
 }
 
@@ -793,5 +833,6 @@ fn job_from_row(row: &sqlx::postgres::PgRow) -> Result<Job, QueueError> {
         started_at: row.try_get("started_at")?,
         finished_at: row.try_get("finished_at")?,
         error: row.try_get("error")?,
+        reused_from_run: row.try_get("reused_from_run")?,
     })
 }

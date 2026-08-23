@@ -20,6 +20,7 @@ fn run_at(git_ref: &str, sha: &str) -> Run {
         claimed_at: None,
         attempt: 0,
         error: None,
+        resumed_from: None,
     }
 }
 

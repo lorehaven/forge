@@ -59,6 +59,10 @@ ui_meta_duration = Duración
 ui_meta_attempt = Intento
 ui_artifacts_title = Artefactos
 ui_log_loading = Cargando…
+ui_log_raw_tooltip = Abrir registro sin procesar
+ui_log_copy_tooltip = Copiar registro
+ui_run_restart = Reiniciar
+ui_job_reused = Reutilizado de una ejecución anterior
 
 # ── Scan ─────────────────────────────────────────────────────────────────────
 

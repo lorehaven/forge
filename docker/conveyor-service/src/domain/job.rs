@@ -26,6 +26,10 @@ pub struct Job {
     /// Why the job ended, when there is more to say than the exit code - a
     /// timeout, a cancellation, an executor that could not start it.
     pub error: Option<String>,
+    /// The run this job's result was carried over from, on a restart whose
+    /// stage passed last time. `None` for a job that actually ran here - its
+    /// log and steps live under this job's own id either way.
+    pub reused_from_run: Option<String>,
 }
 
 impl Job {

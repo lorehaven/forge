@@ -16,8 +16,10 @@ use crate::scheduler::queue::{self, PlannedJob};
 use crate::scheduler::repos;
 use crate::secrets::{Redactor, SecretKey, store as secret_store};
 use crate::workspace::{self, CheckoutRequest, HttpCredential, Workspace};
+use futures_util::StreamExt;
+use futures_util::stream::FuturesUnordered;
 use quench_db::prelude::Db;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
@@ -140,6 +142,17 @@ async fn janitor(db: Db, config: ConveyorConfig) {
             Err(error) => tracing::error!("could not requeue stale runs: {error}"),
         }
     }
+}
+
+/// One job, in its stage, waiting on however many of that stage's `needs` are
+/// still outstanding. The unit `Worker::execute_jobs` schedules is this, not
+/// the stage: `needs` lives on the stage, but two jobs in one stage do not
+/// need each other any more than two jobs in two unrelated stages do.
+struct Unit<'p> {
+    stage_index: usize,
+    job: &'p pipeline::Job,
+    stage: &'p pipeline::Stage,
+    row: &'p crate::domain::Job,
 }
 
 impl Worker {
@@ -292,26 +305,58 @@ impl Worker {
         let context = EvalContext::new(event, &run.git_ref, &run.sha);
         let plan = pipeline::plan(&spec, &context);
 
+        // A restart's source jobs, when this run has one - `Some` even if it
+        // turns out to have carried nothing over, so a source that has since
+        // been pruned is distinguishable from "not a restart" in the warning
+        // below rather than silently building everything again.
+        let source_jobs = match &run.resumed_from {
+            Some(source_run_id) => match queue::list_jobs(&self.db, source_run_id).await {
+                Ok(jobs) => Some(jobs),
+                Err(error) => {
+                    tracing::warn!(
+                        "run {} could not read the run it is restarting ({source_run_id}): \
+                         {error}; nothing will be carried over",
+                        run.id
+                    );
+                    None
+                }
+            },
+            None => None,
+        };
+        let passed_stages = source_jobs
+            .as_deref()
+            .map(passed_stages)
+            .unwrap_or_default();
+
         // The whole plan is written before anything runs, so the run's page can
         // show what it decided not to do as well as what it did.
         let mut planned = Vec::new();
         for stage_plan in &plan {
             let stage = &spec.stages[stage_plan.index];
+            let reused = passed_stages.contains(stage.name.as_str());
             for job_plan in &stage_plan.jobs {
+                let (status, error) = if !job_plan.decision.will_run() {
+                    (Status::Skipped, job_plan.decision.reason())
+                } else if reused {
+                    (Status::Success, None)
+                } else {
+                    (Status::Queued, None)
+                };
                 planned.push(PlannedJob {
                     stage: stage.name.clone(),
                     name: stage.jobs[job_plan.index].name.clone(),
                     needs: stage.needs.clone(),
-                    status: if job_plan.decision.will_run() {
-                        Status::Queued
-                    } else {
-                        Status::Skipped
-                    },
-                    error: job_plan.decision.reason(),
+                    status,
+                    error,
+                    reused_from_run: reused.then(|| run.resumed_from.clone().unwrap_or_default()),
                 });
             }
         }
         let rows = queue::create_jobs(&self.db, &run.id, &planned).await?;
+
+        if let Some(source_jobs) = &source_jobs {
+            self.copy_reused_job_data(run, &rows, source_jobs).await;
+        }
 
         let result = self
             .execute_jobs(run, repo, &spec, &plan, &rows, &workspace)
@@ -362,7 +407,16 @@ impl Worker {
         .map_err(|error| WorkerError::Checkout(redactor.apply(&error.to_string())))
     }
 
-    /// Runs the jobs the plan allowed, stage by stage.
+    /// Runs the jobs the plan allowed. A job starts the instant every stage
+    /// it needs has finished in full, rather than waiting for its turn in
+    /// `plan`'s topological order - two jobs that do not depend on each
+    /// other, whether they sit in the same stage or in two stages that do not
+    /// depend on each other, always overlap.
+    ///
+    /// One caveat: the native executor runs every job against the same
+    /// checkout, so two jobs racing on the same files is possible if a
+    /// pipeline's jobs both write to it. The kubernetes executor does not
+    /// share this problem - each job clones its own commit.
     async fn execute_jobs(
         &self,
         run: &Run,
@@ -372,24 +426,33 @@ impl Worker {
         rows: &[crate::domain::Job],
         workspace: &Workspace,
     ) -> Result<(Status, Option<String>), WorkerError> {
-        let mut failed_stages: HashSet<String> = HashSet::new();
-        let mut statuses = Vec::new();
-        let mut cancelled = false;
+        let stage_count = plan.len();
 
-        for stage_plan in plan {
+        // `needs` names a stage, and a stage can be depended on by several
+        // others - the readiness count and the reverse edges below are what a
+        // stage's completion walks to find what just became ready.
+        let mut index_of: HashMap<&str, usize> = HashMap::with_capacity(stage_count);
+        for (index, stage_plan) in plan.iter().enumerate() {
+            index_of.insert(spec.stages[stage_plan.index].name.as_str(), index);
+        }
+        let mut stage_remaining: Vec<usize> = vec![0; stage_count];
+        let mut stage_dependents: Vec<Vec<usize>> = vec![Vec::new(); stage_count];
+        for (index, stage_plan) in plan.iter().enumerate() {
+            for need in &spec.stages[stage_plan.index].needs {
+                if let Some(&needed) = index_of.get(need.as_str()) {
+                    stage_dependents[needed].push(index);
+                    stage_remaining[index] += 1;
+                }
+            }
+        }
+
+        // Every job, flattened out from under its stage, and which units
+        // belong to which stage - needed the moment a stage finishes, to tell
+        // whether every one of its own jobs has too.
+        let mut units: Vec<Unit> = Vec::new();
+        let mut units_of_stage: Vec<Vec<usize>> = vec![Vec::new(); stage_count];
+        for (stage_index, stage_plan) in plan.iter().enumerate() {
             let stage = &spec.stages[stage_plan.index];
-
-            // A stage whose dependency failed at run time cannot run, however
-            // its own condition read. The plan could not know this: `when` is
-            // decided before anything runs, failure is only known afterwards.
-            let blocked_by = stage
-                .needs
-                .iter()
-                .find(|need| failed_stages.contains(*need))
-                .cloned();
-
-            let mut stage_failed = false;
-
             for job_plan in &stage_plan.jobs {
                 let job = &stage.jobs[job_plan.index];
                 let Some(row) = rows
@@ -398,49 +461,216 @@ impl Worker {
                 else {
                     continue;
                 };
+                units_of_stage[stage_index].push(units.len());
+                units.push(Unit {
+                    stage_index,
+                    job,
+                    stage,
+                    row,
+                });
+            }
+        }
+        let unit_count = units.len();
 
-                if !job_plan.decision.will_run() {
-                    // Already recorded as skipped when the plan was written.
-                    statuses.push(Status::Skipped);
-                    continue;
-                }
+        let mut ready: VecDeque<usize> = VecDeque::new();
+        for stage_index in 0..stage_count {
+            if stage_remaining[stage_index] == 0 {
+                ready.extend(units_of_stage[stage_index].iter().copied());
+            }
+        }
 
-                if cancelled || blocked_by.is_some() {
-                    let reason = if cancelled {
-                        "the run was cancelled".to_string()
+        let mut failed_stages: HashSet<String> = HashSet::new();
+        let mut cancelled = false;
+        let mut all_statuses = Vec::new();
+        let mut stage_finished: Vec<usize> = vec![0; stage_count];
+        let mut finished_units = 0usize;
+        let mut running = FuturesUnordered::new();
+
+        while finished_units < unit_count {
+            // A unit's own readiness already proves every stage its own stage
+            // needs is done, so `failed_stages` and `cancelled` as they stand
+            // right now are everything this job will ever need to know.
+            while let Some(unit_index) = ready.pop_front() {
+                let Unit {
+                    stage_index,
+                    job,
+                    stage,
+                    row,
+                } = &units[unit_index];
+                let blocked_by = stage
+                    .needs
+                    .iter()
+                    .find(|need| failed_stages.contains(*need))
+                    .cloned();
+                let cancelled_now = cancelled;
+                let stage_index = *stage_index;
+
+                running.push(async move {
+                    // Already settled when the plan was written: excluded by
+                    // a `when`, or carried over from a restart's stage that
+                    // passed last time.
+                    let status = if row.status != Status::Queued {
+                        row.status
+                    } else if cancelled_now || blocked_by.is_some() {
+                        let reason = if cancelled_now {
+                            "the run was cancelled".to_string()
+                        } else {
+                            format!("stage '{}' failed", blocked_by.clone().unwrap_or_default())
+                        };
+                        queue::finish_job(&self.db, &row.id, Status::Skipped, None, Some(&reason))
+                            .await?;
+                        Status::Skipped
                     } else {
-                        format!("stage '{}' failed", blocked_by.clone().unwrap_or_default())
+                        self.run_one_job(run, repo, stage, job, row, workspace)
+                            .await?
                     };
-                    queue::finish_job(&self.db, &row.id, Status::Skipped, None, Some(&reason))
-                        .await?;
-                    statuses.push(Status::Skipped);
-                    continue;
-                }
 
-                let status = self
-                    .run_one_job(run, repo, stage, job, row, workspace)
-                    .await?;
-                statuses.push(status);
-
-                match status {
-                    Status::Cancelled => {
-                        cancelled = true;
-                        stage_failed = true;
-                    }
-                    status if status.is_failure() => stage_failed = true,
-                    _ => {}
-                }
+                    Ok::<_, WorkerError>((stage_index, status))
+                });
             }
 
-            if stage_failed {
-                failed_stages.insert(stage.name.clone());
+            let Some(outcome) = running.next().await else {
+                // Every unit has either finished or is queued in `running`
+                // above; this only happens once both are empty, which the
+                // loop condition already ends on.
+                break;
+            };
+            let (stage_index, status) = outcome?;
+            finished_units += 1;
+            all_statuses.push(status);
+
+            if status == Status::Cancelled {
+                cancelled = true;
+            }
+            if status.is_failure() {
+                failed_stages.insert(spec.stages[plan[stage_index].index].name.clone());
+            }
+
+            stage_finished[stage_index] += 1;
+            if stage_finished[stage_index] < units_of_stage[stage_index].len() {
+                // The rest of this stage's own jobs are still running or
+                // queued - what depends on the stage as a whole has to wait
+                // for those too, not just this one job.
+                continue;
+            }
+            for &dependent in &stage_dependents[stage_index] {
+                stage_remaining[dependent] -= 1;
+                if stage_remaining[dependent] == 0 {
+                    ready.extend(units_of_stage[dependent].iter().copied());
+                }
             }
         }
 
         if cancelled {
             return Ok((Status::Cancelled, Some("cancelled".to_string())));
         }
-        Ok((Status::rollup(statuses), None))
+        Ok((Status::rollup(all_statuses), None))
+    }
+
+    /// Copies a reused job's steps, log and artifacts from the run being
+    /// restarted, so a run made of some rebuilt stages and some carried-over
+    /// ones reads as one coherent record rather than sending a reader back to
+    /// the old run for half of it.
+    ///
+    /// Never fails the restart: a source job gone missing, or a copy that
+    /// errors, leaves that one job without a log rather than losing the run.
+    async fn copy_reused_job_data(
+        &self,
+        run: &Run,
+        rows: &[crate::domain::Job],
+        source_jobs: &[crate::domain::Job],
+    ) {
+        for row in rows {
+            if row.reused_from_run.is_none() {
+                continue;
+            }
+
+            let Some(source_job) = source_jobs
+                .iter()
+                .find(|job| job.stage == row.stage && job.name == row.name)
+            else {
+                tracing::warn!(
+                    "run {} reused stage '{}', but its source job for '{}' is gone; \
+                     {} will show no log",
+                    run.id,
+                    row.stage,
+                    row.name,
+                    row.id
+                );
+                continue;
+            };
+
+            match queue::list_steps(&self.db, &source_job.id).await {
+                Ok(steps) => {
+                    if let Err(error) = queue::record_steps(&self.db, &row.id, &steps).await {
+                        tracing::warn!(
+                            "could not copy steps from job {} to {}: {error}",
+                            source_job.id,
+                            row.id
+                        );
+                    }
+                }
+                Err(error) => {
+                    tracing::warn!("could not read steps for job {}: {error}", source_job.id)
+                }
+            }
+
+            match queue::read_logs(&self.db, &source_job.id, -1).await {
+                Ok(chunks) => {
+                    if let Err(error) = queue::append_logs(&self.db, &row.id, &chunks).await {
+                        tracing::warn!(
+                            "could not copy the log from job {} to {}: {error}",
+                            source_job.id,
+                            row.id
+                        );
+                    }
+                }
+                Err(error) => {
+                    tracing::warn!("could not read the log for job {}: {error}", source_job.id)
+                }
+            }
+
+            match queue::list_artifacts_for_job(&self.db, &source_job.id).await {
+                Ok(artifacts) => {
+                    for artifact in artifacts {
+                        let copy = crate::domain::Artifact {
+                            id: Uuid::new_v4().to_string(),
+                            run_id: run.id.clone(),
+                            job_id: row.id.clone(),
+                            kind: artifact.kind,
+                            name: artifact.name,
+                            version: artifact.version,
+                            uri: artifact.uri,
+                            digest: artifact.digest,
+                            created_at: artifact.created_at,
+                        };
+                        if let Err(error) = queue::record_artifact(&self.db, &copy).await {
+                            tracing::warn!(
+                                "could not copy an artifact from job {} to {}: {error}",
+                                source_job.id,
+                                row.id
+                            );
+                        }
+                    }
+                }
+                Err(error) => tracing::warn!(
+                    "could not read artifacts for job {}: {error}",
+                    source_job.id
+                ),
+            }
+
+            if let Err(error) = queue::finish_job(
+                &self.db,
+                &row.id,
+                Status::Success,
+                source_job.exit_code,
+                None,
+            )
+            .await
+            {
+                tracing::warn!("could not close out reused job {}: {error}", row.id);
+            }
+        }
     }
 
     /// Starts one job, watches it, and records everything it produced.
@@ -687,6 +917,21 @@ pub enum WorkerError {
 
     #[error(transparent)]
     Queue(#[from] queue::QueueError),
+}
+
+/// The stages a restart can skip: every one whose jobs, last time, all ended
+/// `Success`. A stage with no job in `jobs` at all is not among them - it
+/// never ran, so there is nothing here to carry over.
+fn passed_stages(jobs: &[crate::domain::Job]) -> HashSet<String> {
+    let mut ok: HashMap<&str, bool> = HashMap::new();
+    for job in jobs {
+        let entry = ok.entry(job.stage.as_str()).or_insert(true);
+        *entry = *entry && job.status == Status::Success;
+    }
+    ok.into_iter()
+        .filter(|(_, passed)| *passed)
+        .map(|(stage, _)| stage.to_string())
+        .collect()
 }
 
 /// Exposed for the tests, which need to know what a decision turns into.

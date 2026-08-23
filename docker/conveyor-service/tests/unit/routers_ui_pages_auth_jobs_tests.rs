@@ -81,6 +81,28 @@ async fn job_log_viewer_connects_to_the_streams_own_sse_endpoint() {
 }
 
 #[actix_web::test]
+async fn job_log_viewer_offers_a_raw_view_and_a_copy_button() {
+    let config = JwtConfig::for_tests();
+    let app = actix_test::init_service(app_with(config)).await;
+
+    let req = actix_test::TestRequest::get()
+        .uri("/ui/jobs/job-42/log")
+        .to_request();
+    let resp = actix_test::call_service(&app, req).await;
+    let body = actix_test::read_body(resp).await;
+    let html = String::from_utf8(body.to_vec()).expect("utf8 html");
+
+    // "Open raw" points straight at the API's own raw endpoint, in a new tab.
+    assert!(html.contains("jobs/job-42/raw"));
+    assert!(html.contains(r#"target="_blank""#));
+    assert!(html.contains(r#"rel="noopener""#));
+
+    // Copy reads the log element by the same id it was just asserted to have.
+    assert!(html.contains("navigator.clipboard.writeText"));
+    assert!(html.contains("log-job-42"));
+}
+
+#[actix_web::test]
 async fn job_log_viewer_redirects_to_login_when_auth_is_enabled_and_there_is_no_session() {
     let mut config = JwtConfig::for_tests();
     config.auth_enabled = true;

@@ -53,6 +53,33 @@ pub struct StreamQuery {
 /// `id:` carries the sequence number, so a browser reconnecting sends
 /// `Last-Event-ID` and can be given everything after it rather than the whole
 /// log again.
+/// Shared by [`stream_logs`] and [`raw_logs`]: both read the same job, and
+/// both need to be sure the caller may see it before either touches the
+/// executor or the database for its output.
+async fn authorize_job_read(
+    request: &HttpRequest,
+    db: &Db,
+    job_id: &str,
+) -> Result<(), HttpResponse> {
+    match crate::scheduler::queue::repo_id_for_job(db, job_id).await {
+        Ok(Some(repo_id)) => match crate::scheduler::repos::read(db, &repo_id).await {
+            Ok(Some(repo)) => {
+                if !can_on_project(request, db, &repo.project_id, "read").await {
+                    return Err(json_error(
+                        StatusCode::FORBIDDEN,
+                        "no read access to this job's logs",
+                    ));
+                }
+                Ok(())
+            }
+            Ok(None) => Err(json_error(StatusCode::NOT_FOUND, "no such job")),
+            Err(error) => Err(ApiError::from(error).into_response()),
+        },
+        Ok(None) => Err(json_error(StatusCode::NOT_FOUND, "no such job")),
+        Err(error) => Err(ApiError::from(error).into_response()),
+    }
+}
+
 #[get("/jobs/{id}/stream")]
 pub async fn stream_logs(
     request: HttpRequest,
@@ -63,18 +90,8 @@ pub async fn stream_logs(
 ) -> impl Responder {
     let job_id = path.into_inner();
 
-    match crate::scheduler::queue::repo_id_for_job(&db, &job_id).await {
-        Ok(Some(repo_id)) => match crate::scheduler::repos::read(&db, &repo_id).await {
-            Ok(Some(repo)) => {
-                if !can_on_project(&request, &db, &repo.project_id, "read").await {
-                    return json_error(StatusCode::FORBIDDEN, "no read access to this job's logs");
-                }
-            }
-            Ok(None) => return json_error(StatusCode::NOT_FOUND, "no such job"),
-            Err(error) => return ApiError::from(error).into_response(),
-        },
-        Ok(None) => return json_error(StatusCode::NOT_FOUND, "no such job"),
-        Err(error) => return ApiError::from(error).into_response(),
+    if let Err(response) = authorize_job_read(&request, &db, &job_id).await {
+        return response;
     }
 
     let format = query.format;
@@ -128,6 +145,64 @@ pub async fn stream_logs(
         .append_header(("Cache-Control", "no-cache"))
         .append_header(("X-Accel-Buffering", "no"))
         .streaming(stream_iter(body.into_iter().map(Ok::<_, Error>)))
+}
+
+/// The log as plain lines, with no SSE framing - what "open raw" in a new tab
+/// points at, and what a person piping a build's output through `grep` wants.
+///
+/// A running job's output still streams: the response just stays open,
+/// appending each line as it arrives, until the executor forgets the job -
+/// the same close a finished [`stream_logs`] answer gets from `done()`, minus
+/// the event a plain GET has no framing to carry.
+#[get("/jobs/{id}/raw")]
+pub async fn raw_logs(
+    request: HttpRequest,
+    path: web::Path<String>,
+    db: web::Data<Db>,
+    executor: web::Data<Arc<dyn JobExecutor>>,
+) -> impl Responder {
+    let job_id = path.into_inner();
+
+    if let Err(response) = authorize_job_read(&request, &db, &job_id).await {
+        return response;
+    }
+
+    let handle = Handle::new(job_id.clone());
+
+    if let Ok(tail) = executor.logs(&handle).await {
+        let history = stream_iter(tail.history.into_iter().map(|chunk| Ok(raw_line(&chunk))));
+
+        let live = BroadcastStream::new(tail.live).map(|message| match message {
+            Ok(chunk) => Ok(raw_line(&chunk)),
+            Err(_) => Ok::<_, Error>(Bytes::from(
+                "\n[some lines were skipped; reload to see them]\n",
+            )),
+        });
+
+        return HttpResponse::Ok()
+            .content_type("text/plain; charset=utf-8")
+            .append_header(("Cache-Control", "no-cache"))
+            .append_header(("X-Accel-Buffering", "no"))
+            .streaming(history.chain(live));
+    }
+
+    let chunks = match queue::read_logs(&db, &job_id, -1).await {
+        Ok(chunks) => chunks,
+        Err(error) => return ApiError::from(error).into_response(),
+    };
+
+    let body: Vec<Bytes> = chunks.iter().map(raw_line).collect();
+
+    HttpResponse::Ok()
+        .content_type("text/plain; charset=utf-8")
+        .streaming(stream_iter(body.into_iter().map(Ok::<_, Error>)))
+}
+
+/// One log line, as it was written, with the newline `frame` has to strip
+/// back out for `Format::Text` - a raw view has nothing else to keep it
+/// from ending the line itself.
+pub fn raw_line(chunk: &LogChunk) -> Bytes {
+    Bytes::from(format!("{}\n", chunk.line))
 }
 
 /// Says the log is complete, so a reader stops rather than reconnecting.

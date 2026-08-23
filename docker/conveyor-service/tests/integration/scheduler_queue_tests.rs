@@ -19,6 +19,7 @@ fn new_run(repo_id: &str, sha: &str) -> NewRun {
         sha: sha.to_string(),
         message: Some("a commit".to_string()),
         delivery_id: None,
+        resumed_from: None,
     }
 }
 
@@ -425,6 +426,7 @@ async fn a_job(db: &Db) -> (String, String) {
                 needs: vec![],
                 status: Status::Queued,
                 error: None,
+                reused_from_run: None,
             },
             PlannedJob {
                 stage: "deploy".to_string(),
@@ -432,6 +434,7 @@ async fn a_job(db: &Db) -> (String, String) {
                 needs: vec!["build".to_string()],
                 status: Status::Skipped,
                 error: Some("excluded by its `when` condition".to_string()),
+                reused_from_run: None,
             },
         ],
     )

@@ -127,6 +127,7 @@ pub async fn receive(
         sha: event.sha,
         message: event.message,
         delivery_id: Some(event.delivery_id),
+        resumed_from: None,
     };
 
     match queue::enqueue(&db, &new).await {

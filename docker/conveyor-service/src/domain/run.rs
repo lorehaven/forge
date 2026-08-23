@@ -75,6 +75,10 @@ pub struct Run {
     /// Why the run ended the way it did, when that is not obvious from the jobs
     /// - a missing `.conveyor.toml`, a checkout that failed, a cycle in `needs`.
     pub error: Option<String>,
+
+    /// The run this one restarted, if it did. Stages that passed there are
+    /// carried over rather than rebuilt - see `worker::execute_jobs`.
+    pub resumed_from: Option<String>,
 }
 
 impl Run {

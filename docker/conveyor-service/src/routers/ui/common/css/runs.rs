@@ -89,8 +89,61 @@ pub fn runs_rules() -> Vec<CssRule> {
             .property("padding", "0.25rem 0")
             .property("font-size", "0.85rem"),
         // ---------------------------------------------------------------
+        // The job graph: one row per dependency level, connected top to
+        // bottom - stages in the same row run at once, the row below waits
+        // for all of them.
+        // ---------------------------------------------------------------
+        CssRule::new(".job-graph")
+            .property("display", "flex")
+            .property("flex-direction", "column")
+            .property("align-items", "stretch"),
+        CssRule::new(".job-graph-level")
+            .property("display", "flex")
+            .property("flex-wrap", "wrap")
+            .property("gap", "1rem")
+            .property("align-items", "flex-start"),
+        CssRule::new(".job-graph-connector")
+            .property("display", "flex")
+            .property("justify-content", "center")
+            .property("color", "var(--bs-gray-600)")
+            .property("font-size", "0.85rem")
+            .property("padding", "0.15rem 0"),
+        CssRule::new(".stage-card")
+            .property("flex", "1 1 20rem")
+            .property("min-width", "18rem")
+            .property("display", "flex")
+            .property("flex-direction", "column"),
+        // A stage card's own jobs stack with the usual `.job` spacing, but the
+        // card itself does not add another border around them - two stages
+        // side by side already read as separate without doubling the frame.
+        CssRule::new(".stage-card .job:last-child").property("margin-bottom", "0"),
+        // ---------------------------------------------------------------
         // Logs
         // ---------------------------------------------------------------
+        CssRule::new(".log-toolbar")
+            .property("display", "flex")
+            .property("justify-content", "flex-end")
+            .property("gap", "0.4rem")
+            .property("margin-bottom", "0.4rem"),
+        CssRule::new(".log-action")
+            .property("display", "inline-flex")
+            .property("align-items", "center")
+            .property("justify-content", "center")
+            .property("width", "1.8rem")
+            .property("height", "1.8rem")
+            .property("padding", "0")
+            .property("border", "0.1rem solid var(--bs-gray-700)")
+            .property("border-radius", "0.3rem")
+            .property("background-color", "var(--bs-gray-800)")
+            .property("color", "var(--bs-gray-300)")
+            .property("cursor", "pointer")
+            .property("text-decoration", "none")
+            .property("font-size", "0.8rem")
+            .child(
+                CssRule::new("&:hover")
+                    .property("background-color", "var(--bs-gray-700)")
+                    .property("color", "var(--bs-gray-100)"),
+            ),
         CssRule::new(".log")
             .property(
                 "font-family",

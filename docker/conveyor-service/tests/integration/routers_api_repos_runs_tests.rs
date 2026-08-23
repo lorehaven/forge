@@ -297,6 +297,7 @@ async fn runs_list_reports_a_queued_run_scoped_to_its_repo() {
             sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
             message: Some("a commit".to_string()),
             delivery_id: None,
+            resumed_from: None,
         },
     )
     .await
@@ -342,6 +343,7 @@ async fn runs_read_returns_the_run_with_jobs_and_artifacts() {
             sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
             message: Some("a commit".to_string()),
             delivery_id: None,
+            resumed_from: None,
         },
     )
     .await
@@ -388,6 +390,7 @@ async fn runs_cancel_accepts_a_queued_run() {
             sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
             message: Some("a commit".to_string()),
             delivery_id: None,
+            resumed_from: None,
         },
     )
     .await

@@ -27,21 +27,27 @@ fn run(status: Status) -> Run {
         claimed_at: None,
         attempt: 1,
         error: None,
+        resumed_from: None,
     }
 }
 
 fn job(status: Status) -> Job {
+    job_in("job-1", "build", "cargo", &[], status)
+}
+
+fn job_in(id: &str, stage: &str, name: &str, needs: &[&str], status: Status) -> Job {
     Job {
-        id: "job-1".to_string(),
+        id: id.to_string(),
         run_id: "run-1".to_string(),
-        stage: "build".to_string(),
-        name: "cargo".to_string(),
-        needs: Vec::new(),
+        stage: stage.to_string(),
+        name: name.to_string(),
+        needs: needs.iter().map(|need| need.to_string()).collect(),
         status,
         exit_code: None,
         started_at: Some(Utc::now() - Duration::seconds(30)),
         finished_at: None,
         error: None,
+        reused_from_run: None,
     }
 }
 
@@ -122,6 +128,99 @@ fn the_polled_part_of_a_job_is_separable_from_its_log() {
 fn a_running_job_reports_how_long_it_has_been_going() {
     let html = job_state(&job(Status::Running)).render();
     assert!(html.contains("so far"), "got: {html}");
+}
+
+// ---------------------------------------------------------------------------
+// Restart
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_failed_or_cancelled_run_offers_a_restart() {
+    for status in [Status::Failed, Status::Cancelled] {
+        let html = state_block(&run(status), None, 1).render();
+        assert!(
+            html.contains("runs/run-1/restart"),
+            "{status} run had no restart button: {html}"
+        );
+    }
+}
+
+#[test]
+fn a_run_that_did_not_fail_offers_no_restart() {
+    for status in [
+        Status::Queued,
+        Status::Running,
+        Status::Success,
+        Status::Skipped,
+    ] {
+        let html = state_block(&run(status), None, 1).render();
+        assert!(
+            !html.contains("restart"),
+            "{status} run offered to restart: {html}"
+        );
+    }
+}
+
+#[test]
+fn a_reused_job_says_so() {
+    let mut reused = job(Status::Success);
+    reused.reused_from_run = Some("run-0".to_string());
+    let html = job_state(&reused).render();
+    assert!(html.contains("ui_job_reused"), "got: {html}");
+
+    let fresh = job_state(&job(Status::Success)).render();
+    assert!(!fresh.contains("ui_job_reused"), "got: {fresh}");
+}
+
+// ---------------------------------------------------------------------------
+// The job graph
+// ---------------------------------------------------------------------------
+
+#[test]
+fn independent_stages_share_the_first_level() {
+    // `lint` and `test` both need nothing, so they belong in the same row -
+    // the row a concurrent run actually executes together.
+    let html = jobs_block(&[
+        job_in("job-1", "lint", "clippy", &[], Status::Success),
+        job_in("job-2", "test", "cargo-test", &[], Status::Success),
+    ])
+    .render();
+
+    assert_eq!(html.matches("job-graph-level").count(), 1);
+    assert!(!html.contains("job-graph-connector"), "got: {html}");
+}
+
+#[test]
+fn a_stage_that_needs_another_sits_in_a_later_level_after_a_connector() {
+    let html = jobs_block(&[
+        job_in("job-1", "build", "cargo", &[], Status::Success),
+        job_in("job-2", "deploy", "k8s", &["build"], Status::Queued),
+    ])
+    .render();
+
+    assert_eq!(html.matches("job-graph-level").count(), 2);
+    assert_eq!(html.matches("job-graph-connector").count(), 1);
+    let build_at = html.find("job-1").expect("build job");
+    let connector_at = html.find("job-graph-connector").expect("the connector");
+    let deploy_at = html.find("job-2").expect("deploy job");
+    assert!(
+        build_at < connector_at && connector_at < deploy_at,
+        "expected build, then the connector, then deploy: {html}"
+    );
+}
+
+#[test]
+fn a_stage_that_needs_two_others_lands_after_the_deeper_one() {
+    // `deploy` needs both `build` (level 0) and `sign` (level 1, since it
+    // needs `build` too) - it belongs at level 2, not level 1.
+    let html = jobs_block(&[
+        job_in("job-1", "build", "cargo", &[], Status::Success),
+        job_in("job-2", "sign", "cosign", &["build"], Status::Success),
+        job_in("job-3", "deploy", "k8s", &["build", "sign"], Status::Queued),
+    ])
+    .render();
+
+    assert_eq!(html.matches("job-graph-level").count(), 3);
 }
 
 fn artifact(name: &str) -> Artifact {

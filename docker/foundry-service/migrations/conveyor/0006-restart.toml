@@ -1,0 +1,23 @@
+[[migrations]]
+id = "0006-restart"
+author = "conveyor-service"
+since = "0.1.0"
+
+# A restart is a new run, not the old one requeued: the old row stays exactly
+# as it finished, and `resumed_from` is what tells the worker there is an
+# earlier attempt whose passed stages it can carry over instead of rebuilding.
+[[migrations.changes]]
+sql = """
+ALTER TABLE ${schema}.runs
+    ADD COLUMN IF NOT EXISTS resumed_from TEXT REFERENCES ${schema}.runs(id) ON DELETE SET NULL;
+"""
+
+# Set on a job whose result was copied from `resumed_from` rather than
+# actually executed in this run - the stage it belongs to passed last time and
+# a restart does not repeat work that already succeeded. The run it names is
+# where the log and steps this job shows actually came from.
+[[migrations.changes]]
+sql = """
+ALTER TABLE ${schema}.jobs
+    ADD COLUMN IF NOT EXISTS reused_from_run TEXT REFERENCES ${schema}.runs(id) ON DELETE SET NULL;
+"""

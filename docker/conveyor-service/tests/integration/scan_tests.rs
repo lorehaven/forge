@@ -21,6 +21,7 @@ fn new_run(repo_id: &str, sha: &str) -> NewRun {
         sha: sha.to_string(),
         message: Some("a commit".to_string()),
         delivery_id: None,
+        resumed_from: None,
     }
 }
 
@@ -45,6 +46,7 @@ async fn summarises_lint_machete_and_audit_from_one_job() {
             needs: vec![],
             status: Status::Success,
             error: None,
+            reused_from_run: None,
         }],
     )
     .await
@@ -158,6 +160,7 @@ async fn a_run_with_no_quality_steps_has_an_empty_summary() {
             needs: vec![],
             status: Status::Success,
             error: None,
+            reused_from_run: None,
         }],
     )
     .await

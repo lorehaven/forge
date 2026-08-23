@@ -36,6 +36,7 @@ fn run() -> Run {
         claimed_at: None,
         attempt: 0,
         error: None,
+        resumed_from: None,
     }
 }
 

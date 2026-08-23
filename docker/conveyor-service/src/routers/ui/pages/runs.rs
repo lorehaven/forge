@@ -20,12 +20,13 @@ use crate::routers::ui::common::{
     ui_login_redirect_for, ui_path,
 };
 use crate::scheduler::{queue, repos};
-use actix_web::{HttpRequest, HttpResponse, Responder, get, http::header::ContentType, web};
+use actix_web::{HttpRequest, HttpResponse, Responder, get, http::header::ContentType, post, web};
 use quench_auth::prelude::JwtConfig;
 use quench_db::prelude::Db;
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 use serde::Deserialize;
+use std::collections::{HashMap, HashSet};
 
 /// How often a moving run is asked about. Fast enough that a job changing state
 /// feels immediate, slow enough that a page left open overnight on a finished
@@ -126,6 +127,35 @@ pub(super) async fn run_state(
         .body(body)
 }
 
+/// Restarts a failed or cancelled run and sends the browser to the new one.
+///
+/// `HX-Redirect` rather than a swap: the restart button sits inside the run
+/// it is restarting, and the result is a different run entirely - there is
+/// nothing on this page left to update in place.
+#[post("/runs/{id}/restart")]
+pub(super) async fn run_restart(
+    request: HttpRequest,
+    path: web::Path<String>,
+    config: web::Data<JwtConfig>,
+    db: web::Data<Db>,
+) -> impl Responder {
+    if !is_ui_authenticated(&request, &config).await {
+        return ui_login_redirect_for(&request);
+    }
+
+    let destination = match crate::routers::api::runs::restart_run(&db, &path).await {
+        Ok(run) => run.id,
+        Err(error) => {
+            tracing::warn!("restart of run {} could not start: {error}", path.as_str());
+            path.into_inner()
+        }
+    };
+
+    HttpResponse::Ok()
+        .append_header(("HX-Redirect", ui_path(&format!("/runs/{destination}"))))
+        .finish()
+}
+
 /// Marks an element as replacing the one with its id, wherever that sits.
 fn oob(element: Element) -> Element {
     element.attr("hx-swap-oob", "true")
@@ -178,6 +208,20 @@ pub fn state_block(run: &Run, repo: Option<&Repo>, job_count: usize) -> Element 
         );
     }
 
+    // No default repeat: a failed or cancelled run stays failed until someone
+    // asks for another attempt. This is that ask - it does not rebuild stages
+    // that already passed, see `worker::execute_jobs`.
+    if run.status.is_failure() {
+        block = block.child(
+            button()
+                .attr("type", "button")
+                .class("run-button")
+                .attr("data-i18n", "ui_run_restart")
+                .attr("hx-post", ui_path(&format!("/runs/{}/restart", run.id)))
+                .attr("hx-swap", "none"),
+        );
+    }
+
     if !run.status.is_terminal() {
         block = block
             .attr(
@@ -191,12 +235,114 @@ pub fn state_block(run: &Run, repo: Option<&Repo>, job_count: usize) -> Element 
     block
 }
 
+/// The run's jobs as a dependency graph rather than the flat list `list_jobs`
+/// returns them in: one row per dependency level, every stage in a row beside
+/// the others it does not wait on - the same stages `worker::execute_jobs`
+/// actually runs at once, laid out the way it runs them.
+///
+/// A job's own detail element (`job_block`) is unchanged and keeps its id, so
+/// the poll's out-of-band swaps for `job-state-{id}` still find their target
+/// wherever this regroups it.
 pub fn jobs_block(jobs: &[Job]) -> Element {
-    let mut list = div().attr("id", "run-jobs");
-    for job in jobs {
-        list = list.child(job_block(job));
+    let mut graph = div().attr("id", "run-jobs").class("job-graph");
+
+    for (level_index, level) in stage_levels(jobs).into_iter().enumerate() {
+        if level_index > 0 {
+            graph = graph.child(
+                div()
+                    .class("job-graph-connector")
+                    .child(i().class("fas").class("fa-arrow-down")),
+            );
+        }
+
+        let mut row = div().class("job-graph-level");
+        for stage_jobs in level {
+            let mut card = div().class("stage-card");
+            for job in stage_jobs {
+                card = card.child(job_block(job));
+            }
+            row = row.child(card);
+        }
+        graph = graph.child(row);
     }
-    list
+
+    graph
+}
+
+/// Stages grouped into dependency levels: level 0 needs nothing, level *n*
+/// needs only stages at levels below *n*. Two stages sharing a level never
+/// depend on each other, directly or transitively - the longest `needs` chain
+/// under either of them would put it higher otherwise - so a level is exactly
+/// the set of stages a concurrent run executes at once.
+///
+/// Grouped from the run's own `Job` rows rather than the pipeline spec: an old
+/// run's page renders the same way long after the commit that produced it is
+/// gone, the same reason `stage` and `needs` were copied onto the row in the
+/// first place.
+fn stage_levels(jobs: &[Job]) -> Vec<Vec<Vec<&Job>>> {
+    let mut stage_order: Vec<&str> = Vec::new();
+    let mut jobs_by_stage: HashMap<&str, Vec<&Job>> = HashMap::new();
+    let mut needs_by_stage: HashMap<&str, &[String]> = HashMap::new();
+
+    for job in jobs {
+        if !jobs_by_stage.contains_key(job.stage.as_str()) {
+            stage_order.push(job.stage.as_str());
+        }
+        jobs_by_stage
+            .entry(job.stage.as_str())
+            .or_default()
+            .push(job);
+        needs_by_stage
+            .entry(job.stage.as_str())
+            .or_insert(job.needs.as_slice());
+    }
+
+    let mut level_of: HashMap<&str, usize> = HashMap::new();
+    let mut visiting: HashSet<&str> = HashSet::new();
+    for &stage in &stage_order {
+        stage_level(stage, &needs_by_stage, &mut level_of, &mut visiting);
+    }
+
+    let level_count = level_of.values().copied().max().map_or(0, |max| max + 1);
+    let mut levels: Vec<Vec<Vec<&Job>>> = vec![Vec::new(); level_count.max(1)];
+    for &stage in &stage_order {
+        levels[level_of[stage]].push(jobs_by_stage.remove(stage).unwrap_or_default());
+    }
+    levels.retain(|level| !level.is_empty());
+    levels
+}
+
+/// One stage's level: one more than the deepest of whatever it needs, zero if
+/// it needs nothing this run has a job for.
+///
+/// `visiting` stops a `needs` cycle from recursing forever. The pipeline
+/// parser already refuses one - `graph::topological_order` - so this is a
+/// backstop for a row a future migration or a hand-edited database left
+/// inconsistent, not a case expected to fire.
+fn stage_level<'a>(
+    stage: &'a str,
+    needs_by_stage: &HashMap<&'a str, &'a [String]>,
+    level_of: &mut HashMap<&'a str, usize>,
+    visiting: &mut HashSet<&'a str>,
+) -> usize {
+    if let Some(&level) = level_of.get(stage) {
+        return level;
+    }
+    if !visiting.insert(stage) {
+        return 0;
+    }
+
+    let needs = needs_by_stage.get(stage).copied().unwrap_or(&[]);
+    let level = needs
+        .iter()
+        .filter(|need| needs_by_stage.contains_key(need.as_str()))
+        .map(|need| stage_level(need, needs_by_stage, level_of, visiting) + 1)
+        .max()
+        .unwrap_or(0);
+
+    visiting.remove(stage);
+    level_of.insert(stage, level);
+    level
 }
 
 /// Always rendered, even with nothing in it: an out-of-band swap needs
@@ -286,7 +432,7 @@ pub fn job_block(job: &Job) -> Element {
 /// re-rendering it would arm the trigger again - a second click would then open
 /// a second stream over the first.
 ///
-/// `.job-state` is `display: contents`, so wrapping these four children changes
+/// `.job-state` is `display: contents`, so wrapping these children changes
 /// what can be swapped and not how the row is laid out.
 pub fn job_state(job: &Job) -> Element {
     div()
@@ -294,6 +440,11 @@ pub fn job_state(job: &Job) -> Element {
         .class("job-state")
         .child(status_pill(job.status))
         .child(div().class("job-name").text(job.qualified_name()))
+        .child_opt(
+            job.reused_from_run
+                .as_ref()
+                .map(|_| span().class("muted").attr("data-i18n", "ui_job_reused")),
+        )
         .child_opt(
             job.exit_code
                 .filter(|code| *code != 0)

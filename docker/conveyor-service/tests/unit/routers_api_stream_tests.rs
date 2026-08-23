@@ -9,7 +9,7 @@
 //! this endpoint serves, and the fact that only one of them is escaped.
 
 use conveyor_service::executors::{LogChunk, Stream};
-use conveyor_service::routers::api::stream::{Format, done, frame};
+use conveyor_service::routers::api::stream::{Format, done, frame, raw_line};
 
 fn chunk(seq: u64, stream: Stream, line: &str) -> LogChunk {
     LogChunk {
@@ -148,4 +148,29 @@ fn a_carriage_return_cannot_split_the_frame_either() {
         let out = rendered(&chunk(0, Stream::Stdout, "50%\r100%"), format);
         assert!(!out.contains('\r'), "{format:?}: {out}");
     }
+}
+
+// ---------------------------------------------------------------------------
+// Raw view
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_raw_line_is_the_line_as_written_with_no_framing_at_all() {
+    // What "open raw log" in a new tab shows: no `id:`/`event:`/`data:`, no
+    // escaping - just the line a terminal would have printed.
+    let out = String::from_utf8_lossy(&raw_line(&chunk(0, Stream::Stdout, "compiling thing")))
+        .to_string();
+    assert_eq!(out, "compiling thing\n");
+    assert!(!out.contains("data:"));
+    assert!(!out.contains("id:"));
+}
+
+#[test]
+fn a_raw_line_is_not_html_escaped() {
+    // Same reasoning as `Format::Text`: this is read as plain text, not
+    // rendered in a page, so escaping it would put literal `&lt;` in a log
+    // that never had any.
+    let out =
+        String::from_utf8_lossy(&raw_line(&chunk(0, Stream::Stdout, "a < b && c"))).to_string();
+    assert_eq!(out, "a < b && c\n");
 }

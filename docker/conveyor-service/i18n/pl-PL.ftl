@@ -59,6 +59,10 @@ ui_meta_duration = Czas trwania
 ui_meta_attempt = Próba
 ui_artifacts_title = Artefakty
 ui_log_loading = Ładowanie…
+ui_log_raw_tooltip = Otwórz surowy dziennik
+ui_log_copy_tooltip = Kopiuj dziennik
+ui_run_restart = Uruchom ponownie
+ui_job_reused = Ponownie użyto z poprzedniego przebiegu
 
 # ── Scan ─────────────────────────────────────────────────────────────────────
 

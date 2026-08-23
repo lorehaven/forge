@@ -136,6 +136,7 @@ pub(crate) async fn trigger_manual(
         // A manual run has no delivery to be a duplicate of; asking for the
         // same commit twice on purpose is allowed.
         delivery_id: None,
+        resumed_from: None,
     };
 
     let enqueued = queue::enqueue(db, &new).await?;
@@ -363,6 +364,93 @@ pub async fn cancel(
     }
 }
 
+/// Why [`restart_run`] could not start a new run.
+#[derive(Debug, thiserror::Error)]
+pub enum RestartError {
+    #[error("no such run")]
+    NotFound,
+    #[error("only a failed or cancelled run can be restarted")]
+    NotRestartable,
+    #[error(transparent)]
+    Queue(#[from] QueueError),
+}
+
+impl From<RestartError> for ApiError {
+    fn from(error: RestartError) -> Self {
+        let RestartError::Queue(queue_error) = error else {
+            let status = match &error {
+                RestartError::NotFound => StatusCode::NOT_FOUND,
+                RestartError::NotRestartable => StatusCode::CONFLICT,
+                RestartError::Queue(_) => unreachable!(),
+            };
+            return ApiError::new(status, error.to_string());
+        };
+        Self::from(queue_error)
+    }
+}
+
+/// Starts a new run of a failed or cancelled run's commit, so nothing repeats
+/// on its own - a build only tries again when somebody asks it to.
+///
+/// The new run is its own row, not the old one requeued: the old run stays
+/// exactly as it finished, and `resumed_from` tells the worker there is an
+/// earlier attempt whose passed stages it can carry over rather than rebuild
+/// (`worker::execute_jobs`).
+pub(crate) async fn restart_run(db: &Db, run_id: &str) -> Result<Run, RestartError> {
+    let source = match queue::read_run(db, run_id).await {
+        Ok(Some(run)) => run,
+        Ok(None) => return Err(RestartError::NotFound),
+        Err(error) => return Err(RestartError::Queue(error)),
+    };
+
+    if !source.status.is_failure() {
+        return Err(RestartError::NotRestartable);
+    }
+
+    let new = NewRun {
+        repo_id: source.repo_id.clone(),
+        trigger: source.trigger,
+        git_ref: source.git_ref.clone(),
+        sha: source.sha.clone(),
+        message: source.message.clone(),
+        // Not a redelivery: any number of restarts may follow one failure.
+        delivery_id: None,
+        resumed_from: Some(source.id.clone()),
+    };
+
+    let enqueued = queue::enqueue(db, &new).await?;
+    Ok(enqueued.run().clone())
+}
+
+/// Restarts a failed or cancelled run. `POST /runs/{id}/cancel`'s sibling:
+/// same authorization, same shape, opposite direction.
+#[post("/runs/{id}/restart")]
+pub async fn restart(
+    request: HttpRequest,
+    path: web::Path<String>,
+    db: web::Data<Db>,
+) -> impl Responder {
+    let run = match queue::read_run(&db, &path).await {
+        Ok(Some(run)) => run,
+        Ok(None) => return json_error(StatusCode::NOT_FOUND, "no such run"),
+        Err(error) => return ApiError::from(error).into_response(),
+    };
+
+    match repo_access(&request, &db, &run.repo_id, "write").await {
+        Ok(Some(true)) => {}
+        Ok(Some(false)) => {
+            return json_error(StatusCode::FORBIDDEN, "no write access to this run");
+        }
+        Ok(None) => return json_error(StatusCode::FORBIDDEN, "no write access to this run"),
+        Err(error) => return ApiError::from(error).into_response(),
+    }
+
+    match restart_run(&db, &path).await {
+        Ok(run) => HttpResponse::Accepted().json(run),
+        Err(error) => ApiError::from(error).into_response(),
+    }
+}
+
 /// The credential a trigger's ref resolution should authenticate with, if
 /// any - same lookup `scheduler::worker`'s checkout does, but resolved
 /// fresh here rather than shared with it: this runs once per manual
@@ -425,5 +513,7 @@ pub fn scope() -> actix_web::Scope {
         .service(read)
         .service(logs)
         .service(super::stream::stream_logs)
+        .service(super::stream::raw_logs)
         .service(cancel)
+        .service(restart)
 }
