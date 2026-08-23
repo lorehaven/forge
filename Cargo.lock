@@ -3867,6 +3867,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "toml",
+ "which",
  "windows-sys 0.59.0",
 ]
 

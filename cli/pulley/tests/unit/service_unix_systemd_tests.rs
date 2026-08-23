@@ -5,18 +5,27 @@ use pulley::service::unix::systemd::{
 };
 use std::path::PathBuf;
 
-// This machine has a real `systemctl` on PATH (it's a real systemd-based
-// desktop, not a container), so `Backend::install`/`uninstall` for `Systemd`
-// are never called here - they enable/write/reload a real user systemd
-// unit, which would mutate this actual machine's session. `status` and
-// `run_systemctl`/`linger_enabled` below are read-only queries (`systemctl
-// --user status`/`is-active`, `loginctl show-user ... --property=Linger`),
-// safe to run for real: they only report on `pulley.service`'s (almost
-// certainly nonexistent) state, never change anything.
+// Some dev sandboxes have a real `systemctl`/`loginctl` on PATH (a real
+// systemd-based desktop); the CI build image does not - it only compiles and
+// tests the workspace, it never runs a systemd user session. So these can't
+// assume either way; they check against the real environment instead, the
+// same way `require_docker`'s test does. `Backend::install`/`uninstall` for
+// `Systemd` are never called here regardless - they enable/write/reload a
+// real user systemd unit, which would mutate this actual machine's session.
+// `status` and `run_systemctl`/`linger_enabled` below are read-only queries
+// (`systemctl --user status`/`is-active`, `loginctl show-user ...
+// --property=Linger`), safe to run for real when the tool exists: they only
+// report on `pulley.service`'s (almost certainly nonexistent) state, never
+// change anything.
 
 #[test]
 fn status_queries_systemctl_without_erroring_even_when_the_unit_does_not_exist() {
-    Systemd.status().expect("status");
+    let result = Systemd.status();
+    if which::which("systemctl").is_ok() {
+        result.expect("status");
+    } else {
+        result.expect_err("status should report the missing systemctl binary");
+    }
 }
 
 #[test]
@@ -26,15 +35,25 @@ fn run_systemctl_errors_for_a_unit_that_does_not_exist() {
         "definitely-not-a-real-pulley-test-unit.service",
     ])
     .unwrap_err();
-    assert!(err.to_string().contains("systemctl"));
+    // The crafted "systemctl ... failed" message only exists once systemctl
+    // actually ran and exited non-zero; without the binary on PATH this is a
+    // raw `NotFound` io error instead, which never mentions "systemctl".
+    if which::which("systemctl").is_ok() {
+        assert!(err.to_string().contains("systemctl"));
+    }
 }
 
 #[test]
 fn linger_enabled_returns_a_bool_without_erroring() {
     // Whatever this machine's actual linger state is, the call itself must
     // succeed and parse to a bool - not panic or error just because linger
-    // happens to be off.
-    linger_enabled().expect("linger_enabled");
+    // happens to be off. That's only true when `loginctl` actually exists.
+    let result = linger_enabled();
+    if which::which("loginctl").is_ok() {
+        result.expect("linger_enabled");
+    } else {
+        result.expect_err("linger_enabled should report the missing loginctl binary");
+    }
 }
 
 #[test]
