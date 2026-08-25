@@ -1721,7 +1721,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3409,7 +3409,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -3890,9 +3890,9 @@ dependencies = [
 
 [[package]]
 name = "quench-auth"
-version = "0.3.11"
+version = "0.3.12"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "3840cb979f19d5b8d5fd5b828678a1f150b7f7fb314f67afec2a8180b5322ef4"
+checksum = "4ec677331d738abaf5980ed9fb8084b51c7c5211525b7641ad04fa8cbd6b9138"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -4006,9 +4006,9 @@ dependencies = [
 
 [[package]]
 name = "quench-starter"
-version = "0.3.11"
+version = "0.3.12"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "fa1a5a8236961243c5d174245269c19a4107feb54d43be95d9c94bb56b81139b"
+checksum = "fe8ba787cbe61d816cedb496962530e43b3a51fb0680338c0fae5b57eefa42fd"
 dependencies = [
  "actix-service",
  "actix-web",
@@ -4109,7 +4109,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4408,7 +4408,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -4467,7 +4467,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5420,7 +5420,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5448,7 +5448,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "230a1b821ccbd75b185820a1f1ff7b14d21da1e442e22c0863ea5f08771a8874"
 dependencies = [
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6298,7 +6298,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
