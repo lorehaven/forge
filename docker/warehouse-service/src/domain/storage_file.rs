@@ -338,6 +338,55 @@ pub async fn list_files(
         .collect()
 }
 
+/// A bounded, resumable slice of [`list_files`], for a caller that cannot
+/// take the whole thing at once - the storage listing endpoint, where a
+/// backup client's own storage can hold tens of thousands of paths.
+///
+/// `after` is the last path the caller has already seen (exclusive) - `None`
+/// starts from the beginning. `limit` rows are fetched, no more; asking for
+/// one extra (`limit + 1`, the caller's job) is what turns this into a
+/// peekable page rather than a second `COUNT` query.
+pub async fn list_files_page(
+    db: &Db,
+    storage_name: &str,
+    prefix: &str,
+    after: Option<&str>,
+    limit: i64,
+) -> Result<Vec<StorageFile>, StorageError> {
+    let pool = pool(db)?;
+    let schema = schema();
+    let sql = format!(
+        "SELECT path, size FROM {schema}.storage_files \
+         WHERE storage = $1 AND path LIKE $2 AND ($3::text IS NULL OR path > $3) \
+         ORDER BY path LIMIT $4"
+    );
+
+    // `%`/`_` in a caller's own prefix are not treated as wildcards - escaped
+    // so `LIKE` only ever matches it as a literal prefix.
+    let escaped = prefix
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    let pattern = format!("{escaped}%");
+
+    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+        .bind(storage_name)
+        .bind(pattern)
+        .bind(after)
+        .bind(limit)
+        .fetch_all(pool)
+        .await?;
+
+    rows.into_iter()
+        .map(|row| {
+            Ok(StorageFile {
+                path: row.try_get("path")?,
+                size: row.try_get("size")?,
+            })
+        })
+        .collect()
+}
+
 pub async fn read_file(
     db: &Db,
     storage_name: &str,

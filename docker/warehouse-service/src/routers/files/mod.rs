@@ -38,6 +38,7 @@ use std::path::{Component, Path, PathBuf};
 pub mod authz;
 pub mod dynamic;
 pub mod ops;
+pub mod pagination;
 
 /// A name bound to a directory on disk.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -276,11 +277,18 @@ pub struct FileQuery {
     pub path: String,
 }
 
-/// `?prefix=` - which subtree to list.
+/// `?prefix=&n=&last=` - which subtree to list, and how much of it at once.
+/// `n`/`last` mirror `routers::docker::registry::catalog`'s own pagination
+/// rather than a second convention in the same service: `n` is the page
+/// size, `last` the final item's key from the previous page (exclusive).
 #[derive(Debug, Deserialize)]
 pub struct ListQuery {
     #[serde(default)]
     pub prefix: Option<String>,
+    #[serde(default)]
+    pub n: Option<usize>,
+    #[serde(default)]
+    pub last: Option<String>,
 }
 
 // ---------------------------------------------------------------------------

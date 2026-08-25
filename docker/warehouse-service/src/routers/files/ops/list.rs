@@ -4,14 +4,27 @@
 //! dynamic storage has no directory to walk - `storage_files` already holds
 //! every path as a flat row, so "shallow" doesn't apply; every entry whose
 //! path starts with `?prefix=` matches, regardless of depth.
+//!
+//! Both kinds page the same way (`?n=&last=`, see
+//! `crate::routers::files::pagination`) - a dynamic storage backing a photo
+//! backup client can hold tens of thousands of paths, and returning them all
+//! in one response was the thing this was built to stop doing.
 
 use super::{ResolvedStorage, authorize, error, forbidden, not_found, resolve_storage};
 use crate::domain::storage_file;
+use crate::routers::files::pagination::{next_link, page_size, paginate, resume_after};
 use crate::routers::files::{ListQuery, PathError, confined, relative};
 use actix_web::http::StatusCode;
 use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
 use quench_db::prelude::Db;
 use serde::Serialize;
+
+/// The page size a caller gets when it doesn't ask for one, and the most it
+/// can ask for - large enough that a mobile client browsing its own backups
+/// rarely needs a second round trip, small enough that a single response
+/// never again holds an entire multi-year photo library at once.
+const DEFAULT_LIST_PAGE_SIZE: usize = 500;
+const MAX_LIST_PAGE_SIZE: usize = 2000;
 
 #[derive(Serialize)]
 pub struct StorageSummary {
@@ -115,8 +128,19 @@ async fn dynamic_entries(
     query: &ListQuery,
 ) -> HttpResponse {
     let prefix = query.prefix.clone().unwrap_or_default();
+    let limit = page_size(query.n, DEFAULT_LIST_PAGE_SIZE, MAX_LIST_PAGE_SIZE);
 
-    let files = match storage_file::list_files(db, &storage.name, &prefix).await {
+    // One extra row, discarded by `paginate` below - it exists only to answer
+    // `has_more` without a second (`COUNT`) query.
+    let files = match storage_file::list_files_page(
+        db,
+        &storage.name,
+        &prefix,
+        query.last.as_deref(),
+        limit as i64 + 1,
+    )
+    .await
+    {
         Ok(files) => files,
         Err(problem) => {
             tracing::error!("dynamic list failed: {problem}");
@@ -124,9 +148,12 @@ async fn dynamic_entries(
         }
     };
 
+    let page = paginate(files, limit);
+
     // Not `entries`: actix's `#[get(...)]` on the `entries` handler below
     // already generates a unit struct of that name in this module's scope.
-    let entry_list = files
+    let entry_list: Vec<Entry> = page
+        .items
         .into_iter()
         .map(|file| {
             let name = file
@@ -144,7 +171,25 @@ async fn dynamic_entries(
         })
         .collect();
 
-    HttpResponse::Ok().json(Listing {
+    let mut response = HttpResponse::Ok();
+    if page.has_more
+        && let Some(last) = entry_list.last()
+    {
+        response.append_header((
+            "Link",
+            next_link(
+                &format!(
+                    "/api/v1/files/{}?prefix={}",
+                    storage.name,
+                    urlencoding::encode(&prefix)
+                ),
+                limit,
+                &last.path,
+            ),
+        ));
+    }
+
+    response.json(Listing {
         storage: storage.name.clone(),
         prefix,
         entries: entry_list,
@@ -244,16 +289,39 @@ async fn static_entries(
     }
 
     // Directories first, then by name - a stable order, so a client diffing two
-    // listings sees changes rather than reshuffling.
+    // listings sees changes rather than reshuffling, and the one this
+    // storage kind's pagination resumes against below.
     entry_list.sort_by(|left, right| {
         (left.kind == "file")
             .cmp(&(right.kind == "file"))
             .then_with(|| left.name.cmp(&right.name))
     });
 
-    HttpResponse::Ok().json(Listing {
+    let limit = page_size(query.n, DEFAULT_LIST_PAGE_SIZE, MAX_LIST_PAGE_SIZE);
+    let skip = resume_after(&entry_list, query.last.as_deref(), |entry| &entry.name);
+    let page = paginate(entry_list.split_off(skip), limit);
+
+    let mut response = HttpResponse::Ok();
+    if page.has_more
+        && let Some(last) = page.items.last()
+    {
+        response.append_header((
+            "Link",
+            next_link(
+                &format!(
+                    "/api/v1/files/{}?prefix={}",
+                    storage.name,
+                    urlencoding::encode(&prefix)
+                ),
+                limit,
+                &last.name,
+            ),
+        ));
+    }
+
+    response.json(Listing {
         storage: storage.name.clone(),
         prefix,
-        entries: entry_list,
+        entries: page.items,
     })
 }

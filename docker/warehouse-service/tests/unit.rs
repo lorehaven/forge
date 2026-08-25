@@ -71,6 +71,8 @@ mod routers_files_ops_download_tests;
 mod routers_files_ops_list_tests;
 #[path = "unit/routers_files_ops_upload_tests.rs"]
 mod routers_files_ops_upload_tests;
+#[path = "unit/routers_files_pagination_tests.rs"]
+mod routers_files_pagination_tests;
 #[path = "unit/routers_mod_tests.rs"]
 mod routers_mod_tests;
 #[path = "unit/routers_ui_common_css_mod_tests.rs"]
