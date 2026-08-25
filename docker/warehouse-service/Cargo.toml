@@ -30,18 +30,20 @@ hex = { workspace = true }
 jsonwebtoken = { workspace = true }
 quench-auth = { workspace = true }
 quench-config = { workspace = true }
+quench-db = { workspace = true }
 quench-starter = { workspace = true }
 quench-web = { workspace = true }
 quench-web-components = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
+sqlx = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
-quench-db = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }

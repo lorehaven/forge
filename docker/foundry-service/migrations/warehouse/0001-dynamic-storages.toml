@@ -1,0 +1,84 @@
+[[migrations]]
+id = "0001-dynamic-storages"
+author = "warehouse-service"
+since = "0.2.1"
+
+# A storage an admin provisions and assigns to an owner - unlike the static,
+# env-configured storages in `FILE_STORAGES`, which stay exactly as they are
+# and never touch this table. `used_bytes` is maintained by the domain layer
+# alongside every insert/delete into `storage_files`, not recomputed from it,
+# so a quota check never has to scan a storage's whole content to answer.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.storages (
+    name TEXT PRIMARY KEY,
+    owner TEXT NOT NULL REFERENCES ${auth_schema}.users(username) ON DELETE CASCADE,
+    max_file_bytes BIGINT,
+    quota_bytes BIGINT NOT NULL,
+    used_bytes BIGINT NOT NULL DEFAULT 0,
+    sync_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS storages_owner_idx ON ${schema}.storages (owner);
+"""
+
+# Content-addressed, shared across every dynamic storage regardless of owner -
+# uploading the same bytes twice (the same photo backed up from two phones, or
+# a re-run of an already-successful backup) costs a `ref_count` bump instead of
+# a second copy on disk. `ref_count` reaching zero is what tells the domain
+# layer it may delete the physical blob.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.blobs (
+    sha256 TEXT PRIMARY KEY,
+    size BIGINT NOT NULL,
+    ref_count BIGINT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+"""
+
+# The logical name a caller uploaded under, within one storage - what a
+# dynamic storage's `list`/`download`/`delete` resolve against instead of a
+# real directory tree. `ON DELETE RESTRICT` on `sha256`: a blob with any
+# `storage_files` row still pointing at it is still referenced, so the
+# constraint itself backstops the domain layer's ref-counting if that ever
+# disagrees with reality.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.storage_files (
+    storage TEXT NOT NULL REFERENCES ${schema}.storages(name) ON DELETE CASCADE,
+    path TEXT NOT NULL,
+    sha256 TEXT NOT NULL REFERENCES ${schema}.blobs(sha256) ON DELETE RESTRICT,
+    size BIGINT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (storage, path)
+);
+"""
+
+# An append-only change feed, populated only for a storage with `sync_enabled`
+# - the "what changed since my last checkpoint" a backup client polls instead
+# of re-listing and re-hashing everything it already sent. `id` is the cursor:
+# a client stores the highest one it has seen and asks for `id > since` next
+# time.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.storage_sync_log (
+    id BIGSERIAL PRIMARY KEY,
+    storage TEXT NOT NULL REFERENCES ${schema}.storages(name) ON DELETE CASCADE,
+    path TEXT NOT NULL,
+    op TEXT NOT NULL,
+    sha256 TEXT,
+    size BIGINT,
+    at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS storage_sync_log_storage_id_idx ON ${schema}.storage_sync_log (storage, id);
+"""

@@ -19,13 +19,17 @@ Two mount points, split by where the protocol forces them to live (`src/lib.rs`)
 
 ### Files API
 
-Everything is under `{BASE_PATH}/api/v1/files` and behind the realm's auth — a bearer token or the realm cookie, verified against gatehouse's JWKS like any other relying party. Turned on with `FEATURE_FILES_ENABLED`; upload and delete need `warehouse:write` (or a wildcard role), download and list need only `warehouse:read`, enforced by `quench-auth`'s `RequireWrite`.
+Everything is under `{BASE_PATH}/api/v1/files` and behind the realm's auth — a bearer token or the realm cookie, verified against gatehouse's JWKS like any other relying party. Turned on with `FEATURE_FILES_ENABLED`. There are two kinds of storage, resolved through the same URL shape but otherwise independent of each other:
 
-A *storage* is a name bound to a directory (`FILE_STORAGES=artifacts=/storage/artifacts;media=/mnt/media`). Callers name the storage, never the directory. An unconfigured name is a `404`; a malformed entry is dropped with a warning rather than treated as fatal, so one bad storage does not take the crates and Docker registries down with it. Names may use letters, digits, `-` and `_`; a duplicate name keeps the first binding.
+**Static storages** — the original kind, a name bound to a directory the operator configures (`FILE_STORAGES=artifacts=/storage/artifacts;media=/mnt/media`). Callers name the storage, never the directory. An unconfigured name is a `404`; a malformed `FILE_STORAGES` entry is dropped with a warning rather than treated as fatal, so one bad storage does not take the crates and Docker registries down with it. Names may use letters, digits, `-` and `_`; a duplicate name keeps the first binding. Access is the original, realm-wide model: upload/delete need the blanket `warehouse:write` grant (or a wildcard role), download/list need only a valid realm identity for this service (no separate `read` check, unchanged from before dynamic storages existed).
 
-Endpoints: `GET /api/v1/files` (storage names), `GET /api/v1/files/{storage}?prefix=` (shallow listing), and `GET`/`PUT`/`HEAD`/`DELETE /api/v1/files/{storage}/file?path=`. `PUT` streams the body straight to a sibling of the target and renames it into place, returning the size and SHA-256 digest; `MAX_FILE_BYTES` (default `MAX_REQUEST_BODY_BYTES`, 1GiB) is enforced as bytes arrive rather than after buffering the whole thing.
+**Dynamic storages** — admin-provisioned, database-backed, and *owned*: created via `POST /api/v1/files` (blanket `warehouse:write` required) naming an `owner`, an optional `max_file_bytes` override, a `quota_bytes` ceiling (defaults from `WAREHOUSE_DEFAULT_STORAGE_QUOTA_BYTES`), and whether `sync_enabled`. Unlike a static storage, a dynamic one is **private by default**: only its owner, a wildcard role, or someone holding an explicit `warehouse:storage:<name>:read`/`write` grant (assigned through gatehouse's ordinary per-user permission editor, once `resource_types = ["storage"]` is declared for warehouse in `gatehouse-service`'s `config/permissions.toml`) may read or write it — the blanket `warehouse:read`/`write` grant does **not** apply here, deliberately, since the point is per-user isolation (see `routers/files/authz.rs`). `PATCH`/`DELETE /api/v1/files/{storage}` reconfigure or remove one, admin-only the same way creation is.
 
-The `path` parameter is the entire attack surface: `..`, absolute paths, empty paths and control bytes are refused lexically (never normalised away — a symlink component would make normalisation wrong anyway), and the resolved path is separately checked to stay inside the storage root once every symlink is followed. Both checks answer `403`.
+A dynamic storage's content is not a directory: every upload is content-addressed by SHA-256 into one shared blob store under `DYNAMIC_STORAGE_ROOT`, ref-counted so uploading identical bytes twice (the same photo backed up from two phones, or a re-run of an already-successful backup) costs a ref-count bump instead of a second copy on disk. A storage's `quota_bytes` still charges the full logical size for a dedup hit, so there's no way to game the quota by re-uploading content someone else already stored. `GET /api/v1/files/{storage}/sync?since=<id>` — available only when `sync_enabled` — returns the append-only change log (`{id, path, op, sha256, size, at}`) since cursor `since`, so a client (a phone backup app, say) can ask "what changed" instead of re-listing and re-hashing everything it already sent.
+
+Endpoints common to both kinds: `GET /api/v1/files` (storage list — static entries by name only, dynamic entries also carry `owner`/`quota_bytes`/`used_bytes`/`sync_enabled`, filtered to what the caller may see), `GET /api/v1/files/{storage}?prefix=` (listing — a shallow directory walk for a static storage, a flat path-prefix match for a dynamic one), and `GET`/`PUT`/`HEAD`/`DELETE /api/v1/files/{storage}/file?path=`. `PUT` streams the body rather than buffering it and returns the size and SHA-256 digest; the per-file size limit is `MAX_FILE_BYTES` (default `MAX_REQUEST_BODY_BYTES`, 1GiB) for a static storage, or a dynamic storage's own `max_file_bytes` when it overrides that default.
+
+The `path` parameter is lexically validated the same way for both kinds — `..`, absolute paths, empty paths and control bytes are refused (never normalised away). For a static storage the resolved path is separately checked to stay inside the storage root once every symlink is followed (both checks answer `403`); a dynamic storage has no filesystem path to confine in the first place, since `path` is only ever a database key resolved to a blob by digest.
 
 The crates registry and `/admin` are **not** behind any of this — they have no real authentication yet, so there is no identity to build a permission on top of. That is separate, unstarted work.
 
@@ -60,9 +64,10 @@ Auth flow: a client hits `/v2/...`; gets `401` with `WWW-Authenticate: Bearer re
 ## Requirements
 
 - A relying party of gatehouse: `GATEHOUSE_URL`/OAuth client config for realm sessions on the files API and the UI.
-- Postgres reachable via `DATABASE_URL` for the realm's users (Docker registry Basic auth) — schema comes from foundry's `warehouse` catalog module.
+- Postgres reachable via `DATABASE_URL` for the realm's users (Docker registry Basic auth) and, if any dynamic storage is created, for the `storages`/`blobs`/`storage_files`/`storage_sync_log` tables — schema comes from foundry's `warehouse` catalog module.
 - `DOCKER_TOKEN_SECRET` set, unconditionally, or the process refuses to start.
 - Redis/`REDIS_URL` for the shared session store, like every other service in the realm.
+- `DYNAMIC_STORAGE_ROOT` set to a directory, if any dynamic storage is created — its content-addressed blob store lives there.
 
 ## Configuration
 
@@ -71,8 +76,10 @@ Selected environment variables:
 | Variable | Purpose |
 |---|---|
 | `FEATURE_FILES_ENABLED` | turns the files API on |
-| `FILE_STORAGES` | `name=path;name=path` storage catalog |
-| `MAX_FILE_BYTES` / `MAX_REQUEST_BODY_BYTES` | per-file / per-request cap (default 1GiB) |
+| `FILE_STORAGES` | `name=path;name=path` static storage catalog |
+| `MAX_FILE_BYTES` / `MAX_REQUEST_BODY_BYTES` | per-file / per-request cap for a static storage (default 1GiB) |
+| `DYNAMIC_STORAGE_ROOT` | root of the shared, content-addressed blob store for dynamic storages |
+| `WAREHOUSE_DEFAULT_STORAGE_QUOTA_BYTES` | quota a new dynamic storage gets when its admin doesn't name one (default 10GiB) |
 | `DOCKER_TOKEN_SECRET` | signs Docker Registry bearer tokens (required, no default) |
 | `SERVICE_AUTH_ENABLED` | Docker Registry auth on/off (default `false`) |
 | `SERVICE_NAME` / `SERVICE_REALM` | Docker token `service`/`realm` claim (defaults `service` / `https://localhost:8698/token`) |
@@ -83,6 +90,6 @@ In local dev (`foreman.toml`) warehouse runs on port 6443 under base path `/ware
 
 ## Testing
 
-Unit tests live under `tests/unit/` (`files_path_tests.rs`, `files_confinement_tests.rs`, `files_storage_tests.rs`), aggregated through `tests/unit.rs` — mostly path-safety and storage-resolution coverage for the files API. Run with `cargo test -p warehouse-service` or `foreman test warehouse`.
+Unit tests live under `tests/unit/` (`files_path_tests.rs`, `files_confinement_tests.rs`, `files_storage_tests.rs`, plus the `routers_files_ops_*` and domain-level dynamic-storage tests), aggregated through `tests/unit.rs` — mostly path-safety and storage-resolution coverage for the files API. Run with `cargo test -p warehouse-service` or `foreman test warehouse` (the latter needed to exercise anything dynamic-storage-related, since that needs real Postgres).
 
 [Home](../README.md)

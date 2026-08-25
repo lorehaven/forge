@@ -20,6 +20,7 @@ async fn main() -> std::io::Result<()> {
     let sso_config = web::Data::new(SsoConfig::init());
     let user_db = UserDb::init(db_wrapper.db.clone()).await;
     let session_db = SessionDb::from_env().await.expect("session store");
+    let db = db_wrapper.db.clone();
 
     // Reported at startup rather than discovered by a caller getting a 404 for
     // a storage this deployment was never given.
@@ -45,6 +46,7 @@ async fn main() -> std::io::Result<()> {
                 sso_config.clone(),
                 user_db.clone(),
                 session_db.clone(),
+                db.clone(),
             )
         },
         Some(db_wrapper),

@@ -1,6 +1,12 @@
 use actix_web::App;
 use actix_web::test as actix_test;
+use actix_web::web;
+use quench_db::{Db, InMemoryDb};
 use warehouse_service::routers::files::ops::download::{download_name, handle, head, is_file};
+
+fn in_memory_db() -> web::Data<Db> {
+    web::Data::new(Db::InMemory(InMemoryDb::new()))
+}
 
 #[test]
 fn download_name_uses_the_target_s_file_name() {
@@ -41,7 +47,7 @@ async fn handle_reports_not_found_when_file_storage_is_disabled() {
     // a `LazyLock` fixed for the whole test binary (see `routers_mod_tests`'s
     // own tests) - so this deterministically hits the "not enabled"
     // branch rather than ever reaching the filesystem.
-    let app = actix_test::init_service(App::new().service(handle)).await;
+    let app = actix_test::init_service(App::new().app_data(in_memory_db()).service(handle)).await;
     let req = actix_test::TestRequest::get()
         .uri("/artifacts/file?path=a.txt")
         .to_request();
@@ -51,7 +57,7 @@ async fn handle_reports_not_found_when_file_storage_is_disabled() {
 
 #[actix_web::test]
 async fn head_reports_not_found_when_file_storage_is_disabled() {
-    let app = actix_test::init_service(App::new().service(head)).await;
+    let app = actix_test::init_service(App::new().app_data(in_memory_db()).service(head)).await;
     let req = actix_test::TestRequest::default()
         .method(actix_web::http::Method::HEAD)
         .uri("/artifacts/file?path=a.txt")

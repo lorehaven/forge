@@ -57,6 +57,10 @@ mod routers_docker_registry_storage_tests;
 mod routers_docker_registry_tags_tests;
 #[path = "unit/routers_docker_token_tests.rs"]
 mod routers_docker_token_tests;
+#[path = "unit/routers_files_authz_tests.rs"]
+mod routers_files_authz_tests;
+#[path = "unit/routers_files_dynamic_tests.rs"]
+mod routers_files_dynamic_tests;
 #[path = "unit/routers_files_mod_tests.rs"]
 mod routers_files_mod_tests;
 #[path = "unit/routers_files_ops_delete_tests.rs"]

@@ -31,11 +31,12 @@ use actix_web::dev::HttpServiceFactory;
 use actix_web::middleware::NormalizePath;
 use actix_web::web;
 use quench_auth::actix::middleware::auth::Auth;
-use quench_auth::actix::middleware::require_write::RequireWrite;
 use quench_auth::prelude::JwtConfig;
 use serde::Deserialize;
 use std::path::{Component, Path, PathBuf};
 
+pub mod authz;
+pub mod dynamic;
 pub mod ops;
 
 /// A name bound to a directory on disk.
@@ -65,6 +66,17 @@ pub fn max_file_bytes() -> u64 {
     *MAX_FILE_BYTES
 }
 
+/// Whether `name` is safe to use as a storage name - static or dynamic alike.
+/// Names appear in a URL path segment, so keeping them to this set means one
+/// can never be something that has to be escaped, or something that looks
+/// like a path of its own.
+pub fn valid_storage_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+}
+
 /// `name=path` pairs separated by `;`.
 ///
 /// A malformed entry is dropped with a warning rather than taken as a fatal
@@ -90,10 +102,7 @@ pub fn parse_storages(raw: &str) -> Vec<Storage> {
         // The name appears in a URL path segment. Keeping it to this set means
         // a storage can never be named something that has to be escaped, or
         // something that looks like a path of its own.
-        if !name
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
-        {
+        if !valid_storage_name(name) {
             tracing::warn!(
                 "ignoring file storage `{name}`: names may use letters, digits, `-` and `_` only"
             );
@@ -278,20 +287,25 @@ pub struct ListQuery {
 // Actix scope
 // ---------------------------------------------------------------------------
 
-/// Route order is load-bearing: `/{storage}/file` is concrete and has to be
-/// registered before `/{storage}`, which would otherwise match it and treat
-/// `file` as a storage name.
+/// Route order is load-bearing: the concrete `/{storage}/file` and
+/// `/{storage}/sync` have to be registered before `/{storage}`, which would
+/// otherwise match them and treat `file`/`sync` as a storage name.
 ///
-/// Upload and delete are the only writes here, both already the right HTTP
-/// method (`PUT`, `DELETE`) for download/list/head's `GET`, so `RequireWrite`
-/// needs no route-level exceptions. It has to sit *inside* `Auth` - the `Auth`
-/// wrap has to be the last one registered, so it runs first and populates the
-/// claims `RequireWrite` reads. See `require_write`'s module docs.
+/// Unlike before dynamic storages existed, there is no blanket `RequireWrite`
+/// here: a static storage's upload/delete still check the blanket
+/// `warehouse:write` grant themselves (see `ops::mod::storage_or_error`), but
+/// a dynamic storage's access depends on who owns it and what's been shared
+/// with whom, which only `authz::can_on_storage` can answer - see that
+/// module's docs for why this diverges from `RequireWrite`'s usual role.
+/// `Auth` stays mounted so every handler has claims to check.
 pub fn scope(jwt_config: JwtConfig) -> impl HttpServiceFactory {
     web::scope("/api/v1/files")
         .wrap(NormalizePath::trim())
-        .wrap(RequireWrite::new(jwt_config.clone()))
         .wrap(Auth::new(jwt_config))
+        .service(ops::storages::create)
+        .service(ops::storages::patch)
+        .service(ops::storages::remove)
+        .service(ops::storages::sync_log)
         .service(ops::upload::handle)
         .service(ops::download::handle)
         .service(ops::download::head)

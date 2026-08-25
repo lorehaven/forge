@@ -1,19 +1,29 @@
 //! `GET /api/v1/files` and `GET /api/v1/files/{storage}` - what is there.
 //!
-//! Listing is shallow and one directory at a time. A recursive walk of a
-//! storage holding every artifact of every run would be a slow request whose
-//! cost grows with history, and the caller that wants one subtree can ask for
-//! it with `?prefix=`.
+//! Listing is shallow and one directory at a time for a static storage. A
+//! dynamic storage has no directory to walk - `storage_files` already holds
+//! every path as a flat row, so "shallow" doesn't apply; every entry whose
+//! path starts with `?prefix=` matches, regardless of depth.
 
-use super::{error, not_found, storage_or_error};
+use super::{ResolvedStorage, authorize, error, forbidden, not_found, resolve_storage};
+use crate::domain::storage_file;
 use crate::routers::files::{ListQuery, PathError, confined, relative};
 use actix_web::http::StatusCode;
-use actix_web::{HttpResponse, Responder, get, web};
+use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
+use quench_db::prelude::Db;
 use serde::Serialize;
 
 #[derive(Serialize)]
 pub struct StorageSummary {
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quota_bytes: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub used_bytes: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sync_enabled: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -33,36 +43,118 @@ pub struct Entry {
     pub size: Option<u64>,
 }
 
-/// The storages this deployment serves - names only.
-///
-/// Deliberately not their directories: a caller addresses a storage by name,
-/// and the host's layout is not theirs to know.
+/// The storages this deployment serves - static ones by name only, since a
+/// caller addresses one by name and the host's layout is not theirs to know;
+/// dynamic ones with the fields a caller managing its own backup space needs
+/// (`owner`, `quota_bytes`, `used_bytes`, `sync_enabled`), filtered to the
+/// ones the caller may see at all (its owner, a wildcard role, or an
+/// explicit grant).
 #[get("")]
-#[tracing::instrument]
-pub async fn storages() -> impl Responder {
+#[tracing::instrument(skip(request))]
+pub async fn storages(request: HttpRequest, db: web::Data<Db>) -> impl Responder {
     if !crate::routers::files_enabled() {
         return not_found("file storage is not enabled");
     }
 
-    let storages: Vec<StorageSummary> = crate::routers::files::storages()
+    let mut summaries: Vec<StorageSummary> = crate::routers::files::storages()
         .iter()
         .map(|storage| StorageSummary {
             name: storage.name.clone(),
+            owner: None,
+            quota_bytes: None,
+            used_bytes: None,
+            sync_enabled: None,
         })
         .collect();
 
-    HttpResponse::Ok().json(storages)
+    if let Ok(dynamic_storages) = crate::domain::storage::list(&db).await {
+        for storage in dynamic_storages {
+            if !authorize(&request, &ResolvedStorage::Dynamic(storage.clone()), "read") {
+                continue;
+            }
+            summaries.push(StorageSummary {
+                name: storage.name,
+                owner: Some(storage.owner),
+                quota_bytes: Some(storage.quota_bytes),
+                used_bytes: Some(storage.used_bytes),
+                sync_enabled: Some(storage.sync_enabled),
+            });
+        }
+    }
+
+    HttpResponse::Ok().json(summaries)
 }
 
 #[get("/{storage}")]
-#[tracing::instrument]
-pub async fn entries(storage: web::Path<String>, query: web::Query<ListQuery>) -> impl Responder {
+#[tracing::instrument(skip(request))]
+pub async fn entries(
+    request: HttpRequest,
+    db: web::Data<Db>,
+    storage: web::Path<String>,
+    query: web::Query<ListQuery>,
+) -> impl Responder {
     let storage_name = storage.into_inner();
-    let storage = match storage_or_error(&storage_name) {
-        Ok(storage) => storage,
+    let resolved = match resolve_storage(&db, &storage_name).await {
+        Ok(resolved) => resolved,
         Err(response) => return *response,
     };
 
+    if !authorize(&request, &resolved, "read") {
+        return forbidden("read access to this storage is required");
+    }
+
+    match resolved {
+        ResolvedStorage::Static(storage) => static_entries(storage, &query).await,
+        ResolvedStorage::Dynamic(storage) => dynamic_entries(&db, &storage, &query).await,
+    }
+}
+
+async fn dynamic_entries(
+    db: &Db,
+    storage: &crate::domain::storage::DynamicStorage,
+    query: &ListQuery,
+) -> HttpResponse {
+    let prefix = query.prefix.clone().unwrap_or_default();
+
+    let files = match storage_file::list_files(db, &storage.name, &prefix).await {
+        Ok(files) => files,
+        Err(problem) => {
+            tracing::error!("dynamic list failed: {problem}");
+            return error(StatusCode::INTERNAL_SERVER_ERROR, "listing failed");
+        }
+    };
+
+    // Not `entries`: actix's `#[get(...)]` on the `entries` handler below
+    // already generates a unit struct of that name in this module's scope.
+    let entry_list = files
+        .into_iter()
+        .map(|file| {
+            let name = file
+                .path
+                .rsplit('/')
+                .next()
+                .unwrap_or(&file.path)
+                .to_string();
+            Entry {
+                name,
+                path: file.path,
+                kind: "file",
+                size: Some(file.size as u64),
+            }
+        })
+        .collect();
+
+    HttpResponse::Ok().json(Listing {
+        storage: storage.name.clone(),
+        prefix,
+        entries: entry_list,
+    })
+}
+
+async fn static_entries(
+    storage: &'static crate::routers::files::Storage,
+    query: &ListQuery,
+) -> HttpResponse {
     let prefix = query.prefix.clone().unwrap_or_default();
 
     // An empty prefix means the storage root, which `relative` refuses as a
@@ -92,7 +184,7 @@ pub async fn entries(storage: web::Path<String>, query: web::Query<ListQuery>) -
         Err(_) => return not_found("no such directory"),
     };
 
-    let mut entries = Vec::new();
+    let mut entry_list = Vec::new();
 
     while let Ok(Some(entry)) = reader.next_entry().await {
         let name = entry.file_name().to_string_lossy().to_string();
@@ -143,7 +235,7 @@ pub async fn entries(storage: web::Path<String>, query: web::Query<ListQuery>) -
             continue;
         };
 
-        entries.push(Entry {
+        entry_list.push(Entry {
             name,
             path,
             kind,
@@ -153,7 +245,7 @@ pub async fn entries(storage: web::Path<String>, query: web::Query<ListQuery>) -
 
     // Directories first, then by name - a stable order, so a client diffing two
     // listings sees changes rather than reshuffling.
-    entries.sort_by(|left, right| {
+    entry_list.sort_by(|left, right| {
         (left.kind == "file")
             .cmp(&(right.kind == "file"))
             .then_with(|| left.name.cmp(&right.name))
@@ -162,6 +254,6 @@ pub async fn entries(storage: web::Path<String>, query: web::Query<ListQuery>) -
     HttpResponse::Ok().json(Listing {
         storage: storage.name.clone(),
         prefix,
-        entries,
+        entries: entry_list,
     })
 }

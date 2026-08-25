@@ -1,13 +1,24 @@
 use actix_web::http::StatusCode;
 use actix_web::test as actix_test;
+use actix_web::web;
+use quench_db::{Db, InMemoryDb};
 use warehouse_service::routers::files::ops::list::{entries, storages};
+
+fn in_memory_db() -> web::Data<Db> {
+    web::Data::new(Db::InMemory(InMemoryDb::new()))
+}
 
 #[actix_web::test]
 async fn storages_reports_not_found_when_file_storage_is_disabled() {
     // `FEATURE_FILES_ENABLED` is unset in this sandbox, and the flag is a
     // `LazyLock` fixed for the whole test binary (see `routers_mod_tests`'s
     // own tests), so this is the one branch reachable deterministically.
-    let app = actix_test::init_service(actix_web::App::new().service(storages)).await;
+    let app = actix_test::init_service(
+        actix_web::App::new()
+            .app_data(in_memory_db())
+            .service(storages),
+    )
+    .await;
     let req = actix_test::TestRequest::get().uri("/").to_request();
     let resp = actix_test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
@@ -15,7 +26,12 @@ async fn storages_reports_not_found_when_file_storage_is_disabled() {
 
 #[actix_web::test]
 async fn entries_reports_not_found_when_file_storage_is_disabled() {
-    let app = actix_test::init_service(actix_web::App::new().service(entries)).await;
+    let app = actix_test::init_service(
+        actix_web::App::new()
+            .app_data(in_memory_db())
+            .service(entries),
+    )
+    .await;
     let req = actix_test::TestRequest::get()
         .uri("/artifacts")
         .to_request();

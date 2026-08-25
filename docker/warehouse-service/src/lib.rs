@@ -14,6 +14,7 @@ use docker_token::DockerTokenConfig;
 use quench_auth::actix::domain::sso_client::SsoConfig;
 use quench_auth::prelude::{JwtConfig, SessionDb, UserDb};
 use quench_config::ConfigLoader;
+use quench_db::prelude::Db;
 use quench_starter::prelude::HttpServiceFactory;
 use std::sync::Arc;
 
@@ -58,6 +59,7 @@ pub fn base_path_scope(
     sso_config: web::Data<SsoConfig>,
     user_db: Arc<UserDb>,
     session_db: Arc<SessionDb>,
+    db: Db,
 ) -> impl HttpServiceFactory {
     let loader = ConfigLoader::new("WAREHOUSE");
     let max_body_bytes = loader.env_u64("MAX_REQUEST_BODY_BYTES", 1024 * 1024 * 1024) as usize;
@@ -71,6 +73,7 @@ pub fn base_path_scope(
         .app_data(sso_config)
         .app_data(web::Data::new(user_db))
         .app_data(web::Data::new(session_db))
+        .app_data(web::Data::new(db))
         .service(routers::admin::scope())
         .service(routers::crates::scope())
         .service(routers::crates::scope_index())
