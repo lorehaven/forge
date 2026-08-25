@@ -6071,7 +6071,7 @@ dependencies = [
 
 [[package]]
 name = "warehouse-service"
-version = "0.4.14"
+version = "0.4.15"
 dependencies = [
  "actix-web",
  "base64 0.23.1",
