@@ -2,7 +2,7 @@ use actix_web::http::StatusCode;
 use actix_web::test as actix_test;
 use actix_web::web;
 use quench_db::{Db, InMemoryDb};
-use warehouse_service::routers::files::ops::list::{entries, storages};
+use warehouse_service::routers::files::ops::list::{entries, list_path, storages};
 
 fn in_memory_db() -> web::Data<Db> {
     web::Data::new(Db::InMemory(InMemoryDb::new()))
@@ -37,4 +37,28 @@ async fn entries_reports_not_found_when_file_storage_is_disabled() {
         .to_request();
     let resp = actix_test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[test]
+fn list_path_ascending_carries_only_the_prefix() {
+    assert_eq!(
+        list_path("backups", "photos/2026", false),
+        "/api/v1/files/backups?prefix=photos%2F2026"
+    );
+}
+
+#[test]
+fn list_path_descending_also_carries_desc_true() {
+    assert_eq!(
+        list_path("backups", "photos/2026", true),
+        "/api/v1/files/backups?prefix=photos%2F2026&desc=true"
+    );
+}
+
+#[test]
+fn list_path_encodes_a_prefix_with_reserved_characters() {
+    assert_eq!(
+        list_path("backups", "a b&c", false),
+        "/api/v1/files/backups?prefix=a%20b%26c"
+    );
 }

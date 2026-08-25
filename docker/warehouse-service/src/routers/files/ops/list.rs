@@ -26,6 +26,23 @@ use serde::Serialize;
 const DEFAULT_LIST_PAGE_SIZE: usize = 500;
 const MAX_LIST_PAGE_SIZE: usize = 2000;
 
+/// The path+query a `Link` header's target names, before pagination's own
+/// `n`/`last` are appended by `pagination::next_link`. `prefix` and `desc`
+/// have to survive onto the next page too, or a client just following
+/// `Link` would silently drift back to the storage root or the default
+/// (ascending) order partway through paging.
+pub fn list_path(storage_name: &str, prefix: &str, desc: bool) -> String {
+    let mut path = format!(
+        "/api/v1/files/{}?prefix={}",
+        storage_name,
+        urlencoding::encode(prefix)
+    );
+    if desc {
+        path.push_str("&desc=true");
+    }
+    path
+}
+
 #[derive(Serialize)]
 pub struct StorageSummary {
     pub name: String,
@@ -138,6 +155,7 @@ async fn dynamic_entries(
         &prefix,
         query.last.as_deref(),
         limit as i64 + 1,
+        query.desc,
     )
     .await
     {
@@ -178,11 +196,7 @@ async fn dynamic_entries(
         response.append_header((
             "Link",
             next_link(
-                &format!(
-                    "/api/v1/files/{}?prefix={}",
-                    storage.name,
-                    urlencoding::encode(&prefix)
-                ),
+                &list_path(&storage.name, &prefix, query.desc),
                 limit,
                 &last.path,
             ),
@@ -288,13 +302,20 @@ async fn static_entries(
         });
     }
 
-    // Directories first, then by name - a stable order, so a client diffing two
-    // listings sees changes rather than reshuffling, and the one this
-    // storage kind's pagination resumes against below.
+    // Directories first regardless of `desc` - a file-manager convention, not
+    // part of "newest first" - then by name, reversed under `desc`. A stable
+    // order either way, so a client diffing two listings sees changes rather
+    // than reshuffling, and the one this storage kind's pagination resumes
+    // against below.
     entry_list.sort_by(|left, right| {
+        let name_order = if query.desc {
+            right.name.cmp(&left.name)
+        } else {
+            left.name.cmp(&right.name)
+        };
         (left.kind == "file")
             .cmp(&(right.kind == "file"))
-            .then_with(|| left.name.cmp(&right.name))
+            .then_with(|| name_order)
     });
 
     let limit = page_size(query.n, DEFAULT_LIST_PAGE_SIZE, MAX_LIST_PAGE_SIZE);
@@ -308,11 +329,7 @@ async fn static_entries(
         response.append_header((
             "Link",
             next_link(
-                &format!(
-                    "/api/v1/files/{}?prefix={}",
-                    storage.name,
-                    urlencoding::encode(&prefix)
-                ),
+                &list_path(&storage.name, &prefix, query.desc),
                 limit,
                 &last.name,
             ),

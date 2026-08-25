@@ -343,22 +343,27 @@ pub async fn list_files(
 /// backup client's own storage can hold tens of thousands of paths.
 ///
 /// `after` is the last path the caller has already seen (exclusive) - `None`
-/// starts from the beginning. `limit` rows are fetched, no more; asking for
-/// one extra (`limit + 1`, the caller's job) is what turns this into a
-/// peekable page rather than a second `COUNT` query.
+/// starts from the beginning of whichever end `desc` points at. `limit` rows
+/// are fetched, no more; asking for one extra (`limit + 1`, the caller's job)
+/// is what turns this into a peekable page rather than a second `COUNT`
+/// query. `desc` walks `path` newest-first instead of oldest-first - the
+/// comparison flips along with the sort so `after` still means the same
+/// thing either way: "past this point already".
 pub async fn list_files_page(
     db: &Db,
     storage_name: &str,
     prefix: &str,
     after: Option<&str>,
     limit: i64,
+    desc: bool,
 ) -> Result<Vec<StorageFile>, StorageError> {
     let pool = pool(db)?;
     let schema = schema();
+    let (cmp, order) = if desc { ("<", "DESC") } else { (">", "ASC") };
     let sql = format!(
         "SELECT path, size FROM {schema}.storage_files \
-         WHERE storage = $1 AND path LIKE $2 AND ($3::text IS NULL OR path > $3) \
-         ORDER BY path LIMIT $4"
+         WHERE storage = $1 AND path LIKE $2 AND ($3::text IS NULL OR path {cmp} $3) \
+         ORDER BY path {order} LIMIT $4"
     );
 
     // `%`/`_` in a caller's own prefix are not treated as wildcards - escaped

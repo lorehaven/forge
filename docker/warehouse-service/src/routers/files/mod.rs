@@ -277,10 +277,13 @@ pub struct FileQuery {
     pub path: String,
 }
 
-/// `?prefix=&n=&last=` - which subtree to list, and how much of it at once.
-/// `n`/`last` mirror `routers::docker::registry::catalog`'s own pagination
-/// rather than a second convention in the same service: `n` is the page
-/// size, `last` the final item's key from the previous page (exclusive).
+/// `?prefix=&n=&last=&desc=` - which subtree to list, how much of it at once,
+/// and in which direction. `n`/`last` mirror `routers::docker::registry::
+/// catalog`'s own pagination rather than a second convention in the same
+/// service: `n` is the page size, `last` the final item's key from the
+/// previous page (exclusive). `desc` walks newest-first instead of
+/// oldest-first - a backup client's browse view wants the files it just
+/// uploaded at the top, not buried behind everything older.
 #[derive(Debug, Deserialize)]
 pub struct ListQuery {
     #[serde(default)]
@@ -289,6 +292,8 @@ pub struct ListQuery {
     pub n: Option<usize>,
     #[serde(default)]
     pub last: Option<String>,
+    #[serde(default)]
+    pub desc: bool,
 }
 
 // ---------------------------------------------------------------------------
