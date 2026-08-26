@@ -77,9 +77,10 @@ pub fn base_path_scope(
         .service(routers::admin::scope())
         .service(routers::crates::scope())
         .service(routers::crates::scope_index())
-        // Unlike crates and docker, the files API applies the realm's auth to
-        // itself: there is no registry protocol here to negotiate a token, and
-        // a caller presents a realm identity directly.
+        // Unlike crates and docker, the files and apk APIs apply the realm's
+        // auth to themselves: there is no registry protocol here to
+        // negotiate a token, and a caller presents a realm identity directly.
         .service(routers::files::scope(jwt_config.get_ref().clone()))
+        .service(routers::apk::scope(jwt_config.get_ref().clone()))
         .service(routers::ui::scope())
 }

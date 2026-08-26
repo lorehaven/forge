@@ -26,6 +26,7 @@ argon2 = { version = "0.5" }
 async-stream = { version = "0.3" }
 assert_cmd = { version = "2.2" }
 async-trait = { version = "0.1" }
+axmldecoder = { version = "0.5" }
 axum = { version = "0.8", features = ["json"] }
 base64 = { version = "0.23" }
 bytes = { version = "1.12" }
@@ -101,6 +102,7 @@ tracing-subscriber = { version = "0.3" }
 uuid = { version = "1.25", features = ["v4"] }
 urlencoding = { version = "2.1" }
 walkdir = { version = "2.5" }
+zip = { version = "8", default-features = false, features = ["deflate"] }
 which = { version = "8.0" }
 wiremock = { version = "0.6" }
 

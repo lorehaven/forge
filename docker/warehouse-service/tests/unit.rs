@@ -1,8 +1,12 @@
 #[path = "support.rs"]
 mod support;
 
+#[path = "unit/apk_manifest_tests.rs"]
+mod apk_manifest_tests;
 #[path = "unit/docker_token_tests.rs"]
 mod docker_token_tests;
+#[path = "unit/domain_apk_tests.rs"]
+mod domain_apk_tests;
 #[path = "unit/files_confinement_tests.rs"]
 mod files_confinement_tests;
 #[path = "unit/files_path_tests.rs"]
@@ -17,6 +21,24 @@ mod middleware_limits_tests;
 mod routers_admin_crates_gc_tests;
 #[path = "unit/routers_admin_docker_gc_tests.rs"]
 mod routers_admin_docker_gc_tests;
+#[path = "unit/routers_apk_download_tests.rs"]
+mod routers_apk_download_tests;
+#[path = "unit/routers_apk_latest_tests.rs"]
+mod routers_apk_latest_tests;
+#[path = "unit/routers_apk_list_tests.rs"]
+mod routers_apk_list_tests;
+#[path = "unit/routers_apk_metadata_tests.rs"]
+mod routers_apk_metadata_tests;
+#[path = "unit/routers_apk_mod_tests.rs"]
+mod routers_apk_mod_tests;
+#[path = "unit/routers_apk_ops_mod_tests.rs"]
+mod routers_apk_ops_mod_tests;
+#[path = "unit/routers_apk_publish_tests.rs"]
+mod routers_apk_publish_tests;
+#[path = "unit/routers_apk_unyank_tests.rs"]
+mod routers_apk_unyank_tests;
+#[path = "unit/routers_apk_yank_tests.rs"]
+mod routers_apk_yank_tests;
 #[path = "unit/routers_crates_mod_tests.rs"]
 mod routers_crates_mod_tests;
 #[path = "unit/routers_crates_owners_tests.rs"]

@@ -1,0 +1,46 @@
+[[migrations]]
+id = "0002-apk-versions"
+author = "warehouse-service"
+since = "0.2.1"
+
+# One row per published APK version. `id` is `<package_name>@<version_code>`
+# rather than a surrogate key: the pair is already the natural identity a
+# caller addresses (`PUT /api/v1/apk/{package}/{version_code}`), and a text
+# primary key lets this go through `quench-db`'s generic `Crud` - there is no
+# locked read-then-write accounting here the way a dynamic storage's quota
+# needs, so the raw-SQL path `domain/storage.rs` uses would be unwarranted
+# complexity.
+#
+# `version_code` and `version_name` both come from the APK's own
+# `AndroidManifest.xml`, decoded server-side at publish time - not supplied
+# by the caller - so an app-store consumer of this catalog can trust them.
+# `version_code` is what "latest" sorts on: Android guarantees it only ever
+# increases across an app's releases, where `version_name` is a free-form
+# string with no ordering an app store could rely on.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.apk_versions (
+    id TEXT PRIMARY KEY,
+    package_name TEXT NOT NULL,
+    version_code BIGINT NOT NULL,
+    version_name TEXT NOT NULL,
+    min_sdk_version INT,
+    target_sdk_version INT,
+    label TEXT,
+    permissions JSONB NOT NULL DEFAULT '[]'::jsonb,
+    size_bytes BIGINT NOT NULL,
+    sha256 TEXT NOT NULL,
+    uploaded_by TEXT NOT NULL REFERENCES ${auth_schema}.users(username) ON DELETE CASCADE,
+    yanked BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+"""
+
+# What every read path filters or sorts by: "versions of this package,
+# newest first" for the per-package listing, and the same shape for picking
+# out the latest non-yanked one.
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS apk_versions_package_version_idx
+    ON ${schema}.apk_versions (package_name, version_code DESC);
+"""

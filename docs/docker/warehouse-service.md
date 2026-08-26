@@ -1,12 +1,13 @@
 # Warehouse Service
 
-Warehouse is the Forge estate's storage service: one address for a Cargo registry, a Docker Registry HTTP API v2, and plain file storage, mounted side by side because storage is storage even when the addressing scheme differs — a crate by name and version, an image by digest, a file by path within a named directory. Conveyor is the first real caller of the files API (build artifacts) and of the Docker registry (release images); the crates registry lets the estate host its own internal Rust crates. Binary and crate name: `warehouse-service` (`docker/warehouse-service`).
+Warehouse is the Forge estate's storage service: one address for a Cargo registry, a Docker Registry HTTP API v2, plain file storage, and an Android APK registry, mounted side by side because storage is storage even when the addressing scheme differs — a crate by name and version, an image by digest, a file by path within a named directory, an APK by package name and `versionCode`. Conveyor is the first real caller of the files API (build artifacts) and of the Docker registry (release images); the crates registry lets the estate host its own internal Rust crates; the apk registry is the backend a future Android app-store service will pull installable bundles from. Binary and crate name: `warehouse-service` (`docker/warehouse-service`).
 
 ## Features
 
 - **Files API** — plain named-storage file upload/download/list/delete, streamed to disk rather than buffered, behind the realm's normal bearer/cookie auth.
 - **Docker Registry HTTP API v2** — the standard blob/manifest/catalog routes, with its own Basic-then-Bearer token exchange independent of the realm's JWKS-based tokens.
 - **Crates registry** (`/api/v1/crates`) — publish, download, yank/unyank, owners and search, plus a sparse index. Has no real authentication yet.
+- **APK registry** (`/api/v1/apk`) — publish, download, per-package version listing, latest-version resolution and yank/unyank, behind the realm's normal bearer/cookie auth. Package identity comes from decoding the APK's own `AndroidManifest.xml` server-side, not from the caller.
 - **Admin endpoints** (`/admin`) — garbage collection for both the crates and Docker storages.
 - **A small server-rendered UI** for browsing the crates and Docker catalogs.
 
@@ -15,7 +16,7 @@ Warehouse is the Forge estate's storage service: one address for a Cargo registr
 Two mount points, split by where the protocol forces them to live (`src/lib.rs`):
 
 - **`root_scope`** — mounted at the server root, outside `BASE_PATH`. Holds `/v2/*` and `/token`, because the Docker Registry spec fixes those paths; wrapped in `WarehouseAuth` (the registry's own Bearer-token middleware, with a per-client auth-failure rate limit — `MAX_AUTH_FAILURES_PER_MINUTE`, default 30, `AUTH_FAILURE_WINDOW_SECONDS`, default 60) and `WarehouseLimits` (concurrent-upload cap).
-- **`base_path_scope`** — everything else: `/admin`, `/api/v1/crates` (+ the sparse index), `/api/v1/files`, and the UI.
+- **`base_path_scope`** — everything else: `/admin`, `/api/v1/crates` (+ the sparse index), `/api/v1/files`, `/api/v1/apk`, and the UI.
 
 ### Files API
 
@@ -61,10 +62,27 @@ Auth flow: a client hits `/v2/...`; gets `401` with `WWW-Authenticate: Bearer re
 
 `/api/v1/crates` implements the Cargo registry protocol (publish, download, yank/unyank, owners, search) plus a sparse index under `/api/v1/crates/index`. `/admin` exposes garbage collection for both the crates and Docker blob storages. Neither surface authenticates callers today.
 
+### APK registry
+
+Everything is under `{BASE_PATH}/api/v1/apk` and behind the realm's auth, the same `Auth` + `RequireWrite` pair the files API uses — a valid realm identity to read, the blanket `warehouse:write` grant (or a wildcard role) to publish or yank. Turned on with `FEATURE_APK_ENABLED`.
+
+An APK is addressed by `{package}/{version_code}` — never a caller-chosen name. `PUT /api/v1/apk/{package}/{version_code}` decodes the uploaded archive's own compiled `AndroidManifest.xml` (package name, `versionCode`, `versionName`, `minSdkVersion`/`targetSdkVersion`, `uses-permission` names, and `application`'s `label` when it isn't an unresolved resource reference) and rejects the publish with `422` if the decoded package/version doesn't match the URL, or `409` if that exact version already exists — so a caller cannot get the catalog to say something the archive itself doesn't, and cannot overwrite a version once published. Catalog rows live in Postgres (`apk_versions`, via foundry's `warehouse` module) rather than a directory listing, so per-package and cross-package queries are cheap SQL rather than a filesystem walk.
+
+| Method | Path | Purpose |
+|---|---|---|
+| `PUT` | `/api/v1/apk/{package}/{version_code}` | publish (body is the raw `.apk`) |
+| `GET` | `/api/v1/apk/{package}/{version_code}` | one version's catalog row |
+| `GET` | `/api/v1/apk/{package}/{version_code}/download` | fetch the bytes |
+| `GET` | `/api/v1/apk/{package}` | every version of a package, newest first |
+| `GET` | `/api/v1/apk` | catalog: every package's latest non-yanked version |
+| `GET` | `/api/v1/apk/{package}/latest` / `.../latest/download` | highest non-yanked `version_code` |
+| `DELETE` | `/api/v1/apk/{package}/{version_code}/yank` | hide from `latest`/the catalog, keep the file |
+| `PUT` | `/api/v1/apk/{package}/{version_code}/unyank` | undo a yank |
+
 ## Requirements
 
-- A relying party of gatehouse: `GATEHOUSE_URL`/OAuth client config for realm sessions on the files API and the UI.
-- Postgres reachable via `DATABASE_URL` for the realm's users (Docker registry Basic auth) and, if any dynamic storage is created, for the `storages`/`blobs`/`storage_files`/`storage_sync_log` tables — schema comes from foundry's `warehouse` catalog module.
+- A relying party of gatehouse: `GATEHOUSE_URL`/OAuth client config for realm sessions on the files API, the apk API, and the UI.
+- Postgres reachable via `DATABASE_URL` for the realm's users (Docker registry Basic auth), the `apk_versions` catalog table, and, if any dynamic storage is created, for the `storages`/`blobs`/`storage_files`/`storage_sync_log` tables — schema comes from foundry's `warehouse` catalog module.
 - `DOCKER_TOKEN_SECRET` set, unconditionally, or the process refuses to start.
 - Redis/`REDIS_URL` for the shared session store, like every other service in the realm.
 - `DYNAMIC_STORAGE_ROOT` set to a directory, if any dynamic storage is created — its content-addressed blob store lives there.
@@ -83,13 +101,16 @@ Selected environment variables:
 | `DOCKER_TOKEN_SECRET` | signs Docker Registry bearer tokens (required, no default) |
 | `SERVICE_AUTH_ENABLED` | Docker Registry auth on/off (default `false`) |
 | `SERVICE_NAME` / `SERVICE_REALM` | Docker token `service`/`realm` claim (defaults `service` / `https://localhost:8698/token`) |
-| `STORAGE_PATH` / `CRATES_STORAGE_PATH` | Docker / crates blob roots |
+| `STORAGE_PATH` / `CRATES_STORAGE_PATH` / `APK_STORAGE_PATH` | Docker / crates / apk blob roots |
 | `MAX_AUTH_FAILURES_PER_MINUTE` / `AUTH_FAILURE_WINDOW_SECONDS` | Docker Registry auth rate limit (defaults 30 / 60) |
+| `FEATURE_APK_ENABLED` | turns the apk API on |
 
 In local dev (`foreman.toml`) warehouse runs on port 6443 under base path `/warehouse`, `needs = ["gatehouse"]`, with `GATEHOUSE_CLIENT_SECRET` and `DOCKER_TOKEN_SECRET` supplied from the estate's shared secrets.
 
 ## Testing
 
 Unit tests live under `tests/unit/` (`files_path_tests.rs`, `files_confinement_tests.rs`, `files_storage_tests.rs`, plus the `routers_files_ops_*` and domain-level dynamic-storage tests), aggregated through `tests/unit.rs` — mostly path-safety and storage-resolution coverage for the files API. Run with `cargo test -p warehouse-service` or `foreman test warehouse` (the latter needed to exercise anything dynamic-storage-related, since that needs real Postgres).
+
+`apk_manifest_tests.rs` covers manifest decoding against real fixtures under `tests/fixtures/apk/` (built with the Android SDK's `aapt`/`aapt2`, not hand-crafted bytes — see that file's own doc comment for why). `routers_apk_*_tests.rs` covers path/package-name validation and the `latest`/catalog selection logic directly; like the files API's own handler tests, publish/download/yank's *positive* paths aren't exercised here, since `FEATURE_APK_ENABLED` is a process-wide `LazyLock` fixed for the whole test binary — that end-to-end coverage is BDD/cucumber's job, not yet written for this module.
 
 [Home](../README.md)

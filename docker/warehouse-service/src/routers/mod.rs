@@ -1,4 +1,5 @@
 pub mod admin;
+pub mod apk;
 pub mod crates;
 pub mod docker;
 pub mod files;
@@ -18,10 +19,15 @@ pub fn docker_storage_root() -> String {
     envmnt::get_or("STORAGE_PATH", "./storage/docker")
 }
 
+pub fn apk_storage_root() -> String {
+    envmnt::get_or("APK_STORAGE_PATH", "./storage/apk")
+}
+
 struct FeatureFlags {
     docker: bool,
     crates: bool,
     files: bool,
+    apk: bool,
 }
 
 static FEATURE_FLAGS: std::sync::LazyLock<FeatureFlags> =
@@ -29,6 +35,7 @@ static FEATURE_FLAGS: std::sync::LazyLock<FeatureFlags> =
         docker: feature_enabled("FEATURE_DOCKER_ENABLED", false),
         crates: feature_enabled("FEATURE_CRATES_ENABLED", false),
         files: feature_enabled("FEATURE_FILES_ENABLED", false),
+        apk: feature_enabled("FEATURE_APK_ENABLED", false),
     });
 
 pub fn feature_enabled(name: &str, default: bool) -> bool {
@@ -53,4 +60,8 @@ pub fn crates_enabled() -> bool {
 
 pub fn files_enabled() -> bool {
     FEATURE_FLAGS.files
+}
+
+pub fn apk_enabled() -> bool {
+    FEATURE_FLAGS.apk
 }
