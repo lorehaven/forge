@@ -106,7 +106,10 @@ impl VllmEngine for KubernetesVllmEngine {
                 model,
                 host: format!("{name}.{namespace}.svc.cluster.local"),
                 port,
-                quantization: annotations.get("vllm-quantization").cloned(),
+                quantization: annotations
+                    .get("vllm-quantization")
+                    .filter(|v| !v.is_empty())
+                    .cloned(),
                 dtype: annotations
                     .get("vllm-dtype")
                     .filter(|v| !v.is_empty())

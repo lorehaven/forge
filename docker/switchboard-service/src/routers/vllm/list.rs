@@ -71,9 +71,28 @@ pub fn render_instances_grid(instances: Vec<VllmInstance>, can_stop: bool) -> St
             _ => "fit-ok",
         };
 
+        // "cpu" (case-insensitive) => CPU; anything else, including None, is a
+        // GPU launch (the historical default).
+        let is_cpu = instance
+            .device
+            .as_deref()
+            .is_some_and(|d| d.trim().eq_ignore_ascii_case("cpu"));
+        let (device_label, device_i18n, device_class) = if is_cpu {
+            ("CPU", "ui_vllm_device_cpu", "badge badge-device badge-cpu")
+        } else {
+            ("GPU", "ui_vllm_device_gpu", "badge badge-device badge-gpu")
+        };
+
         let mut header = div()
             .class("card-header")
-            .child(div().class("card-title").text(&instance.model));
+            .child(div().class("card-title").text(&instance.model))
+            .child(
+                span()
+                    .class(device_class)
+                    .attr("data-i18n", device_i18n)
+                    .attr("title", format!("Running on {device_label}"))
+                    .text(device_label),
+            );
 
         if can_stop && instance.status != "failed" && instance.status != "terminating" {
             header = header.child(
@@ -185,6 +204,8 @@ pub fn render_instances_grid(instances: Vec<VllmInstance>, can_stop: bool) -> St
                             instance
                                 .quantization
                                 .as_deref()
+                                .map(str::trim)
+                                .filter(|q| !q.is_empty())
                                 .unwrap_or("auto")
                                 .to_string(),
                         ),
@@ -207,18 +228,33 @@ pub fn render_instances_grid(instances: Vec<VllmInstance>, can_stop: bool) -> St
                         .child(span().text(": "))
                         .child(span().text(limit.to_string()));
                 }
+                // GPU utilization is meaningless for a CPU instance - the badge
+                // in the header already says where it runs.
+                if is_cpu {
+                    fit_line = fit_line
+                        .child(span().text(" | "))
+                        .child(
+                            span()
+                                .attr("data-i18n", "ui_vllm_meta_device")
+                                .text("Device"),
+                        )
+                        .child(span().text(": "))
+                        .child(span().text("CPU"));
+                } else {
+                    fit_line = fit_line
+                        .child(span().text(" | "))
+                        .child(
+                            span()
+                                .attr("data-i18n", "ui_vllm_meta_gpu_util")
+                                .text("GPU Util"),
+                        )
+                        .child(span().text(": "))
+                        .child(span().text(format!(
+                            "{:.2}",
+                            instance.gpu_memory_utilization.unwrap_or(0.9)
+                        )));
+                }
                 fit_line
-                    .child(span().text(" | "))
-                    .child(
-                        span()
-                            .attr("data-i18n", "ui_vllm_meta_gpu_util")
-                            .text("GPU Util"),
-                    )
-                    .child(span().text(": "))
-                    .child(span().text(format!(
-                        "{:.2}",
-                        instance.gpu_memory_utilization.unwrap_or(0.9)
-                    )))
             }))
             .child({
                 let mut diag = div().class("instance-diagnostics");

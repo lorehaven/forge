@@ -108,6 +108,47 @@ fn quantization_falls_back_to_auto_when_unset() {
 }
 
 #[test]
+fn quantization_falls_back_to_auto_when_the_engine_reports_an_empty_string() {
+    // The Kubernetes engine round-trips a missing quant as "" via a pod
+    // annotation; the UI must still show "auto", not a blank.
+    let mut model = instance("running");
+    model.quantization = Some(String::new());
+    let html = render_instances_grid(vec![model], true);
+    assert!(html.contains(">auto<"));
+}
+
+#[test]
+fn a_gpu_instance_gets_a_gpu_badge_and_shows_gpu_util() {
+    let html = render_instances_grid(vec![instance("running")], true);
+    assert!(html.contains("badge-gpu"));
+    assert!(html.contains("ui_vllm_device_gpu"));
+    assert!(html.contains("ui_vllm_meta_gpu_util"));
+    assert!(!html.contains("badge-cpu"));
+}
+
+#[test]
+fn a_cpu_instance_gets_a_cpu_badge_and_hides_gpu_util() {
+    let mut model = instance("running");
+    model.device = Some("cpu".to_string());
+    let html = render_instances_grid(vec![model], true);
+    assert!(html.contains("badge-cpu"));
+    assert!(html.contains("ui_vllm_device_cpu"));
+    assert!(html.contains("ui_vllm_meta_device"));
+    assert!(!html.contains("ui_vllm_meta_gpu_util"));
+}
+
+#[test]
+fn device_matching_is_case_insensitive_and_ignores_a_gpu_value() {
+    let mut cpu = instance("running");
+    cpu.device = Some("CPU".to_string());
+    assert!(render_instances_grid(vec![cpu], true).contains("badge-cpu"));
+
+    let mut gpu = instance("running");
+    gpu.device = Some("gpu".to_string());
+    assert!(render_instances_grid(vec![gpu], true).contains("badge-gpu"));
+}
+
+#[test]
 fn multiple_instances_all_render_as_separate_cards() {
     let mut a = instance("running");
     a.id = "a".to_string();
