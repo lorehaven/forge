@@ -6242,7 +6242,7 @@ dependencies = [
 
 [[package]]
 name = "warehouse-service"
-version = "0.4.17"
+version = "0.4.18"
 dependencies = [
  "actix-web",
  "axmldecoder",
