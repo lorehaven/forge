@@ -9,7 +9,7 @@ Warehouse is the Forge estate's storage service: one address for a Cargo registr
 - **Crates registry** (`/api/v1/crates`) — publish, download, yank/unyank, owners and search, plus a sparse index. Has no real authentication yet.
 - **APK registry** (`/api/v1/apk`) — publish, download, per-package version listing, latest-version resolution and yank/unyank, behind the realm's normal bearer/cookie auth. Package identity comes from decoding the APK's own `AndroidManifest.xml` server-side, not from the caller.
 - **Admin endpoints** (`/admin`) — garbage collection for both the crates and Docker storages.
-- **A small server-rendered UI** for browsing the crates and Docker catalogs.
+- **A small server-rendered UI** (`{BASE_PATH}/ui`) for browsing the Docker and crates catalogs, managing dynamic file storages, and yanking/unyanking APK versions.
 
 ## Architecture
 
@@ -79,6 +79,17 @@ An APK is addressed by `{package}/{version_code}` — never a caller-chosen name
 | `DELETE` | `/api/v1/apk/{package}/{version_code}/yank` | hide from `latest`/the catalog, keep the file |
 | `PUT` | `/api/v1/apk/{package}/{version_code}/unyank` | undo a yank |
 
+### UI
+
+`{BASE_PATH}/ui` is a small server-rendered UI, behind the realm cookie (`is_ui_authenticated`) — any signed-in realm identity for this service may *view* every page. It covers the Docker and crates catalogs, plus two management sections:
+
+| Path | Purpose |
+|---|---|
+| `/ui/files/storages` | list static + dynamic storages, browse a storage's files, and (with permission) provision / edit quota, max-file-size, sync / delete a dynamic storage, or delete a single file |
+| `/ui/apk/catalog` | browse published APK packages and versions, and (with permission) yank / unyank a version |
+
+Every *mutation* on these pages is held to `routers::ui::authz::can_manage` — the blanket `warehouse:write` grant or a wildcard `admin`/`service` role, the same bar `routers::files::authz::has_blanket("write")` and the APK scope's `RequireWrite` enforce on the JSON APIs. Controls that mutate are not rendered without it, and each handler re-checks; a page whose feature flag (`FEATURE_FILES_ENABLED` / `FEATURE_APK_ENABLED`) is off still renders read-only but every mutation answers `404`. No new gatehouse catalog entry is needed — `warehouse` already exposes `["read", "write"]` and the `editor` template grants it.
+
 ## Requirements
 
 - A relying party of gatehouse: `GATEHOUSE_URL`/OAuth client config for realm sessions on the files API, the apk API, and the UI.
@@ -110,6 +121,8 @@ In local dev (`foreman.toml`) warehouse runs on port 6443 under base path `/ware
 ## Testing
 
 Unit tests live under `tests/unit/` (`files_path_tests.rs`, `files_confinement_tests.rs`, `files_storage_tests.rs`, plus the `routers_files_ops_*` and domain-level dynamic-storage tests), aggregated through `tests/unit.rs` — mostly path-safety and storage-resolution coverage for the files API. Run with `cargo test -p warehouse-service` or `foreman test warehouse` (the latter needed to exercise anything dynamic-storage-related, since that needs real Postgres).
+
+The management UI is covered by `routers_ui_authz_tests.rs` (the `can_manage` predicate in isolation), `routers_ui_pages_files_storages_tests.rs` and `routers_ui_pages_apk_catalog_tests.rs` — the pure `render_*` functions get the real rendering/permission assertions (they take an already-fetched view model, no `Db`), while the feature-gated handlers, like the JSON APIs', are only deterministically reachable on their login-redirect and feature-disabled branches in the test binary.
 
 `apk_manifest_tests.rs` covers manifest decoding against real fixtures under `tests/fixtures/apk/` (built with the Android SDK's `aapt`/`aapt2`, not hand-crafted bytes — see that file's own doc comment for why). `routers_apk_*_tests.rs` covers path/package-name validation and the `latest`/catalog selection logic directly; like the files API's own handler tests, publish/download/yank's *positive* paths aren't exercised here, since `FEATURE_APK_ENABLED` is a process-wide `LazyLock` fixed for the whole test binary — that end-to-end coverage is BDD/cucumber's job, not yet written for this module.
 

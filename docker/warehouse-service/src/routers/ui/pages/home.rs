@@ -1,5 +1,5 @@
 use crate::routers::ui::common::{UiPageKind, render_page, ui_path};
-use crate::routers::{crates_enabled, docker_enabled};
+use crate::routers::{apk_enabled, crates_enabled, docker_enabled, files_enabled};
 use actix_web::{HttpResponse, Responder, get, web};
 use quench_auth::prelude::JwtConfig;
 use quench_starter::actix::routers::ui::pages::home::{handle_home, service_card};
@@ -40,6 +40,26 @@ pub fn render_home_page() -> HttpResponse {
             "ui_service_crates_title",
             "ui_service_crates_desc",
             "home-card-crates",
+        ));
+    }
+
+    if files_enabled() {
+        has_service_cards = true;
+        service_cards = service_cards.child(service_card(
+            &ui_path("/files/storages"),
+            "ui_service_files_title",
+            "ui_service_files_desc",
+            "home-card-files",
+        ));
+    }
+
+    if apk_enabled() {
+        has_service_cards = true;
+        service_cards = service_cards.child(service_card(
+            &ui_path("/apk/catalog"),
+            "ui_service_apk_title",
+            "ui_service_apk_desc",
+            "home-card-apk",
         ));
     }
 

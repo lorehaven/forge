@@ -5,6 +5,7 @@ use quench_auth::prelude::JwtConfig;
 use quench_starter::prelude::with_base_path;
 use serde::Deserialize;
 
+pub mod authz;
 pub mod common;
 pub mod pages;
 
@@ -99,6 +100,59 @@ pub async fn crates_root_slash(
         .finish()
 }
 
+// Files redirects
+
+#[get("/files")]
+pub async fn files_root(
+    req: actix_web::HttpRequest,
+    config: web::Data<JwtConfig>,
+) -> impl Responder {
+    if !common::is_ui_authenticated(&req, &config).await {
+        return common::ui_login_redirect();
+    }
+    HttpResponse::PermanentRedirect()
+        .append_header(("Location", with_base_path("/ui/files/storages")))
+        .finish()
+}
+
+#[get("/files/")]
+pub async fn files_root_slash(
+    req: actix_web::HttpRequest,
+    config: web::Data<JwtConfig>,
+) -> impl Responder {
+    if !common::is_ui_authenticated(&req, &config).await {
+        return common::ui_login_redirect();
+    }
+    HttpResponse::PermanentRedirect()
+        .append_header(("Location", with_base_path("/ui/files/storages")))
+        .finish()
+}
+
+// APK redirects
+
+#[get("/apk")]
+pub async fn apk_root(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
+    if !common::is_ui_authenticated(&req, &config).await {
+        return common::ui_login_redirect();
+    }
+    HttpResponse::PermanentRedirect()
+        .append_header(("Location", with_base_path("/ui/apk/catalog")))
+        .finish()
+}
+
+#[get("/apk/")]
+pub async fn apk_root_slash(
+    req: actix_web::HttpRequest,
+    config: web::Data<JwtConfig>,
+) -> impl Responder {
+    if !common::is_ui_authenticated(&req, &config).await {
+        return common::ui_login_redirect();
+    }
+    HttpResponse::PermanentRedirect()
+        .append_header(("Location", with_base_path("/ui/apk/catalog")))
+        .finish()
+}
+
 // ---------------------------------------------------------------------------
 // Scope
 // ---------------------------------------------------------------------------
@@ -115,6 +169,12 @@ pub fn scope() -> impl HttpServiceFactory {
         // Crates redirects
         .service(crates_root)
         .service(crates_root_slash)
+        // Files redirects
+        .service(files_root)
+        .service(files_root_slash)
+        // APK redirects
+        .service(apk_root)
+        .service(apk_root_slash)
         // Auth
         .service(pages::auth::login)
         .service(pages::auth::login_slash)
@@ -137,4 +197,18 @@ pub fn scope() -> impl HttpServiceFactory {
         .service(pages::crates::catalog::crates_index_slash)
         .service(pages::crates::catalog::yank_version)
         .service(pages::crates::catalog::unyank_version)
+        // Files pages
+        .service(pages::files::storages::files_storages)
+        .service(pages::files::storages::files_storages_slash)
+        .service(pages::files::storages::create_storage)
+        .service(pages::files::storages::edit_storage)
+        .service(pages::files::storages::delete_storage)
+        .service(pages::files::storages::delete_storage_modal)
+        .service(pages::files::storages::empty_delete_storage_modal)
+        .service(pages::files::storages::delete_file)
+        // APK pages
+        .service(pages::apk::catalog::apk_catalog)
+        .service(pages::apk::catalog::apk_catalog_slash)
+        .service(pages::apk::catalog::yank_version)
+        .service(pages::apk::catalog::unyank_version)
 }

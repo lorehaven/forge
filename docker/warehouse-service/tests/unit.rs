@@ -97,6 +97,8 @@ mod routers_files_ops_upload_tests;
 mod routers_files_pagination_tests;
 #[path = "unit/routers_mod_tests.rs"]
 mod routers_mod_tests;
+#[path = "unit/routers_ui_authz_tests.rs"]
+mod routers_ui_authz_tests;
 #[path = "unit/routers_ui_common_css_mod_tests.rs"]
 mod routers_ui_common_css_mod_tests;
 #[path = "unit/routers_ui_common_css_rules_tests.rs"]
@@ -105,6 +107,8 @@ mod routers_ui_common_css_rules_tests;
 mod routers_ui_common_mod_tests;
 #[path = "unit/routers_ui_mod_tests.rs"]
 mod routers_ui_mod_tests;
+#[path = "unit/routers_ui_pages_apk_catalog_tests.rs"]
+mod routers_ui_pages_apk_catalog_tests;
 #[path = "unit/routers_ui_pages_auth_tests.rs"]
 mod routers_ui_pages_auth_tests;
 #[path = "unit/routers_ui_pages_crates_catalog_tests.rs"]
@@ -115,6 +119,8 @@ mod routers_ui_pages_crates_storage_tests;
 mod routers_ui_pages_docker_catalog_tests;
 #[path = "unit/routers_ui_pages_docker_tags_tests.rs"]
 mod routers_ui_pages_docker_tags_tests;
+#[path = "unit/routers_ui_pages_files_storages_tests.rs"]
+mod routers_ui_pages_files_storages_tests;
 #[path = "unit/routers_ui_pages_home_tests.rs"]
 mod routers_ui_pages_home_tests;
 #[path = "unit/utils_sha256_tests.rs"]

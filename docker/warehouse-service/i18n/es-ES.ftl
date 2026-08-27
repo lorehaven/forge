@@ -22,6 +22,9 @@ ui_service_crates_desc = Explora los crates publicados y sus versiones.
 ui_service_files_title = Almacén de archivos
 ui_service_files_desc = Explora y gestiona archivos.
 
+ui_service_apk_title = Registro de APK
+ui_service_apk_desc = Explora los paquetes de Android publicados y sus versiones.
+
 # ── Docker ───────────────────────────────────────────────────────────────────
 
 ui_header_docker = Warehouse — Explorador de repositorios Docker
@@ -112,6 +115,59 @@ ui_meta_bytes = {$size} bytes
 ui_yank_version = Retirar versión
 ui_unyank_version = Restaurar versión
 
+# ── Gestión de archivos ─────────────────────────────────────────────────────
+
+ui_storages_title = Almacenes
+ui_storages_empty = No hay ningún almacén configurado.
+ui_storages_detail_title = Almacén
+ui_storages_select = Selecciona un almacén de la lista.
+ui_storage_static_badge = estático
+ui_storage_kind = Tipo
+ui_storage_owner = Propietario
+ui_storage_usage = Uso
+ui_storage_max_file = Tamaño máx. de archivo
+ui_storage_sync = Sincronización
+ui_storage_sync_on = activada
+ui_storage_sync_off = desactivada
+ui_storage_created = Creado
+ui_storage_root = Raíz
+ui_storage_files_title = Archivos
+ui_storage_files_empty = Este almacén no tiene archivos.
+ui_storage_files_truncated = Mostrando solo la primera página de archivos.
+ui_storage_not_found = No existe ese almacén.
+ui_storage_root_unreadable = No se pudo leer la raíz del almacén.
+ui_file_download = descargar
+ui_file_delete = Eliminar
+ui_storage_edit_title = Editar almacén
+ui_storage_quota_gib = Cuota (GiB)
+ui_storage_max_file_mib = Tamaño máx. de archivo (MiB)
+ui_storage_clear_max_file = Restablecer el tamaño máx. de archivo predeterminado
+ui_storage_save = Guardar cambios
+ui_storage_new_title = Nuevo almacén
+ui_storage_name = Nombre
+ui_storage_create = Crear almacén
+ui_storage_delete = Eliminar almacén
+ui_storage_delete_title = Eliminar almacén
+ui_storage_delete_confirm_text = ¿Eliminar este almacén y todo su contenido? Esta acción no se puede deshacer.
+
+# ── Gestión de APK ─────────────────────────────────────────────────────────
+
+ui_header_apk = Warehouse - Explorador del registro de APK
+ui_apk_packages = Paquetes
+ui_apk_empty = Aún no se ha publicado ningún paquete APK.
+ui_apk_empty_select_version = Selecciona una versión para ver sus metadatos.
+ui_apk_meta_package = Paquete
+ui_apk_meta_version_name = Nombre de versión
+ui_apk_meta_version_code = Código de versión
+ui_apk_meta_label = Etiqueta
+ui_apk_meta_min_sdk = SDK mínimo
+ui_apk_meta_target_sdk = SDK objetivo
+ui_apk_meta_size = Tamaño
+ui_apk_meta_uploaded_by = Subido por
+ui_apk_meta_permissions = Permisos
+ui_apk_yank = Retirar
+ui_apk_unyank = Restaurar
+
 # ── Códigos de error de la API ───────────────────────────────────────────────
 
 api_error_internal = Algo salió mal. Inténtalo de nuevo.
@@ -120,6 +176,21 @@ api_error_invalid_repository = Nombre de repositorio no válido
 api_error_invalid_digest = Resumen no válido
 api_error_manifest_unknown = Manifiesto desconocido
 api_error_crate_version_not_found = Versión del crate no encontrada
+api_error_forbidden = No tienes permiso para hacer eso.
+api_error_files_disabled = El almacenamiento de archivos no está habilitado en este despliegue.
+api_error_apk_disabled = El registro de APK no está habilitado en este despliegue.
+api_error_invalid_storage_name = Los nombres de almacén solo pueden usar letras, dígitos, - y _.
+api_error_storage_owner_required = Se requiere un propietario.
+api_error_storage_owner_unknown = No existe ese usuario para ser propietario del almacén.
+api_error_storage_name_static_clash = Un almacén estático ya usa ese nombre.
+api_error_storage_exists = Ya existe un almacén con ese nombre.
+api_error_storage_not_found = No existe ese almacén dinámico.
+api_error_invalid_quota = La cuota debe ser un número no negativo.
+api_error_invalid_max_file = El tamaño máx. de archivo debe ser un número no negativo.
+api_error_invalid_path = Ruta de archivo no válida.
+api_error_path_escapes_storage = Esa ruta apunta fuera del almacén.
+api_error_no_dynamic_root = Este despliegue no tiene configurada una raíz de almacenamiento dinámico.
+api_error_file_not_found = No existe ese archivo.
 
 # ── Inicio de sesión ─────────────────────────────────────────────────────────
 

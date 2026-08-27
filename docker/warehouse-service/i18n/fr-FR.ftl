@@ -22,6 +22,9 @@ ui_service_crates_desc = Parcourir les crates publiés et leurs versions.
 ui_service_files_title = Stockage de fichiers
 ui_service_files_desc = Parcourir et gérer les fichiers.
 
+ui_service_apk_title = Registre APK
+ui_service_apk_desc = Parcourir les paquets Android publiés et leurs versions.
+
 # ── Docker ───────────────────────────────────────────────────────────────────
 
 ui_header_docker = Warehouse — Explorateur de dépôts Docker
@@ -112,6 +115,59 @@ ui_meta_bytes = {$size} octets
 ui_yank_version = Retirer la version
 ui_unyank_version = Restaurer la version
 
+# ── Gestion des fichiers ───────────────────────────────────────────────────
+
+ui_storages_title = Stockages
+ui_storages_empty = Aucun stockage n'est configuré.
+ui_storages_detail_title = Stockage
+ui_storages_select = Sélectionnez un stockage dans la liste.
+ui_storage_static_badge = statique
+ui_storage_kind = Type
+ui_storage_owner = Propriétaire
+ui_storage_usage = Utilisation
+ui_storage_max_file = Taille max. de fichier
+ui_storage_sync = Synchronisation
+ui_storage_sync_on = activée
+ui_storage_sync_off = désactivée
+ui_storage_created = Créé le
+ui_storage_root = Racine
+ui_storage_files_title = Fichiers
+ui_storage_files_empty = Ce stockage ne contient aucun fichier.
+ui_storage_files_truncated = Affichage de la première page de fichiers uniquement.
+ui_storage_not_found = Aucun stockage de ce nom.
+ui_storage_root_unreadable = Impossible de lire la racine du stockage.
+ui_file_download = télécharger
+ui_file_delete = Supprimer
+ui_storage_edit_title = Modifier le stockage
+ui_storage_quota_gib = Quota (Gio)
+ui_storage_max_file_mib = Taille max. de fichier (Mio)
+ui_storage_clear_max_file = Réinitialiser la taille max. de fichier par défaut
+ui_storage_save = Enregistrer les modifications
+ui_storage_new_title = Nouveau stockage
+ui_storage_name = Nom
+ui_storage_create = Créer le stockage
+ui_storage_delete = Supprimer le stockage
+ui_storage_delete_title = Supprimer le stockage
+ui_storage_delete_confirm_text = Supprimer ce stockage et tout son contenu ? Cette action est irréversible.
+
+# ── Gestion des APK ────────────────────────────────────────────────────────
+
+ui_header_apk = Warehouse - Explorateur du registre APK
+ui_apk_packages = Paquets
+ui_apk_empty = Aucun paquet APK n'a encore été publié.
+ui_apk_empty_select_version = Sélectionnez une version pour voir ses métadonnées.
+ui_apk_meta_package = Paquet
+ui_apk_meta_version_name = Nom de version
+ui_apk_meta_version_code = Code de version
+ui_apk_meta_label = Libellé
+ui_apk_meta_min_sdk = SDK minimal
+ui_apk_meta_target_sdk = SDK cible
+ui_apk_meta_size = Taille
+ui_apk_meta_uploaded_by = Envoyé par
+ui_apk_meta_permissions = Autorisations
+ui_apk_yank = Retirer
+ui_apk_unyank = Restaurer
+
 # ── Codes d'erreur API ───────────────────────────────────────────────────────
 
 api_error_internal = Une erreur s'est produite. Veuillez réessayer.
@@ -120,6 +176,21 @@ api_error_invalid_repository = Nom de dépôt non valide
 api_error_invalid_digest = Empreinte non valide
 api_error_manifest_unknown = Manifeste inconnu
 api_error_crate_version_not_found = Version du crate introuvable
+api_error_forbidden = Vous n'avez pas l'autorisation de faire cela.
+api_error_files_disabled = Le stockage de fichiers n'est pas activé sur ce déploiement.
+api_error_apk_disabled = Le registre APK n'est pas activé sur ce déploiement.
+api_error_invalid_storage_name = Les noms de stockage ne peuvent contenir que des lettres, des chiffres, - et _.
+api_error_storage_owner_required = Un propriétaire est requis.
+api_error_storage_owner_unknown = Aucun utilisateur de ce nom pour être propriétaire de ce stockage.
+api_error_storage_name_static_clash = Un stockage statique utilise déjà ce nom.
+api_error_storage_exists = Un stockage portant ce nom existe déjà.
+api_error_storage_not_found = Aucun stockage dynamique de ce nom.
+api_error_invalid_quota = Le quota doit être un nombre positif ou nul.
+api_error_invalid_max_file = La taille max. de fichier doit être un nombre positif ou nul.
+api_error_invalid_path = Chemin de fichier non valide.
+api_error_path_escapes_storage = Ce chemin pointe hors du stockage.
+api_error_no_dynamic_root = Ce déploiement n'a pas de racine de stockage dynamique configurée.
+api_error_file_not_found = Aucun fichier de ce nom.
 
 # ── Connexion ────────────────────────────────────────────────────────────────
 

@@ -2,6 +2,7 @@ use quench_starter::actix::routers::ui::common::css;
 use quench_web::prelude::CssRule;
 
 pub mod grid;
+pub mod manage;
 pub mod meta;
 pub mod table;
 pub mod tree;
@@ -34,6 +35,7 @@ pub fn warehouse_css_rules() -> Vec<CssRule> {
     rules.extend(tree::tree_rules());
     rules.extend(table::table_rules());
     rules.extend(grid::grid_rules());
+    rules.extend(manage::manage_rules());
     rules.extend(meta::meta_rules());
     rules.extend(css::meta_rules());
     rules.extend(css::home_rules());

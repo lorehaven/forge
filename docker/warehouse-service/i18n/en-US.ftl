@@ -22,6 +22,9 @@ ui_service_crates_desc = Browse published crates and versions.
 ui_service_files_title = File Storage
 ui_service_files_desc = Browse and manage plain files.
 
+ui_service_apk_title = APK Registry
+ui_service_apk_desc = Browse published Android packages and versions.
+
 # ── Docker ───────────────────────────────────────────────────────────────────
 
 ui_header_docker = Warehouse - Docker Repository Explorer
@@ -112,6 +115,59 @@ ui_meta_bytes = {$size} bytes
 ui_yank_version = Yank Version
 ui_unyank_version = Unyank Version
 
+# ── Files management ─────────────────────────────────────────────────────────
+
+ui_storages_title = Storages
+ui_storages_empty = No storages are configured.
+ui_storages_detail_title = Storage
+ui_storages_select = Select a storage from the list.
+ui_storage_static_badge = static
+ui_storage_kind = Kind
+ui_storage_owner = Owner
+ui_storage_usage = Usage
+ui_storage_max_file = Max file size
+ui_storage_sync = Sync
+ui_storage_sync_on = enabled
+ui_storage_sync_off = disabled
+ui_storage_created = Created
+ui_storage_root = Root
+ui_storage_files_title = Files
+ui_storage_files_empty = This storage has no files.
+ui_storage_files_truncated = Showing the first page of files only.
+ui_storage_not_found = No such storage.
+ui_storage_root_unreadable = The storage root could not be read.
+ui_file_download = download
+ui_file_delete = Delete
+ui_storage_edit_title = Edit storage
+ui_storage_quota_gib = Quota (GiB)
+ui_storage_max_file_mib = Max file size (MiB)
+ui_storage_clear_max_file = Reset max file size to default
+ui_storage_save = Save changes
+ui_storage_new_title = New storage
+ui_storage_name = Name
+ui_storage_create = Create storage
+ui_storage_delete = Delete storage
+ui_storage_delete_title = Delete storage
+ui_storage_delete_confirm_text = Delete this storage and everything in it? This cannot be undone.
+
+# ── APK management ───────────────────────────────────────────────────────────
+
+ui_header_apk = Warehouse - APK Registry Explorer
+ui_apk_packages = Packages
+ui_apk_empty = No APK packages published yet.
+ui_apk_empty_select_version = Select a version to inspect metadata.
+ui_apk_meta_package = Package
+ui_apk_meta_version_name = Version name
+ui_apk_meta_version_code = Version code
+ui_apk_meta_label = Label
+ui_apk_meta_min_sdk = Min SDK
+ui_apk_meta_target_sdk = Target SDK
+ui_apk_meta_size = Size
+ui_apk_meta_uploaded_by = Uploaded by
+ui_apk_meta_permissions = Permissions
+ui_apk_yank = Yank
+ui_apk_unyank = Unyank
+
 # ── API error codes ──────────────────────────────────────────────────────────
 
 api_error_internal = Something went wrong. Please try again.
@@ -120,6 +176,21 @@ api_error_invalid_repository = Invalid repository name
 api_error_invalid_digest = Invalid digest
 api_error_manifest_unknown = Manifest unknown
 api_error_crate_version_not_found = Crate version not found
+api_error_forbidden = You do not have permission to do that.
+api_error_files_disabled = File storage is not enabled on this deployment.
+api_error_apk_disabled = The APK registry is not enabled on this deployment.
+api_error_invalid_storage_name = Storage names may use letters, digits, - and _ only.
+api_error_storage_owner_required = An owner is required.
+api_error_storage_owner_unknown = No such user to own this storage.
+api_error_storage_name_static_clash = A static storage already uses that name.
+api_error_storage_exists = A storage with that name already exists.
+api_error_storage_not_found = No such dynamic storage.
+api_error_invalid_quota = Quota must be a non-negative number.
+api_error_invalid_max_file = Max file size must be a non-negative number.
+api_error_invalid_path = Invalid file path.
+api_error_path_escapes_storage = That path resolves outside the storage.
+api_error_no_dynamic_root = This deployment has no dynamic storage root configured.
+api_error_file_not_found = No such file.
 
 # ── Auth ─────────────────────────────────────────────────────────────────────
 

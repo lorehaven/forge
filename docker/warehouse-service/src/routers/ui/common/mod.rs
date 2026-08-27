@@ -65,6 +65,42 @@ static UI_SHELL_HOME: LazyLock<AppShell> = LazyLock::new(|| {
         .build()
 });
 
+static UI_SHELL_FILES: LazyLock<AppShell> = LazyLock::new(|| {
+    css::ensure_warehouse_css();
+
+    AppShellBuilder::new()
+        .title("Warehouse — Files")
+        .supported_locales(supported_locales())
+        .default_theme(Theme::DefaultDark)
+        .supported_themes(vec![Theme::DefaultDark])
+        .header(ui_header(Some("ui_header_files"), true, true, true))
+        .links(vec![Link::new(
+            "stylesheet",
+            &ui_asset_path("/css/warehouse.css"),
+        )])
+        .with_nav(false)
+        .resources_prefix(ui_path(""))
+        .build()
+});
+
+static UI_SHELL_APK: LazyLock<AppShell> = LazyLock::new(|| {
+    css::ensure_warehouse_css();
+
+    AppShellBuilder::new()
+        .title("Warehouse — APK")
+        .supported_locales(supported_locales())
+        .default_theme(Theme::DefaultDark)
+        .supported_themes(vec![Theme::DefaultDark])
+        .header(ui_header(Some("ui_header_apk"), true, true, true))
+        .links(vec![Link::new(
+            "stylesheet",
+            &ui_asset_path("/css/warehouse.css"),
+        )])
+        .with_nav(false)
+        .resources_prefix(ui_path(""))
+        .build()
+});
+
 pub fn ui_header(
     title_key: Option<&str>,
     show_locale_switch: bool,
@@ -111,6 +147,8 @@ pub fn render_page(
         UiPageKind::Home => &*UI_SHELL_HOME,
         UiPageKind::Docker => &*UI_SHELL_DOCKER,
         UiPageKind::Crates => &*UI_SHELL_CRATES,
+        UiPageKind::Files => &*UI_SHELL_FILES,
+        UiPageKind::Apk => &*UI_SHELL_APK,
     };
     builder
         .content_type(ContentType::html())
@@ -121,6 +159,8 @@ pub enum UiPageKind {
     Home,
     Docker,
     Crates,
+    Files,
+    Apk,
 }
 
 pub fn ui_login_redirect() -> HttpResponse {

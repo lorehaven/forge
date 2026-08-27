@@ -32,7 +32,13 @@ fn ui_header_can_hide_locale_switch_home_and_logout() {
 
 #[test]
 fn render_page_wraps_content_in_the_matching_shell_for_every_page_kind() {
-    for kind in [UiPageKind::Home, UiPageKind::Docker, UiPageKind::Crates] {
+    for kind in [
+        UiPageKind::Home,
+        UiPageKind::Docker,
+        UiPageKind::Crates,
+        UiPageKind::Files,
+        UiPageKind::Apk,
+    ] {
         let resp = render_page(HttpResponse::Ok(), div().text("marker-content"), kind);
         assert_eq!(resp.status(), StatusCode::OK);
     }
