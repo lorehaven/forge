@@ -1,6 +1,8 @@
 use crate::domain::docker_error;
-use crate::routers::docker::{DigestQuery, blob_path, upload_path, validate_digest};
-use crate::utils::sha256::sha256_hex;
+use crate::routers::docker::{
+    AppendError, DigestQuery, append_body_to_upload, blob_path, upload_path, validate_digest,
+};
+use crate::utils::sha256::sha256_file;
 use actix_web::{HttpResponse, Responder, put, web};
 use quench_starter::prelude::error;
 
@@ -8,7 +10,7 @@ use quench_starter::prelude::error;
 pub async fn handle(
     path: web::Path<(String, String)>,
     query: web::Query<DigestQuery>,
-    body: web::Bytes,
+    mut body: web::Payload,
 ) -> impl Responder {
     let (name, uuid) = path.into_inner();
     let digest = &query.digest;
@@ -44,40 +46,36 @@ pub async fn handle(
             .finish();
     }
 
-    if !upload_file.exists() {
-        return error::response(
-            actix_web::http::StatusCode::NOT_FOUND,
-            docker_error::BLOB_UNKNOWN,
-            "blob upload unknown to registry",
-        );
-    }
-
-    // Append final chunk if present
-    if !body.is_empty() {
-        use tokio::io::AsyncWriteExt;
-        let mut file = match tokio::fs::OpenOptions::new()
-            .append(true)
-            .open(&upload_file)
-            .await
-        {
-            Ok(f) => f,
-            Err(_) => {
-                return error::response(
-                    actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-                    error::UNSUPPORTED,
-                    "internal server error",
-                );
-            }
-        };
-
-        if file.write_all(&body).await.is_err() {
+    let current_size = match tokio::fs::metadata(&upload_file).await {
+        Ok(m) => m.len(),
+        Err(_) => {
             return error::response(
-                actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-                error::UNSUPPORTED,
-                "internal server error",
+                actix_web::http::StatusCode::NOT_FOUND,
+                docker_error::BLOB_UNKNOWN,
+                "blob upload unknown to registry",
             );
         }
-        if file.sync_data().await.is_err() {
+    };
+
+    // A monolithic push sends the whole blob in this final PUT with no prior
+    // PATCH; stream it onto the upload file rather than buffering it.
+    match append_body_to_upload(&upload_file, current_size, &mut body).await {
+        Ok(_) => {}
+        Err(AppendError::TooLarge(_)) => {
+            return error::response(
+                actix_web::http::StatusCode::PAYLOAD_TOO_LARGE,
+                error::UNSUPPORTED,
+                "blob exceeds the maximum allowed size",
+            );
+        }
+        Err(AppendError::Read) => {
+            return error::response(
+                actix_web::http::StatusCode::BAD_REQUEST,
+                error::UNSUPPORTED,
+                "the upload was interrupted",
+            );
+        }
+        Err(AppendError::Write) => {
             return error::response(
                 actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
                 error::UNSUPPORTED,
@@ -86,9 +84,10 @@ pub async fn handle(
         }
     }
 
-    // Read entire file
-    let data = match tokio::fs::read(&upload_file).await {
-        Ok(d) => d,
+    // Hash the assembled blob straight off disk - 64 KiB at a time, never the
+    // whole layer in memory.
+    let computed = match sha256_file(&upload_file).await {
+        Ok(hex) => format!("sha256:{hex}"),
         Err(_) => {
             if tokio::fs::metadata(&final_path).await.is_ok() {
                 return HttpResponse::Created()
@@ -103,9 +102,6 @@ pub async fn handle(
             );
         }
     };
-
-    // Verify digest
-    let computed = format!("sha256:{}", sha256_hex(&data));
 
     if &computed != digest {
         return error::response(

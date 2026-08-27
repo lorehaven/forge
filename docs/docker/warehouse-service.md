@@ -52,6 +52,8 @@ Auth flow: a client hits `/v2/...`; gets `401` with `WWW-Authenticate: Bearer re
 | `DELETE` | `/v2/{name}/blobs/uploads/{uuid}` | cancel an upload |
 | `HEAD` | `/v2/{name}/blobs/{digest}` | check a blob exists |
 | `GET` | `/v2/{name}/blobs/{digest}` | retrieve a blob (`Range` supported) |
+
+Blob transfer is streamed end to end: `PATCH`/`PUT` append the request body to the upload file 64 KiB at a time and the completing `PUT` hashes it straight off disk, so a monolithic multi-GB layer push (`docker push`, `crane`/`skopeo copy`) never lands in memory at its own size; `GET` streams the file back the same way. The assembled size is capped at `MAX_DOCKER_BLOB_BYTES` (default 32 GiB), enforced as the bytes arrive.
 | `PUT` | `/v2/{name}/manifests/{reference}` | upload a manifest (Docker/OCI media types) |
 | `GET` | `/v2/{name}/manifests/{reference}` | fetch a manifest by tag or digest |
 | `HEAD` | `/v2/{name}/manifests/{reference}` | check a manifest exists |
@@ -107,6 +109,7 @@ Selected environment variables:
 | `FEATURE_FILES_ENABLED` | turns the files API on |
 | `FILE_STORAGES` | `name=path;name=path` static storage catalog |
 | `MAX_FILE_BYTES` / `MAX_REQUEST_BODY_BYTES` | per-file / per-request cap for a static storage (default 1GiB) |
+| `MAX_DOCKER_BLOB_BYTES` | ceiling on a single assembled Docker blob, streamed-enforced (default 32GiB) |
 | `DYNAMIC_STORAGE_ROOT` | root of the shared, content-addressed blob store for dynamic storages |
 | `WAREHOUSE_DEFAULT_STORAGE_QUOTA_BYTES` | quota a new dynamic storage gets when its admin doesn't name one (default 10GiB) |
 | `DOCKER_TOKEN_SECRET` | signs Docker Registry bearer tokens (required, no default) |

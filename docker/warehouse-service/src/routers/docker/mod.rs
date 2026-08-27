@@ -1,13 +1,69 @@
 use crate::routers::docker_storage_root;
 use actix_web::dev::HttpServiceFactory;
 use actix_web::web;
+use futures_util::StreamExt;
 use serde::Deserialize;
 use std::path::{Component, Path, PathBuf};
+use tokio::io::AsyncWriteExt;
 
 pub mod blob;
 pub mod manifest;
 pub mod registry;
 pub mod token;
+
+/// Hard ceiling on a single blob's assembled size, enforced as bytes stream in
+/// (the blob upload handlers read the body as a `Payload` stream, which the
+/// global `PayloadConfig` limit does not cover). Generous by default - image
+/// layers can legitimately be multiple GB - but bounded so a runaway or
+/// malicious upload cannot fill the disk. Override with `MAX_DOCKER_BLOB_BYTES`.
+pub fn max_docker_blob_bytes() -> u64 {
+    quench_config::ConfigLoader::new("WAREHOUSE")
+        .env_u64("MAX_DOCKER_BLOB_BYTES", 32 * 1024 * 1024 * 1024)
+}
+
+/// Why streaming a request body onto a blob upload file stopped early.
+pub enum AppendError {
+    /// The client connection dropped or errored mid-body.
+    Read,
+    /// Writing to the upload file failed.
+    Write,
+    /// The assembled upload would exceed [`max_docker_blob_bytes`].
+    TooLarge(u64),
+}
+
+/// Appends a streamed request body to `file_path` in 64 KiB frames, flushing
+/// at the end, and returns the number of bytes written. Never holds more than
+/// one frame in memory, so a monolithic multi-GB `PATCH`/`PUT` (what
+/// `docker push` and `crane`/`skopeo` send) costs a buffer, not its own size
+/// in RAM. `already_on_disk` is the upload file's current length, so the
+/// size ceiling is checked against the whole blob, not just this request.
+pub async fn append_body_to_upload(
+    file_path: &Path,
+    already_on_disk: u64,
+    body: &mut web::Payload,
+) -> Result<u64, AppendError> {
+    let limit = max_docker_blob_bytes();
+    let mut file = tokio::fs::OpenOptions::new()
+        .append(true)
+        .open(file_path)
+        .await
+        .map_err(|_| AppendError::Write)?;
+
+    let mut written: u64 = 0;
+    while let Some(chunk) = body.next().await {
+        let chunk = chunk.map_err(|_| AppendError::Read)?;
+
+        written = written.saturating_add(chunk.len() as u64);
+        if already_on_disk.saturating_add(written) > limit {
+            return Err(AppendError::TooLarge(limit));
+        }
+
+        file.write_all(&chunk).await.map_err(|_| AppendError::Write)?;
+    }
+
+    file.flush().await.map_err(|_| AppendError::Write)?;
+    Ok(written)
+}
 
 pub fn upload_path(name: &str, uuid: &str) -> Option<PathBuf> {
     let repo = repository_path(name)?;

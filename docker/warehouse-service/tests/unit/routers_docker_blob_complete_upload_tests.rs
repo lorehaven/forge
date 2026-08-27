@@ -137,3 +137,24 @@ async fn handle_dedupes_when_the_blob_already_exists_at_the_final_path() {
         .join("upload-1");
     assert!(!upload_file.exists());
 }
+
+#[actix_web::test]
+async fn handle_streams_a_large_monolithic_put_without_buffering_the_whole_blob() {
+    let storage = WithStorageRoot::new();
+    start_upload(&storage, "upload-1", b"");
+
+    // Larger than the 64 KiB streaming buffer, so this exercises the multi-frame
+    // append + off-disk hash path rather than a single read.
+    let blob: Vec<u8> = (0..(256 * 1024 + 7)).map(|i| (i % 251) as u8).collect();
+    let digest = digest_of(&blob);
+
+    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
+    let req = actix_test::TestRequest::put()
+        .uri(&format!("/my-repo/blobs/uploads/upload-1?digest={digest}"))
+        .set_payload(blob.clone())
+        .to_request();
+    let resp = actix_test::call_service(&app, req).await;
+
+    assert_eq!(resp.status(), actix_web::http::StatusCode::CREATED);
+    assert_eq!(std::fs::read(blob_path(&storage, &digest)).unwrap(), blob);
+}

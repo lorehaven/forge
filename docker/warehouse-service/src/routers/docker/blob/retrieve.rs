@@ -5,6 +5,7 @@ use quench_starter::prelude::error;
 use std::{io::SeekFrom, path::PathBuf};
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use tokio_util::io::ReaderStream;
 
 #[get("/{name:.+}/blobs/{digest}")]
 pub async fn handle(req: HttpRequest, path: web::Path<(String, String)>) -> impl Responder {
@@ -118,14 +119,9 @@ async fn serve_partial(
         );
     }
 
-    let mut buffer = vec![0u8; length as usize];
-    if file.read_exact(&mut buffer).await.is_err() {
-        return error::response(
-            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-            error::UNSUPPORTED,
-            "internal server error",
-        );
-    }
+    // Stream the requested window straight off disk; a range request for a
+    // whole layer must not cost the layer's size in RAM.
+    let stream = ReaderStream::new(file.take(length));
 
     HttpResponse::PartialContent()
         .append_header(("Content-Type", "application/octet-stream"))
@@ -136,26 +132,20 @@ async fn serve_partial(
         .append_header(("Content-Length", length))
         .append_header(("Accept-Ranges", "bytes"))
         .append_header(("Docker-Content-Digest", digest))
-        .body(buffer)
+        .streaming(stream)
 }
 
-async fn serve_full(mut file: File, total_size: u64, digest: &str) -> HttpResponse {
-    let mut buffer = Vec::with_capacity(total_size as usize);
-
-    if file.read_to_end(&mut buffer).await.is_err() {
-        return error::response(
-            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
-            error::UNSUPPORTED,
-            "internal server error",
-        );
-    }
+async fn serve_full(file: File, total_size: u64, digest: &str) -> HttpResponse {
+    // Streamed 8 KiB at a time by `ReaderStream`, so serving a multi-GB layer
+    // on `docker pull` costs a buffer, not the whole blob in memory.
+    let stream = ReaderStream::new(file);
 
     HttpResponse::Ok()
         .append_header(("Content-Type", "application/octet-stream"))
         .append_header(("Content-Length", total_size))
         .append_header(("Accept-Ranges", "bytes"))
         .append_header(("Docker-Content-Digest", digest))
-        .body(buffer)
+        .streaming(stream)
 }
 
 pub fn parse_range(header: &str, total: u64) -> Option<(u64, u64)> {

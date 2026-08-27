@@ -67,3 +67,29 @@ async fn handle_appends_a_chunk_and_reports_the_new_range() {
     let content = std::fs::read(&path).unwrap();
     assert_eq!(content, b"hello world");
 }
+
+#[actix_web::test]
+async fn handle_streams_a_large_chunk_onto_the_upload_file() {
+    let storage = WithStorageRoot::new();
+    let path = start_upload(&storage, "upload-1", b"head:");
+
+    // Bigger than the 64 KiB streaming buffer, so the append loop runs several
+    // iterations rather than a single write.
+    let chunk: Vec<u8> = (0..(200 * 1024)).map(|i| (i % 249) as u8).collect();
+
+    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
+    let req = actix_test::TestRequest::patch()
+        .uri("/my-repo/blobs/uploads/upload-1")
+        .set_payload(chunk.clone())
+        .to_request();
+    let resp = actix_test::call_service(&app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::ACCEPTED);
+    assert_eq!(
+        resp.headers().get("Range").unwrap(),
+        format!("0-{}", 5 + chunk.len() - 1).as_str()
+    );
+
+    let mut expected = b"head:".to_vec();
+    expected.extend_from_slice(&chunk);
+    assert_eq!(std::fs::read(&path).unwrap(), expected);
+}

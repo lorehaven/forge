@@ -156,3 +156,41 @@ async fn handle_reports_range_not_satisfiable_for_a_bogus_range() {
         actix_web::http::StatusCode::RANGE_NOT_SATISFIABLE
     );
 }
+
+#[actix_web::test]
+async fn handle_streams_a_large_full_blob_across_many_frames() {
+    let storage = WithStorageRoot::new();
+    // Well past ReaderStream's frame size, so the body is delivered in pieces.
+    let blob: Vec<u8> = (0..(512 * 1024 + 3)).map(|i| (i % 253) as u8).collect();
+    write_blob(&storage, &blob);
+
+    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
+    let req = actix_test::TestRequest::get()
+        .uri(&format!("/my-repo/blobs/{DIGEST}"))
+        .to_request();
+    let resp = actix_test::call_service(&app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    assert_eq!(
+        resp.headers().get("Content-Length").unwrap(),
+        blob.len().to_string().as_str()
+    );
+    let body = actix_test::read_body(resp).await;
+    assert_eq!(&body[..], &blob[..]);
+}
+
+#[actix_web::test]
+async fn handle_streams_a_partial_range_out_of_a_large_blob() {
+    let storage = WithStorageRoot::new();
+    let blob: Vec<u8> = (0..(512 * 1024)).map(|i| (i % 253) as u8).collect();
+    write_blob(&storage, &blob);
+
+    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
+    let req = actix_test::TestRequest::get()
+        .uri(&format!("/my-repo/blobs/{DIGEST}"))
+        .insert_header(("Range", "bytes=100000-359999"))
+        .to_request();
+    let resp = actix_test::call_service(&app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::PARTIAL_CONTENT);
+    let body = actix_test::read_body(resp).await;
+    assert_eq!(&body[..], &blob[100_000..=359_999]);
+}
