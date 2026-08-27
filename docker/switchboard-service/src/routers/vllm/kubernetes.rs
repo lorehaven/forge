@@ -1,6 +1,6 @@
 use crate::routers::vllm::engine::VllmEngine;
 use crate::routers::vllm::{
-    LaunchRequest, VllmInstance, cpu_kvcache_space_gib, device_launch_args, is_cpu_device,
+    LaunchRequest, VllmInstance, cpu_image, cpu_kvcache_space_gib, device_launch_args, is_cpu_device,
     task_launch_args,
 };
 use async_trait::async_trait;
@@ -161,25 +161,46 @@ impl VllmEngine for KubernetesVllmEngine {
         let is_amd = gpu_resource_key.to_lowercase().contains("amd")
             || gpu_resource_key.to_lowercase() == "none";
 
-        let image = std::env::var("VLLM_IMAGE").unwrap_or_else(|_| {
-            if is_amd {
-                "rocm/vllm:latest".to_string()
-            } else {
-                "vllm/vllm-openai:latest".to_string()
-            }
-        });
+        // CPU launches run a dedicated image that ships its own vLLM + entrypoint;
+        // GPU launches run vLLM from a host-mounted venv (the `is_amd` path).
+        let cpu = is_cpu_device(req.device.as_deref());
+
+        let image = if cpu {
+            cpu_image()
+        } else {
+            std::env::var("VLLM_IMAGE").unwrap_or_else(|_| {
+                if is_amd {
+                    "rocm/vllm:latest".to_string()
+                } else {
+                    "vllm/vllm-openai:latest".to_string()
+                }
+            })
+        };
 
         let safe_model = req.model.replace(['/', '.'], "-").to_lowercase();
         let pod_name = format!("vllm-{}-{}", safe_model, req.port);
 
-        let mut args = vec![
-            "--model".to_string(),
-            req.model.clone(),
-            "--host".to_string(),
-            "0.0.0.0".to_string(),
-            "--port".to_string(),
-            req.port.to_string(),
-        ];
+        // The CPU image's entrypoint (`vllm serve`) takes the model as a
+        // positional arg; the GPU path invokes the api_server module, which
+        // wants `--model`.
+        let mut args = if cpu {
+            vec![
+                req.model.clone(),
+                "--host".to_string(),
+                "0.0.0.0".to_string(),
+                "--port".to_string(),
+                req.port.to_string(),
+            ]
+        } else {
+            vec![
+                "--model".to_string(),
+                req.model.clone(),
+                "--host".to_string(),
+                "0.0.0.0".to_string(),
+                "--port".to_string(),
+                req.port.to_string(),
+            ]
+        };
 
         if let Some(ref q) = req.quantization {
             args.push("--quantization".to_string());
@@ -191,7 +212,6 @@ impl VllmEngine for KubernetesVllmEngine {
             args.push(dtype.clone());
         }
 
-        let cpu = is_cpu_device(req.device.as_deref());
         if let Some(ref device) = req.device {
             args.extend(device_launch_args(device));
         }
@@ -238,36 +258,25 @@ impl VllmEngine for KubernetesVllmEngine {
             args.extend(task_args);
         }
 
-        let mut volume_mounts = vec![
-            json!({
-                "mountPath": "/dev/kfd",
-                "name": "kfd"
-            }),
-            json!({
-                "mountPath": "/dev/dri",
-                "name": "dri"
-            }),
-        ];
+        let mut volume_mounts: Vec<serde_json::Value> = Vec::new();
+        let mut volumes: Vec<serde_json::Value> = Vec::new();
 
-        let mut volumes = vec![
-            json!({
+        // GPU accelerator device nodes - never for a CPU launch.
+        if !cpu {
+            volume_mounts.push(json!({ "mountPath": "/dev/kfd", "name": "kfd" }));
+            volume_mounts.push(json!({ "mountPath": "/dev/dri", "name": "dri" }));
+            volumes.push(json!({
                 "name": "kfd",
-                "hostPath": {
-                    "path": "/dev/kfd",
-                    "type": "CharDevice"
-                }
-            }),
-            json!({
+                "hostPath": { "path": "/dev/kfd", "type": "CharDevice" }
+            }));
+            volumes.push(json!({
                 "name": "dri",
-                "hostPath": {
-                    "path": "/dev/dri",
-                    "type": "Directory"
-                }
-            }),
-        ];
+                "hostPath": { "path": "/dev/dri", "type": "Directory" }
+            }));
+        }
 
         // Add venv and rocm mounts for the custom image
-        if is_amd {
+        if is_amd && !cpu {
             let venv_path = std::env::var("VLLM_VENV_PATH")
                 .unwrap_or_else(|_| "/mnt/dev/vllm/vllm-venv".to_string());
             let rocm_path =
@@ -330,6 +339,23 @@ impl VllmEngine for KubernetesVllmEngine {
             }));
         }
 
+        // The CPU image needs the HF cache too, but none of the venv/ROCm mounts.
+        if cpu {
+            let hf_cache_path = std::env::var("HF_CACHE_PATH")
+                .unwrap_or_else(|_| "/mnt/dev/huggingface/cache".to_string());
+            volume_mounts.push(json!({
+                "name": "hf-cache",
+                "mountPath": "/root/.cache/huggingface"
+            }));
+            volumes.push(json!({
+                "name": "hf-cache",
+                "hostPath": {
+                    "path": hf_cache_path,
+                    "type": "DirectoryOrCreate"
+                }
+            }));
+        }
+
         let mut env_vars = Vec::new();
 
         let mut resources = json!({});
@@ -349,10 +375,16 @@ impl VllmEngine for KubernetesVllmEngine {
                 "name": "VLLM_CPU_KVCACHE_SPACE",
                 "value": cpu_kvcache_space_gib()
             }));
+            if let Ok(bind) = std::env::var("VLLM_CPU_OMP_THREADS_BIND") {
+                env_vars.push(json!({
+                    "name": "VLLM_CPU_OMP_THREADS_BIND",
+                    "value": bind
+                }));
+            }
         }
 
         // Add AMD-specific environment variables if using AMD
-        if is_amd {
+        if is_amd && !cpu {
             // Check if user has overridden the gfx version in the host environment
             if let Ok(gfx) = std::env::var("HSA_OVERRIDE_GFX_VERSION") {
                 env_vars.push(json!({
@@ -400,6 +432,51 @@ impl VllmEngine for KubernetesVllmEngine {
             }));
         }
 
+        let mut container = json!({
+            "name": "vllm",
+            "image": image,
+            "imagePullPolicy": "Always",
+            "args": args,
+            "ports": [
+                {
+                    "containerPort": req.port,
+                    "name": "http"
+                }
+            ],
+            "resources": resources,
+            "env": env_vars,
+            "volumeMounts": volume_mounts,
+            // vLLM serves /health once the model is loaded; until then
+            // the pod stays NotReady so list_instances reports "starting".
+            "readinessProbe": {
+                "httpGet": {
+                    "path": "/health",
+                    "port": req.port
+                },
+                "initialDelaySeconds": 5,
+                "periodSeconds": 5,
+                "timeoutSeconds": 3
+            }
+        });
+
+        if cpu {
+            // Use the CPU image's own entrypoint (`vllm serve`); it needs no GPU
+            // devices, so a minimal securityContext with SYS_NICE is enough for
+            // vLLM's thread-priority tuning.
+            container["securityContext"] = json!({
+                "capabilities": { "add": ["SYS_NICE"] }
+            });
+        } else {
+            // GPU path: run vLLM from the host-mounted venv, privileged for the
+            // ROCm device nodes.
+            container["command"] = json!([
+                "/opt/venv/bin/python",
+                "-m",
+                "vllm.entrypoints.openai.api_server",
+            ]);
+            container["securityContext"] = json!({ "privileged": true });
+        }
+
         let pod_manifest = json!({
             "apiVersion": "v1",
             "kind": "Pod",
@@ -427,42 +504,7 @@ impl VllmEngine for KubernetesVllmEngine {
             },
             "spec": {
                 "hostIPC": true,
-                "containers": [
-                    {
-                        "name": "vllm",
-                        "image": image,
-                        "imagePullPolicy": "Always",
-                        "command": [
-                            "/opt/venv/bin/python",
-                            "-m",
-                            "vllm.entrypoints.openai.api_server",
-                        ],
-                        "args": args,
-                        "securityContext": {
-                            "privileged": true
-                        },
-                        "ports": [
-                            {
-                                "containerPort": req.port,
-                                "name": "http"
-                            }
-                        ],
-                        "resources": resources,
-                        "env": env_vars,
-                        "volumeMounts": volume_mounts,
-                        // vLLM serves /health once the model is loaded; until then
-                        // the pod stays NotReady so list_instances reports "starting".
-                        "readinessProbe": {
-                            "httpGet": {
-                                "path": "/health",
-                                "port": req.port
-                            },
-                            "initialDelaySeconds": 5,
-                            "periodSeconds": 5,
-                            "timeoutSeconds": 3
-                        }
-                    }
-                ],
+                "containers": [container],
                 "volumes": volumes,
                 "restartPolicy": "Never"
             }

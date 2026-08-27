@@ -108,6 +108,15 @@ pub fn cpu_kvcache_space_gib() -> String {
     std::env::var("VLLM_CPU_KVCACHE_SPACE").unwrap_or_else(|_| "4".to_string())
 }
 
+/// Container image the Kubernetes engine runs for `device: "cpu"` launches,
+/// from `VLLM_CPU_IMAGE` or the upstream default. Unlike the GPU path (which
+/// runs vLLM from a host-mounted venv), the CPU image ships its own vLLM and
+/// entrypoint, so a CPU launch needs no venv / ROCm / device mounts.
+pub fn cpu_image() -> String {
+    std::env::var("VLLM_CPU_IMAGE")
+        .unwrap_or_else(|_| "vllm/vllm-openai-cpu:latest-x86_64".to_string())
+}
+
 /// Translate a task value (e.g. "embed", "generate") into vLLM CLI flags.
 ///
 /// Current vLLM removed the `--task` flag in favour of `--runner`
