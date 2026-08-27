@@ -18,6 +18,7 @@ pub struct LaunchModalQuery {
     pub prefix_caching: Option<bool>,
     pub task: Option<String>,
     pub enable_tool_calling: Option<bool>,
+    pub device: Option<String>,
     pub recalculate_gpu_util: Option<bool>,
 }
 
@@ -84,9 +85,20 @@ pub fn render_launch_modal(
     let max_model_len = parse_optional_u32(query.max_model_len.as_deref());
     let gpu_util = launch_gpu_util(selected_model, quantization, max_model_len, query, gpu);
     let prefix_caching = query.prefix_caching.unwrap_or(false);
+    let cpu = crate::routers::vllm::is_cpu_device(query.device.as_deref());
 
-    let (fit_note_class, fit_note_text, fit_note_i18n, fit_note_args, launch_disabled) =
-        launch_fit_note(selected_model, quantization, max_model_len, gpu_util, gpu);
+    let (fit_note_class, fit_note_text, fit_note_i18n, fit_note_args, launch_disabled) = if cpu {
+        (
+            "fit-line fit-ok",
+            "Running on CPU - GPU VRAM fit is not evaluated. Needs a CPU-capable vLLM build."
+                .to_string(),
+            "ui_vllm_fit_note_cpu",
+            None,
+            false,
+        )
+    } else {
+        launch_fit_note(selected_model, quantization, max_model_len, gpu_util, gpu)
+    };
 
     div()
         .attr("id", "launch-modal")
@@ -127,7 +139,7 @@ pub fn render_launch_modal(
                             .child(endpoint_fields(query))
                             .child(namespace_field(query))
                             .child(runtime_fields(query))
-                            .child(memory_fields(gpu_util, prefix_caching))
+                            .child(memory_fields(gpu_util, prefix_caching, cpu))
                             .child(task_fields(query))
                             .child(
                                 div().attr("id", "launch-fit-note").class("fit-note").child(
@@ -319,6 +331,16 @@ fn runtime_fields(query: &LaunchModalQuery) -> Element {
                 .class("form-group")
                 .child(
                     label()
+                        .attr("data-i18n", "ui_vllm_form_device")
+                        .text("Device"),
+                )
+                .child(device_select(query.device.as_deref())),
+        )
+        .child(
+            div()
+                .class("form-group")
+                .child(
+                    label()
                         .attr("data-i18n", "ui_vllm_form_max_len")
                         .text("Max Model Len"),
                 )
@@ -396,7 +418,29 @@ fn dtype_select(selected: Option<&str>) -> Element {
     select
 }
 
-fn memory_fields(gpu_util: f32, prefix_caching: bool) -> Element {
+/// GPU (the default, empty value) vs CPU (`--device cpu`). Re-renders the
+/// modal on change so the GPU-utilization field and fit note can react.
+fn device_select(selected: Option<&str>) -> Element {
+    let selected = selected.unwrap_or("").trim();
+    let mut select = select()
+        .attr("id", "launch-device")
+        .attr("name", "device")
+        .attr("hx-get", with_base_path("/api/v1/vllm/launch-modal"))
+        .attr("hx-target", "#launch-modal")
+        .attr("hx-swap", "outerHTML")
+        .attr("hx-include", "#launch-form")
+        .attr("hx-vals", r#"{"recalculate_gpu_util": true}"#);
+    for (value, text) in [("", "GPU"), ("cpu", "CPU")] {
+        let mut opt = option().attr("value", value).text(text);
+        if selected.eq_ignore_ascii_case(value) {
+            opt = opt.attr("selected", "selected");
+        }
+        select = select.child(opt);
+    }
+    select
+}
+
+fn memory_fields(gpu_util: f32, prefix_caching: bool, cpu: bool) -> Element {
     let mut prefix = input()
         .attr("type", "checkbox")
         .attr("id", "launch-prefix-caching")
@@ -404,6 +448,20 @@ fn memory_fields(gpu_util: f32, prefix_caching: bool) -> Element {
         .attr("value", "true");
     if prefix_caching {
         prefix = prefix.attr("checked", "checked");
+    }
+
+    // `--gpu-memory-utilization` has no effect on CPU; disable the field so it
+    // isn't submitted, and the launch path treats it as unset.
+    let mut gpu_util_input = input()
+        .attr("type", "number")
+        .attr("id", "launch-gpu-util")
+        .attr("name", "gpu_memory_utilization")
+        .attr("step", "0.05")
+        .attr("min", "0.1")
+        .attr("max", "1.0")
+        .attr("value", format!("{gpu_util:.2}"));
+    if cpu {
+        gpu_util_input = gpu_util_input.attr("disabled", "disabled");
     }
 
     div()
@@ -416,16 +474,7 @@ fn memory_fields(gpu_util: f32, prefix_caching: bool) -> Element {
                         .attr("data-i18n", "ui_vllm_form_gpu_util")
                         .text("GPU Utilization"),
                 )
-                .child(
-                    input()
-                        .attr("type", "number")
-                        .attr("id", "launch-gpu-util")
-                        .attr("name", "gpu_memory_utilization")
-                        .attr("step", "0.05")
-                        .attr("min", "0.1")
-                        .attr("max", "1.0")
-                        .attr("value", format!("{gpu_util:.2}")),
-                ),
+                .child(gpu_util_input),
         )
         .child(
             div().class("form-group form-group-checkbox").child(

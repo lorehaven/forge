@@ -200,6 +200,7 @@ fn query(gpu_util: Option<&str>, recalc: Option<bool>) -> LaunchModalQuery {
         gpu_memory_utilization: gpu_util.map(str::to_string),
         prefix_caching: None,
         task: None,
+        device: None,
         enable_tool_calling: None,
         recalculate_gpu_util: recalc,
     }
@@ -352,6 +353,31 @@ fn render_launch_modal_includes_the_model_select_and_fit_note() {
     assert!(html.contains("launch-instance-modal"));
     assert!(html.contains("test-model"));
     assert!(html.contains("fit-line"));
+}
+
+#[test]
+fn render_launch_modal_offers_a_device_select_defaulting_to_gpu() {
+    let model = model_with_estimates(vec![estimate(Quant::FP16, Context::Size4096, 5.0, 1.0)]);
+    let q = query(None, None);
+    let html = render_launch_modal(vec![model], &q, &gpu(24.0, 24.0));
+    assert!(html.contains(r#"name="device""#));
+    assert!(html.contains(">GPU<"));
+    assert!(html.contains(">CPU<"));
+    // GPU default: the VRAM fit note is still computed, not the CPU placeholder.
+    assert!(html.contains("fit-line"));
+    assert!(!html.contains("ui_vllm_fit_note_cpu"));
+}
+
+#[test]
+fn render_launch_modal_for_cpu_disables_gpu_util_and_skips_the_vram_fit_note() {
+    let model = model_with_estimates(vec![estimate(Quant::FP16, Context::Size4096, 5.0, 1.0)]);
+    let mut q = query(None, None);
+    q.device = Some("cpu".to_string());
+    let html = render_launch_modal(vec![model], &q, &gpu(24.0, 24.0));
+    assert!(html.contains("ui_vllm_fit_note_cpu"));
+    // Only the GPU-utilization input is disabled on the CPU path.
+    assert!(html.contains(r#"id="launch-gpu-util""#));
+    assert!(html.contains("disabled"));
 }
 
 #[test]

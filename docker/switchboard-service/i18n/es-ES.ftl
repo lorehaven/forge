@@ -48,6 +48,7 @@ ui_vllm_form_port = Puerto
 ui_vllm_form_namespace = Espacio de nombres
 ui_vllm_form_quant = Cuantización
 ui_vllm_form_dtype = Dtype
+ui_vllm_form_device = Dispositivo
 ui_vllm_form_limit_mm = Límite multimodal
 ui_vllm_form_max_len = Longitud máx. del modelo
 ui_vllm_form_gpu_util = Uso de memoria GPU
@@ -125,6 +126,7 @@ ui_vllm_fit_wont_fit_budget = No cabrá: el modelo necesita ~{ $model } GB para 
 ui_vllm_fit_wont_fit_free = No cabe ahora mismo: vLLM reservará ~{ $required } GB, pero solo hay { $free } GB libres
 ui_vllm_fit_tight = Ajuste justo: el modelo necesita ~{ $model } GB y vLLM reservará ~{ $required } GB, dejando { $remaining } GB libres
 ui_vllm_fit_ok = Debería caber: el modelo necesita ~{ $model } GB y vLLM reservará ~{ $required } GB
+ui_vllm_fit_note_cpu = Ejecutándose en CPU: no se evalúa el ajuste de VRAM de GPU. Requiere una compilación de vLLM compatible con CPU.
 
 # ── Códigos de error de la API ───────────────────────────────────────────────
 

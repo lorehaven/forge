@@ -16,6 +16,7 @@ fn instance(id: &str, task: Option<&str>) -> VllmInstance {
         gpu_memory_utilization: None,
         enable_prefix_caching: false,
         task: task.map(str::to_string),
+        device: None,
         started_at: chrono::Utc::now(),
         status: "running".to_string(),
     }

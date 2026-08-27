@@ -134,7 +134,17 @@ async fn launch_instance_parses_the_created_instance() {
 
     let client = SwitchboardClient::new();
     let instance = client
-        .launch_instance("test-model", None, None, None, None, None, false, None)
+        .launch_instance(
+            "test-model",
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+            None,
+            None,
+        )
         .await
         .unwrap();
     assert_eq!(instance.id, "inst-2");
@@ -152,6 +162,7 @@ fn instance(task: Option<&str>) -> VllmInstance {
         gpu_memory_utilization: None,
         enable_prefix_caching: false,
         task: task.map(str::to_string),
+        device: None,
         started_at: Utc::now(),
         status: "running".to_string(),
     }

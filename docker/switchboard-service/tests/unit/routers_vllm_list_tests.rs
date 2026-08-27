@@ -20,6 +20,7 @@ fn instance(status: &str) -> VllmInstance {
         enable_prefix_caching: false,
         enable_tool_calling: false,
         task: None,
+        device: None,
         started_at: Utc::now(),
         status: status.to_string(),
         log_path: None,

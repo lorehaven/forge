@@ -32,6 +32,7 @@ impl VllmEngine for MockVllmEngine {
             enable_prefix_caching: req.enable_prefix_caching,
             enable_tool_calling: req.enable_tool_calling,
             task: req.task,
+            device: req.device,
             started_at: Utc::now(),
             status: "running".to_string(),
             log_path: None,

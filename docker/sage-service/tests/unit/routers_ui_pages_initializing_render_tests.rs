@@ -14,6 +14,7 @@ fn default_model(name: &str, task: Option<&str>) -> DefaultModel {
         limit_mm_per_prompt: None,
         enable_tool_calling: false,
         task: task.map(str::to_string),
+        device: None,
     }
 }
 
@@ -69,6 +70,7 @@ fn render_model_rows_reflects_each_models_own_state() {
         gpu_memory_utilization: None,
         enable_prefix_caching: false,
         task: None,
+        device: None,
         started_at: chrono::Utc::now(),
         status: "running".to_string(),
     }]);

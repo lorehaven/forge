@@ -24,6 +24,7 @@ fn model(name: &str) -> DefaultModel {
         limit_mm_per_prompt: None,
         enable_tool_calling: false,
         task: None,
+        device: None,
     }
 }
 
@@ -39,6 +40,7 @@ fn instance(model: &str, status: &str) -> VllmInstance {
         gpu_memory_utilization: None,
         enable_prefix_caching: false,
         task: None,
+        device: None,
         started_at: chrono::Utc::now(),
         status: status.to_string(),
     }

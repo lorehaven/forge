@@ -73,6 +73,7 @@ impl VllmEngine for RecordingEngine {
             enable_prefix_caching: req.enable_prefix_caching,
             enable_tool_calling: req.enable_tool_calling,
             task: req.task.clone(),
+            device: req.device.clone(),
             started_at: chrono::Utc::now(),
             status: "starting".to_string(),
             log_path: None,

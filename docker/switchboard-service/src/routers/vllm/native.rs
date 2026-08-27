@@ -1,5 +1,8 @@
 use crate::routers::vllm::engine::VllmEngine;
-use crate::routers::vllm::{LaunchRequest, VllmInstance, task_from_args, task_launch_args};
+use crate::routers::vllm::{
+    LaunchRequest, VllmInstance, cpu_kvcache_space_gib, device_from_args, device_launch_args,
+    is_cpu_device, task_from_args, task_launch_args,
+};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
@@ -26,6 +29,7 @@ struct LaunchRecord {
     enable_prefix_caching: bool,
     enable_tool_calling: bool,
     task: Option<String>,
+    device: Option<String>,
     started_at: DateTime<Utc>,
     terminating_at: Option<DateTime<Utc>>,
     log_path: Option<String>,
@@ -104,6 +108,7 @@ impl VllmEngine for NativeVllmEngine {
             let enable_prefix_caching = parts.iter().any(|p| p == "--enable-prefix-caching");
             let enable_tool_calling = parts.iter().any(|p| p == "--enable-auto-tool-choice");
             let task = task_from_args(&parts);
+            let device = device_from_args(&parts);
 
             let started_at = process_started_at(pid).unwrap_or_else(Utc::now);
 
@@ -140,6 +145,7 @@ impl VllmEngine for NativeVllmEngine {
                 enable_prefix_caching,
                 enable_tool_calling,
                 task,
+                device,
                 started_at,
                 status: status.to_string(),
                 log_path: record.and_then(|r| r.log_path.clone()),
@@ -175,6 +181,7 @@ impl VllmEngine for NativeVllmEngine {
                     enable_prefix_caching: record.enable_prefix_caching,
                     enable_tool_calling: record.enable_tool_calling,
                     task: record.task.clone(),
+                    device: record.device.clone(),
                     started_at: record.started_at,
                     status: "terminating".to_string(),
                     log_path: record.log_path.clone(),
@@ -221,6 +228,11 @@ impl VllmEngine for NativeVllmEngine {
             args.push(dtype.clone());
         }
 
+        let cpu = is_cpu_device(req.device.as_deref());
+        if let Some(ref device) = req.device {
+            args.extend(device_launch_args(device));
+        }
+
         if let Some(ref limit) = req.limit_mm_per_prompt {
             args.push("--limit-mm-per-prompt".to_string());
             args.push(limit.clone());
@@ -231,7 +243,11 @@ impl VllmEngine for NativeVllmEngine {
             args.push(len.to_string());
         }
 
-        if let Some(util) = req.gpu_memory_utilization {
+        // `--gpu-memory-utilization` is meaningless on CPU; the CPU backend
+        // sizes its KV cache from VLLM_CPU_KVCACHE_SPACE instead (set below).
+        if let Some(util) = req.gpu_memory_utilization
+            && !cpu
+        {
             args.push("--gpu-memory-utilization".to_string());
             args.push(format!("{:.2}", util));
         }
@@ -283,6 +299,17 @@ impl VllmEngine for NativeVllmEngine {
             .stdout(Stdio::from(stdout_file))
             .stderr(Stdio::from(stderr_file));
 
+        if cpu {
+            let kvcache = cpu_kvcache_space_gib();
+            command.env("VLLM_CPU_KVCACHE_SPACE", &kvcache);
+            tracing::info!(
+                "Launching model {} on CPU (--device cpu, VLLM_CPU_KVCACHE_SPACE={} GiB). \
+                 Requires a CPU-capable vLLM build; FP8 checkpoints won't load on CPU.",
+                req.model,
+                kvcache
+            );
+        }
+
         #[cfg(unix)]
         command.process_group(0);
 
@@ -310,6 +337,7 @@ impl VllmEngine for NativeVllmEngine {
                         enable_prefix_caching: req.enable_prefix_caching,
                         enable_tool_calling: req.enable_tool_calling,
                         task: req.task.clone(),
+                        device: req.device.clone(),
                         started_at,
                         terminating_at: None,
                         log_path: Some(log_path.clone()),
@@ -336,6 +364,7 @@ impl VllmEngine for NativeVllmEngine {
                             enable_prefix_caching: req.enable_prefix_caching,
                             enable_tool_calling: req.enable_tool_calling,
                             task: req.task.clone(),
+                            device: req.device.clone(),
                             started_at,
                             terminating_at: None,
                             log_path: Some(log_path.clone()),
@@ -371,6 +400,7 @@ impl VllmEngine for NativeVllmEngine {
                         enable_prefix_caching: req.enable_prefix_caching,
                         enable_tool_calling: req.enable_tool_calling,
                         task: req.task.clone(),
+                        device: req.device.clone(),
                         started_at,
                         terminating_at: None,
                         log_path: Some(log_path.clone()),
@@ -392,6 +422,7 @@ impl VllmEngine for NativeVllmEngine {
                     enable_prefix_caching: req.enable_prefix_caching,
                     enable_tool_calling: req.enable_tool_calling,
                     task: req.task.clone(),
+                    device: req.device.clone(),
                     started_at,
                     status: "starting".to_string(),
                     log_path: Some(log_path),

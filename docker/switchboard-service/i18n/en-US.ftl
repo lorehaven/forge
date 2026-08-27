@@ -48,6 +48,7 @@ ui_vllm_form_port = Port
 ui_vllm_form_namespace = Namespace
 ui_vllm_form_quant = Quantization
 ui_vllm_form_dtype = Dtype
+ui_vllm_form_device = Device
 ui_vllm_form_limit_mm = Multimodal Limit
 ui_vllm_form_max_len = Max Model Len
 ui_vllm_form_gpu_util = GPU Memory Utilization
@@ -125,6 +126,7 @@ ui_vllm_fit_wont_fit_budget = Won't fit: model needs ~{ $model } GB for the sele
 ui_vllm_fit_wont_fit_free = Won't fit right now: vLLM will reserve ~{ $required } GB, but only { $free } GB is free
 ui_vllm_fit_tight = Tight fit: model needs ~{ $model } GB and vLLM will reserve ~{ $required } GB, leaving { $remaining } GB free
 ui_vllm_fit_ok = Should fit: model needs ~{ $model } GB and vLLM will reserve ~{ $required } GB
+ui_vllm_fit_note_cpu = Running on CPU - GPU VRAM fit is not evaluated. Needs a CPU-capable vLLM build.
 
 # ── API error codes ──────────────────────────────────────────────────────────
 

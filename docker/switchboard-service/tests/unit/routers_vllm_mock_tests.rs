@@ -25,6 +25,7 @@ fn request(model: &str) -> LaunchRequest {
         enable_prefix_caching: false,
         enable_tool_calling: false,
         task: None,
+        device: None,
     }
 }
 

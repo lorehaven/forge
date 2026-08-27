@@ -24,6 +24,10 @@ pub struct DefaultModel {
     /// vLLM task, e.g. "embed", so switchboard serves /v1/embeddings instead of chat completions.
     #[serde(default)]
     pub task: Option<String>,
+    /// Execution device switchboard launches the model on. None (default) = GPU;
+    /// "cpu" launches with `--device cpu` (needs a CPU-capable vLLM; no FP8).
+    #[serde(default)]
+    pub device: Option<String>,
 }
 
 impl DefaultModel {
@@ -54,6 +58,7 @@ impl DefaultModel {
                 limit_mm_per_prompt: None,
                 enable_tool_calling: false,
                 task: None,
+                device: None,
             }];
         }
 

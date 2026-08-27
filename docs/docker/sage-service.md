@@ -57,7 +57,7 @@ Key environment variables (see `docker/sage-service/.env`):
 
 - `SWITCHBOARD_URL`, `CLIENT_SECRET_SAGE_SWITCHBOARD`, `GATEHOUSE_URL` — service-to-service auth toward Switchboard.
 - `SAGE_CAPABILITY_PROFILE` — `web_assistant` (default), `code_assistant`, or `cli_agent`.
-- `SAGE_DEFAULT_MODELS` — JSON array of models to keep launched (name, GPU utilization, context length, quantization, dtype, tool-calling, task); the monitor loop reconciles against this on every tick.
+- `SAGE_DEFAULT_MODELS` — JSON array of models to keep launched (name, GPU utilization, context length, quantization, dtype, tool-calling, task, and `device`); the monitor loop reconciles against this on every tick. Set `"device": "cpu"` on an entry to have switchboard launch that model on CPU (`vllm serve --device cpu`) instead of the GPU — useful for keeping a small chat model resident without spending VRAM; requires a CPU-capable vLLM and rules out FP8 checkpoints.
 - `SAGE_SUPPORTED_MODELS` — glob patterns a model name must match to be eligible for default-model launch.
 - `SAGE_STOP_MODELS_ON_SHUTDOWN` — gracefully stop owned default models on shutdown (default false).
 - `SAGE_EMBEDDING_MODEL`, `SAGE_EMBEDDING_DIMENSION`, `SAGE_EMBEDDING_BATCH_SIZE` — must match the `file_chunks.embedding vector(N)` column dimension.

@@ -1,4 +1,4 @@
-use super::types::LaunchRequest;
+use super::types::{LaunchRequest, is_cpu_device};
 use crate::routers::models::mod_impl::can;
 use crate::routers::vllm::engine::VllmEngine;
 use actix_web::{HttpResponse, Responder, http::header::ContentType, post, web};
@@ -45,6 +45,7 @@ pub struct LaunchRequestForm {
     prefix_caching: Option<bool>,
     enable_tool_calling: Option<bool>,
     task: Option<String>,
+    device: Option<String>,
 }
 
 #[post("/instances/form")]
@@ -57,6 +58,18 @@ pub async fn launch_instance_form(
     if !can(&http_req, &config, "launch").await {
         return HttpResponse::Forbidden().finish();
     }
+
+    let device = form.device.as_deref().and_then(|value| {
+        let trimmed = value.trim();
+        (!trimmed.is_empty()).then(|| trimmed.to_string())
+    });
+    // The GPU utilization field is disabled in the form for CPU launches, so
+    // it arrives empty; make that explicit rather than falling back to 0.90.
+    let gpu_memory_utilization = if is_cpu_device(device.as_deref()) {
+        None
+    } else {
+        Some(parse_optional_f32(form.gpu_memory_utilization.as_deref()).unwrap_or(0.90))
+    };
 
     let req = LaunchRequest {
         model: form.model.clone(),
@@ -79,9 +92,7 @@ pub async fn launch_instance_form(
             (!trimmed.is_empty()).then(|| trimmed.to_string())
         }),
         max_model_len: parse_optional_u32(form.max_model_len.as_deref()),
-        gpu_memory_utilization: Some(
-            parse_optional_f32(form.gpu_memory_utilization.as_deref()).unwrap_or(0.90),
-        ),
+        gpu_memory_utilization,
         enable_prefix_caching: form
             .enable_prefix_caching
             .or(form.prefix_caching)
@@ -91,6 +102,7 @@ pub async fn launch_instance_form(
             let trimmed = value.trim();
             (!trimmed.is_empty()).then(|| trimmed.to_string())
         }),
+        device,
     };
 
     match engine.launch_instance(req).await {

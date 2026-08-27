@@ -21,6 +21,9 @@ pub struct VllmInstance {
     /// /v1/embeddings only, so they must be excluded from the chat model selector.
     #[serde(default)]
     pub task: Option<String>,
+    /// Execution device the instance was launched on (e.g. "cpu"); None = GPU.
+    #[serde(default)]
+    pub device: Option<String>,
     pub started_at: DateTime<Utc>,
     pub status: String,
 }
@@ -206,6 +209,7 @@ impl SwitchboardClient {
         limit_mm_per_prompt: Option<&str>,
         enable_tool_calling: bool,
         task: Option<&str>,
+        device: Option<&str>,
     ) -> Result<VllmInstance> {
         if !self.circuit_breaker.is_available() {
             tracing::warn!("Switchboard circuit breaker is open");
@@ -226,7 +230,8 @@ impl SwitchboardClient {
             "gpu_memory_utilization": gpu_memory_utilization,
             "enable_prefix_caching": false,
             "enable_tool_calling": enable_tool_calling,
-            "task": task
+            "task": task,
+            "device": device
         });
 
         let client = self.client.clone();

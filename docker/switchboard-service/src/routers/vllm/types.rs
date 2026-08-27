@@ -25,6 +25,11 @@ pub struct VllmInstance {
     /// vLLM task the instance was launched with (e.g. "embed"); None = generate.
     #[serde(default)]
     pub task: Option<String>,
+    /// Execution device the instance was launched on (passed as `--device`,
+    /// e.g. "cpu"). None / "gpu" / "auto" = vLLM's platform default (GPU),
+    /// i.e. the pre-device-option behaviour.
+    #[serde(default)]
+    pub device: Option<String>,
 
     pub started_at: DateTime<Utc>,
 
@@ -59,6 +64,48 @@ pub struct LaunchRequest {
     /// `--runner`/`--convert` flags at launch time (see [`task_launch_args`]).
     #[serde(default)]
     pub task: Option<String>,
+    /// Execution device to launch on. None (the default) keeps the historical
+    /// GPU behaviour: nothing is passed and vLLM auto-selects the platform
+    /// accelerator. `"cpu"` launches with `--device cpu` and skips
+    /// `--gpu-memory-utilization`; any other value is passed through verbatim
+    /// as `--device <value>` (see [`device_launch_args`]).
+    #[serde(default)]
+    pub device: Option<String>,
+}
+
+/// Whether `device` selects CPU execution (case-insensitive `"cpu"`).
+pub fn is_cpu_device(device: Option<&str>) -> bool {
+    matches!(device, Some(d) if d.trim().eq_ignore_ascii_case("cpu"))
+}
+
+/// Translate a `device` value into vLLM CLI flags.
+///
+/// `""` / `"gpu"` / `"auto"` / `"default"` yield nothing, so vLLM keeps
+/// auto-selecting the platform accelerator exactly as it did before the
+/// device option existed. Anything else (`"cpu"`, `"cuda"`, `"neuron"`, …) is
+/// passed straight through as `--device <value>`.
+pub fn device_launch_args(device: &str) -> Vec<String> {
+    match device.trim().to_lowercase().as_str() {
+        "" | "gpu" | "auto" | "default" => vec![],
+        other => vec!["--device".to_string(), other.to_string()],
+    }
+}
+
+/// Recover a `device` value from a running instance's CLI args, the inverse of
+/// [`device_launch_args`]. `None` when no `--device` flag is present.
+pub fn device_from_args(parts: &[String]) -> Option<String> {
+    parts
+        .iter()
+        .position(|p| p == "--device")
+        .and_then(|i| parts.get(i + 1))
+        .map(|v| v.to_string())
+}
+
+/// GiB the CPU backend reserves for the KV cache, from `VLLM_CPU_KVCACHE_SPACE`
+/// in the parent environment or a modest default. vLLM has no
+/// `--gpu-memory-utilization` equivalent for CPU; this env var is the knob.
+pub fn cpu_kvcache_space_gib() -> String {
+    std::env::var("VLLM_CPU_KVCACHE_SPACE").unwrap_or_else(|_| "4".to_string())
 }
 
 /// Translate a task value (e.g. "embed", "generate") into vLLM CLI flags.

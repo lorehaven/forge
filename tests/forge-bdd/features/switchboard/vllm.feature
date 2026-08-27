@@ -65,6 +65,24 @@ Feature: vLLM Management API
     When DELETE request is sent to "/api/v1/vllm/instances/{last_id}"
     Then response status should be 200
 
+  Scenario: Launch a vLLM instance on CPU
+    When POST request is sent to "/api/v1/vllm/instances" with body:
+      """
+      {
+        "model": "cpu-model",
+        "host": "0.0.0.0",
+        "port": 8002,
+        "enable_prefix_caching": false,
+        "device": "cpu"
+      }
+      """
+    Then response status should be 202
+    And response should be a JSON object
+    And response should contain "cpu-model"
+    And response should contain "cpu"
+    When DELETE request is sent to "/api/v1/vllm/instances/{last_id}"
+    Then response status should be 200
+
   Scenario: Stop non-existent instance
     When DELETE request is sent to "/api/v1/vllm/instances/non-existent-id"
     Then response status should be 404

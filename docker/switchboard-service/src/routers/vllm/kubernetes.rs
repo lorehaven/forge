@@ -1,5 +1,8 @@
 use crate::routers::vllm::engine::VllmEngine;
-use crate::routers::vllm::{LaunchRequest, VllmInstance, task_launch_args};
+use crate::routers::vllm::{
+    LaunchRequest, VllmInstance, cpu_kvcache_space_gib, device_launch_args, is_cpu_device,
+    task_launch_args,
+};
 use async_trait::async_trait;
 use chrono::Utc;
 use k8s_openapi::api::core::v1::{Pod, Service};
@@ -130,6 +133,10 @@ impl VllmEngine for KubernetesVllmEngine {
                     .get("vllm-task")
                     .filter(|v| !v.is_empty())
                     .cloned(),
+                device: annotations
+                    .get("vllm-device")
+                    .filter(|v| !v.is_empty())
+                    .cloned(),
                 started_at: chrono::DateTime::<Utc>::from_timestamp(
                     started_at.as_second(),
                     started_at.subsec_nanosecond() as u32,
@@ -184,6 +191,11 @@ impl VllmEngine for KubernetesVllmEngine {
             args.push(dtype.clone());
         }
 
+        let cpu = is_cpu_device(req.device.as_deref());
+        if let Some(ref device) = req.device {
+            args.extend(device_launch_args(device));
+        }
+
         if let Some(ref limit) = req.limit_mm_per_prompt {
             args.push("--limit-mm-per-prompt".to_string());
             args.push(limit.clone());
@@ -194,7 +206,9 @@ impl VllmEngine for KubernetesVllmEngine {
             args.push(len.to_string());
         }
 
-        if let Some(util) = req.gpu_memory_utilization {
+        if let Some(util) = req.gpu_memory_utilization
+            && !cpu
+        {
             args.push("--gpu-memory-utilization".to_string());
             args.push(format!("{:.2}", util));
         }
@@ -320,12 +334,21 @@ impl VllmEngine for KubernetesVllmEngine {
 
         let mut resources = json!({});
         let key = gpu_resource_key.trim();
-        if !key.is_empty() && key.to_lowercase() != "none" {
+        // A CPU launch must not request a GPU device plugin resource, or the
+        // pod stays Pending on hosts with no allocatable GPUs.
+        if !cpu && !key.is_empty() && key.to_lowercase() != "none" {
             resources = json!({
                 "limits": {
                     key: "1"
                 }
             });
+        }
+
+        if cpu {
+            env_vars.push(json!({
+                "name": "VLLM_CPU_KVCACHE_SPACE",
+                "value": cpu_kvcache_space_gib()
+            }));
         }
 
         // Add AMD-specific environment variables if using AMD
@@ -399,6 +422,7 @@ impl VllmEngine for KubernetesVllmEngine {
                     "vllm-enable-prefix-caching": req.enable_prefix_caching.to_string(),
                     "vllm-enable-tool-calling": req.enable_tool_calling.to_string(),
                     "vllm-task": req.task.as_deref().unwrap_or(""),
+                    "vllm-device": req.device.as_deref().unwrap_or(""),
                 }
             },
             "spec": {
@@ -514,6 +538,7 @@ impl VllmEngine for KubernetesVllmEngine {
             enable_prefix_caching: req.enable_prefix_caching,
             enable_tool_calling: req.enable_tool_calling,
             task: req.task.clone(),
+            device: req.device.clone(),
             started_at: Utc::now(),
             status: "starting".to_string(),
             log_path: None,

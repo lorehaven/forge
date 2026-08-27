@@ -10,6 +10,7 @@ Switchboard is Forge's model-serving gateway and dashboard: it discovers local m
 - **vLLM architecture allow-list** — HF models are marked `vllm_supported` by checking their `architectures` field against a configurable list (`VLLM_ARCHITECTURES_FILE`, `switchboard.vllm_architectures` table).
 - **vLLM instance lifecycle** — launch, list, and stop vLLM server processes through a pluggable `VllmEngine` trait with three backends selected by `VLLM_MANAGEMENT_MODE`:
   - **Native** (default) — spawns `vllm serve <model> ...` as a child process, tracks it by PID, infers live status (`starting`/`running`/`terminating`) by scanning `/proc` and tailing its log for the "Started server process" line, and picks a free port for concurrent launches. Handles the `--task`→`--runner`/`--convert` flag migration (vLLM removed `--task` in favor of `--runner`/`--convert`).
+- **CPU launches** — a launch request's optional `device` field selects the execution device. Omitted / `"gpu"` / `"auto"` keeps the historical behaviour (nothing passed, vLLM auto-selects the accelerator). `"cpu"` adds `--device cpu`, drops `--gpu-memory-utilization` (meaningless on CPU), and sets `VLLM_CPU_KVCACHE_SPACE` (GiB, from the env var or a default of 4) on the child; the Kubernetes engine additionally omits the GPU device-plugin resource so the pod schedules on a GPU-less node. Any other value is passed through verbatim as `--device <value>`. CPU inference requires a CPU-capable vLLM build and cannot load FP8 checkpoints. The launch modal exposes this as a GPU/CPU selector and, for CPU, disables the GPU-utilization field and skips the VRAM fit note.
   - **Kubernetes** — creates/lists/deletes `vllm`-labeled Pods (and Services) via the `kube` crate; falls back to Native if the in-cluster client can't be built.
   - **Mock** — for tests/local dev without real GPUs.
   - A background **reaper** (`reaper.rs`) removes instances stuck in `Failed` state every 30s, since Kubernetes pods with `restartPolicy: Never` never self-heal and would otherwise block relaunching the same model.
@@ -51,6 +52,7 @@ Key environment variables (see `docker/switchboard-service/.env`):
 - `VLLM_ARCHITECTURES_FILE` — path to a JSON file listing vLLM-supported HF architectures.
 - `VLLM_K8S_NAMESPACE` — namespace for the Kubernetes engine (falls back to the in-cluster service-account namespace file, then `default`).
 - `VLLM_LOG_DIR` — where Native-mode launch logs are written (default `dist/vllm_logs`).
+- `VLLM_CPU_KVCACHE_SPACE` — GiB the CPU backend reserves for the KV cache on `device: "cpu"` launches (default `4`); passed through to the vLLM child process.
 - `FEATURE_MODELS_DASHBOARD_ENABLED`, `FEATURE_VLLM_MANAGEMENT_ENABLED` — UI feature toggles.
 - `DATABASE_URL`, `DB_SCHEMA` (`switchboard`), `DB_POOL_MAX_SIZE`, `DB_MIGRATION_TABLE`, `DB_RECREATE`.
 - `GATEHOUSE_CLIENT_SECRET`, `GATEHOUSE_TLS_VERIFY` — this service's own OAuth identity toward Gatehouse.

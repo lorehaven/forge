@@ -191,6 +191,7 @@ pub async fn request_model_launch(
             model.limit_mm_per_prompt.as_deref(),
             model.enable_tool_calling,
             model.task.as_deref(),
+            model.device.as_deref(),
         )
         .await
     {
