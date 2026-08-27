@@ -80,13 +80,15 @@ pub fn is_cpu_device(device: Option<&str>) -> bool {
 
 /// Translate a `device` value into vLLM CLI flags.
 ///
-/// `""` / `"gpu"` / `"auto"` / `"default"` yield nothing, so vLLM keeps
-/// auto-selecting the platform accelerator exactly as it did before the
-/// device option existed. Anything else (`"cpu"`, `"cuda"`, `"neuron"`, …) is
-/// passed straight through as `--device <value>`.
+/// CPU execution is selected by the *runtime* - a CPU-only vLLM build in
+/// native mode, the `vllm-openai-cpu` image in Kubernetes mode - never by a
+/// flag: current vLLM repurposed `--device` for GPU device *ids* and rejects
+/// `--device cpu` outright (`int("cpu")`). So `""` / `"gpu"` / `"auto"` /
+/// `"default"` / `"cpu"` all yield nothing; only an explicit non-CPU
+/// accelerator name (`"cuda"`, `"neuron"`, …) is passed as `--device <value>`.
 pub fn device_launch_args(device: &str) -> Vec<String> {
     match device.trim().to_lowercase().as_str() {
-        "" | "gpu" | "auto" | "default" => vec![],
+        "" | "gpu" | "auto" | "default" | "cpu" => vec![],
         other => vec!["--device".to_string(), other.to_string()],
     }
 }

@@ -95,8 +95,10 @@ fn is_cpu_device_matches_cpu_case_insensitively_and_nothing_else() {
 }
 
 #[test]
-fn device_launch_args_is_empty_for_gpu_defaults() {
-    for value in ["", "gpu", "GPU", "auto", "default"] {
+fn device_launch_args_is_empty_for_the_runtime_selected_devices() {
+    // cpu included: CPU is chosen by the runtime/image, and current vLLM
+    // rejects `--device cpu`.
+    for value in ["", "gpu", "GPU", "auto", "default", "cpu", "CPU", " cpu "] {
         assert!(
             device_launch_args(value).is_empty(),
             "expected no flags for {value:?}"
@@ -105,10 +107,9 @@ fn device_launch_args_is_empty_for_gpu_defaults() {
 }
 
 #[test]
-fn device_launch_args_passes_cpu_and_other_devices_through() {
-    assert_eq!(device_launch_args("cpu"), vec!["--device", "cpu"]);
-    assert_eq!(device_launch_args("CPU"), vec!["--device", "cpu"]);
+fn device_launch_args_passes_explicit_non_cpu_accelerators_through() {
     assert_eq!(device_launch_args("cuda"), vec!["--device", "cuda"]);
+    assert_eq!(device_launch_args("neuron"), vec!["--device", "neuron"]);
 }
 
 #[test]
