@@ -67,7 +67,7 @@ quench-log = { registry = "ennor", version = "0.1.0" }
 quench-starter = { registry = "ennor", version = "0.3.12" }
 quench-web = { registry = "ennor", version = "0.1.12" }
 quench-web-components = { registry = "ennor", version = "0.1.7" }
-redis = { version = "1.6", features = ["tokio-comp", "cluster-async", "connection-manager"] }
+redis = { version = "1.7", features = ["tokio-comp", "cluster-async", "connection-manager"] }
 regex = { version = "1.13" }
 reqwest = { version = "0.13", default-features = false, features = [
   "json",
@@ -100,7 +100,7 @@ totp-rs = { version = "6.0", default-features = false, features = ["otpauth", "g
 tower-http = { version = "0.7", features = ["fs"] }
 tracing = { version = "0.1" }
 tracing-subscriber = { version = "0.3" }
-uuid = { version = "1.25", features = ["v4"] }
+uuid = { version = "1.26", features = ["v4"] }
 urlencoding = { version = "2.1" }
 walkdir = { version = "2.5" }
 zip = { version = "8", default-features = false, features = ["deflate"] }
