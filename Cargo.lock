@@ -1019,7 +1019,7 @@ dependencies = [
 
 [[package]]
 name = "conveyor-service"
-version = "0.5.26"
+version = "0.5.27"
 dependencies = [
  "actix-web",
  "async-trait",
@@ -1984,7 +1984,7 @@ dependencies = [
 
 [[package]]
 name = "foundry-service"
-version = "0.2.12"
+version = "0.2.13"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -2122,7 +2122,7 @@ dependencies = [
 
 [[package]]
 name = "gatehouse-service"
-version = "0.2.20"
+version = "0.2.21"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -4628,7 +4628,7 @@ checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
 name = "sage-service"
-version = "0.4.15"
+version = "0.4.16"
 dependencies = [
  "actix-multipart",
  "actix-web",
@@ -5413,7 +5413,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "switchboard-service"
-version = "0.4.17"
+version = "0.4.18"
 dependencies = [
  "actix-web",
  "async-trait",
@@ -6242,7 +6242,7 @@ dependencies = [
 
 [[package]]
 name = "warehouse-service"
-version = "0.4.19"
+version = "0.4.20"
 dependencies = [
  "actix-web",
  "axmldecoder",
@@ -6680,7 +6680,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "workbench-service"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "actix-web",
  "chrono",
