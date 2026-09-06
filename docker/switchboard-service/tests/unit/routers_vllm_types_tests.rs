@@ -4,7 +4,8 @@
 
 use crate::env_support::env_lock;
 use switchboard_service::routers::vllm::types::{
-    cpu_image, device_from_args, device_launch_args, is_cpu_device, task_from_args, task_launch_args,
+    cpu_image, device_from_args, device_launch_args, is_cpu_device, task_from_args,
+    task_launch_args,
 };
 
 fn parts(args: &[&str]) -> Vec<String> {
@@ -125,7 +126,12 @@ async fn cpu_image_defaults_to_upstream_and_honours_the_env_override() {
     let _guard = env_lock().lock().await;
     unsafe { std::env::remove_var("VLLM_CPU_IMAGE") };
     assert_eq!(cpu_image(), "vllm/vllm-openai-cpu:latest-x86_64");
-    unsafe { std::env::set_var("VLLM_CPU_IMAGE", "reg.local/forge/vllm/vllm-openai-cpu:v0.25.1") };
+    unsafe {
+        std::env::set_var(
+            "VLLM_CPU_IMAGE",
+            "reg.local/forge/vllm/vllm-openai-cpu:v0.25.1",
+        )
+    };
     assert_eq!(cpu_image(), "reg.local/forge/vllm/vllm-openai-cpu:v0.25.1");
     unsafe { std::env::remove_var("VLLM_CPU_IMAGE") };
 }

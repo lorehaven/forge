@@ -1,7 +1,7 @@
 use crate::routers::vllm::engine::VllmEngine;
 use crate::routers::vllm::{
-    LaunchRequest, VllmInstance, cpu_image, cpu_kvcache_space_gib, device_launch_args, is_cpu_device,
-    task_launch_args,
+    LaunchRequest, VllmInstance, cpu_image, cpu_kvcache_space_gib, device_launch_args,
+    is_cpu_device, task_launch_args,
 };
 use async_trait::async_trait;
 use chrono::Utc;

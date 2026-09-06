@@ -4,10 +4,7 @@ use actix_web::{HttpResponse, Responder, patch, web};
 use quench_starter::prelude::error;
 
 #[patch("/{name:.*}/blobs/uploads/{uuid}")]
-pub async fn handle(
-    path: web::Path<(String, String)>,
-    mut body: web::Payload,
-) -> impl Responder {
+pub async fn handle(path: web::Path<(String, String)>, mut body: web::Payload) -> impl Responder {
     let (name, uuid) = path.into_inner();
 
     let Some(file_path) = upload_path(&name, &uuid) else {

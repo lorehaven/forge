@@ -58,7 +58,9 @@ pub async fn append_body_to_upload(
             return Err(AppendError::TooLarge(limit));
         }
 
-        file.write_all(&chunk).await.map_err(|_| AppendError::Write)?;
+        file.write_all(&chunk)
+            .await
+            .map_err(|_| AppendError::Write)?;
     }
 
     file.flush().await.map_err(|_| AppendError::Write)?;

@@ -8,7 +8,10 @@ use warehouse_service::domain::storage_file::prefix_upper_bound;
 fn bumps_the_last_byte_of_an_ascii_prefix() {
     assert_eq!(prefix_upper_bound("photos").as_deref(), Some("photot"));
     assert_eq!(prefix_upper_bound("videos").as_deref(), Some("videot"));
-    assert_eq!(prefix_upper_bound("custom:foo").as_deref(), Some("custom:fop"));
+    assert_eq!(
+        prefix_upper_bound("custom:foo").as_deref(),
+        Some("custom:fop")
+    );
 }
 
 #[test]
