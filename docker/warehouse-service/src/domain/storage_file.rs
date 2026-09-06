@@ -349,6 +349,13 @@ pub async fn list_files(
 /// query. `desc` walks `path` newest-first instead of oldest-first - the
 /// comparison flips along with the sort so `after` still means the same
 /// thing either way: "past this point already".
+///
+/// Ordering and the prefix range are both taken under the `C` collation, to
+/// match `storage_files_storage_path_c_idx` (migration
+/// `warehouse/0003-storage-files-prefix-index`). Without that, a non-`C`
+/// database collation leaves no index able to bound a literal-prefix range,
+/// and the query degrades into a backward scan of the whole storage,
+/// discarding every path that sorts past the prefix before returning a row.
 pub async fn list_files_page(
     db: &Db,
     storage_name: &str,
@@ -360,23 +367,32 @@ pub async fn list_files_page(
     let pool = pool(db)?;
     let schema = schema();
     let (cmp, order) = if desc { ("<", "DESC") } else { (">", "ASC") };
+
+    // The prefix match is stated two ways. `starts_with` is the exact
+    // predicate - it alone is correct. `path COLLATE "C"` between `$3`
+    // (`prefix`) and `$4` (`prefix` with its last byte bumped) is the same
+    // set restated as a range the `C`-collation index can resolve as a bound;
+    // under `C`, `[prefix, prefix++)` is exactly the paths starting with
+    // `prefix`. An empty prefix (the whole storage) has no lower bound and no
+    // successor, so both `$n IS NULL` guards drop their term and
+    // `starts_with(path, '')` matches everything.
     let sql = format!(
         "SELECT path, size FROM {schema}.storage_files \
-         WHERE storage = $1 AND path LIKE $2 AND ($3::text IS NULL OR path {cmp} $3) \
-         ORDER BY path {order} LIMIT $4"
+         WHERE storage = $1 AND starts_with(path, $2) \
+           AND ($3::text IS NULL OR path COLLATE \"C\" >= $3) \
+           AND ($4::text IS NULL OR path COLLATE \"C\" < $4) \
+           AND ($5::text IS NULL OR path COLLATE \"C\" {cmp} $5) \
+         ORDER BY path COLLATE \"C\" {order} LIMIT $6"
     );
 
-    // `%`/`_` in a caller's own prefix are not treated as wildcards - escaped
-    // so `LIKE` only ever matches it as a literal prefix.
-    let escaped = prefix
-        .replace('\\', "\\\\")
-        .replace('%', "\\%")
-        .replace('_', "\\_");
-    let pattern = format!("{escaped}%");
+    let lower_bound = (!prefix.is_empty()).then(|| prefix.to_string());
+    let upper_bound = prefix_upper_bound(prefix);
 
     let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(storage_name)
-        .bind(pattern)
+        .bind(prefix)
+        .bind(lower_bound)
+        .bind(upper_bound)
         .bind(after)
         .bind(limit)
         .fetch_all(pool)
@@ -390,6 +406,27 @@ pub async fn list_files_page(
             })
         })
         .collect()
+}
+
+/// The exclusive upper bound of the half-open key range `[prefix, _)` that,
+/// under the `C` collation, holds exactly the paths beginning with `prefix`:
+/// `prefix` with its last byte incremented, trailing `0xFF` bytes dropped
+/// first since they cannot be. `None` when `prefix` is empty or all `0xFF`
+/// (no successor exists), or when bumping the last byte would break UTF-8 -
+/// the query then omits its upper bound and leans on `starts_with` alone,
+/// which costs a wider index range for such a prefix but stays correct. Every
+/// prefix this service actually lists (`photos`, `videos`, `custom:<slug>`)
+/// ends in an ASCII byte, where the successor is always well-formed.
+pub fn prefix_upper_bound(prefix: &str) -> Option<String> {
+    let mut bytes = prefix.as_bytes().to_vec();
+    while let Some(last) = bytes.last_mut() {
+        if *last < 0xFF {
+            *last += 1;
+            return String::from_utf8(bytes).ok();
+        }
+        bytes.pop();
+    }
+    None
 }
 
 pub async fn read_file(

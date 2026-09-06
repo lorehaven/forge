@@ -1,0 +1,38 @@
+[[migrations]]
+id = "0003-storage-files-prefix-index"
+author = "warehouse-service"
+since = "0.2.1"
+
+# The dynamic-storage listing endpoint (`GET /api/v1/files/{storage}`) pages
+# through one category's paths newest-first:
+#
+#   WHERE storage = $1 AND starts_with(path, $prefix)
+#   ORDER BY path DESC LIMIT n
+#
+# The only index that query had was the primary key `(storage, path)`, a
+# btree in the database's default collation. A non-`C` collation cannot
+# resolve a literal-prefix range against such an index, so the planner fell
+# back to a backward scan of the storage's *entire* path space, discarding
+# every row that sorts after the wanted prefix - all of `videos/...` when a
+# client lists `photos`, with a heap fetch per discarded row - before it
+# could return a single entry. A photo backup with tens of thousands of
+# files turned the first page of the mobile Browse screen into a
+# multi-second call.
+#
+# This index keys `path` under the `C` collation. There, `path >= prefix AND
+# path < prefix++` is an exact prefix match, and the `ORDER BY path COLLATE
+# "C"` the listing query now uses is satisfied by walking this index
+# backward - a bounded, index-only scan of ~n rows whatever the storage's
+# size. `INCLUDE (size)` keeps it covering: the listing selects only
+# `path, size`.
+#
+# Plain `CREATE INDEX` (not `CONCURRENTLY`) because the migration runner
+# wraps each migration in a transaction; it takes a brief `SHARE` lock on
+# `storage_files`, which builds in well under a second at the row counts a
+# personal backup reaches.
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS storage_files_storage_path_c_idx
+    ON ${schema}.storage_files (storage, path COLLATE "C")
+    INCLUDE (size);
+"""

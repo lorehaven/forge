@@ -7,6 +7,8 @@ mod apk_manifest_tests;
 mod docker_token_tests;
 #[path = "unit/domain_apk_tests.rs"]
 mod domain_apk_tests;
+#[path = "unit/domain_storage_file_tests.rs"]
+mod domain_storage_file_tests;
 #[path = "unit/files_confinement_tests.rs"]
 mod files_confinement_tests;
 #[path = "unit/files_path_tests.rs"]
