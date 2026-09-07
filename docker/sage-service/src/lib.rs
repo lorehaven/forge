@@ -1,3 +1,9 @@
+// Router helpers return `Result<T, HttpResponse>` so callers can `?` an early
+// response straight out. actix-web's `HttpResponse` is a large type, which
+// trips `clippy::result_large_err` on that pattern - boxing every such
+// signature buys nothing on a cold error path.
+#![allow(clippy::result_large_err)]
+
 use actix_web::web;
 use quench_starter::prelude::*;
 

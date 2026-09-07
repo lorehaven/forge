@@ -126,7 +126,7 @@ name = "build"
 [[stage.job]]
 name      = "cargo"
 timeout   = 900
-image     = "rust:1.94"
+image     = "rust:1.98"
 secrets   = ["CARGO_TOKEN"]
 artifacts = ["target/release/thing"]
 steps     = ["cargo build"]
@@ -139,7 +139,7 @@ CARGO_TERM_COLOR = "always"
 
     let job = &spec.stages[0].jobs[0];
     assert_eq!(job.timeout, Some(900));
-    assert_eq!(job.image.as_deref(), Some("rust:1.94"));
+    assert_eq!(job.image.as_deref(), Some("rust:1.98"));
     assert_eq!(job.secrets, ["CARGO_TOKEN"]);
     assert_eq!(job.artifacts, ["target/release/thing"]);
     assert_eq!(

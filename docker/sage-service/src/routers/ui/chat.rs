@@ -847,8 +847,7 @@ pub async fn stream_message(
             }
         }
 
-        let ai_parent_id;
-        if !req.skip_user_message {
+        let ai_parent_id = if !req.skip_user_message {
             // Create user message in DB
             let msg_repo = db_clone.repository::<crate::domain::models::Message>();
             let user_msg_id = uuid::Uuid::new_v4().to_string();
@@ -877,10 +876,10 @@ pub async fn stream_message(
             {
                 tracing::error!("Failed to link attachments to message: {}", err);
             }
-            ai_parent_id = Some(user_msg_id);
+            Some(user_msg_id)
         } else {
-            ai_parent_id = req.parent_id.clone();
-        }
+            req.parent_id.clone()
+        };
 
         // Create AI message in DB with full response (including embedded tool results)
         let msg_repo = db_clone.repository::<crate::domain::models::Message>();

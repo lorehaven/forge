@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.5
 
 # ---------- Dependency build stage ----------
-FROM rust:1.94-bookworm AS deps-builder
+FROM rust:1.98-bookworm AS deps-builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \

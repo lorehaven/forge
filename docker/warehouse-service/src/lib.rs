@@ -9,6 +9,12 @@
 //! they do: the docker registry owns `/v2` at the server root because the
 //! registry protocol says so, and everything else sits under `BASE_PATH`.
 
+// Router helpers return `Result<T, HttpResponse>` so callers can `?` an early
+// response straight out. actix-web's `HttpResponse` is a large type, which
+// trips `clippy::result_large_err` on that pattern - boxing every such
+// signature buys nothing on a cold error path.
+#![allow(clippy::result_large_err)]
+
 use actix_web::web;
 use docker_token::DockerTokenConfig;
 use quench_auth::actix::domain::sso_client::SsoConfig;

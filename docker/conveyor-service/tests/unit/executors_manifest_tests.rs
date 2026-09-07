@@ -121,11 +121,11 @@ fn a_pod_is_never_restarted() {
 #[test]
 fn the_steps_run_in_the_image_the_pipeline_named() {
     let mut spec = spec();
-    spec.image = Some("rust:1.94".to_string());
+    spec.image = Some("rust:1.98".to_string());
 
     let built = build(&spec);
     let pod = built.job.spec.unwrap().template.spec.expect("pod spec");
-    assert_eq!(pod.containers[0].image.as_deref(), Some("rust:1.94"));
+    assert_eq!(pod.containers[0].image.as_deref(), Some("rust:1.98"));
 }
 
 #[test]
