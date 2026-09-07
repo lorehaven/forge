@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::process::Command;
 
-use crate::util::run_command;
+use crate::util::{run_command, run_command_streamed};
 
 #[must_use]
 pub fn lint_args(all_targets: bool, all_features: bool, deny_warnings: bool) -> Vec<String> {
@@ -29,7 +29,9 @@ pub fn lint(all_targets: bool, all_features: bool, deny_warnings: bool) -> Resul
     let mut cmd = Command::new("cargo");
     cmd.args(lint_args(all_targets, all_features, deny_warnings));
 
-    run_command(cmd, "lint")
+    // Streamed, not captured: clippy's diagnostics are the whole point of the
+    // command, and they need to come back in full and in color.
+    run_command_streamed(cmd, "lint")
 }
 
 #[must_use]

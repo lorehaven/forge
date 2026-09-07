@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use std::process::Command;
 
 use crate::cargo_meta::resolve_package;
-use crate::util::run_command;
+use crate::util::{run_command, run_command_streamed};
 
 /// `which::which`, turned into the "not found, here's how to fix it" error.
 ///
@@ -75,7 +75,9 @@ pub fn audit() -> Result<()> {
     let mut cmd = Command::new("cargo");
     cmd.arg("audit");
 
-    run_command(cmd, "audit")
+    // Streamed, not captured: the advisory report is the whole point, and a
+    // long one must not lose its top rows to the failure tail.
+    run_command_streamed(cmd, "audit")
 }
 
 pub fn machete() -> Result<()> {
@@ -84,7 +86,9 @@ pub fn machete() -> Result<()> {
     let mut cmd = Command::new("cargo");
     cmd.arg("machete");
 
-    run_command(cmd, "machete")
+    // Streamed, not captured: the list of unused dependencies and the paths
+    // they were found in need to come back in full and in color.
+    run_command_streamed(cmd, "machete")
 }
 
 pub fn deny() -> Result<()> {

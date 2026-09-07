@@ -1,4 +1,4 @@
-use anvil::util::{log_file_path, print_log_tail, run_command};
+use anvil::util::{log_file_path, print_log_tail, run_command, run_command_streamed};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
@@ -51,6 +51,42 @@ fn run_command_reports_an_error_for_a_failing_status_and_still_logs() {
 fn run_command_errors_when_the_program_does_not_exist() {
     let cmd = Command::new("definitely-not-a-real-binary-anvil-test");
     let error = run_command(cmd, "util test missing binary").unwrap_err();
+    assert!(error.to_string().contains("Failed to execute"));
+}
+
+#[test]
+fn run_command_streamed_succeeds_without_writing_a_log_file() {
+    let log_path = log_file_path("util test streamed success");
+    let _ = fs::remove_file(&log_path);
+
+    let mut cmd = Command::new("sh");
+    cmd.args(["-c", "echo streamed-from-anvil-test"]);
+    run_command_streamed(cmd, "util test streamed success").expect("command succeeds");
+
+    assert!(
+        !log_path.exists(),
+        "streamed runs must not leave a captured log behind"
+    );
+}
+
+#[test]
+fn run_command_streamed_reports_a_failing_status_without_a_log_path() {
+    let mut cmd = Command::new("sh");
+    cmd.args(["-c", "echo boom >&2; exit 7"]);
+    let error = run_command_streamed(cmd, "util test streamed failure").unwrap_err();
+
+    let message = error.to_string();
+    assert!(message.contains("failed with status"));
+    assert!(
+        !message.contains("full log"),
+        "a streamed run has no log file to point at: {message}"
+    );
+}
+
+#[test]
+fn run_command_streamed_errors_when_the_program_does_not_exist() {
+    let cmd = Command::new("definitely-not-a-real-binary-anvil-test");
+    let error = run_command_streamed(cmd, "util test streamed missing binary").unwrap_err();
     assert!(error.to_string().contains("Failed to execute"));
 }
 

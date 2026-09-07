@@ -135,8 +135,8 @@ fn previous_version_rev_errors_for_a_path_git_has_never_tracked() {
 // run them for real against this workspace rather than faking them. Neither
 // asserts success: a real `cargo machete`/`cargo deny check` finding
 // something to flag in this workspace is a legitimate `Err`, not a test
-// failure - the point is exercising the command-construction and
-// `run_command` plumbing, not asserting this repo is currently clean.
+// failure - the point is exercising the command-construction and the
+// run_command* plumbing, not asserting this repo is currently clean.
 #[test]
 fn machete_runs_cargo_machete_for_real_against_this_workspace() {
     let _guard = stable_cwd_lock()

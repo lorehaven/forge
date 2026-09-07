@@ -75,6 +75,50 @@ pub fn run_command(mut cmd: Command, operation: &str) -> Result<()> {
     Ok(())
 }
 
+/// Like [`run_command`], but lets the child write straight to anvil's own
+/// stdout/stderr instead of capturing to a log file.
+///
+/// The captured form is wrong for the checks whose entire output *is* the
+/// result - `cargo clippy`, `cargo machete`, `cargo audit`. Redirected to a
+/// file the child sees no terminal and drops its coloring, and on failure
+/// only [`print_log_tail`]'s 80-line tail comes back, which silently hides
+/// findings above the cut. Streamed, every finding is printed, in real time,
+/// with the tool's own formatting and color exactly as running the tool by
+/// hand would show it. There is no on-disk log for these runs; they are cheap
+/// to repeat.
+pub fn run_command_streamed(mut cmd: Command, operation: &str) -> Result<()> {
+    print_status(
+        Tone::Info,
+        "anvil",
+        &format!("running {operation} operation..."),
+    );
+
+    let start = Instant::now();
+    let status = cmd
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .with_context(|| format!("Failed to execute {operation} command"))?;
+    let elapsed = start.elapsed();
+
+    if !status.success() {
+        print_status(
+            Tone::Error,
+            "anvil",
+            &format!("{operation} operation failed with status: {status}"),
+        );
+        anyhow::bail!("{operation} operation failed with status: {status}");
+    }
+
+    print_status(
+        Tone::Success,
+        "anvil",
+        &format!("{operation} operation completed successfully ({elapsed:.2?})"),
+    );
+    Ok(())
+}
+
 pub fn print_log_tail(log_path: &PathBuf) {
     let Ok(contents) = fs::read_to_string(log_path) else {
         return;
