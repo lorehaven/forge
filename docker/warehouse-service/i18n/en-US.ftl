@@ -22,8 +22,8 @@ ui_service_crates_desc = Browse published crates and versions.
 ui_service_files_title = File Storage
 ui_service_files_desc = Browse and manage plain files.
 
-ui_service_apk_title = APK Registry
-ui_service_apk_desc = Browse published Android packages and versions.
+ui_service_artifacts_title = Artifact Registry
+ui_service_artifacts_desc = Browse published apps for Android, Linux and Windows.
 
 # ── Docker ───────────────────────────────────────────────────────────────────
 
@@ -150,23 +150,27 @@ ui_storage_delete = Delete storage
 ui_storage_delete_title = Delete storage
 ui_storage_delete_confirm_text = Delete this storage and everything in it? This cannot be undone.
 
-# ── APK management ───────────────────────────────────────────────────────────
+# ── Artifact management ──────────────────────────────────────────────────────
 
-ui_header_apk = Warehouse - APK Registry Explorer
-ui_apk_packages = Packages
-ui_apk_empty = No APK packages published yet.
-ui_apk_empty_select_version = Select a version to inspect metadata.
-ui_apk_meta_package = Package
-ui_apk_meta_version_name = Version name
-ui_apk_meta_version_code = Version code
-ui_apk_meta_label = Label
-ui_apk_meta_min_sdk = Min SDK
-ui_apk_meta_target_sdk = Target SDK
-ui_apk_meta_size = Size
-ui_apk_meta_uploaded_by = Uploaded by
-ui_apk_meta_permissions = Permissions
-ui_apk_yank = Yank
-ui_apk_unyank = Unyank
+ui_header_artifacts = Warehouse - Artifact Registry Explorer
+ui_artifact_programs = Programs
+ui_artifact_empty = No artifacts published yet.
+ui_artifact_empty_select_version = Select a version to inspect metadata.
+ui_artifact_meta_program = Program
+ui_artifact_meta_platform = Platform
+ui_artifact_meta_format = Format
+ui_artifact_meta_version_name = Version name
+ui_artifact_meta_version_code = Version code
+ui_artifact_meta_arch = Architecture
+ui_artifact_meta_label = Label
+ui_artifact_meta_min_sdk = Min SDK
+ui_artifact_meta_target_sdk = Target SDK
+ui_artifact_meta_filename = File name
+ui_artifact_meta_size = Size
+ui_artifact_meta_uploaded_by = Uploaded by
+ui_artifact_meta_permissions = Permissions
+ui_artifact_yank = Yank
+ui_artifact_unyank = Unyank
 
 # ── API error codes ──────────────────────────────────────────────────────────
 
@@ -178,7 +182,7 @@ api_error_manifest_unknown = Manifest unknown
 api_error_crate_version_not_found = Crate version not found
 api_error_forbidden = You do not have permission to do that.
 api_error_files_disabled = File storage is not enabled on this deployment.
-api_error_apk_disabled = The APK registry is not enabled on this deployment.
+api_error_artifacts_disabled = The artifact registry is not enabled on this deployment.
 api_error_invalid_storage_name = Storage names may use letters, digits, - and _ only.
 api_error_storage_owner_required = An owner is required.
 api_error_storage_owner_unknown = No such user to own this storage.

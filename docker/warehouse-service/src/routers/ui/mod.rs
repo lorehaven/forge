@@ -11,10 +11,12 @@ pub mod pages;
 
 #[derive(Deserialize)]
 pub(super) struct PageQuery {
-    /// Selected crate name (or docker repository)
+    /// Selected crate name (or docker repository, or artifact program)
     pub(super) repo: Option<String>,
     /// Selected version (or docker tag)
     pub(super) tag: Option<String>,
+    /// Selected platform tag - artifact catalog only; ignored elsewhere.
+    pub(super) platform: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -128,16 +130,27 @@ pub async fn files_root_slash(
         .finish()
 }
 
-// APK redirects
+// Artifact redirects (`/apk` kept for old bookmarks)
+
+#[get("/artifacts")]
+pub async fn artifacts_root(
+    req: actix_web::HttpRequest,
+    config: web::Data<JwtConfig>,
+) -> impl Responder {
+    artifacts_redirect(req, config).await
+}
+
+#[get("/artifacts/")]
+pub async fn artifacts_root_slash(
+    req: actix_web::HttpRequest,
+    config: web::Data<JwtConfig>,
+) -> impl Responder {
+    artifacts_redirect(req, config).await
+}
 
 #[get("/apk")]
 pub async fn apk_root(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
-    if !common::is_ui_authenticated(&req, &config).await {
-        return common::ui_login_redirect();
-    }
-    HttpResponse::PermanentRedirect()
-        .append_header(("Location", with_base_path("/ui/apk/catalog")))
-        .finish()
+    artifacts_redirect(req, config).await
 }
 
 #[get("/apk/")]
@@ -145,11 +158,18 @@ pub async fn apk_root_slash(
     req: actix_web::HttpRequest,
     config: web::Data<JwtConfig>,
 ) -> impl Responder {
+    artifacts_redirect(req, config).await
+}
+
+async fn artifacts_redirect(
+    req: actix_web::HttpRequest,
+    config: web::Data<JwtConfig>,
+) -> HttpResponse {
     if !common::is_ui_authenticated(&req, &config).await {
         return common::ui_login_redirect();
     }
     HttpResponse::PermanentRedirect()
-        .append_header(("Location", with_base_path("/ui/apk/catalog")))
+        .append_header(("Location", with_base_path("/ui/artifacts/catalog")))
         .finish()
 }
 
@@ -172,7 +192,9 @@ pub fn scope() -> impl HttpServiceFactory {
         // Files redirects
         .service(files_root)
         .service(files_root_slash)
-        // APK redirects
+        // Artifact redirects
+        .service(artifacts_root)
+        .service(artifacts_root_slash)
         .service(apk_root)
         .service(apk_root_slash)
         // Auth
@@ -206,9 +228,9 @@ pub fn scope() -> impl HttpServiceFactory {
         .service(pages::files::storages::delete_storage_modal)
         .service(pages::files::storages::empty_delete_storage_modal)
         .service(pages::files::storages::delete_file)
-        // APK pages
-        .service(pages::apk::catalog::apk_catalog)
-        .service(pages::apk::catalog::apk_catalog_slash)
-        .service(pages::apk::catalog::yank_version)
-        .service(pages::apk::catalog::unyank_version)
+        // Artifact pages
+        .service(pages::artifacts::catalog::artifacts_catalog)
+        .service(pages::artifacts::catalog::artifacts_catalog_slash)
+        .service(pages::artifacts::catalog::yank_version)
+        .service(pages::artifacts::catalog::unyank_version)
 }

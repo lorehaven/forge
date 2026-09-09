@@ -22,8 +22,8 @@ ui_service_crates_desc = Explora los crates publicados y sus versiones.
 ui_service_files_title = Almacén de archivos
 ui_service_files_desc = Explora y gestiona archivos.
 
-ui_service_apk_title = Registro de APK
-ui_service_apk_desc = Explora los paquetes de Android publicados y sus versiones.
+ui_service_artifacts_title = Registro de artefactos
+ui_service_artifacts_desc = Explora las aplicaciones publicadas para Android, Linux y Windows.
 
 # ── Docker ───────────────────────────────────────────────────────────────────
 
@@ -150,23 +150,27 @@ ui_storage_delete = Eliminar almacén
 ui_storage_delete_title = Eliminar almacén
 ui_storage_delete_confirm_text = ¿Eliminar este almacén y todo su contenido? Esta acción no se puede deshacer.
 
-# ── Gestión de APK ─────────────────────────────────────────────────────────
+# ── Gestión de artefactos ─────────────────────────────────────────────────
 
-ui_header_apk = Warehouse - Explorador del registro de APK
-ui_apk_packages = Paquetes
-ui_apk_empty = Aún no se ha publicado ningún paquete APK.
-ui_apk_empty_select_version = Selecciona una versión para ver sus metadatos.
-ui_apk_meta_package = Paquete
-ui_apk_meta_version_name = Nombre de versión
-ui_apk_meta_version_code = Código de versión
-ui_apk_meta_label = Etiqueta
-ui_apk_meta_min_sdk = SDK mínimo
-ui_apk_meta_target_sdk = SDK objetivo
-ui_apk_meta_size = Tamaño
-ui_apk_meta_uploaded_by = Subido por
-ui_apk_meta_permissions = Permisos
-ui_apk_yank = Retirar
-ui_apk_unyank = Restaurar
+ui_header_artifacts = Warehouse - Explorador del registro de artefactos
+ui_artifact_programs = Programas
+ui_artifact_empty = Aún no se ha publicado ningún artefacto.
+ui_artifact_empty_select_version = Selecciona una versión para ver sus metadatos.
+ui_artifact_meta_program = Programa
+ui_artifact_meta_platform = Plataforma
+ui_artifact_meta_format = Formato
+ui_artifact_meta_version_name = Nombre de versión
+ui_artifact_meta_version_code = Código de versión
+ui_artifact_meta_arch = Arquitectura
+ui_artifact_meta_label = Etiqueta
+ui_artifact_meta_min_sdk = SDK mínimo
+ui_artifact_meta_target_sdk = SDK objetivo
+ui_artifact_meta_filename = Nombre de archivo
+ui_artifact_meta_size = Tamaño
+ui_artifact_meta_uploaded_by = Subido por
+ui_artifact_meta_permissions = Permisos
+ui_artifact_yank = Retirar
+ui_artifact_unyank = Restaurar
 
 # ── Códigos de error de la API ───────────────────────────────────────────────
 
@@ -178,7 +182,7 @@ api_error_manifest_unknown = Manifiesto desconocido
 api_error_crate_version_not_found = Versión del crate no encontrada
 api_error_forbidden = No tienes permiso para hacer eso.
 api_error_files_disabled = El almacenamiento de archivos no está habilitado en este despliegue.
-api_error_apk_disabled = El registro de APK no está habilitado en este despliegue.
+api_error_artifacts_disabled = El registro de artefactos no está habilitado en este despliegue.
 api_error_invalid_storage_name = Los nombres de almacén solo pueden usar letras, dígitos, - y _.
 api_error_storage_owner_required = Se requiere un propietario.
 api_error_storage_owner_unknown = No existe ese usuario para ser propietario del almacén.

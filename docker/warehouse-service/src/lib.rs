@@ -1,9 +1,10 @@
 //! Warehouse - the estate's storage service.
 //!
-//! Three things live behind one address: a cargo registry, a docker registry,
-//! and plain file storage. Each is a feature that can be turned off, and each
-//! addresses its content its own way - a crate by name and version, an image by
-//! digest, a file by path within a named storage.
+//! Four things live behind one address: a cargo registry, a docker registry,
+//! plain file storage, and a multi-platform artifact store. Each is a feature
+//! that can be turned off, and each addresses its content its own way - a crate
+//! by name and version, an image by digest, a file by path within a named
+//! storage, an artifact by `{program}/{platform}/{version_code}`.
 //!
 //! The scopes are split by where they have to be mounted rather than by what
 //! they do: the docker registry owns `/v2` at the server root because the
@@ -83,10 +84,14 @@ pub fn base_path_scope(
         .service(routers::admin::scope())
         .service(routers::crates::scope())
         .service(routers::crates::scope_index())
-        // Unlike crates and docker, the files and apk APIs apply the realm's
+        // Unlike crates and docker, the files and artifact APIs apply the realm's
         // auth to themselves: there is no registry protocol here to
         // negotiate a token, and a caller presents a realm identity directly.
         .service(routers::files::scope(jwt_config.get_ref().clone()))
-        .service(routers::apk::scope(jwt_config.get_ref().clone()))
+        .service(routers::artifacts::scope(jwt_config.get_ref().clone()))
+        // Back-compat: `/api/v1/apk/*` -> the same store, `platform=android`.
+        .service(routers::artifacts::apk_alias_scope(
+            jwt_config.get_ref().clone(),
+        ))
         .service(routers::ui::scope())
 }

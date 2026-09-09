@@ -1,4 +1,4 @@
-pub mod apk;
+pub mod artifacts;
 pub mod auth;
 pub mod crates;
 pub mod docker;

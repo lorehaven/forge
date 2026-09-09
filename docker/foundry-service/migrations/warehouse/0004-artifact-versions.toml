@@ -1,0 +1,99 @@
+[[migrations]]
+id = "0004-artifact-versions"
+author = "warehouse-service"
+since = "0.3.0"
+
+# Generalises `apk_versions` into a multi-platform artifact catalog. One row
+# per published build of a program on one platform, keyed by
+# `<program>/<platform>@<version_code>` rather than a surrogate key - the
+# triple is the natural identity a caller addresses
+# (`PUT /api/v1/artifacts/{program}/{platform}/{version_code}`), and a text
+# primary key lets this stay on `quench-db`'s generic `Crud` (there is no
+# locked read-then-write accounting here the way a dynamic storage's quota
+# needs).
+#
+# `program` is the reverse-DNS application id, shared across platforms
+# (`dev.lorehaven.pedlar` on Android, Linux and Windows alike). `platform` is
+# the tag the client filters on. For `android`, `version_code`/`version_name`
+# are still decoded from the APK's own `AndroidManifest.xml` server-side at
+# publish time, so an app-store consumer can trust them; for every other
+# platform there is no manifest to decode, so they are taken from the publish
+# URL as asserted by the caller (the same pubspec `+N` the build already
+# carries). `version_code` is what "latest" sorts on regardless.
+#
+# Columns common to every platform are top-level; anything platform-specific
+# (Android's `min_sdk_version`, `target_sdk_version`, `permissions`) lives in
+# `metadata` so a Linux or Windows row is not carrying a column-per-Android-
+# concept it will never use.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.artifact_versions (
+    id TEXT PRIMARY KEY,
+    program TEXT NOT NULL,
+    platform TEXT NOT NULL
+        CHECK (platform IN ('android', 'linux', 'windows', 'macos')),
+    arch TEXT,
+    format TEXT NOT NULL,
+    version_code BIGINT NOT NULL,
+    version_name TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    size_bytes BIGINT NOT NULL,
+    sha256 TEXT NOT NULL,
+    label TEXT,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    uploaded_by TEXT NOT NULL REFERENCES ${auth_schema}.users(username) ON DELETE CASCADE,
+    yanked BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (program, platform, version_code)
+);
+"""
+
+# What every read path filters or sorts by: "versions of this program on this
+# platform, newest first" for the per-platform listing, and the same shape for
+# picking out the latest non-yanked one.
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS artifact_versions_program_platform_version_idx
+    ON ${schema}.artifact_versions (program, platform, version_code DESC);
+"""
+
+# Carry the existing APK catalog over as `android` rows. `apk_versions` held
+# `<package_name>@<version_code>` ids; the new id gains the platform segment.
+# The Android-only fields fold into `metadata` with the same names the model
+# reads them back under.
+[[migrations.changes]]
+sql = """
+INSERT INTO ${schema}.artifact_versions
+    (id, program, platform, arch, format, version_code, version_name, filename,
+     size_bytes, sha256, label, metadata, uploaded_by, yanked, created_at)
+SELECT
+    package_name || '/android@' || version_code,
+    package_name,
+    'android',
+    NULL,
+    'apk',
+    version_code,
+    version_name,
+    package_name || '-' || version_code || '.apk',
+    size_bytes,
+    sha256,
+    label,
+    jsonb_build_object(
+        'min_sdk_version', min_sdk_version,
+        'target_sdk_version', target_sdk_version,
+        'permissions', COALESCE(permissions, '[]'::jsonb)
+    ),
+    uploaded_by,
+    yanked,
+    created_at
+FROM ${schema}.apk_versions
+ON CONFLICT (id) DO NOTHING;
+"""
+
+# `apk_versions` has no reader left: the service now addresses this table for
+# every platform, Android included, and the `/api/v1/apk` routes are a thin
+# alias over the same `artifact_versions` rows filtered to `platform='android'`.
+[[migrations.changes]]
+sql = """
+DROP TABLE IF EXISTS ${schema}.apk_versions;
+"""

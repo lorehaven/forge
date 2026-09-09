@@ -37,7 +37,7 @@ fn render_page_wraps_content_in_the_matching_shell_for_every_page_kind() {
         UiPageKind::Docker,
         UiPageKind::Crates,
         UiPageKind::Files,
-        UiPageKind::Apk,
+        UiPageKind::Artifacts,
     ] {
         let resp = render_page(HttpResponse::Ok(), div().text("marker-content"), kind);
         assert_eq!(resp.status(), StatusCode::OK);

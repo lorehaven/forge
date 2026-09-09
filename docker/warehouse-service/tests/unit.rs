@@ -5,8 +5,8 @@ mod support;
 mod apk_manifest_tests;
 #[path = "unit/docker_token_tests.rs"]
 mod docker_token_tests;
-#[path = "unit/domain_apk_tests.rs"]
-mod domain_apk_tests;
+#[path = "unit/domain_artifact_tests.rs"]
+mod domain_artifact_tests;
 #[path = "unit/domain_storage_file_tests.rs"]
 mod domain_storage_file_tests;
 #[path = "unit/files_confinement_tests.rs"]
@@ -23,24 +23,24 @@ mod middleware_limits_tests;
 mod routers_admin_crates_gc_tests;
 #[path = "unit/routers_admin_docker_gc_tests.rs"]
 mod routers_admin_docker_gc_tests;
-#[path = "unit/routers_apk_download_tests.rs"]
-mod routers_apk_download_tests;
-#[path = "unit/routers_apk_latest_tests.rs"]
-mod routers_apk_latest_tests;
-#[path = "unit/routers_apk_list_tests.rs"]
-mod routers_apk_list_tests;
-#[path = "unit/routers_apk_metadata_tests.rs"]
-mod routers_apk_metadata_tests;
-#[path = "unit/routers_apk_mod_tests.rs"]
-mod routers_apk_mod_tests;
-#[path = "unit/routers_apk_ops_mod_tests.rs"]
-mod routers_apk_ops_mod_tests;
-#[path = "unit/routers_apk_publish_tests.rs"]
-mod routers_apk_publish_tests;
-#[path = "unit/routers_apk_unyank_tests.rs"]
-mod routers_apk_unyank_tests;
-#[path = "unit/routers_apk_yank_tests.rs"]
-mod routers_apk_yank_tests;
+#[path = "unit/routers_artifacts_download_tests.rs"]
+mod routers_artifacts_download_tests;
+#[path = "unit/routers_artifacts_latest_tests.rs"]
+mod routers_artifacts_latest_tests;
+#[path = "unit/routers_artifacts_list_tests.rs"]
+mod routers_artifacts_list_tests;
+#[path = "unit/routers_artifacts_metadata_tests.rs"]
+mod routers_artifacts_metadata_tests;
+#[path = "unit/routers_artifacts_mod_tests.rs"]
+mod routers_artifacts_mod_tests;
+#[path = "unit/routers_artifacts_ops_mod_tests.rs"]
+mod routers_artifacts_ops_mod_tests;
+#[path = "unit/routers_artifacts_publish_tests.rs"]
+mod routers_artifacts_publish_tests;
+#[path = "unit/routers_artifacts_unyank_tests.rs"]
+mod routers_artifacts_unyank_tests;
+#[path = "unit/routers_artifacts_yank_tests.rs"]
+mod routers_artifacts_yank_tests;
 #[path = "unit/routers_crates_mod_tests.rs"]
 mod routers_crates_mod_tests;
 #[path = "unit/routers_crates_owners_tests.rs"]
@@ -109,8 +109,8 @@ mod routers_ui_common_css_rules_tests;
 mod routers_ui_common_mod_tests;
 #[path = "unit/routers_ui_mod_tests.rs"]
 mod routers_ui_mod_tests;
-#[path = "unit/routers_ui_pages_apk_catalog_tests.rs"]
-mod routers_ui_pages_apk_catalog_tests;
+#[path = "unit/routers_ui_pages_artifacts_catalog_tests.rs"]
+mod routers_ui_pages_artifacts_catalog_tests;
 #[path = "unit/routers_ui_pages_auth_tests.rs"]
 mod routers_ui_pages_auth_tests;
 #[path = "unit/routers_ui_pages_crates_catalog_tests.rs"]

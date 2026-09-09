@@ -1,6 +1,6 @@
 //! The management-permission predicate for the warehouse UI, in isolation -
 //! see `docker/warehouse-service/src/routers/ui/authz.rs`. It has to match
-//! `routers::files::authz::has_blanket("write")` and the APK scope's
+//! `routers::files::authz::has_blanket("write")` and the artifact scope's
 //! `RequireWrite`: a wildcard role, or the blanket `warehouse:write` grant.
 
 use quench_auth::prelude::Claims;

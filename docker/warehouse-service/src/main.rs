@@ -26,6 +26,10 @@ async fn main() -> std::io::Result<()> {
     // a storage this deployment was never given.
     warehouse_service::routers::files::report_storages();
 
+    // One-time: move any pre-multi-platform APK tree into the new
+    // `<program>/android/<version_code>/` layout. No-op once done.
+    warehouse_service::routers::artifacts::relocate_legacy_apk_storage();
+
     let root_user_db = user_db.clone();
     let root_session_db = session_db.clone();
     let root_jwt_config = jwt_config.clone();
