@@ -36,8 +36,14 @@ const MIB: f64 = 1024.0 * 1024.0;
 
 /// How many files the tree is built from before it stops and says there are
 /// more. Browsing here is a convenience, not the backup client's paged
-/// `GET /api/v1/files/{s}`.
-const TREE_FILE_CAP: usize = 2000;
+/// `GET /api/v1/files/{s}`; this is a safety bound on how much one page render
+/// will hold, not a page size - [`dynamic_files`] walks the storage a page at
+/// a time up to this many rows.
+const TREE_FILE_CAP: usize = 50_000;
+
+/// How many rows each [`storage_file::list_files_page`] call pulls while
+/// [`dynamic_files`] walks toward [`TREE_FILE_CAP`].
+const DYNAMIC_PAGE_SIZE: i64 = 2000;
 
 // ---------------------------------------------------------------------------
 // Query
@@ -217,19 +223,38 @@ fn normalize_path(raw: &str) -> String {
         .join("/")
 }
 
+/// Walk the whole storage a page at a time, keyed by the last path seen, and
+/// build the tree from every row up to [`TREE_FILE_CAP`]. Pulling one row past
+/// the cap is what tells us the storage has more than we'll show; a page
+/// shorter than what we asked for is the end of the storage.
 async fn dynamic_files(db: &Db, name: &str) -> (Vec<BrowseFile>, bool) {
-    let rows = storage_file::list_files_page(db, name, "", None, TREE_FILE_CAP as i64 + 1, false)
-        .await
-        .unwrap_or_default();
-    let truncated = rows.len() > TREE_FILE_CAP;
-    let files = rows
-        .into_iter()
-        .take(TREE_FILE_CAP)
-        .map(|file| BrowseFile {
+    let mut files: Vec<BrowseFile> = Vec::new();
+    let mut after: Option<String> = None;
+    let mut truncated = false;
+
+    loop {
+        let remaining = TREE_FILE_CAP + 1 - files.len();
+        let limit = remaining.min(DYNAMIC_PAGE_SIZE as usize) as i64;
+        let rows = storage_file::list_files_page(db, name, "", after.as_deref(), limit, false)
+            .await
+            .unwrap_or_default();
+        let page_len = rows.len();
+        after = rows.last().map(|file| file.path.clone());
+        files.extend(rows.into_iter().map(|file| BrowseFile {
             path: file.path,
             size: Some(file.size),
-        })
-        .collect();
+        }));
+
+        if files.len() > TREE_FILE_CAP {
+            files.truncate(TREE_FILE_CAP);
+            truncated = true;
+            break;
+        }
+        if page_len < limit as usize {
+            break;
+        }
+    }
+
     (files, truncated)
 }
 
@@ -422,7 +447,7 @@ fn render_tree(view: &BrowseView) -> Element {
             div()
                 .class("file-truncated")
                 .attr("data-i18n", "ui_storage_files_truncated")
-                .text("Showing the first page of files only."),
+                .text("This storage has more files than the browser can show."),
         );
     }
 
