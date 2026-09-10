@@ -237,8 +237,14 @@ impl ForgeWorld {
     /// registry and index routes off the host root rather than the base path.
     pub fn resolve_url(&self, path: &str) -> String {
         let resolved = self.resolve_placeholders(path);
-        let off_base_path = self.target == Target::Warehouse
-            && !(resolved.starts_with("/api/v1/crates") || resolved.starts_with("/index"));
+        // Warehouse serves the docker registry (`/v2`) and its token endpoint off
+        // the host root; everything under `BASE_PATH` (`/warehouse`) is the
+        // crates index, the crates/artifacts/apk/files APIs and the UI.
+        let on_base_path = resolved.starts_with("/api/v1/crates")
+            || resolved.starts_with("/api/v1/artifacts")
+            || resolved.starts_with("/api/v1/apk")
+            || resolved.starts_with("/index");
+        let off_base_path = self.target == Target::Warehouse && !on_base_path;
 
         if off_base_path {
             format!("{}{}", self.target_base_url(), resolved)

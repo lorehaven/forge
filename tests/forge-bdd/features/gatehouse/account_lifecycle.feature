@@ -83,8 +83,24 @@ Feature: Account lifecycle and multi-factor authentication
     And a user "bdd-lifecycle-mfa-recovery" with password "secret" and no permissions
     And I am signed in to the realm as "bdd-lifecycle-mfa-recovery" with password "secret"
     And I enroll two-factor authentication
+    # Enrolling signed the realm cookie in as that user; the admin form needs the
+    # admin's session back.
+    And I am signed in to the realm
     When I submit the force-disable MFA form for "bdd-lifecycle-mfa-recovery"
     Then the redirect should report "ok=saved"
     When I submit the login form with username "bdd-lifecycle-mfa-recovery" and password "secret"
+    Then response should be a redirect
+    And a realm session cookie should be set
+
+  # The self-service path: a user who still has their authenticator can turn the
+  # second factor back off from their own account page, no administrator needed.
+  Scenario: A user can remove their own second factor
+    Given no user "bdd-lifecycle-mfa-self" exists
+    And a user "bdd-lifecycle-mfa-self" with password "secret" and no permissions
+    And I am signed in to the realm as "bdd-lifecycle-mfa-self" with password "secret"
+    And I enroll two-factor authentication
+    When I disable my own two-factor authentication
+    Then the redirect location should contain "ok=mfa_disabled"
+    When I submit the login form with username "bdd-lifecycle-mfa-self" and password "secret"
     Then response should be a redirect
     And a realm session cookie should be set

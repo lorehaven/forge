@@ -6,3 +6,4 @@ pub mod errors;
 pub mod files;
 pub mod models;
 pub mod shutdown;
+pub mod ui;

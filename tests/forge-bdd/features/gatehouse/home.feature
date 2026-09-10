@@ -49,3 +49,11 @@ Feature: Gatehouse home page
     When I open the UI root
     Then response should be a redirect
     And the redirect location should contain "/ui/login"
+
+  # The same JSON shape every other service's /ui/status answers with, so a
+  # front-end can ask any of them the same way.
+  Scenario: The auth status endpoint is honest about being anonymous
+    When GET request is sent to "/ui/status"
+    Then response status should be 200
+    And response should contain "authenticated"
+    And response should contain "false"

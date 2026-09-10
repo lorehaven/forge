@@ -21,6 +21,19 @@ Feature: Conveyor's API
       | /api/v1/runs/abc    |
       | /api/v1/secrets     |
 
+  # The middleware wraps the whole scope, so a write verb is refused before its
+  # handler - and its body - is ever looked at.
+  Scenario Outline: A write API route needs a token too
+    When an unauthenticated <method> request is sent to "<path>"
+    Then the response status should be 401
+
+    Examples:
+      | method | path                     |
+      | POST   | /api/v1/repos            |
+      | POST   | /api/v1/runs/abc/cancel  |
+      | POST   | /api/v1/runs/abc/restart |
+      | DELETE | /api/v1/repos/abc        |
+
   # 401 rather than 404: the auth middleware wraps the scope, so it answers
   # before a path is matched inside it. That is the right order - an
   # unauthenticated caller should not be able to map the API by probing it.

@@ -25,6 +25,9 @@ Feature: Switchboard per-action permissions
       """
     Then response status should be 403
 
+  # @serial: shares the mock instance registry and port with vllm.feature's
+  # launch scenarios; concurrent launches evict each other by port.
+  @serial
   Scenario: A launch grant is enough to launch, and nothing more
     Given I hold a switchboard token scoped "user switchboard:launch"
     When POST request is sent to "/api/v1/vllm/instances" with body:
@@ -40,6 +43,7 @@ Feature: Switchboard per-action permissions
     When DELETE request is sent to "/api/v1/vllm/instances/{last_id}"
     Then response status should be 403
 
+  @serial
   Scenario: Stopping the instance a launch grant started needs its own stop grant
     Given I hold a switchboard token scoped "user switchboard:launch"
     When POST request is sent to "/api/v1/vllm/instances" with body:

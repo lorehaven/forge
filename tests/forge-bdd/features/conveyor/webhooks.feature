@@ -32,6 +32,18 @@ Feature: Conveyor's webhook endpoint
     When a delivery is sent to the "gitlab" webhook endpoint
     Then the response status should be 404
 
+  # Parsed before the repository is looked up, so this needs no database: a body
+  # that is not the JSON the event promised is a 400, not a 500 or a hang.
+  Scenario: A body that is not valid JSON is refused
+    When a github "push" delivery is sent with body "this is not json"
+    Then the response status should be 400
+
+  # An event conveyor has nothing to build for - here an `issues` event - is
+  # accepted so the provider does not keep retrying it, and does nothing.
+  Scenario: An event with nothing to build is accepted and ignored
+    When a github "issues" delivery is sent with body "{}"
+    Then the response status should be 202
+
   # A provider has no realm token; its delivery is authenticated by its
   # signature instead. A 401 here would mean the endpoint had been put behind
   # the realm's middleware by mistake.

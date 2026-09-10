@@ -75,6 +75,70 @@ async fn send_delete_request(world: &mut ForgeWorld, path: String) {
     world.record_response(res).await;
 }
 
+#[when(expr = "HEAD request is sent to {string}")]
+async fn send_head_request(world: &mut ForgeWorld, path: String) {
+    let url = world.resolve_url(&path);
+    let request = world.apply_auth(world.client.head(&url));
+    let res = request.send().await.expect("Failed to send HEAD request");
+    world.record_response(res).await;
+}
+
+// Deliberately no auth, whatever the target. Switchboard's generic step attaches
+// a bearer token by default (`ForgeWorld::apply_auth`), so "what does this route
+// do with no credentials at all" needs a step that never adds any.
+
+#[when(expr = "an unauthenticated GET request is sent to {string}")]
+async fn send_unauth_get(world: &mut ForgeWorld, path: String) {
+    let url = world.resolve_url(&path);
+    let res = world
+        .client
+        .get(&url)
+        .send()
+        .await
+        .expect("Failed to send GET request");
+    world.record_response(res).await;
+}
+
+#[when(expr = "an unauthenticated POST request is sent to {string}")]
+async fn send_unauth_post(world: &mut ForgeWorld, path: String) {
+    let url = world.resolve_url(&path);
+    let res = world
+        .client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .body("{}")
+        .send()
+        .await
+        .expect("Failed to send POST request");
+    world.record_response(res).await;
+}
+
+#[when(expr = "an unauthenticated PUT request is sent to {string}")]
+async fn send_unauth_put(world: &mut ForgeWorld, path: String) {
+    let url = world.resolve_url(&path);
+    let res = world
+        .client
+        .put(&url)
+        .header("Content-Type", "application/json")
+        .body("{}")
+        .send()
+        .await
+        .expect("Failed to send PUT request");
+    world.record_response(res).await;
+}
+
+#[when(expr = "an unauthenticated DELETE request is sent to {string}")]
+async fn send_unauth_delete(world: &mut ForgeWorld, path: String) {
+    let url = world.resolve_url(&path);
+    let res = world
+        .client
+        .delete(&url)
+        .send()
+        .await
+        .expect("Failed to send DELETE request");
+    world.record_response(res).await;
+}
+
 #[given("I am authenticated")]
 async fn authenticated(world: &mut ForgeWorld) {
     world.credentials = Some((world.username.clone(), world.password.clone()));
@@ -174,6 +238,19 @@ async fn response_status_should_be(world: &mut ForgeWorld, expected: u16) -> Res
 #[then("the response should contain error message")]
 async fn response_contains_error(_world: &mut ForgeWorld) -> Result<(), String> {
     Ok(())
+}
+
+#[then(expr = "response header {string} should contain {string}")]
+async fn check_response_header(world: &mut ForgeWorld, name: String, expected: String) {
+    let actual = world
+        .last_response_headers
+        .get(&name)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_else(|| panic!("no {name} header"));
+    assert!(
+        actual.contains(&expected),
+        "header '{name}: {actual}' does not contain '{expected}'"
+    );
 }
 
 /// Used by every suite now that login is a redirect to gatehouse.

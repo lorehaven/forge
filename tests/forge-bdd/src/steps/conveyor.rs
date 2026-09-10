@@ -146,17 +146,19 @@ fn uuid_like() -> String {
     )
 }
 
-#[when("a github delivery is sent with no signature")]
-async fn no_signature(world: &mut ForgeWorld) {
-    let body = push_body("nobody/unregistered", "refs/heads/master");
-    deliver(world, "push", body, None).await;
-}
+// The signature is verified only *after* the repository the delivery names is
+// looked up (its secret is per repository), and that lookup needs Postgres,
+// which this suite deliberately does not provide. So "no signature" / "bad
+// signature" cannot be exercised here - those twelve scenarios live in
+// `docker/conveyor-service/tests/integration/webhook_tests.rs`. What this suite
+// covers is everything the handler decides *before* the lookup: the provider,
+// the event type, the body's shape and the ref.
 
-#[when("a github delivery is sent with a bad signature")]
-async fn bad_signature(world: &mut ForgeWorld) {
-    let body = push_body("nobody/unregistered", "refs/heads/master");
-    let signature = sign(&body, "not-the-secret");
-    deliver(world, "push", body, Some(signature)).await;
+/// Delivers with the given event type and raw body, unsigned - for the checks
+/// that run before any signature or repository lookup.
+#[when(expr = "a github {string} delivery is sent with body {string}")]
+async fn github_event_with_body(world: &mut ForgeWorld, event: String, body: String) {
+    deliver(world, &event, body, None).await;
 }
 
 #[when(expr = "a signed github push is sent for {string}")]

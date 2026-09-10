@@ -21,6 +21,19 @@ Feature: Workbench's API
       | /api/v1/comments/abc |
       | /api/v1/labels/abc   |
 
+  # The write verbs sit behind the same middleware; it answers before the
+  # handler parses a body.
+  Scenario Outline: A write API route needs a token too
+    When an unauthenticated <method> request is sent to "<path>"
+    Then the response status should be 401
+
+    Examples:
+      | method | path                          |
+      | POST   | /api/v1/projects              |
+      | POST   | /api/v1/issues/abc/transition |
+      | PUT    | /api/v1/issues/abc            |
+      | DELETE | /api/v1/labels/abc            |
+
   # 401 rather than 404: the auth middleware wraps the scope, so it answers
   # before a path is matched inside it. That is the right order - an
   # unauthenticated caller should not be able to map the API by probing it.

@@ -13,6 +13,18 @@ Feature: vLLM Management API
     Then response status should be 200
     And response should be a JSON array
 
+  # `/instances` is the REST-shaped sibling of `/list`; both answer with the
+  # same array, and a client that guessed the plural should not get a 404.
+  Scenario: List vLLM instances under the REST path
+    When GET request is sent to "/api/v1/vllm/instances"
+    Then response status should be 200
+    And response should be a JSON array
+
+  Scenario: List running models
+    When GET request is sent to "/api/v1/models/running"
+    Then response status should be 200
+    And response should be a JSON array
+
   Scenario: Get vLLM instances grid
     When GET request is sent to "/api/v1/vllm/grid"
     Then response status should be 200
@@ -48,6 +60,11 @@ Feature: vLLM Management API
     Then response status should be 200
     And response content type should be "text/event-stream"
 
+  # @serial: the launch-then-stop scenarios (here and in permissions.feature)
+  # share the switchboard process's mock instance registry and all bind the
+  # same port, so running them concurrently makes one scenario's launch evict
+  # another's before its stop-by-id lands.
+  @serial
   Scenario: Launch and stop a vLLM instance
     When POST request is sent to "/api/v1/vllm/instances" with body:
       """
@@ -65,6 +82,7 @@ Feature: vLLM Management API
     When DELETE request is sent to "/api/v1/vllm/instances/{last_id}"
     Then response status should be 200
 
+  @serial
   Scenario: Launch a vLLM instance on CPU
     When POST request is sent to "/api/v1/vllm/instances" with body:
       """

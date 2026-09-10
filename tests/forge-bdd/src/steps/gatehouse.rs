@@ -1041,9 +1041,112 @@ fn extract_link(line: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// JWKS and signing-key rotation
+// ---------------------------------------------------------------------------
+
+#[when("I fetch the realm JWKS")]
+async fn fetch_jwks(world: &mut ForgeWorld) {
+    let url = format!("{}/.well-known/jwks.json", world.gatehouse_url);
+    let res = world
+        .client
+        .get(&url)
+        .send()
+        .await
+        .expect("jwks request failed");
+    world.record_response(res).await;
+}
+
+async fn rotate_keys(world: &mut ForgeWorld, token: Option<String>) {
+    let url = format!("{}/api/v1/admin/keys/rotate", world.gatehouse_url);
+    let mut request = world.client.post(&url);
+    if let Some(token) = token {
+        request = request.bearer_auth(token);
+    }
+    let res = request.send().await.expect("key rotation request failed");
+    world.record_response(res).await;
+}
+
+#[when("I rotate the signing keys as an administrator")]
+async fn rotate_keys_as_admin(world: &mut ForgeWorld) {
+    let token = admin_token(world);
+    rotate_keys(world, Some(token)).await;
+}
+
+#[when("I rotate the signing keys with no token")]
+async fn rotate_keys_no_token(world: &mut ForgeWorld) {
+    rotate_keys(world, None).await;
+}
+
+#[when("I rotate the signing keys with my own token")]
+async fn rotate_keys_as_me(world: &mut ForgeWorld) {
+    let token = world.access_token.clone().expect("no access token");
+    rotate_keys(world, Some(token)).await;
+}
+
+// ---------------------------------------------------------------------------
+// The OAuth token endpoint
+// ---------------------------------------------------------------------------
+//
+// `POST /api/v1/token` is form-encoded (`web::Form<TokenRequest>`). The
+// authorization-code grant needs a real `/authorize` round trip, covered by
+// `oauth.feature`; what these steps drive is the grants that need no browser:
+// `client_credentials`, `refresh_token`, and the unknown-grant refusal.
+
+async fn post_token_form(world: &mut ForgeWorld, form: &[(&str, &str)]) {
+    let url = format!("{}/api/v1/token", world.gatehouse_url);
+    let res = world
+        .client
+        .post(&url)
+        .form(form)
+        .send()
+        .await
+        .expect("token request failed");
+    world.record_response(res).await;
+}
+
+/// The `sage-switchboard` client is `client_credentials`-only; its secret is
+/// the one `services.rs` sets on gatehouse's env and `clients.toml` names.
+#[when(expr = "I request a client-credentials token for {string} with secret {string}")]
+async fn client_credentials_token(world: &mut ForgeWorld, client_id: String, secret: String) {
+    post_token_form(
+        world,
+        &[
+            ("grant_type", "client_credentials"),
+            ("client_id", &client_id),
+            ("client_secret", &secret),
+        ],
+    )
+    .await;
+}
+
+#[when(expr = "I request a token with grant type {string}")]
+async fn token_with_grant(world: &mut ForgeWorld, grant: String) {
+    post_token_form(world, &[("grant_type", grant.as_str())]).await;
+}
+
+#[when(expr = "I exchange the refresh token {string} at the token endpoint")]
+async fn refresh_grant_at_token_endpoint(world: &mut ForgeWorld, refresh_token: String) {
+    post_token_form(
+        world,
+        &[
+            ("grant_type", "refresh_token"),
+            ("refresh_token", refresh_token.as_str()),
+        ],
+    )
+    .await;
+}
+
+// ---------------------------------------------------------------------------
 // Account lifecycle: disable/enable, lockout, unlock
 // ---------------------------------------------------------------------------
 
+// Also `#[given]`: these lifecycle actions appear both as the thing a scenario
+// is testing and as a precondition for a later one ("a user who was disabled
+// and re-enabled ..."). Cucumber resolves a bare `And`/`But` to the previous
+// step's keyword, so without the `given` arm an `And I submit the disable form`
+// following an `And a user ...` (a given) silently skips the rest of the
+// scenario instead of running.
+#[given(expr = "I submit the disable form for {string}")]
 #[when(expr = "I submit the disable form for {string}")]
 async fn submit_disable(world: &mut ForgeWorld, username: String) {
     post_form(world, &format!("/ui/admin/users/{username}/disable"), &[]).await;
@@ -1055,6 +1158,7 @@ async fn submit_disable_self(world: &mut ForgeWorld) {
     submit_disable(world, username).await;
 }
 
+#[given(expr = "I submit the enable form for {string}")]
 #[when(expr = "I submit the enable form for {string}")]
 async fn submit_enable(world: &mut ForgeWorld, username: String) {
     post_form(world, &format!("/ui/admin/users/{username}/enable"), &[]).await;
@@ -1075,9 +1179,17 @@ async fn submit_force_disable_mfa(world: &mut ForgeWorld, username: String) {
     .await;
 }
 
+/// The self-service counterpart: the signed-in user drops their own second
+/// factor from `/ui/account`, no administrator involved.
+#[when("I disable my own two-factor authentication")]
+async fn disable_own_mfa(world: &mut ForgeWorld) {
+    post_form(world, "/ui/account/mfa/disable", &[]).await;
+}
+
 /// Drives the token API's own login, deliberately wrong, enough times to
 /// cross `GATEHOUSE_LOGIN_MAX_ATTEMPTS` (5 by default) - each call is a
 /// separate request, the same as a real attacker's would be.
+#[given(expr = "I attempt to log in with username {string} and the wrong password {int} times")]
 #[when(expr = "I attempt to log in with username {string} and the wrong password {int} times")]
 async fn attempt_wrong_password(world: &mut ForgeWorld, username: String, times: u32) {
     for _ in 0..times {
@@ -1145,6 +1257,7 @@ fn extract_form_value(body: &str, field: &str) -> Option<String> {
 /// reads the not-yet-persisted secret off the enroll page, computes one valid
 /// code for it, and submits that - the same "prove you saved it" round trip
 /// `/ui/account/mfa/enroll`'s own page expects.
+#[given("I enroll two-factor authentication")]
 #[when("I enroll two-factor authentication")]
 async fn enroll_mfa(world: &mut ForgeWorld) {
     let url = format!("{}/ui/account/mfa/enroll", world.gatehouse_url);

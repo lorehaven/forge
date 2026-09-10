@@ -38,10 +38,18 @@ Feature: Gatehouse authentication API
     Then response status should be 200
     And the refresh token should have changed
 
-  Scenario: A rotated refresh token cannot be reused
+  # quench-auth keeps a short `reuse:{hash}` grace slot (REUSE_GRACE_SECS, see
+  # quench-auth/src/actix/domain/session.rs): the *first* replay of a
+  # just-rotated token hands back the pair the rotation produced, so a client
+  # that never persisted the rotation response is not locked out. That slot is
+  # itself one-shot - a second replay finds nothing and is rejected. So reuse is
+  # bounded, not impossible.
+  Scenario: A rotated refresh token stops working after its one grace replay
     Given I am logged in as "admin"
     When I refresh the session
     And I refresh with the previous refresh token
+    Then response status should be 200
+    When I refresh with the previous refresh token
     Then response status should be 401
 
 
