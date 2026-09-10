@@ -76,7 +76,8 @@ pub async fn handle(
         }
     };
 
-    stream_file(&target).await
+    let inline = query.disposition.as_deref() == Some("inline");
+    stream_file(&target, &query.path, inline).await
 }
 
 #[head("/{storage}/file")]
@@ -135,7 +136,16 @@ pub async fn head(
     }
 }
 
-async fn stream_file(target: &Path) -> HttpResponse {
+/// Streams `target` back.
+///
+/// `display_path` is the caller's `?path=` - the file's real name and
+/// extension, which for a dynamic storage the on-disk `target` (a blob digest)
+/// no longer carries. `inline` is set by `?disposition=inline`: the browser
+/// then renders the file in place, with a `Content-Type` guessed from the
+/// extension, rather than saving it - what the management UI's preview pane
+/// needs. Without it the response is unchanged: an opaque
+/// `application/octet-stream` attachment.
+async fn stream_file(target: &Path, display_path: &str, inline: bool) -> HttpResponse {
     let metadata = match tokio::fs::metadata(target).await {
         Ok(metadata) => metadata,
         Err(_) => return not_found("no such file"),
@@ -152,14 +162,84 @@ async fn stream_file(target: &Path) -> HttpResponse {
         Err(_) => return not_found("no such file"),
     };
 
+    let name = display_name(display_path);
+    let (content_type, disposition) = if inline {
+        (
+            content_type_for(display_path),
+            format!("inline; filename=\"{name}\""),
+        )
+    } else {
+        (
+            "application/octet-stream",
+            format!("attachment; filename=\"{name}\""),
+        )
+    };
+
     HttpResponse::Ok()
-        .content_type("application/octet-stream")
+        .content_type(content_type)
         .append_header(("Content-Length", metadata.len()))
-        .append_header((
-            "Content-Disposition",
-            format!("attachment; filename=\"{}\"", download_name(target)),
-        ))
+        .append_header(("Content-Disposition", disposition))
         .streaming(read_stream(file))
+}
+
+/// The last path segment of a caller's `?path=`, cleaned the same way
+/// [`download_name`] cleans a filesystem name - quotes, backslashes and
+/// control bytes dropped so the value is always a parseable header.
+fn display_name(path: &str) -> String {
+    let last = path.rsplit(['/', '\\']).next().unwrap_or(path);
+    let cleaned: String = last
+        .chars()
+        .filter(|c| *c != '"' && *c != '\\' && !c.is_control())
+        .collect();
+    if cleaned.is_empty() {
+        "download".to_string()
+    } else {
+        cleaned
+    }
+}
+
+/// A `Content-Type` guessed from `path`'s extension, for `?disposition=inline`
+/// only - enough for a browser to render the common preview-able types
+/// (images, video, audio, PDF, plain text) in place. Anything unrecognised
+/// stays `application/octet-stream`, which a browser offers to save.
+pub fn content_type_for(path: &str) -> &'static str {
+    let ext = path
+        .rsplit('.')
+        .next()
+        .filter(|ext| !ext.contains('/'))
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "avif" => "image/avif",
+        "bmp" => "image/bmp",
+        "svg" => "image/svg+xml",
+        "ico" => "image/x-icon",
+        "mp4" | "m4v" => "video/mp4",
+        "webm" => "video/webm",
+        "ogv" => "video/ogg",
+        "mov" => "video/quicktime",
+        "mkv" => "video/x-matroska",
+        "mp3" => "audio/mpeg",
+        "wav" => "audio/wav",
+        "oga" | "ogg" => "audio/ogg",
+        "flac" => "audio/flac",
+        "m4a" | "aac" => "audio/mp4",
+        "pdf" => "application/pdf",
+        "json" => "application/json",
+        "xml" => "text/xml",
+        "html" | "htm" => "text/html",
+        "css" => "text/css",
+        "csv" => "text/csv",
+        "txt" | "md" | "markdown" | "log" | "toml" | "yaml" | "yml" | "ini" | "conf" | "cfg"
+        | "rs" | "py" | "js" | "ts" | "sh" | "c" | "h" | "cpp" | "go" | "java" | "rb" | "sql"
+        | "env" => "text/plain",
+        _ => "application/octet-stream",
+    }
 }
 
 /// The file's own name, for a browser saving it.

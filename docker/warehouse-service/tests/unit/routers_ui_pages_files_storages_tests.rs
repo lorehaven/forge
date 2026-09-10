@@ -5,8 +5,8 @@ use quench_auth::prelude::JwtConfig;
 use quench_db::{Db, InMemoryDb};
 use warehouse_service::domain::storage::DynamicStorage;
 use warehouse_service::routers::ui::pages::files::storages::{
-    FileRow, SelectedView, StoragesView, create_storage, delete_file, delete_storage,
-    delete_storage_modal, edit_storage, files_storages, render_storages_page,
+    SelectedView, StoragesView, create_storage, delete_file, delete_storage, delete_storage_modal,
+    edit_storage, files_storages, render_storages_page,
 };
 
 fn body_html(resp: actix_web::HttpResponse) -> String {
@@ -70,8 +70,6 @@ fn a_selected_dynamic_storage_shows_owner_and_a_quota_bar() {
             name: "phone_backup".to_string(),
             dynamic: Some(dynamic("phone_backup", "losseheil")),
             static_root: None,
-            files: vec![],
-            truncated: false,
             notice: None,
         }),
     };
@@ -87,8 +85,6 @@ fn management_controls_appear_only_with_permission() {
         name: "phone_backup".to_string(),
         dynamic: Some(dynamic("phone_backup", "losseheil")),
         static_root: None,
-        files: vec![],
-        truncated: false,
         notice: None,
     };
     let view = |sel| StoragesView {
@@ -109,7 +105,7 @@ fn management_controls_appear_only_with_permission() {
     assert!(!without.contains("/edit"));
 }
 
-fn page_with_one_file(truncated: bool) -> StoragesView {
+fn selected_dynamic() -> StoragesView {
     StoragesView {
         static_names: vec![],
         dynamic: vec![dynamic("phone_backup", "losseheil")],
@@ -117,34 +113,27 @@ fn page_with_one_file(truncated: bool) -> StoragesView {
             name: "phone_backup".to_string(),
             dynamic: Some(dynamic("phone_backup", "losseheil")),
             static_root: None,
-            files: vec![FileRow {
-                name: "IMG_0001.jpg".to_string(),
-                path: "photos/IMG_0001.jpg".to_string(),
-                is_dir: false,
-                size: Some(2048),
-            }],
-            truncated,
             notice: None,
         }),
     }
 }
 
 #[test]
-fn a_file_list_renders_download_links_and_a_gated_delete_form() {
-    let html = body_html(render_storages_page(&page_with_one_file(true), true));
-    assert!(html.contains("IMG_0001.jpg"));
-    assert!(html.contains("/api/v1/files/phone_backup/download?path=photos%2FIMG_0001.jpg"));
-    assert!(html.contains("/files/delete-file"));
-    assert!(html.contains("ui_storage_files_truncated"));
+fn a_selected_storage_links_to_the_file_browser_instead_of_listing_files() {
+    let html = body_html(render_storages_page(&selected_dynamic(), true));
+    assert!(html.contains("ui_browse_open"));
+    assert!(html.contains("/files/browse?storage=phone_backup"));
+    // The old in-panel list and its (broken) download link are gone.
+    assert!(!html.contains("/download?path="));
+    assert!(!html.contains("ui_storage_files_truncated"));
 
-    let html_ro = body_html(render_storages_page(&page_with_one_file(false), false));
-    assert!(html_ro.contains("IMG_0001.jpg"));
-    assert!(!html_ro.contains("/files/delete-file"));
-    assert!(!html_ro.contains("ui_storage_files_truncated"));
+    // The link shows for a read-only viewer too - browsing is not a mutation.
+    let html_ro = body_html(render_storages_page(&selected_dynamic(), false));
+    assert!(html_ro.contains("/files/browse?storage=phone_backup"));
 }
 
 #[test]
-fn a_notice_replaces_the_file_list() {
+fn a_notice_replaces_the_detail_panel_for_an_unknown_storage() {
     let view = StoragesView {
         static_names: vec!["artifacts".to_string()],
         dynamic: vec![],
@@ -152,8 +141,6 @@ fn a_notice_replaces_the_file_list() {
             name: "missing".to_string(),
             dynamic: None,
             static_root: None,
-            files: vec![],
-            truncated: false,
             notice: Some("ui_storage_not_found"),
         }),
     };

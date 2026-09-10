@@ -121,6 +121,8 @@ mod routers_ui_pages_crates_storage_tests;
 mod routers_ui_pages_docker_catalog_tests;
 #[path = "unit/routers_ui_pages_docker_tags_tests.rs"]
 mod routers_ui_pages_docker_tags_tests;
+#[path = "unit/routers_ui_pages_files_browse_tests.rs"]
+mod routers_ui_pages_files_browse_tests;
 #[path = "unit/routers_ui_pages_files_storages_tests.rs"]
 mod routers_ui_pages_files_storages_tests;
 #[path = "unit/routers_ui_pages_home_tests.rs"]

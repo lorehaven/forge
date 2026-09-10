@@ -16,11 +16,6 @@ use quench_web_components::containers::empty_state;
 const GIB: f64 = 1024.0 * 1024.0 * 1024.0;
 const MIB: f64 = 1024.0 * 1024.0;
 
-/// The first-page cap for the in-browser file listing. Browsing is a
-/// convenience here, not the backup client's paged `GET /api/v1/files/{s}`;
-/// a storage with more than this many files shows the first slice and says so.
-const FILE_BROWSE_LIMIT: i64 = 200;
-
 // ---------------------------------------------------------------------------
 // Query / form shapes
 // ---------------------------------------------------------------------------
@@ -75,22 +70,13 @@ pub struct DeleteStorageModalQuery {
 // is a pure function the tests can drive directly)
 // ---------------------------------------------------------------------------
 
-pub struct FileRow {
-    pub name: String,
-    pub path: String,
-    pub is_dir: bool,
-    pub size: Option<i64>,
-}
-
 pub struct SelectedView {
     pub name: String,
     /// `Some` for a database-backed storage, `None` for a static one.
     pub dynamic: Option<DynamicStorage>,
     pub static_root: Option<String>,
-    pub files: Vec<FileRow>,
-    pub truncated: bool,
-    /// An i18n key describing why the file listing is empty, when that is a
-    /// condition rather than a genuinely empty storage.
+    /// An i18n key shown in place of the detail panel - set only when the
+    /// selected name resolves to no storage at all.
     pub notice: Option<&'static str>,
 }
 
@@ -151,7 +137,7 @@ async fn handle_list(
     };
 
     let selected = match query.storage.as_deref() {
-        Some(name) if !name.is_empty() => Some(build_selection(db, name, &dynamic).await),
+        Some(name) if !name.is_empty() => Some(build_selection(name, &dynamic)),
         _ => None,
     };
 
@@ -165,28 +151,22 @@ async fn handle_list(
     )
 }
 
-async fn build_selection(db: &Db, name: &str, dynamic: &[DynamicStorage]) -> SelectedView {
+fn build_selection(name: &str, dynamic: &[DynamicStorage]) -> SelectedView {
     if let Some(found) = dynamic.iter().find(|s| s.name == name) {
-        let (files, truncated) = dynamic_files(db, name).await;
         return SelectedView {
             name: name.to_string(),
             dynamic: Some(found.clone()),
             static_root: None,
-            files,
-            truncated,
             notice: None,
         };
     }
 
     if let Some(storage) = crate::routers::files::storage(name) {
-        let (files, notice) = static_files(&storage.root).await;
         return SelectedView {
             name: name.to_string(),
             dynamic: None,
             static_root: Some(storage.root.display().to_string()),
-            files,
-            truncated: false,
-            notice,
+            notice: None,
         };
     }
 
@@ -194,67 +174,8 @@ async fn build_selection(db: &Db, name: &str, dynamic: &[DynamicStorage]) -> Sel
         name: name.to_string(),
         dynamic: None,
         static_root: None,
-        files: Vec::new(),
-        truncated: false,
         notice: Some("ui_storage_not_found"),
     }
-}
-
-async fn dynamic_files(db: &Db, name: &str) -> (Vec<FileRow>, bool) {
-    let rows = storage_file::list_files_page(db, name, "", None, FILE_BROWSE_LIMIT + 1, false)
-        .await
-        .unwrap_or_default();
-    let truncated = rows.len() as i64 > FILE_BROWSE_LIMIT;
-    let files = rows
-        .into_iter()
-        .take(FILE_BROWSE_LIMIT as usize)
-        .map(|file| {
-            let name = file
-                .path
-                .rsplit('/')
-                .next()
-                .unwrap_or(&file.path)
-                .to_string();
-            FileRow {
-                name,
-                path: file.path,
-                is_dir: false,
-                size: Some(file.size),
-            }
-        })
-        .collect();
-    (files, truncated)
-}
-
-/// A shallow read of a static storage's root - enough to see what is there
-/// without walking an arbitrarily deep tree in a page render.
-async fn static_files(root: &std::path::Path) -> (Vec<FileRow>, Option<&'static str>) {
-    let Ok(mut reader) = tokio::fs::read_dir(root).await else {
-        return (Vec::new(), Some("ui_storage_root_unreadable"));
-    };
-
-    let mut files = Vec::new();
-    while let Ok(Some(entry)) = reader.next_entry().await {
-        let name = entry.file_name().to_string_lossy().to_string();
-        if name.starts_with('.') && name.ends_with(".part") {
-            continue;
-        }
-        let Ok(metadata) = entry.metadata().await else {
-            continue;
-        };
-        files.push(FileRow {
-            name: name.clone(),
-            path: name,
-            is_dir: metadata.is_dir(),
-            size: metadata.is_file().then_some(metadata.len() as i64),
-        });
-    }
-    files.sort_by(|a, b| {
-        (a.is_dir.cmp(&b.is_dir))
-            .reverse()
-            .then_with(|| a.name.cmp(&b.name))
-    });
-    (files, None)
 }
 
 // ---------------------------------------------------------------------------
@@ -488,7 +409,7 @@ pub async fn delete_file(
         })
         .await
         {
-            Ok(true) => redirect_to_storage(&storage_name),
+            Ok(true) => redirect_to_browse(&storage_name, parent_dir(&path)),
             Ok(false) => HttpResponse::NotFound().body("api_error_file_not_found"),
             Err(problem) => {
                 tracing::error!("UI delete dynamic file failed: {problem}");
@@ -508,7 +429,7 @@ pub async fn delete_file(
         return HttpResponse::Forbidden().body("api_error_path_escapes_storage");
     }
     match tokio::fs::remove_file(&target).await {
-        Ok(()) => redirect_to_storage(&storage_name),
+        Ok(()) => redirect_to_browse(&storage_name, parent_dir(&path)),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
             HttpResponse::NotFound().body("api_error_file_not_found")
         }
@@ -571,6 +492,29 @@ fn redirect_to_storage(name: &str) -> HttpResponse {
             with_base_path(&format!("/ui/files/storages?storage={name}")),
         ))
         .finish()
+}
+
+/// After a delete, land back on the file browser at the deleted file's parent
+/// directory - the browser is the only page that offers the delete now.
+fn redirect_to_browse(storage: &str, path: String) -> HttpResponse {
+    HttpResponse::NoContent()
+        .append_header((
+            "HX-Redirect",
+            with_base_path(&format!(
+                "/ui/files/browse?storage={}&path={}",
+                encode_query_component(storage),
+                encode_query_component(&path)
+            )),
+        ))
+        .finish()
+}
+
+/// The directory a `/`-separated path sits in, or `""` for a top-level file.
+fn parent_dir(path: &str) -> String {
+    match path.rsplit_once('/') {
+        Some((parent, _)) => parent.to_string(),
+        None => String::new(),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -686,6 +630,18 @@ fn render_detail_panel(view: &StoragesView, can_manage: bool) -> Element {
         .child(span().attr("data-i18n", "ui_metadata_for"))
         .child(span().text(format!(" {}", selected.name)));
 
+    // The selected name resolved to no storage at all - nothing to show but why.
+    if let Some(notice) = selected.notice {
+        let mut body = div().class("manage-scroll").child(empty_state(notice));
+        if can_manage {
+            body = body.child(render_create_form());
+        }
+        return div()
+            .class("h-100 d-flex flex-column")
+            .child(title)
+            .child(body);
+    }
+
     let mut body = div().class("manage-scroll");
 
     match &selected.dynamic {
@@ -701,7 +657,7 @@ fn render_detail_panel(view: &StoragesView, can_manage: bool) -> Element {
         }
     }
 
-    body = body.child(render_file_list(selected, can_manage));
+    body = body.child(render_browse_link(&selected.name));
 
     if can_manage {
         body = body.child(render_create_form());
@@ -772,94 +728,26 @@ fn render_static_meta(selected: &SelectedView) -> Element {
         ))
 }
 
-fn render_file_list(selected: &SelectedView, can_manage: bool) -> Element {
-    let mut section = div().class("mt-4").child(
-        div()
-            .class("panel-subtitle")
-            .attr("data-i18n", "ui_storage_files_title"),
-    );
-
-    if let Some(notice) = selected.notice {
-        return section.child(empty_state(notice));
-    }
-    if selected.files.is_empty() {
-        return section.child(empty_state("ui_storage_files_empty"));
-    }
-
-    let mut list = ul().class("file-list");
-    for file in &selected.files {
-        let icon = if file.is_dir {
-            "fas fa-folder mr-2"
-        } else {
-            "fas fa-file mr-2"
-        };
-        let size = match file.size {
-            Some(bytes) => format_bytes(bytes),
-            None => String::new(),
-        };
-
-        let mut row = li()
-            .class("file-row")
-            .child(i().class(icon))
-            .child(span().class("file-name").text(&file.name))
-            .child(span().class("file-size mono").text(size));
-
-        if !file.is_dir {
-            row = row.child(
-                a().class("file-download")
-                    .attr(
-                        "href",
-                        with_base_path(&format!(
-                            "/api/v1/files/{}/download?path={}",
-                            selected.name,
-                            encode_query_component(&file.path)
-                        )),
-                    )
-                    .attr("data-i18n", "ui_file_download")
-                    .text("download"),
-            );
-        }
-
-        if can_manage && !file.is_dir {
-            row = row.child(
-                form()
-                    .class("inline-action-form")
-                    .attr("hx-post", ui_path("/files/delete-file"))
-                    .attr("hx-swap", "none")
-                    .child(
-                        input()
-                            .attr("type", "hidden")
-                            .attr("name", "storage")
-                            .attr("value", &selected.name),
-                    )
-                    .child(
-                        input()
-                            .attr("type", "hidden")
-                            .attr("name", "path")
-                            .attr("value", &file.path),
-                    )
-                    .child(
-                        button()
-                            .class("button-danger-sm")
-                            .attr("type", "submit")
-                            .attr("data-i18n", "ui_file_delete")
-                            .text("Delete"),
-                    ),
-            );
-        }
-
-        list = list.child(row);
-    }
-
-    section = section.child(list);
-    if selected.truncated {
-        section = section.child(
-            div()
-                .class("file-truncated")
-                .attr("data-i18n", "ui_storage_files_truncated"),
-        );
-    }
-    section
+/// The file list this panel used to carry now lives on its own page, with a
+/// real tree and a preview pane - this is the way in.
+fn render_browse_link(name: &str) -> Element {
+    div().class("mt-4").child(
+        a().class("button-neutral-sm")
+            .attr(
+                "href",
+                format!(
+                    "{}?storage={}",
+                    ui_path("/files/browse"),
+                    encode_query_component(name)
+                ),
+            )
+            .child(i().class("fas fa-folder-tree mr-2"))
+            .child(
+                span()
+                    .attr("data-i18n", "ui_browse_open")
+                    .text("Browse files"),
+            ),
+    )
 }
 
 fn render_edit_form(storage: &DynamicStorage) -> Element {

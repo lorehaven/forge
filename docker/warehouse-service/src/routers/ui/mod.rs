@@ -222,6 +222,8 @@ pub fn scope() -> impl HttpServiceFactory {
         // Files pages
         .service(pages::files::storages::files_storages)
         .service(pages::files::storages::files_storages_slash)
+        .service(pages::files::browse::files_browse)
+        .service(pages::files::browse::files_browse_slash)
         .service(pages::files::storages::create_storage)
         .service(pages::files::storages::edit_storage)
         .service(pages::files::storages::delete_storage)

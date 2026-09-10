@@ -1,7 +1,8 @@
 //! Styles for the file-storage and APK management pages: the quota bar, the
-//! provisioning/edit forms, the in-browser file list, and the storage-delete
-//! confirm modal (the image-modal rules in `utility.rs` are keyed to their own
-//! id, so this restates the shape for `#confirm-delete-storage-modal`).
+//! provisioning/edit forms, the file browser (its tree listing, breadcrumbs
+//! and the preview pane), and the storage-delete confirm modal (the
+//! image-modal rules in `utility.rs` are keyed to their own id, so this
+//! restates the shape for `#confirm-delete-storage-modal`).
 
 use quench_web::prelude::CssRule;
 
@@ -83,7 +84,7 @@ pub fn manage_rules() -> Vec<CssRule> {
         CssRule::new(".field-label")
             .property("color", "var(--bs-gray-400)")
             .property("font-size", "0.9rem"),
-        // File list.
+        // File browser: directory listing.
         CssRule::new(".file-list")
             .property("display", "flex")
             .property("flex-direction", "column")
@@ -99,25 +100,97 @@ pub fn manage_rules() -> Vec<CssRule> {
             .child(
                 CssRule::new(".file-name")
                     .property("flex", "1 1 auto")
-                    .property("min-width", "0"),
+                    .property("min-width", "0")
+                    .property("color", "var(--bs-gray-200)")
+                    .property("text-decoration", "none")
+                    .property("overflow", "hidden")
+                    .property("text-overflow", "ellipsis")
+                    .property("white-space", "nowrap")
+                    .child(CssRule::new("&:hover").property("text-decoration", "underline")),
             )
             .child(
                 CssRule::new(".file-size")
                     .property("color", "var(--bs-gray-500)")
                     .property("font-size", "0.8rem")
                     .property("white-space", "nowrap"),
-            )
-            .child(
-                CssRule::new(".file-download")
-                    .property("color", "var(--bs-info)")
-                    .property("font-size", "0.8rem")
-                    .property("text-decoration", "none"),
             ),
         CssRule::new(".file-truncated")
             .property("padding-top", "0.5rem")
             .property("color", "var(--bs-gray-500)")
             .property("font-size", "0.8rem")
             .property("font-style", "italic"),
+        // File browser: breadcrumbs and up/back links.
+        CssRule::new(".browse-back,\n.browse-up")
+            .property("display", "inline-flex")
+            .property("align-items", "center")
+            .property("color", "var(--bs-gray-300)")
+            .property("text-decoration", "none")
+            .property("font-size", "0.9rem")
+            .child(CssRule::new("&:hover").property("color", "var(--bs-gray-100)")),
+        CssRule::new(".browse-up").property("margin-bottom", "0.5rem"),
+        CssRule::new(".browse-breadcrumbs")
+            .property("display", "flex")
+            .property("flex-wrap", "wrap")
+            .property("align-items", "center")
+            .property("gap", "0.15rem")
+            .property("font-size", "0.9rem")
+            .property("word-break", "break-all")
+            .child(
+                CssRule::new("a")
+                    .property("color", "var(--bs-info)")
+                    .property("text-decoration", "none")
+                    .child(CssRule::new("&:hover").property("text-decoration", "underline")),
+            )
+            .child(CssRule::new(".browse-crumb-sep").property("color", "var(--bs-gray-500)")),
+        // File browser: preview pane.
+        CssRule::new(".file-preview")
+            .property("margin-top", "1rem")
+            .property("padding-top", "1rem")
+            .property("border-top", "0.1rem solid var(--bs-gray-700)"),
+        CssRule::new(".file-preview-media")
+            .property("display", "block")
+            .property("max-width", "100%")
+            .property("max-height", "60vh")
+            .property("object-fit", "contain")
+            .property("background-color", "var(--bs-gray-900)")
+            .property("border", "0.1rem solid var(--bs-gray-700)")
+            .property("border-radius", "0.25rem"),
+        CssRule::new(".file-preview-audio").property("width", "100%"),
+        CssRule::new(".file-preview-frame")
+            .property("width", "100%")
+            .property("height", "60vh")
+            .property("border", "0.1rem solid var(--bs-gray-700)")
+            .property("border-radius", "0.25rem")
+            .property("background-color", "white"),
+        // Download / delete row on a file's detail.
+        CssRule::new(".file-actions-row")
+            .property("display", "flex")
+            .property("flex-wrap", "wrap")
+            .property("align-items", "center")
+            .property("gap", "0.75rem")
+            .property("margin-top", "1rem"),
+        // A neutral sibling of `.button-danger-sm` (utility.rs): same shape,
+        // used for the file download link so it reads as a peer of Delete.
+        CssRule::new(".button-neutral-sm")
+            .property("display", "inline-flex")
+            .property("width", "fit-content")
+            .property("align-items", "center")
+            .property("padding", "0.35rem 0.75rem")
+            .property("background-color", "transparent")
+            .property("color", "var(--bs-gray-300)")
+            .property("border", "0.1rem solid var(--bs-gray-500)")
+            .property("border-radius", "0.3rem")
+            .property("font-size", "0.85rem")
+            .property("font-weight", "500")
+            .property("text-decoration", "none")
+            .property("cursor", "pointer")
+            .property("transition", "all 0.15s ease-in-out")
+            .child(
+                CssRule::new("&:hover")
+                    .property("background-color", "var(--bs-gray-700)")
+                    .property("color", "var(--bs-gray-100)"),
+            )
+            .child(CssRule::new("&:active").property("transform", "scale(0.96)")),
     ];
 
     rules.push(confirm_modal_rule("#confirm-delete-storage-modal"));

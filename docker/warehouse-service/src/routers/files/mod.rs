@@ -270,11 +270,16 @@ pub async fn confined(root: &Path, target: &Path) -> bool {
 // Query
 // ---------------------------------------------------------------------------
 
-/// `?path=` - which file within the storage.
+/// `?path=` - which file within the storage. `?disposition=inline` asks the
+/// download endpoint to serve the file for in-place rendering (a `Content-Type`
+/// guessed from the extension, `Content-Disposition: inline`) rather than as an
+/// opaque attachment - the management UI's preview pane is the only caller.
 #[derive(Debug, Deserialize)]
 pub struct FileQuery {
     #[serde(default)]
     pub path: String,
+    #[serde(default)]
+    pub disposition: Option<String>,
 }
 
 /// `?prefix=&n=&last=&desc=` - which subtree to list, how much of it at once,
