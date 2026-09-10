@@ -9,7 +9,12 @@
 use crate::world::ForgeWorld;
 use cucumber::when;
 
-async fn send(world: &mut ForgeWorld, method: reqwest::Method, path: &str, body: Option<&'static [u8]>) {
+async fn send(
+    world: &mut ForgeWorld,
+    method: reqwest::Method,
+    path: &str,
+    body: Option<&'static [u8]>,
+) {
     let url = format!("{}{path}", world.warehouse_url);
     let mut builder = world.client.request(method, &url);
     if let Some(token) = &world.token {
