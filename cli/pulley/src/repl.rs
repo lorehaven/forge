@@ -77,7 +77,7 @@ impl Repl {
         println!("  quit, exit              - Exit the REPL");
     }
 
-    fn list_jobs(&self) {
+    pub fn list_jobs(&self) {
         if self.config.jobs.is_empty() {
             println!("No jobs configured");
             return;

@@ -4,7 +4,7 @@ Pulley is an interactive, REPL-based backup/sync tool built on `rsync`, configur
 
 ## Features
 
-- Interactive REPL (`list`, `run`, `reload`, `help`, `quit`/`exit`) instead of one-shot CLI invocations.
+- Interactive REPL (`list`, `run`, `reload`, `help`, `quit`/`exit`), or non-interactive equivalents (`pulley list`, `pulley run <job_id>... | all`) for scripts and cron.
 - Multi-file TOML configuration, merged from a global directory and local project files.
 - Dry-run preview (via `rsync --dry-run --itemize-changes`) showing creates/modifies/deletes before anything happens, with a confirmation prompt unless `no-confirm` is set.
 - Local and remote (`user@host:/path`) sources, since `src`/`dest` are passed straight to `rsync`.
@@ -24,9 +24,18 @@ Build it with `cargo build --release -p pulley`, or run it directly:
 ```bash
 cargo run -p pulley
 # or, once built:
-pulley
-pulley --version   # / -V
+pulley                    # interactive REPL
+pulley list               # print every configured job, then exit
+pulley run documents      # run one job once, non-interactively, then exit
+pulley run all            # run every job once, then exit
+pulley --version          # / -V
 ```
+
+### One-shot runs
+
+`pulley list` prints the merged job set (the same output as the REPL's `list`) and exits, so you can see what ids `pulley run` accepts without opening the REPL.
+
+`pulley run <job_id> [job_id2...]` (or `pulley run all`) runs the named jobs a single time and exits - the same dry-run-then-`Continue? (y/n)` flow as the REPL's `run`, with no REPL session and no daemon loop. Per-job `no-confirm` still suppresses the prompt, so a `no-confirm` job under `pulley run` is fully unattended and suitable for cron. Unlike `pulley daemon`, this ignores `interval` and runs every job you name regardless of when it last ran.
 
 ### REPL commands
 
@@ -62,7 +71,7 @@ An example file ships at `cli/pulley/example.pulley.toml`.
 
 ## Constant sync mode
 
-`pulley daemon` runs in the foreground (no REPL, no prompts) and continuously polls every job that sets `interval`, re-syncing it once that many seconds have elapsed since its last run. Jobs without `interval` are invisible to the daemon but remain runnable manually from the REPL — the same config files drive both modes. Each due job runs the same dry-run-then-update flow as `run`, but unattended: if the dry run finds changes, `pulley daemon` applies them immediately, without a confirmation prompt.
+`pulley daemon` runs in the foreground (no REPL, no prompts) and continuously polls every job that sets `interval`, re-syncing it once that many seconds have elapsed since its last run. Jobs without `interval` are invisible to the daemon but remain runnable manually from the REPL or via `pulley run <job_id>` — the same config files drive all modes. Each due job runs the same dry-run-then-update flow as `run`, but unattended: if the dry run finds changes, `pulley daemon` applies them immediately, without a confirmation prompt.
 
 ```bash
 pulley daemon

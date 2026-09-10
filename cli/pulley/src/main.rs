@@ -27,6 +27,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             service::hide_console_window();
             return daemon::run(&config);
         }
+        Some(Command::List) => {
+            let config = load_config_or_exit();
+            Repl::new(config).list_jobs();
+            return Ok(());
+        }
+        Some(Command::Run { jobs }) => {
+            require_binary("rsync", RSYNC_HINT)?;
+            let config = load_config_or_exit();
+            let repl = Repl::new(config);
+            let ids: Vec<&str> = jobs.iter().map(String::as_str).collect();
+            return repl.run_jobs(&ids);
+        }
         None => {}
     }
 

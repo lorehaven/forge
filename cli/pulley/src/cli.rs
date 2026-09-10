@@ -14,6 +14,19 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
+    /// List every configured job (merged from all config files) and exit -
+    /// the REPL's `list`, without the REPL.
+    List,
+
+    /// Run the named job(s) once and exit - a non-interactive one-shot of
+    /// the REPL's `run`, with no REPL prompt and no daemon loop. Pass `all`
+    /// to run every configured job. Per-job `no-confirm` still applies.
+    Run {
+        /// Job id(s) to run, or `all` for every configured job
+        #[arg(required = true, value_name = "JOB_ID")]
+        jobs: Vec<String>,
+    },
+
     /// Run continuous sync in the foreground, polling every job's `interval`
     Daemon,
 

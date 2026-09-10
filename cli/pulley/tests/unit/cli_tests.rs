@@ -14,6 +14,36 @@ fn daemon_parses_as_its_own_subcommand() {
 }
 
 #[test]
+fn list_parses_as_its_own_subcommand() {
+    let cli = Cli::try_parse_from(["pulley", "list"]).unwrap();
+    assert!(matches!(cli.command, Some(Command::List)));
+}
+
+#[test]
+fn run_collects_the_named_job_ids() {
+    let cli = Cli::try_parse_from(["pulley", "run", "docs", "photos"]).unwrap();
+    match cli.command {
+        Some(Command::Run { jobs }) => assert_eq!(jobs, ["docs", "photos"]),
+        other => panic!("expected Run, got {other:?}"),
+    }
+}
+
+#[test]
+fn run_accepts_all_as_a_plain_job_id() {
+    let cli = Cli::try_parse_from(["pulley", "run", "all"]).unwrap();
+    match cli.command {
+        Some(Command::Run { jobs }) => assert_eq!(jobs, ["all"]),
+        other => panic!("expected Run, got {other:?}"),
+    }
+}
+
+#[test]
+fn run_requires_at_least_one_job_id() {
+    let result = Cli::try_parse_from(["pulley", "run"]);
+    assert!(result.is_err());
+}
+
+#[test]
 fn service_requires_an_action() {
     let result = Cli::try_parse_from(["pulley", "service"]);
     assert!(result.is_err());
