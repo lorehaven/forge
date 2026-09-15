@@ -54,6 +54,17 @@ anvil semver-check -p <name> [--baseline-rev <rev>]
 
 In `run --serve` mode: `r` rebuilds immediately, `R` toggles auto-rebuild-on-change, `q`/`Q`/`e`/`E` quit.
 
+### Output control
+
+Every subcommand that shells out (`build`, `test`, `nextest`, `run`, `lint`, `format`, `upgrade`, `audit`, `machete`, `deny`, `semver-check`, `install`, `release`, `docker ...`) streams the underlying command's stdout/stderr live by default, exactly as running it by hand would — plus, for the file-backed commands, a full copy saved to `target/anvil-logs/<operation>.log`. Two global flags (placed before the subcommand) change that:
+
+```bash
+anvil --silent <command> ...        # only anvil's own status lines; a short tail prints on failure
+anvil --tail[=<N>] <command> ...    # print only the last N lines (default 80) once the command finishes
+```
+
+`--silent` and `--tail` are mutually exclusive. A `--tail` value must be attached with `=` (e.g. `--tail=200`) rather than as a separate argument, so it isn't mistaken for the subcommand name that follows.
+
 ### Release and distribution
 
 ```bash

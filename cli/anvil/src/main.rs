@@ -1,6 +1,7 @@
 use anvil::cli::{Cli, Commands, DockerCommands};
 use anvil::commands;
 use anvil::config;
+use anvil::util::{OutputMode, set_output_mode};
 use anyhow::Result;
 use clap::Parser;
 use quench_cli::require::require_binary;
@@ -11,6 +12,14 @@ fn main() -> Result<()> {
     require_binary("cargo", "anvil shells out to it for nearly every command")?;
     let config = config::load_config()?;
     let cli = Cli::parse();
+
+    set_output_mode(if cli.silent {
+        OutputMode::Silent
+    } else if let Some(n) = cli.tail {
+        OutputMode::Tail(n)
+    } else {
+        OutputMode::Full
+    });
 
     match cli.command {
         Commands::Build {

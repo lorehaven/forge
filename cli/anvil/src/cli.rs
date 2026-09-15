@@ -5,6 +5,23 @@ use clap::{Parser, Subcommand};
 #[command(version)]
 #[command(about = "Anvil - Workspace tools for building, linting, and publishing", long_about = None)]
 pub struct Cli {
+    /// Suppress the underlying command's live output; only anvil's own
+    /// status lines are shown (a short tail is still printed on failure)
+    #[arg(long, global = true, conflicts_with = "tail")]
+    pub silent: bool,
+    /// Instead of streaming the underlying command's output live, print only
+    /// the last N lines once it finishes (default 80 when no value is given).
+    /// A value, if given, must be attached with `=` (e.g. `--tail=200`) so it
+    /// isn't mistaken for the subcommand that follows.
+    #[arg(
+        long,
+        global = true,
+        value_name = "N",
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "80"
+    )]
+    pub tail: Option<usize>,
     #[command(subcommand)]
     pub command: Commands,
 }
