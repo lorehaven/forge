@@ -1,8 +1,9 @@
 use anyhow::{Context, Result};
+use crossterm::tty::IsTty;
 use quench_cli::prelude::{DIM, RESET, Tone, print_status};
 use std::collections::VecDeque;
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -131,6 +132,20 @@ fn pump_stream<R: std::io::Read + Send + 'static>(
     })
 }
 
+/// Piping a child's stdout/stderr (needed so we can tee it to a log file and
+/// a tail buffer) hides the real terminal from it, so tools that colorize
+/// based on `isatty()` - cargo, clippy, rustc - fall back to plain text even
+/// when the output is headed straight back to anvil's own terminal. When
+/// anvil's own stdout/stderr are real terminals, tell the child to colorize
+/// anyway via the env vars the Rust toolchain and most CLIs already respect.
+fn force_color_if_tty(cmd: &mut Command) {
+    if io::stdout().is_tty() || io::stderr().is_tty() {
+        cmd.env("CARGO_TERM_COLOR", "always")
+            .env("CLICOLOR_FORCE", "1")
+            .env("FORCE_COLOR", "1");
+    }
+}
+
 fn print_tail_lines(lines: &[String], n: usize, source: &str) {
     if lines.is_empty() {
         return;
@@ -180,6 +195,8 @@ fn run_command_with_logging(mut cmd: Command, operation: &str, log_to_file: bool
     };
 
     let tail = Arc::new(TailCapture::new(tail_n));
+
+    force_color_if_tty(&mut cmd);
 
     let start = Instant::now();
     let mut child = cmd
