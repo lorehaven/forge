@@ -1,6 +1,6 @@
 # Sage Service
 
-Sage is Forge's AI workspace/chat service: an Actix Web application that gives users a browser-based chat UI (and a matching JSON API) backed by vLLM models served through [Switchboard](./switchboard-service.md). It manages conversations organized into projects, supports tool-calling (web search, calculator, file operations, shell commands, code execution), and lets users upload files that are extracted, chunked, embedded into pgvector, and retrieved as RAG context to ground chat answers. Sage owns the "keep my configured models warm" responsibility too: at startup and on a 10s loop it asks Switchboard to launch whatever models are declared in `SAGE_DEFAULT_MODELS`, and it blocks its own home page behind an "initializing" screen until they're all running.
+Sage is Forge's AI workspace/chat service: a `quench-http` application that gives users a browser-based chat UI (and a matching JSON API) backed by vLLM models served through [Switchboard](./switchboard-service.md). It manages conversations organized into projects, supports tool-calling (web search, calculator, file operations, shell commands, code execution), and lets users upload files that are extracted, chunked, embedded into pgvector, and retrieved as RAG context to ground chat answers. Sage owns the "keep my configured models warm" responsibility too: at startup and on a 10s loop it asks Switchboard to launch whatever models are declared in `SAGE_DEFAULT_MODELS`, and it blocks its own home page behind an "initializing" screen until they're all running.
 
 ## Features
 
@@ -25,7 +25,7 @@ Sage is Forge's AI workspace/chat service: an Actix Web application that gives u
   - `pipeline.rs`: orchestrates the above per-file, spawned as a background tokio task after upload; tracks file status (`uploaded` → `processing` → `ready`/`failed`).
 - **`tools/`** — `ToolRegistry`, `CapabilityProfile`s, per-tool executors, and `parser.rs` (extracts/strips tool-call JSON from model output, tolerant of malformed closing tags and nested braces).
 - **`clients/`** — `SwitchboardClient` (OAuth client-credentials call to Switchboard's `/api/v1/vllm/instances` etc., with retry + circuit breaker) and `VllmClient` (talks directly to a vLLM instance's OpenAI-compatible endpoints for chat streaming and embeddings).
-- **`startup/`** — `state.rs` builds `AppState` (shared across Actix workers); `default_models.rs` is the model-launch monitor described above; `validate.rs` checks Switchboard connectivity and search-provider config at boot.
+- **`startup/`** — `state.rs` builds `AppState` (its pieces handed individually to the DI container in `main.rs`); `default_models.rs` is the model-launch monitor described above; `validate.rs` checks Switchboard connectivity and search-provider config at boot.
 - **`domain/`** — `Conversation`, `Project`, `File`, `FileChunk` models plus a `TokenCounter` used by the chunker/context builder.
 - **`observability/`** — metrics collector, cost tracker, audit logger.
 

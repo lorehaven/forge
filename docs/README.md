@@ -23,7 +23,8 @@ docs/
 │   ├── gatehouse-service.md
 │   ├── sage-service.md
 │   ├── switchboard-service.md
-│   └── warehouse-service.md
+│   ├── warehouse-service.md
+│   └── workbench-service.md
 ├── libs/                   # libs/* shared crates
 │   └── conveyor-pipeline.md
 ├── examples/                # examples/* runnable references
@@ -36,7 +37,7 @@ Each page lives at the same path as the crate it documents (e.g. `docker/sage-se
 
 ## Services (`docker/*`)
 
-Long-running Actix Web services, each with its own Postgres schema, started locally via [Foreman](./cli/foreman.md).
+Long-running quench-http services, each with its own Postgres schema, started locally via [Foreman](./cli/foreman.md).
 
 - [Gatehouse Service](./docker/gatehouse-service.md) — the realm's single identity/auth service; issues the tokens every other service verifies
 - [Foundry Service](./docker/foundry-service.md) — run-to-completion database migration job for every other service's schema
@@ -44,6 +45,7 @@ Long-running Actix Web services, each with its own Postgres schema, started loca
 - [Warehouse Service](./docker/warehouse-service.md) — storage: Cargo registry, Docker Registry v2, and plain file storage
 - [Switchboard Service](./docker/switchboard-service.md) — model-serving gateway; discovers models, estimates VRAM fit, manages vLLM processes
 - [Sage Service](./docker/sage-service.md) — AI chat/workspace app with RAG file upload, built on models Switchboard serves
+- [Workbench Service](./docker/workbench-service.md) — task management: projects, issues, comments and labels, behind the same realm auth
 
 ## CLI Tools (`cli/*`)
 
@@ -163,7 +165,7 @@ services.
 ├── cli/           # binaries: anvil, conveyor-cli, foreman, pulley, riveter,
 │                  #           toolbox, warehouse-cli, welder
 ├── docker/        # services: conveyor, foundry, gatehouse, sage,
-│                  #           switchboard, warehouse (each its own image)
+│                  #           switchboard, warehouse, workbench (each its own image)
 ├── libs/          # shared crates: conveyor-pipeline
 ├── examples/      # runnable references: vllm_cluster_test
 ├── tests/         # forge-bdd, the cross-service Cucumber suite

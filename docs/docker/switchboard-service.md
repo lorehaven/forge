@@ -27,7 +27,7 @@ Switchboard is Forge's model-serving gateway and dashboard: it discovers local m
 - **`routers/vllm/`** — instance management: `engine.rs` (the `VllmEngine` trait + `VllmManagementMode`), `native.rs`, `kubernetes.rs`, `mock.rs` (the three engines), `launch.rs`/`stop.rs`/`list.rs`/`modals.rs` (HTTP handlers and HTMX fragments), `sse.rs` (live instance-grid updates), `reaper.rs`, `types.rs` (`VllmInstance`, `LaunchRequest`, task↔CLI-flag translation).
 - **`routers/gpu/`** — VRAM polling and SSE broadcast.
 - **`routers/ui/`** — HTMX dashboard: home, models dashboard, vLLM management pages, auth delegation to Gatehouse (same pattern as Sage — no local login).
-- **`lib.rs`** — wires the above into `root_scope`/`base_path_scope`, installing broadcaster channels and JWT/session config as shared Actix app data.
+- **`main.rs`** — wires the above into the DI container (broadcaster channels, JWT/session config) and mounts the discovered routes behind `Auth`.
 
 ## API routes / UI pages
 

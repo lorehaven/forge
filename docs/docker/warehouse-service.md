@@ -13,10 +13,10 @@ Warehouse is the Forge estate's storage service: one address for a Cargo registr
 
 ## Architecture
 
-Two mount points, split by where the protocol forces them to live (`src/lib.rs`):
+Two mount points, split by where the protocol forces them to live (`main.rs`'s `RootOrBasePath`, dispatching on path prefix):
 
-- **`root_scope`** — mounted at the server root, outside `BASE_PATH`. Holds `/v2/*` and `/token`, because the Docker Registry spec fixes those paths; wrapped in `WarehouseAuth` (the registry's own Bearer-token middleware, with a per-client auth-failure rate limit — `MAX_AUTH_FAILURES_PER_MINUTE`, default 30, `AUTH_FAILURE_WINDOW_SECONDS`, default 60) and `WarehouseLimits` (concurrent-upload cap).
-- **`base_path_scope`** — everything else: `/admin`, `/api/v1/crates` (+ the sparse index), `/api/v1/files`, `/api/v1/artifacts` (+ the `/api/v1/apk` alias), and the UI.
+- **the docker router** — mounted at the server root, outside `BASE_PATH`. Holds `/v2/*` and `/token`, because the Docker Registry spec fixes those paths; wrapped in `WarehouseAuth` (the registry's own Bearer-token middleware, with a per-client auth-failure rate limit — `MAX_AUTH_FAILURES_PER_MINUTE`, default 30, `AUTH_FAILURE_WINDOW_SECONDS`, default 60) and `WarehouseLimits` (concurrent-upload cap).
+- **the base-path app** — everything else: `/admin`, `/api/v1/crates` (+ the sparse index), `/api/v1/files`, `/api/v1/artifacts` (+ the `/api/v1/apk` alias), and the UI.
 
 ### Files API
 

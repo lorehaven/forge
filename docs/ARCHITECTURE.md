@@ -4,26 +4,26 @@ How the pieces documented in the [Home](./README.md) page fit together.
 
 ## The estate
 
-Forge runs six Actix Web services (`docker/*`), each owning its own Postgres schema, plus a set of CLI tools that either drive those services or operate independently on the workspace/cluster. [Foreman](./cli/foreman.md) is what brings a chosen subset of the estate up locally, in dependency order, from one `foreman.toml`.
+Forge runs six long-running services (`docker/*`) built on [quench-http](https://github.com/lorehaven/quench/blob/master/docs/quench-http.md), each owning its own Postgres schema, plus a set of CLI tools that either drive those services or operate independently on the workspace/cluster. [Foreman](./cli/foreman.md) is what brings a chosen subset of the estate up locally, in dependency order, from one `foreman.toml`.
 
 ```
                      ┌───────────────────┐
                      │  Gatehouse (auth) │  issues realm tokens
                      └─────────┬─────────┘
                                │ every service verifies tokens locally
-        ┌──────────┬──────────┼──────────┬───────────┐
-        ▼          ▼          ▼          ▼           ▼
-   Conveyor    Warehouse   Switchboard  Sage      (Foundry: not a
-   (CI/CD)     (storage)   (vLLM mgmt) (chat/RAG)  peer — runs once
-        │          ▲            ▲          │        ahead of the others,
-        │          │            └──────────┘        installs every
-        └──────────┘         Sage calls Switchboard  service's schema)
-   artifacts/images           to launch/find models
+        ┌──────────┬──────────┼──────────┬──────────┬──────────┐
+        ▼          ▼          ▼          ▼          ▼          ▼
+   Conveyor    Warehouse   Switchboard  Sage     Workbench  (Foundry: not
+   (CI/CD)     (storage)   (vLLM mgmt) (chat/RAG)  (tasks)    a peer — runs
+        │          ▲            ▲          │                  once ahead of
+        │          │            └──────────┘                  the others,
+        └──────────┘         Sage calls Switchboard            installs every
+   artifacts/images           to launch/find models             service's schema)
 ```
 
 ## Identity: Gatehouse is the one source of truth
 
-[Gatehouse](./docker/gatehouse-service.md) holds the only user table in the realm (`auth.users`) and the only login page. It issues Ed25519-signed JWTs; every other service verifies those tokens **locally**, against Gatehouse's published JWKS — there is no per-request call back to Gatehouse on the hot path. [Quench Auth](https://github.com/lorehaven/quench/blob/master/docs/quench-auth.md) is the library that gives each relying-party service that verification logic, its actix middleware, and the permission-check helpers (`Claims::can(service, action)`); Gatehouse itself depends on it too, to verify its own tokens.
+[Gatehouse](./docker/gatehouse-service.md) holds the only user table in the realm (`auth.users`) and the only login page. It issues Ed25519-signed JWTs; every other service verifies those tokens **locally**, against Gatehouse's published JWKS — there is no per-request call back to Gatehouse on the hot path. [Quench Auth](https://github.com/lorehaven/quench/blob/master/docs/quench-auth.md) is the library that gives each relying-party service that verification logic, its `quench-http` `Auth` middleware, and the permission-check helpers (`Claims::can(service, action)`); Gatehouse itself depends on it too, to verify its own tokens.
 
 Two related points worth knowing if you're integrating a new service:
 - **Actions, not read/write levels.** There is no `Access::Read`/`Access::Write` ordering — a `"write"` grant does not imply `"read"`. Permissions are checked per action string (`can(service, "write")`, or a service-specific action like `switchboard`'s `"launch"`/`"stop"`/`"delete-model"`).

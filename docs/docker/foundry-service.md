@@ -36,7 +36,7 @@ since = "0.2.0"
 sql = "CREATE TABLE IF NOT EXISTS ${schema}.files (...);"
 ```
 
-The catalog today holds `quench-core`, `auth`, `pgvector`, `gatehouse` (an empty module whose whole state is `auth` — it exists only so `gatehouse` is a nameable install target), `sage`, `switchboard`, `warehouse` and `conveyor` — one directory per service that owns database state, plus the shared/base modules they all depend on.
+The catalog today holds `quench-core`, `auth`, `pgvector`, `gatehouse` (an empty module whose whole state is `auth` — it exists only so `gatehouse` is a nameable install target), `sage`, `switchboard`, `warehouse`, `workbench` and `conveyor` — one directory per service that owns database state, plus the shared/base modules they all depend on.
 
 ### Dependency resolution and apply order
 
@@ -85,7 +85,7 @@ Configuration precedence is flags, then environment, then `config/install.toml`:
 
 ## Configuration
 
-`config/install.toml` is the baked-in default install list (currently `conveyor`, `gatehouse`, `sage`, `switchboard`, `warehouse` — shared modules like `auth`, `quench-core` and `pgvector` resolve automatically and never need listing). Override per environment without rebuilding the image via `FOUNDRY_INSTALL`, e.g. `FOUNDRY_INSTALL="sage@0.2.0,switchboard:switchboard_staging"`.
+`config/install.toml` is the baked-in default install list (currently `conveyor`, `gatehouse`, `sage`, `switchboard`, `warehouse`, `workbench` — shared modules like `auth`, `quench-core` and `pgvector` resolve automatically and never need listing). Override per environment without rebuilding the image via `FOUNDRY_INSTALL`, e.g. `FOUNDRY_INSTALL="sage@0.2.0,switchboard:switchboard_staging"`.
 
 As a Kubernetes `Job`, the image needs no command — `apply` runs when given none. It runs as uid 999 (owner of everything under `/app`), so no `securityContext` is needed to keep it off root; deployment manifests themselves live outside this repository.
 
