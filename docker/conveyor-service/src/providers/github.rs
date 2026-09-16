@@ -4,8 +4,8 @@ use crate::domain::{Repo, Trigger};
 use crate::providers::{
     CommitStatusReport, GitProvider, ProviderError, TriggerEvent, header, verify_sha256_signature,
 };
-use actix_web::http::header::HeaderMap;
 use async_trait::async_trait;
+use http::HeaderMap;
 use serde::Deserialize;
 use serde_json::json;
 
@@ -18,8 +18,7 @@ const ZERO_SHA: &str = "0000000000000000000000000000000000000000";
 
 pub struct GitHubProvider {
     api_base: String,
-    /// A token with `repo:status`. Without it conveyor still builds; it just
-    /// cannot say so on the commit.
+    /// A token with `repo:status`; without it conveyor still builds, just can't report.
     token: Option<String>,
     http: reqwest::Client,
 }
@@ -37,8 +36,7 @@ impl GitHubProvider {
         }
 
         Self {
-            // Overridable for GitHub Enterprise, where the API lives on the
-            // installation's own host.
+            // Overridable for GitHub Enterprise's own host.
             api_base: envmnt::get_or("CONVEYOR_GITHUB_API", "https://api.github.com")
                 .trim_end_matches('/')
                 .to_string(),
@@ -76,8 +74,7 @@ impl GitProvider for GitHubProvider {
         match event {
             "push" => parse_push(body, delivery),
             "pull_request" => parse_pull_request(body, delivery),
-            // `ping` is what GitHub sends when a hook is created, and the rest
-            // are events conveyor has no use for. Neither is an error.
+            // `ping` (hook creation) and everything else conveyor has no use for; not an error.
             other => {
                 tracing::debug!("ignoring GitHub event {other}");
                 Ok(None)
@@ -102,9 +99,7 @@ impl GitProvider for GitHubProvider {
 
         let mut payload = json!({
             "state": report.state.as_str(),
-            // GitHub truncates at 140 characters and returns a validation
-            // error for longer, which would turn a passing build into a
-            // logged failure to report it.
+            // GitHub errors past 140 chars, which would log a passing build as a report failure.
             "description": truncate(&report.description, 140),
             "context": report.context,
         });
@@ -139,15 +134,11 @@ impl GitProvider for GitHubProvider {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Events
-// ---------------------------------------------------------------------------
-
+// Events.
 fn parse_push(body: &[u8], delivery: String) -> Result<Option<TriggerEvent>, ProviderError> {
     let push: PushEvent = decode(body)?;
 
-    // A deleted branch has nothing to build, and its `after` is all zeros - a
-    // sha that would fail the checkout in a way nobody could interpret.
+    // A deleted branch has nothing to build; its `after` is all zeros.
     if push.deleted || push.after == ZERO_SHA {
         tracing::debug!("ignoring the deletion of {}", push.git_ref);
         return Ok(None);
@@ -163,8 +154,7 @@ fn parse_push(body: &[u8], delivery: String) -> Result<Option<TriggerEvent>, Pro
         message: push
             .head_commit
             .and_then(|commit| first_line(&commit.message)),
-        // A push is always to the repository itself. Only a pull request can
-        // carry code from somewhere else.
+        // A push is always to the repository itself; only a pull request can carry code from elsewhere.
         from_fork: false,
     }))
 }
@@ -175,8 +165,7 @@ fn parse_pull_request(
 ) -> Result<Option<TriggerEvent>, ProviderError> {
     let event: PullRequestEvent = decode(body)?;
 
-    // `synchronize` is a new push to an open pull request. The rest - labelled,
-    // assigned, closed - change nothing about the code.
+    // `synchronize` is a new push; the rest (labelled, assigned, closed) change nothing about the code.
     if !matches!(
         event.action.as_str(),
         "opened" | "reopened" | "synchronize" | "ready_for_review"
@@ -192,15 +181,10 @@ fn parse_pull_request(
         .repo
         .as_ref()
         .map(|repo| repo.full_name.clone());
-    // A head repository that is absent means it was deleted, which GitHub also
-    // reports for forks; treating that as "not a fork" would be the unsafe way
-    // round.
+    // Absent head repo means deleted (also true for forks) - treat as fork, the safe direction.
     let from_fork = head_repo.as_deref() != Some(base.as_str());
 
-    // A fork's head branch does not exist in the base repository, but GitHub
-    // publishes every pull request's head there as `refs/pull/N/head`. Same-
-    // repository pull requests use their branch, so `branch == '...'` in a
-    // `when` still means what it looks like.
+    // A fork's branch doesn't exist in the base repo; GitHub publishes it as `refs/pull/N/head`.
     let git_ref = if from_fork {
         format!("refs/pull/{}/head", event.number)
     } else {
@@ -226,8 +210,7 @@ fn decode<T: for<'de> Deserialize<'de>>(body: &[u8]) -> Result<T, ProviderError>
     })
 }
 
-/// Commit messages are a subject line and then a body; only the subject is
-/// worth carrying into a run listing.
+/// Only the subject line is worth carrying into a run listing.
 fn first_line(message: &str) -> Option<String> {
     let line = message.lines().next()?.trim();
     (!line.is_empty()).then(|| line.to_string())
@@ -237,19 +220,12 @@ fn truncate(value: &str, limit: usize) -> String {
     if value.chars().count() <= limit {
         return value.to_string();
     }
-    // By characters rather than bytes: slicing a multi-byte character in half
-    // would produce a string GitHub rejects as invalid UTF-8.
+    // By characters, not bytes - slicing mid-character would produce invalid UTF-8.
     let kept: String = value.chars().take(limit.saturating_sub(1)).collect();
     format!("{kept}…")
 }
 
-// ---------------------------------------------------------------------------
-// Payloads
-// ---------------------------------------------------------------------------
-//
-// Only the fields conveyor reads. GitHub's payloads carry a hundred more and
-// add to them regularly, so these are deliberately not exhaustive.
-
+// Payloads - only the fields conveyor reads, deliberately not exhaustive.
 #[derive(Deserialize)]
 struct PushEvent {
     #[serde(rename = "ref")]

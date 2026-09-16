@@ -1,6 +1,6 @@
 [package]
 name = "gatehouse-service"
-version = "0.2.22"
+version = "0.3.0"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Gatehouse - the Forge authentication service: one login, one identity store"
@@ -20,14 +20,14 @@ name = "gatehouse-service"
 path = "src/main.rs"
 
 [dependencies]
-actix-web = { workspace = true }
 async-trait = { workspace = true }
 base64 = { workspace = true }
+bytes = { workspace = true }
 chacha20poly1305 = { workspace = true }
 chrono = { workspace = true }
-futures-util = { workspace = true }
 hex = { workspace = true }
 hmac = { workspace = true }
+http = { workspace = true }
 jsonwebtoken = { workspace = true }
 anyhow = { workspace = true }
 envmnt = { workspace = true }
@@ -35,11 +35,13 @@ quench-auth = { workspace = true }
 quench-cache = { workspace = true, features = ["redis"] }
 quench-config = { workspace = true }
 quench-db = { workspace = true }
+quench-http = { workspace = true }
 quench-starter = { workspace = true }
 quench-web = { workspace = true }
 quench-web-components = { workspace = true }
 rand = "0.8"
 rand_core = { version = "0.6", features = ["getrandom"] }
+rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
@@ -51,4 +53,6 @@ tracing = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
+http-body-util = { workspace = true }
+serde_urlencoded = { workspace = true }
 tempfile = { workspace = true }

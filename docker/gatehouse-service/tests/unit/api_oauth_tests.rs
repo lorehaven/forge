@@ -1,14 +1,20 @@
-use actix_web::{App, web};
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use bytes::Bytes;
 use chrono::Utc;
 use gatehouse_service::api::oauth::*;
 use gatehouse_service::clients::{ClientRow, hash_secret};
 use gatehouse_service::codes::AuthorizationCodeRow;
-use quench_auth::prelude::{JwtConfig, Permissions, Role, SessionDb, User, UserDb};
+use http::{HeaderMap, Method, StatusCode, Uri};
+use quench_auth::domain::auth::{Permissions, Role, User, UserDb};
+use quench_auth::domain::jwt::JwtConfig;
+use quench_auth::domain::session::SessionDb;
 use quench_cache::CacheStore;
 use quench_db::prelude::{Crud, Db};
+use quench_http::di::ContainerBuilder;
+use quench_http::prelude::{Form, Inject, Request};
 use sha2::{Digest, Sha256};
+use std::sync::Arc;
 
 fn empty_token_request(grant_type: &str) -> TokenRequest {
     TokenRequest {
@@ -114,7 +120,7 @@ async fn authorization_code_grant_rejects_missing_fields() {
         &sessions,
     )
     .await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::BAD_REQUEST);
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
@@ -132,7 +138,7 @@ async fn authorization_code_grant_rejects_an_unknown_client() {
         ..empty_token_request("authorization_code")
     };
     let resp = authorization_code_grant(&body, &config, &db, &users, &sessions).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::BAD_REQUEST);
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
@@ -151,7 +157,7 @@ async fn authorization_code_grant_rejects_the_wrong_client_secret() {
         ..empty_token_request("authorization_code")
     };
     let resp = authorization_code_grant(&body, &config, &db, &users, &sessions).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::BAD_REQUEST);
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
@@ -182,7 +188,7 @@ async fn authorization_code_grant_rejects_an_unusable_code() {
         ..empty_token_request("authorization_code")
     };
     let resp = authorization_code_grant(&body, &config, &db, &users, &sessions).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::BAD_REQUEST);
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
@@ -213,7 +219,7 @@ async fn authorization_code_grant_rejects_a_pkce_verifier_mismatch() {
         ..empty_token_request("authorization_code")
     };
     let resp = authorization_code_grant(&body, &config, &db, &users, &sessions).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::BAD_REQUEST);
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
@@ -244,11 +250,11 @@ async fn authorization_code_grant_succeeds_and_the_code_cannot_be_replayed() {
         ..empty_token_request("authorization_code")
     };
     let resp = authorization_code_grant(&body, &config, &db, &users, &sessions).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    assert_eq!(resp.status(), StatusCode::OK);
 
     // Replaying the same code must fail - it was marked consumed above.
     let replay = authorization_code_grant(&body, &config, &db, &users, &sessions).await;
-    assert_eq!(replay.status(), actix_web::http::StatusCode::BAD_REQUEST);
+    assert_eq!(replay.status(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
@@ -265,7 +271,7 @@ async fn refresh_token_grant_rejects_a_missing_refresh_token() {
         &sessions,
     )
     .await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::BAD_REQUEST);
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
@@ -280,7 +286,7 @@ async fn refresh_token_grant_rejects_an_unknown_token() {
         ..empty_token_request("refresh_token")
     };
     let resp = refresh_token_grant(&body, &config, &users, &sessions).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::UNAUTHORIZED);
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]
@@ -300,7 +306,7 @@ async fn refresh_token_grant_succeeds_for_a_live_session() {
         ..empty_token_request("refresh_token")
     };
     let resp = refresh_token_grant(&body, &config, &users, &sessions).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    assert_eq!(resp.status(), StatusCode::OK);
 }
 
 #[tokio::test]
@@ -310,7 +316,7 @@ async fn client_credentials_grant_rejects_missing_fields() {
 
     let resp =
         client_credentials_grant(&empty_token_request("client_credentials"), &config, &db).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::BAD_REQUEST);
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
@@ -325,7 +331,7 @@ async fn client_credentials_grant_rejects_the_wrong_secret() {
         ..empty_token_request("client_credentials")
     };
     let resp = client_credentials_grant(&body, &config, &db).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::BAD_REQUEST);
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
@@ -340,14 +346,21 @@ async fn client_credentials_grant_succeeds_with_the_right_secret() {
         ..empty_token_request("client_credentials")
     };
     let resp = client_credentials_grant(&body, &config, &db).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    assert_eq!(resp.status(), StatusCode::OK);
 }
 
 #[tokio::test]
 async fn subject_from_cookie_is_none_without_a_session_cookie() {
     let config = JwtConfig::for_tests_with_signing();
     let sessions = SessionDb::init(CacheStore::in_memory());
-    let req = actix_web::test::TestRequest::default().to_http_request();
+    let container = Arc::new(ContainerBuilder::new().build().await.unwrap());
+    let req = Request::new(
+        Method::GET,
+        "/".parse::<Uri>().unwrap(),
+        HeaderMap::new(),
+        quench_http::body::InboundBody::from_bytes(Bytes::new()),
+        container,
+    );
     assert!(
         subject_from_cookie(&req, &config, &sessions)
             .await
@@ -355,54 +368,49 @@ async fn subject_from_cookie_is_none_without_a_session_cookie() {
     );
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn token_endpoint_rejects_an_unsupported_grant_type() {
     let config = JwtConfig::for_tests_with_signing();
     let db = Db::connect("").await.expect("in-memory db");
-    let users = web::Data::new(UserDb::init(db.clone()).await);
-    let sessions = web::Data::new(SessionDb::init(CacheStore::in_memory()));
+    let users = UserDb::init(db.clone()).await;
+    let sessions = SessionDb::init(CacheStore::in_memory());
 
-    let app = actix_web::test::init_service(
-        App::new()
-            .app_data(web::Data::new(config))
-            .app_data(web::Data::new(db))
-            .app_data(users)
-            .app_data(sessions)
-            .service(token),
+    let resp = token(
+        Form(empty_token_request("not-a-real-grant")),
+        Inject(Arc::new(config)),
+        Inject(Arc::new(db)),
+        Inject(users),
+        Inject(sessions),
     )
     .await;
-
-    let req = actix_web::test::TestRequest::post()
-        .uri("/api/v1/token")
-        .set_form([("grant_type", "not-a-real-grant")])
-        .to_request();
-    let resp = actix_web::test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::BAD_REQUEST);
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn authorize_endpoint_rejects_an_unknown_client() {
+    // `AuthorizeQuery` is private to `api::oauth`, so this goes through the
+    // real discovered router rather than calling `authorize` directly.
+    gatehouse_service::api::oauth::register_routes();
     let config = JwtConfig::for_tests_with_signing();
     let db = Db::connect("").await.expect("in-memory db");
-    let users = web::Data::new(UserDb::init(db.clone()).await);
-    let sessions = web::Data::new(SessionDb::init(CacheStore::in_memory()));
+    let container = ContainerBuilder::new()
+        .provide(config)
+        .provide(db.clone())
+        .provide_arc(UserDb::init(db).await)
+        .provide_arc(SessionDb::init(CacheStore::in_memory()))
+        .build()
+        .await
+        .unwrap();
+    let container = Arc::new(container);
+    let app = quench_starter::http::discover_and_mount("/");
 
-    let app = actix_web::test::init_service(
-        App::new()
-            .app_data(web::Data::new(config))
-            .app_data(web::Data::new(db))
-            .app_data(users)
-            .app_data(sessions)
-            .service(authorize),
-    )
-    .await;
-
-    let req = actix_web::test::TestRequest::get()
-        .uri(
-            "/api/v1/authorize?client_id=no-such-client&redirect_uri=https://example.test/cb\
-             &state=xyz&code_challenge=abc",
-        )
-        .to_request();
-    let resp = actix_web::test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::BAD_REQUEST);
+    let req = Request::new(
+        Method::GET,
+        "/api/v1/authorize?client_id=no-such-client&redirect_uri=https://example.test/cb&state=xyz&code_challenge=abc".parse::<Uri>().unwrap(),
+        HeaderMap::new(),
+        quench_http::body::InboundBody::from_bytes(Bytes::new()),
+        container,
+    );
+    let resp = app.call(req).await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }

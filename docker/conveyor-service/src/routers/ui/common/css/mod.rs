@@ -1,6 +1,4 @@
-//! Conveyor's stylesheet, composed from the same rule sets the other services
-//! build theirs from - that is what keeps the estate looking like one product
-//! rather than six.
+//! Conveyor's stylesheet, composed from the same rule sets the other services build theirs from.
 
 use quench_starter::actix::routers::ui::common::css;
 use quench_web::prelude::CssRule;

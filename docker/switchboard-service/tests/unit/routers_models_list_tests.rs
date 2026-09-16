@@ -3,21 +3,55 @@
 //! model cards/estimate grids, which exercises the private render helpers
 //! transitively - the same approach `routers_models_handlers_tests.rs` uses.
 
-use crate::env_support::{env_lock, store_lock};
-use actix_web::http::StatusCode;
-use actix_web::web::Data;
-use actix_web::{App, test as actix_test};
-use quench_auth::prelude::JwtConfig;
+use crate::env_support::store_lock;
+use bytes::Bytes;
+use http::{HeaderMap, Method, StatusCode, Uri};
+use http_body_util::BodyExt;
+use quench_auth::domain::jwt::JwtConfig;
 use quench_db::prelude::Db;
+use quench_http::body::InboundBody;
+use quench_http::di::ContainerBuilder;
+use quench_http::prelude::{FromRequest, Inject, Query, Request};
 use switchboard_service::routers::gpu::monitor::GpuInfo;
-use switchboard_service::routers::models;
-use switchboard_service::routers::models::list::apply_filters;
+use switchboard_service::routers::models::list::{apply_filters, estimates_modal, handle_grid};
+use switchboard_service::routers::models::mod_impl::OptionalClaims;
 use switchboard_service::routers::models::store::{get_store, init_model_store};
 use switchboard_service::routers::models::types::{
     Context, Model, ModelEstimate, ModelFilters, Quant,
 };
-use switchboard_service::routers::vllm::mock::MockVllmEngine;
 use tokio::sync::OnceCell as AsyncOnceCell;
+
+fn config() -> Inject<JwtConfig> {
+    Inject(std::sync::Arc::new(JwtConfig::for_tests()))
+}
+
+async fn body_text(resp: quench_http::response::Response) -> String {
+    let collected = resp
+        .into_hyper()
+        .into_body()
+        .collect()
+        .await
+        .expect("body collects");
+    String::from_utf8(collected.to_bytes().to_vec()).expect("utf8")
+}
+
+/// `ModelFilters`/`EstimatesModalQuery` (the latter private to `list.rs`) go
+/// through a real `Query::from_request` deserialize rather than a struct
+/// literal, so this exercises the exact same query-string parsing a real
+/// request would.
+async fn query<T: serde::de::DeserializeOwned + Send>(uri: &str) -> Query<T> {
+    let container = std::sync::Arc::new(ContainerBuilder::new().build().await.unwrap());
+    let mut req = Request::new(
+        Method::GET,
+        uri.parse::<Uri>().unwrap(),
+        HeaderMap::new(),
+        InboundBody::from_bytes(Bytes::new()),
+        container,
+    );
+    Query::<T>::from_request(&mut req)
+        .await
+        .expect("query deserializes")
+}
 
 async fn ensure_store() {
     static ONCE: AsyncOnceCell<()> = AsyncOnceCell::const_new();
@@ -26,10 +60,6 @@ async fn ensure_store() {
         init_model_store(db).await;
     })
     .await;
-}
-
-fn engine() -> std::sync::Arc<dyn switchboard_service::routers::vllm::engine::VllmEngine> {
-    std::sync::Arc::new(MockVllmEngine)
 }
 
 fn gpu() -> GpuInfo {
@@ -276,12 +306,10 @@ fn apply_filters_unknown_sort_key_leaves_order_unchanged() {
 // for the simpler no-estimates case.
 // -----------------------------------------------------------------
 
-#[actix_web::test]
+#[tokio::test]
 async fn handle_grid_shows_a_fit_line_when_an_estimate_fits_with_a_small_margin() {
     ensure_store().await;
-    let _guard = env_lock().lock().await;
     let _store_guard = store_lock().lock().await;
-    unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", "false") };
 
     // gpu().free_gb is 20.0; a total_gb of 19.0 leaves a 1.0 GB margin, which
     // is `<= 2.0` and hits the "fit-warn" branch rather than "fit-ok".
@@ -295,61 +323,35 @@ async fn handle_grid_shows_a_fit_line_when_an_estimate_fits_with_a_small_margin(
     bare.path = "/tmp/list-test/handle-grid-bare".to_string();
     get_store().insert_model(&bare).await;
 
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(Data::new(JwtConfig::for_tests()))
-            .service(models::scope(engine(), JwtConfig::for_tests())),
-    )
-    .await;
-
-    let req = actix_test::TestRequest::get()
-        .uri("/api/v1/models/grid")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let filters: ModelFilters = serde_json::from_value(serde_json::json!({})).unwrap();
+    let resp = handle_grid(OptionalClaims(None), config(), Query(filters)).await;
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let body = actix_test::read_body(resp).await;
-    let html = String::from_utf8(body.to_vec()).expect("utf8 html");
+    let html = body_text(resp).await;
     assert!(html.contains("tight-fit"));
     assert!(html.contains("no-estimates"));
     assert!(html.contains("fit-warn") || html.contains("fit-no"));
-    unsafe { std::env::remove_var("SERVICE_AUTH_ENABLED") };
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn handle_grid_shows_the_delete_button_when_the_caller_can_delete_models() {
     ensure_store().await;
-    let _guard = env_lock().lock().await;
     let _store_guard = store_lock().lock().await;
-    unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", "false") };
 
     let mut deletable = model("deletable", "HF", Quant::FP16, Context::Size4096, 7.0);
     deletable.path = "/tmp/list-test/handle-grid-deletable".to_string();
     get_store().insert_model(&deletable).await;
 
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(Data::new(JwtConfig::for_tests()))
-            .service(models::scope(engine(), JwtConfig::for_tests())),
-    )
-    .await;
-
-    let req = actix_test::TestRequest::get()
-        .uri("/api/v1/models/grid")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    let body = actix_test::read_body(resp).await;
-    let html = String::from_utf8(body.to_vec()).expect("utf8 html");
+    let filters: ModelFilters = serde_json::from_value(serde_json::json!({})).unwrap();
+    let resp = handle_grid(OptionalClaims(None), config(), Query(filters)).await;
+    let html = body_text(resp).await;
     assert!(html.contains("card-delete"));
-    unsafe { std::env::remove_var("SERVICE_AUTH_ENABLED") };
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn estimates_modal_filters_by_fit_context_and_quant() {
     ensure_store().await;
-    let _guard = env_lock().lock().await;
     let _store_guard = store_lock().lock().await;
-    unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", "false") };
 
     let mut with_estimates = model("multi-estimate", "HF", Quant::FP16, Context::Size4096, 7.0);
     with_estimates.path = "/tmp/list-test/estimates-modal-multi".to_string();
@@ -371,35 +373,25 @@ async fn estimates_modal_filters_by_fit_context_and_quant() {
     ];
     get_store().insert_model(&with_estimates).await;
 
-    let app = actix_test::init_service(
-        App::new().service(models::scope(engine(), JwtConfig::for_tests())),
-    )
+    let q = query(&format!(
+        "/api/v1/models/estimates-modal?path={}&fit=fit&context=4096&quant=FP16",
+        with_estimates.path
+    ))
     .await;
-
-    let req = actix_test::TestRequest::get()
-        .uri(&format!(
-            "/api/v1/models/estimates-modal?path={}&fit=fit&context=4096&quant=FP16",
-            with_estimates.path
-        ))
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = estimates_modal(q).await;
     assert_eq!(resp.status(), StatusCode::OK);
-    let body = actix_test::read_body(resp).await;
-    let html = String::from_utf8(body.to_vec()).expect("utf8 html");
+    let html = body_text(resp).await;
     assert!(html.contains("estimates-modal-content"));
     assert!(html.contains("multi-estimate"));
 
     // "nofit" should show the 30GB estimate (which doesn't fit in a 20GB gpu)
     // instead of the 14GB one.
-    let req = actix_test::TestRequest::get()
-        .uri(&format!(
-            "/api/v1/models/estimates-modal?path={}&fit=nofit",
-            with_estimates.path
-        ))
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    let body = actix_test::read_body(resp).await;
-    let html = String::from_utf8(body.to_vec()).expect("utf8 html");
+    let q = query(&format!(
+        "/api/v1/models/estimates-modal?path={}&fit=nofit",
+        with_estimates.path
+    ))
+    .await;
+    let resp = estimates_modal(q).await;
+    let html = body_text(resp).await;
     assert!(html.contains("30.0 GB"));
-    unsafe { std::env::remove_var("SERVICE_AUTH_ENABLED") };
 }

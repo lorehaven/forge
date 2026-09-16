@@ -1,10 +1,9 @@
 use crate::clients::switchboard::{SwitchboardClient, VllmInstance};
 use crate::config::{DefaultModel, SageConfig};
 use crate::routers::ui::common;
-use crate::routers::ui::common::{UiPageKind, render_page};
-use actix_web::{HttpResponse, Responder, get, web};
-use quench_auth::prelude::JwtConfig;
-use quench_starter::prelude::with_base_path;
+use crate::routers::ui::common::{PageAuth, render_page};
+use quench_http::prelude::{Inject, Response, get, http::StatusCode};
+use quench_starter::common::routes::with_base_path;
 use quench_web::prelude::*;
 
 /// Launch state of a configured default model; the initializing screen blocks until every
@@ -137,7 +136,7 @@ pub fn render_model_rows(
 pub fn render_initializing_page(
     defaults: &[DefaultModel],
     instances_res: &anyhow::Result<Vec<VllmInstance>>,
-) -> HttpResponse {
+) -> Response {
     let switchboard_down = instances_res.is_err();
 
     let card = div()
@@ -174,21 +173,16 @@ pub fn render_initializing_page(
                 )
         }));
 
-    render_page(
-        HttpResponse::Ok(),
-        content().class("init-content").child(card),
-        UiPageKind::Home,
-    )
+    render_page(StatusCode::OK, content().class("init-content").child(card))
 }
 
-#[get("/initializing")]
+#[get("/ui/initializing")]
 pub(super) async fn initializing(
-    req: actix_web::HttpRequest,
-    jwt_config: web::Data<JwtConfig>,
-    switchboard: web::Data<SwitchboardClient>,
-    sage_config: web::Data<SageConfig>,
-) -> impl Responder {
-    if !common::is_ui_authenticated(&req, &jwt_config).await {
+    PageAuth(authenticated): PageAuth,
+    Inject(switchboard): Inject<SwitchboardClient>,
+    Inject(sage_config): Inject<SageConfig>,
+) -> Response {
+    if !authenticated {
         return common::ui_login_redirect();
     }
 
@@ -196,23 +190,20 @@ pub(super) async fn initializing(
     if let Ok(ref insts) = instances
         && all_models_running(&sage_config.default_models, insts)
     {
-        return HttpResponse::Found()
-            .append_header(("Location", with_base_path("/ui/home")))
-            .finish();
+        return Response::new(StatusCode::FOUND).header("Location", with_base_path("/ui/home"));
     }
 
     render_initializing_page(&sage_config.default_models, &instances)
 }
 
-#[get("/initializing/status")]
+#[get("/ui/initializing/status")]
 pub(super) async fn initializing_status(
-    req: actix_web::HttpRequest,
-    jwt_config: web::Data<JwtConfig>,
-    switchboard: web::Data<SwitchboardClient>,
-    sage_config: web::Data<SageConfig>,
-) -> impl Responder {
-    if !common::is_ui_authenticated(&req, &jwt_config).await {
-        return HttpResponse::Unauthorized().finish();
+    PageAuth(authenticated): PageAuth,
+    Inject(switchboard): Inject<SwitchboardClient>,
+    Inject(sage_config): Inject<SageConfig>,
+) -> Response {
+    if !authenticated {
+        return Response::new(StatusCode::UNAUTHORIZED);
     }
 
     let instances = switchboard.get_vllm_instances().await;
@@ -220,12 +211,16 @@ pub(super) async fn initializing_status(
         && all_models_running(&sage_config.default_models, insts)
     {
         // Every model is up — tell htmx to navigate to the real home screen.
-        return HttpResponse::Ok()
-            .append_header(("HX-Redirect", with_base_path("/ui/home")))
-            .finish();
+        return Response::new(StatusCode::OK).header("HX-Redirect", with_base_path("/ui/home"));
     }
 
-    HttpResponse::Ok()
-        .content_type("text/html")
-        .body(render_model_rows(&sage_config.default_models, &instances).render())
+    Response::html(
+        StatusCode::OK,
+        render_model_rows(&sage_config.default_models, &instances).render(),
+    )
+}
+
+pub fn register_routes() {
+    let _ = initializing as fn(_, _, _) -> _;
+    let _ = initializing_status as fn(_, _, _) -> _;
 }

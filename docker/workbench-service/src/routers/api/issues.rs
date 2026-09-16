@@ -4,9 +4,12 @@
 use crate::domain::issue::{self, IssueUpdate, NewIssue};
 use crate::domain::label;
 use crate::routers::api::authz::can_on_project;
-use crate::routers::api::{ApiError, actor, json_error};
-use actix_web::{HttpRequest, HttpResponse, Responder, delete, get, post, put, web};
+use crate::routers::api::{ApiError, OptionalClaims, actor, json_error};
+use quench_auth::domain::jwt::JwtConfig;
 use quench_db::prelude::Db;
+use quench_http::prelude::{
+    Inject, Json, Path, Query, Response, delete, get, http::StatusCode, post, put,
+};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -34,25 +37,20 @@ fn default_priority() -> String {
     "medium".to_string()
 }
 
-#[post("")]
+#[post("/api/v1/projects/{id}/issues")]
 pub async fn create(
-    request: HttpRequest,
-    project_id: web::Path<String>,
-    body: web::Json<CreateIssue>,
-    db: web::Data<Db>,
-) -> impl Responder {
+    Path(project_id): Path<String>,
+    Json(body): Json<CreateIssue>,
+    Inject(db): Inject<Db>,
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+) -> Result<Response, ApiError> {
     if body.title.trim().is_empty() {
-        return json_error(
-            actix_web::http::StatusCode::BAD_REQUEST,
-            "title is required",
-        );
+        return Ok(json_error(StatusCode::BAD_REQUEST, "title is required"));
     }
 
-    if !can_on_project(&request, &project_id, "write") {
-        return json_error(
-            actix_web::http::StatusCode::FORBIDDEN,
-            "no write access here",
-        );
+    if !can_on_project(claims.as_ref(), &config, &project_id, "write") {
+        return Ok(json_error(StatusCode::FORBIDDEN, "no write access here"));
     }
 
     let new = NewIssue {
@@ -63,14 +61,12 @@ pub async fn create(
         description: body.description.clone(),
         priority: body.priority.clone(),
         assignee: body.assignee.clone(),
-        reporter: actor(&request).await,
+        reporter: actor(claims.as_ref()),
         estimate: body.estimate,
     };
 
-    match issue::create(&db, &new).await {
-        Ok(issue) => HttpResponse::Created().json(issue),
-        Err(error) => ApiError::from(error).into_response(),
-    }
+    let issue = issue::create(&db, &new).await?;
+    Ok(json_created(&issue))
 }
 
 #[derive(Deserialize)]
@@ -79,56 +75,46 @@ pub struct ListQuery {
     pub status: Option<String>,
 }
 
-/// The board view's own query when `status` is set (one column at a time);
-/// the plain list view's with it left `None`.
-#[get("")]
+/// Board view when `status` is set; plain list view with it `None`.
+#[get("/api/v1/projects/{id}/issues")]
 pub async fn list(
-    request: HttpRequest,
-    project_id: web::Path<String>,
-    query: web::Query<ListQuery>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    if !can_on_project(&request, &project_id, "read") {
-        return json_error(
-            actix_web::http::StatusCode::FORBIDDEN,
-            "no read access here",
-        );
+    Path(project_id): Path<String>,
+    Query(query): Query<ListQuery>,
+    Inject(db): Inject<Db>,
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+) -> Result<Response, ApiError> {
+    if !can_on_project(claims.as_ref(), &config, &project_id, "read") {
+        return Ok(json_error(StatusCode::FORBIDDEN, "no read access here"));
     }
 
-    match issue::list_by_project(&db, &project_id, query.status.as_deref()).await {
-        Ok(issues) => HttpResponse::Ok().json(issues),
-        Err(error) => ApiError::from(error).into_response(),
-    }
-}
-
-pub fn scope_under_project() -> actix_web::Scope {
-    web::scope("/{id}/issues").service(create).service(list)
+    let issues = issue::list_by_project(&db, &project_id, query.status.as_deref()).await?;
+    Ok(json_ok(&issues))
 }
 
 // ---------------------------------------------------------------------------
 // By issue id
 // ---------------------------------------------------------------------------
 
-#[get("/{id}")]
+#[get("/api/v1/issues/{id}")]
 pub async fn read(
-    request: HttpRequest,
-    path: web::Path<String>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    let issue = match issue::read(&db, &path).await {
-        Ok(Some(issue)) => issue,
-        Ok(None) => return json_error(actix_web::http::StatusCode::NOT_FOUND, "no such issue"),
-        Err(error) => return ApiError::from(error).into_response(),
+    Path(id): Path<String>,
+    Inject(db): Inject<Db>,
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+) -> Result<Response, ApiError> {
+    let Some(issue) = issue::read(&db, &id).await? else {
+        return Ok(json_error(StatusCode::NOT_FOUND, "no such issue"));
     };
 
-    if !can_on_project(&request, &issue.project_id, "read") {
-        return json_error(
-            actix_web::http::StatusCode::FORBIDDEN,
+    if !can_on_project(claims.as_ref(), &config, &issue.project_id, "read") {
+        return Ok(json_error(
+            StatusCode::FORBIDDEN,
             "no read access to this issue",
-        );
+        ));
     }
 
-    HttpResponse::Ok().json(issue)
+    Ok(json_ok(&issue))
 }
 
 #[derive(Deserialize)]
@@ -144,31 +130,27 @@ pub struct UpdateIssue {
     pub estimate: Option<i32>,
 }
 
-#[put("/{id}")]
+#[put("/api/v1/issues/{id}")]
 pub async fn update(
-    request: HttpRequest,
-    path: web::Path<String>,
-    body: web::Json<UpdateIssue>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    let issue = match issue::read(&db, &path).await {
-        Ok(Some(issue)) => issue,
-        Ok(None) => return json_error(actix_web::http::StatusCode::NOT_FOUND, "no such issue"),
-        Err(error) => return ApiError::from(error).into_response(),
+    Path(id): Path<String>,
+    Json(body): Json<UpdateIssue>,
+    Inject(db): Inject<Db>,
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+) -> Result<Response, ApiError> {
+    let Some(issue) = issue::read(&db, &id).await? else {
+        return Ok(json_error(StatusCode::NOT_FOUND, "no such issue"));
     };
 
     if body.title.trim().is_empty() {
-        return json_error(
-            actix_web::http::StatusCode::BAD_REQUEST,
-            "title cannot be empty",
-        );
+        return Ok(json_error(StatusCode::BAD_REQUEST, "title cannot be empty"));
     }
 
-    if !can_on_project(&request, &issue.project_id, "write") {
-        return json_error(
-            actix_web::http::StatusCode::FORBIDDEN,
+    if !can_on_project(claims.as_ref(), &config, &issue.project_id, "write") {
+        return Ok(json_error(
+            StatusCode::FORBIDDEN,
             "no write access to this issue",
-        );
+        ));
     }
 
     let changes = IssueUpdate {
@@ -180,10 +162,9 @@ pub async fn update(
         estimate: body.estimate,
     };
 
-    match issue::update(&db, &path, &changes).await {
-        Ok(Some(issue)) => HttpResponse::Ok().json(issue),
-        Ok(None) => json_error(actix_web::http::StatusCode::NOT_FOUND, "no such issue"),
-        Err(error) => ApiError::from(error).into_response(),
+    match issue::update(&db, &id, &changes).await? {
+        Some(issue) => Ok(json_ok(&issue)),
+        None => Ok(json_error(StatusCode::NOT_FOUND, "no such issue")),
     }
 }
 
@@ -192,67 +173,63 @@ pub struct Transition {
     pub status: String,
 }
 
-#[post("/{id}/transition")]
+#[post("/api/v1/issues/{id}/transition")]
 pub async fn transition(
-    request: HttpRequest,
-    path: web::Path<String>,
-    body: web::Json<Transition>,
-    db: web::Data<Db>,
-) -> impl Responder {
+    Path(id): Path<String>,
+    Json(body): Json<Transition>,
+    Inject(db): Inject<Db>,
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+) -> Result<Response, ApiError> {
     if !issue::is_valid_status(&body.status) {
-        return json_error(
-            actix_web::http::StatusCode::BAD_REQUEST,
+        return Ok(json_error(
+            StatusCode::BAD_REQUEST,
             &format!(
                 "unknown status '{}'; must be one of {:?}",
                 body.status,
                 issue::STATUSES
             ),
-        );
+        ));
     }
 
-    let issue_row = match issue::read(&db, &path).await {
-        Ok(Some(issue)) => issue,
-        Ok(None) => return json_error(actix_web::http::StatusCode::NOT_FOUND, "no such issue"),
-        Err(error) => return ApiError::from(error).into_response(),
+    let Some(issue_row) = issue::read(&db, &id).await? else {
+        return Ok(json_error(StatusCode::NOT_FOUND, "no such issue"));
     };
 
-    if !can_on_project(&request, &issue_row.project_id, "write") {
-        return json_error(
-            actix_web::http::StatusCode::FORBIDDEN,
+    if !can_on_project(claims.as_ref(), &config, &issue_row.project_id, "write") {
+        return Ok(json_error(
+            StatusCode::FORBIDDEN,
             "no write access to this issue",
-        );
+        ));
     }
 
-    match issue::transition(&db, &path, &body.status).await {
-        Ok(Some(issue)) => HttpResponse::Ok().json(issue),
-        Ok(None) => json_error(actix_web::http::StatusCode::NOT_FOUND, "no such issue"),
-        Err(error) => ApiError::from(error).into_response(),
+    match issue::transition(&db, &id, &body.status).await? {
+        Some(issue) => Ok(json_ok(&issue)),
+        None => Ok(json_error(StatusCode::NOT_FOUND, "no such issue")),
     }
 }
 
-#[delete("/{id}")]
+#[delete("/api/v1/issues/{id}")]
 pub async fn remove(
-    request: HttpRequest,
-    path: web::Path<String>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    let issue = match issue::read(&db, &path).await {
-        Ok(Some(issue)) => issue,
-        Ok(None) => return json_error(actix_web::http::StatusCode::NOT_FOUND, "no such issue"),
-        Err(error) => return ApiError::from(error).into_response(),
+    Path(id): Path<String>,
+    Inject(db): Inject<Db>,
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+) -> Result<Response, ApiError> {
+    let Some(issue) = issue::read(&db, &id).await? else {
+        return Ok(json_error(StatusCode::NOT_FOUND, "no such issue"));
     };
 
-    if !can_on_project(&request, &issue.project_id, "write") {
-        return json_error(
-            actix_web::http::StatusCode::FORBIDDEN,
+    if !can_on_project(claims.as_ref(), &config, &issue.project_id, "write") {
+        return Ok(json_error(
+            StatusCode::FORBIDDEN,
             "no write access to this issue",
-        );
+        ));
     }
 
-    match issue::delete(&db, &path).await {
-        Ok(true) => HttpResponse::NoContent().finish(),
-        Ok(false) => json_error(actix_web::http::StatusCode::NOT_FOUND, "no such issue"),
-        Err(error) => ApiError::from(error).into_response(),
+    match issue::delete(&db, &id).await? {
+        true => Ok(Response::new(StatusCode::NO_CONTENT)),
+        false => Ok(json_error(StatusCode::NOT_FOUND, "no such issue")),
     }
 }
 
@@ -260,94 +237,90 @@ pub async fn remove(
 // Labels on an issue
 // ---------------------------------------------------------------------------
 
-#[get("/{id}/labels")]
+#[get("/api/v1/issues/{id}/labels")]
 pub async fn list_labels(
-    request: HttpRequest,
-    path: web::Path<String>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    let issue = match issue::read(&db, &path).await {
-        Ok(Some(issue)) => issue,
-        Ok(None) => return json_error(actix_web::http::StatusCode::NOT_FOUND, "no such issue"),
-        Err(error) => return ApiError::from(error).into_response(),
+    Path(id): Path<String>,
+    Inject(db): Inject<Db>,
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+) -> Result<Response, ApiError> {
+    let Some(issue) = issue::read(&db, &id).await? else {
+        return Ok(json_error(StatusCode::NOT_FOUND, "no such issue"));
     };
 
-    if !can_on_project(&request, &issue.project_id, "read") {
-        return json_error(
-            actix_web::http::StatusCode::FORBIDDEN,
+    if !can_on_project(claims.as_ref(), &config, &issue.project_id, "read") {
+        return Ok(json_error(
+            StatusCode::FORBIDDEN,
             "no read access to this issue",
-        );
+        ));
     }
 
-    match label::list_for_issue(&db, &issue.id).await {
-        Ok(labels) => HttpResponse::Ok().json(labels),
-        Err(error) => ApiError::from(error).into_response(),
-    }
+    let labels = label::list_for_issue(&db, &issue.id).await?;
+    Ok(json_ok(&labels))
 }
 
-#[post("/{id}/labels/{label_id}")]
+#[post("/api/v1/issues/{id}/labels/{label_id}")]
 pub async fn attach_label(
-    request: HttpRequest,
-    path: web::Path<(String, String)>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    let (issue_id, label_id) = path.into_inner();
-
-    let issue = match issue::read(&db, &issue_id).await {
-        Ok(Some(issue)) => issue,
-        Ok(None) => return json_error(actix_web::http::StatusCode::NOT_FOUND, "no such issue"),
-        Err(error) => return ApiError::from(error).into_response(),
+    Path((issue_id, label_id)): Path<(String, String)>,
+    Inject(db): Inject<Db>,
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+) -> Result<Response, ApiError> {
+    let Some(issue) = issue::read(&db, &issue_id).await? else {
+        return Ok(json_error(StatusCode::NOT_FOUND, "no such issue"));
     };
 
-    if !can_on_project(&request, &issue.project_id, "write") {
-        return json_error(
-            actix_web::http::StatusCode::FORBIDDEN,
+    if !can_on_project(claims.as_ref(), &config, &issue.project_id, "write") {
+        return Ok(json_error(
+            StatusCode::FORBIDDEN,
             "no write access to this issue",
-        );
+        ));
     }
 
-    match label::attach(&db, &issue_id, &label_id).await {
-        Ok(()) => HttpResponse::NoContent().finish(),
-        Err(error) => ApiError::from(error).into_response(),
-    }
+    label::attach(&db, &issue_id, &label_id).await?;
+    Ok(Response::new(StatusCode::NO_CONTENT))
 }
 
-#[delete("/{id}/labels/{label_id}")]
+#[delete("/api/v1/issues/{id}/labels/{label_id}")]
 pub async fn detach_label(
-    request: HttpRequest,
-    path: web::Path<(String, String)>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    let (issue_id, label_id) = path.into_inner();
-
-    let issue = match issue::read(&db, &issue_id).await {
-        Ok(Some(issue)) => issue,
-        Ok(None) => return json_error(actix_web::http::StatusCode::NOT_FOUND, "no such issue"),
-        Err(error) => return ApiError::from(error).into_response(),
+    Path((issue_id, label_id)): Path<(String, String)>,
+    Inject(db): Inject<Db>,
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+) -> Result<Response, ApiError> {
+    let Some(issue) = issue::read(&db, &issue_id).await? else {
+        return Ok(json_error(StatusCode::NOT_FOUND, "no such issue"));
     };
 
-    if !can_on_project(&request, &issue.project_id, "write") {
-        return json_error(
-            actix_web::http::StatusCode::FORBIDDEN,
+    if !can_on_project(claims.as_ref(), &config, &issue.project_id, "write") {
+        return Ok(json_error(
+            StatusCode::FORBIDDEN,
             "no write access to this issue",
-        );
+        ));
     }
 
-    match label::detach(&db, &issue_id, &label_id).await {
-        Ok(()) => HttpResponse::NoContent().finish(),
-        Err(error) => ApiError::from(error).into_response(),
-    }
+    label::detach(&db, &issue_id, &label_id).await?;
+    Ok(Response::new(StatusCode::NO_CONTENT))
 }
 
-pub fn scope() -> actix_web::Scope {
-    web::scope("/issues")
-        .service(read)
-        .service(update)
-        .service(transition)
-        .service(remove)
-        .service(list_labels)
-        .service(attach_label)
-        .service(detach_label)
-        .service(super::comments::scope_under_issue())
-        .service(super::issue_links::scope_under_issue())
+fn json_ok<T: serde::Serialize>(value: &T) -> Response {
+    Response::json(StatusCode::OK, value)
+        .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
+}
+
+fn json_created<T: serde::Serialize>(value: &T) -> Response {
+    Response::json(StatusCode::CREATED, value)
+        .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
+}
+
+pub fn register_routes() {
+    let _ = create as fn(_, _, _, _, _) -> _;
+    let _ = list as fn(_, _, _, _, _) -> _;
+    let _ = read as fn(_, _, _, _) -> _;
+    let _ = update as fn(_, _, _, _, _) -> _;
+    let _ = transition as fn(_, _, _, _, _) -> _;
+    let _ = remove as fn(_, _, _, _) -> _;
+    let _ = list_labels as fn(_, _, _, _) -> _;
+    let _ = attach_label as fn(_, _, _, _) -> _;
+    let _ = detach_label as fn(_, _, _, _) -> _;
 }

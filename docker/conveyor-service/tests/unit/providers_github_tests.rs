@@ -1,12 +1,12 @@
 //! Unit tests for `providers/github.rs` and the signature scheme in
 //! `providers/mod.rs`.
 
-use actix_web::http::header::{HeaderMap, HeaderName, HeaderValue};
 use chrono::Utc;
 use conveyor_service::domain::{Provider, Repo, Status, Trigger};
 use conveyor_service::providers::{
     CommitStatusReport, GitHubProvider, GitProvider, ProviderError, sign_sha256,
 };
+use http::{HeaderMap, HeaderName, HeaderValue};
 use serde_json::json;
 
 const SECRET: &[u8] = b"it's a secret to everybody";

@@ -1,10 +1,5 @@
-//! The executor interface, and the vocabulary it speaks.
-//!
-//! Modelled on switchboard's `VllmEngine`: one trait, an opaque handle, and an
-//! implementation per place the work can happen. The handle is a string rather
-//! than an associated type so the trait stays object-safe - the scheduler holds
-//! an `Arc<dyn JobExecutor>` chosen from configuration, and cannot be generic
-//! over something decided at runtime.
+//! The executor interface. Modelled on switchboard's `VllmEngine`: one trait, opaque string handle
+//! (not an associated type) so it stays object-safe for `Arc<dyn JobExecutor>`.
 
 use crate::domain::Status;
 use crate::pipeline::Step;
@@ -18,39 +13,24 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 use tokio::sync::broadcast;
 
-/// Where a job's code comes from.
-///
-/// The native executor never looks at this: it runs in the checkout conveyor
-/// already made. The kubernetes executor does, because its pod is somewhere
-/// else entirely and has to fetch the commit for itself.
+/// Where a job's code comes from. Native ignores this (runs in conveyor's own checkout); kubernetes fetches it itself.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SourceSpec {
     pub clone_url: String,
     pub git_ref: String,
     pub sha: String,
-    /// The same credential `workspace::checkout` would use for this
-    /// repository, if any - the kubernetes executor's own checkout (an init
-    /// container, not this process) needs its own copy of it, since it
-    /// fetches the commit independently rather than reusing conveyor's.
-    /// Never given to the step container that runs the pipeline's own
-    /// commands, only to the init container that clones ahead of it.
+    /// For kubernetes's own init-container checkout only - never given to the step container.
     pub credential: Option<JobCredential>,
 }
 
-/// A resolved credential, owned rather than borrowed like
-/// `workspace::checkout::HttpCredential` - a `JobSpec` is built once and
-/// handed to an executor that may hold onto it past the resolving call.
+/// Owned, not borrowed like `workspace::checkout::HttpCredential` - a `JobSpec` outlives the resolving call.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct JobCredential {
     pub username: String,
     pub token: String,
 }
 
-/// One job, as the executor needs it.
-///
-/// Built from a [`crate::pipeline::Job`] plus the run's context - the timeout
-/// resolved against the deployment default, and secrets already merged into
-/// `env` by the caller, so an executor never sees the secret store.
+/// Built from a [`crate::pipeline::Job`] plus run context; secrets are already merged into `env`.
 #[derive(Clone, Debug)]
 pub struct JobSpec {
     /// The `jobs` row this belongs to; also the handle the executor returns.
@@ -60,17 +40,11 @@ pub struct JobSpec {
     pub steps: Vec<Step>,
     pub env: BTreeMap<String, String>,
     pub timeout: Duration,
-    /// Honoured by the kubernetes executor; the native one has only the
-    /// toolchain conveyor itself was given.
+    /// Honoured by kubernetes; native only has conveyor's own toolchain.
     pub image: Option<String>,
-    /// Where to fetch the code, for an executor that runs off this machine.
     /// `None` means only a local checkout is available.
     pub source: Option<SourceSpec>,
-    /// Strips injected secrets out of output.
-    ///
-    /// Applied by the executor rather than by the caller, so it covers the live
-    /// stream as well as what is stored. A subscriber watching a running job
-    /// sees the same redacted text the database will.
+    /// Applied by the executor, not the caller, so it covers the live stream too.
     pub redactor: Redactor,
 }
 
@@ -98,11 +72,9 @@ impl std::fmt::Display for Handle {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct JobState {
     pub status: Status,
-    /// Exit code of the first step that failed, or of the last step when they
-    /// all passed.
+    /// First failing step's exit code, or the last step's if all passed.
     pub exit_code: Option<i32>,
-    /// Why it ended, when the exit code does not say - a timeout, a
-    /// cancellation, a step that could not be spawned.
+    /// Why it ended, when the exit code doesn't say (timeout, cancellation, spawn failure).
     pub error: Option<String>,
     pub started_at: Option<DateTime<Utc>>,
     pub finished_at: Option<DateTime<Utc>>,
@@ -152,11 +124,7 @@ impl Stream {
     }
 }
 
-/// One line of output.
-///
-/// `seq` is assigned by the executor and is contiguous per job, which is what
-/// lets a reader ask for everything after what it already has and resume a
-/// stream without gaps or repeats.
+/// `seq` is contiguous per job, so a reader can resume a stream without gaps or repeats.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LogChunk {
     pub seq: u64,
@@ -165,11 +133,7 @@ pub struct LogChunk {
     pub at: DateTime<Utc>,
 }
 
-/// Output so far, and output to come.
-///
-/// Both, because either alone is a race: a subscriber that only gets the live
-/// channel misses whatever was written before it asked, and a snapshot alone
-/// goes stale immediately.
+/// Both halves needed: live-only misses history, snapshot-only goes stale immediately.
 #[derive(Debug)]
 pub struct LogTail {
     pub history: Vec<LogChunk>,
@@ -202,8 +166,7 @@ pub trait JobExecutor: Send + Sync {
     /// A name for logs and error messages.
     fn name(&self) -> &'static str;
 
-    /// Begins the job and returns immediately. The work continues in the
-    /// background; [`JobExecutor::poll`] says how it is getting on.
+    /// Returns immediately; [`JobExecutor::poll`] says how it's getting on.
     async fn start(&self, spec: &JobSpec, workspace: &Workspace) -> Result<Handle, ExecError>;
 
     async fn poll(&self, handle: &Handle) -> Result<JobState, ExecError>;
@@ -211,12 +174,9 @@ pub trait JobExecutor: Send + Sync {
     /// Output so far, plus a subscription to the rest.
     async fn logs(&self, handle: &Handle) -> Result<LogTail, ExecError>;
 
-    /// Asks the job to stop. Returns once it has been asked, not once it has
-    /// stopped - the job's final state arrives through `poll` like any other.
+    /// Returns once asked, not once stopped - final state arrives through `poll`.
     async fn cancel(&self, handle: &Handle) -> Result<(), ExecError>;
 
-    /// Drops whatever the executor was holding for a finished job. The
-    /// scheduler calls this once it has persisted the outcome; without it a
-    /// long-lived service accumulates every log line it has ever produced.
+    /// Called once the scheduler has persisted the outcome, or logs accumulate forever.
     async fn forget(&self, handle: &Handle) -> Result<(), ExecError>;
 }

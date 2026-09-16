@@ -1,7 +1,7 @@
 use crate::routers::crates::{
     crate_file_path, index_file_path, validate_crate_name, validate_version,
 };
-use actix_web::{HttpResponse, Responder, delete, web};
+use quench_http::prelude::{Path, Response, delete, http::StatusCode};
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -9,16 +9,13 @@ pub struct OkResponse {
     ok: bool,
 }
 
-#[delete("/{name}/{version}/yank")]
+#[delete("/api/v1/crates/{name}/{version}/yank")]
 #[tracing::instrument]
-pub async fn handle(path: web::Path<(String, String)>) -> impl Responder {
-    let (name, version) = path.into_inner();
-
+pub async fn handle(Path((name, version)): Path<(String, String)>) -> Response {
     if !validate_crate_name(&name) || !validate_version(&version) {
         return not_found();
     }
 
-    // Verify the crate file actually exists
     let Some(crate_path) = crate_file_path(&name, &version) else {
         return not_found();
     };
@@ -27,19 +24,18 @@ pub async fn handle(path: web::Path<(String, String)>) -> impl Responder {
     }
 
     match set_yanked(&name, &version, true).await {
-        Ok(true) => HttpResponse::Ok().json(OkResponse { ok: true }),
+        Ok(true) => Response::json(StatusCode::OK, &OkResponse { ok: true })
+            .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR)),
         Ok(false) => not_found(),
-        Err(msg) => HttpResponse::InternalServerError().json(serde_json::json!({
-            "errors": [{ "detail": msg }]
-        })),
+        Err(msg) => Response::json(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            &serde_json::json!({ "errors": [{ "detail": msg }] }),
+        )
+        .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR)),
     }
 }
 
-// ---------------------------------------------------------------------------
-// Shared yank helper (also used by unyank)
-// ---------------------------------------------------------------------------
-
-/// Sets `yanked` for `version`'s index entry. `Ok(true)` if found and updated, `Ok(false)` if not found, `Err` on I/O failure.
+/// Sets `yanked` for `version`'s index entry; also used by unyank.
 #[tracing::instrument]
 pub async fn set_yanked(name: &str, version: &str, yanked_value: bool) -> Result<bool, String> {
     let Some(index_path) = index_file_path(name) else {
@@ -48,7 +44,7 @@ pub async fn set_yanked(name: &str, version: &str, yanked_value: bool) -> Result
 
     let content = match tokio::fs::read_to_string(&index_path).await {
         Ok(s) => s,
-        Err(_) => return Ok(false), // index file doesn't exist → version not found
+        Err(_) => return Ok(false), // no index file - version not found
     };
 
     let mut found = false;
@@ -72,10 +68,7 @@ pub async fn set_yanked(name: &str, version: &str, yanked_value: bool) -> Result
                     Err(e) => return Err(format!("failed to serialize index record: {e}")),
                 }
             }
-            Err(_) => {
-                // Preserve malformed lines as-is
-                new_lines.push(trimmed.to_string());
-            }
+            Err(_) => new_lines.push(trimmed.to_string()), // preserve malformed lines as-is
         }
     }
 
@@ -91,8 +84,14 @@ pub async fn set_yanked(name: &str, version: &str, yanked_value: bool) -> Result
     Ok(true)
 }
 
-fn not_found() -> HttpResponse {
-    HttpResponse::NotFound().json(serde_json::json!({
-        "errors": [{ "detail": "crate or version not found" }]
-    }))
+fn not_found() -> Response {
+    Response::json(
+        StatusCode::NOT_FOUND,
+        &serde_json::json!({ "errors": [{ "detail": "crate or version not found" }] }),
+    )
+    .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
+}
+
+pub fn register_routes() {
+    let _ = handle as fn(_) -> _;
 }

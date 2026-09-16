@@ -1,12 +1,9 @@
-use actix_web::App;
-use actix_web::test as actix_test;
-use actix_web::web;
+use crate::support;
+use http::{Method, StatusCode};
+use quench_auth::domain::jwt::JwtConfig;
 use quench_db::{Db, InMemoryDb};
-use warehouse_service::routers::files::ops::download::{download_name, handle, head, is_file};
-
-fn in_memory_db() -> web::Data<Db> {
-    web::Data::new(Db::InMemory(InMemoryDb::new()))
-}
+use warehouse_service::routers::files;
+use warehouse_service::routers::files::ops::download::{download_name, is_file};
 
 #[test]
 fn download_name_uses_the_target_s_file_name() {
@@ -41,27 +38,47 @@ async fn is_file_is_true_only_for_a_real_file_not_a_directory_or_missing_path() 
     assert!(!is_file(&dir.path().join("missing")).await);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn handle_reports_not_found_when_file_storage_is_disabled() {
     // `FEATURE_FILES_ENABLED` is unset in this sandbox, and the flag is
-    // a `LazyLock` fixed for the whole test binary (see `routers_mod_tests`'s
-    // own tests) - so this deterministically hits the "not enabled"
-    // branch rather than ever reaching the filesystem.
-    let app = actix_test::init_service(App::new().app_data(in_memory_db()).service(handle)).await;
-    let req = actix_test::TestRequest::get()
-        .uri("/artifacts/file?path=a.txt")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::NOT_FOUND);
+    // a `LazyLock` fixed for the whole test binary - so this deterministically
+    // hits the "not enabled" branch rather than ever reaching the filesystem.
+    files::register_routes();
+    let container = support::container_builder()
+        .provide(JwtConfig::for_tests())
+        .provide(Db::InMemory(InMemoryDb::new()))
+        .build()
+        .await
+        .unwrap();
+    let (app, container) = support::app(container).await;
+
+    let resp = app
+        .call(support::req(
+            Method::GET,
+            "/api/v1/files/artifacts/file?path=a.txt",
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn head_reports_not_found_when_file_storage_is_disabled() {
-    let app = actix_test::init_service(App::new().app_data(in_memory_db()).service(head)).await;
-    let req = actix_test::TestRequest::default()
-        .method(actix_web::http::Method::HEAD)
-        .uri("/artifacts/file?path=a.txt")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::NOT_FOUND);
+    files::register_routes();
+    let container = support::container_builder()
+        .provide(JwtConfig::for_tests())
+        .provide(Db::InMemory(InMemoryDb::new()))
+        .build()
+        .await
+        .unwrap();
+    let (app, container) = support::app(container).await;
+
+    let resp = app
+        .call(support::req(
+            Method::HEAD,
+            "/api/v1/files/artifacts/file?path=a.txt",
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }

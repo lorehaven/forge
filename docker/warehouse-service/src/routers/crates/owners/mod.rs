@@ -1,15 +1,9 @@
 use crate::routers::crates::{crates_storage_root, validate_crate_name};
-use actix_web::{HttpResponse, Responder, delete, get, put, web};
+use quench_http::prelude::{Json, Path, Response, delete, get, http::StatusCode, put};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-// ---------------------------------------------------------------------------
-// Storage helper
-// ---------------------------------------------------------------------------
-
-/// On-disk path for a crate's owners file.
-///
-/// Layout: `<root>/<n>/owners.json`
+/// On-disk path for a crate's owners file: `<root>/<n>/owners.json`.
 fn owners_path(name: &str) -> PathBuf {
     PathBuf::from(crates_storage_root())
         .join(name)
@@ -24,7 +18,6 @@ async fn load_owners(name: &str) -> Option<Vec<Owner>> {
 
 async fn save_owners(name: &str, owners: &[Owner]) -> std::io::Result<()> {
     let path = owners_path(name);
-    // Ensure the crate directory exists
     if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
@@ -32,7 +25,7 @@ async fn save_owners(name: &str, owners: &[Owner]) -> std::io::Result<()> {
     tokio::fs::write(&path, data).await
 }
 
-/// Returns `true` if the crate directory exists (i.e. the crate has been published).
+/// Whether the crate has been published.
 async fn crate_exists(name: &str) -> bool {
     let path = PathBuf::from(crates_storage_root()).join(name);
     tokio::fs::metadata(&path)
@@ -41,24 +34,17 @@ async fn crate_exists(name: &str) -> bool {
         .unwrap_or(false)
 }
 
-// ---------------------------------------------------------------------------
-// Shared types
-// ---------------------------------------------------------------------------
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Owner {
-    /// Numeric id, monotonically assigned on add; stable for the entry's lifetime and purely informational for Cargo.
+    /// Monotonically assigned on add; informational only for Cargo.
     pub id: u64,
-    /// The login / username string Cargo uses to identify the owner.
     pub login: String,
-    /// Optional human-readable display name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
 }
 
 #[derive(Deserialize)]
 pub struct OwnersRequest {
-    /// List of login names to add or remove.
     pub users: Vec<String>,
 }
 
@@ -72,13 +58,9 @@ pub struct OkResponse {
     pub ok: bool,
 }
 
-// ---------------------------------------------------------------------------
-// GET /api/v1/crates/{name}/owners
-// ---------------------------------------------------------------------------
-
-#[get("/{name}/owners")]
-pub async fn list(path: web::Path<String>) -> impl Responder {
-    let name = path.into_inner().to_ascii_lowercase();
+#[get("/api/v1/crates/{name}/owners")]
+pub async fn list(Path(name): Path<String>) -> Response {
+    let name = name.to_ascii_lowercase();
 
     if !validate_crate_name(&name) {
         return not_found();
@@ -88,16 +70,13 @@ pub async fn list(path: web::Path<String>) -> impl Responder {
     }
 
     let owners = load_owners(&name).await.unwrap_or_default();
-    HttpResponse::Ok().json(OwnersResponse { users: owners })
+    Response::json(StatusCode::OK, &OwnersResponse { users: owners })
+        .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
 }
 
-// ---------------------------------------------------------------------------
-// PUT /api/v1/crates/{name}/owners
-// ---------------------------------------------------------------------------
-
-#[put("/{name}/owners")]
-pub async fn add(path: web::Path<String>, body: web::Json<OwnersRequest>) -> impl Responder {
-    let name = path.into_inner().to_ascii_lowercase();
+#[put("/api/v1/crates/{name}/owners")]
+pub async fn add(Path(name): Path<String>, Json(body): Json<OwnersRequest>) -> Response {
+    let name = name.to_ascii_lowercase();
 
     if !validate_crate_name(&name) {
         return not_found();
@@ -106,14 +85,15 @@ pub async fn add(path: web::Path<String>, body: web::Json<OwnersRequest>) -> imp
         return not_found();
     }
     if body.users.is_empty() {
-        return HttpResponse::BadRequest().json(serde_json::json!({
-            "errors": [{ "detail": "users list must not be empty" }]
-        }));
+        return Response::json(
+            StatusCode::BAD_REQUEST,
+            &serde_json::json!({ "errors": [{ "detail": "users list must not be empty" }] }),
+        )
+        .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR));
     }
 
     let mut owners = load_owners(&name).await.unwrap_or_default();
 
-    // Assign IDs sequentially from the current max, so existing entries keep theirs.
     let mut next_id = owners.iter().map(|o| o.id).max().unwrap_or(0) + 1;
 
     for login in &body.users {
@@ -121,7 +101,6 @@ pub async fn add(path: web::Path<String>, body: web::Json<OwnersRequest>) -> imp
         if login.is_empty() {
             continue;
         }
-        // Skip if already an owner (case-insensitive)
         if owners.iter().any(|o| o.login.eq_ignore_ascii_case(&login)) {
             continue;
         }
@@ -134,21 +113,20 @@ pub async fn add(path: web::Path<String>, body: web::Json<OwnersRequest>) -> imp
     }
 
     if let Err(e) = save_owners(&name, &owners).await {
-        return HttpResponse::InternalServerError().json(serde_json::json!({
-            "errors": [{ "detail": format!("failed to save owners: {e}") }]
-        }));
+        return Response::json(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            &serde_json::json!({ "errors": [{ "detail": format!("failed to save owners: {e}") }] }),
+        )
+        .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR));
     }
 
-    HttpResponse::Ok().json(OkResponse { ok: true })
+    Response::json(StatusCode::OK, &OkResponse { ok: true })
+        .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
 }
 
-// ---------------------------------------------------------------------------
-// DELETE /api/v1/crates/{name}/owners
-// ---------------------------------------------------------------------------
-
-#[delete("/{name}/owners")]
-pub async fn remove(path: web::Path<String>, body: web::Json<OwnersRequest>) -> impl Responder {
-    let name = path.into_inner().to_ascii_lowercase();
+#[delete("/api/v1/crates/{name}/owners")]
+pub async fn remove(Path(name): Path<String>, Json(body): Json<OwnersRequest>) -> Response {
+    let name = name.to_ascii_lowercase();
 
     if !validate_crate_name(&name) {
         return not_found();
@@ -157,9 +135,11 @@ pub async fn remove(path: web::Path<String>, body: web::Json<OwnersRequest>) -> 
         return not_found();
     }
     if body.users.is_empty() {
-        return HttpResponse::BadRequest().json(serde_json::json!({
-            "errors": [{ "detail": "users list must not be empty" }]
-        }));
+        return Response::json(
+            StatusCode::BAD_REQUEST,
+            &serde_json::json!({ "errors": [{ "detail": "users list must not be empty" }] }),
+        )
+        .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR));
     }
 
     let mut owners = load_owners(&name).await.unwrap_or_default();
@@ -173,20 +153,27 @@ pub async fn remove(path: web::Path<String>, body: web::Json<OwnersRequest>) -> 
     owners.retain(|o| !remove_set.contains(&o.login.to_ascii_lowercase()));
 
     if let Err(e) = save_owners(&name, &owners).await {
-        return HttpResponse::InternalServerError().json(serde_json::json!({
-            "errors": [{ "detail": format!("failed to save owners: {e}") }]
-        }));
+        return Response::json(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            &serde_json::json!({ "errors": [{ "detail": format!("failed to save owners: {e}") }] }),
+        )
+        .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR));
     }
 
-    HttpResponse::Ok().json(OkResponse { ok: true })
+    Response::json(StatusCode::OK, &OkResponse { ok: true })
+        .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+fn not_found() -> Response {
+    Response::json(
+        StatusCode::NOT_FOUND,
+        &serde_json::json!({ "errors": [{ "detail": "crate not found" }] }),
+    )
+    .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
+}
 
-fn not_found() -> HttpResponse {
-    HttpResponse::NotFound().json(serde_json::json!({
-        "errors": [{ "detail": "crate not found" }]
-    }))
+pub fn register_routes() {
+    let _ = list as fn(_) -> _;
+    let _ = add as fn(_, _) -> _;
+    let _ = remove as fn(_, _) -> _;
 }

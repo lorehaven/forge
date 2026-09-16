@@ -1,13 +1,9 @@
-//! A provider that reports nowhere and records everything.
-//!
-//! For the BDD suite and for tests of the worker, which needs to assert that a
-//! run reported `pending` and then `failure` without a GitHub account to check
-//! it against.
+//! A provider that reports nowhere and records everything - for the BDD suite and worker tests.
 
 use crate::domain::{Repo, Trigger};
 use crate::providers::{CommitStatusReport, GitProvider, ProviderError, TriggerEvent};
-use actix_web::http::header::HeaderMap;
 use async_trait::async_trait;
+use http::HeaderMap;
 use std::sync::Mutex;
 
 /// One status report, as it was made.
@@ -20,8 +16,7 @@ pub struct Reported {
 }
 
 pub struct MockProvider {
-    /// What `verify` should say. Tests of the endpoint's rejection path set
-    /// this to false rather than computing a deliberately wrong signature.
+    /// What `verify` should say - set false rather than computing a deliberately wrong signature.
     accept_signatures: Mutex<bool>,
     /// What `parse` should return.
     event: Mutex<Option<TriggerEvent>>,
@@ -57,8 +52,7 @@ impl MockProvider {
         self.reports.lock().expect("poisoned").clone()
     }
 
-    /// A trigger event with plausible values, for a test that only cares about
-    /// one field of it.
+    /// Plausible values, for a test that only cares about one field of it.
     pub fn sample_event() -> TriggerEvent {
         TriggerEvent {
             delivery_id: "delivery-1".to_string(),

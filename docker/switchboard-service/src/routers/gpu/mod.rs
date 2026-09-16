@@ -1,13 +1,12 @@
 use std::time::Duration;
 
-use actix_web::dev::HttpServiceFactory;
-use actix_web::{Error, HttpResponse, Responder, get, web};
 use bytes::Bytes;
 use futures_util::StreamExt;
-use quench_auth::actix::middleware::auth::Auth;
-use quench_auth::actix::middleware::require_write::RequireWrite;
-use quench_auth::prelude::JwtConfig;
+use quench_auth::domain::jwt::JwtConfig;
+use quench_auth::http::middleware::auth::Auth;
+use quench_http::prelude::{Endpoint, HttpError, Inject, Json, OnPathPrefix, Response, get, wrap};
 use quench_web::prelude::*;
+use std::sync::Arc;
 use tokio::sync::broadcast::Sender;
 use tokio_stream::wrappers::BroadcastStream;
 
@@ -17,43 +16,40 @@ pub use monitor::get_gpu_info;
 
 pub struct GpuBroadcaster(pub Sender<String>);
 
-// ---------------------------------------------------------------------------
-// Scope
-// ---------------------------------------------------------------------------
-
-/// Both routes are GET, so `RequireWrite` never actually refuses anything
-/// here - it is mounted for the same reason every scope in the estate mounts
-/// it: so a route added here later that does write is covered without anyone
-/// having to remember to add the check.
-pub fn scope(jwt_config: JwtConfig) -> impl HttpServiceFactory {
-    web::scope("/api/v1/gpu")
-        .wrap(RequireWrite::new(jwt_config.clone()))
-        .wrap(Auth::new(jwt_config))
-        .service(handle_sse)
-        .service(get_status)
+/// Wraps `/api/v1/gpu` in `Auth`. `base_path` matters: `OnPathPrefix` sees
+/// the raw un-mounted path, which still carries `BASE_PATH`.
+pub fn wrap_auth(
+    app: Arc<dyn Endpoint>,
+    jwt_config: JwtConfig,
+    base_path: &str,
+) -> Arc<dyn Endpoint> {
+    let prefix: &'static str = Box::leak(format!("{base_path}/api/v1/gpu").into_boxed_str());
+    wrap(app, OnPathPrefix::new(prefix, Auth::new(jwt_config)))
 }
 
-// ---------------------------------------------------------------------------
+pub fn register_routes() {
+    let _ = get_status as fn() -> _;
+    let _ = handle_sse as fn(_) -> _;
+}
+
 // REST endpoint
-// ---------------------------------------------------------------------------
 
-#[get("/status")]
-pub async fn get_status() -> impl Responder {
-    let gpu = get_gpu_info().unwrap_or_default();
-    HttpResponse::Ok().json(gpu)
+#[get("/api/v1/gpu/status")]
+pub async fn get_status() -> Json<monitor::GpuInfo> {
+    Json(get_gpu_info().unwrap_or_default())
 }
 
-// ---------------------------------------------------------------------------
 // SSE endpoint
-// ---------------------------------------------------------------------------
 
-#[get("/status/sse")]
-pub async fn handle_sse(broadcaster: web::Data<GpuBroadcaster>) -> Result<HttpResponse, Error> {
+#[get("/api/v1/gpu/status/sse")]
+pub async fn handle_sse(
+    Inject(broadcaster): Inject<GpuBroadcaster>,
+) -> Result<Response, HttpError> {
     let rx = broadcaster.0.subscribe();
 
     let stream = BroadcastStream::new(rx).filter_map(|msg| async move {
         match msg {
-            Ok(html) => Some(Ok::<Bytes, Error>(Bytes::from(format!(
+            Ok(html) => Some(Ok::<Bytes, std::io::Error>(Bytes::from(format!(
                 "event: gpu-status\ndata: {}\n\n",
                 html.replace('\n', "")
             )))),
@@ -61,10 +57,9 @@ pub async fn handle_sse(broadcaster: web::Data<GpuBroadcaster>) -> Result<HttpRe
         }
     });
 
-    Ok(HttpResponse::Ok()
-        .insert_header(("Content-Type", "text/event-stream"))
-        .insert_header(("Cache-Control", "no-cache"))
-        .streaming(stream))
+    Ok(Response::streaming(http::StatusCode::OK, stream)
+        .header("content-type", "text/event-stream")
+        .header("cache-control", "no-cache"))
 }
 
 pub fn init_gpu_status_publisher(broadcaster: Sender<String>) {

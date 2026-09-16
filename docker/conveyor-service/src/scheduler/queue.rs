@@ -1,12 +1,5 @@
-//! The run queue, which is the `runs` table.
-//!
-//! A run is its own queue entry rather than a message on a broker: the record
-//! and the claim live in one row, so a run cannot be queued twice, a restart
-//! loses nothing, and "what is running" is answerable with a select rather than
-//! by asking a queue that has already forgotten.
-//!
-//! Claiming is `FOR UPDATE SKIP LOCKED`, which is what lets several replicas
-//! share one queue without coordinating.
+//! The run queue is the `runs` table itself, not a separate broker. Claiming
+//! uses `FOR UPDATE SKIP LOCKED` so replicas share it without coordinating.
 
 use crate::domain::{Artifact, Job, Run, Status, Trigger};
 use crate::executors::{LogChunk, StepState};
@@ -47,11 +40,8 @@ impl QueueError {
     }
 }
 
-/// The pool, or a clear refusal.
-///
-/// The estate allows an in-memory database for tests. A scheduler on top of one
-/// would look like it worked and lose every queued run on restart, so this says
-/// so rather than degrading quietly.
+/// The pool, or a clear refusal - an in-memory `Db` would silently lose every
+/// queued run on restart, so this refuses rather than degrading quietly.
 pub fn pool(db: &Db) -> Result<&Pool<Postgres>, QueueError> {
     match db {
         Db::Postgres(postgres) => Ok(postgres.pool()),
@@ -63,10 +53,7 @@ pub fn schema() -> String {
     envmnt::get_or("DB_SCHEMA", "conveyor")
 }
 
-// ---------------------------------------------------------------------------
-// Enqueueing
-// ---------------------------------------------------------------------------
-
+// Enqueueing.
 #[derive(Clone, Debug)]
 pub struct NewRun {
     pub repo_id: String,
@@ -84,9 +71,7 @@ pub struct NewRun {
 #[derive(Clone, Debug)]
 pub enum Enqueued {
     Created(Box<Run>),
-    /// This delivery has already been seen. A provider retries a webhook it did
-    /// not get a prompt answer for, and a second run of the same commit would
-    /// double every side effect the first one had.
+    /// Already seen - a provider's webhook retry must not double every side effect.
     AlreadySeen(Box<Run>),
 }
 
@@ -107,9 +92,7 @@ pub async fn enqueue(db: &Db, new: &NewRun) -> Result<Enqueued, QueueError> {
     let schema = schema();
     let id = Uuid::new_v4().to_string();
 
-    // `DO NOTHING` rather than an existence check first: two deliveries of the
-    // same webhook can arrive at two replicas at once, and only the index can
-    // settle which of them wins.
+    // `DO NOTHING`, not a pre-check: two replicas can race the same delivery.
     let sql = format!(
         "INSERT INTO {schema}.runs \
          (id, repo_id, trigger, git_ref, sha, message, delivery_id, status, resumed_from) \
@@ -159,17 +142,8 @@ pub async fn find_by_delivery(db: &Db, delivery_id: &str) -> Result<Option<Run>,
     row.as_ref().map(run_from_row).transpose()
 }
 
-// ---------------------------------------------------------------------------
-// Claiming
-// ---------------------------------------------------------------------------
-
-/// Takes the oldest queued run whose repository is free, or nothing.
-///
-/// The `NOT EXISTS` clause keeps a worker from picking up a repository that is
-/// already building; the partial unique index behind it makes that a guarantee
-/// rather than a hope, because the check and the claim are not one atomic act.
-/// A collision comes back as `Ok(None)` - there was nothing this worker could
-/// take, which is exactly what an empty queue means to the caller.
+/// Takes the oldest queued run whose repo is free; a claim race just comes
+/// back `Ok(None)` rather than erroring.
 pub async fn claim_next(db: &Db, worker: &str) -> Result<Option<Run>, QueueError> {
     let pool = pool(db)?;
     let schema = schema();
@@ -234,11 +208,8 @@ pub async fn heartbeat(db: &Db, run_id: &str, worker: &str) -> Result<(), QueueE
     Ok(())
 }
 
-/// Puts back any run whose worker stopped saying it was alive.
-///
-/// A worker that was killed leaves its run `running` for ever otherwise, and
-/// the partial unique index would keep that repository from ever building
-/// again - one dead worker would take a repository out of service permanently.
+/// Puts back any run whose worker went silent - otherwise a killed worker's run
+/// stays `running` forever and blocks that repo from ever building again.
 pub async fn requeue_stale(db: &Db, stale_after_secs: u64) -> Result<u64, QueueError> {
     let pool = pool(db)?;
     let schema = schema();
@@ -258,12 +229,8 @@ pub async fn requeue_stale(db: &Db, stale_after_secs: u64) -> Result<u64, QueueE
     Ok(result.rows_affected())
 }
 
-// ---------------------------------------------------------------------------
-// Cancellation
-// ---------------------------------------------------------------------------
-
-/// Asks for a run to stop. Whichever replica is holding it notices on its next
-/// poll; a run that has not started yet is cancelled outright.
+/// Asks a run to stop; the holding replica notices on its next poll (an
+/// unstarted run is cancelled outright).
 pub async fn request_cancel(db: &Db, run_id: &str) -> Result<bool, QueueError> {
     let pool = pool(db)?;
     let schema = schema();
@@ -297,10 +264,7 @@ pub async fn is_cancel_requested(db: &Db, run_id: &str) -> Result<bool, QueueErr
     Ok(requested.is_some_and(|(flag,)| flag))
 }
 
-// ---------------------------------------------------------------------------
-// Finishing
-// ---------------------------------------------------------------------------
-
+// Finishing.
 pub async fn finish_run(
     db: &Db,
     run_id: &str,
@@ -324,30 +288,23 @@ pub async fn finish_run(
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Jobs and steps
-// ---------------------------------------------------------------------------
-
+// Jobs and steps.
 /// A job as the plan describes it, before it has run.
 #[derive(Clone, Debug)]
 pub struct PlannedJob {
     pub stage: String,
     pub name: String,
     pub needs: Vec<String>,
-    /// `Queued` for a job that will run, `Skipped` for one the plan excluded,
-    /// `Success` for one carried over from a restart's `resumed_from` run.
+    /// `Queued`/`Skipped`/`Success` (carried over from a restart's `resumed_from`).
     pub status: Status,
     /// Why it was excluded, when it was.
     pub error: Option<String>,
-    /// Set instead of actually running this job: its stage passed in this
-    /// run, so its result was copied rather than rebuilt.
+    /// Set when this job's result was copied from a passing stage, not rerun.
     pub reused_from_run: Option<String>,
 }
 
-/// Writes the whole plan up front, skipped jobs included.
-///
-/// The alternative - inserting a job when it starts - leaves a run whose page
-/// grows as it goes and which can never show what it decided not to do.
+/// Writes the whole plan up front (skipped jobs included) so a run's page
+/// shows what was decided, not just what has happened so far.
 pub async fn create_jobs(
     db: &Db,
     run_id: &str,
@@ -426,8 +383,7 @@ pub async fn record_steps(db: &Db, job_id: &str, steps: &[StepState]) -> Result<
     let pool = pool(db)?;
     let schema = schema();
 
-    // Written once, at the end, so a retried job does not accumulate two sets
-    // of rows under the same ordinals.
+    // Written once at the end, so a retried job doesn't accumulate duplicate ordinals.
     let clear = format!("DELETE FROM {schema}.steps WHERE job_id = $1");
     sqlx::query(sqlx::AssertSqlSafe(clear.as_str()))
         .bind(job_id)
@@ -458,12 +414,8 @@ pub async fn record_steps(db: &Db, job_id: &str, steps: &[StepState]) -> Result<
     Ok(())
 }
 
-/// Appends output for a job.
-///
-/// Persisted when the job finishes rather than line by line: a running job's
-/// output is served live from the executor, and writing every line as it
-/// arrives would put a database round trip in the path of a build's stdout.
-/// The cost is that a worker killed mid-job loses that job's log.
+/// Appends job output. Persisted at finish, not per line - live output is
+/// served from the executor, so a mid-job kill only loses that job's log.
 pub async fn append_logs(db: &Db, job_id: &str, chunks: &[LogChunk]) -> Result<(), QueueError> {
     if chunks.is_empty() {
         return Ok(());
@@ -577,10 +529,7 @@ pub async fn list_artifacts_for_job(db: &Db, job_id: &str) -> Result<Vec<Artifac
         .collect()
 }
 
-// ---------------------------------------------------------------------------
-// Reading
-// ---------------------------------------------------------------------------
-
+// Reading.
 pub async fn read_run(db: &Db, run_id: &str) -> Result<Option<Run>, QueueError> {
     let pool = pool(db)?;
     let schema = schema();
@@ -594,8 +543,7 @@ pub async fn read_run(db: &Db, run_id: &str) -> Result<Option<Run>, QueueError> 
     row.as_ref().map(run_from_row).transpose()
 }
 
-/// The repository a job's run belongs to, for permission checks that only
-/// have a `job_id` to start from (the log-reading routes).
+/// The repo a job's run belongs to, for permission checks starting from a `job_id` alone.
 pub async fn repo_id_for_job(db: &Db, job_id: &str) -> Result<Option<String>, QueueError> {
     let pool = pool(db)?;
     let schema = schema();
@@ -633,9 +581,8 @@ pub async fn list_runs(db: &Db, repo_id: Option<&str>, limit: i64) -> Result<Vec
     rows.iter().map(run_from_row).collect()
 }
 
-/// A page of runs, newest first, optionally scoped to a set of repositories -
-/// the "view all pipelines" page's own read, distinct from `list_runs`'s
-/// bounded-but-unpaged front-page one.
+/// A page of runs, newest first, optionally scoped to repos - the "view all
+/// pipelines" read, distinct from `list_runs`'s unpaged front-page one.
 pub async fn list_runs_page(
     db: &Db,
     repo_ids: Option<&[String]>,
@@ -676,8 +623,7 @@ pub async fn list_runs_page(
     rows.iter().map(run_from_row).collect()
 }
 
-/// How many runs `list_runs_page` would find in total for the same scope, so
-/// a caller can work out how many pages there are.
+/// Total runs `list_runs_page` would find for the same scope, for pagination.
 pub async fn count_runs(db: &Db, repo_ids: Option<&[String]>) -> Result<i64, QueueError> {
     let pool = pool(db)?;
     let schema = schema();
@@ -747,8 +693,7 @@ pub async fn read_logs(db: &Db, job_id: &str, after: i64) -> Result<Vec<LogChunk
         .collect()
 }
 
-/// A job's steps, in the order they ran - the counterpart `record_steps`
-/// never got, since nothing read them back until the repo scan summary did.
+/// A job's steps in run order (nothing read `record_steps` back until this).
 pub async fn list_steps(db: &Db, job_id: &str) -> Result<Vec<StepState>, QueueError> {
     let pool = pool(db)?;
     let schema = schema();
@@ -779,10 +724,7 @@ pub async fn list_steps(db: &Db, job_id: &str) -> Result<Vec<StepState>, QueueEr
         .collect()
 }
 
-// ---------------------------------------------------------------------------
-// Rows
-// ---------------------------------------------------------------------------
-
+// Rows.
 const RUN_COLUMNS: &str = "id, repo_id, trigger, git_ref, sha, message, delivery_id, status, \
                            queued_at, started_at, finished_at, claimed_by, claimed_at, attempt, \
                            error, resumed_from";

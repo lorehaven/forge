@@ -1,26 +1,11 @@
-//! Best-effort summaries of a repo's most recent code-quality steps.
-//!
-//! `anvil lint` (clippy), `anvil machete` (unused dependencies) and
-//! `anvil audit` (known vulnerabilities) already exist as ordinary pipeline
-//! steps - see `libs/conveyor-pipeline/src/steps/anvil.rs`. `cargo llvm-cov`
-//! (test coverage) is a plain `run` step rather than an `anvil` one - there is
-//! no tool of its own to wrap - so it is matched on its command text instead
-//! of a step kind; see `CheckKind::from_command`. Nothing here triggers a run
-//! or shells out to anything: it reads the most recent run's own steps and
-//! parses whichever of the four it happened to execute. A repo whose
-//! `.conveyor.toml` never runs one of these simply has nothing to show for it.
-//!
-//! Parsing is deliberately forgiving. `anvil`'s own output format is not a
-//! contract conveyor owns, so every parser below falls back to "the step
-//! passed" or "the step failed (exit N)" rather than guessing at a shape that
-//! turned out to have changed.
+//! Best-effort summaries of a repo's most recent lint/machete/audit/coverage
+//! steps - reads the last run's own step output; never triggers or shells out.
 
 use crate::domain::{Job, Run, Status};
 use crate::scheduler::queue::{self, QueueError};
 use quench_db::prelude::Db;
 
-/// Every category this page knows how to summarise. Add a new one here and
-/// in `run_kind` below to teach the page about another `anvil` step.
+/// A category this page knows how to summarise.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CheckKind {
     /// `anvil lint` (clippy).
@@ -34,12 +19,8 @@ pub enum CheckKind {
 }
 
 impl CheckKind {
-    /// The first word of an `anvil` step's command identifies `Lint`,
-    /// `Machete` or `Audit`, e.g. `anvil lint --all-targets` regardless of the
-    /// flags after it. `Coverage` is a plain `run` step - there is no `anvil
-    /// coverage` - so it is matched on the command text containing
-    /// `llvm-cov` instead, regardless of which of `cargo-llvm-cov`'s
-    /// subcommands or flags produced this particular step.
+    /// First word picks Lint/Machete/Audit; Coverage has no `anvil` command
+    /// of its own, so it's matched on `llvm-cov` appearing anywhere instead.
     fn from_command(command: &str) -> Option<Self> {
         if command.contains("llvm-cov") {
             return Some(Self::Coverage);
@@ -82,25 +63,18 @@ impl CheckKind {
     }
 }
 
-/// One specific thing a check found - a clippy diagnostic, an unused
-/// dependency, a RUSTSEC advisory. Fields are optional because the three
-/// tools don't share a shape: `machete` has no severity or date, `lint` has
-/// no advisory id, and so on. The overview cards only need `Vec<Finding>`'s
-/// length; the detail subpage is what actually reads the rest of this.
+/// One thing a check found. Fields are optional since lint/machete/audit
+/// don't share a shape - `severity`/`date`/`id` mean different things per tool.
 #[derive(Debug, Clone, Default)]
 pub struct Finding {
     pub title: String,
-    /// `RUSTSEC-2023-0071`, for audit findings. Nothing else has one.
+    /// `RUSTSEC-2023-0071`, for audit findings only.
     pub id: Option<String>,
-    /// `warning` / `error` for lint, the advisory's own CVSS-ish string
-    /// (`5.9 (medium)`) or `unmaintained` / `yanked` for audit.
+    /// `warning`/`error` for lint, CVSS string or `unmaintained`/`yanked` for audit.
     pub severity: Option<String>,
-    /// When the advisory was published, for audit - the closest thing to
-    /// "when this was introduced" available without diffing dependency
-    /// history across runs, which is its own, much bigger feature.
+    /// When the advisory was published, for audit.
     pub date: Option<String>,
-    /// `src/main.rs:10:9` for lint, the crate the dependency is unused in for
-    /// machete.
+    /// `src/main.rs:10:9` for lint, the unused-in crate for machete.
     pub location: Option<String>,
     /// Audit's `Solution:` line, when it has one.
     pub extra: Option<String>,
@@ -113,18 +87,10 @@ pub struct CheckResult {
     pub passed: bool,
     /// One line: "clean", "3 warnings", "1 vulnerability found", etc.
     pub headline: String,
-    /// What the parser found, richest first for lint/audit's own ordering.
-    /// Capped at 50 - a job that failed this badly needs its own log, not a
-    /// summary page trying to hold all of it.
+    /// Capped at 50 - a job failed this badly needs its own log, not this page.
     pub findings: Vec<Finding>,
-    /// What the overview card's big number should read, when the finding
-    /// count itself isn't it. `None` for lint/machete/audit, where the count
-    /// is the number worth leading with. `Some` for coverage: the count of
-    /// incompletely-covered files hits the 50-finding cap on nearly any
-    /// real codebase (that's the normal case, not a sign of trouble the way
-    /// 50 live lint warnings would be), so it would read as an arbitrary,
-    /// unexplained "50" instead of the coverage percentage the headline
-    /// already states.
+    /// The overview card's big number when the finding count isn't it - only
+    /// `Some` for coverage, since 50 capped files says nothing about % covered.
     pub metric: Option<String>,
 }
 
@@ -155,10 +121,8 @@ impl ScanSummary {
     }
 }
 
-/// The most recent run for this repo, and whichever of the four checks its
-/// jobs happened to run. `Ok(ScanSummary::default())` (not an error) when the
-/// repo has never run, or has never run any of the four - both are "nothing
-/// to show yet", not a failure.
+/// The most recent run and whichever checks its jobs happened to run.
+/// `Ok(default())`, not an error, when there's nothing to show yet.
 pub async fn latest(db: &Db, repo_id: &str) -> Result<ScanSummary, QueueError> {
     let Some(run) = queue::list_runs(db, Some(repo_id), 1)
         .await?
@@ -196,18 +160,11 @@ async fn collect_job_checks(
         return Ok(());
     }
 
-    // Logs are appended once, when the job finishes (see
-    // `queue::append_logs`), so a job with any finished step already has
-    // everything below it settled - fetched once per job rather than once
-    // per step.
-    // `read_logs` is `seq > after`, so `0` would silently drop the very first
-    // line (seq 0) - `-1` is the one value that means "from the start".
+    // Fetched once per job, not per step - `-1` since `read_logs` is `seq > after` and `0` would drop line 0.
     let logs = queue::read_logs(db, &job.id, -1).await?;
 
     for (kind, step) in relevant {
-        // A step still queued or running has nothing finished to parse yet -
-        // its window has no end, and there is nothing wrong in leaving it out
-        // until the run itself finishes.
+        // Still queued or running: nothing finished to parse yet.
         let (Some(start), Some(end)) = (step.started_at, step.finished_at) else {
             continue;
         };
@@ -233,11 +190,7 @@ async fn collect_job_checks(
             CheckKind::Lint => summary.lint = Some(result),
             CheckKind::Machete => summary.machete = Some(result),
             CheckKind::Audit => summary.audit = Some(result),
-            // A job may run several `llvm-cov` invocations (see .conveyor.toml's
-            // `coverage` job) - regenerating a report from already-collected
-            // profile data doesn't re-run anything, so whichever one parses is
-            // kept, and a later one overwrites an earlier one rather than the
-            // two being merged.
+            // A job may run several llvm-cov invocations; last one wins, not merged.
             CheckKind::Coverage => summary.coverage = Some(result),
         }
     }
@@ -276,8 +229,7 @@ impl CheckResult {
             return self;
         }
 
-        // The tool's output did not look like anything this module knows how
-        // to read - fall back to what the step itself already recorded.
+        // Unrecognised output - fall back to what the step itself recorded.
         if self.passed {
             self.headline = "passed".to_string();
             return self;
@@ -287,10 +239,7 @@ impl CheckResult {
             Some(code) => format!("failed (exit {code})"),
             None => "failed".to_string(),
         };
-        // A failure with unparseable output has nothing else to summarise -
-        // the tail of the log is the closest thing to a "finding" available,
-        // so surface it. A passing step's tail (e.g. "10 modules scanned")
-        // is not a finding and must not inflate the chip count above.
+        // Unparseable failure: the log tail is the closest thing to a finding.
         self.findings = stripped
             .iter()
             .rev()
@@ -307,10 +256,7 @@ impl CheckResult {
     }
 }
 
-/// `cargo`'s own diagnostics: `warning: message` / `error: message` /
-/// `warning[clippy::foo]: message`, each optionally followed by a `--> file:
-/// line:col` location line. Cheap and format-stable enough for a summary -
-/// this is not trying to be `--message-format=json`.
+/// `cargo`'s plain-text diagnostics, not `--message-format=json`.
 pub fn parse_lint(lines: &[&str]) -> Option<(String, Vec<Finding>)> {
     let mut warnings = 0usize;
     let mut errors = 0usize;
@@ -350,9 +296,7 @@ pub fn parse_lint(lines: &[&str]) -> Option<(String, Vec<Finding>)> {
     }
 
     if warnings == 0 && errors == 0 {
-        // Nothing recognisable at all - most likely this ran clean and cargo
-        // printed nothing but "Checking ..." lines, but it could also be an
-        // unrecognised format. Say so rather than claiming a count of zero.
+        // Say so rather than claiming zero - could be clean, could be unrecognised.
         return None;
     }
 
@@ -365,9 +309,8 @@ pub fn parse_lint(lines: &[&str]) -> Option<(String, Vec<Finding>)> {
     Some((headline, findings))
 }
 
-/// `cargo-machete`'s two shapes: a clean "didn't find any unused
-/// dependencies" line, or one `crate -- path:` header per crate followed by
-/// its indented, unused dependency names.
+/// `cargo-machete`'s two shapes: a clean line, or one `crate -- path:` header
+/// per crate followed by its indented, unused dependency names.
 pub fn parse_machete(lines: &[&str]) -> Option<(String, Vec<Finding>)> {
     if lines
         .iter()
@@ -405,10 +348,8 @@ pub fn parse_machete(lines: &[&str]) -> Option<(String, Vec<Finding>)> {
     Some((headline, findings))
 }
 
-/// `cargo-audit`'s `Crate:`/`Title:`/`Date:`/`ID:`/`Severity:`/`Solution:`
-/// blocks (vulnerabilities and `Warning: unmaintained`/`yanked` notices
-/// share the same shape), separated by blank lines, plus its own final
-/// "N vulnerabilities found" line when there is nothing to report.
+/// `cargo-audit`'s `Crate:`/`Title:`/... blocks, blank-line separated, plus
+/// its "N vulnerabilities found" line when there's nothing to report.
 pub fn parse_audit(lines: &[&str]) -> Option<(String, Vec<Finding>)> {
     let mut findings = Vec::new();
     let mut block: Vec<&str> = Vec::new();
@@ -462,8 +403,7 @@ fn audit_block(block: &[&str]) -> Option<Finding> {
         } else if let Some(v) = line.strip_prefix("Solution:") {
             finding.extra = Some(format!("Solution: {}", v.trim()));
         } else if let Some(v) = line.strip_prefix("Warning:") {
-            // `unmaintained` / `yanked` - a severity of sorts when there is no
-            // CVSS-style one to show instead.
+            // `unmaintained`/`yanked` - a severity of sorts when there's no CVSS one.
             finding.severity.get_or_insert_with(|| v.trim().to_string());
         }
     }
@@ -479,12 +419,8 @@ fn audit_block(block: &[&str]) -> Option<Finding> {
     Some(finding)
 }
 
-/// `cargo llvm-cov report`'s per-file table: a header row, a `---...` rule,
-/// one row per file, then a trailing `TOTAL` row. Only positions 0
-/// (filename), 7 (lines), 8 (missed lines) and 9 (line coverage %) are read -
-/// `cargo-llvm-cov`'s column set (region/function/branch coverage too) has
-/// changed release to release, but lines has stayed the seventh data column
-/// through every version this has been checked against.
+/// `cargo llvm-cov report`'s per-file table. Only columns 0/7/8/9 (filename,
+/// lines, missed, line%) are read - the only ones stable across versions.
 pub fn parse_coverage(lines: &[&str]) -> Option<(String, Vec<Finding>, String)> {
     let mut files = Vec::new();
     let mut total: Option<CoverageRow> = None;
@@ -502,16 +438,14 @@ pub fn parse_coverage(lines: &[&str]) -> Option<(String, Vec<Finding>, String)> 
         if row.filename == "TOTAL" {
             total = Some(row);
         } else if row.missed_lines > 0 {
-            // A fully-covered file is not a finding - nothing there needs a
-            // reader's attention.
+            // A fully-covered file is not a finding.
             files.push(row);
         }
     }
 
     let total = total?;
 
-    // Worst first: the file with the most uncovered lines is the one most
-    // worth opening, regardless of how large or small its percentage looks.
+    // Worst first: most uncovered lines, not lowest percentage.
     files.sort_by_key(|row| std::cmp::Reverse(row.missed_lines));
 
     let findings = files
@@ -528,16 +462,12 @@ pub fn parse_coverage(lines: &[&str]) -> Option<(String, Vec<Finding>, String)> 
         .collect();
 
     let headline = format!("{:.2}% line coverage", total.line_pct);
-    // A rounded, shorter form for the overview card's big number - the
-    // finding count itself would just be the (capped) count of files with any
-    // gap at all, which is 50 on nearly every real codebase and says nothing
-    // about how covered it actually is.
+    // Rounded, for the overview card - the capped finding count says nothing about % covered.
     let metric = format!("{:.0}%", total.line_pct);
     Some((headline, findings, metric))
 }
 
-/// One row of `cargo llvm-cov report`'s table - a file's, or the trailing
-/// `TOTAL`'s.
+/// One row of the table - a file's, or the trailing `TOTAL`'s.
 struct CoverageRow {
     filename: String,
     lines: u64,
@@ -548,11 +478,7 @@ struct CoverageRow {
 impl CoverageRow {
     fn parse(line: &str) -> Option<Self> {
         let fields: Vec<&str> = line.split_whitespace().collect();
-        // Filename, regions, missed regions, region%, functions, missed
-        // functions, function% ("Executed" in the header), lines, missed
-        // lines, line%, branches, missed branches, branch% - thirteen
-        // columns when nothing is empty. `TOTAL` has no separate filename
-        // column, but is otherwise the same shape.
+        // 13 columns when nothing's empty; `TOTAL` is otherwise the same shape.
         if fields.len() < 10 {
             return None;
         }
@@ -574,9 +500,8 @@ fn plural_y(count: usize) -> &'static str {
     if count == 1 { "y" } else { "ies" }
 }
 
-/// Strips `ESC [ ... m` SGR sequences. `cargo`/`anvil` colour their output by
-/// default, and a piped, non-tty subprocess does not always disable that -
-/// leaving codes in place would break every `starts_with` check above.
+/// Strips SGR color codes - a piped subprocess doesn't always disable them,
+/// and left in place they'd break every `starts_with` check above.
 pub fn strip_ansi(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
     let mut chars = line.chars().peekable();

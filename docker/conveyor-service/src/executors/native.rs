@@ -1,13 +1,5 @@
-//! Running a job as child processes of this service.
-//!
-//! Steps run in order, in the checkout, and the first one to fail ends the job.
-//! Output is read line by line off both pipes and given a sequence number by
-//! the job task rather than by the readers, so stdout and stderr interleave in
-//! the order they arrived and every subscriber sees the same order.
-//!
-//! This executor runs whatever the repository asked for with this service's
-//! privileges. That is the whole reason repositories are registered explicitly
-//! and fork pull requests are refused by default.
+//! Running a job as child processes of this service, with this service's privileges - why repos
+//! are registered explicitly and fork PRs refused by default.
 
 use crate::domain::Status;
 use crate::executors::engine::{
@@ -27,16 +19,10 @@ use tokio::process::Command;
 use tokio::sync::{broadcast, mpsc, watch};
 use tokio::time::{Duration, Instant};
 
-/// How many log lines a subscriber may fall behind before it is dropped.
-///
-/// A dropped subscriber is not a lost log: the lines are in `history`, which is
-/// what a reader re-reads after a lag. The channel exists to make output live,
-/// not to store it.
+/// How many log lines a subscriber may fall behind before dropped - not lost, `history` still has them.
 const LOG_CHANNEL_CAPACITY: usize = 1024;
 
-/// Bound on the reader-to-job-task queue. Backpressure here is the right
-/// behaviour: a step producing output faster than it can be recorded should be
-/// slowed by its own pipe, not have its output dropped.
+/// Bound on the reader-to-job-task queue; backpressure slows a fast step's own pipe, not drops output.
 const LINE_QUEUE_CAPACITY: usize = 256;
 
 #[derive(Clone)]
@@ -81,10 +67,7 @@ impl JobExecutor for NativeExecutor {
         }
 
         if spec.image.is_some() {
-            // Not an error: a pipeline that names an image is perfectly valid,
-            // and refusing it here would make every such repository unbuildable
-            // on a single-node deployment. Saying so beats the confusion of a
-            // job that quietly ran somewhere other than the image says.
+            // Not an error - refusing it would make the repo unbuildable on a single-node deployment.
             tracing::warn!(
                 "job {} names image {:?}, which the native executor ignores; \
                  steps run with the toolchain conveyor itself has",
@@ -93,8 +76,7 @@ impl JobExecutor for NativeExecutor {
             );
         }
 
-        // Resolved before anything is spawned, so a quoting mistake in step
-        // four does not surface after steps one to three have already run.
+        // Resolved before spawning, so a bad quote in step four isn't discovered mid-run.
         let mut planned = Vec::with_capacity(spec.steps.len());
         for step in &spec.steps {
             planned.push((
@@ -163,8 +145,7 @@ impl JobExecutor for NativeExecutor {
 
     async fn logs(&self, handle: &Handle) -> Result<LogTail, ExecError> {
         let running = self.get(handle)?;
-        // Subscribe before snapshotting: the other order leaves a window in
-        // which a line is written into neither the snapshot nor the channel.
+        // Subscribe before snapshotting, or a line can land in neither.
         let live = running.publisher.subscribe();
         let history = running
             .history
@@ -189,10 +170,7 @@ impl JobExecutor for NativeExecutor {
     }
 }
 
-// ---------------------------------------------------------------------------
-// The job task
-// ---------------------------------------------------------------------------
-
+// The job task.
 struct JobContext {
     name: String,
     root: PathBuf,
@@ -280,8 +258,7 @@ async fn run_job(mut context: JobContext) {
             }
             StepOutcome::TimedOut => {
                 finish_step(&context.running, ordinal, Status::Failed, None);
-                // A timeout is a failed build, not a cancelled one: nobody
-                // asked for it to stop and the code was not shown to work.
+                // A timeout is a failure, not a cancellation - nobody asked it to stop.
                 job_status = Status::Failed;
                 job_error = Some(format!(
                     "job exceeded its timeout of {}s",
@@ -304,8 +281,7 @@ async fn run_job(mut context: JobContext) {
     }
 
     let mut state = context.running.state.lock().expect("job state poisoned");
-    // Everything after the step that ended the job never ran. Leaving them
-    // `Queued` would make a finished job look like it was still going.
+    // Leaving later steps `Queued` would make a finished job look still-going.
     for step in &mut state.steps {
         if step.status == Status::Queued {
             step.status = Status::Skipped;
@@ -334,17 +310,9 @@ async fn run_step(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        // Without this a step survives the task being dropped, keeps the
-        // checkout directory busy, and outlives the run that started it.
+        // Without this a step outlives the task being dropped.
         .kill_on_drop(true)
-        // A step is spawned as `sh -c "<command>"`, and not every `/bin/sh`
-        // execs directly into a single simple command the way bash does -
-        // dash (Debian's, and busybox's) forks a child to run it instead.
-        // Left as the default process group, cancelling or timing out this
-        // step would only kill `sh`, orphaning that child - which keeps
-        // running for however long it likes and keeps stdout/stderr's write
-        // end open, so the drain loop below never sees EOF. Leading its own
-        // process group lets `kill_group` below reach the whole tree.
+        // dash/busybox fork a child under `sh -c`; own process group lets `kill_group` reach it too.
         .process_group(0);
 
     for (key, value) in env {
@@ -365,15 +333,12 @@ async fn run_step(
     if let Some(stderr) = child.stderr.take() {
         tokio::spawn(pump(stderr, Stream::Stderr, lines.clone()));
     }
-    // The job task's own sender has to go, or the queue never closes and the
-    // drain below waits forever.
+    // The job task's own sender has to go, or the queue never closes.
     drop(lines);
 
     let outcome = loop {
         tokio::select! {
-            // Biased so output already in the queue is recorded before the
-            // exit is noticed; otherwise a fast step's last lines are drained
-            // after its status is decided, which reads as output from nowhere.
+            // Biased: drain queued output before noticing exit, or a fast step's last lines look like they came from nowhere.
             biased;
 
             Some((stream, line)) = queue.recv() => emitter.emit(stream, line),
@@ -405,19 +370,14 @@ async fn run_step(
     outcome
 }
 
-/// Kills every process in a step's group, not just the `sh` it was spawned
-/// as - see the `process_group(0)` call above for why the direct child alone
-/// isn't enough.
+/// Kills the whole process group, not just the `sh` it was spawned as - see `process_group(0)` above.
 fn kill_group(child: &tokio::process::Child) {
     let Some(pid) = child.id() else {
-        // Already reaped; nothing left to signal.
+        // Already reaped.
         return;
     };
 
-    // SAFETY: `pid` is this step's own child, spawned into its own process
-    // group (`process_group(0)`), so `-pid` names a real group this process
-    // just created - not a value read from anywhere untrusted. `kill` with an
-    // unmatched pid is a documented `ESRCH` return, not undefined behaviour.
+    // SAFETY: `pid` is this step's own process group (`process_group(0)`), not an untrusted value.
     unsafe {
         libc::kill(-(pid as libc::pid_t), libc::SIGKILL);
     }
@@ -428,9 +388,7 @@ where
     R: tokio::io::AsyncRead + Unpin,
 {
     let mut reader = BufReader::new(reader).lines();
-    // `next_line` splits on newlines and gives up on invalid UTF-8. Build
-    // output is text; a step that emits a binary blob on stdout gets its output
-    // truncated rather than taking the job down with it.
+    // Gives up on invalid UTF-8 - a binary blob on stdout truncates output rather than killing the job.
     while let Ok(Some(line)) = reader.next_line().await {
         if lines.send((stream, line)).await.is_err() {
             break;
@@ -438,11 +396,7 @@ where
     }
 }
 
-/// Assigns sequence numbers and fans a line out to history and subscribers.
-///
-/// Redaction happens here, at the one point every line passes through, rather
-/// than at each of the places that produce one. A line that never reaches this
-/// struct is never recorded either.
+/// Assigns sequence numbers and fans a line out to history and subscribers; redaction happens here, the one choke point.
 struct Emitter {
     seq: u64,
     running: Running,
@@ -465,8 +419,7 @@ impl Emitter {
             .expect("log history poisoned")
             .push(chunk.clone());
 
-        // Fails only when nobody is subscribed, which is the normal case for a
-        // job nobody is watching.
+        // Fails only when nobody is subscribed - the normal case.
         let _ = self.running.publisher.send(chunk);
     }
 }

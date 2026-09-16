@@ -1,10 +1,5 @@
-//! The repository admin pages: list, create, edit and delete.
-//!
-//! Adapted from gatehouse's `.admin-*` rules (`docker/gatehouse-service/src/
-//! ui/common/css.rs`) - same shapes (a row list, a notice banner, a
-//! danger-zone button), conveyor just doesn't have them under these class
-//! names yet. Forms need no rules here: `style.css` already styles `form`,
-//! `input`, `select`, `button` and `form .error` for the whole estate.
+//! The repository admin pages - shapes adapted from gatehouse's `.admin-*`
+//! rules; forms need no rules here, `style.css` already styles those.
 
 use quench_web::prelude::CssRule;
 
@@ -20,8 +15,7 @@ pub fn repos_rules() -> Vec<CssRule> {
             .property("margin", "0 auto"),
         CssRule::new(".repos-panel").property("width", "100%"),
         CssRule::new("a.button.repos-back").property("align-self", "flex-start"),
-        // One row per repository: name and project on the left, provider,
-        // branch and state in the middle, the edit link pinned right.
+        // Name/project left, provider/branch/state middle, edit link pinned right.
         CssRule::new(".repos-row")
             .property("display", "flex")
             .property("align-items", "center")

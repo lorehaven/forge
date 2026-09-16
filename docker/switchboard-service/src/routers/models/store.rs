@@ -51,7 +51,6 @@ pub struct ModelStore {
     pub db: Db,
     model_repo: Repository<CachedModel>,
     arch_repo: Repository<VllmArchitecture>,
-    // Keep in-memory cache for performance
     cache: RwLock<HashMap<String, Model>>,
     architectures: RwLock<HashSet<String>>,
 }
@@ -177,12 +176,10 @@ impl ModelStore {
 
     #[tracing::instrument(skip(self))]
     pub async fn get_model(&self, path: &str) -> Option<Model> {
-        // Try in-memory cache first
         if let Some(cached) = self.cache.read().unwrap().get(path).cloned() {
             return Some(cached);
         }
 
-        // Try DB
         if let Ok(Some(cached_db)) = self.model_repo.read(path).await
             && let Ok(model) = serde_json::from_value::<Model>(cached_db.data)
         {

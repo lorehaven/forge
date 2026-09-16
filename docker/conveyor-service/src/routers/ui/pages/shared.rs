@@ -1,9 +1,5 @@
-//! Bits the home page and the pages that scope or paginate it share.
-//!
-//! `home.rs` renders the whole estate, and - at `/projects/{id}` - one branch
-//! of it; `pipelines.rs` renders one long, paged table of either. All three
-//! read the same rows and draw the same table, so the reading and the drawing
-//! live here once rather than twice or three times over.
+//! Bits `home.rs`, its `/projects/{id}` branch, and `pipelines.rs` all share -
+//! same rows, same table, drawn once rather than three times over.
 
 use crate::domain::{Project, Repo, Run};
 use crate::routers::ui::common::{format, status_pill, ui_path};
@@ -14,9 +10,7 @@ use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 use std::collections::{HashMap, HashSet};
 
-/// One lookup per repository, run concurrently - `scan::latest` is several
-/// sequential DB round trips on its own, and no page here has any other use
-/// for waiting on them one repository at a time.
+/// Run concurrently - `scan::latest` is several sequential round trips on its own.
 pub async fn scan_summaries(db: &Db, repositories: &[Repo]) -> HashMap<String, ScanSummary> {
     let fetches = repositories.iter().map(|repo| async move {
         let summary = crate::scan::latest(db, &repo.id).await.unwrap_or_default();
@@ -25,14 +19,8 @@ pub async fn scan_summaries(db: &Db, repositories: &[Repo]) -> HashMap<String, S
     join_all(fetches).await.into_iter().collect()
 }
 
-/// Keeps the newest run per repository - at most `max_per_repo` of them - and
-/// caps the whole selection at `max_total`. `runs` must already be sorted
-/// newest first; that is the order a repository's "newest" and the list's
-/// "first" both mean.
-///
-/// Cloning rather than borrowing: every caller wants an owned `Vec<Run>` it
-/// can render immediately, and a front page's run count is small enough that
-/// the copies cost nothing worth avoiding the borrow-checker fight for.
+/// Newest `max_per_repo` runs per repo, capped at `max_total` total. `runs`
+/// must already be sorted newest first. Clones - cheap at front-page scale.
 pub fn cap_per_repo(runs: &[Run], max_total: usize, max_per_repo: usize) -> Vec<Run> {
     let mut seen: HashMap<&str, usize> = HashMap::new();
     let mut selected = Vec::new();
@@ -52,8 +40,7 @@ pub fn cap_per_repo(runs: &[Run], max_total: usize, max_per_repo: usize) -> Vec<
     selected
 }
 
-/// `root_id` and every project nested under it, however deep - the set a
-/// scoped page's tree and run list both filter down to.
+/// `root_id` and every project nested under it, however deep.
 pub fn descendant_project_ids(root_id: &str, all_projects: &[Project]) -> HashSet<String> {
     let mut children_of: HashMap<&str, Vec<&Project>> = HashMap::new();
     for project in all_projects {
@@ -79,8 +66,7 @@ pub fn descendant_project_ids(root_id: &str, all_projects: &[Project]) -> HashSe
     ids
 }
 
-/// The repositories attached anywhere under `project_ids`, as the id list
-/// `queue::list_runs_page` and `queue::count_runs` scope by.
+/// The id list `queue::list_runs_page`/`count_runs` scope by.
 pub fn repo_ids_under(project_ids: &HashSet<String>, repositories: &[Repo]) -> Vec<String> {
     repositories
         .iter()
@@ -89,9 +75,7 @@ pub fn repo_ids_under(project_ids: &HashSet<String>, repositories: &[Repo]) -> V
         .collect()
 }
 
-/// `id`'s ancestors, root first, with `id` itself last - a breadcrumb reads
-/// left to right from the estate's root down to where the visitor is.
-/// Empty when `id` names no project.
+/// `id`'s ancestors, root first, `id` itself last. Empty if `id` names no project.
 pub fn ancestor_chain<'a>(id: &str, all_projects: &'a [Project]) -> Vec<&'a Project> {
     let by_id: HashMap<&str, &Project> = all_projects
         .iter()
@@ -112,9 +96,7 @@ pub fn ancestor_chain<'a>(id: &str, all_projects: &'a [Project]) -> Vec<&'a Proj
     chain
 }
 
-/// A table of runs, newest first as given - or the empty-state message, when
-/// there are none. Shared by the front page's capped panel and the full
-/// pipeline history page's paged one, so the columns cannot drift apart.
+/// Shared by the front page's capped panel and the full history's paged one, so columns can't drift apart.
 pub fn runs_table(runs: &[Run], repositories: &[Repo]) -> Element {
     if runs.is_empty() {
         return empty_state("ui_runs_empty");
@@ -163,9 +145,7 @@ pub fn runs_table(runs: &[Run], repositories: &[Repo]) -> Element {
     table
 }
 
-/// `Home / root / ... / project` - a trail back up the tree, each segment but
-/// the last a link to that ancestor's own branch of the page it heads (the
-/// project page, or the pipeline list scoped to it).
+/// `Home / root / ... / project`, each segment but the last a link back up the tree.
 pub fn breadcrumb(all_projects: &[Project], project: &Project) -> Element {
     let chain = ancestor_chain(&project.id, all_projects);
 

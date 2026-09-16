@@ -1,9 +1,4 @@
-//! The loop that turns a queued run into a finished one.
-//!
-//! Claim, check out, read the pipeline the commit carries, plan it against this
-//! run's context, execute what the plan says, record what happened. Every step
-//! of that is written to the database as it goes, so a run that dies halfway
-//! leaves a record of how far it got rather than nothing at all.
+//! Claim, check out, plan, execute, record - every step written to the DB as it goes, so a dead run leaves a trail.
 
 use crate::artifacts::{self, WarehouseStore};
 use crate::config::ConveyorConfig;
@@ -24,17 +19,13 @@ use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
 
-/// How long a worker waits before asking for work again when the queue is
-/// empty. Short enough that a manual trigger feels immediate, long enough that
-/// an idle estate is not running a query several times a second.
+/// Poll interval when idle - short enough to feel immediate, long enough not to hammer the DB.
 const IDLE_POLL: Duration = Duration::from_secs(2);
 
 /// How often a running job's state is read from the executor.
 const JOB_POLL: Duration = Duration::from_millis(250);
 
-/// How often, in job polls, the database is asked whether a cancel arrived.
-/// Cancellation is rare and the check is a round trip, so it is not worth doing
-/// four times a second.
+/// Cancel checks are a DB round trip and rare, so not worth doing every poll.
 const CANCEL_CHECK_EVERY: u32 = 8;
 
 #[derive(Clone)]
@@ -44,23 +35,15 @@ pub struct Worker {
     config: ConveyorConfig,
     executor: Arc<dyn JobExecutor>,
     providers: Arc<Providers>,
-    /// `None` when `CONVEYOR_SECRET_KEY` is unset. A pipeline that declares no
-    /// secrets does not need one; one that does fails with a message saying so.
+    /// `None` when `CONVEYOR_SECRET_KEY` is unset - fine unless a pipeline declares secrets.
     key: Arc<Option<SecretKey>>,
-    /// `None` when `CONVEYOR_CREDENTIAL_KEY` is unset. A repository or project
-    /// with no credential registered checks out unauthenticated either way;
-    /// one that does have a credential fails to check out with a message
-    /// saying why, the same shape `key`'s absence gives pipeline secrets.
+    /// `None` when `CONVEYOR_CREDENTIAL_KEY` is unset - fine unless a repo/project needs one.
     credential_key: Arc<Option<SecretKey>>,
-    /// `None` when no warehouse is configured, in which case declared
-    /// artifacts are reported as produced-and-not-kept rather than recorded.
+    /// `None` when no warehouse is configured - artifacts report as produced-not-kept.
     artifacts: Arc<Option<WarehouseStore>>,
 }
 
-/// Starts the worker pool and the janitor, and returns immediately.
-///
-/// Refuses to start against an in-memory database rather than looking healthy
-/// and losing every queued run on restart.
+/// Starts the worker pool and janitor and returns immediately; refuses an in-memory DB.
 pub fn spawn_pool(
     db: Db,
     config: ConveyorConfig,
@@ -83,9 +66,7 @@ pub fn spawn_pool(
     let key = Arc::new(match SecretKey::from_env() {
         Ok(key) => key,
         Err(error) => {
-            // Not fatal: pipelines with no secrets build perfectly well. One
-            // that needs a secret fails with this same message, where it can
-            // actually be seen.
+            // Not fatal: pipelines with no secrets build fine either way.
             tracing::error!("secrets are unavailable: {error}");
             None
         }
@@ -94,10 +75,7 @@ pub fn spawn_pool(
     let credential_key = Arc::new(match SecretKey::from_env_named(credential_store::KEY_VAR) {
         Ok(key) => key,
         Err(error) => {
-            // Not fatal, for the same reason `key` above is not: a public
-            // repository builds fine with no credential key configured at
-            // all. One that needs a credential fails at checkout with this
-            // same message.
+            // Not fatal: a public repo builds fine with no credential key.
             tracing::error!("git credentials are unavailable: {error}");
             None
         }
@@ -127,11 +105,7 @@ pub fn spawn_pool(
     );
 }
 
-/// Puts back runs whose worker stopped saying it was alive.
-///
-/// Without this, one killed worker takes its repository out of service for
-/// good: the run stays `running`, and the index that allows only one running
-/// run per repository never lets another start.
+/// Requeues runs whose worker stopped heartbeating - else a dead worker locks its repo forever.
 async fn janitor(db: Db, config: ConveyorConfig) {
     let interval = Duration::from_secs((config.claim_stale_after_secs / 2).max(5));
     loop {
@@ -144,10 +118,7 @@ async fn janitor(db: Db, config: ConveyorConfig) {
     }
 }
 
-/// One job, in its stage, waiting on however many of that stage's `needs` are
-/// still outstanding. The unit `Worker::execute_jobs` schedules is this, not
-/// the stage: `needs` lives on the stage, but two jobs in one stage do not
-/// need each other any more than two jobs in two unrelated stages do.
+/// One job waiting on its stage's outstanding `needs` - `execute_jobs` schedules these, not stages.
 struct Unit<'p> {
     stage_index: usize,
     job: &'p pipeline::Job,
@@ -228,11 +199,7 @@ impl Worker {
         Ok(())
     }
 
-    /// Tells the provider how the commit is doing.
-    ///
-    /// Never fatal. A repository that builds but cannot be reported on is worth
-    /// a warning, not a failed run - and `generic` repositories have nowhere to
-    /// report to at all.
+    /// Tells the provider how the commit is doing - never fatal, just a warning if it can't.
     async fn report(&self, repo: &Repo, run: &Run, status: Status, description: &str) {
         let report = CommitStatusReport::new(status, description).with_target(run_url(&run.id));
 
@@ -305,10 +272,7 @@ impl Worker {
         let context = EvalContext::new(event, &run.git_ref, &run.sha);
         let plan = pipeline::plan(&spec, &context);
 
-        // A restart's source jobs, when this run has one - `Some` even if it
-        // turns out to have carried nothing over, so a source that has since
-        // been pruned is distinguishable from "not a restart" in the warning
-        // below rather than silently building everything again.
+        // `Some` even if empty, so a pruned source is distinguishable from "not a restart" below.
         let source_jobs = match &run.resumed_from {
             Some(source_run_id) => match queue::list_jobs(&self.db, source_run_id).await {
                 Ok(jobs) => Some(jobs),
@@ -382,11 +346,7 @@ impl Worker {
             token: &resolved.token,
         });
 
-        // A backstop, not a guarantee - same reasoning as the redactor built
-        // from a job's declared secrets. Applied here because a failed clone's
-        // git stderr is the one place a credential's token could otherwise
-        // reach the run page, which the checkout path itself never shows one
-        // to on success.
+        // Backstop: a failed clone's git stderr is the one place a token could leak to the run page.
         let redactor = resolved
             .as_ref()
             .map(|resolved| Redactor::new([resolved.token.clone()]))
@@ -407,16 +367,8 @@ impl Worker {
         .map_err(|error| WorkerError::Checkout(redactor.apply(&error.to_string())))
     }
 
-    /// Runs the jobs the plan allowed. A job starts the instant every stage
-    /// it needs has finished in full, rather than waiting for its turn in
-    /// `plan`'s topological order - two jobs that do not depend on each
-    /// other, whether they sit in the same stage or in two stages that do not
-    /// depend on each other, always overlap.
-    ///
-    /// One caveat: the native executor runs every job against the same
-    /// checkout, so two jobs racing on the same files is possible if a
-    /// pipeline's jobs both write to it. The kubernetes executor does not
-    /// share this problem - each job clones its own commit.
+    /// A job starts the instant its needed stages finish, not in `plan`'s topological order.
+    /// Native executor caveat: jobs share one checkout, so racing writes are possible; kubernetes doesn't share this.
     async fn execute_jobs(
         &self,
         run: &Run,
@@ -428,9 +380,7 @@ impl Worker {
     ) -> Result<(Status, Option<String>), WorkerError> {
         let stage_count = plan.len();
 
-        // `needs` names a stage, and a stage can be depended on by several
-        // others - the readiness count and the reverse edges below are what a
-        // stage's completion walks to find what just became ready.
+        // A stage can be depended on by several others; reverse edges below find what just became ready.
         let mut index_of: HashMap<&str, usize> = HashMap::with_capacity(stage_count);
         for (index, stage_plan) in plan.iter().enumerate() {
             index_of.insert(spec.stages[stage_plan.index].name.as_str(), index);
@@ -446,9 +396,7 @@ impl Worker {
             }
         }
 
-        // Every job, flattened out from under its stage, and which units
-        // belong to which stage - needed the moment a stage finishes, to tell
-        // whether every one of its own jobs has too.
+        // Every job flattened from its stage, so a stage finishing can check all its jobs did too.
         let mut units: Vec<Unit> = Vec::new();
         let mut units_of_stage: Vec<Vec<usize>> = vec![Vec::new(); stage_count];
         for (stage_index, stage_plan) in plan.iter().enumerate() {
@@ -487,9 +435,7 @@ impl Worker {
         let mut running = FuturesUnordered::new();
 
         while finished_units < unit_count {
-            // A unit's own readiness already proves every stage its own stage
-            // needs is done, so `failed_stages` and `cancelled` as they stand
-            // right now are everything this job will ever need to know.
+            // Readiness already proves `needs` is done, so the current `failed_stages`/`cancelled` suffice.
             while let Some(unit_index) = ready.pop_front() {
                 let Unit {
                     stage_index,
@@ -506,9 +452,7 @@ impl Worker {
                 let stage_index = *stage_index;
 
                 running.push(async move {
-                    // Already settled when the plan was written: excluded by
-                    // a `when`, or carried over from a restart's stage that
-                    // passed last time.
+                    // Already settled at plan time: excluded by `when`, or carried over from a restart.
                     let status = if row.status != Status::Queued {
                         row.status
                     } else if cancelled_now || blocked_by.is_some() {
@@ -530,9 +474,7 @@ impl Worker {
             }
 
             let Some(outcome) = running.next().await else {
-                // Every unit has either finished or is queued in `running`
-                // above; this only happens once both are empty, which the
-                // loop condition already ends on.
+                // Only reached once `ready` and `running` are both empty.
                 break;
             };
             let (stage_index, status) = outcome?;
@@ -548,9 +490,7 @@ impl Worker {
 
             stage_finished[stage_index] += 1;
             if stage_finished[stage_index] < units_of_stage[stage_index].len() {
-                // The rest of this stage's own jobs are still running or
-                // queued - what depends on the stage as a whole has to wait
-                // for those too, not just this one job.
+                // Dependents wait for the whole stage, not just this one job.
                 continue;
             }
             for &dependent in &stage_dependents[stage_index] {
@@ -567,13 +507,8 @@ impl Worker {
         Ok((Status::rollup(all_statuses), None))
     }
 
-    /// Copies a reused job's steps, log and artifacts from the run being
-    /// restarted, so a run made of some rebuilt stages and some carried-over
-    /// ones reads as one coherent record rather than sending a reader back to
-    /// the old run for half of it.
-    ///
-    /// Never fails the restart: a source job gone missing, or a copy that
-    /// errors, leaves that one job without a log rather than losing the run.
+    /// Copies a reused job's steps/log/artifacts so a restart reads as one coherent record.
+    /// Never fails the restart itself - a copy error just leaves that job without a log.
     async fn copy_reused_job_data(
         &self,
         run: &Run,
@@ -697,9 +632,7 @@ impl Worker {
         {
             Ok(secrets) => secrets,
             Err(error) => {
-                // Failing here beats running a deploy step with a blank token,
-                // which fails somewhere further on and takes much longer to
-                // understand.
+                // Beats running a deploy step with a blank token that fails confusingly later.
                 let reason = error.to_string();
                 queue::finish_job(&self.db, &row.id, Status::Failed, None, Some(&reason)).await?;
                 tracing::warn!("job {} could not get its secrets: {reason}", row.id);
@@ -707,10 +640,7 @@ impl Worker {
             }
         };
 
-        // The same credential `checkout()` would use for this repository -
-        // an executor running off this machine (kubernetes) fetches the
-        // commit for itself, in an init container that never runs the
-        // pipeline's own commands, and needs its own copy to do it.
+        // Same credential `checkout()` uses - an off-machine executor's init container needs its own copy.
         let credential =
             credential_store::resolve(&self.db, self.credential_key.as_ref().as_ref(), repo)
                 .await
@@ -739,9 +669,7 @@ impl Worker {
                 job.timeout.unwrap_or(self.config.default_job_timeout_secs),
             ),
             image: job.image.clone(),
-            // Supplied whatever the executor is: the native one runs in the
-            // checkout conveyor already made and ignores this, but an executor
-            // running off this machine has no other way to get the code.
+            // Native executor ignores this (already has the checkout); an off-machine one needs it.
             source: Some(SourceSpec {
                 clone_url: repo.clone_url.clone(),
                 git_ref: run.git_ref.clone(),
@@ -812,10 +740,7 @@ impl Worker {
         Ok(state.status)
     }
 
-    /// Uploads what the job declared, and records where it went.
-    ///
-    /// Never fails the job. The build passed; losing a copy of its output is
-    /// worth a warning rather than turning a green run red.
+    /// Uploads declared artifacts; never fails the job - a lost copy is a warning, not a red run.
     async fn keep_artifacts(
         &self,
         run: &Run,
@@ -857,11 +782,7 @@ impl Worker {
         }
     }
 
-    /// What a step sees in its environment.
-    ///
-    /// `CI` because half the tooling in the world looks for it, and the
-    /// `CONVEYOR_*` set so a step can tell what it is building without parsing
-    /// anything back out of git.
+    /// What a step sees in its environment - `CI` for common tooling, `CONVEYOR_*` for context.
     fn job_environment(
         &self,
         run: &Run,
@@ -890,9 +811,7 @@ impl Worker {
             ),
         ]);
 
-        // The pipeline's own values last, so a job can override what conveyor
-        // set - which is occasionally what you want and never harmful, since
-        // these describe the run rather than grant anything.
+        // Pipeline values last, so a job can override conveyor's - harmless, these just describe the run.
         env.extend(job.env.clone());
         env
     }
@@ -919,9 +838,7 @@ pub enum WorkerError {
     Queue(#[from] queue::QueueError),
 }
 
-/// The stages a restart can skip: every one whose jobs, last time, all ended
-/// `Success`. A stage with no job in `jobs` at all is not among them - it
-/// never ran, so there is nothing here to carry over.
+/// Stages a restart can skip: every one whose jobs all ended `Success` last time.
 fn passed_stages(jobs: &[crate::domain::Job]) -> HashSet<String> {
     let mut ok: HashMap<&str, bool> = HashMap::new();
     for job in jobs {
@@ -955,10 +872,7 @@ fn describe(status: Status) -> String {
     .to_string()
 }
 
-/// Where to send someone who clicks the status mark.
-///
-/// `None` unless the deployment says where it is reachable from - a link to
-/// `localhost` on somebody else's machine is worse than no link.
+/// `None` unless the deployment says where it's reachable - a `localhost` link is worse than none.
 fn run_url(run_id: &str) -> Option<String> {
     let base = envmnt::get_or("CONVEYOR_PUBLIC_URL", "");
     let base = base.trim().trim_end_matches('/');

@@ -1,16 +1,10 @@
-//! `DELETE /api/v1/artifacts/{program}/{platform}/{version_code}/yank` - hide
-//! a version from `latest` and the catalog without deleting it.
-//!
-//! Mirrors `crates::ops::yank`: a store shouldn't offer a yanked build to a
-//! new install, but a device that already has it - or one mid-download -
-//! should still be able to fetch it by exact version. Content and history
-//! stay; only visibility changes.
+//! `DELETE .../{version_code}/yank` - hides a version from `latest`/catalog without deleting it,
+//! so an exact-version fetch (a device mid-download) still works. Mirrors `crates::ops::yank`.
 
 use crate::domain::artifact::{ArtifactVersion, Platform};
 use crate::routers::artifacts::ops::{disabled, error, not_found};
-use actix_web::http::StatusCode;
-use actix_web::{HttpResponse, Responder, delete, web};
 use quench_db::prelude::{Crud, Db};
+use quench_http::prelude::{Inject, Path, Response, delete, http::StatusCode};
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -18,14 +12,16 @@ pub struct OkResponse {
     ok: bool,
 }
 
-#[delete("/{program}/{platform}/{version_code}/yank")]
+#[delete("/api/v1/artifacts/{program}/{platform}/{version_code}/yank")]
 #[tracing::instrument]
-pub async fn handle(db: web::Data<Db>, path: web::Path<(String, String, i64)>) -> impl Responder {
+pub async fn handle(
+    Inject(db): Inject<Db>,
+    Path((program, platform_raw, version_code)): Path<(String, String, i64)>,
+) -> Response {
     if !crate::routers::artifacts_enabled() {
         return disabled();
     }
 
-    let (program, platform_raw, version_code) = path.into_inner();
     set_yanked(&db, &program, &platform_raw, version_code, true).await
 }
 
@@ -36,7 +32,7 @@ pub async fn set_yanked(
     platform_raw: &str,
     version_code: i64,
     value: bool,
-) -> HttpResponse {
+) -> Response {
     let Some(platform) = Platform::parse(platform_raw) else {
         return not_found("program or version not found");
     };
@@ -53,7 +49,12 @@ pub async fn set_yanked(
     version.yanked = value;
 
     match repo.update(&version).await {
-        Ok(_) => HttpResponse::Ok().json(OkResponse { ok: true }),
+        Ok(_) => Response::json(StatusCode::OK, &OkResponse { ok: true })
+            .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR)),
         Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
     }
+}
+
+pub fn register_routes() {
+    let _ = handle as fn(_, _) -> _;
 }

@@ -1,14 +1,5 @@
-//! Getting the commit onto disk.
-//!
-//! Conveyor shells out to `git` rather than linking a git library. The estate
-//! already shells out to `docker` and `kubectl`, the operations here are four
-//! commands, and a repository that clones from the command line clones from
-//! conveyor - which is not true of every library's protocol support.
-//!
-//! The ref and the sha arrive in a webhook payload, so they are validated
-//! before they reach an argument list. `git` reads a leading `-` as an option,
-//! and `--upload-pack=...` in the position where a ref was expected runs a
-//! program of the sender's choosing.
+//! Gets the commit onto disk by shelling out to `git`. Ref/sha come from a
+//! webhook payload, so they're validated first - a leading `-` is an injectable option.
 
 use crate::workspace::Workspace;
 use std::path::{Path, PathBuf};
@@ -54,9 +45,7 @@ pub enum CheckoutError {
     Spawn(#[from] std::io::Error),
 }
 
-/// What to authenticate a fetch with. `username`/`token` become an HTTP Basic
-/// `Authorization` header - this module doesn't know or care where they came
-/// from, only how to use them.
+/// `username`/`token` become an HTTP Basic `Authorization` header.
 #[derive(Clone, Copy, Debug)]
 pub struct HttpCredential<'a> {
     pub username: &'a str,
@@ -72,18 +61,12 @@ pub struct CheckoutRequest<'a> {
     /// ref, which can move while the run is queued.
     pub sha: &'a str,
     pub timeout: Duration,
-    /// `None` for a repository conveyor has no credential for - the clone is
-    /// attempted unauthenticated, exactly as before this existed, which is
-    /// the right behaviour for a public repository.
+    /// `None` clones unauthenticated - correct for a public repository.
     pub credential: Option<HttpCredential<'a>>,
 }
 
-/// Checks `request` out into a directory of its own beneath `work_dir`.
-///
-/// The directory is named after the run, so a stale one left by a crashed
-/// worker is identifiable rather than anonymous. An existing directory of the
-/// same name is removed first: a retry of the same run must not inherit
-/// whatever the previous attempt left behind.
+/// Checks out into `run-<id>/` under `work_dir`; a stale same-named dir is
+/// removed first so a retry doesn't inherit the previous attempt.
 pub async fn checkout(
     work_dir: &Path,
     run_id: &str,
@@ -127,10 +110,7 @@ pub async fn checkout(
 
     fetch(&root, request).await?;
 
-    // Detached on purpose: a run builds a commit, not a branch. Checking out
-    // the branch would leave the workspace pointing at a ref that can move, and
-    // a step that runs `git describe` would report something other than what is
-    // being built.
+    // Detached on purpose: a run builds a commit, not a movable branch ref.
     git(
         &root,
         &["checkout", "--quiet", "--detach", request.sha],
@@ -142,18 +122,8 @@ pub async fn checkout(
     Ok(workspace)
 }
 
-/// Fetches the commit, cheaply if the server allows it.
-///
-/// Asking for the sha directly fetches one commit and nothing else, which is
-/// what GitHub and anything with `uploadpack.allowReachableSHA1InWant` will
-/// serve. Plenty of servers do not - a bare `file://` repository does not by
-/// default - so the fallback fetches the ref in full. Shallow-fetching the ref
-/// instead is not an option: the ref may have moved on since the webhook, and
-/// the depth-1 tip would be the wrong commit.
-///
-/// The only step that talks to the network, so the only one that needs
-/// `request.credential` - `init`, `remote add` and the final `checkout` never
-/// see it.
+/// Fetches the sha directly when the server allows it; falls back to
+/// fetching the full ref (shallow-by-ref would risk the wrong commit).
 async fn fetch(root: &Path, request: &CheckoutRequest<'_>) -> Result<(), CheckoutError> {
     let header = request
         .credential
@@ -196,23 +166,16 @@ async fn fetch(root: &Path, request: &CheckoutRequest<'_>) -> Result<(), Checkou
     }
 }
 
-/// `Authorization: Basic ...`, built once so both fetch attempts (shallow,
-/// then full) send the same header.
-///
-/// `pub` for the same reason `validate_sha`/`validate_ref`/`validate_url`
-/// are: so a test can check what this builds without driving a real git
-/// server through it.
+/// `Authorization: Basic ...`, built once for both fetch attempts.
+/// `pub` so a test can check this without driving a real git server.
 pub fn basic_auth_header(username: &str, token: &str) -> String {
     use base64::Engine;
     let encoded = base64::engine::general_purpose::STANDARD.encode(format!("{username}:{token}"));
     format!("Authorization: Basic {encoded}")
 }
 
-/// The env pairs that hand a fetch its credential, via `http.extraheader`
-/// supplied through `GIT_CONFIG_*` rather than argv or an on-disk
-/// `.git/config` entry - so the header never shows up in a process listing
-/// (`ps`) and a later build step reading `git config --list` in the
-/// checked-out workspace can't echo it back.
+/// Passes the credential via `GIT_CONFIG_*` env, not argv or `.git/config`,
+/// so it never appears in `ps` or a build step's `git config --list`.
 pub fn credential_env(header: Option<&str>) -> Vec<(&str, &str)> {
     match header {
         Some(header) => vec![
@@ -238,12 +201,8 @@ async fn git(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
-        // Without these, a private repository with no usable credentials makes
-        // git ask for a password. There is no terminal to ask on, so it would
-        // hang until the checkout timeout rather than failing immediately.
-        // Deliberately not a contradiction with `extra_env` below: a
-        // credential conveyor holds is supplied explicitly, as config, not
-        // fished for interactively.
+        // Without these, a private repo with no credential hangs asking for a
+        // password on a terminal that doesn't exist, instead of failing fast.
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GIT_ASKPASS", "")
         .env("SSH_ASKPASS", "")
@@ -276,10 +235,7 @@ async fn git(
     })
 }
 
-// ---------------------------------------------------------------------------
-// Validation
-// ---------------------------------------------------------------------------
-
+// Validation.
 /// A commit sha, as git writes them.
 pub fn validate_sha(sha: &str) -> Result<(), CheckoutError> {
     let invalid = |reason| {
@@ -379,10 +335,8 @@ pub fn validate_url(url: &str) -> Result<(), CheckoutError> {
     Ok(())
 }
 
-/// Keeps a run id to characters that are safe in a directory name.
-///
-/// Ids are generated, so this never fires in practice; it is here so that a
-/// future id scheme cannot turn into a path traversal by being adopted.
+/// Keeps a run id to safe directory-name characters, guarding against a
+/// future id scheme becoming a path traversal.
 fn sanitize_component(value: &str) -> String {
     let cleaned: String = value
         .chars()

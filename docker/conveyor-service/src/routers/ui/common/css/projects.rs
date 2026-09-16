@@ -1,9 +1,5 @@
-//! The front page's project tree.
-//!
-//! Visually the same disclosure `.job`/`details.job` already gives the run
-//! page's job list (see `runs.rs`) - a bordered box with a clickable head and
-//! no script needed for collapse and expand - just nested arbitrarily deep
-//! instead of one level, with each nesting indented under its parent.
+//! The front page's project tree - the same `.job` disclosure as the run
+//! page's job list (see `runs.rs`), nested arbitrarily deep instead of one level.
 
 use quench_web::prelude::CssRule;
 
@@ -27,9 +23,7 @@ pub fn projects_rules() -> Vec<CssRule> {
             .property("font-weight", "600")
             .property("text-decoration", "none")
             .child(CssRule::new("&:hover").property("text-decoration", "underline")),
-        // An empty leaf's own link - same muted colour it had before it was
-        // clickable, just without the browser's default underline until it is
-        // actually hovered.
+        // An empty leaf's link - same muted color, underline only on hover.
         CssRule::new(".project-leaf-link")
             .property("text-decoration", "none")
             .child(CssRule::new("&:hover").property("text-decoration", "underline")),
@@ -38,9 +32,7 @@ pub fn projects_rules() -> Vec<CssRule> {
         CssRule::new("details.project-node > summary")
             .property("list-style", "none")
             .child(CssRule::new("::-webkit-details-marker").property("display", "none")),
-        // A nested node's own margin is what draws the tree - each level
-        // indents under the one before it, and the last child's margin does
-        // not leave a gap before its parent's closing border.
+        // Each nested level's own margin is what draws the tree.
         CssRule::new(".project-children")
             .property("padding", "0 0.9rem 0.9rem")
             .child(
@@ -49,10 +41,7 @@ pub fn projects_rules() -> Vec<CssRule> {
                     .property("border-color", "var(--bs-gray-700)"),
             ),
         CssRule::new(".project-tree > .project-node:last-child").property("margin-bottom", "0"),
-        // ---------------------------------------------------------------
-        // Breadcrumb - a scoped page's own header, in place of the plain
-        // title the unscoped front page and pipeline list use.
-        // ---------------------------------------------------------------
+        // --- Breadcrumb: a scoped page's header, replacing the plain title. ---
         CssRule::new(".breadcrumb")
             .property("display", "flex")
             .property("align-items", "baseline")

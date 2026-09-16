@@ -2,38 +2,56 @@
 
 use crate::services::enabled_services;
 use crate::ui::common::{UiPageKind, render_page};
-use actix_web::{HttpResponse, Responder, get, web};
-use quench_auth::prelude::JwtConfig;
-use quench_starter::actix::routers::ui::pages::home::{handle_home, service_card};
+use async_trait::async_trait;
+use quench_auth::domain::jwt::JwtConfig;
+use quench_auth::http::routers::ui::{get_user_from_req, is_ui_authenticated};
+use quench_http::prelude::{FromRequest, HttpError, Request, Response, get};
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 
-#[get("/home")]
-pub async fn home(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
-    let admin = is_admin(&req, &config).await;
-    handle_home(req, config, move || render_home_page(admin)).await
+/// Session validity, plus (cosmetic only) whether to show the admin link.
+pub struct HomeAuth {
+    authenticated: bool,
+    admin: bool,
 }
 
-#[get("/home/")]
-pub async fn home_slash(
-    req: actix_web::HttpRequest,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
-    let admin = is_admin(&req, &config).await;
-    handle_home(req, config, move || render_home_page(admin)).await
+#[async_trait]
+impl FromRequest for HomeAuth {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        let Ok(config) = req.container().get::<JwtConfig>() else {
+            return Ok(Self {
+                authenticated: false,
+                admin: false,
+            });
+        };
+        let authenticated = is_ui_authenticated(req, &config).await;
+        let admin = get_user_from_req(req, &config)
+            .await
+            .is_some_and(|claims| claims.has_role("admin"));
+        Ok(Self {
+            authenticated,
+            admin,
+        })
+    }
 }
 
-/// Whether to offer the realm administration link.
-///
-/// Cosmetic only - the admin pages check for themselves, and so does the API
-/// behind them. But a visible control that answers 403 is worse than no control.
-async fn is_admin(req: &actix_web::HttpRequest, config: &JwtConfig) -> bool {
-    quench_auth::actix::routers::ui::get_user_from_req(req, config)
-        .await
-        .is_some_and(|claims| claims.has_role("admin"))
+#[get("/ui/home")]
+pub async fn home(auth: HomeAuth) -> Response {
+    if !auth.authenticated {
+        return crate::ui::pages::auth::login_redirect();
+    }
+    render_home_page(auth.admin)
 }
 
-pub fn render_home_page(admin: bool) -> HttpResponse {
+#[get("/ui/home/")]
+pub async fn home_slash(auth: HomeAuth) -> Response {
+    if !auth.authenticated {
+        return crate::ui::pages::auth::login_redirect();
+    }
+    render_home_page(auth.admin)
+}
+
+pub fn render_home_page(admin: bool) -> Response {
     let services = enabled_services();
 
     let mut sections = div().class("home-sections");
@@ -62,8 +80,7 @@ pub fn render_home_page(admin: bool) -> HttpResponse {
         );
     }
 
-    // The realm itself, not a service: rendered as its own section so it does not
-    // look like another destination in the estate.
+    // The realm itself, not a service - its own section.
     if admin {
         sections = sections.child(
             div()
@@ -82,7 +99,7 @@ pub fn render_home_page(admin: bool) -> HttpResponse {
     }
 
     render_page(
-        HttpResponse::Ok(),
+        http::StatusCode::OK,
         content().class("home-content").child(
             div()
                 .class("home-container")
@@ -99,4 +116,21 @@ pub fn render_home_page(admin: bool) -> HttpResponse {
         ),
         UiPageKind::Home,
     )
+}
+
+fn service_card(href: &str, title_key: &str, desc_key: &str, extra_class: &str) -> Element {
+    a().attr("href", href)
+        .class(format!("home-card {extra_class}"))
+        .child(
+            div()
+                .class("home-card-body")
+                .child(div().class("home-card-title").attr("data-i18n", title_key))
+                .child(div().class("home-card-desc").attr("data-i18n", desc_key)),
+        )
+        .child(div().class("home-card-arrow").text("→"))
+}
+
+pub fn register_routes() {
+    let _ = home as fn(_) -> _;
+    let _ = home_slash as fn(_) -> _;
 }

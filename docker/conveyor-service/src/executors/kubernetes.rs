@@ -1,15 +1,5 @@
-//! Running a job as a `batch/v1` Job in a cluster.
-//!
-//! The reason this exists is isolation. Under the native executor a
-//! `.conveyor.toml` runs with conveyor's own privileges - its database, its
-//! secret key, its network identity. Here it runs in a pod, with whatever
-//! service account the deployment gives it and nothing else, which is what
-//! makes `CONVEYOR_ALLOW_FORK_PR` a defensible thing to turn on.
-//!
-//! The pod fetches its own commit through an init container, so nothing is
-//! copied in from conveyor's disk. Conveyor still checks out locally as well -
-//! it has to, to read the `.conveyor.toml` and plan the run before there is
-//! anything to submit.
+//! Running a job as a `batch/v1` Job in a cluster - isolation from conveyor's own privileges,
+//! which is what makes `CONVEYOR_ALLOW_FORK_PR` defensible. The pod fetches its own commit.
 
 use crate::domain::Status;
 use crate::executors::engine::{
@@ -33,8 +23,6 @@ use tokio::sync::broadcast;
 const LOG_CHANNEL_CAPACITY: usize = 1024;
 
 /// How long to wait for the pod to exist before giving up on following its log.
-/// A pod that has not been scheduled by then is either queued behind resources
-/// or unschedulable, and either way its log is not the thing to report.
 const POD_WAIT_ATTEMPTS: u32 = 120;
 
 #[derive(Clone)]
@@ -42,7 +30,7 @@ struct Running {
     state: Arc<Mutex<JobState>>,
     history: Arc<Mutex<Vec<LogChunk>>>,
     publisher: broadcast::Sender<LogChunk>,
-    /// The Job and Secret this handle owns, so `forget` can remove them.
+    /// The Job/Secret this handle owns, so `forget` can remove them.
     object_name: String,
     has_secret: bool,
 }
@@ -55,8 +43,7 @@ pub struct KubernetesExecutor {
 }
 
 impl KubernetesExecutor {
-    /// Connects using whatever the environment provides: the in-cluster service
-    /// account, or a kubeconfig when running outside one.
+    /// Uses the in-cluster service account, or a kubeconfig outside one.
     pub async fn connect() -> Result<Self, String> {
         let client = Client::try_default()
             .await
@@ -66,8 +53,7 @@ impl KubernetesExecutor {
             .trim()
             .to_string();
         let namespace = if namespace.is_empty() {
-            // In a pod, this file says which namespace it is in; outside one,
-            // `default` is the only sensible guess.
+            // In-pod, this file names the namespace; outside one, `default` is the best guess.
             std::fs::read_to_string("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
                 .map(|value| value.trim().to_string())
                 .unwrap_or_else(|_| "default".to_string())
@@ -123,15 +109,12 @@ impl JobExecutor for KubernetesExecutor {
         if spec.source.is_none() {
             return Err(ExecError::Unsupported {
                 executor: "kubernetes",
-                what: "run a job with no source to fetch: the pod has no access \
-                       to conveyor's own checkout"
+                what: "run a job with no source to fetch: the pod has no access to conveyor's own checkout"
                     .to_string(),
             });
         }
 
-        // Resolved before anything is submitted, so a quoting mistake in step
-        // four is not discovered by a pod that has already run steps one to
-        // three.
+        // Resolved before submitting, so a bad quote in step four isn't discovered mid-run.
         let mut commands = Vec::with_capacity(spec.steps.len());
         for step in &spec.steps {
             commands.push(steps::argv(step)?);
@@ -139,8 +122,7 @@ impl JobExecutor for KubernetesExecutor {
 
         let built = manifest::build(spec, &commands, &self.namespace, &self.settings);
 
-        // The Secret first: a pod whose `envFrom` names a missing Secret stays
-        // pending rather than failing, which reads as a job that never starts.
+        // Secret first: a pod whose `envFrom` names a missing Secret stays pending, not failing.
         if let Some(secret) = built.secret.clone() {
             self.secrets_api()
                 .create(&PostParams::default(), &secret)
@@ -215,8 +197,7 @@ impl JobExecutor for KubernetesExecutor {
 
     async fn logs(&self, handle: &Handle) -> Result<LogTail, ExecError> {
         let running = self.get(handle)?;
-        // Subscribe before snapshotting, as the native executor does: the other
-        // order leaves a window in which a line reaches neither.
+        // Subscribe before snapshotting (as native does), or a line can reach neither.
         let live = running.publisher.subscribe();
         let history = running
             .history
@@ -229,8 +210,7 @@ impl JobExecutor for KubernetesExecutor {
     async fn cancel(&self, handle: &Handle) -> Result<(), ExecError> {
         let running = self.get(handle)?;
 
-        // Background propagation, so the pod goes with the Job rather than
-        // being orphaned and left running.
+        // Background propagation, so the pod goes with the Job instead of being orphaned.
         let params = DeleteParams::background();
         if let Err(error) = self.jobs_api().delete(&running.object_name, &params).await {
             tracing::warn!("could not delete job {}: {error}", running.object_name);
@@ -271,8 +251,7 @@ impl JobExecutor for KubernetesExecutor {
                 .await
             && !is_gone(&error)
         {
-            // Worth an error rather than a warning: a secret left behind is a
-            // credential left behind.
+            // Error, not warning: a secret left behind is a credential left behind.
             tracing::error!(
                 "could not delete the secret for job {}: {error}",
                 running.object_name
@@ -292,10 +271,7 @@ fn is_gone(error: &kube::Error) -> bool {
     matches!(error, kube::Error::Api(response) if response.code == 404)
 }
 
-// ---------------------------------------------------------------------------
-// Watching
-// ---------------------------------------------------------------------------
-
+// Watching.
 /// Follows the job's pod, recording its output and its outcome.
 async fn watch(
     pods: Api<Pod>,
@@ -317,8 +293,7 @@ async fn watch(
 
     follow_logs(&pods, &pod_name, &redactor, &running).await;
 
-    // The log ending does not settle the verdict: a container can produce no
-    // output at all, and the Job's own status is what says whether it passed.
+    // Log ending doesn't settle the verdict; the Job's own status decides pass/fail.
     let outcome = await_completion(&jobs, &object_name).await;
     match outcome {
         Outcome::Succeeded => finish(&running, Status::Success, Some(0), None),
@@ -351,8 +326,7 @@ async fn await_pod(pods: &Api<Pod>, object_name: &str) -> Option<String> {
                 .and_then(|status| status.phase.as_deref())
                 .unwrap_or("Pending");
 
-            // `Pending` covers image pulls and the init container, neither of
-            // which produces log output from the container being followed.
+            // `Pending` covers image pulls/init container, neither producing log output yet.
             if phase != "Pending" {
                 return Some(pod.name_any());
             }
@@ -382,8 +356,7 @@ async fn follow_logs(pods: &Api<Pod>, pod_name: &str, redactor: &Redactor, runni
     let mut lines = stream.lines();
 
     while let Ok(Some(line)) = lines.next().await.transpose() {
-        // A marker says a step is starting. It is conveyor's own bookkeeping,
-        // not the build's output, so it is consumed rather than recorded.
+        // Conveyor's own bookkeeping marker, not build output - consumed, not recorded.
         if let Some(ordinal) = line.trim().strip_prefix(STEP_MARKER) {
             if let Ok(ordinal) = ordinal.trim().parse::<usize>() {
                 advance(running, ordinal);
@@ -452,8 +425,7 @@ async fn await_completion(jobs: &Api<Job>, object_name: &str) -> Outcome {
                     return Outcome::Failed(reason);
                 }
             }
-            // Deleted underneath us, which is what a cancel looks like from
-            // here.
+            // Deleted underneath us - what a cancel looks like from here.
             Err(error) if is_gone(&error) => return Outcome::Vanished,
             Err(error) => {
                 tracing::warn!("could not read job {object_name}: {error}");
@@ -477,8 +449,7 @@ fn finish(running: &Running, status: Status, exit_code: Option<i32>, error: Opti
                 step.exit_code = Some(0);
                 step.finished_at = Some(Utc::now());
             }
-            // The step that was going when the job failed is the one that
-            // failed; anything after it never started.
+            // The step running when the job failed is the one that failed.
             Status::Running => {
                 step.status = Status::Failed;
                 step.finished_at = Some(Utc::now());

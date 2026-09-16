@@ -3,9 +3,7 @@ use crate::routers::crates_storage_root;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-// ---------------------------------------------------------------------------
-// Public data types
-// ---------------------------------------------------------------------------
+// --- Public data types ---
 
 /// A single version entry as stored in the sparse index file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,9 +43,7 @@ pub struct IndexDep {
     pub package: Option<String>,
 }
 
-// ---------------------------------------------------------------------------
-// Listing helpers
-// ---------------------------------------------------------------------------
+// --- Listing helpers ---
 
 /// Returns a sorted list of all crate names that have an index file.
 pub fn list_crates() -> Vec<String> {

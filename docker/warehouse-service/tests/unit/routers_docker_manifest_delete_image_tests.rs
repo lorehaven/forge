@@ -1,12 +1,10 @@
 use crate::support;
 
-use actix_web::test as actix_test;
-use support::WithDockerStorageRoot as WithStorageRoot;
-use warehouse_service::routers::docker::manifest::delete_image::handle;
+use http::{Method, StatusCode};
 
 const DIGEST: &str = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
-fn write_manifest(storage: &WithStorageRoot) -> std::path::PathBuf {
+fn write_manifest(storage: &support::WithDockerStorageRoot) -> std::path::PathBuf {
     let hex = DIGEST.strip_prefix("sha256:").unwrap();
     let dir = storage.dir.path().join("manifests").join("sha256");
     std::fs::create_dir_all(&dir).unwrap();
@@ -15,7 +13,12 @@ fn write_manifest(storage: &WithStorageRoot) -> std::path::PathBuf {
     path
 }
 
-fn write_tag(storage: &WithStorageRoot, repo: &str, tag: &str, digest: &str) -> std::path::PathBuf {
+fn write_tag(
+    storage: &support::WithDockerStorageRoot,
+    repo: &str,
+    tag: &str,
+    digest: &str,
+) -> std::path::PathBuf {
     let dir = storage.dir.path().join(repo).join("tags");
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join(tag);
@@ -23,45 +26,60 @@ fn write_tag(storage: &WithStorageRoot, repo: &str, tag: &str, digest: &str) -> 
     path
 }
 
-#[actix_web::test]
+async fn app() -> (
+    std::sync::Arc<dyn quench_http::endpoint::Endpoint>,
+    std::sync::Arc<quench_http::di::Container>,
+) {
+    warehouse_service::routers::docker::manifest::delete_image::register_routes();
+    let container = support::container_builder().build().await.unwrap();
+    support::app(container).await
+}
+
+#[tokio::test]
 async fn handle_rejects_a_non_digest_reference() {
-    let _storage = WithStorageRoot::new();
-    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
-    let req = actix_test::TestRequest::delete()
-        .uri("/my-repo/manifests/latest")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(
-        resp.status(),
-        actix_web::http::StatusCode::METHOD_NOT_ALLOWED
-    );
+    let _storage = support::WithDockerStorageRoot::new();
+    let (app, container) = app().await;
+    let resp = app
+        .call(support::req(
+            Method::DELETE,
+            "/v2/my-repo/manifests/latest",
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::METHOD_NOT_ALLOWED);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn handle_rejects_an_invalid_repository_name() {
-    let _storage = WithStorageRoot::new();
-    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
-    let req = actix_test::TestRequest::delete()
-        .uri(&format!("/..%2fetc/manifests/{DIGEST}"))
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::BAD_REQUEST);
+    let _storage = support::WithDockerStorageRoot::new();
+    let (app, container) = app().await;
+    let resp = app
+        .call(support::req(
+            Method::DELETE,
+            &format!("/v2/..%2fetc/manifests/{DIGEST}"),
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn handle_reports_not_found_for_an_unknown_manifest() {
-    let _storage = WithStorageRoot::new();
-    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
-    let req = actix_test::TestRequest::delete()
-        .uri(&format!("/my-repo/manifests/{DIGEST}"))
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::NOT_FOUND);
+    let _storage = support::WithDockerStorageRoot::new();
+    let (app, container) = app().await;
+    let resp = app
+        .call(support::req(
+            Method::DELETE,
+            &format!("/v2/my-repo/manifests/{DIGEST}"),
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn handle_deletes_the_manifest_and_every_tag_pointing_at_it() {
-    let storage = WithStorageRoot::new();
+    let storage = support::WithDockerStorageRoot::new();
     let manifest_path = write_manifest(&storage);
     let matching_tag = write_tag(&storage, "my-repo", "latest", DIGEST);
     let other_tag = write_tag(
@@ -71,12 +89,15 @@ async fn handle_deletes_the_manifest_and_every_tag_pointing_at_it() {
         "sha256:1111111111111111111111111111111111111111111111111111111111111111",
     );
 
-    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
-    let req = actix_test::TestRequest::delete()
-        .uri(&format!("/my-repo/manifests/{DIGEST}"))
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::ACCEPTED);
+    let (app, container) = app().await;
+    let resp = app
+        .call(support::req(
+            Method::DELETE,
+            &format!("/v2/my-repo/manifests/{DIGEST}"),
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::ACCEPTED);
 
     assert!(!manifest_path.exists());
     assert!(

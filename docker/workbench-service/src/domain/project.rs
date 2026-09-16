@@ -1,8 +1,5 @@
-//! Projects: the flat container every issue lives in.
-//!
-//! Flat, unlike conveyor's project tree - workbench has no need for nesting,
-//! and it keeps the resource-scoped permission check (`workbench:project:<id>:<action>`,
-//! added in a later stage) a single lookup instead of an ancestor walk.
+//! Projects: the flat container every issue lives in. Flat (unlike
+//! conveyor's tree) keeps the permission check a single lookup, not a walk.
 
 use crate::domain::db::{WorkbenchError, pool, schema};
 use chrono::{DateTime, Utc};
@@ -14,8 +11,7 @@ use uuid::Uuid;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Project {
     pub id: String,
-    /// Short code issue keys are built from (`WB-1`, `WB-2`, ...). Unique
-    /// across the estate's one workbench schema.
+    /// Short code issue keys are built from (`WB-1`, ...); unique per schema.
     pub key: String,
     pub name: String,
     pub description: Option<String>,

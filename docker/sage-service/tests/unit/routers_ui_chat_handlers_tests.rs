@@ -10,13 +10,17 @@
 //! Everything else in this file that doesn't need those two clients is
 //! covered.
 
-use actix_web::test as actix_test;
-use actix_web::web::Data;
-use actix_web::{App, http::StatusCode};
-use quench_auth::prelude::JwtConfig;
+use bytes::Bytes;
+use http::{HeaderMap, Method, StatusCode, Uri};
+use http_body_util::BodyExt;
+use quench_auth::domain::jwt::JwtConfig;
 use quench_db::prelude::{Crud, Db};
+use quench_http::di::ContainerBuilder;
+use quench_http::endpoint::Endpoint;
+use quench_http::request::Request;
 use sage_service::domain::models::{Conversation, Message};
 use sage_service::routers::ui::chat::*;
+use std::sync::Arc;
 
 fn db() -> Db {
     Db::InMemory(quench_db::InMemoryDb::new())
@@ -38,89 +42,162 @@ fn auth_enabled() -> JwtConfig {
     config
 }
 
+fn sage_config() -> sage_service::config::SageConfig {
+    sage_service::config::SageConfig {
+        system_prompt: "you are sage".to_string(),
+        default_models: Vec::new(),
+        supported_models: Vec::new(),
+        default_search_provider: "duckduckgo".to_string(),
+        available_search_providers: vec!["duckduckgo".to_string()],
+        capability_profile: sage_service::tools::capabilities::get_profile("web_assistant")
+            .expect("web_assistant profile exists"),
+        stop_models_on_shutdown: false,
+    }
+}
+
+async fn app(builder: ContainerBuilder) -> (Arc<dyn Endpoint>, Arc<quench_http::di::Container>) {
+    register_routes();
+    let container = builder.build().await.unwrap();
+    (
+        quench_starter::http::discover_and_mount("/"),
+        Arc::new(container),
+    )
+}
+
+fn req(method: Method, path: &str, container: &Arc<quench_http::di::Container>) -> Request {
+    Request::new(
+        method,
+        path.parse::<Uri>().unwrap(),
+        HeaderMap::new(),
+        quench_http::body::InboundBody::from_bytes(Bytes::new()),
+        container.clone(),
+    )
+}
+
+fn form_req(
+    method: Method,
+    path: &str,
+    pairs: &[(&str, &str)],
+    container: &Arc<quench_http::di::Container>,
+) -> Request {
+    let encoded = serde_urlencoded::to_string(pairs).unwrap();
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        "content-type",
+        "application/x-www-form-urlencoded".parse().unwrap(),
+    );
+    Request::new(
+        method,
+        path.parse::<Uri>().unwrap(),
+        headers,
+        quench_http::body::InboundBody::from_bytes(Bytes::from(encoded)),
+        container.clone(),
+    )
+}
+
+async fn body_text(resp: quench_http::response::Response) -> String {
+    let collected = resp.into_hyper().into_body().collect().await.expect("body");
+    String::from_utf8_lossy(&collected.to_bytes()).into_owned()
+}
+
+async fn json_body(resp: quench_http::response::Response) -> serde_json::Value {
+    let collected = resp.into_hyper().into_body().collect().await.expect("body");
+    serde_json::from_slice(&collected.to_bytes()).expect("valid json body")
+}
+
+/// Splits a response into its headers and text body, since `Response` only
+/// exposes headers via the consuming `into_hyper()` - a test that needs both
+/// takes ownership once here instead of trying to inspect headers on a
+/// borrow and then separately consume the body.
+async fn parts(resp: quench_http::response::Response) -> (http::HeaderMap, String) {
+    let (parts, body) = resp.into_hyper().into_parts();
+    let collected = body.collect().await.expect("body");
+    (
+        parts.headers,
+        String::from_utf8_lossy(&collected.to_bytes()).into_owned(),
+    )
+}
+
 // ---------------------------------------------------------------------------
 // send_message
 // ---------------------------------------------------------------------------
 
-#[actix_test]
+#[tokio::test]
 async fn send_message_is_unauthorized_without_a_session_when_auth_is_enabled() {
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(Data::new(auth_enabled()))
-            .app_data(Data::new(state()))
-            .app_data(Data::new(db()))
-            .service(send_message),
-    )
+    let (app, container) = app(ContainerBuilder::new()
+        .provide(auth_enabled())
+        .provide(state())
+        .provide(db()))
     .await;
 
-    let req = actix_test::TestRequest::post()
-        .uri("/send")
-        .set_form([
-            ("instance_id", "i1"),
-            ("message", "hi"),
-            ("conversation_id", "c1"),
-        ])
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = app
+        .call(form_req(
+            Method::POST,
+            "/ui/chat/send",
+            &[
+                ("instance_id", "i1"),
+                ("message", "hi"),
+                ("conversation_id", "c1"),
+            ],
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
-#[actix_test]
+#[tokio::test]
 async fn send_message_renders_a_thinking_block_and_registers_the_pending_message() {
-    let chat_state = state();
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(Data::new(auth_disabled()))
-            .app_data(Data::new(chat_state))
-            .app_data(Data::new(db()))
-            .service(send_message),
-    )
+    let (app, container) = app(ContainerBuilder::new()
+        .provide(auth_disabled())
+        .provide(state())
+        .provide(db()))
     .await;
 
-    let req = actix_test::TestRequest::post()
-        .uri("/send")
-        .set_form([
-            ("instance_id", "i1"),
-            ("message", "  hello there  "),
-            ("conversation_id", "c1"),
-        ])
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = app
+        .call(form_req(
+            Method::POST,
+            "/ui/chat/send",
+            &[
+                ("instance_id", "i1"),
+                ("message", "  hello there  "),
+                ("conversation_id", "c1"),
+            ],
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let body = actix_test::read_body(resp).await;
-    let html = String::from_utf8(body.to_vec()).expect("utf8");
+    let html = body_text(resp).await;
     assert!(html.contains("message-user"));
     assert!(html.contains("message-ai"));
     assert!(html.contains("hello there"));
     assert!(html.contains("sse-connect"));
 }
 
-#[actix_test]
+#[tokio::test]
 async fn send_message_with_skip_user_message_only_renders_the_regenerating_block() {
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(Data::new(auth_disabled()))
-            .app_data(Data::new(state()))
-            .app_data(Data::new(db()))
-            .service(send_message),
-    )
+    let (app, container) = app(ContainerBuilder::new()
+        .provide(auth_disabled())
+        .provide(state())
+        .provide(db()))
     .await;
 
-    let req = actix_test::TestRequest::post()
-        .uri("/send")
-        .set_form([
-            ("instance_id", "i1"),
-            ("message", "hi"),
-            ("conversation_id", "c1"),
-            ("skip_user_message", "true"),
-        ])
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = app
+        .call(form_req(
+            Method::POST,
+            "/ui/chat/send",
+            &[
+                ("instance_id", "i1"),
+                ("message", "hi"),
+                ("conversation_id", "c1"),
+                ("skip_user_message", "true"),
+            ],
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let body = actix_test::read_body(resp).await;
-    let html = String::from_utf8(body.to_vec()).expect("utf8");
+    let html = body_text(resp).await;
     assert!(html.contains("ui_chat_regenerating"));
     assert!(!html.contains("message-user"));
 }
@@ -129,21 +206,23 @@ async fn send_message_with_skip_user_message_only_renders_the_regenerating_block
 // delete_modal / delete_modal_empty / delete_conversation
 // ---------------------------------------------------------------------------
 
-#[actix_test]
+#[tokio::test]
 async fn delete_modal_empty_renders_a_closed_shell() {
-    let app = actix_test::init_service(App::new().service(delete_modal_empty)).await;
-    let req = actix_test::TestRequest::get()
-        .uri("/conversations/delete-modal/empty")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(ContainerBuilder::new().provide(db())).await;
+    let resp = app
+        .call(req(
+            Method::GET,
+            "/ui/chat/conversations/delete-modal/empty",
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
-    let body = actix_test::read_body(resp).await;
-    let html = String::from_utf8(body.to_vec()).expect("utf8");
+    let html = body_text(resp).await;
     assert!(html.contains("confirm-delete-modal"));
     assert!(!html.contains("open"));
 }
 
-#[actix_test]
+#[tokio::test]
 async fn delete_modal_names_the_conversation_when_it_exists() {
     let db = db();
     let repo = db.repository::<Conversation>();
@@ -158,33 +237,35 @@ async fn delete_modal_names_the_conversation_when_it_exists() {
     .await
     .unwrap();
 
-    let app =
-        actix_test::init_service(App::new().app_data(Data::new(db)).service(delete_modal)).await;
-    let req = actix_test::TestRequest::get()
-        .uri("/conversations/delete-modal/c1")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(ContainerBuilder::new().provide(db)).await;
+    let resp = app
+        .call(req(
+            Method::GET,
+            "/ui/chat/conversations/delete-modal/c1",
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
-    let body = actix_test::read_body(resp).await;
-    let html = String::from_utf8(body.to_vec()).expect("utf8");
+    let html = body_text(resp).await;
     assert!(html.contains("My chat"));
 }
 
-#[actix_test]
+#[tokio::test]
 async fn delete_modal_falls_back_to_a_generic_label_for_an_unknown_conversation() {
-    let app =
-        actix_test::init_service(App::new().app_data(Data::new(db())).service(delete_modal)).await;
-    let req = actix_test::TestRequest::get()
-        .uri("/conversations/delete-modal/does-not-exist")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(ContainerBuilder::new().provide(db())).await;
+    let resp = app
+        .call(req(
+            Method::GET,
+            "/ui/chat/conversations/delete-modal/does-not-exist",
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
-    let body = actix_test::read_body(resp).await;
-    let html = String::from_utf8(body.to_vec()).expect("utf8");
+    let html = body_text(resp).await;
     assert!(html.contains("ui_chat_this_conversation"));
 }
 
-#[actix_test]
+#[tokio::test]
 async fn delete_conversation_redirects_home_when_it_was_the_active_conversation() {
     let db = db();
     let repo = db.repository::<Conversation>();
@@ -199,21 +280,20 @@ async fn delete_conversation_redirects_home_when_it_was_the_active_conversation(
     .await
     .unwrap();
 
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(Data::new(db))
-            .service(delete_conversation),
-    )
-    .await;
-    let req = actix_test::TestRequest::post()
-        .uri("/conversations/delete/c1?active_id=c1")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(ContainerBuilder::new().provide(db)).await;
+    let resp = app
+        .call(req(
+            Method::POST,
+            "/ui/chat/conversations/delete/c1?active_id=c1",
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
-    assert!(resp.headers().contains_key("HX-Redirect"));
+    let (headers, _) = parts(resp).await;
+    assert!(headers.contains_key("hx-redirect"));
 }
 
-#[actix_test]
+#[tokio::test]
 async fn delete_conversation_returns_an_oob_removal_when_it_was_not_active() {
     let db = db();
     let repo = db.repository::<Conversation>();
@@ -228,20 +308,17 @@ async fn delete_conversation_returns_an_oob_removal_when_it_was_not_active() {
     .await
     .unwrap();
 
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(Data::new(db))
-            .service(delete_conversation),
-    )
-    .await;
-    let req = actix_test::TestRequest::post()
-        .uri("/conversations/delete/c1?active_id=other")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(ContainerBuilder::new().provide(db)).await;
+    let resp = app
+        .call(req(
+            Method::POST,
+            "/ui/chat/conversations/delete/c1?active_id=other",
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
-    assert!(!resp.headers().contains_key("HX-Redirect"));
-    let body = actix_test::read_body(resp).await;
-    let html = String::from_utf8(body.to_vec()).expect("utf8");
+    let (headers, html) = parts(resp).await;
+    assert!(!headers.contains_key("hx-redirect"));
     assert!(html.contains("hx-swap-oob"));
     assert!(html.contains("history-item-c1"));
 }
@@ -310,20 +387,27 @@ async fn switch_active_message_follows_the_newest_child_chain_to_the_tip() {
     assert_eq!(conv.active_message_id.as_deref(), Some("a-child"));
 }
 
-#[actix_test]
+#[tokio::test]
 async fn switch_branch_redirects_with_the_conversation_id() {
     let db = db();
     seed_thread(&db).await;
 
-    let app =
-        actix_test::init_service(App::new().app_data(Data::new(db)).service(switch_branch)).await;
-    let req = actix_test::TestRequest::post()
-        .uri("/conversations/switch")
-        .set_form([("conversation_id", "conv"), ("target_message_id", "a")])
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(ContainerBuilder::new().provide(db)).await;
+    let resp = app
+        .call(form_req(
+            Method::POST,
+            "/ui/chat/conversations/switch",
+            &[("conversation_id", "conv"), ("target_message_id", "a")],
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
-    let location = resp.headers().get("HX-Redirect").unwrap().to_str().unwrap();
+    let (headers, _) = parts(resp).await;
+    let location = headers
+        .get("hx-redirect")
+        .expect("HX-Redirect header")
+        .to_str()
+        .unwrap();
     assert!(location.contains("conversation_id=conv"));
 }
 
@@ -364,18 +448,16 @@ async fn get_conversation_messages_is_empty_without_an_active_message() {
 // edit_form / handle_edit
 // ---------------------------------------------------------------------------
 
-#[actix_test]
+#[tokio::test]
 async fn edit_form_is_not_found_for_an_unknown_message() {
-    let app =
-        actix_test::init_service(App::new().app_data(Data::new(db())).service(edit_form)).await;
-    let req = actix_test::TestRequest::get()
-        .uri("/edit-form/nope")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(ContainerBuilder::new().provide(db())).await;
+    let resp = app
+        .call(req(Method::GET, "/ui/chat/edit-form/nope", &container))
+        .await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[actix_test]
+#[tokio::test]
 async fn edit_form_renders_a_textarea_prefilled_with_the_message_content() {
     let db = db();
     db.repository::<Message>()
@@ -390,30 +472,30 @@ async fn edit_form_renders_a_textarea_prefilled_with_the_message_content() {
         .await
         .unwrap();
 
-    let app = actix_test::init_service(App::new().app_data(Data::new(db)).service(edit_form)).await;
-    let req = actix_test::TestRequest::get()
-        .uri("/edit-form/m1")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(ContainerBuilder::new().provide(db)).await;
+    let resp = app
+        .call(req(Method::GET, "/ui/chat/edit-form/m1", &container))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
-    let body = actix_test::read_body(resp).await;
-    let html = String::from_utf8(body.to_vec()).expect("utf8");
+    let html = body_text(resp).await;
     assert!(html.contains("original text"));
 }
 
-#[actix_test]
+#[tokio::test]
 async fn handle_edit_is_not_found_for_an_unknown_message() {
-    let app =
-        actix_test::init_service(App::new().app_data(Data::new(db())).service(handle_edit)).await;
-    let req = actix_test::TestRequest::post()
-        .uri("/handle-edit")
-        .set_form([("message_id", "nope"), ("new_content", "x")])
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(ContainerBuilder::new().provide(db())).await;
+    let resp = app
+        .call(form_req(
+            Method::POST,
+            "/ui/chat/handle-edit",
+            &[("message_id", "nope"), ("new_content", "x")],
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[actix_test]
+#[tokio::test]
 async fn handle_edit_branches_a_new_user_message_from_the_same_parent_and_redirects() {
     let db = db();
     db.repository::<Message>()
@@ -439,19 +521,18 @@ async fn handle_edit_branches_a_new_user_message_from_the_same_parent_and_redire
         .await
         .unwrap();
 
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(Data::new(db.clone()))
-            .service(handle_edit),
-    )
-    .await;
-    let req = actix_test::TestRequest::post()
-        .uri("/handle-edit")
-        .set_form([("message_id", "m1"), ("new_content", "  edited  ")])
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(ContainerBuilder::new().provide(db.clone())).await;
+    let resp = app
+        .call(form_req(
+            Method::POST,
+            "/ui/chat/handle-edit",
+            &[("message_id", "m1"), ("new_content", "  edited  ")],
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
-    assert!(resp.headers().contains_key("HX-Redirect"));
+    let (headers, _) = parts(resp).await;
+    assert!(headers.contains_key("hx-redirect"));
 
     let conv = db
         .repository::<Conversation>()
@@ -476,52 +557,31 @@ async fn handle_edit_branches_a_new_user_message_from_the_same_parent_and_redire
 // token_stats
 // ---------------------------------------------------------------------------
 
-fn sage_config() -> sage_service::config::SageConfig {
-    sage_service::config::SageConfig {
-        system_prompt: "you are sage".to_string(),
-        default_models: Vec::new(),
-        supported_models: Vec::new(),
-        default_search_provider: "duckduckgo".to_string(),
-        available_search_providers: vec!["duckduckgo".to_string()],
-        capability_profile: sage_service::tools::capabilities::get_profile("web_assistant")
-            .expect("web_assistant profile exists"),
-        stop_models_on_shutdown: false,
-    }
-}
-
-#[actix_test]
+#[tokio::test]
 async fn token_stats_is_unauthorized_without_a_session_when_auth_is_enabled() {
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(Data::new(auth_enabled()))
-            .app_data(Data::new(db()))
-            .app_data(Data::new(sage_config()))
-            .service(token_stats),
-    )
+    let (app, container) = app(ContainerBuilder::new()
+        .provide(auth_enabled())
+        .provide(db())
+        .provide(sage_config()))
     .await;
-    let req = actix_test::TestRequest::get()
-        .uri("/stats/conv")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = app
+        .call(req(Method::GET, "/ui/chat/stats/conv", &container))
+        .await;
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
-#[actix_test]
+#[tokio::test]
 async fn token_stats_reports_usage_for_an_empty_conversation() {
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(Data::new(auth_disabled()))
-            .app_data(Data::new(db()))
-            .app_data(Data::new(sage_config()))
-            .service(token_stats),
-    )
+    let (app, container) = app(ContainerBuilder::new()
+        .provide(auth_disabled())
+        .provide(db())
+        .provide(sage_config()))
     .await;
-    let req = actix_test::TestRequest::get()
-        .uri("/stats/conv")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = app
+        .call(req(Method::GET, "/ui/chat/stats/conv", &container))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
-    let body: serde_json::Value = actix_test::read_body_json(resp).await;
+    let body = json_body(resp).await;
     assert_eq!(body["success"], true);
 }
 

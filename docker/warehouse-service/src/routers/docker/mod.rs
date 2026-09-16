@@ -1,7 +1,9 @@
 use crate::routers::docker_storage_root;
-use actix_web::dev::HttpServiceFactory;
-use actix_web::web;
+use async_trait::async_trait;
 use futures_util::StreamExt;
+use http_body_util::BodyExt;
+use quench_http::body::InboundBody;
+use quench_http::prelude::{FromRequest, HttpError, Request};
 use serde::Deserialize;
 use std::path::{Component, Path, PathBuf};
 use tokio::io::AsyncWriteExt;
@@ -11,11 +13,18 @@ pub mod manifest;
 pub mod registry;
 pub mod token;
 
-/// Hard ceiling on a single blob's assembled size, enforced as bytes stream in
-/// (the blob upload handlers read the body as a `Payload` stream, which the
-/// global `PayloadConfig` limit does not cover). Generous by default - image
-/// layers can legitimately be multiple GB - but bounded so a runaway or
-/// malicious upload cannot fill the disk. Override with `MAX_DOCKER_BLOB_BYTES`.
+/// The unread request body - blobs can be multiple GB, too large for the buffered extractors.
+pub struct RawBody(pub InboundBody);
+
+#[async_trait]
+impl FromRequest for RawBody {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        Ok(Self(req.take_body()))
+    }
+}
+
+/// Hard ceiling on a single blob's assembled size, enforced as bytes stream in.
+/// Override with `MAX_DOCKER_BLOB_BYTES`.
 pub fn max_docker_blob_bytes() -> u64 {
     quench_config::ConfigLoader::new("WAREHOUSE")
         .env_u64("MAX_DOCKER_BLOB_BYTES", 32 * 1024 * 1024 * 1024)
@@ -31,16 +40,12 @@ pub enum AppendError {
     TooLarge(u64),
 }
 
-/// Appends a streamed request body to `file_path` in 64 KiB frames, flushing
-/// at the end, and returns the number of bytes written. Never holds more than
-/// one frame in memory, so a monolithic multi-GB `PATCH`/`PUT` (what
-/// `docker push` and `crane`/`skopeo` send) costs a buffer, not its own size
-/// in RAM. `already_on_disk` is the upload file's current length, so the
-/// size ceiling is checked against the whole blob, not just this request.
+/// Streams `body` onto `file_path` in frames (never buffering the whole thing), returning bytes
+/// written. `already_on_disk` lets the size ceiling apply to the whole blob, not just this request.
 pub async fn append_body_to_upload(
     file_path: &Path,
     already_on_disk: u64,
-    body: &mut web::Payload,
+    body: InboundBody,
 ) -> Result<u64, AppendError> {
     let limit = max_docker_blob_bytes();
     let mut file = tokio::fs::OpenOptions::new()
@@ -50,7 +55,8 @@ pub async fn append_body_to_upload(
         .map_err(|_| AppendError::Write)?;
 
     let mut written: u64 = 0;
-    while let Some(chunk) = body.next().await {
+    let mut stream = body.into_data_stream();
+    while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|_| AppendError::Read)?;
 
         written = written.saturating_add(chunk.len() as u64);
@@ -144,24 +150,9 @@ pub struct DigestQuery {
     digest: String,
 }
 
-pub fn scope() -> impl HttpServiceFactory {
-    web::scope("/v2")
-        // Registry endpoints
-        .service(registry::check::handle_get)
-        .service(registry::check::handle_head)
-        .service(registry::catalog::handle)
-        .service(registry::tags::handle)
-        // Blob endpoints
-        .service(blob::check_exists::handle)
-        .service(blob::retrieve::handle)
-        .service(blob::get_upload_status::handle)
-        .service(blob::cancel_upload::handle)
-        .service(blob::complete_upload::handle)
-        .service(blob::start_upload::handle)
-        .service(blob::upload_chunk::handle)
-        // Manifest endpoints
-        .service(manifest::check_exists::handle)
-        .service(manifest::get_image::handle)
-        .service(manifest::put_image::handle)
-        .service(manifest::delete_image::handle)
+pub fn register_routes() {
+    registry::register_routes();
+    blob::register_routes();
+    manifest::register_routes();
+    token::register_routes();
 }

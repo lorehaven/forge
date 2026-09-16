@@ -1,8 +1,6 @@
-use crate::routers::vllm::engine::VllmEngine;
-use actix_web::dev::HttpServiceFactory;
-use actix_web::web;
-use quench_auth::actix::middleware::auth::Auth;
-use quench_auth::prelude::JwtConfig;
+use quench_auth::domain::jwt::JwtConfig;
+use quench_auth::http::middleware::auth::Auth;
+use quench_http::prelude::{Endpoint, OnPathPrefix, wrap};
 use serde::Deserialize;
 use std::sync::Arc;
 
@@ -25,25 +23,25 @@ pub struct VllmArchitecturesFile {
     pub architectures: Vec<String>,
 }
 
-/// No `RequireWrite` here: switchboard's catalog entry
-/// (`config/permissions.toml`) does not declare a `"write"` action at all,
-/// only the specific ones (`"launch"`, `"stop"`, `"delete-model"`) - a coarse
-/// write grant could never exist to check for. `delete_model` and
-/// `delete_model_form` gate themselves with `mod_impl::can`, which is exactly
-/// what `RequireWrite`'s own module docs say to do for a service whose writes
-/// need something more specific than "write": guard the route directly rather
-/// than mounting a blanket middleware that cannot express the distinction.
-pub fn scope(engine: Arc<dyn VllmEngine>, jwt_config: JwtConfig) -> impl HttpServiceFactory {
-    web::scope("/api/v1/models")
-        .app_data(web::Data::new(engine))
-        .wrap(Auth::new(jwt_config))
-        .service(list::handle_list)
-        .service(list::handle_grid)
-        .service(list::estimates_modal)
-        .service(list::empty_estimates_modal_endpoint)
-        .service(list::delete_modal)
-        .service(list::empty_delete_modal_endpoint)
-        .service(delete::delete_model)
-        .service(delete::delete_model_form)
-        .service(running::list_running_models)
+/// No `RequireWrite`: `delete_model`/`delete_model_form` gate via `mod_impl::can`.
+/// `base_path` matters - `OnPathPrefix` sees the raw un-mounted path.
+pub fn wrap_auth(
+    app: Arc<dyn Endpoint>,
+    jwt_config: JwtConfig,
+    base_path: &str,
+) -> Arc<dyn Endpoint> {
+    let prefix: &'static str = Box::leak(format!("{base_path}/api/v1/models").into_boxed_str());
+    wrap(app, OnPathPrefix::new(prefix, Auth::new(jwt_config)))
+}
+
+pub fn register_routes() {
+    let _ = list::handle_list as fn(_) -> _;
+    let _ = list::handle_grid as fn(_, _, _) -> _;
+    let _ = list::estimates_modal as fn(_) -> _;
+    let _ = list::empty_estimates_modal_endpoint as fn() -> _;
+    let _ = list::delete_modal as fn(_) -> _;
+    let _ = list::empty_delete_modal_endpoint as fn() -> _;
+    let _ = delete::delete_model as fn(_, _, _) -> _;
+    let _ = delete::delete_model_form as fn(_, _, _) -> _;
+    let _ = running::list_running_models as fn(_, _, _) -> _;
 }

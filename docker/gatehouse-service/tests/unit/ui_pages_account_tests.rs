@@ -1,14 +1,20 @@
-use actix_web::body::to_bytes;
-use actix_web::{App, HttpResponse, test as actix_test, web};
+use bytes::Bytes;
 use gatehouse_service::catalog::PermissionCatalog;
 use gatehouse_service::realm::{self, RealmError, begin_mfa_enrollment};
 use gatehouse_service::test_support::{TEST_KEY_MATERIAL, auth_disabled_guard};
 use gatehouse_service::ui::pages::account::{
-    Notice, account_page, error_page, known_error_key, mfa_disable, mfa_enroll_page,
-    mfa_enroll_submit, notice_banner, render_account_page, render_mfa_enroll_page, save_account,
+    Notice, error_page, known_error_key, notice_banner, render_account_page, render_mfa_enroll_page,
 };
-use quench_auth::prelude::{JwtConfig, Permissions, Role, SessionDb, User};
+use http::{HeaderMap, Method, StatusCode, Uri};
+use http_body_util::BodyExt;
+use quench_auth::domain::auth::{Permissions, Role, User};
+use quench_auth::domain::jwt::JwtConfig;
+use quench_auth::domain::session::SessionDb;
+use quench_cache::CacheStore;
 use quench_db::prelude::Db;
+use quench_http::di::ContainerBuilder;
+use quench_http::endpoint::Endpoint;
+use quench_http::request::Request;
 use std::sync::Arc;
 
 fn with_key() {
@@ -49,8 +55,8 @@ fn catalog() -> PermissionCatalog {
     result
 }
 
-fn sessions() -> web::Data<Arc<SessionDb>> {
-    web::Data::new(SessionDb::init(quench_cache::CacheStore::in_memory()))
+fn sessions() -> Arc<SessionDb> {
+    SessionDb::init(CacheStore::in_memory())
 }
 
 async fn seed_user(db: &Db, username: &str) -> User {
@@ -68,9 +74,19 @@ async fn seed_user(db: &Db, username: &str) -> User {
     .expect("seed user")
 }
 
-async fn body_text(resp: HttpResponse) -> String {
-    let body = to_bytes(resp.into_body()).await.expect("body");
-    String::from_utf8(body.to_vec()).expect("utf8")
+async fn body_text(resp: quench_http::response::Response) -> String {
+    let collected = resp.into_hyper().into_body().collect().await.expect("body");
+    String::from_utf8(collected.to_bytes().to_vec()).expect("utf8")
+}
+
+fn location(resp: quench_http::response::Response) -> String {
+    resp.into_hyper()
+        .headers()
+        .get("location")
+        .expect("location header")
+        .to_str()
+        .expect("utf8")
+        .to_string()
 }
 
 // -----------------------------------------------------------------
@@ -136,26 +152,68 @@ async fn render_mfa_enroll_page_without_error_omits_the_banner() {
 #[tokio::test]
 async fn error_page_renders_with_the_error_s_own_status() {
     let resp = error_page(&RealmError::NotFound);
-    assert_eq!(resp.status(), actix_web::http::StatusCode::NOT_FOUND);
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+// -----------------------------------------------------------------
+// HTTP handlers - every route here takes the private `Actor` extractor
+// (`ui::pages::account`), so these go through the real discovered router.
+// -----------------------------------------------------------------
+
+async fn account_app(
+    config: JwtConfig,
+    db: Db,
+) -> (Arc<dyn Endpoint>, Arc<quench_http::di::Container>) {
+    gatehouse_service::ui::pages::account::register_routes();
+    let container = ContainerBuilder::new()
+        .provide(config)
+        .provide(catalog())
+        .provide(db)
+        .provide_arc(sessions())
+        .build()
+        .await
+        .unwrap();
+    (
+        quench_starter::http::discover_and_mount("/"),
+        Arc::new(container),
+    )
+}
+
+fn get(path: &str, container: &Arc<quench_http::di::Container>) -> Request {
+    Request::new(
+        Method::GET,
+        path.parse::<Uri>().unwrap(),
+        HeaderMap::new(),
+        quench_http::body::InboundBody::from_bytes(Bytes::new()),
+        container.clone(),
+    )
+}
+
+fn post_form(
+    path: &str,
+    pairs: &[(&str, &str)],
+    container: &Arc<quench_http::di::Container>,
+) -> Request {
+    let encoded = serde_urlencoded::to_string(pairs).unwrap();
+    Request::new(
+        Method::POST,
+        path.parse::<Uri>().unwrap(),
+        HeaderMap::new(),
+        quench_http::body::InboundBody::from_bytes(Bytes::from(encoded)),
+        container.clone(),
+    )
 }
 
 // -----------------------------------------------------------------
 // HTTP handlers - not signed in
 // -----------------------------------------------------------------
 
-#[actix_web::test]
+#[tokio::test]
 async fn account_page_redirects_to_login_when_not_signed_in() {
     let mut config = JwtConfig::for_tests();
     config.auth_enabled = true;
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(config))
-            .app_data(web::Data::new(db().await))
-            .service(account_page),
-    )
-    .await;
-    let req = actix_test::TestRequest::get().uri("/account").to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = account_app(config, db().await).await;
+    let resp = app.call(get("/ui/account", &container)).await;
     assert!(resp.status().is_redirection());
 }
 
@@ -163,150 +221,94 @@ async fn account_page_redirects_to_login_when_not_signed_in() {
 // HTTP handlers - auth disabled (bypass claims)
 // -----------------------------------------------------------------
 
-#[actix_web::test]
+#[tokio::test]
 async fn account_page_renders_the_bypass_user_s_profile() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
     seed_user(&db, "admin").await;
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(JwtConfig::for_tests()))
-            .app_data(web::Data::new(db))
-            .service(account_page),
-    )
-    .await;
-    let req = actix_test::TestRequest::get().uri("/account").to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let (app, container) = account_app(JwtConfig::for_tests(), db).await;
+    let resp = app.call(get("/ui/account", &container)).await;
+    assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn save_account_updates_the_profile_and_redirects() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
     seed_user(&db, "admin").await;
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(JwtConfig::for_tests()))
-            .app_data(web::Data::new(catalog()))
-            .app_data(web::Data::new(db))
-            .app_data(sessions())
-            .service(save_account),
-    )
-    .await;
-    let req = actix_test::TestRequest::post()
-        .uri("/account")
-        .set_form([("display_name", "Alice A.")])
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::FOUND);
-    let location = resp
-        .headers()
-        .get(actix_web::http::header::LOCATION)
-        .unwrap()
-        .to_str()
-        .unwrap();
-    assert!(location.contains("ok=saved"));
+    let (app, container) = account_app(JwtConfig::for_tests(), db).await;
+    let resp = app
+        .call(post_form(
+            "/ui/account",
+            &[("display_name", "Alice A.")],
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::FOUND);
+    assert!(location(resp).contains("ok=saved"));
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn mfa_enroll_page_renders_a_fresh_secret() {
     let _guard = auth_disabled_guard().await;
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(JwtConfig::for_tests()))
-            .service(mfa_enroll_page),
-    )
-    .await;
-    let req = actix_test::TestRequest::get()
-        .uri("/account/mfa/enroll")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
-    let body = actix_test::read_body(resp).await;
-    let html = String::from_utf8(body.to_vec()).expect("utf8");
+    let (app, container) = account_app(JwtConfig::for_tests(), db().await).await;
+    let resp = app.call(get("/ui/account/mfa/enroll", &container)).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let html = body_text(resp).await;
     assert!(html.contains("ui_account_mfa_enroll_title"));
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn mfa_enroll_submit_rejects_a_wrong_code() {
     let _guard = auth_disabled_guard().await;
     with_key();
     let db = db().await;
     seed_user(&db, "admin").await;
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(JwtConfig::for_tests()))
-            .app_data(web::Data::new(db))
-            .service(mfa_enroll_submit),
-    )
-    .await;
+    let (app, container) = account_app(JwtConfig::for_tests(), db).await;
     let (secret, _) = begin_mfa_enrollment("admin").expect("begin enrollment");
-    let req = actix_test::TestRequest::post()
-        .uri("/account/mfa/enroll")
-        .set_form([("secret", secret.as_str()), ("code", "000000")])
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = app
+        .call(post_form(
+            "/ui/account/mfa/enroll",
+            &[("secret", secret.as_str()), ("code", "000000")],
+            &container,
+        ))
+        .await;
     // A wrong code re-renders the enroll page with the error banner rather
     // than redirecting.
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
-    let body = actix_test::read_body(resp).await;
-    let html = String::from_utf8(body.to_vec()).expect("utf8");
+    assert_eq!(resp.status(), StatusCode::OK);
+    let html = body_text(resp).await;
     assert!(html.contains("ui_admin_error_mfa_code_invalid"));
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn mfa_enroll_submit_enables_mfa_with_the_right_code() {
     let _guard = auth_disabled_guard().await;
     with_key();
     let db = db().await;
     seed_user(&db, "admin").await;
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(JwtConfig::for_tests()))
-            .app_data(web::Data::new(db))
-            .service(mfa_enroll_submit),
-    )
-    .await;
+    let (app, container) = account_app(JwtConfig::for_tests(), db).await;
     let (secret, _) = begin_mfa_enrollment("admin").expect("begin enrollment");
     let code = current_totp_code(&secret, "admin");
-    let req = actix_test::TestRequest::post()
-        .uri("/account/mfa/enroll")
-        .set_form([("secret", secret.as_str()), ("code", code.as_str())])
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::FOUND);
-    let location = resp
-        .headers()
-        .get(actix_web::http::header::LOCATION)
-        .unwrap()
-        .to_str()
-        .unwrap();
-    assert!(location.contains("mfa_enabled"));
+    let resp = app
+        .call(post_form(
+            "/ui/account/mfa/enroll",
+            &[("secret", secret.as_str()), ("code", code.as_str())],
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::FOUND);
+    assert!(location(resp).contains("mfa_enabled"));
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn mfa_disable_turns_mfa_back_off() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
     seed_user(&db, "admin").await;
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(JwtConfig::for_tests()))
-            .app_data(web::Data::new(db))
-            .service(mfa_disable),
-    )
-    .await;
-    let req = actix_test::TestRequest::post()
-        .uri("/account/mfa/disable")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::FOUND);
-    let location = resp
-        .headers()
-        .get(actix_web::http::header::LOCATION)
-        .unwrap()
-        .to_str()
-        .unwrap();
-    assert!(location.contains("mfa_disabled"));
+    let (app, container) = account_app(JwtConfig::for_tests(), db).await;
+    let resp = app
+        .call(post_form("/ui/account/mfa/disable", &[], &container))
+        .await;
+    assert_eq!(resp.status(), StatusCode::FOUND);
+    assert!(location(resp).contains("mfa_disabled"));
 }

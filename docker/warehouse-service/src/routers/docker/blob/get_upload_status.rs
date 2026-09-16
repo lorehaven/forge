@@ -1,15 +1,13 @@
 use crate::domain::docker_error;
 use crate::routers::docker::upload_path;
-use actix_web::{HttpResponse, Responder, get, web};
-use quench_starter::prelude::error;
+use quench_http::prelude::{Path, Response, get, http::StatusCode};
+use quench_starter::http::domain::error;
 
-#[get("/{name:.+}/blobs/uploads/{uuid}")]
-pub async fn handle(path: web::Path<(String, String)>) -> impl Responder {
-    let (name, uuid) = path.into_inner();
-
+#[get("/v2/{name:.+}/blobs/uploads/{uuid}")]
+pub async fn handle(Path((name, uuid)): Path<(String, String)>) -> Response {
     let Some(upload_path) = upload_path(&name, &uuid) else {
         return error::response(
-            actix_web::http::StatusCode::BAD_REQUEST,
+            StatusCode::BAD_REQUEST,
             docker_error::NAME_UNKNOWN,
             "invalid repository name",
         );
@@ -18,7 +16,7 @@ pub async fn handle(path: web::Path<(String, String)>) -> impl Responder {
         Ok(m) => m,
         Err(_) => {
             return error::response(
-                actix_web::http::StatusCode::NOT_FOUND,
+                StatusCode::NOT_FOUND,
                 docker_error::BLOB_UNKNOWN,
                 "blob upload unknown to registry",
             );
@@ -32,10 +30,13 @@ pub async fn handle(path: web::Path<(String, String)>) -> impl Responder {
         format!("0-{}", size - 1)
     };
 
-    HttpResponse::NoContent()
-        .append_header(("Location", format!("/v2/{name}/blobs/uploads/{uuid}")))
-        .append_header(("Docker-Upload-UUID", uuid))
-        .append_header(("Range", range))
-        .append_header(("Content-Length", 0))
-        .finish()
+    Response::new(StatusCode::NO_CONTENT)
+        .header("location", format!("/v2/{name}/blobs/uploads/{uuid}"))
+        .header("docker-upload-uuid", &uuid)
+        .header("range", range)
+        .header("content-length", "0")
+}
+
+pub fn register_routes() {
+    let _ = handle as fn(_) -> _;
 }

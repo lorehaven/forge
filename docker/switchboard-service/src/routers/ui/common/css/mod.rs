@@ -1,5 +1,6 @@
 use quench_starter::actix::routers::ui::common::css;
 use quench_web::prelude::CssRule;
+// `css` is framework-agnostic; it lives under `actix::` only by history.
 
 pub mod estimates;
 pub mod header;

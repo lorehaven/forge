@@ -1,25 +1,39 @@
-use crate::routers::ui::common::{UiPageKind, render_page, ui_path};
+use crate::routers::ui::common::{PageAuth, UiPageKind, render_page, ui_login_redirect, ui_path};
 use crate::routers::{artifacts_enabled, crates_enabled, docker_enabled, files_enabled};
-use actix_web::{HttpResponse, Responder, get, web};
-use quench_auth::prelude::JwtConfig;
-use quench_starter::actix::routers::ui::pages::home::{handle_home, service_card};
+use quench_http::prelude::{Response, get, http::StatusCode};
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 
-#[get("/home")]
-pub async fn home(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
-    handle_home(req, config, render_home_page).await
+#[get("/ui/home")]
+pub async fn home(PageAuth(authenticated): PageAuth) -> Response {
+    if !authenticated {
+        return ui_login_redirect();
+    }
+    render_home_page()
 }
 
-#[get("/home/")]
-pub async fn home_slash(
-    req: actix_web::HttpRequest,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
-    handle_home(req, config, render_home_page).await
+#[get("/ui/home/")]
+pub async fn home_slash(PageAuth(authenticated): PageAuth) -> Response {
+    if !authenticated {
+        return ui_login_redirect();
+    }
+    render_home_page()
 }
 
-pub fn render_home_page() -> HttpResponse {
+/// Ported from `quench_starter::actix::routers::ui::pages::home::service_card` - never split out under `http`.
+fn service_card(href: &str, title_key: &str, desc_key: &str, extra_class: &str) -> Element {
+    a().attr("href", href)
+        .class(format!("home-card {extra_class}"))
+        .child(
+            div()
+                .class("home-card-body")
+                .child(div().class("home-card-title").attr("data-i18n", title_key))
+                .child(div().class("home-card-desc").attr("data-i18n", desc_key)),
+        )
+        .child(div().class("home-card-arrow").text("→"))
+}
+
+pub fn render_home_page() -> Response {
     let mut service_cards = div().class("home-grid");
     let mut has_service_cards = false;
 
@@ -82,7 +96,7 @@ pub fn render_home_page() -> HttpResponse {
     }
 
     render_page(
-        HttpResponse::Ok(),
+        StatusCode::OK,
         content().class("home-content").child(
             div()
                 .class("home-container")
@@ -95,4 +109,9 @@ pub fn render_home_page() -> HttpResponse {
         ),
         UiPageKind::Home,
     )
+}
+
+pub fn register_routes() {
+    let _ = home as fn(_) -> _;
+    let _ = home_slash as fn(_) -> _;
 }

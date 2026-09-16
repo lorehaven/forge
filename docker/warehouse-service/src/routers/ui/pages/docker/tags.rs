@@ -1,22 +1,21 @@
-use crate::routers::ui::common::{is_ui_authenticated, ui_login_redirect};
-use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
-use quench_auth::prelude::JwtConfig;
-use quench_starter::prelude::with_base_path;
+use crate::routers::ui::common::{PageAuth, ui_login_redirect};
+use quench_http::prelude::{Path, Response, get, http::StatusCode};
+use quench_starter::common::routes::with_base_path;
 
-#[get("/docker/tags/{repository:.+}")]
+#[get("/ui/docker/tags/{repository:.+}")]
 pub async fn docker_tags(
-    req: HttpRequest,
-    path: web::Path<String>,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
-    if !is_ui_authenticated(&req, &config).await {
+    PageAuth(authenticated): PageAuth,
+    Path(repository): Path<String>,
+) -> Response {
+    if !authenticated {
         return ui_login_redirect();
     }
-    let repository = path.into_inner();
-    HttpResponse::PermanentRedirect()
-        .append_header((
-            "Location",
-            with_base_path(&format!("/ui/docker/catalog?repo={repository}")),
-        ))
-        .finish()
+    Response::new(StatusCode::PERMANENT_REDIRECT).header(
+        "Location",
+        with_base_path(&format!("/ui/docker/catalog?repo={repository}")),
+    )
+}
+
+pub fn register_routes() {
+    let _ = docker_tags as fn(_, _) -> _;
 }

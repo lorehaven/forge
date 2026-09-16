@@ -1,6 +1,4 @@
-//! Gatehouse's stylesheet, generated from the same rule sets the other
-//! services build theirs from - that is what keeps the estate looking like one
-//! product rather than four.
+//! Gatehouse's stylesheet, built from the same rule sets the other services use.
 
 use quench_starter::actix::routers::ui::common::css;
 use quench_web::prelude::CssRule;
@@ -16,13 +14,8 @@ pub fn ensure_gatehouse_css() {
     let _ = std::fs::write("dist/assets/css/gatehouse.css", rules);
 }
 
-/// The shared sets the other services compose, plus the admin pages' own rows.
-///
-/// The forms need no rules here: `style.css` already styles `form`, `input`,
-/// `select`, `button` and `form .error` for the whole estate, and overriding them
-/// is what made these pages look like a different product. What is local is the
-/// user list and the permission matrix - layout for a table of people, which no
-/// other service in the estate has.
+/// Shared sets plus the admin pages' own rows - just the user list/permission
+/// matrix layout, since `style.css` already covers forms estate-wide.
 pub fn gatehouse_css_rules() -> Vec<CssRule> {
     let mut rules = Vec::new();
     rules.extend(css::layout_rules());
@@ -44,8 +37,7 @@ pub fn admin_rules() -> Vec<CssRule> {
             .property("width", "100%")
             .property("margin", "0 auto"),
         CssRule::new(".admin-panel").property("width", "100%"),
-        // One row per user: name and roles on the left, grants in the middle, the
-        // edit link pinned right.
+        // One row per user: name/roles left, grants middle, edit link pinned right.
         CssRule::new(".admin-row")
             .property("display", "flex")
             .property("align-items", "center")
@@ -89,9 +81,7 @@ pub fn admin_rules() -> Vec<CssRule> {
         CssRule::new(".admin-section-title")
             .property("margin-top", "0.5rem")
             .property("font-weight", "600"),
-        // Lifecycle/security status rows: a label, a value, and an optional
-        // action button pinned right - the same left/middle/right shape
-        // `.admin-row` uses for the user list, at a smaller scale.
+        // Status rows: label, value, optional action button - same shape as `.admin-row`.
         CssRule::new(".admin-status-row")
             .property("display", "flex")
             .property("align-items", "center")
@@ -102,9 +92,7 @@ pub fn admin_rules() -> Vec<CssRule> {
                     .property("margin-left", "auto")
                     .property("width", "auto"),
             ),
-        // The matrix: a label column that does not shrink, and a column of
-        // action checkboxes that wraps rather than overflowing when a service
-        // declares more of them than fit on one line.
+        // Label column fixed, action checkboxes wrap instead of overflowing.
         CssRule::new(".admin-matrix")
             .property("display", "flex")
             .property("flex-direction", "column")

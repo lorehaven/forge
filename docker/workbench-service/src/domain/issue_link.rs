@@ -1,6 +1,5 @@
-//! Typed links between two issues - "blocks" (its inverse, "blocked by", is
-//! the same row read from the other end) and the symmetric "relates to" -
-//! distinct from `issue::Issue::parent_id`'s subtask hierarchy.
+//! Typed links between issues ("blocks"/"relates_to"), distinct from
+//! `Issue::parent_id`'s subtask hierarchy.
 
 use crate::domain::db::{WorkbenchError, pool, schema};
 use chrono::{DateTime, Utc};
@@ -52,8 +51,7 @@ pub async fn create(db: &Db, new: &NewIssueLink) -> Result<IssueLink, WorkbenchE
     from_row(&row)
 }
 
-/// Looked up before a delete, to resolve back to the owning issue (and from
-/// there the project) an authorization check needs.
+/// Used before delete to resolve the owning issue/project for auth.
 pub async fn read(db: &Db, id: &str) -> Result<Option<IssueLink>, WorkbenchError> {
     let pool = pool(db)?;
     let schema = schema();
@@ -80,9 +78,7 @@ pub async fn delete(db: &Db, id: &str) -> Result<bool, WorkbenchError> {
     Ok(result.rows_affected() > 0)
 }
 
-/// One side of a resolved link, carrying enough of the linked issue to render
-/// it as `{project_key}-{seq}` plus its title, without a caller having to
-/// chase the linked issue's project down separately.
+/// One side of a resolved link: enough of the linked issue to render it.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LinkedIssue {
     pub link_id: String,
@@ -110,10 +106,7 @@ const LINKED_ISSUE_SELECT: &str = "SELECT il.id AS link_id, i.id AS issue_id, \
      JOIN {schema}.projects p ON p.id = i.project_id \
      WHERE {filter} ORDER BY p.key, i.seq";
 
-/// Every link touching `issue_id`, resolved and split into the three lists a
-/// detail page renders: issues this one blocks, issues blocking this one, and
-/// issues it loosely relates to (read from either side, since that link has
-/// no direction).
+/// Links touching `issue_id`, split into blocks/blocked_by/relates_to.
 pub async fn related(db: &Db, issue_id: &str) -> Result<RelatedIssues, WorkbenchError> {
     let pool = pool(db)?;
     let schema = schema();

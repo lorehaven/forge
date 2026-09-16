@@ -1,12 +1,9 @@
 use super::storage::{IndexDep, IndexRecord, list_crates, list_versions};
 use crate::routers::crates::ops::yank::set_yanked;
 use crate::routers::ui::PageQuery;
-use crate::routers::ui::common::{
-    UiPageKind, is_ui_authenticated, render_page, ui_login_redirect, ui_path,
-};
-use actix_web::{HttpRequest, HttpResponse, Responder, get, post, web};
-use quench_auth::prelude::JwtConfig;
-use quench_starter::prelude::with_base_path;
+use crate::routers::ui::common::{PageAuth, UiPageKind, render_page, ui_login_redirect, ui_path};
+use quench_http::prelude::{Form, Query, Response, get, http::StatusCode, post};
+use quench_starter::common::routes::with_base_path;
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 
@@ -16,72 +13,61 @@ pub struct CrateActionForm {
     version: String,
 }
 
-#[get("/crates/catalog")]
+#[get("/ui/crates/catalog")]
 pub async fn crates_index(
-    req: HttpRequest,
-    query: web::Query<PageQuery>,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
-    if !is_ui_authenticated(&req, &config).await {
+    PageAuth(authenticated): PageAuth,
+    Query(query): Query<PageQuery>,
+) -> Response {
+    if !authenticated {
         return ui_login_redirect();
     }
     render_crates_page(query.repo.clone(), query.tag.clone())
 }
 
-#[get("/crates/catalog/")]
+#[get("/ui/crates/catalog/")]
 pub async fn crates_index_slash(
-    req: HttpRequest,
-    query: web::Query<PageQuery>,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
-    if !is_ui_authenticated(&req, &config).await {
+    PageAuth(authenticated): PageAuth,
+    Query(query): Query<PageQuery>,
+) -> Response {
+    if !authenticated {
         return ui_login_redirect();
     }
     render_crates_page(query.repo.clone(), query.tag.clone())
 }
 
-#[post("/crates/yank")]
+#[post("/ui/crates/yank")]
 pub async fn yank_version(
-    req: HttpRequest,
-    form: web::Form<CrateActionForm>,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
-    set_yank_state(req, form, config, true).await
+    PageAuth(authenticated): PageAuth,
+    Form(form): Form<CrateActionForm>,
+) -> Response {
+    set_yank_state(authenticated, form, true).await
 }
 
-#[post("/crates/unyank")]
+#[post("/ui/crates/unyank")]
 pub async fn unyank_version(
-    req: HttpRequest,
-    form: web::Form<CrateActionForm>,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
-    set_yank_state(req, form, config, false).await
+    PageAuth(authenticated): PageAuth,
+    Form(form): Form<CrateActionForm>,
+) -> Response {
+    set_yank_state(authenticated, form, false).await
 }
 
-async fn set_yank_state(
-    req: HttpRequest,
-    form: web::Form<CrateActionForm>,
-    config: web::Data<JwtConfig>,
-    yanked: bool,
-) -> HttpResponse {
-    if !is_ui_authenticated(&req, &config).await {
+async fn set_yank_state(authenticated: bool, form: CrateActionForm, yanked: bool) -> Response {
+    if !authenticated {
         return ui_login_redirect();
     }
 
     match set_yanked(&form.name, &form.version, yanked).await {
-        Ok(true) => HttpResponse::NoContent()
-            .append_header((
-                "HX-Redirect",
-                with_base_path(&format!(
-                    "/ui/crates/catalog?repo={}&tag={}",
-                    form.name, form.version
-                )),
-            ))
-            .finish(),
-        Ok(false) => HttpResponse::NotFound().body("api_error_crate_version_not_found"),
+        Ok(true) => Response::new(StatusCode::NO_CONTENT).header(
+            "HX-Redirect",
+            with_base_path(&format!(
+                "/ui/crates/catalog?repo={}&tag={}",
+                form.name, form.version
+            )),
+        ),
+        Ok(false) => Response::text(StatusCode::NOT_FOUND, "api_error_crate_version_not_found"),
         Err(msg) => {
             tracing::error!("Failed to change yank state: {}", msg);
-            HttpResponse::InternalServerError().body("api_error_internal")
+            Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal")
         }
     }
 }
@@ -89,7 +75,7 @@ async fn set_yank_state(
 pub fn render_crates_page(
     selected_crate: Option<String>,
     selected_version: Option<String>,
-) -> HttpResponse {
+) -> Response {
     let all_crates = list_crates();
 
     let krate = selected_crate
@@ -134,7 +120,7 @@ pub fn render_crates_page(
         .child(render_metadata_panel(krate.as_deref(), selected_record));
 
     render_page(
-        HttpResponse::Ok(),
+        StatusCode::OK,
         content()
             .class("container-fluid py-4")
             .child(div().class("split-view").child(left).child(right)),
@@ -450,4 +436,11 @@ fn meta_row_value(label_key: &str, value: Element) -> Element {
         .class("meta-row")
         .child(div().class("meta-label").attr("data-i18n", label_key))
         .child(div().class("meta-value mono").child(value))
+}
+
+pub fn register_routes() {
+    let _ = crates_index as fn(_, _) -> _;
+    let _ = crates_index_slash as fn(_, _) -> _;
+    let _ = yank_version as fn(_, _) -> _;
+    let _ = unyank_version as fn(_, _) -> _;
 }

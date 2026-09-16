@@ -2,8 +2,7 @@
 //! `routers/ui/common/mod.rs`, plus a light smoke test of the `assets`
 //! handler's 404 path (no `dist/assets` fixture is set up for a real file).
 
-use actix_web::App;
-use actix_web::test as actix_test;
+use quench_http::prelude::Path;
 use switchboard_service::routers::ui::common::{
     assets, supported_locales, ui_header, ui_header_split,
 };
@@ -53,12 +52,8 @@ fn ui_header_split_renders_both_title_keys() {
     assert!(html.contains("header-split"));
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn assets_returns_not_found_for_a_nonexistent_asset() {
-    let app = actix_test::init_service(App::new().service(assets)).await;
-    let req = actix_test::TestRequest::get()
-        .uri("/assets/does-not-exist.css")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = assets(Path("does-not-exist.css".to_string())).await;
     assert!(!resp.status().is_success());
 }

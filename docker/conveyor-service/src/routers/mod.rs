@@ -1,21 +1,21 @@
-use actix_web::dev::HttpServiceFactory;
-use actix_web::web;
-use quench_auth::prelude::JwtConfig;
+use quench_auth::domain::jwt::JwtConfig;
+use quench_http::prelude::Endpoint;
+use std::sync::Arc;
 
 pub mod api;
 pub mod ui;
 
-/// Mounted at the server root, outside the base path. Assets are here so a
-/// stylesheet referenced with an absolute path resolves whether or not the
-/// deployment sets `BASE_PATH`.
-pub fn root_scope() -> impl HttpServiceFactory {
-    web::scope("").service(ui::assets)
+/// No blanket `RequireWrite` here - see `api::wrap_auth` for why writes use
+/// a per-resource `Claims::can` check instead; UI pages check their own session.
+pub fn wrap_auth(
+    app: Arc<dyn Endpoint>,
+    jwt_config: JwtConfig,
+    base_path: &str,
+) -> Arc<dyn Endpoint> {
+    api::wrap_auth(app, jwt_config, base_path)
 }
 
-pub fn base_path_scope(jwt_config: JwtConfig) -> impl HttpServiceFactory {
-    web::scope("")
-        .service(ui::scope(jwt_config.clone()))
-        // `api::scope` applies auth itself: the webhook endpoint inside it is
-        // authenticated by signature rather than by a realm token.
-        .service(api::scope(jwt_config))
+pub fn register_routes() {
+    api::register_routes();
+    ui::register_routes();
 }

@@ -1,14 +1,15 @@
 //! `stop_instance` - the DELETE handler, its permission check and its
 //! not-found/error mapping.
 
-use crate::env_support::env_lock;
-use actix_web::http::StatusCode;
-use actix_web::web::Data;
-use actix_web::{App, test};
 use async_trait::async_trait;
-use quench_auth::prelude::JwtConfig;
+use http::StatusCode;
+use http_body_util::BodyExt;
+use quench_auth::domain::jwt::JwtConfig;
+use quench_http::prelude::{Inject, Path};
 use std::sync::Arc;
+use switchboard_service::routers::models::mod_impl::OptionalClaims;
 use switchboard_service::routers::vllm::engine::VllmEngine;
+use switchboard_service::routers::vllm::stop::stop_instance;
 use switchboard_service::routers::vllm::types::{LaunchRequest, VllmInstance};
 
 struct StubEngine {
@@ -28,99 +29,80 @@ impl VllmEngine for StubEngine {
     }
 }
 
-fn engine_data(stop_result: Result<(), String>) -> Data<Arc<dyn VllmEngine>> {
+fn engine(stop_result: Result<(), String>) -> Inject<Arc<dyn VllmEngine>> {
     let engine: Arc<dyn VllmEngine> = Arc::new(StubEngine { stop_result });
-    Data::new(engine)
+    Inject(Arc::new(engine))
 }
 
-#[actix_web::test]
+async fn body_text(resp: quench_http::response::Response) -> String {
+    let collected = resp
+        .into_hyper()
+        .into_body()
+        .collect()
+        .await
+        .expect("body collects");
+    String::from_utf8(collected.to_bytes().to_vec()).expect("utf8")
+}
+
+#[tokio::test]
 async fn stop_instance_is_forbidden_without_the_stop_permission() {
-    let _guard = env_lock().lock().await;
-    unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", "true") };
+    let mut config = JwtConfig::for_tests();
+    config.auth_enabled = true;
 
-    let app = test::init_service(
-        App::new()
-            .app_data(Data::new(JwtConfig::for_tests()))
-            .app_data(engine_data(Ok(())))
-            .service(switchboard_service::routers::vllm::stop::stop_instance),
+    let resp = stop_instance(
+        OptionalClaims(None),
+        Inject(Arc::new(config)),
+        Path("abc".to_string()),
+        engine(Ok(())),
     )
     .await;
-
-    let req = test::TestRequest::delete()
-        .uri("/instances/abc")
-        .to_request();
-    let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
-
-    unsafe { std::env::remove_var("SERVICE_AUTH_ENABLED") };
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn stop_instance_succeeds_and_returns_the_confirm_stop_markup() {
-    let _guard = env_lock().lock().await;
-    unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", "false") };
+    let mut config = JwtConfig::for_tests();
+    config.auth_enabled = false;
 
-    let app = test::init_service(
-        App::new()
-            .app_data(Data::new(JwtConfig::for_tests()))
-            .app_data(engine_data(Ok(())))
-            .service(switchboard_service::routers::vllm::stop::stop_instance),
+    let resp = stop_instance(
+        OptionalClaims(None),
+        Inject(Arc::new(config)),
+        Path("abc".to_string()),
+        engine(Ok(())),
     )
     .await;
-
-    let req = test::TestRequest::delete()
-        .uri("/instances/abc")
-        .to_request();
-    let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let body = test::read_body(resp).await;
-    let html = String::from_utf8(body.to_vec()).expect("utf8");
+    let html = body_text(resp).await;
     assert!(html.contains("confirm-stop-instance-modal"));
-
-    unsafe { std::env::remove_var("SERVICE_AUTH_ENABLED") };
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn stop_instance_maps_a_not_found_error_to_404() {
-    let _guard = env_lock().lock().await;
-    unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", "false") };
+    let mut config = JwtConfig::for_tests();
+    config.auth_enabled = false;
 
-    let app = test::init_service(
-        App::new()
-            .app_data(Data::new(JwtConfig::for_tests()))
-            .app_data(engine_data(Err("instance not found".to_string())))
-            .service(switchboard_service::routers::vllm::stop::stop_instance),
+    let resp = stop_instance(
+        OptionalClaims(None),
+        Inject(Arc::new(config)),
+        Path("missing".to_string()),
+        engine(Err("instance not found".to_string())),
     )
     .await;
-
-    let req = test::TestRequest::delete()
-        .uri("/instances/missing")
-        .to_request();
-    let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
-
-    unsafe { std::env::remove_var("SERVICE_AUTH_ENABLED") };
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn stop_instance_maps_any_other_error_to_500() {
-    let _guard = env_lock().lock().await;
-    unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", "false") };
+    let mut config = JwtConfig::for_tests();
+    config.auth_enabled = false;
 
-    let app = test::init_service(
-        App::new()
-            .app_data(Data::new(JwtConfig::for_tests()))
-            .app_data(engine_data(Err("process would not die".to_string())))
-            .service(switchboard_service::routers::vllm::stop::stop_instance),
+    let resp = stop_instance(
+        OptionalClaims(None),
+        Inject(Arc::new(config)),
+        Path("stuck".to_string()),
+        engine(Err("process would not die".to_string())),
     )
     .await;
-
-    let req = test::TestRequest::delete()
-        .uri("/instances/stuck")
-        .to_request();
-    let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
-
-    unsafe { std::env::remove_var("SERVICE_AUTH_ENABLED") };
 }

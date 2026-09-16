@@ -1,8 +1,4 @@
-//! Something a run produced and left somewhere durable.
-//!
-//! Conveyor records the reference, not the bytes: a crate version or an image
-//! tag lives in warehouse, and copying it into conveyor's database would give
-//! the estate two answers to "what did this build publish".
+//! Something a run produced. Conveyor records the reference, not the bytes - the artifact itself lives in warehouse.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

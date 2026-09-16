@@ -1,8 +1,11 @@
-//! Page shell, shared with the rest of the estate: same builder, same theme,
-//! same header, same generated stylesheet layout.
+//! Page shell shared with the rest of the estate - same builder, theme, header, stylesheet layout.
 
-use actix_web::{HttpResponse, Responder, get, http::header::ContentType, web};
-pub use quench_starter::actix::routers::ui::{
+use async_trait::async_trait;
+pub use quench_auth::domain::jwt::Claims;
+use quench_auth::domain::jwt::JwtConfig;
+use quench_auth::http::routers::ui::get_user_from_req;
+use quench_http::prelude::{FromRequest, HttpError, Path, Request, Response, get};
+pub use quench_starter::http::routers::ui::{
     is_ui_authenticated, ui_asset_path, ui_login_redirect, ui_login_redirect_for, ui_path,
 };
 use quench_web::nav_button;
@@ -64,42 +67,108 @@ fn ui_header(title_key: &str, show_home: bool) -> Element {
         .child(nav::panel())
 }
 
-/// Writes `dist/assets` before the first request. Left to the first page
-/// render, a request for the stylesheet that arrives earlier is answered from
-/// whatever the previous deployment left on disk.
+/// Writes `dist/assets` before the first request, or an early stylesheet request answers stale.
 pub fn ensure_assets() {
     LazyLock::force(&UI_SHELL_HOME);
 }
 
-#[get("/assets/{path:.*}")]
-pub async fn assets(path: web::Path<String>) -> impl Responder {
-    quench_starter::actix::routers::ui::serve_assets(path, "dist/assets").await
+#[get("/ui/assets/{path:.*}")]
+pub async fn assets(Path(path): Path<String>) -> Response {
+    quench_starter::http::routers::ui::serve_assets(&path, "dist/assets").await
 }
 
-/// The estate-wide way to show a run, job or step status.
-///
-/// Both classes are emitted: `.status` carries the shape, `.status-<state>` the
-/// colour. The label is a translation key rather than the raw status string, so
-/// the pill reads in the viewer's language.
+/// `.status` carries the shape, `.status-<state>` the color; the label is a translation key.
 pub fn status_pill(status: crate::domain::Status) -> Element {
     span()
         .class(format!("status status-{status}"))
         .attr("data-i18n", format!("ui_status_{status}"))
 }
 
-pub fn render_page(
-    mut builder: actix_web::HttpResponseBuilder,
-    content: Element,
-    page_kind: UiPageKind,
-) -> HttpResponse {
-    let shell = match page_kind {
-        UiPageKind::Home => &*UI_SHELL_HOME,
-    };
-    builder
-        .content_type(ContentType::html())
-        .body(shell.page(div().class("page").child(content)))
+pub fn render_page(status: http::StatusCode, content: Element) -> Response {
+    Response::html(
+        status,
+        UI_SHELL_HOME.page(div().class("page").child(content)),
+    )
 }
 
-pub enum UiPageKind {
-    Home,
+/// Bearer token or realm cookie. `None` means "not signed in", not "auth
+/// disabled" - `get_user_from_req` folds that into a synthetic all-access `Claims`.
+pub async fn actor(request: &Request, config: &JwtConfig) -> Option<Claims> {
+    get_user_from_req(request, config).await
+}
+
+/// For a page that only needs to gate rendering, not the identity behind it.
+pub struct PageAuth(pub bool);
+
+#[async_trait]
+impl FromRequest for PageAuth {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        let Ok(config) = req.container().get::<JwtConfig>() else {
+            return Ok(Self(false));
+        };
+        Ok(Self(is_ui_authenticated(req, &config).await))
+    }
+}
+
+/// Not a plain `Result<_, HttpError>` - `into_response` always renders fixed
+/// text, never a redirect, so the redirect has to travel as the success value.
+pub enum ActorOrRedirect {
+    Claims(Claims),
+    Redirect(Response),
+}
+
+impl ActorOrRedirect {
+    pub fn or_redirect(self) -> Result<Claims, Response> {
+        match self {
+            Self::Claims(claims) => Ok(claims),
+            Self::Redirect(resp) => Err(resp),
+        }
+    }
+}
+
+#[async_trait]
+impl FromRequest for ActorOrRedirect {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        let Ok(config) = req.container().get::<JwtConfig>() else {
+            return Ok(Self::Redirect(ui_login_redirect_for(req)));
+        };
+        match actor(req, &config).await {
+            Some(claims) => Ok(Self::Claims(claims)),
+            None => Ok(Self::Redirect(ui_login_redirect_for(req))),
+        }
+    }
+}
+
+/// `PageAuth`'s hx-aware sibling - redirects an expired fragment poll with
+/// `HX-Redirect` instead of a 302 it would try to parse as the fragment body.
+pub enum PageGate {
+    Authenticated,
+    Redirect(Response),
+}
+
+impl PageGate {
+    pub fn or_redirect(self) -> Result<(), Response> {
+        match self {
+            Self::Authenticated => Ok(()),
+            Self::Redirect(resp) => Err(resp),
+        }
+    }
+}
+
+#[async_trait]
+impl FromRequest for PageGate {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        let Ok(config) = req.container().get::<JwtConfig>() else {
+            return Ok(Self::Redirect(ui_login_redirect_for(req)));
+        };
+        if is_ui_authenticated(req, &config).await {
+            Ok(Self::Authenticated)
+        } else {
+            Ok(Self::Redirect(ui_login_redirect_for(req)))
+        }
+    }
+}
+
+pub fn register_routes() {
+    let _ = assets as fn(_) -> _;
 }

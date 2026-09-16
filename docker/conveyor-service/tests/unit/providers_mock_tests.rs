@@ -3,10 +3,10 @@
 //! because an untested test double can silently stop doing what its callers
 //! assume.
 
-use actix_web::http::header::HeaderMap;
 use conveyor_service::domain::Repo;
 use conveyor_service::providers::mock::MockProvider;
 use conveyor_service::providers::{CommitState, CommitStatusReport, GitProvider};
+use http::HeaderMap;
 
 fn sample_repo() -> Repo {
     Repo {

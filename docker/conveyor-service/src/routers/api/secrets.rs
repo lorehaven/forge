@@ -1,22 +1,14 @@
-//! Managing what conveyor holds on a pipeline's behalf.
-//!
-//! There is no endpoint that returns a value. Once written, a secret is only
-//! ever read by a job that named it - so a stolen session cannot be used to
-//! read the estate's tokens back out, only to overwrite them, which is visible.
-//!
-//! Repository secrets live under `/repos/{id}/secrets` and estate-wide ones
-//! under `/secrets`. Two shapes rather than one `/{scope}/secrets` because a
-//! wildcard first segment would collide with the `/repos` scope, and actix does
-//! not fall through from a scope whose prefix matched.
+//! Managing what conveyor holds on a pipeline's behalf - write-only, since a
+//! stolen session should overwrite a secret (visible) rather than read it back.
 
 use crate::routers::api::authz::{can_on_project, can_unscoped};
-use crate::routers::api::{ApiError, actor, json_error};
+use crate::routers::api::{Actor, ApiError, OptionalClaims, json_error};
 use crate::scheduler::repos;
 use crate::secrets::store::{self, Scope, SecretError};
 use crate::secrets::{CryptoError, SecretKey};
-use actix_web::http::StatusCode;
-use actix_web::{HttpRequest, HttpResponse, Responder, delete, get, put, web};
+use quench_auth::domain::jwt::JwtConfig;
 use quench_db::prelude::Db;
+use quench_http::prelude::{Inject, Json, Path, Response, delete, get, http::StatusCode, put};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -24,35 +16,33 @@ pub struct SetSecret {
     pub value: String,
 }
 
-// ---------------------------------------------------------------------------
-// Estate-wide
-// ---------------------------------------------------------------------------
-//
-// Not attached to any project, so there is nothing to scope these by beyond
-// the blanket `conveyor:write`/`conveyor:read` grant - a resource-scoped grant
-// on one project has no bearing on a secret every pipeline in the estate can
-// read.
+// --- Estate-wide - gated by the blanket grant only; no project to scope by. ---
 
-#[put("/{name}")]
+#[put("/api/v1/secrets/{name}")]
 pub async fn put_global(
-    request: HttpRequest,
-    path: web::Path<String>,
-    body: web::Json<SetSecret>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    if !can_unscoped(&request, "write") {
+    Actor(actor): Actor,
+    OptionalClaims(claims): OptionalClaims,
+    Path(name): Path<String>,
+    Json(body): Json<SetSecret>,
+    Inject(db): Inject<Db>,
+    Inject(config): Inject<JwtConfig>,
+) -> Response {
+    if !can_unscoped(claims.as_ref(), &config, "write") {
         return json_error(
             StatusCode::FORBIDDEN,
             "no write access to estate-wide secrets",
         );
     }
-    let actor = actor(&request).await;
-    write(&db, Scope::Global, &path, &body.value, &actor).await
+    write(&db, Scope::Global, &name, &body.value, &actor).await
 }
 
-#[get("")]
-pub async fn list_global(request: HttpRequest, db: web::Data<Db>) -> impl Responder {
-    if !can_unscoped(&request, "read") {
+#[get("/api/v1/secrets")]
+pub async fn list_global(
+    OptionalClaims(claims): OptionalClaims,
+    Inject(db): Inject<Db>,
+    Inject(config): Inject<JwtConfig>,
+) -> Response {
+    if !can_unscoped(claims.as_ref(), &config, "read") {
         return json_error(
             StatusCode::FORBIDDEN,
             "no read access to estate-wide secrets",
@@ -61,89 +51,77 @@ pub async fn list_global(request: HttpRequest, db: web::Data<Db>) -> impl Respon
     read_names(&db, Scope::Global).await
 }
 
-#[delete("/{name}")]
+#[delete("/api/v1/secrets/{name}")]
 pub async fn delete_global(
-    request: HttpRequest,
-    path: web::Path<String>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    if !can_unscoped(&request, "write") {
+    OptionalClaims(claims): OptionalClaims,
+    Path(name): Path<String>,
+    Inject(db): Inject<Db>,
+    Inject(config): Inject<JwtConfig>,
+) -> Response {
+    if !can_unscoped(claims.as_ref(), &config, "write") {
         return json_error(
             StatusCode::FORBIDDEN,
             "no write access to estate-wide secrets",
         );
     }
-    remove(&db, Scope::Global, &path).await
+    remove(&db, Scope::Global, &name).await
 }
 
-pub fn scope() -> actix_web::Scope {
-    web::scope("/secrets")
-        .service(list_global)
-        .service(put_global)
-        .service(delete_global)
-}
+// --- Per repository ---
 
-// ---------------------------------------------------------------------------
-// Per repository
-// ---------------------------------------------------------------------------
-//
-// Registered inside the `/repos` scope by `repos::scope`.
-
-#[put("/{repo_id}/secrets/{name}")]
+#[put("/api/v1/repos/{repo_id}/secrets/{name}")]
 pub async fn put_repo(
-    request: HttpRequest,
-    path: web::Path<(String, String)>,
-    body: web::Json<SetSecret>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    let (repo_id, name) = path.into_inner();
-    match repo_scope(&request, &db, &repo_id, "write").await {
-        Ok(scope) => {
-            let actor = actor(&request).await;
-            write(&db, scope, &name, &body.value, &actor).await
-        }
+    Actor(actor): Actor,
+    OptionalClaims(claims): OptionalClaims,
+    Path((repo_id, name)): Path<(String, String)>,
+    Json(body): Json<SetSecret>,
+    Inject(db): Inject<Db>,
+    Inject(config): Inject<JwtConfig>,
+) -> Response {
+    match repo_scope(claims.as_ref(), &config, &db, &repo_id, "write").await {
+        Ok(scope) => write(&db, scope, &name, &body.value, &actor).await,
         Err(response) => response,
     }
 }
 
-#[get("/{repo_id}/secrets")]
+#[get("/api/v1/repos/{repo_id}/secrets")]
 pub async fn list_repo(
-    request: HttpRequest,
-    path: web::Path<String>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    match repo_scope(&request, &db, &path, "read").await {
+    OptionalClaims(claims): OptionalClaims,
+    Path(repo_id): Path<String>,
+    Inject(db): Inject<Db>,
+    Inject(config): Inject<JwtConfig>,
+) -> Response {
+    match repo_scope(claims.as_ref(), &config, &db, &repo_id, "read").await {
         Ok(scope) => read_names(&db, scope).await,
         Err(response) => response,
     }
 }
 
-#[delete("/{repo_id}/secrets/{name}")]
+#[delete("/api/v1/repos/{repo_id}/secrets/{name}")]
 pub async fn delete_repo(
-    request: HttpRequest,
-    path: web::Path<(String, String)>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    let (repo_id, name) = path.into_inner();
-    match repo_scope(&request, &db, &repo_id, "write").await {
+    OptionalClaims(claims): OptionalClaims,
+    Path((repo_id, name)): Path<(String, String)>,
+    Inject(db): Inject<Db>,
+    Inject(config): Inject<JwtConfig>,
+) -> Response {
+    match repo_scope(claims.as_ref(), &config, &db, &repo_id, "write").await {
         Ok(scope) => remove(&db, scope, &name).await,
         Err(response) => response,
     }
 }
 
-// ---------------------------------------------------------------------------
-// Shared
-// ---------------------------------------------------------------------------
+// --- Shared ---
 
 async fn repo_scope(
-    request: &HttpRequest,
+    claims: Option<&quench_auth::domain::jwt::Claims>,
+    config: &JwtConfig,
     db: &Db,
     repo_id: &str,
     action: &str,
-) -> Result<Scope, HttpResponse> {
+) -> Result<Scope, Response> {
     match repos::read(db, repo_id).await {
         Ok(Some(repo)) => {
-            if can_on_project(request, db, &repo.project_id, action).await {
+            if can_on_project(claims, config, db, &repo.project_id, action).await {
                 Ok(Scope::Repo(repo.id))
             } else {
                 Err(json_error(
@@ -157,7 +135,7 @@ async fn repo_scope(
     }
 }
 
-async fn write(db: &Db, scope: Scope, name: &str, value: &str, by: &str) -> HttpResponse {
+async fn write(db: &Db, scope: Scope, name: &str, value: &str, by: &str) -> Response {
     let key = match SecretKey::from_env() {
         Ok(Some(key)) => key,
         Ok(None) => {
@@ -173,27 +151,29 @@ async fn write(db: &Db, scope: Scope, name: &str, value: &str, by: &str) -> Http
     };
 
     match store::put(db, &key, &scope, name, value, by).await {
-        Ok(secret) => HttpResponse::Ok().json(secret),
+        Ok(secret) => Response::json(StatusCode::OK, &secret)
+            .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR)),
         Err(error) => secret_error(&error),
     }
 }
 
-async fn read_names(db: &Db, scope: Scope) -> HttpResponse {
+async fn read_names(db: &Db, scope: Scope) -> Response {
     match store::list(db, &scope).await {
-        Ok(secrets) => HttpResponse::Ok().json(secrets),
+        Ok(secrets) => Response::json(StatusCode::OK, &secrets)
+            .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR)),
         Err(error) => secret_error(&error),
     }
 }
 
-async fn remove(db: &Db, scope: Scope, name: &str) -> HttpResponse {
+async fn remove(db: &Db, scope: Scope, name: &str) -> Response {
     match store::delete(db, &scope, name).await {
-        Ok(true) => HttpResponse::NoContent().finish(),
+        Ok(true) => Response::new(StatusCode::NO_CONTENT),
         Ok(false) => json_error(StatusCode::NOT_FOUND, "no such secret"),
         Err(error) => secret_error(&error),
     }
 }
 
-fn secret_error(error: &SecretError) -> HttpResponse {
+fn secret_error(error: &SecretError) -> Response {
     let status = match error {
         SecretError::BadName { .. } | SecretError::TooShort => StatusCode::BAD_REQUEST,
         SecretError::Missing { .. } => StatusCode::NOT_FOUND,
@@ -210,4 +190,13 @@ fn secret_error(error: &SecretError) -> HttpResponse {
         tracing::error!("secret store: {error}");
     }
     json_error(status, &error.to_string())
+}
+
+pub fn register_routes() {
+    let _ = put_global as fn(_, _, _, _, _, _) -> _;
+    let _ = list_global as fn(_, _, _) -> _;
+    let _ = delete_global as fn(_, _, _, _) -> _;
+    let _ = put_repo as fn(_, _, _, _, _, _) -> _;
+    let _ = list_repo as fn(_, _, _, _) -> _;
+    let _ = delete_repo as fn(_, _, _, _) -> _;
 }

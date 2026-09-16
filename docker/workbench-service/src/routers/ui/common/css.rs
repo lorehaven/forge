@@ -26,12 +26,8 @@ fn workbench_css_rules() -> Vec<CssRule> {
     rules
 }
 
-/// `quench-web`'s shared theme sets no `box-sizing`, so it defaults to the
-/// browser's own `content-box` - a `.wb-form`'s `padding: 1rem` (below) then
-/// adds on top of the shared `form { width: 100% }` rule instead of being cut
-/// out of it, rendering every form 2rem wider than its panel and pushing
-/// anything flush with its right edge (a right-aligned `.wb-submit` button,
-/// the last column in `.wb-form-row`) out past the panel's actual border.
+/// Forces `border-box`; the shared theme's default `content-box` makes a
+/// `.wb-form`'s padding overflow the panel's border.
 fn reset_rules() -> Vec<CssRule> {
     vec![CssRule::new("*,\n*::before,\n*::after").property("box-sizing", "border-box")]
 }
@@ -44,12 +40,8 @@ fn form_rules() -> Vec<CssRule> {
             .property("flex-direction", "column")
             .property("gap", "0.6rem")
             .property("padding", "1rem"),
-        // Block, not inline - every label sits on its own line above the
-        // control it labels (`wb-field-row`'s fields, and the bare
-        // label+control pairs `wb-form-row` wraps) rather than to its left,
-        // which is what frees up a field's full width for its control - the
-        // assignee picker's select-plus-button in particular needs it to
-        // stay on screen instead of overflowing the row.
+        // Block, not inline - labels sit above their control, freeing full
+        // width so the assignee picker's select+button don't overflow.
         CssRule::new(".wb-form label")
             .property("display", "block")
             .property("font-size", "0.85rem")
@@ -59,8 +51,7 @@ fn form_rules() -> Vec<CssRule> {
             .property("display", "flex")
             .property("flex-direction", "column")
             .property("gap", "0.3rem"),
-        // The assignee picker's select + "assign to me" shortcut, sharing
-        // the field row's control column rather than each taking their own.
+        // Assignee select + "assign to me" shortcut share this control column.
         CssRule::new(".wb-field-control")
             .property("display", "flex")
             .property("flex", "1 1 auto")
@@ -68,11 +59,7 @@ fn form_rules() -> Vec<CssRule> {
             .property("flex-wrap", "wrap")
             .property("align-items", "center")
             .property("gap", "0.5rem"),
-        // Lets the select shrink below its content's width (e.g. a long
-        // username) instead of forcing `.wb-field-control` past its own
-        // container - the "assign to me" button next to it stays fixed-size
-        // (`flex: 0 0 auto` above) and wraps under it if there truly isn't
-        // room for both on one line.
+        // Lets the select shrink below content width instead of overflowing.
         CssRule::new(".wb-field-control select")
             .property("flex", "1 1 auto")
             .property("min-width", "0"),
@@ -87,11 +74,7 @@ fn form_rules() -> Vec<CssRule> {
             .property("cursor", "pointer")
             .property("white-space", "nowrap")
             .child(CssRule::new("&:hover").property("background-color", "var(--bs-gray-700)")),
-        // quench-web's shared theme styles `input`/`select` dark but has no
-        // rule for `textarea` at all, so ours would otherwise fall back to
-        // the browser's default white one - matched to `input`'s own rule
-        // (`quench-web/framework/styles/common/elements.rs`) rather than
-        // introducing a different look for one field in the same form.
+        // Shared theme styles input/select dark but not textarea; matched here.
         CssRule::new(".wb-form textarea")
             .property("border-radius", "0.3rem")
             .property("border", "0.1rem var(--bs-gray-700) solid")
@@ -112,12 +95,7 @@ fn form_rules() -> Vec<CssRule> {
             .property("gap", "1rem")
             .property("flex-wrap", "wrap"),
         CssRule::new(".wb-form-row > *").property("flex", "1 1 12rem"),
-        // Every `.wb-form`'s own submit button - small and right-aligned
-        // rather than the shared `button { display: flex }` rule's full-width
-        // block-level default (`.wb-form`'s `display: flex; flex-direction:
-        // column` stretches children across the cross axis unless a child
-        // opts out via `align-self`, which also switches its own width back
-        // to content-based since it is no longer stretched).
+        // Opts out of the shared full-width button rule via `align-self`.
         CssRule::new(".wb-submit")
             .property("align-self", "flex-end")
             .property("padding", "0.6rem 1.2rem")
@@ -137,16 +115,8 @@ fn form_rules() -> Vec<CssRule> {
 
 fn board_rules() -> Vec<CssRule> {
     vec![
-        // The shared shell normally lets `.content-inner` grow past
-        // `.content`'s box and relies on `.content`'s own `overflow-y: auto`
-        // (quench-web's shared shell rule) to scroll the whole page - right
-        // for an ordinary page, wrong here: the columns already own their
-        // scrolling (`.wb-column-body` below), so the ancestor chain instead
-        // needs to respect `.content`'s real height and hand `.wb-board`
-        // whatever's left, rather than growing past it and leaving two
-        // separate scrollbars. Scoped to `:has(.wb-board)` so every other
-        // page (an ordinary list, a form) keeps the shared shell's normal
-        // "grow and let the page scroll" behaviour.
+        // Columns own their own scrolling, so the ancestor chain must respect
+        // `.content`'s real height instead of growing past it (two scrollbars).
         CssRule::new(".content:has(.wb-board)").property("overflow", "hidden"),
         CssRule::new(".content-inner:has(.wb-board)")
             .property("height", "100%")
@@ -166,22 +136,8 @@ fn board_rules() -> Vec<CssRule> {
         CssRule::new(".home-container:has(.wb-board)")
             .property("flex", "1 1 auto")
             .property("min-height", "0"),
-        // The board itself is the one scrollbar, in both directions: sideways
-        // once there are more columns than fit (each auto-generated column's
-        // own `minmax(16rem, ...)` floor below is what forces that rather
-        // than squeezing them), and downward once the tallest column's cards
-        // do not fit in the space above.
-        //
-        // Grid, not flex: with flex, a scrolling flex container
-        // (`overflow: auto`, needed for the horizontal scroll above)
-        // suppresses a stretched item's content-based automatic minimum size
-        // - that is the CSS spec's own rule, not a bug here - so a `flex`
-        // column would stop at the row's height and let its own cards spill
-        // out below its background instead of growing to contain them. Grid
-        // has no such rule: an implicit row's height is measured from its
-        // items' content first, so `align-items: stretch` (grid's default)
-        // correctly grows every column to match the tallest one's actual
-        // content height.
+        // The one scrollbar. Grid, not flex: a scrolling flex container
+        // suppresses stretched items' content-based min-size.
         CssRule::new(".wb-board")
             .property("display", "grid")
             .property("grid-auto-flow", "column")
@@ -206,11 +162,8 @@ fn board_rules() -> Vec<CssRule> {
             .property("font-size", "0.85rem")
             .property("letter-spacing", "0.04em")
             .property("color", "var(--bs-gray-400)"),
-        // `flex: 1 1 auto` so this fills the whole (grid-stretched) column,
-        // not just the height its own cards need - otherwise a shorter or
-        // empty column leaves dead space below/instead of it that is not
-        // `.wb-column-body`, and a card dropped there misses the drop target
-        // `board_script` listens for entirely.
+        // Fills the whole stretched column so an empty/short column still
+        // has a `.wb-column-body` drop target `board_script` can hit.
         CssRule::new(".wb-column-body")
             .property("display", "flex")
             .property("flex-direction", "column")
@@ -228,8 +181,7 @@ fn board_rules() -> Vec<CssRule> {
             .property("display", "flex")
             .property("flex-direction", "column")
             .property("gap", "0.4rem"),
-        // Only the board's own cards are draggable - `.wb-card` is shared with
-        // the issue page's comment list, which is not.
+        // `.wb-card` is shared with the (non-draggable) comment list.
         CssRule::new(".wb-column-body .wb-card").property("cursor", "grab"),
         CssRule::new(".wb-card-key")
             .property("font-size", "0.75rem")
@@ -246,14 +198,8 @@ fn board_rules() -> Vec<CssRule> {
     ]
 }
 
-/// The "+" trigger next to a page title and the "new project" modal it opens.
-///
-/// `.modal-overlay`/`.modal-center`/`.modal-content` are quench-web's own
-/// (baked into every page via `AppShellBuilder`, see `common/mod.rs`) - only
-/// `.modal-center`'s positioning needs a local override, since the shared
-/// rule ships with no top/left of its own (`inset: auto` alone does not
-/// center it), and the panel chrome (background/border/shadow/show
-/// transition) already comes free from that shared rule otherwise.
+/// The "+" trigger and the "new project" modal; only `.modal-center`'s
+/// positioning needs a local override, the rest comes from the shared shell.
 fn modal_rules() -> Vec<CssRule> {
     vec![
         CssRule::new(".home-header")
@@ -275,14 +221,8 @@ fn modal_rules() -> Vec<CssRule> {
             .property("cursor", "pointer")
             .property("padding", "0")
             .child(CssRule::new("&:hover").property("background-color", "var(--bs-gray-700)")),
-        // The shared rule hides `.modal-center` with opacity alone, relying
-        // on `.modal-side`'s sibling variant moving fully off-screen
-        // (`translateX`) to also take it out of the hit-testing path. This
-        // override keeps the modal centered even while hidden (just scaled
-        // down and transparent) rather than off-screen, so it needs its own
-        // `pointer-events: none` - without it, an invisible modal still sits
-        // on top of the board and swallows clicks and drags meant for
-        // whatever is under it.
+        // Stays centered (not off-screen) while hidden, so needs its own
+        // `pointer-events: none` or it swallows clicks meant for the board.
         CssRule::new(".modal-center")
             .property("top", "50%")
             .property("left", "50%")
@@ -346,11 +286,7 @@ fn link_rules() -> Vec<CssRule> {
             .property("flex", "0 0 auto")
             .property("font-size", "0.75rem")
             .property("color", "var(--bs-gray-500)"),
-        // Unwraps the delete form so `.wb-link-remove` itself, not its
-        // block-level form parent, is the flex item `.wb-link-row` sizes -
-        // otherwise the shared `button { display: flex }` rule's block-level
-        // sizing fills the form's full-width box instead of shrinking to fit
-        // the "×" glyph.
+        // Unwraps the form so the button itself, not its block parent, sizes.
         CssRule::new(".wb-link-remove-form").property("display", "contents"),
         CssRule::new(".wb-link-remove")
             .property("flex", "0 0 auto")

@@ -1,12 +1,50 @@
 use crate::support;
 
-use actix_web::test::TestRequest;
+use async_trait::async_trait;
+use http::{HeaderMap, Method, StatusCode, Uri};
+use quench_http::endpoint::Endpoint;
+use quench_http::prelude::wrap;
+use quench_http::request::Request;
+use quench_http::response::Response;
+use std::sync::Arc;
 use std::time::Duration;
 use warehouse_service::docker_token::{DockerClaims, DockerTokenConfig};
 use warehouse_service::middleware::auth::{
     WarehouseAuth, clear_auth_failures, record_auth_failure, repository_action, scope_allows,
     too_many_auth_failures,
 };
+
+/// A container-less request - `repository_action`/`too_many_auth_failures`/
+/// `record_auth_failure`/`clear_auth_failures` never touch the DI container,
+/// so a dummy one is enough to satisfy `Request::new`.
+fn plain_req(method: Method, path: &str) -> Request {
+    let container = Arc::new(quench_http::di::Container::default());
+    Request::new(
+        method,
+        path.parse::<Uri>().unwrap(),
+        HeaderMap::new(),
+        quench_http::body::InboundBody::from_bytes(bytes::Bytes::new()),
+        container,
+    )
+}
+
+/// Like `plain_req`, but with an `x-forwarded-for` header standing in for
+/// the peer address actix's `TestRequest::peer_addr` used to set -
+/// quench-http's `Request` carries no direct peer address at all (see
+/// `middleware/auth.rs`'s own `client_key` doc comment), so the rate
+/// limiter's per-client bucket key comes from this header instead.
+fn req_from(method: Method, path: &str, peer: &str) -> Request {
+    let container = Arc::new(quench_http::di::Container::default());
+    let mut headers = HeaderMap::new();
+    headers.insert("x-forwarded-for", peer.parse().unwrap());
+    Request::new(
+        method,
+        path.parse::<Uri>().unwrap(),
+        headers,
+        quench_http::body::InboundBody::from_bytes(bytes::Bytes::new()),
+        container,
+    )
+}
 
 #[test]
 fn scope_allows_exact_repository_match_with_the_requested_action() {
@@ -57,9 +95,7 @@ fn scope_allows_rejects_an_empty_scope() {
 
 #[test]
 fn repository_action_maps_get_and_head_to_pull() {
-    let req = TestRequest::get()
-        .uri("/v2/my/repo/manifests/latest")
-        .to_srv_request();
+    let req = plain_req(Method::GET, "/v2/my/repo/manifests/latest");
     assert_eq!(
         repository_action(&req),
         Some(("my/repo".to_string(), "pull"))
@@ -68,9 +104,7 @@ fn repository_action_maps_get_and_head_to_pull() {
 
 #[test]
 fn repository_action_maps_writes_to_push() {
-    let req = TestRequest::post()
-        .uri("/v2/my/repo/blobs/uploads/")
-        .to_srv_request();
+    let req = plain_req(Method::POST, "/v2/my/repo/blobs/uploads/");
     assert_eq!(
         repository_action(&req),
         Some(("my/repo".to_string(), "push"))
@@ -79,27 +113,25 @@ fn repository_action_maps_writes_to_push() {
 
 #[test]
 fn repository_action_is_none_for_the_catalog_endpoint() {
-    let req = TestRequest::get().uri("/v2/_catalog").to_srv_request();
+    let req = plain_req(Method::GET, "/v2/_catalog");
     assert_eq!(repository_action(&req), None);
 }
 
 #[test]
 fn repository_action_is_none_outside_v2() {
-    let req = TestRequest::get().uri("/api/v1/crates").to_srv_request();
+    let req = plain_req(Method::GET, "/api/v1/crates");
     assert_eq!(repository_action(&req), None);
 }
 
 #[test]
 fn repository_action_is_none_without_a_recognized_marker() {
-    let req = TestRequest::get().uri("/v2/my/repo").to_srv_request();
+    let req = plain_req(Method::GET, "/v2/my/repo");
     assert_eq!(repository_action(&req), None);
 }
 
 #[test]
 fn too_many_auth_failures_trips_after_the_configured_max_and_clear_resets_it() {
-    let req = TestRequest::default()
-        .peer_addr("203.0.113.7:12345".parse().unwrap())
-        .to_srv_request();
+    let req = req_from(Method::GET, "/v2/my/repo/manifests/latest", "203.0.113.7");
     let window = Duration::from_secs(60);
 
     assert!(!too_many_auth_failures(&req, 3, window));
@@ -115,12 +147,8 @@ fn too_many_auth_failures_trips_after_the_configured_max_and_clear_resets_it() {
 
 #[test]
 fn too_many_auth_failures_is_scoped_per_client() {
-    let a = TestRequest::default()
-        .peer_addr("203.0.113.8:1".parse().unwrap())
-        .to_srv_request();
-    let b = TestRequest::default()
-        .peer_addr("203.0.113.9:1".parse().unwrap())
-        .to_srv_request();
+    let a = req_from(Method::GET, "/v2/my/repo/manifests/latest", "203.0.113.8");
+    let b = req_from(Method::GET, "/v2/my/repo/manifests/latest", "203.0.113.9");
     let window = Duration::from_secs(60);
 
     record_auth_failure(&a, window);
@@ -172,145 +200,163 @@ fn bearer_for_service(config: &DockerTokenConfig, service: &str, scope: &str) ->
     format!("Bearer {}", config.encode(&claims).expect("encode"))
 }
 
-/// A macro, not a function: `test::init_service`'s return type is opaque
-/// and can't be named without pulling in `actix-http` as a direct
-/// dev-dependency just to spell `actix_http::Request`, so this expands
-/// inline at each call site instead of trying to name it.
-macro_rules! test_app {
-    ($config:expr) => {{
-        use actix_web::{App, HttpResponse, web};
-        actix_web::test::init_service(App::new().wrap(WarehouseAuth::new($config)).route(
-            "/v2/{tail:.*}",
-            web::route().to(|| async { HttpResponse::Ok().finish() }),
-        ))
-        .await
-    }};
+/// The middleware's "next" - a fixed 200, since these tests care about what
+/// `WarehouseAuth` does before (or instead of) calling it, not what a real
+/// router would answer.
+struct StubOk;
+
+#[async_trait]
+impl Endpoint for StubOk {
+    async fn call(&self, _req: Request) -> Response {
+        Response::new(StatusCode::OK)
+    }
 }
 
-#[actix_web::test]
+fn test_app(config: DockerTokenConfig) -> Arc<dyn Endpoint> {
+    wrap(Arc::new(StubOk), WarehouseAuth::new(config))
+}
+
+fn req_with_headers(method: Method, path: &str, peer: &str, headers: &[(&str, &str)]) -> Request {
+    let container = Arc::new(quench_http::di::Container::default());
+    let mut header_map = HeaderMap::new();
+    header_map.insert("x-forwarded-for", peer.parse().unwrap());
+    for (name, value) in headers {
+        header_map.insert(
+            http::HeaderName::from_bytes(name.as_bytes()).unwrap(),
+            value.parse().unwrap(),
+        );
+    }
+    Request::new(
+        method,
+        path.parse::<Uri>().unwrap(),
+        header_map,
+        quench_http::body::InboundBody::from_bytes(bytes::Bytes::new()),
+        container,
+    )
+}
+
+#[tokio::test]
 async fn anonymous_mode_bypasses_bearer_validation_entirely() {
-    let app = test_app!(config(false));
-    let req = TestRequest::get()
-        .uri("/v2/my/repo/manifests/latest")
-        .to_request();
-    let resp = actix_web::test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
-}
-
-#[actix_web::test]
-async fn requests_outside_v2_are_never_gated() {
-    // No route matches `/other` at all, so a non-404 here would mean the
-    // middleware itself, not routing, decided the outcome; a 404 proves
-    // the middleware passed the request straight through.
-    let app = test_app!(config(true));
-    let req = TestRequest::get().uri("/other").to_request();
-    let resp = actix_web::test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::NOT_FOUND);
-}
-
-#[actix_web::test]
-async fn missing_authorization_header_is_unauthorized() {
-    let app = test_app!(config(true));
-    let req = TestRequest::get()
-        .uri("/v2/my/repo/manifests/latest")
-        .peer_addr("198.51.100.1:1".parse().unwrap())
-        .to_request();
-    let resp = actix_web::test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::UNAUTHORIZED);
-    assert!(
-        resp.headers()
-            .contains_key(actix_web::http::header::WWW_AUTHENTICATE)
+    let app = test_app(config(false));
+    let req = req_with_headers(
+        Method::GET,
+        "/v2/my/repo/manifests/latest",
+        "198.51.100.100",
+        &[],
     );
+    let resp = app.call(req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[actix_web::test]
+#[tokio::test]
+async fn requests_outside_v2_are_never_gated() {
+    // Unlike the old actix test (which relied on a route pattern scoped to
+    // `/v2/{tail:.*}` so a non-matching path 404ed at the router), this uses
+    // a fixed-200 stub as "next" with no real router behind it - so "never
+    // gated" here means the middleware passes it straight through to that
+    // stub, observed as 200 rather than a 401/403 the middleware itself
+    // would have produced had it tried to gate the request.
+    let app = test_app(config(true));
+    let req = req_with_headers(Method::GET, "/other", "198.51.100.101", &[]);
+    let resp = app.call(req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn missing_authorization_header_is_unauthorized() {
+    let app = test_app(config(true));
+    let req = req_with_headers(
+        Method::GET,
+        "/v2/my/repo/manifests/latest",
+        "198.51.100.1",
+        &[],
+    );
+    let resp = app.call(req).await;
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    let (headers, _) = support::parts(resp).await;
+    assert!(headers.contains_key("www-authenticate"));
+}
+
+#[tokio::test]
 async fn non_bearer_authorization_header_is_unauthorized() {
-    let app = test_app!(config(true));
-    let req = TestRequest::get()
-        .uri("/v2/my/repo/manifests/latest")
-        .peer_addr("198.51.100.2:1".parse().unwrap())
-        .insert_header(("Authorization", "Basic dXNlcjpwYXNz"))
-        .to_request();
-    let resp = actix_web::test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::UNAUTHORIZED);
+    let app = test_app(config(true));
+    let req = req_with_headers(
+        Method::GET,
+        "/v2/my/repo/manifests/latest",
+        "198.51.100.2",
+        &[("authorization", "Basic dXNlcjpwYXNz")],
+    );
+    let resp = app.call(req).await;
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn a_token_for_a_different_service_is_unauthorized() {
     let config = config(true);
-    let app = test_app!(config.clone());
-    let req = TestRequest::get()
-        .uri("/v2/my/repo/manifests/latest")
-        .peer_addr("198.51.100.3:1".parse().unwrap())
-        .insert_header((
-            "Authorization",
-            bearer_for_service(&config, "someone-else", "repository:my/repo:pull"),
-        ))
-        .to_request();
-    let resp = actix_web::test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::UNAUTHORIZED);
+    let app = test_app(config.clone());
+    let token = bearer_for_service(&config, "someone-else", "repository:my/repo:pull");
+    let req = req_with_headers(
+        Method::GET,
+        "/v2/my/repo/manifests/latest",
+        "198.51.100.3",
+        &[("authorization", &token)],
+    );
+    let resp = app.call(req).await;
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn a_valid_token_without_matching_scope_is_forbidden() {
     let config = config(true);
-    let app = test_app!(config.clone());
-    let req = TestRequest::get()
-        .uri("/v2/my/repo/manifests/latest")
-        .peer_addr("198.51.100.4:1".parse().unwrap())
-        .insert_header((
-            "Authorization",
-            bearer(&config, "repository:other/repo:pull"),
-        ))
-        .to_request();
-    let resp = actix_web::test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::FORBIDDEN);
+    let app = test_app(config.clone());
+    let token = bearer(&config, "repository:other/repo:pull");
+    let req = req_with_headers(
+        Method::GET,
+        "/v2/my/repo/manifests/latest",
+        "198.51.100.4",
+        &[("authorization", &token)],
+    );
+    let resp = app.call(req).await;
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn a_valid_token_with_matching_scope_is_let_through() {
     let config = config(true);
-    let app = test_app!(config.clone());
-    let req = TestRequest::get()
-        .uri("/v2/my/repo/manifests/latest")
-        .peer_addr("198.51.100.5:1".parse().unwrap())
-        .insert_header(("Authorization", bearer(&config, "repository:my/repo:pull")))
-        .to_request();
-    let resp = actix_web::test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let app = test_app(config.clone());
+    let token = bearer(&config, "repository:my/repo:pull");
+    let req = req_with_headers(
+        Method::GET,
+        "/v2/my/repo/manifests/latest",
+        "198.51.100.5",
+        &[("authorization", &token)],
+    );
+    let resp = app.call(req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn repeated_failures_from_the_same_client_eventually_get_throttled() {
     // `MAX_AUTH_FAILURES_PER_MINUTE` defaults to 30 in `WarehouseAuth::new`
     // when unset, which would make this loop impractically long, so pin it
     // low for this test. It's a fixed env var name `new()` reads once at
     // construction time, so no cross-test lock is needed here - the value
-    // only matters for the instant `app()` builds this test's own config.
+    // only matters for the instant `test_app` builds this test's own config.
     unsafe { std::env::set_var("MAX_AUTH_FAILURES_PER_MINUTE", "2") };
-    let app = test_app!(config(true));
-    // Safe to clear immediately after: `WarehouseAuth::new` (called by
-    // `.wrap()` inside `app()`, above) reads the env var once at
-    // construction time, not per-request.
+    let app = test_app(config(true));
+    // Safe to clear immediately after: `WarehouseAuth::new` (called inside
+    // `test_app`, above) reads the env var once at construction time, not
+    // per-request.
     unsafe { std::env::remove_var("MAX_AUTH_FAILURES_PER_MINUTE") };
 
-    let peer = "198.51.100.6:1".parse().unwrap();
+    let peer = "198.51.100.6";
     for _ in 0..2 {
-        let req = TestRequest::get()
-            .uri("/v2/my/repo/manifests/latest")
-            .peer_addr(peer)
-            .to_request();
-        let resp = actix_web::test::call_service(&app, req).await;
-        assert_eq!(resp.status(), actix_web::http::StatusCode::UNAUTHORIZED);
+        let req = req_with_headers(Method::GET, "/v2/my/repo/manifests/latest", peer, &[]);
+        let resp = app.call(req).await;
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     }
 
-    let req = TestRequest::get()
-        .uri("/v2/my/repo/manifests/latest")
-        .peer_addr(peer)
-        .to_request();
-    let resp = actix_web::test::call_service(&app, req).await;
-    assert_eq!(
-        resp.status(),
-        actix_web::http::StatusCode::TOO_MANY_REQUESTS
-    );
+    let req = req_with_headers(Method::GET, "/v2/my/repo/manifests/latest", peer, &[]);
+    let resp = app.call(req).await;
+    assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS);
 }

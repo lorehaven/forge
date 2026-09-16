@@ -1,13 +1,5 @@
-//! Keeping what a job produced.
-//!
-//! A run's checkout is deleted when it finishes, so a build output that is only
-//! recorded as a path is a record of something that no longer exists. Declared
-//! artifacts are therefore uploaded to warehouse's file storage, and the row
-//! conveyor keeps points at where they actually are.
-//!
-//! With no warehouse configured, nothing is recorded and the job says what it
-//! produced and did not keep. A row promising an artifact conveyor cannot
-//! produce is worse than no row.
+//! Keeping what a job produced: uploaded to warehouse's file storage before the checkout is deleted.
+//! With no warehouse configured, nothing is recorded rather than a row promising a file that isn't there.
 
 use crate::domain::Artifact;
 use crate::workspace::Workspace;
@@ -16,11 +8,7 @@ use sha2::{Digest, Sha256};
 use std::path::Path;
 use uuid::Uuid;
 
-/// The most a single artifact may be, before conveyor declines to move it.
-///
-/// A build that produces a two-gigabyte tarball wants a registry, not a file
-/// store, and streaming it through this service would hold a worker and a
-/// warehouse connection for as long as it took.
+/// Above this, a build wants a registry, not a file store held open by a worker.
 const MAX_BYTES: u64 = 512 * 1024 * 1024;
 
 #[derive(Debug, thiserror::Error)]
@@ -58,8 +46,7 @@ pub struct WarehouseStore {
 }
 
 impl WarehouseStore {
-    /// Built from the environment, or `None` when this deployment keeps no
-    /// artifacts.
+    /// `None` when this deployment keeps no artifacts.
     pub fn from_env() -> Option<Self> {
         let base_url = envmnt::get_or("WAREHOUSE_URL", "");
         let base_url = base_url.trim().trim_end_matches('/');
@@ -78,16 +65,14 @@ impl WarehouseStore {
             credentials,
             http: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(120))
-                // The estate's internal certificates are its own; the same
-                // allowance sage makes for switchboard.
+                // Same allowance sage makes for switchboard's internal certs.
                 .danger_accept_invalid_certs(!envmnt::is_or("WAREHOUSE_TLS_VERIFY", true))
                 .build()
                 .unwrap_or_default(),
         })
     }
 
-    /// Where a run's artifacts live, so two runs of the same commit do not
-    /// overwrite each other.
+    /// Scoped by run id so two runs of the same commit don't overwrite each other.
     fn remote_path(&self, run_id: &str, name: &str) -> String {
         format!("conveyor/{run_id}/{name}")
     }
@@ -118,9 +103,7 @@ impl WarehouseStore {
             });
         }
 
-        // The whole url, query included. Warehouse addresses a file by the
-        // `path` parameter, so trimming it would give every artifact of every
-        // run the same uri and identify none of them.
+        // Query included: warehouse addresses the file by `path`, so trimming it would collide every artifact.
         Ok(url)
     }
 }
@@ -130,12 +113,7 @@ pub struct Collected {
     pub artifact: Artifact,
 }
 
-/// Uploads everything `job` declared and returns what was kept.
-///
-/// Errors are per artifact and do not fail the job: the build itself passed,
-/// and losing a copy of its output is worth a warning rather than a red mark.
-/// A path that escapes the checkout is the exception in spirit but not in
-/// mechanism - it is refused, loudly, and the rest still go.
+/// Uploads everything `job` declared; per-artifact errors don't fail the job (the build passed regardless).
 pub async fn collect(
     store: Option<&WarehouseStore>,
     workspace: &Workspace,
@@ -149,8 +127,7 @@ pub async fn collect(
     for path in declared {
         match collect_one(store, workspace, run_id, job_id, path).await {
             Ok(Some(collected)) => kept.push(collected),
-            // No store configured: nothing to keep, and the caller says so once
-            // rather than once per path.
+            // No store configured; nothing to keep.
             Ok(None) => {}
             Err(error) => problems.push(error),
         }
@@ -166,9 +143,7 @@ async fn collect_one(
     job_id: &str,
     declared: &str,
 ) -> Result<Option<Collected>, ArtifactError> {
-    // A pipeline can say `artifacts = ["../../etc/passwd"]`, and collecting it
-    // would hand a repository author whatever the service account can read.
-    // Checked before the file is opened, not after.
+    // Checked before opening: a pipeline could declare `../../etc/passwd` otherwise.
     let resolved = workspace
         .resolve(declared)
         .ok_or_else(|| ArtifactError::Outside {
@@ -228,11 +203,7 @@ async fn collect_one(
     }))
 }
 
-/// The name an artifact is stored under.
-///
-/// The file's own name, falling back to the declared path with separators
-/// replaced - so `target/release/thing` and a directory of the same shape do
-/// not collide inside one run.
+/// The file's own name, falling back to the declared path with separators replaced.
 fn file_name(resolved: &Path, declared: &str) -> String {
     resolved
         .file_name()

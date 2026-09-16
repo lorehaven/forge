@@ -1,13 +1,17 @@
-use actix_web::body::to_bytes;
-use actix_web::{App, HttpResponse, test as actix_test, web};
+use bytes::Bytes;
 use gatehouse_service::catalog::PermissionCatalog;
 use gatehouse_service::email::{LoggingSender, Sender};
 use gatehouse_service::tokens::VerificationTokens;
 use gatehouse_service::ui::pages::register::{
-    Notice, known_error_key, register_page, register_page_slash, register_submit,
-    render_register_page, verify,
+    Notice, VerifyQuery, known_error_key, register_page, register_page_slash, render_register_page,
+    verify,
 };
+use http::{HeaderMap, Method, StatusCode, Uri};
+use http_body_util::BodyExt;
 use quench_db::prelude::Db;
+use quench_http::di::ContainerBuilder;
+use quench_http::endpoint::Endpoint;
+use quench_http::prelude::{Inject, Query, Request};
 use std::sync::Arc;
 
 async fn db() -> Db {
@@ -24,17 +28,23 @@ fn catalog() -> PermissionCatalog {
     result
 }
 
-fn mailer() -> web::Data<Arc<dyn Sender>> {
-    web::Data::new(Arc::new(LoggingSender) as Arc<dyn Sender>)
+fn mailer() -> Arc<dyn Sender> {
+    Arc::new(LoggingSender)
 }
 
-fn verification_tokens() -> web::Data<Arc<VerificationTokens>> {
-    web::Data::new(Arc::new(VerificationTokens::in_memory()))
+async fn body_text(resp: quench_http::response::Response) -> String {
+    let collected = resp.into_hyper().into_body().collect().await.expect("body");
+    String::from_utf8(collected.to_bytes().to_vec()).expect("utf8")
 }
 
-async fn body_text(resp: HttpResponse) -> String {
-    let body = to_bytes(resp.into_body()).await.expect("body");
-    String::from_utf8(body.to_vec()).expect("utf8")
+fn location(resp: quench_http::response::Response) -> String {
+    resp.into_hyper()
+        .headers()
+        .get("location")
+        .expect("location header")
+        .to_str()
+        .expect("utf8")
+        .to_string()
 }
 
 // -----------------------------------------------------------------
@@ -71,103 +81,95 @@ async fn render_register_page_without_a_notice_has_no_error() {
 // HTTP handlers
 // -----------------------------------------------------------------
 
-#[actix_web::test]
+#[tokio::test]
 async fn register_page_renders() {
-    let app = actix_test::init_service(App::new().service(register_page)).await;
-    let req = actix_test::TestRequest::get().uri("/register").to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let resp = register_page(Query(Notice::default())).await;
+    assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn register_page_slash_renders() {
-    let app = actix_test::init_service(App::new().service(register_page_slash)).await;
-    let req = actix_test::TestRequest::get()
-        .uri("/register/")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let resp = register_page_slash(Query(Notice::default())).await;
+    assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[actix_web::test]
+async fn register_app(db: Db) -> (Arc<dyn Endpoint>, Arc<quench_http::di::Container>) {
+    gatehouse_service::ui::pages::register::register_routes();
+    let container = ContainerBuilder::new()
+        .provide(catalog())
+        .provide(db)
+        .provide(mailer())
+        .provide_arc(Arc::new(VerificationTokens::in_memory()))
+        .build()
+        .await
+        .unwrap();
+    (
+        quench_starter::http::discover_and_mount("/"),
+        Arc::new(container),
+    )
+}
+
+fn post_form(
+    path: &str,
+    pairs: &[(&str, &str)],
+    container: &Arc<quench_http::di::Container>,
+) -> Request {
+    let encoded = serde_urlencoded::to_string(pairs).unwrap();
+    Request::new(
+        Method::POST,
+        path.parse::<Uri>().unwrap(),
+        HeaderMap::new(),
+        quench_http::body::InboundBody::from_bytes(Bytes::from(encoded)),
+        container.clone(),
+    )
+}
+
+#[tokio::test]
 async fn register_submit_rejects_an_invalid_email() {
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(catalog()))
-            .app_data(web::Data::new(db().await))
-            .app_data(mailer())
-            .app_data(verification_tokens())
-            .service(register_submit),
-    )
-    .await;
-    let req = actix_test::TestRequest::post()
-        .uri("/register")
-        .set_form([
-            ("username", "alice"),
-            ("password", "correct-horse"),
-            ("email", "not-an-email"),
-        ])
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::FOUND);
-    let location = resp
-        .headers()
-        .get(actix_web::http::header::LOCATION)
-        .unwrap()
-        .to_str()
-        .unwrap();
-    assert!(location.contains("ui_register_error_email_invalid"));
+    let (app, container) = register_app(db().await).await;
+    let resp = app
+        .call(post_form(
+            "/ui/register",
+            &[
+                ("username", "alice"),
+                ("password", "correct-horse"),
+                ("email", "not-an-email"),
+            ],
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::FOUND);
+    assert!(location(resp).contains("ui_register_error_email_invalid"));
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn register_submit_creates_the_account_and_redirects_to_login() {
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(catalog()))
-            .app_data(web::Data::new(db().await))
-            .app_data(mailer())
-            .app_data(verification_tokens())
-            .service(register_submit),
-    )
-    .await;
-    let req = actix_test::TestRequest::post()
-        .uri("/register")
-        .set_form([
-            ("username", "alice"),
-            ("password", "correct-horse"),
-            ("email", "alice@example.com"),
-        ])
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::FOUND);
-    let location = resp
-        .headers()
-        .get(actix_web::http::header::LOCATION)
-        .unwrap()
-        .to_str()
-        .unwrap();
-    assert!(location.contains("registered=1"));
+    let (app, container) = register_app(db().await).await;
+    let resp = app
+        .call(post_form(
+            "/ui/register",
+            &[
+                ("username", "alice"),
+                ("password", "correct-horse"),
+                ("email", "alice@example.com"),
+            ],
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::FOUND);
+    assert!(location(resp).contains("registered=1"));
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn verify_rejects_an_unknown_token() {
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(db().await))
-            .app_data(verification_tokens())
-            .service(verify),
+    let resp = verify(
+        Query(VerifyQuery {
+            token: "not-a-real-token".to_string(),
+        }),
+        Inject(Arc::new(db().await)),
+        Inject(Arc::new(VerificationTokens::in_memory())),
     )
     .await;
-    let req = actix_test::TestRequest::get()
-        .uri("/verify?token=not-a-real-token")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::FOUND);
-    let location = resp
-        .headers()
-        .get(actix_web::http::header::LOCATION)
-        .unwrap()
-        .to_str()
-        .unwrap();
-    assert!(location.contains("ui_login_verify_invalid"));
+    assert_eq!(resp.status(), StatusCode::FOUND);
+    assert!(location(resp).contains("ui_login_verify_invalid"));
 }

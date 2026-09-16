@@ -1,6 +1,6 @@
 use gatehouse_service::SigningKeys;
 use gatehouse_service::test_support::TEST_KEY_MATERIAL;
-use quench_auth::actix::domain::jwt::{KeyResolver, KeySigner};
+use quench_auth::domain::jwt::{KeyResolver, KeySigner};
 use quench_db::prelude::Db;
 
 /// `GATEHOUSE_KEY_ENCRYPTION_KEY` is a fixed env var name several modules'

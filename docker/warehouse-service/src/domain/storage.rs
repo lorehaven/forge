@@ -1,6 +1,4 @@
-//! Dynamic storages: admin-provisioned, owned, quota'd storages backed by the
-//! database - the counterpart to the static, env-configured storages in
-//! `routers::files` (`FILE_STORAGES`), which this table never touches.
+//! Dynamic, admin-provisioned, quota'd storages - the DB counterpart to `routers::files`'s static ones.
 
 use crate::domain::db::{StorageError, pool, schema};
 use chrono::{DateTime, Utc};
@@ -12,8 +10,7 @@ use sqlx::Row;
 pub struct DynamicStorage {
     pub name: String,
     pub owner: String,
-    /// `None` falls back to the deployment-wide default
-    /// (`routers::files::max_file_bytes`).
+    /// `None` falls back to the deployment-wide default.
     pub max_file_bytes: Option<i64>,
     pub quota_bytes: i64,
     pub used_bytes: i64,
@@ -64,8 +61,7 @@ pub async fn read(db: &Db, name: &str) -> Result<Option<DynamicStorage>, Storage
     row.as_ref().map(from_row).transpose()
 }
 
-/// Every dynamic storage this deployment holds - for `GET /api/v1/files`,
-/// filtered down to what the caller may see by the route handler, not here.
+/// Every dynamic storage; caller-visibility filtering happens in the route handler.
 pub async fn list(db: &Db) -> Result<Vec<DynamicStorage>, StorageError> {
     let pool = pool(db)?;
     let schema = schema();
@@ -85,11 +81,7 @@ pub struct StorageUpdate {
     pub sync_enabled: Option<bool>,
 }
 
-/// Applies whichever fields `changes` sets, leaving the rest as they are.
-///
-/// `max_file_bytes` is `Option<Option<i64>>` because the column itself is
-/// nullable: the outer `None` means "leave it alone", the inner `None` means
-/// "clear it back to the deployment default".
+/// Applies whichever fields `changes` sets. `max_file_bytes`: outer `None` = leave alone, inner = clear.
 pub async fn update(
     db: &Db,
     name: &str,
@@ -122,11 +114,7 @@ pub async fn update(
     row.as_ref().map(from_row).transpose()
 }
 
-/// Deletes the storage row - cascading, via the foreign keys in the
-/// migration, to its `storage_files` and `storage_sync_log` rows. Blob
-/// ref-counts for whatever it referenced are the caller's job to release
-/// first (see `domain::storage_file::delete_all_for_storage`), since a blob
-/// is shared with other storages and this table knows nothing about it.
+/// Deletes the storage row (cascades to its files/sync-log). Caller must release blob ref-counts first.
 pub async fn delete(db: &Db, name: &str) -> Result<bool, StorageError> {
     let pool = pool(db)?;
     let schema = schema();

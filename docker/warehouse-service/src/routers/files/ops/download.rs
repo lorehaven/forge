@@ -1,49 +1,45 @@
-//! `GET`/`HEAD /api/v1/files/{storage}/file?path=…` - fetch a file back.
-//!
-//! Streamed off disk in chunks rather than read into a `Vec`, so serving a
-//! large file does not cost its size in memory - and several concurrent
-//! downloads do not cost their combined size. A static storage streams
-//! straight from its own path; a dynamic storage resolves `path` to a blob
-//! digest first and streams from the shared blob store instead.
+//! `GET`/`HEAD /api/v1/files/{storage}/file?path=…` - streamed off disk in
+//! chunks, so serving (and concurrently downloading) a large file stays cheap in memory.
 
 use super::{
     ResolvedStorage, authorize, dynamic_path, error, forbidden, not_found, resolve_storage,
 };
 use crate::domain::storage_file;
-use crate::routers::files::{FileQuery, dynamic};
-use actix_web::http::StatusCode;
-use actix_web::{HttpRequest, HttpResponse, Responder, get, head, web};
+use crate::routers::files::{FileQuery, OptionalClaims, dynamic};
+use async_trait::async_trait;
 use bytes::Bytes;
+use quench_auth::domain::jwt::JwtConfig;
 use quench_db::prelude::Db;
-use std::path::{Path, PathBuf};
+use quench_http::prelude::{
+    Endpoint, FromRequest, Inject, Path, Query, Request, Response, get,
+    http::{Method, StatusCode},
+};
+use std::path::{Path as FsPath, PathBuf};
 use tokio::io::AsyncReadExt;
 use tokio_stream::wrappers::ReceiverStream;
 
 /// How much is read from disk, and handed to the network, at a time.
 const CHUNK_BYTES: usize = 64 * 1024;
 
-/// How many chunks may sit between the reader and a slow client.
-///
-/// Small on purpose: the channel is the only thing holding file content in
-/// memory, and a client that stops reading should stall the reader rather than
-/// let it pull the whole file into a queue.
+/// How many chunks may sit between the reader and a slow client - small so a
+/// stalled client stalls the reader instead of buffering the whole file.
 const CHUNK_BUFFER: usize = 8;
 
-#[get("/{storage}/file")]
-#[tracing::instrument(skip(request))]
+#[get("/api/v1/files/{storage}/file")]
+#[tracing::instrument(skip(claims, config, db))]
 pub async fn handle(
-    request: HttpRequest,
-    db: web::Data<Db>,
-    storage: web::Path<String>,
-    query: web::Query<FileQuery>,
-) -> impl Responder {
-    let storage_name = storage.into_inner();
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+    Inject(db): Inject<Db>,
+    Path(storage_name): Path<String>,
+    Query(query): Query<FileQuery>,
+) -> Response {
     let resolved = match resolve_storage(&db, &storage_name).await {
         Ok(resolved) => resolved,
-        Err(response) => return *response,
+        Err(response) => return response,
     };
 
-    if !authorize(&request, &resolved, "read") {
+    if !authorize(claims.as_ref(), &config, &resolved, "read") {
         return forbidden("read access to this storage is required");
     }
 
@@ -51,13 +47,13 @@ pub async fn handle(
         ResolvedStorage::Static(storage) => {
             match super::static_target_or_error(storage, &query.path).await {
                 Ok(target) => target,
-                Err(response) => return *response,
+                Err(response) => return response,
             }
         }
         ResolvedStorage::Dynamic(storage) => {
             let path = match dynamic_path(&query.path) {
                 Ok(path) => path,
-                Err(response) => return *response,
+                Err(response) => return response,
             };
             let Some(root) = dynamic::root() else {
                 return error(
@@ -80,21 +76,20 @@ pub async fn handle(
     stream_file(&target, &query.path, inline).await
 }
 
-#[head("/{storage}/file")]
-#[tracing::instrument(skip(request))]
+/// No `#[head]` macro exists - hand-expanded from `route_impl` in quench-http-macros.
 pub async fn head(
-    request: HttpRequest,
-    db: web::Data<Db>,
-    storage: web::Path<String>,
-    query: web::Query<FileQuery>,
-) -> impl Responder {
-    let storage_name = storage.into_inner();
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+    Inject(db): Inject<Db>,
+    Path(storage_name): Path<String>,
+    Query(query): Query<FileQuery>,
+) -> Response {
     let resolved = match resolve_storage(&db, &storage_name).await {
         Ok(resolved) => resolved,
-        Err(response) => return *response,
+        Err(response) => return response,
     };
 
-    if !authorize(&request, &resolved, "read") {
+    if !authorize(claims.as_ref(), &config, &resolved, "read") {
         return forbidden("read access to this storage is required");
     }
 
@@ -102,13 +97,13 @@ pub async fn head(
         ResolvedStorage::Static(storage) => {
             match super::static_target_or_error(storage, &query.path).await {
                 Ok(target) => target,
-                Err(response) => return *response,
+                Err(response) => return response,
             }
         }
         ResolvedStorage::Dynamic(storage) => {
             let path = match dynamic_path(&query.path) {
                 Ok(path) => path,
-                Err(response) => return *response,
+                Err(response) => return response,
             };
             let Some(root) = dynamic::root() else {
                 return error(
@@ -128,31 +123,60 @@ pub async fn head(
     };
 
     match tokio::fs::metadata(&target).await {
-        Ok(metadata) if metadata.is_file() => HttpResponse::Ok()
-            .content_type("application/octet-stream")
-            .append_header(("Content-Length", metadata.len()))
-            .finish(),
+        Ok(metadata) if metadata.is_file() => Response::new(StatusCode::OK)
+            .header("content-type", "application/octet-stream")
+            .header("content-length", metadata.len().to_string()),
         _ => error(StatusCode::NOT_FOUND, "no such file"),
     }
 }
 
-/// Streams `target` back.
-///
-/// `display_path` is the caller's `?path=` - the file's real name and
-/// extension, which for a dynamic storage the on-disk `target` (a blob digest)
-/// no longer carries. `inline` is set by `?disposition=inline`: the browser
-/// then renders the file in place, with a `Content-Type` guessed from the
-/// extension, rather than saving it - what the management UI's preview pane
-/// needs. Without it the response is unchanged: an opaque
-/// `application/octet-stream` attachment.
-async fn stream_file(target: &Path, display_path: &str, inline: bool) -> HttpResponse {
+#[allow(non_camel_case_types)]
+struct __quench_route_head;
+
+#[async_trait]
+impl Endpoint for __quench_route_head {
+    async fn call(&self, mut req: Request) -> Response {
+        let arg0 = match <OptionalClaims as FromRequest>::from_request(&mut req).await {
+            Ok(v) => v,
+            Err(e) => return e.into_response(),
+        };
+        let arg1 = match <Inject<JwtConfig> as FromRequest>::from_request(&mut req).await {
+            Ok(v) => v,
+            Err(e) => return e.into_response(),
+        };
+        let arg2 = match <Inject<Db> as FromRequest>::from_request(&mut req).await {
+            Ok(v) => v,
+            Err(e) => return e.into_response(),
+        };
+        let arg3 = match <Path<String> as FromRequest>::from_request(&mut req).await {
+            Ok(v) => v,
+            Err(e) => return e.into_response(),
+        };
+        let arg4 = match <Query<FileQuery> as FromRequest>::from_request(&mut req).await {
+            Ok(v) => v,
+            Err(e) => return e.into_response(),
+        };
+        head(arg0, arg1, arg2, arg3, arg4).await
+    }
+}
+
+quench_http::inventory::submit! {
+    quench_http::prelude::RouteRegistration {
+        method: Method::HEAD,
+        pattern: "/api/v1/files/{storage}/file",
+        endpoint: || std::sync::Arc::new(__quench_route_head) as std::sync::Arc<dyn Endpoint>,
+    }
+}
+
+/// Streams `target` back. `display_path` carries the real name/extension a
+/// dynamic storage's blob-digest `target` no longer has; `inline` renders in place instead of saving.
+async fn stream_file(target: &FsPath, display_path: &str, inline: bool) -> Response {
     let metadata = match tokio::fs::metadata(target).await {
         Ok(metadata) => metadata,
         Err(_) => return not_found("no such file"),
     };
 
-    // A directory is not a file, and answering with one would mean deciding
-    // what "the content of a directory" is. `GET /{storage}` lists instead.
+    // `GET /{storage}` lists directories; this only ever serves a file.
     if !metadata.is_file() {
         return not_found("no such file");
     }
@@ -175,16 +199,13 @@ async fn stream_file(target: &Path, display_path: &str, inline: bool) -> HttpRes
         )
     };
 
-    HttpResponse::Ok()
-        .content_type(content_type)
-        .append_header(("Content-Length", metadata.len()))
-        .append_header(("Content-Disposition", disposition))
-        .streaming(read_stream(file))
+    Response::streaming(StatusCode::OK, read_stream(file))
+        .header("content-type", content_type)
+        .header("content-length", metadata.len().to_string())
+        .header("content-disposition", disposition)
 }
 
-/// The last path segment of a caller's `?path=`, cleaned the same way
-/// [`download_name`] cleans a filesystem name - quotes, backslashes and
-/// control bytes dropped so the value is always a parseable header.
+/// The last path segment of `?path=`, cleaned like [`download_name`] for a parseable header.
 fn display_name(path: &str) -> String {
     let last = path.rsplit(['/', '\\']).next().unwrap_or(path);
     let cleaned: String = last
@@ -198,10 +219,7 @@ fn display_name(path: &str) -> String {
     }
 }
 
-/// A `Content-Type` guessed from `path`'s extension, for `?disposition=inline`
-/// only - enough for a browser to render the common preview-able types
-/// (images, video, audio, PDF, plain text) in place. Anything unrecognised
-/// stays `application/octet-stream`, which a browser offers to save.
+/// `Content-Type` guessed from `path`'s extension, for `?disposition=inline` only.
 pub fn content_type_for(path: &str) -> &'static str {
     let ext = path
         .rsplit('.')
@@ -242,12 +260,8 @@ pub fn content_type_for(path: &str) -> &'static str {
     }
 }
 
-/// The file's own name, for a browser saving it.
-///
-/// Quotes and control bytes are dropped rather than escaped: the name only has
-/// to be a usable suggestion, and a header that cannot be parsed is worse than
-/// one that suggests something slightly different.
-pub fn download_name(target: &Path) -> String {
+/// The file's own name for a browser saving it; quotes/control bytes dropped, not escaped.
+pub fn download_name(target: &FsPath) -> String {
     let name = target
         .file_name()
         .map(|name| name.to_string_lossy().to_string())
@@ -265,10 +279,8 @@ pub fn download_name(target: &Path) -> String {
     }
 }
 
-/// Reads the file on a task of its own, handing chunks over a bounded channel.
-///
-/// The bound is what applies backpressure: once `CHUNK_BUFFER` chunks are
-/// waiting, the reader blocks until the client has taken one.
+/// Reads on a task of its own; `ReceiverStream` is `Sync` regardless of what
+/// feeds it, which `Response::streaming` needs and the raw file I/O alone wouldn't satisfy.
 fn read_stream(mut file: tokio::fs::File) -> ReceiverStream<Result<Bytes, std::io::Error>> {
     let (sender, receiver) = tokio::sync::mpsc::channel(CHUNK_BUFFER);
 
@@ -304,4 +316,9 @@ pub async fn is_file(target: &PathBuf) -> bool {
     tokio::fs::metadata(target)
         .await
         .is_ok_and(|metadata| metadata.is_file())
+}
+
+pub fn register_routes() {
+    let _ = handle as fn(_, _, _, _, _) -> _;
+    let _ = head as fn(_, _, _, _, _) -> _;
 }

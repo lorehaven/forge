@@ -1,8 +1,8 @@
 use super::list::render_instances_grid;
 use crate::routers::vllm::engine::VllmEngine;
-use actix_web::{Error, HttpResponse, get, web};
 use bytes::Bytes;
 use futures_util::StreamExt;
+use quench_http::prelude::{HttpError, Inject, Response, get};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::broadcast::Sender;
@@ -23,31 +23,30 @@ pub fn init_vllm_status_publisher(broadcaster: Sender<String>, engine: Arc<dyn V
     });
 }
 
-#[get("/sse")]
+#[get("/api/v1/vllm/sse")]
 pub async fn handle_sse_canonical(
-    broadcaster: web::Data<VllmBroadcaster>,
-) -> Result<HttpResponse, Error> {
+    Inject(broadcaster): Inject<VllmBroadcaster>,
+) -> Result<Response, HttpError> {
     handle_sse_impl(broadcaster).await
 }
 
-#[get("/instances/sse")]
+#[get("/api/v1/vllm/instances/sse")]
 pub async fn handle_sse_alias(
-    broadcaster: web::Data<VllmBroadcaster>,
-) -> Result<HttpResponse, Error> {
+    Inject(broadcaster): Inject<VllmBroadcaster>,
+) -> Result<Response, HttpError> {
     handle_sse_impl(broadcaster).await
 }
 
-async fn handle_sse_impl(broadcaster: web::Data<VllmBroadcaster>) -> Result<HttpResponse, Error> {
+async fn handle_sse_impl(broadcaster: Arc<VllmBroadcaster>) -> Result<Response, HttpError> {
     let receiver = broadcaster.0.subscribe();
     let stream = BroadcastStream::new(receiver).map(|msg| match msg {
-        Ok(html) => Ok::<_, Error>(Bytes::from(format!(
+        Ok(html) => Ok::<_, std::io::Error>(Bytes::from(format!(
             "event: vllm-instances\ndata: {}\n\n",
             html.replace("\n", "")
         ))),
-        Err(_) => Ok::<_, Error>(Bytes::from("event: error\ndata: stream closed\n\n")),
+        Err(_) => Ok::<_, std::io::Error>(Bytes::from("event: error\ndata: stream closed\n\n")),
     });
 
-    Ok(HttpResponse::Ok()
-        .content_type("text/event-stream")
-        .streaming(stream))
+    Ok(Response::streaming(http::StatusCode::OK, stream)
+        .header("content-type", "text/event-stream"))
 }

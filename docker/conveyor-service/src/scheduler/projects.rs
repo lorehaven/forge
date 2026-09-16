@@ -1,9 +1,5 @@
-//! Reading and writing conveyor's organisational tree.
-//!
-//! Raw SQL, for the same reason `repos.rs` is: the tree walks below need a
-//! recursive query `quench-db`'s `Crud` has no way to express, and having half
-//! the schema go through one path and half through another is worse than
-//! having all of it go through this one.
+//! Conveyor's organisational tree. Raw SQL, like `repos.rs`: the recursive
+//! tree walks below have no `Crud` equivalent.
 
 use crate::domain::Project;
 use crate::scheduler::queue::{QueueError, pool, schema};
@@ -80,9 +76,7 @@ pub async fn list_children(db: &Db, parent_id: Option<&str>) -> Result<Vec<Proje
     rows.iter().map(from_row).collect()
 }
 
-/// Every node in the tree, in one query - for a caller building the whole
-/// hierarchy in memory (the UI's project tree) rather than walking it one
-/// level at a time.
+/// Every node in one query, for building the whole hierarchy in memory.
 pub async fn list_all(db: &Db) -> Result<Vec<Project>, QueueError> {
     let pool = pool(db)?;
     let schema = schema();
@@ -161,10 +155,7 @@ pub enum DeleteOutcome {
     HasRepo,
 }
 
-/// Refuses a delete that would silently orphan children or a repository,
-/// rather than relying on `ON DELETE CASCADE` to make the call for it - this
-/// is meant to be explicit and deliberate, the same reason repo registration
-/// is.
+/// Refuses to silently orphan children or a repo via `ON DELETE CASCADE` - deliberate, not automatic.
 pub async fn delete(db: &Db, id: &str) -> Result<DeleteOutcome, QueueError> {
     let pool = pool(db)?;
     let schema = schema();
@@ -208,9 +199,7 @@ pub async fn delete(db: &Db, id: &str) -> Result<DeleteOutcome, QueueError> {
     Ok(DeleteOutcome::Deleted)
 }
 
-/// `id` and every ancestor above it, in no particular order - callers only
-/// ever check membership. Used by permission enforcement: a grant on any
-/// entry in this chain covers `id`.
+/// `id` and every ancestor above it, unordered - a grant on any entry in this chain covers `id`.
 pub async fn ancestor_chain(db: &Db, id: &str) -> Result<Vec<String>, QueueError> {
     let pool = pool(db)?;
     let schema = schema();
@@ -232,10 +221,7 @@ pub async fn ancestor_chain(db: &Db, id: &str) -> Result<Vec<String>, QueueError
         .collect()
 }
 
-/// Every one of `root_ids` plus everything nested beneath them. Used to turn a
-/// set of directly-granted project ids into the full set of projects a grant
-/// on them covers - the read side of the same rule `ancestor_chain` checks
-/// from the other direction.
+/// `root_ids` plus everything nested beneath them - the read side of what `ancestor_chain` checks.
 pub async fn descendant_ids(db: &Db, root_ids: &[String]) -> Result<Vec<String>, QueueError> {
     if root_ids.is_empty() {
         return Ok(Vec::new());

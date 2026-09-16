@@ -1,8 +1,4 @@
-//! One status vocabulary for runs, jobs and steps.
-//!
-//! Three parallel enums would drift, and the aggregation rules below - a run is
-//! as bad as its worst job - only work if the three levels agree on what "bad"
-//! means.
+//! One status vocabulary for runs, jobs and steps - three parallel enums would drift.
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -55,20 +51,12 @@ impl Status {
         )
     }
 
-    /// Whether the thing this describes counts as having gone wrong.
-    ///
-    /// `Skipped` is deliberately not a failure: a stage whose `when` excluded it
-    /// did what the pipeline asked for.
+    /// `Skipped` is deliberately not a failure - a `when`-excluded stage did what the pipeline asked.
     pub const fn is_failure(self) -> bool {
         matches!(self, Self::Failed | Self::Cancelled)
     }
 
-    /// The status of a parent, given its children.
-    ///
-    /// Worst-wins, with the ordering chosen so a run reports the most
-    /// actionable thing that happened to it: anything still moving keeps the
-    /// parent `Running`, then failure, then cancellation, and a parent whose
-    /// children were all skipped is itself skipped rather than a hollow success.
+    /// Worst-wins: running beats failure beats cancellation beats skipped-all.
     pub fn rollup(children: impl IntoIterator<Item = Self>) -> Self {
         let mut seen_running = false;
         let mut seen_failed = false;

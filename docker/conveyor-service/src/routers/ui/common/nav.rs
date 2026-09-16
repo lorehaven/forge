@@ -1,24 +1,5 @@
-//! Conveyor's own slide-out nav drawer.
-//!
-//! quench-web ships no reusable sidebar with page-nav entries - its only
-//! drawer, `NavPanelBuilder`, renders exclusively the locale/theme
-//! `<select>`s, has no extension point for anything else, and has a real
-//! bug besides (its locale- and theme-select init scripts are joined into
-//! one `<script>` body, both declaring `const select` - an immediate
-//! `SyntaxError` at runtime). Palantir's `app/src/shell.rs` hand-rolls its
-//! own drawer for exactly this reason, reusing only `nav_button()` (the
-//! hamburger trigger, already wired to
-//! `toggle_modal("modal-overlay", "modal-side", "show")`) and the
-//! `.modal-overlay`/`.modal-side`/`.modal-content` CSS quench-web ships
-//! pre-styled. This does the same, in conveyor's own crate - palantir is a
-//! separate git repo and a separate `quench-web` registry dependency, so
-//! there is no shared component to import.
-//!
-//! Unlike palantir's per-section, path-dependent entry list, this one is
-//! two static links and carries no locale/theme select at all - so, unlike
-//! `nav::panel(current_path)` there, it needs no per-request rebuild and no
-//! current-path threading through every page. It is built once, as part of
-//! the already-`LazyLock`'d header.
+//! Conveyor's own slide-out nav drawer - quench-web's `NavPanelBuilder` only
+//! renders locale/theme selects and has a real init-script bug, so this hand-rolls one.
 
 use crate::routers::ui::common::ui_path;
 use quench_web::framework::dom::toggle_modal;

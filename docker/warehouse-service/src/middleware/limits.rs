@@ -1,14 +1,8 @@
-use actix_web::{
-    Error,
-    body::{EitherBody, MessageBody},
-    dev::{Service, ServiceRequest, ServiceResponse, Transform},
-};
-use futures_util::future::{LocalBoxFuture, Ready, ok};
-use quench_starter::prelude::error;
-use std::{
-    sync::Arc,
-    task::{Context, Poll},
-};
+use async_trait::async_trait;
+use quench_http::prelude::http::{Method, StatusCode};
+use quench_http::prelude::{Endpoint, Middleware, Request, Response};
+use quench_starter::http::domain::error;
+use std::sync::Arc;
 use tokio::sync::Semaphore;
 
 pub struct WarehouseLimits {
@@ -24,81 +18,32 @@ impl WarehouseLimits {
     }
 }
 
-impl<S, B> Transform<S, ServiceRequest> for WarehouseLimits
-where
-    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
-    B: MessageBody + 'static,
-{
-    type Response = ServiceResponse<EitherBody<B>>;
-    type Error = Error;
-    type Transform = WarehouseLimitsMiddleware<S>;
-    type InitError = ();
-    type Future = Ready<Result<Self::Transform, Self::InitError>>;
-
-    fn new_transform(&self, service: S) -> Self::Future {
-        ok(WarehouseLimitsMiddleware {
-            service,
-            upload_semaphore: self.upload_semaphore.clone(),
-        })
-    }
-}
-
-pub struct WarehouseLimitsMiddleware<S> {
-    service: S,
-    upload_semaphore: Arc<Semaphore>,
-}
-
-impl<S, B> Service<ServiceRequest> for WarehouseLimitsMiddleware<S>
-where
-    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
-    B: MessageBody + 'static,
-{
-    type Response = ServiceResponse<EitherBody<B>>;
-    type Error = Error;
-    type Future = LocalBoxFuture<'static, Result<Self::Response, Self::Error>>;
-
-    fn poll_ready(&self, ctx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.service.poll_ready(ctx)
-    }
-
-    fn call(&self, req: ServiceRequest) -> Self::Future {
+#[async_trait]
+impl Middleware for WarehouseLimits {
+    async fn handle(&self, req: Request, next: &dyn Endpoint) -> Response {
         if !is_upload_mutation(&req) {
-            let fut = self.service.call(req);
-            return Box::pin(async move {
-                let res = fut.await?;
-                Ok(res.map_into_left_body())
-            });
+            return next.call(req).await;
         }
 
         let permit = match self.upload_semaphore.clone().try_acquire_owned() {
             Ok(p) => p,
             Err(_) => {
-                let response = error::response(
-                    actix_web::http::StatusCode::TOO_MANY_REQUESTS,
+                return error::response(
+                    StatusCode::TOO_MANY_REQUESTS,
                     error::DENIED,
                     "too many concurrent upload requests",
-                )
-                .map_into_right_body();
-                return Box::pin(async move { Ok(req.into_response(response)) });
+                );
             }
         };
 
-        let fut = self.service.call(req);
-        Box::pin(async move {
-            let _permit = permit;
-            let res = fut.await?;
-            Ok(res.map_into_left_body())
-        })
+        let response = next.call(req).await;
+        drop(permit);
+        response
     }
 }
 
-pub fn is_upload_mutation(req: &ServiceRequest) -> bool {
-    let is_write = matches!(
-        *req.method(),
-        actix_web::http::Method::POST
-            | actix_web::http::Method::PATCH
-            | actix_web::http::Method::PUT
-    );
+pub fn is_upload_mutation(req: &Request) -> bool {
+    let is_write = matches!(*req.method(), Method::POST | Method::PATCH | Method::PUT);
 
-    is_write && req.path().contains("/blobs/uploads")
+    is_write && req.uri().path().contains("/blobs/uploads")
 }

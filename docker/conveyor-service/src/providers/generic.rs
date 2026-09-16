@@ -1,23 +1,11 @@
-//! A webhook from anything: a shared secret in, nothing back.
-//!
-//! For a repository on a host conveyor has no integration with. The sender
-//! decides what to say and signs it the same way GitHub does, so a three-line
-//! post-receive hook is enough to drive a build.
-//!
-//! ```bash
-//! BODY='{"delivery_id":"'$(git rev-parse HEAD)'","owner":"me","name":"thing",
-//!        "ref":"refs/heads/master","sha":"'$(git rev-parse HEAD)'"}'
-//! SIG="sha256=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$SECRET" -r | cut -d' ' -f1)"
-//! curl -X POST "$CONVEYOR/api/v1/webhooks/generic" \
-//!      -H "X-Conveyor-Signature-256: $SIG" -d "$BODY"
-//! ```
+//! A webhook from anything: a shared secret in, nothing back - for a host conveyor has no integration with.
 
 use crate::domain::{Repo, Trigger};
 use crate::providers::{
     CommitStatusReport, GitProvider, ProviderError, TriggerEvent, header, verify_sha256_signature,
 };
-use actix_web::http::header::HeaderMap;
 use async_trait::async_trait;
+use http::HeaderMap;
 use serde::Deserialize;
 
 const SIGNATURE_HEADER: &str = "x-conveyor-signature-256";
@@ -74,8 +62,7 @@ impl GitProvider for GenericProvider {
             git_ref: payload.git_ref,
             sha: payload.sha,
             message: payload.message,
-            // Nothing in a plain webhook says where the code came from, so the
-            // sender is trusted - which is what the shared secret establishes.
+            // Nothing says where the code came from; the shared secret is what establishes trust.
             from_fork: false,
         }))
     }
@@ -86,9 +73,7 @@ impl GitProvider for GenericProvider {
         sha: &str,
         report: &CommitStatusReport,
     ) -> Result<(), ProviderError> {
-        // Deliberately not an error: a repository registered as `generic` is
-        // one conveyor has no API for, and failing every run's final step over
-        // something it was never going to be able to do would be wrong.
+        // Not an error - a `generic` repo has no API conveyor can report to.
         tracing::debug!(
             "generic provider has nowhere to report {} for {}@{sha}",
             report.state.as_str(),
@@ -98,12 +83,10 @@ impl GitProvider for GenericProvider {
     }
 }
 
-/// What a sender posts. Deliberately small - anything conveyor can work out for
-/// itself is not asked for.
+/// What a sender posts - deliberately small, nothing conveyor can work out itself.
 #[derive(Deserialize)]
 struct GenericEvent {
-    /// Anything unique per delivery. A redelivery with the same id is ignored,
-    /// which is what makes a retrying sender safe.
+    /// Unique per delivery; a repeat with the same id is ignored, making a retrying sender safe.
     delivery_id: String,
     owner: String,
     name: String,

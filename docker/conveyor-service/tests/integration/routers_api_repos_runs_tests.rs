@@ -2,9 +2,7 @@
 //! read/list/update/cancel/logs handlers - the JSON API mirror of what
 //! `routers_ui_repos_tests.rs` covers for the browser pages.
 
-use crate::support::{database, skipped};
-use actix_web::http::StatusCode;
-use actix_web::{App, test as actix_test, web};
+use crate::support::{database, json_body, json_req, req, skipped};
 use conveyor_service::config::ConveyorConfig;
 use conveyor_service::domain::Trigger;
 use conveyor_service::providers::Providers;
@@ -12,35 +10,41 @@ use conveyor_service::routers::api;
 use conveyor_service::scheduler::projects::{self, NewProject};
 use conveyor_service::scheduler::queue::{self, NewRun};
 use conveyor_service::scheduler::repos::{self, NewRepo};
-use quench_auth::prelude::JwtConfig;
+use http::{Method, StatusCode};
+use quench_auth::domain::jwt::JwtConfig;
 use quench_db::prelude::{Database, Db};
+use quench_http::di::ContainerBuilder;
+use quench_http::endpoint::Endpoint;
+use std::sync::Arc;
 
-/// `routers::api::actor` falls back to the literal user `"dev"` with auth
-/// disabled, and every write route stamps that name into a `created_by`/
-/// `registered_by` foreign key into `auth.users` - `database()` seeds
-/// `TEST_USER`, not `"dev"`, so any test performing a write must seed this.
-async fn seed_dev_user(db: &Db) {
-    db.execute(
-        "INSERT INTO auth.users (username, password, roles) \
-         VALUES ('dev', 'x', '[]'::jsonb) ON CONFLICT DO NOTHING",
-    )
-    .await
-    .expect("seed the dev user");
+/// `routers::api::Actor` resolves to the synthetic `"admin"` identity
+/// `get_user_from_req` returns with `JwtConfig::for_tests()`'s `auth_enabled`
+/// off (the default) whenever the container actually carries a `JwtConfig`,
+/// which it does here - unlike the old actix version's test harness, which
+/// never registered one as `app_data` and so fell back to a different,
+/// incidental `"dev"` literal instead. Every write route stamps that name
+/// into a `created_by`/`registered_by` foreign key into `auth.users` -
+/// `database()` seeds `TEST_USER`, not `"admin"`, so any test performing a
+/// write must seed this too.
+async fn seed_admin_user(db: &Db) {
+    db.execute("INSERT INTO auth.users (username, password, roles) VALUES ('admin', 'x', '[]'::jsonb) ON CONFLICT DO NOTHING").await.expect("seed the admin user");
 }
 
-macro_rules! app {
-    ($db:expr) => {{
-        let db = $db;
-        seed_dev_user(&db).await;
-        actix_test::init_service(
-            App::new()
-                .app_data(web::Data::new(db))
-                .app_data(web::Data::new(Providers::from_env()))
-                .app_data(web::Data::new(ConveyorConfig::default()))
-                .service(api::scope(JwtConfig::for_tests())),
-        )
+async fn app(db: Db) -> (Arc<dyn Endpoint>, Arc<quench_http::di::Container>) {
+    seed_admin_user(&db).await;
+    api::register_routes();
+    let container = ContainerBuilder::new()
+        .provide(db)
+        .provide(JwtConfig::for_tests())
+        .provide(ConveyorConfig::default())
+        .provide_arc(Arc::new(Providers::from_env()))
+        .build()
         .await
-    }};
+        .unwrap();
+    (
+        quench_starter::http::discover_and_mount("/"),
+        Arc::new(container),
+    )
 }
 
 async fn seed_project(db: &Db) -> String {
@@ -65,7 +69,7 @@ async fn seed_repo(db: &Db, project_id: &str) -> conveyor_service::domain::Repo 
             name: "widget".to_string(),
             clone_url: "https://example.test/widget.git".to_string(),
             default_branch: "master".to_string(),
-            registered_by: "dev".to_string(),
+            registered_by: "admin".to_string(),
             project_id: project_id.to_string(),
         },
     )
@@ -77,173 +81,170 @@ async fn seed_repo(db: &Db, project_id: &str) -> conveyor_service::domain::Repo 
 // repos
 // ---------------------------------------------------------------------------
 
-#[actix_web::test]
+#[tokio::test]
 async fn register_rejects_an_unknown_provider() {
     let Some((db, _guard)) = database().await else {
         return skipped("register_rejects_an_unknown_provider");
     };
     let project_id = seed_project(&db).await;
-    let app = app!(db);
+    let (app, container) = app(db).await;
 
-    let req = actix_test::TestRequest::post()
-        .uri("/api/v1/repos")
-        .set_json(serde_json::json!({
-            "provider": "not-a-provider",
-            "owner": "tests",
-            "name": "widget",
-            "clone_url": "https://example.test/widget.git",
-            "project_id": project_id,
-        }))
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = app.call(json_req(Method::POST, "/api/v1/repos", serde_json::json!({ "provider": "not-a-provider", "owner": "tests", "name": "widget", "clone_url": "https://example.test/widget.git", "project_id": project_id }), &container)).await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn register_creates_a_repo_when_valid() {
     let Some((db, _guard)) = database().await else {
         return skipped("register_creates_a_repo_when_valid");
     };
     let project_id = seed_project(&db).await;
-    let app = app!(db);
+    let (app, container) = app(db).await;
 
-    let req = actix_test::TestRequest::post()
-        .uri("/api/v1/repos")
-        .set_json(serde_json::json!({
-            "owner": "tests",
-            "name": "widget",
-            "clone_url": "https://example.test/widget.git",
-            "project_id": project_id,
-        }))
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = app.call(json_req(Method::POST, "/api/v1/repos", serde_json::json!({ "owner": "tests", "name": "widget", "clone_url": "https://example.test/widget.git", "project_id": project_id }), &container)).await;
     assert_eq!(resp.status(), StatusCode::CREATED);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn list_reports_every_registered_repo() {
     let Some((db, _guard)) = database().await else {
         return skipped("list_reports_every_registered_repo");
     };
     let project_id = seed_project(&db).await;
     seed_repo(&db, &project_id).await;
-    let app = app!(db);
+    let (app, container) = app(db).await;
 
-    let req = actix_test::TestRequest::get()
-        .uri("/api/v1/repos")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = app
+        .call(req(Method::GET, "/api/v1/repos", &container))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
-    let body: Vec<serde_json::Value> = actix_test::read_body_json(resp).await;
-    assert_eq!(body.len(), 1);
+    let body = json_body(resp).await;
+    assert_eq!(body.as_array().expect("array").len(), 1);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn read_reports_not_found_for_an_unknown_id() {
     let Some((db, _guard)) = database().await else {
         return skipped("read_reports_not_found_for_an_unknown_id");
     };
-    let app = app!(db);
+    let (app, container) = app(db).await;
 
-    let req = actix_test::TestRequest::get()
-        .uri("/api/v1/repos/does-not-exist")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = app
+        .call(req(Method::GET, "/api/v1/repos/does-not-exist", &container))
+        .await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn read_returns_a_known_repo() {
     let Some((db, _guard)) = database().await else {
         return skipped("read_returns_a_known_repo");
     };
     let project_id = seed_project(&db).await;
     let repo = seed_repo(&db, &project_id).await;
-    let app = app!(db);
+    let (app, container) = app(db).await;
 
-    let req = actix_test::TestRequest::get()
-        .uri(&format!("/api/v1/repos/{}", repo.id))
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = app
+        .call(req(
+            Method::GET,
+            &format!("/api/v1/repos/{}", repo.id),
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn update_rejects_an_empty_name() {
     let Some((db, _guard)) = database().await else {
         return skipped("update_rejects_an_empty_name");
     };
     let project_id = seed_project(&db).await;
     let repo = seed_repo(&db, &project_id).await;
-    let app = app!(db);
+    let (app, container) = app(db).await;
 
-    let req = actix_test::TestRequest::patch()
-        .uri(&format!("/api/v1/repos/{}", repo.id))
-        .set_json(serde_json::json!({ "name": "   " }))
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = app
+        .call(json_req(
+            Method::PATCH,
+            &format!("/api/v1/repos/{}", repo.id),
+            serde_json::json!({ "name": "   " }),
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn update_applies_a_valid_partial_change() {
     let Some((db, _guard)) = database().await else {
         return skipped("update_applies_a_valid_partial_change");
     };
     let project_id = seed_project(&db).await;
     let repo = seed_repo(&db, &project_id).await;
-    let app = app!(db);
+    let (app, container) = app(db).await;
 
-    let req = actix_test::TestRequest::patch()
-        .uri(&format!("/api/v1/repos/{}", repo.id))
-        .set_json(serde_json::json!({ "default_branch": "develop" }))
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = app
+        .call(json_req(
+            Method::PATCH,
+            &format!("/api/v1/repos/{}", repo.id),
+            serde_json::json!({ "default_branch": "develop" }),
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
-    let body: serde_json::Value = actix_test::read_body_json(resp).await;
+    let body = json_body(resp).await;
     assert_eq!(body["default_branch"], "develop");
     // Untouched fields survive the partial update.
     assert_eq!(body["owner"], "tests");
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn set_enabled_toggles_the_flag() {
     let Some((db, _guard)) = database().await else {
         return skipped("set_enabled_toggles_the_flag");
     };
     let project_id = seed_project(&db).await;
     let repo = seed_repo(&db, &project_id).await;
-    let app = app!(db);
+    let (app, container) = app(db).await;
 
-    let req = actix_test::TestRequest::post()
-        .uri(&format!("/api/v1/repos/{}/enabled", repo.id))
-        .set_json(serde_json::json!({ "enabled": false }))
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = app
+        .call(json_req(
+            Method::POST,
+            &format!("/api/v1/repos/{}/enabled", repo.id),
+            serde_json::json!({ "enabled": false }),
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
-    let body: serde_json::Value = actix_test::read_body_json(resp).await;
+    let body = json_body(resp).await;
     assert_eq!(body["enabled"], false);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn remove_deletes_a_known_repo_then_404s_on_retry() {
     let Some((db, _guard)) = database().await else {
         return skipped("remove_deletes_a_known_repo_then_404s_on_retry");
     };
     let project_id = seed_project(&db).await;
     let repo = seed_repo(&db, &project_id).await;
-    let app = app!(db);
+    let (app, container) = app(db).await;
 
-    let req = actix_test::TestRequest::delete()
-        .uri(&format!("/api/v1/repos/{}", repo.id))
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = app
+        .call(req(
+            Method::DELETE,
+            &format!("/api/v1/repos/{}", repo.id),
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
 
-    let req = actix_test::TestRequest::delete()
-        .uri(&format!("/api/v1/repos/{}", repo.id))
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = app
+        .call(req(
+            Method::DELETE,
+            &format!("/api/v1/repos/{}", repo.id),
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
@@ -251,37 +252,37 @@ async fn remove_deletes_a_known_repo_then_404s_on_retry() {
 // runs
 // ---------------------------------------------------------------------------
 
-#[actix_web::test]
+#[tokio::test]
 async fn runs_list_is_empty_with_no_runs_queued() {
     let Some((db, _guard)) = database().await else {
         return skipped("runs_list_is_empty_with_no_runs_queued");
     };
-    let app = app!(db);
+    let (app, container) = app(db).await;
 
-    let req = actix_test::TestRequest::get()
-        .uri("/api/v1/runs")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = app.call(req(Method::GET, "/api/v1/runs", &container)).await;
     assert_eq!(resp.status(), StatusCode::OK);
-    let body: Vec<serde_json::Value> = actix_test::read_body_json(resp).await;
-    assert!(body.is_empty());
+    let body = json_body(resp).await;
+    assert!(body.as_array().expect("array").is_empty());
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn runs_list_scoped_to_an_unknown_repo_is_not_found() {
     let Some((db, _guard)) = database().await else {
         return skipped("runs_list_scoped_to_an_unknown_repo_is_not_found");
     };
-    let app = app!(db);
+    let (app, container) = app(db).await;
 
-    let req = actix_test::TestRequest::get()
-        .uri("/api/v1/runs?repo_id=does-not-exist")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = app
+        .call(req(
+            Method::GET,
+            "/api/v1/runs?repo_id=does-not-exist",
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn runs_list_reports_a_queued_run_scoped_to_its_repo() {
     let Some((db, _guard)) = database().await else {
         return skipped("runs_list_reports_a_queued_run_scoped_to_its_repo");
@@ -302,32 +303,34 @@ async fn runs_list_reports_a_queued_run_scoped_to_its_repo() {
     )
     .await
     .expect("enqueue");
-    let app = app!(db);
+    let (app, container) = app(db).await;
 
-    let req = actix_test::TestRequest::get()
-        .uri(&format!("/api/v1/runs?repo_id={}", repo.id))
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = app
+        .call(req(
+            Method::GET,
+            &format!("/api/v1/runs?repo_id={}", repo.id),
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
-    let body: Vec<serde_json::Value> = actix_test::read_body_json(resp).await;
-    assert_eq!(body.len(), 1);
+    let body = json_body(resp).await;
+    assert_eq!(body.as_array().expect("array").len(), 1);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn runs_read_reports_not_found_for_an_unknown_run() {
     let Some((db, _guard)) = database().await else {
         return skipped("runs_read_reports_not_found_for_an_unknown_run");
     };
-    let app = app!(db);
+    let (app, container) = app(db).await;
 
-    let req = actix_test::TestRequest::get()
-        .uri("/api/v1/runs/does-not-exist")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = app
+        .call(req(Method::GET, "/api/v1/runs/does-not-exist", &container))
+        .await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn runs_read_returns_the_run_with_jobs_and_artifacts() {
     let Some((db, _guard)) = database().await else {
         return skipped("runs_read_returns_the_run_with_jobs_and_artifacts");
@@ -348,33 +351,39 @@ async fn runs_read_returns_the_run_with_jobs_and_artifacts() {
     )
     .await
     .expect("enqueue");
-    let app = app!(db);
+    let (app, container) = app(db).await;
 
-    let req = actix_test::TestRequest::get()
-        .uri(&format!("/api/v1/runs/{}", enqueued.run().id))
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = app
+        .call(req(
+            Method::GET,
+            &format!("/api/v1/runs/{}", enqueued.run().id),
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
-    let body: serde_json::Value = actix_test::read_body_json(resp).await;
+    let body = json_body(resp).await;
     assert_eq!(body["jobs"].as_array().unwrap().len(), 0);
     assert_eq!(body["artifacts"].as_array().unwrap().len(), 0);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn runs_cancel_reports_not_found_for_an_unknown_run() {
     let Some((db, _guard)) = database().await else {
         return skipped("runs_cancel_reports_not_found_for_an_unknown_run");
     };
-    let app = app!(db);
+    let (app, container) = app(db).await;
 
-    let req = actix_test::TestRequest::post()
-        .uri("/api/v1/runs/does-not-exist/cancel")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = app
+        .call(req(
+            Method::POST,
+            "/api/v1/runs/does-not-exist/cancel",
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn runs_cancel_accepts_a_queued_run() {
     let Some((db, _guard)) = database().await else {
         return skipped("runs_cancel_accepts_a_queued_run");
@@ -395,25 +404,31 @@ async fn runs_cancel_accepts_a_queued_run() {
     )
     .await
     .expect("enqueue");
-    let app = app!(db);
+    let (app, container) = app(db).await;
 
-    let req = actix_test::TestRequest::post()
-        .uri(&format!("/api/v1/runs/{}/cancel", enqueued.run().id))
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = app
+        .call(req(
+            Method::POST,
+            &format!("/api/v1/runs/{}/cancel", enqueued.run().id),
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn job_logs_reports_not_found_for_an_unknown_job() {
     let Some((db, _guard)) = database().await else {
         return skipped("job_logs_reports_not_found_for_an_unknown_job");
     };
-    let app = app!(db);
+    let (app, container) = app(db).await;
 
-    let req = actix_test::TestRequest::get()
-        .uri("/api/v1/jobs/does-not-exist/logs")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = app
+        .call(req(
+            Method::GET,
+            "/api/v1/jobs/does-not-exist/logs",
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }

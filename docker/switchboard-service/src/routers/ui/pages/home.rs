@@ -1,28 +1,27 @@
+use crate::routers::ui::UiAuthenticated;
 use crate::routers::ui::common::{UiPageKind, render_page, ui_path};
 use crate::routers::{models_dashboard_enabled, vllm_management_enabled};
-use actix_web::{HttpResponse, Responder, get, web};
-use quench_auth::prelude::JwtConfig;
-use quench_starter::actix::routers::ui::pages::home::{handle_home, service_card};
+use quench_http::prelude::{Response, get};
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 
-#[get("/home")]
-pub(super) async fn home(
-    req: actix_web::HttpRequest,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
-    handle_home(req, config, render_home_page).await
+#[get("/ui/home")]
+pub(super) async fn home(UiAuthenticated(authenticated): UiAuthenticated) -> Response {
+    if !authenticated {
+        return crate::routers::ui::common::ui_login_redirect();
+    }
+    render_home_page()
 }
 
-#[get("/home/")]
-pub(super) async fn home_slash(
-    req: actix_web::HttpRequest,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
-    handle_home(req, config, render_home_page).await
+#[get("/ui/home/")]
+pub(super) async fn home_slash(UiAuthenticated(authenticated): UiAuthenticated) -> Response {
+    if !authenticated {
+        return crate::routers::ui::common::ui_login_redirect();
+    }
+    render_home_page()
 }
 
-fn render_home_page() -> HttpResponse {
+fn render_home_page() -> Response {
     let mut service_cards = div().class("home-grid");
     let mut has_service_cards = false;
 
@@ -65,7 +64,7 @@ fn render_home_page() -> HttpResponse {
     }
 
     render_page(
-        HttpResponse::Ok(),
+        http::StatusCode::OK,
         content().class("home-content").child(
             div()
                 .class("home-container")
@@ -78,4 +77,21 @@ fn render_home_page() -> HttpResponse {
         ),
         UiPageKind::Home,
     )
+}
+
+fn service_card(href: &str, title_key: &str, desc_key: &str, extra_class: &str) -> Element {
+    a().attr("href", href)
+        .class(format!("home-card {extra_class}"))
+        .child(
+            div()
+                .class("home-card-body")
+                .child(div().class("home-card-title").attr("data-i18n", title_key))
+                .child(div().class("home-card-desc").attr("data-i18n", desc_key)),
+        )
+        .child(div().class("home-card-arrow").text("→"))
+}
+
+pub(super) fn register_routes() {
+    let _ = home as fn(_) -> _;
+    let _ = home_slash as fn(_) -> _;
 }

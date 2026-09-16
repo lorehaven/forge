@@ -3,9 +3,10 @@
 use crate::domain::comment::{self, NewComment};
 use crate::domain::issue;
 use crate::routers::api::authz::can_on_project;
-use crate::routers::api::{ApiError, actor, json_error};
-use actix_web::{HttpRequest, HttpResponse, Responder, delete, get, post, web};
+use crate::routers::api::{ApiError, OptionalClaims, actor, json_error};
+use quench_auth::domain::jwt::JwtConfig;
 use quench_db::prelude::Db;
+use quench_http::prelude::{Inject, Json, Path, Response, delete, get, http::StatusCode, post};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -13,103 +14,101 @@ pub struct CreateComment {
     pub body: String,
 }
 
-#[post("")]
+#[post("/api/v1/issues/{id}/comments")]
 pub async fn create(
-    request: HttpRequest,
-    issue_id: web::Path<String>,
-    body: web::Json<CreateComment>,
-    db: web::Data<Db>,
-) -> impl Responder {
+    Path(issue_id): Path<String>,
+    Json(body): Json<CreateComment>,
+    Inject(db): Inject<Db>,
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+) -> Result<Response, ApiError> {
     if body.body.trim().is_empty() {
-        return json_error(actix_web::http::StatusCode::BAD_REQUEST, "body is required");
+        return Ok(json_error(StatusCode::BAD_REQUEST, "body is required"));
     }
 
-    let issue = match issue::read(&db, &issue_id).await {
-        Ok(Some(issue)) => issue,
-        Ok(None) => return json_error(actix_web::http::StatusCode::NOT_FOUND, "no such issue"),
-        Err(error) => return ApiError::from(error).into_response(),
+    let Some(issue) = issue::read(&db, &issue_id).await? else {
+        return Ok(json_error(StatusCode::NOT_FOUND, "no such issue"));
     };
 
-    if !can_on_project(&request, &issue.project_id, "write") {
-        return json_error(
-            actix_web::http::StatusCode::FORBIDDEN,
+    if !can_on_project(claims.as_ref(), &config, &issue.project_id, "write") {
+        return Ok(json_error(
+            StatusCode::FORBIDDEN,
             "no write access to this issue",
-        );
+        ));
     }
 
     let new = NewComment {
         issue_id: issue.id,
-        author: actor(&request).await,
+        author: actor(claims.as_ref()),
         body: body.body.trim().to_string(),
     };
 
-    match comment::create(&db, &new).await {
-        Ok(comment) => HttpResponse::Created().json(comment),
-        Err(error) => ApiError::from(error).into_response(),
-    }
+    let comment = comment::create(&db, &new).await?;
+    Ok(json_created(&comment))
 }
 
-#[get("")]
+#[get("/api/v1/issues/{id}/comments")]
 pub async fn list(
-    request: HttpRequest,
-    issue_id: web::Path<String>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    let issue = match issue::read(&db, &issue_id).await {
-        Ok(Some(issue)) => issue,
-        Ok(None) => return json_error(actix_web::http::StatusCode::NOT_FOUND, "no such issue"),
-        Err(error) => return ApiError::from(error).into_response(),
+    Path(issue_id): Path<String>,
+    Inject(db): Inject<Db>,
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+) -> Result<Response, ApiError> {
+    let Some(issue) = issue::read(&db, &issue_id).await? else {
+        return Ok(json_error(StatusCode::NOT_FOUND, "no such issue"));
     };
 
-    if !can_on_project(&request, &issue.project_id, "read") {
-        return json_error(
-            actix_web::http::StatusCode::FORBIDDEN,
+    if !can_on_project(claims.as_ref(), &config, &issue.project_id, "read") {
+        return Ok(json_error(
+            StatusCode::FORBIDDEN,
             "no read access to this issue",
-        );
+        ));
     }
 
-    match comment::list_by_issue(&db, &issue.id).await {
-        Ok(comments) => HttpResponse::Ok().json(comments),
-        Err(error) => ApiError::from(error).into_response(),
-    }
+    let comments = comment::list_by_issue(&db, &issue.id).await?;
+    Ok(json_ok(&comments))
 }
 
-pub fn scope_under_issue() -> actix_web::Scope {
-    web::scope("/{id}/comments").service(create).service(list)
-}
-
-#[delete("/{id}")]
+#[delete("/api/v1/comments/{id}")]
 pub async fn remove(
-    request: HttpRequest,
-    path: web::Path<String>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    let comment = match comment::read(&db, &path).await {
-        Ok(Some(comment)) => comment,
-        Ok(None) => return json_error(actix_web::http::StatusCode::NOT_FOUND, "no such comment"),
-        Err(error) => return ApiError::from(error).into_response(),
+    Path(id): Path<String>,
+    Inject(db): Inject<Db>,
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+) -> Result<Response, ApiError> {
+    let Some(comment) = comment::read(&db, &id).await? else {
+        return Ok(json_error(StatusCode::NOT_FOUND, "no such comment"));
     };
 
-    let issue = match issue::read(&db, &comment.issue_id).await {
-        Ok(Some(issue)) => issue,
-        Ok(None) => return json_error(actix_web::http::StatusCode::NOT_FOUND, "no such issue"),
-        Err(error) => return ApiError::from(error).into_response(),
+    let Some(issue) = issue::read(&db, &comment.issue_id).await? else {
+        return Ok(json_error(StatusCode::NOT_FOUND, "no such issue"));
     };
 
-    if !can_on_project(&request, &issue.project_id, "write") {
-        return json_error(
-            actix_web::http::StatusCode::FORBIDDEN,
+    if !can_on_project(claims.as_ref(), &config, &issue.project_id, "write") {
+        return Ok(json_error(
+            StatusCode::FORBIDDEN,
             "no write access to this comment",
-        );
+        ));
     }
 
-    match comment::delete(&db, &path).await {
-        Ok(true) => HttpResponse::NoContent().finish(),
-        Ok(false) => json_error(actix_web::http::StatusCode::NOT_FOUND, "no such comment"),
-        Err(error) => ApiError::from(error).into_response(),
+    match comment::delete(&db, &id).await? {
+        true => Ok(Response::new(StatusCode::NO_CONTENT)),
+        false => Ok(json_error(StatusCode::NOT_FOUND, "no such comment")),
     }
 }
 
-pub fn scope() -> actix_web::Scope {
-    web::scope("/comments").service(remove)
+fn json_ok<T: serde::Serialize>(value: &T) -> Response {
+    Response::json(StatusCode::OK, value)
+        .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
+}
+
+fn json_created<T: serde::Serialize>(value: &T) -> Response {
+    Response::json(StatusCode::CREATED, value)
+        .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
+}
+
+pub fn register_routes() {
+    let _ = create as fn(_, _, _, _, _) -> _;
+    let _ = list as fn(_, _, _, _) -> _;
+    let _ = remove as fn(_, _, _, _) -> _;
 }

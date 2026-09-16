@@ -1,12 +1,11 @@
 use crate::support;
 
-use actix_web::test as actix_test;
-use support::WithDockerStorageRoot as WithStorageRoot;
-use warehouse_service::routers::docker::blob::retrieve::{handle, maybe_redirect, parse_range};
+use http::{Method, StatusCode};
+use warehouse_service::routers::docker::blob::retrieve::{maybe_redirect, parse_range};
 
 const DIGEST: &str = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
-fn write_blob(storage: &WithStorageRoot, content: &[u8]) {
+fn write_blob(storage: &support::WithDockerStorageRoot, content: &[u8]) {
     let hex = DIGEST.strip_prefix("sha256:").unwrap();
     let blob_dir = storage.dir.path().join("blobs").join("sha256");
     std::fs::create_dir_all(&blob_dir).unwrap();
@@ -70,11 +69,15 @@ fn maybe_redirect_points_at_the_configured_backend_when_enabled() {
     envmnt::set("ENABLE_REDIRECT", "true");
     envmnt::set("BLOB_REDIRECT_BASE", "https://cdn.example.com");
     let resp = maybe_redirect(DIGEST).expect("redirect");
-    assert_eq!(
-        resp.status(),
-        actix_web::http::StatusCode::TEMPORARY_REDIRECT
-    );
-    let location = resp.headers().get("Location").unwrap().to_str().unwrap();
+    assert_eq!(resp.status(), StatusCode::TEMPORARY_REDIRECT);
+    let location = resp
+        .into_hyper()
+        .headers()
+        .get("location")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
     assert_eq!(
         location,
         "https://cdn.example.com/blobs/sha256/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -87,110 +90,149 @@ fn maybe_redirect_points_at_the_configured_backend_when_enabled() {
 // handle
 // -----------------------------------------------------------------
 
-#[actix_web::test]
+async fn app() -> (
+    std::sync::Arc<dyn quench_http::endpoint::Endpoint>,
+    std::sync::Arc<quench_http::di::Container>,
+) {
+    warehouse_service::routers::docker::blob::retrieve::register_routes();
+    let container = support::container_builder().build().await.unwrap();
+    support::app(container).await
+}
+
+fn get_with_range(
+    path: &str,
+    range: Option<&str>,
+    container: &std::sync::Arc<quench_http::di::Container>,
+) -> quench_http::request::Request {
+    match range {
+        Some(r) => support::raw_req(Method::GET, path, &[("range", r)], b"", container),
+        None => support::req(Method::GET, path, container),
+    }
+}
+
+#[tokio::test]
 async fn handle_rejects_a_malformed_digest() {
-    let _storage = WithStorageRoot::new();
-    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
-    let req = actix_test::TestRequest::get()
-        .uri("/my-repo/blobs/not-a-digest")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::BAD_REQUEST);
+    let _storage = support::WithDockerStorageRoot::new();
+    let (app, container) = app().await;
+    let resp = app
+        .call(support::req(
+            Method::GET,
+            "/v2/my-repo/blobs/not-a-digest",
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn handle_reports_not_found_for_a_missing_blob() {
-    let _storage = WithStorageRoot::new();
-    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
-    let req = actix_test::TestRequest::get()
-        .uri(&format!("/my-repo/blobs/{DIGEST}"))
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::NOT_FOUND);
+    let _storage = support::WithDockerStorageRoot::new();
+    let (app, container) = app().await;
+    let resp = app
+        .call(support::req(
+            Method::GET,
+            &format!("/v2/my-repo/blobs/{DIGEST}"),
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn handle_serves_the_full_blob_without_a_range_header() {
-    let storage = WithStorageRoot::new();
+    let storage = support::WithDockerStorageRoot::new();
     write_blob(&storage, b"hello world");
 
-    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
-    let req = actix_test::TestRequest::get()
-        .uri(&format!("/my-repo/blobs/{DIGEST}"))
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
-    let body = actix_test::read_body(resp).await;
+    let (app, container) = app().await;
+    let resp = app
+        .call(support::req(
+            Method::GET,
+            &format!("/v2/my-repo/blobs/{DIGEST}"),
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = support::body_bytes(resp).await;
     assert_eq!(&body[..], b"hello world");
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn handle_serves_a_partial_range_when_requested() {
-    let storage = WithStorageRoot::new();
+    let storage = support::WithDockerStorageRoot::new();
     write_blob(&storage, b"hello world");
 
-    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
-    let req = actix_test::TestRequest::get()
-        .uri(&format!("/my-repo/blobs/{DIGEST}"))
-        .insert_header(("Range", "bytes=0-4"))
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::PARTIAL_CONTENT);
-    let body = actix_test::read_body(resp).await;
+    let (app, container) = app().await;
+    let resp = app
+        .call(get_with_range(
+            &format!("/v2/my-repo/blobs/{DIGEST}"),
+            Some("bytes=0-4"),
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::PARTIAL_CONTENT);
+    let body = support::body_bytes(resp).await;
     assert_eq!(&body[..], b"hello");
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn handle_reports_range_not_satisfiable_for_a_bogus_range() {
-    let storage = WithStorageRoot::new();
+    let storage = support::WithDockerStorageRoot::new();
     write_blob(&storage, b"hello world");
 
-    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
-    let req = actix_test::TestRequest::get()
-        .uri(&format!("/my-repo/blobs/{DIGEST}"))
-        .insert_header(("Range", "bytes=500-600"))
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(
-        resp.status(),
-        actix_web::http::StatusCode::RANGE_NOT_SATISFIABLE
-    );
+    let (app, container) = app().await;
+    let resp = app
+        .call(get_with_range(
+            &format!("/v2/my-repo/blobs/{DIGEST}"),
+            Some("bytes=500-600"),
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::RANGE_NOT_SATISFIABLE);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn handle_streams_a_large_full_blob_across_many_frames() {
-    let storage = WithStorageRoot::new();
+    let storage = support::WithDockerStorageRoot::new();
     // Well past ReaderStream's frame size, so the body is delivered in pieces.
     let blob: Vec<u8> = (0..(512 * 1024 + 3)).map(|i| (i % 253) as u8).collect();
     write_blob(&storage, &blob);
 
-    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
-    let req = actix_test::TestRequest::get()
-        .uri(&format!("/my-repo/blobs/{DIGEST}"))
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let (app, container) = app().await;
+    let resp = app
+        .call(support::req(
+            Method::GET,
+            &format!("/v2/my-repo/blobs/{DIGEST}"),
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    // Binary content, so read headers+body from one `into_hyper()` call rather
+    // than `support::parts` (which lossily re-decodes the body as UTF-8 text).
+    use http_body_util::BodyExt;
+    let (parts, body) = resp.into_hyper().into_parts();
     assert_eq!(
-        resp.headers().get("Content-Length").unwrap(),
+        parts.headers.get("content-length").unwrap(),
         blob.len().to_string().as_str()
     );
-    let body = actix_test::read_body(resp).await;
+    let body = body.collect().await.expect("body").to_bytes();
     assert_eq!(&body[..], &blob[..]);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn handle_streams_a_partial_range_out_of_a_large_blob() {
-    let storage = WithStorageRoot::new();
+    let storage = support::WithDockerStorageRoot::new();
     let blob: Vec<u8> = (0..(512 * 1024)).map(|i| (i % 253) as u8).collect();
     write_blob(&storage, &blob);
 
-    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
-    let req = actix_test::TestRequest::get()
-        .uri(&format!("/my-repo/blobs/{DIGEST}"))
-        .insert_header(("Range", "bytes=100000-359999"))
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::PARTIAL_CONTENT);
-    let body = actix_test::read_body(resp).await;
+    let (app, container) = app().await;
+    let resp = app
+        .call(get_with_range(
+            &format!("/v2/my-repo/blobs/{DIGEST}"),
+            Some("bytes=100000-359999"),
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::PARTIAL_CONTENT);
+    let body = support::body_bytes(resp).await;
     assert_eq!(&body[..], &blob[100_000..=359_999]);
 }

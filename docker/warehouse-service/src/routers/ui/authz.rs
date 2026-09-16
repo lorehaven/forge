@@ -1,42 +1,65 @@
-//! Who may *change* things from the management UI.
-//!
-//! Viewing a management page needs only a realm session for this service, the
-//! same bar the docker and crates pages already use (`is_ui_authenticated`).
-//! Every mutation - provisioning a dynamic storage, editing its quota, deleting
-//! a storage or a file, yanking an APK - is held to the same check the JSON
-//! APIs enforce: the blanket `warehouse:write` grant, or a wildcard
-//! (`admin`/`service`) role. This is exactly `routers::files::authz::has_blanket`
-//! and the APK scope's `RequireWrite`, restated here against a UI cookie
-//! instead of a bearer header.
+//! Who may *change* things from the management UI: viewing needs only a
+//! session; mutating needs the blanket `warehouse:write` grant or a wildcard role.
 
-use actix_web::{HttpRequest, HttpResponse};
-use quench_auth::prelude::{Claims, JwtConfig};
+use async_trait::async_trait;
+use quench_auth::domain::jwt::{Claims, JwtConfig};
+use quench_auth::http::routers::ui::get_user_from_req;
+use quench_http::prelude::{FromRequest, HttpError, Request, Response, http::StatusCode};
+use quench_starter::http::routers::ui::ui_login_redirect_for;
 
 /// Whether `claims` may perform a management mutation in the warehouse UI.
-///
-/// Pure and role-only: a wildcard role short-circuits inside
-/// [`Claims::can`], so this is `has_wildcard() || can("warehouse", "write")`
-/// folded into one call.
 pub fn can_manage(claims: &Claims) -> bool {
     claims.can("warehouse", "write")
 }
 
-/// The caller's claims from the realm session cookie, or `None` when there is
-/// no usable session. With auth disabled this hands back a synthetic wildcard
-/// identity, matching every other check in the estate.
-pub async fn ui_claims(request: &HttpRequest, config: &JwtConfig) -> Option<Claims> {
-    quench_auth::actix::routers::ui::get_user_from_req(request, config).await
+/// The caller's claims from the realm session cookie, or `None` if there's no usable session.
+pub async fn ui_claims(request: &Request, config: &JwtConfig) -> Option<Claims> {
+    get_user_from_req(request, config).await
 }
 
-/// `Ok(())` when the caller may mutate, otherwise the response to return
-/// instead: a login redirect when there is no session at all, a plain `403`
-/// when there is a session but it lacks `warehouse:write`.
-pub async fn require_manage(request: &HttpRequest, config: &JwtConfig) -> Result<(), HttpResponse> {
-    match ui_claims(request, config).await {
-        Some(claims) if can_manage(&claims) => Ok(()),
-        Some(_) => Err(HttpResponse::Forbidden().body("api_error_forbidden")),
-        None => Err(quench_starter::actix::routers::ui::ui_login_redirect_for(
-            request,
-        )),
+/// The caller's claims, for a page that also needs to know if it may manage
+/// this content (to show/hide a mutating control) beyond the plain `PageAuth` gate.
+pub struct OptionalUiClaims(pub Option<Claims>);
+
+#[async_trait]
+impl FromRequest for OptionalUiClaims {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        let Ok(config) = req.container().get::<JwtConfig>() else {
+            return Ok(Self(None));
+        };
+        Ok(Self(ui_claims(req, &config).await))
+    }
+}
+
+/// A management-mutation gate. The redirect is resolved during extraction and
+/// carried as the success value, since `HttpError` can only render fixed text, never a redirect.
+pub enum ManageGate {
+    Allowed,
+    Forbidden,
+    Redirect(Response),
+}
+
+impl ManageGate {
+    /// `Ok(())` when allowed; otherwise a login redirect (no session) or a 403 (no grant).
+    pub fn or_response(self) -> Result<(), Response> {
+        match self {
+            Self::Allowed => Ok(()),
+            Self::Forbidden => Err(Response::text(StatusCode::FORBIDDEN, "api_error_forbidden")),
+            Self::Redirect(response) => Err(response),
+        }
+    }
+}
+
+#[async_trait]
+impl FromRequest for ManageGate {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        let Ok(config) = req.container().get::<JwtConfig>() else {
+            return Ok(Self::Redirect(ui_login_redirect_for(req)));
+        };
+        match ui_claims(req, &config).await {
+            Some(claims) if can_manage(&claims) => Ok(Self::Allowed),
+            Some(_) => Ok(Self::Forbidden),
+            None => Ok(Self::Redirect(ui_login_redirect_for(req))),
+        }
     }
 }

@@ -1,8 +1,5 @@
-//! Styles for the file-storage and APK management pages: the quota bar, the
-//! provisioning/edit forms, the file browser (its tree listing, breadcrumbs
-//! and the preview pane), and the storage-delete confirm modal (the
-//! image-modal rules in `utility.rs` are keyed to their own id, so this
-//! restates the shape for `#confirm-delete-storage-modal`).
+//! Styles for the file-storage and APK management pages: quota bar, forms,
+//! file browser, and the storage-delete confirm modal.
 
 use quench_web::prelude::CssRule;
 
@@ -197,9 +194,7 @@ pub fn manage_rules() -> Vec<CssRule> {
     rules
 }
 
-/// The image-modal styling from `utility.rs`, restated for another id. Kept in
-/// sync by shape rather than shared because the source rules hardcode their
-/// own selector.
+/// The image-modal styling from `utility.rs`, restated for another id (its rules hardcode the selector).
 fn confirm_modal_rule(id: &str) -> CssRule {
     CssRule::new(id)
         .property("position", "fixed")

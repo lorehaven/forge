@@ -1,5 +1,5 @@
 use crate::routers::docker_storage_root;
-use actix_web::{HttpResponse, Responder, post};
+use quench_http::prelude::{Response, http::StatusCode, post};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -11,11 +11,12 @@ pub struct GcReport {
     pub kept: usize,
 }
 
-#[post("/docker/gc")]
-pub async fn handle() -> impl Responder {
+#[post("/admin/docker/gc")]
+pub async fn handle() -> Response {
     match garbage_collect().await {
-        Ok(report) => HttpResponse::Ok().json(report),
-        Err(_) => HttpResponse::InternalServerError().finish(),
+        Ok(report) => Response::json(StatusCode::OK, &report)
+            .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR)),
+        Err(_) => Response::new(StatusCode::INTERNAL_SERVER_ERROR),
     }
 }
 
@@ -160,7 +161,7 @@ pub fn mark_manifest_references(
                 continue;
             };
 
-            // In indexes, this points to child manifests; treat unknown media types as manifest refs.
+            // Unknown media types are treated as manifest refs, not blobs.
             let media_type = m.get("mediaType").and_then(|x| x.as_str()).unwrap_or("");
             if media_type.contains("manifest")
                 || media_type.contains("index")
@@ -178,7 +179,6 @@ async fn cleanup_empty_dirs(root: &Path) -> std::io::Result<()> {
     let mut dirs = Vec::new();
     let mut stack = vec![root.to_path_buf()];
 
-    // Collect all directories
     while let Some(dir) = stack.pop() {
         let mut entries = match tokio::fs::read_dir(&dir).await {
             Ok(e) => e,
@@ -194,7 +194,7 @@ async fn cleanup_empty_dirs(root: &Path) -> std::io::Result<()> {
         }
     }
 
-    // Sort deepest first
+    // Deepest first, so a dir empties before its parent is checked.
     dirs.sort_by_key(|p| std::cmp::Reverse(p.components().count()));
 
     for dir in dirs {
@@ -209,4 +209,8 @@ async fn cleanup_empty_dirs(root: &Path) -> std::io::Result<()> {
     }
 
     Ok(())
+}
+
+pub fn register_routes() {
+    let _ = handle as fn() -> _;
 }

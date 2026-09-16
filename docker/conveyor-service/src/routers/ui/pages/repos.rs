@@ -1,37 +1,20 @@
-//! Registering, editing and removing repositories from a browser, instead of
-//! only through the JSON API.
-//!
-//! Plain forms with a POST and a redirect - the same shape gatehouse's
-//! `/admin/users` pages use, and for the same reason: this is a mutation
-//! consequential enough that it should not depend on JavaScript to submit,
-//! and conveyor's UI already leans on plain navigation everywhere else (see
-//! `scan.rs`).
-//!
-//! Unlike the rest of conveyor's UI - which shows every project and
-//! repository to any signed-in visitor - these pages enforce the same
-//! project-scoped write grants the JSON API does
-//! (`routers::api::authz::can_on_project_claims`). Read-only browsing stays
-//! unscoped (a visitor can always land on `/repos` or an edit page from a
-//! link), but nothing here is submittable without a write grant on the
-//! repository's project.
+//! Registering/editing/removing repositories from a browser - plain
+//! POST+redirect forms, gated by the same project-scoped write grants the API uses.
 
 use crate::domain::{Project, Provider, Repo};
 use crate::routers::api::authz::{can_on_project_claims, granted_project_ids};
-use crate::routers::ui::common::{UiPageKind, render_page, ui_login_redirect_for, ui_path};
+use crate::routers::ui::common::{ActorOrRedirect, render_page, ui_path};
 use crate::scheduler::repos::{NewRepo, RepoUpdate};
 use crate::scheduler::{projects, repos};
-use actix_web::{HttpRequest, HttpResponse, Responder, get, post, web};
-use quench_auth::actix::routers::ui::get_user_from_req;
-use quench_auth::prelude::{Claims, JwtConfig};
+use quench_auth::domain::jwt::Claims;
 use quench_db::prelude::Db;
+use quench_http::prelude::{Form, Inject, Path, Query, Response, get, http::StatusCode, post};
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 use serde::Deserialize;
 use std::collections::HashSet;
 
-/// `Element` has no conditional attribute setter, and `selected`/`checked`/
-/// `disabled` are exactly the attributes that want one - see gatehouse's
-/// `admin.rs`, where this same trait was introduced first.
+/// `Element` has no conditional attribute setter - see gatehouse's `admin.rs`.
 trait AttrIf {
     fn attr_if(self, condition: bool, key: &str, value: &str) -> Self;
 }
@@ -49,23 +32,15 @@ impl AttrIf for Element {
 /// Feedback carried across the redirect that follows every write.
 #[derive(Deserialize, Default)]
 pub struct Notice {
-    /// A known error slug, validated before it reaches the page - see
-    /// `known_error_key`.
+    /// A known error slug - see `known_error_key`.
     #[serde(default)]
     pub err: Option<String>,
     #[serde(default)]
     pub ok: Option<String>,
 }
 
-async fn actor(request: &HttpRequest, config: &JwtConfig) -> Option<Claims> {
-    get_user_from_req(request, config).await
-}
-
-/// The project ids `claims` may write to: every project when they hold the
-/// blanket `conveyor:write` grant (or auth is disabled - `get_user_from_req`
-/// already folds that into a synthetic all-access `Claims`), otherwise
-/// whatever they hold a resource-scoped grant on plus everything nested
-/// beneath it.
+/// Every project id `claims` may write to - all of them under the blanket
+/// grant (or auth disabled), else the resource-scoped grants plus descendants.
 async fn writable_project_ids(db: &Db, claims: &Claims, all_projects: &[Project]) -> Vec<String> {
     if claims.can("conveyor", "write") {
         return all_projects.iter().map(|p| p.id.clone()).collect();
@@ -76,9 +51,7 @@ async fn writable_project_ids(db: &Db, claims: &Claims, all_projects: &[Project]
         .unwrap_or_default()
 }
 
-/// `root/.../leaf`, read out of an in-memory project list rather than a
-/// per-repository query - the same tree `home.rs` already holds in memory to
-/// render its own panel.
+/// `root/.../leaf`, read from an in-memory project list, not a per-repo query.
 pub fn project_path(id: &str, all_projects: &[Project]) -> String {
     let mut names = Vec::new();
     let mut current = all_projects.iter().find(|p| p.id == id);
@@ -93,44 +66,39 @@ pub fn project_path(id: &str, all_projects: &[Project]) -> String {
     names.join("/")
 }
 
-// ---------------------------------------------------------------------------
-// Pages
-// ---------------------------------------------------------------------------
+// --- Pages ---
 
-#[get("/repos")]
+#[get("/ui/repos")]
 pub(super) async fn list_page(
-    request: HttpRequest,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    notice: web::Query<Notice>,
-) -> impl Responder {
-    let Some(claims) = actor(&request, &config).await else {
-        return ui_login_redirect_for(&request);
+    actor: ActorOrRedirect,
+    Inject(db): Inject<Db>,
+    Query(notice): Query<Notice>,
+) -> Response {
+    let claims = match actor.or_redirect() {
+        Ok(claims) => claims,
+        Err(response) => return response,
     };
     render_list(&db, &claims, &notice).await
 }
 
-#[get("/repos/{owner}/{name}/edit")]
+#[get("/ui/repos/{owner}/{name}/edit")]
 pub(super) async fn edit_page(
-    request: HttpRequest,
-    path: web::Path<(String, String)>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    notice: web::Query<Notice>,
-) -> impl Responder {
-    let Some(claims) = actor(&request, &config).await else {
-        return ui_login_redirect_for(&request);
+    actor: ActorOrRedirect,
+    Path((owner, name)): Path<(String, String)>,
+    Inject(db): Inject<Db>,
+    Query(notice): Query<Notice>,
+) -> Response {
+    let claims = match actor.or_redirect() {
+        Ok(claims) => claims,
+        Err(response) => return response,
     };
-    let (owner, name) = path.into_inner();
     match repos::find_by_owner_name(&db, &owner, &name).await {
         Ok(Some(repo)) => render_edit(&db, &repo, &claims, &notice).await,
         _ => not_found(),
     }
 }
 
-// ---------------------------------------------------------------------------
-// Forms
-// ---------------------------------------------------------------------------
+// --- Forms ---
 
 #[derive(Deserialize)]
 pub(super) struct CreateForm {
@@ -144,17 +112,16 @@ pub(super) struct CreateForm {
     pub provider: Option<String>,
 }
 
-#[post("/repos")]
+#[post("/ui/repos")]
 pub(super) async fn create_repo(
-    request: HttpRequest,
-    form: web::Form<CreateForm>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    let Some(claims) = actor(&request, &config).await else {
-        return ui_login_redirect_for(&request);
+    actor: ActorOrRedirect,
+    Form(form): Form<CreateForm>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    let claims = match actor.or_redirect() {
+        Ok(claims) => claims,
+        Err(response) => return response,
     };
-    let form = form.into_inner();
 
     if form.owner.trim().is_empty() || form.name.trim().is_empty() {
         return redirect_to_list(Some("owner_name_empty"));
@@ -202,25 +169,22 @@ pub(super) struct EditForm {
     #[serde(default)]
     pub default_branch: Option<String>,
     pub project_id: String,
-    /// Absent when the checkbox was left unchecked - a browser omits an
-    /// unchecked box from the submission entirely, it does not send `false`.
+    /// Absent when unchecked - a browser omits it rather than sending `false`.
     #[serde(default)]
     pub enabled: Option<String>,
 }
 
-#[post("/repos/{owner}/{name}/edit")]
+#[post("/ui/repos/{owner}/{name}/edit")]
 pub(super) async fn save_repo(
-    request: HttpRequest,
-    path: web::Path<(String, String)>,
-    form: web::Form<EditForm>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    let Some(claims) = actor(&request, &config).await else {
-        return ui_login_redirect_for(&request);
+    actor: ActorOrRedirect,
+    Path((owner, name)): Path<(String, String)>,
+    Form(form): Form<EditForm>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    let claims = match actor.or_redirect() {
+        Ok(claims) => claims,
+        Err(response) => return response,
     };
-    let (owner, name) = path.into_inner();
-    let form = form.into_inner();
 
     let repo = match repos::find_by_owner_name(&db, &owner, &name).await {
         Ok(Some(repo)) => repo,
@@ -239,9 +203,7 @@ pub(super) async fn save_repo(
     if crate::workspace::checkout::validate_url(&form.clone_url).is_err() {
         return redirect_to_edit(&owner, &name, Some("bad_clone_url"));
     }
-    // Moving a repository to a different project needs write on both ends -
-    // otherwise a write grant on one project alone would let it pull a
-    // repository in from a project the caller has no access to.
+    // Moving a repo needs write on both ends, or one grant could pull it from an inaccessible project.
     if form.project_id != repo.project_id
         && !can_on_project_claims(&claims, &db, &form.project_id, "write").await
     {
@@ -271,17 +233,16 @@ pub(super) async fn save_repo(
     }
 }
 
-#[post("/repos/{owner}/{name}/delete")]
+#[post("/ui/repos/{owner}/{name}/delete")]
 pub(super) async fn delete_repo(
-    request: HttpRequest,
-    path: web::Path<(String, String)>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    let Some(claims) = actor(&request, &config).await else {
-        return ui_login_redirect_for(&request);
+    actor: ActorOrRedirect,
+    Path((owner, name)): Path<(String, String)>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    let claims = match actor.or_redirect() {
+        Ok(claims) => claims,
+        Err(response) => return response,
     };
-    let (owner, name) = path.into_inner();
 
     let repo = match repos::find_by_owner_name(&db, &owner, &name).await {
         Ok(Some(repo)) => repo,
@@ -299,11 +260,9 @@ pub(super) async fn delete_repo(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Rendering
-// ---------------------------------------------------------------------------
+// --- Rendering ---
 
-async fn render_list(db: &Db, claims: &Claims, notice: &Notice) -> HttpResponse {
+async fn render_list(db: &Db, claims: &Claims, notice: &Notice) -> Response {
     let all_projects = projects::list_all(db).await.unwrap_or_default();
     let repositories = repos::list(db).await.unwrap_or_default();
     let writable = writable_project_ids(db, claims, &all_projects).await;
@@ -335,7 +294,7 @@ async fn render_list(db: &Db, claims: &Claims, notice: &Notice) -> HttpResponse 
         .child(rows);
 
     render_page(
-        HttpResponse::Ok(),
+        StatusCode::OK,
         content().class("repos-content").child(
             div()
                 .class("repos-container")
@@ -348,7 +307,6 @@ async fn render_list(db: &Db, claims: &Claims, notice: &Notice) -> HttpResponse 
                 .child(list_panel)
                 .child_opt(create_panel(&writable_projects, &all_projects)),
         ),
-        UiPageKind::Home,
     )
 }
 
@@ -399,9 +357,7 @@ pub fn repo_row(repo: &Repo, project_path: &str, can_edit: bool) -> Element {
     row
 }
 
-/// Omitted, not disabled, when there is nowhere the caller may register a
-/// repository - there is nothing honest to disable a form control into when
-/// the whole action is out of reach.
+/// Omitted, not disabled, when there's nowhere the caller may register a repo.
 pub fn create_panel(writable_projects: &[&Project], all_projects: &[Project]) -> Option<Element> {
     if writable_projects.is_empty() {
         return None;
@@ -504,7 +460,7 @@ pub fn create_panel(writable_projects: &[&Project], all_projects: &[Project]) ->
     )
 }
 
-async fn render_edit(db: &Db, repo: &Repo, claims: &Claims, notice: &Notice) -> HttpResponse {
+async fn render_edit(db: &Db, repo: &Repo, claims: &Claims, notice: &Notice) -> Response {
     let all_projects = projects::list_all(db).await.unwrap_or_default();
     let writable = writable_project_ids(db, claims, &all_projects).await;
     let writable_set: HashSet<&str> = writable.iter().map(String::as_str).collect();
@@ -596,7 +552,7 @@ async fn render_edit(db: &Db, repo: &Repo, claims: &Claims, notice: &Notice) -> 
     });
 
     render_page(
-        HttpResponse::Ok(),
+        StatusCode::OK,
         content().class("repos-content").child(
             div()
                 .class("repos-container")
@@ -609,13 +565,11 @@ async fn render_edit(db: &Db, repo: &Repo, claims: &Claims, notice: &Notice) -> 
                 .child(panel_body)
                 .child_opt(danger),
         ),
-        UiPageKind::Home,
     )
 }
 
-/// The field list shared by the editable form and the read-only view: same
-/// controls either way, `disabled` just decides whether a submission could
-/// ever reach the server that already re-checks every one of these.
+/// Shared by the editable form and read-only view - `disabled` is cosmetic
+/// only, since the server re-checks every field regardless.
 pub fn edit_fields(
     repo: &Repo,
     all_projects: &[Project],
@@ -720,32 +674,29 @@ pub fn edit_fields(
         )
 }
 
-fn not_found() -> HttpResponse {
+fn not_found() -> Response {
     render_page(
-        HttpResponse::NotFound(),
+        StatusCode::NOT_FOUND,
         content().class("repos-content").child(
             div()
                 .class("repos-container")
                 .child(empty_state("ui_repos_not_found")),
         ),
-        UiPageKind::Home,
     )
 }
 
-fn redirect(path: &str) -> HttpResponse {
-    HttpResponse::Found()
-        .append_header(("Location", ui_path(path)))
-        .finish()
+fn redirect(path: &str) -> Response {
+    Response::new(StatusCode::FOUND).header("Location", ui_path(path))
 }
 
-fn redirect_to_list(err: Option<&str>) -> HttpResponse {
+fn redirect_to_list(err: Option<&str>) -> Response {
     match err {
         Some(key) => redirect(&format!("/repos?err={key}")),
         None => redirect("/repos"),
     }
 }
 
-fn redirect_to_edit(owner: &str, name: &str, err: Option<&str>) -> HttpResponse {
+fn redirect_to_edit(owner: &str, name: &str, err: Option<&str>) -> Response {
     let base = format!(
         "/repos/{}/{}/edit",
         urlencoding::encode(owner),
@@ -757,9 +708,7 @@ fn redirect_to_edit(owner: &str, name: &str, err: Option<&str>) -> HttpResponse 
     }
 }
 
-/// Success or failure from the write that redirected here. The error slug is
-/// checked against a fixed allowlist rather than trusted from the query
-/// string, so a hand-crafted link cannot put arbitrary text on the page.
+/// Error slug is checked against a fixed allowlist, so a crafted link can't put arbitrary text on the page.
 pub fn notice_banner(notice: &Notice) -> Option<Element> {
     if let Some(key) = notice.err.as_deref().and_then(known_error_key) {
         return Some(p().class("repos-notice error").attr("data-i18n", key));
@@ -783,4 +732,12 @@ pub fn known_error_key(candidate: &str) -> Option<&'static str> {
         "create_failed" | "save_failed" | "delete_failed" => Some("ui_repos_err_write_failed"),
         _ => None,
     }
+}
+
+pub(super) fn register_routes() {
+    let _ = list_page as fn(_, _, _) -> _;
+    let _ = edit_page as fn(_, _, _, _) -> _;
+    let _ = create_repo as fn(_, _, _) -> _;
+    let _ = save_repo as fn(_, _, _, _) -> _;
+    let _ = delete_repo as fn(_, _, _) -> _;
 }

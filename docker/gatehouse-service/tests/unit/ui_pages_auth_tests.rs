@@ -1,26 +1,33 @@
-use actix_web::body::to_bytes;
-use actix_web::{App, HttpResponse, test as actix_test, web};
+use bytes::Bytes;
 use gatehouse_service::realm;
 use gatehouse_service::ui::pages::auth::{
-    LoginNotices, login, login_error_key, login_mfa, login_mfa_submit, login_ok_key,
-    login_redirect, login_slash, login_submit, logout, mfa_challenge_url, refresh,
-    render_login_page, render_mfa_page, status,
+    LoginForm, LoginNotices, MfaForm, MfaQuery, login_error_key, login_mfa, login_mfa_submit,
+    login_ok_key, login_redirect, login_submit, mfa_challenge_url, render_login_page,
+    render_mfa_page,
 };
-use quench_auth::prelude::{JwtConfig, Permissions, Role, SessionDb};
+use http::{HeaderMap, Method, StatusCode, Uri};
+use http_body_util::BodyExt;
+use quench_auth::domain::auth::{Permissions, Role};
+use quench_auth::domain::jwt::JwtConfig;
+use quench_auth::domain::session::SessionDb;
+use quench_cache::CacheStore;
 use quench_db::prelude::Db;
+use quench_http::di::ContainerBuilder;
+use quench_http::endpoint::Endpoint;
+use quench_http::prelude::{Form, Inject, Query, Request};
 use std::sync::Arc;
 
 async fn db() -> Db {
     Db::connect("").await.expect("in-memory db")
 }
 
-fn sessions() -> web::Data<Arc<SessionDb>> {
-    web::Data::new(SessionDb::init(quench_cache::CacheStore::in_memory()))
+fn sessions() -> Arc<SessionDb> {
+    SessionDb::init(CacheStore::in_memory())
 }
 
-async fn body_text(resp: HttpResponse) -> String {
-    let body = to_bytes(resp.into_body()).await.expect("body");
-    String::from_utf8(body.to_vec()).expect("utf8")
+async fn body_text(resp: quench_http::response::Response) -> String {
+    let collected = resp.into_hyper().into_body().collect().await.expect("body");
+    String::from_utf8(collected.to_bytes().to_vec()).expect("utf8")
 }
 
 // -----------------------------------------------------------------
@@ -78,21 +85,19 @@ fn mfa_challenge_url_omits_an_empty_redirect() {
 
 #[tokio::test]
 async fn render_login_page_shows_the_credential_error() {
-    let req = actix_test::TestRequest::default().to_http_request();
-    let resp = render_login_page(&req, true, &LoginNotices::default());
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let resp = render_login_page(None, true, &LoginNotices::default());
+    assert_eq!(resp.status(), StatusCode::OK);
     let html = body_text(resp).await;
     assert!(html.contains("ui_login_invalid_credentials"));
 }
 
 #[tokio::test]
 async fn render_login_page_shows_a_notice_ok_key_when_no_error() {
-    let req = actix_test::TestRequest::default().to_http_request();
     let notices = LoginNotices {
         registered: Some("1".to_string()),
         ..LoginNotices::default()
     };
-    let resp = render_login_page(&req, false, &notices);
+    let resp = render_login_page(None, false, &notices);
     let html = body_text(resp).await;
     assert!(html.contains("ui_login_registered_ok"));
 }
@@ -119,73 +124,64 @@ async fn render_mfa_page_without_error_omits_the_banner() {
 #[test]
 fn login_redirect_points_at_the_login_page() {
     let resp = login_redirect();
-    assert_eq!(resp.status(), actix_web::http::StatusCode::FOUND);
+    assert_eq!(resp.status(), StatusCode::FOUND);
     let location = resp
+        .into_hyper()
         .headers()
-        .get(actix_web::http::header::LOCATION)
+        .get("location")
         .unwrap()
         .to_str()
-        .unwrap();
+        .unwrap()
+        .to_string();
     assert!(location.contains("/login"));
 }
 
 // -----------------------------------------------------------------
-// HTTP handlers
+// login_mfa - takes only `Query<MfaQuery>` (pub fields), callable directly
 // -----------------------------------------------------------------
 
-#[actix_web::test]
-async fn login_renders_the_form_with_no_session() {
-    let app = actix_test::init_service(App::new().service(login)).await;
-    let req = actix_test::TestRequest::get().uri("/login").to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
-}
-
-#[actix_web::test]
-async fn login_slash_renders_the_form_with_no_session() {
-    let app = actix_test::init_service(App::new().service(login_slash)).await;
-    let req = actix_test::TestRequest::get().uri("/login/").to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
-}
-
-#[actix_web::test]
+#[tokio::test]
 async fn login_mfa_renders_the_code_form() {
-    let app = actix_test::init_service(App::new().service(login_mfa)).await;
-    let req = actix_test::TestRequest::get()
-        .uri("/login/mfa?pending=abc")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let resp = login_mfa(Query(MfaQuery {
+        pending: "abc".to_string(),
+        redirect: None,
+        err: None,
+    }))
+    .await;
+    assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[actix_web::test]
+// -----------------------------------------------------------------
+// login_submit / login_mfa_submit - take only `Form<T>` (pub fields) plus
+// `Inject<...>`, callable directly
+// -----------------------------------------------------------------
+
+#[tokio::test]
 async fn login_submit_redirects_with_an_error_for_unknown_credentials() {
-    let db = db().await;
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(JwtConfig::for_tests()))
-            .app_data(web::Data::new(db))
-            .app_data(sessions())
-            .service(login_submit),
+    let resp = login_submit(
+        Form(LoginForm {
+            username: "nobody".to_string(),
+            password: "whatever".to_string(),
+            redirect: None,
+        }),
+        Inject(Arc::new(JwtConfig::for_tests())),
+        Inject(Arc::new(db().await)),
+        Inject(sessions()),
     )
     .await;
-    let req = actix_test::TestRequest::post()
-        .uri("/login")
-        .set_form([("username", "nobody"), ("password", "whatever")])
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::FOUND);
+    assert_eq!(resp.status(), StatusCode::FOUND);
     let location = resp
+        .into_hyper()
         .headers()
-        .get(actix_web::http::header::LOCATION)
+        .get("location")
         .unwrap()
         .to_str()
-        .unwrap();
+        .unwrap()
+        .to_string();
     assert!(location.contains("err="));
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn login_submit_succeeds_and_sets_session_cookies_for_the_right_password() {
     let db = db().await;
     realm::create(
@@ -201,80 +197,132 @@ async fn login_submit_succeeds_and_sets_session_cookies_for_the_right_password()
     .await
     .expect("seed user");
 
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(JwtConfig::for_tests_with_signing()))
-            .app_data(web::Data::new(db))
-            .app_data(sessions())
-            .service(login_submit),
+    let resp = login_submit(
+        Form(LoginForm {
+            username: "alice".to_string(),
+            password: "correct-horse".to_string(),
+            redirect: None,
+        }),
+        Inject(Arc::new(JwtConfig::for_tests_with_signing())),
+        Inject(Arc::new(db)),
+        Inject(sessions()),
     )
     .await;
-    let req = actix_test::TestRequest::post()
-        .uri("/login")
-        .set_form([("username", "alice"), ("password", "correct-horse")])
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::FOUND);
+    assert_eq!(resp.status(), StatusCode::FOUND);
     assert!(
-        resp.headers()
-            .get_all(actix_web::http::header::SET_COOKIE)
+        resp.into_hyper()
+            .headers()
+            .get_all("set-cookie")
+            .iter()
             .count()
             >= 2
     );
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn login_mfa_submit_redirects_with_an_error_for_an_unknown_pending_token() {
-    let db = db().await;
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(JwtConfig::for_tests()))
-            .app_data(web::Data::new(db))
-            .app_data(sessions())
-            .service(login_mfa_submit),
+    let resp = login_mfa_submit(
+        Form(MfaForm {
+            pending: "not-a-real-token".to_string(),
+            code: "000000".to_string(),
+            redirect: None,
+        }),
+        Inject(Arc::new(JwtConfig::for_tests())),
+        Inject(Arc::new(db().await)),
+        Inject(sessions()),
     )
     .await;
-    let req = actix_test::TestRequest::post()
-        .uri("/login/mfa")
-        .set_form([("pending", "not-a-real-token"), ("code", "000000")])
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::FOUND);
+    assert_eq!(resp.status(), StatusCode::FOUND);
 }
 
-#[actix_web::test]
+// -----------------------------------------------------------------
+// login / login_slash / logout / status / refresh - each takes a private
+// per-request extractor (`LoginContext`/`LogoutContext`/`AuthStatusResponse`/
+// `RefreshResponse`), so these go through the real discovered router.
+// -----------------------------------------------------------------
+
+async fn app(
+    auth_enabled: bool,
+    db: Db,
+    sessions: Arc<SessionDb>,
+) -> (Arc<dyn Endpoint>, Arc<quench_http::di::Container>) {
+    gatehouse_service::ui::pages::auth::register_routes();
+    let mut jwt_config = JwtConfig::for_tests();
+    jwt_config.auth_enabled = auth_enabled;
+    let container = ContainerBuilder::new()
+        .provide(jwt_config)
+        .provide(db)
+        .provide_arc(sessions)
+        .build()
+        .await
+        .unwrap();
+    (
+        quench_starter::http::discover_and_mount("/"),
+        Arc::new(container),
+    )
+}
+
+fn get(path: &str, container: &Arc<quench_http::di::Container>) -> Request {
+    Request::new(
+        Method::GET,
+        path.parse::<Uri>().unwrap(),
+        HeaderMap::new(),
+        quench_http::body::InboundBody::from_bytes(Bytes::new()),
+        container.clone(),
+    )
+}
+
+fn post(path: &str, container: &Arc<quench_http::di::Container>) -> Request {
+    Request::new(
+        Method::POST,
+        path.parse::<Uri>().unwrap(),
+        HeaderMap::new(),
+        quench_http::body::InboundBody::from_bytes(Bytes::new()),
+        container.clone(),
+    )
+}
+
+#[tokio::test]
+async fn login_renders_the_form_with_no_session() {
+    let (app, container) = app(false, db().await, sessions()).await;
+    let resp = app.call(get("/ui/login", &container)).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn login_slash_renders_the_form_with_no_session() {
+    let (app, container) = app(false, db().await, sessions()).await;
+    let resp = app.call(get("/ui/login/", &container)).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
 async fn logout_clears_cookies_and_redirects_to_login() {
-    let app = actix_test::init_service(App::new().app_data(sessions()).service(logout)).await;
-    let req = actix_test::TestRequest::get().uri("/logout").to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::FOUND);
+    let (app, container) = app(false, db().await, sessions()).await;
+    let resp = app.call(get("/ui/logout", &container)).await;
+    assert_eq!(resp.status(), StatusCode::FOUND);
     let location = resp
+        .into_hyper()
         .headers()
-        .get(actix_web::http::header::LOCATION)
+        .get("location")
         .unwrap()
         .to_str()
-        .unwrap();
+        .unwrap()
+        .to_string();
     assert!(location.contains("/login"));
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn status_reports_when_there_is_no_session() {
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(JwtConfig::for_tests()))
-            .service(status),
-    )
-    .await;
-    let req = actix_test::TestRequest::get().uri("/status").to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(false, db().await, sessions()).await;
+    let resp = app.call(get("/ui/status", &container)).await;
     assert!(resp.status().is_success() || resp.status().is_client_error());
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn refresh_without_a_cookie_is_not_a_server_error() {
-    let app = actix_test::init_service(App::new().service(refresh)).await;
-    let req = actix_test::TestRequest::post().uri("/refresh").to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(false, db().await, sessions()).await;
+    let resp = app.call(post("/ui/refresh", &container)).await;
     assert!(!resp.status().is_server_error());
 }
 

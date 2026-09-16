@@ -1,44 +1,29 @@
-//! Watching a job's output as it happens.
-//!
-//! A running job's log lives in the executor that is running it; a finished
-//! job's lives in the database, written when it ended. This endpoint serves
-//! whichever applies, so a caller does not have to know which.
-//!
-//! One caveat, and it is the phase-4 log-persistence trade showing through:
-//! only the replica actually running a job holds its live output. With several
-//! replicas behind one address, a browser can land on one that is not running
-//! the job and will see nothing until it finishes. Single-replica deployments -
-//! which is every one of these so far - are unaffected.
+//! Watching a job's output live (executor) or after the fact (database).
+//! Caveat: only the replica actually running a job holds its live output.
 
-use crate::executors::{Handle, JobExecutor, LogChunk, Stream as LogStream};
+use crate::executors::{Executor, Handle, LogChunk, Stream as LogStream};
 use crate::routers::api::authz::can_on_project;
-use crate::routers::api::{ApiError, json_error};
+use crate::routers::api::{ApiError, OptionalClaims, json_error};
 use crate::scheduler::queue;
-use actix_web::http::StatusCode;
-use actix_web::{Error, HttpRequest, HttpResponse, Responder, get, web};
 use bytes::Bytes;
 use futures_util::StreamExt;
 use futures_util::stream::iter as stream_iter;
+use quench_auth::domain::jwt::JwtConfig;
 use quench_db::prelude::Db;
+use quench_http::prelude::{Inject, Path, Query, Response, get, http::StatusCode};
 use quench_web::prelude::*;
 use serde::Deserialize;
-use std::sync::Arc;
 use tokio_stream::wrappers::BroadcastStream;
 
-/// What a frame's `data:` carries.
-///
-/// A query parameter rather than content negotiation, because the choice is
-/// forced by the mechanism: htmx's SSE extension uses `EventSource`, which
-/// sends `Accept: text/event-stream` and gives the page no way to ask for
-/// anything else.
+/// What a frame's `data:` carries - a query param since `EventSource`
+/// (htmx's SSE extension) sends a fixed `Accept` header, no room to negotiate.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Format {
-    /// The line as it was written. What `conveyor logs --follow` reads.
+    /// The line as written - what `conveyor logs --follow` reads.
     #[default]
     Text,
-    /// An escaped `<span>`, for a page that appends each frame with
-    /// `hx-swap="beforeend"`.
+    /// An escaped `<span>` for `hx-swap="beforeend"` appending.
     Html,
 }
 
@@ -48,23 +33,18 @@ pub struct StreamQuery {
     pub format: Format,
 }
 
-/// Server-sent events, one per log line.
-///
-/// `id:` carries the sequence number, so a browser reconnecting sends
-/// `Last-Event-ID` and can be given everything after it rather than the whole
-/// log again.
-/// Shared by [`stream_logs`] and [`raw_logs`]: both read the same job, and
-/// both need to be sure the caller may see it before either touches the
-/// executor or the database for its output.
+/// Shared by [`stream_logs`] and [`raw_logs`] - checks read access before
+/// either touches the job's output.
 async fn authorize_job_read(
-    request: &HttpRequest,
+    claims: Option<&quench_auth::domain::jwt::Claims>,
+    config: &JwtConfig,
     db: &Db,
     job_id: &str,
-) -> Result<(), HttpResponse> {
+) -> Result<(), Response> {
     match crate::scheduler::queue::repo_id_for_job(db, job_id).await {
         Ok(Some(repo_id)) => match crate::scheduler::repos::read(db, &repo_id).await {
             Ok(Some(repo)) => {
-                if !can_on_project(request, db, &repo.project_id, "read").await {
+                if !can_on_project(claims, config, db, &repo.project_id, "read").await {
                     return Err(json_error(
                         StatusCode::FORBIDDEN,
                         "no read access to this job's logs",
@@ -80,26 +60,26 @@ async fn authorize_job_read(
     }
 }
 
-#[get("/jobs/{id}/stream")]
+/// SSE, one event per log line; `id:` carries the sequence number so a
+/// reconnect can send `Last-Event-ID` instead of replaying the whole log.
+#[get("/api/v1/jobs/{id}/stream")]
 pub async fn stream_logs(
-    request: HttpRequest,
-    path: web::Path<String>,
-    query: web::Query<StreamQuery>,
-    db: web::Data<Db>,
-    executor: web::Data<Arc<dyn JobExecutor>>,
-) -> impl Responder {
-    let job_id = path.into_inner();
-
-    if let Err(response) = authorize_job_read(&request, &db, &job_id).await {
+    OptionalClaims(claims): OptionalClaims,
+    Path(job_id): Path<String>,
+    Query(query): Query<StreamQuery>,
+    Inject(db): Inject<Db>,
+    Inject(config): Inject<JwtConfig>,
+    Inject(executor): Inject<Executor>,
+) -> Response {
+    if let Err(response) = authorize_job_read(claims.as_ref(), &config, &db, &job_id).await {
         return response;
     }
 
     let format = query.format;
     let handle = Handle::new(job_id.clone());
 
-    // The executor first: if it knows this job, the job is still running here
-    // and its output is not in the database yet.
-    if let Ok(tail) = executor.logs(&handle).await {
+    // The executor first: if it knows this job, it's still running.
+    if let Ok(tail) = executor.0.logs(&handle).await {
         let history = stream_iter(
             tail.history
                 .into_iter()
@@ -108,30 +88,23 @@ pub async fn stream_logs(
 
         let live = BroadcastStream::new(tail.live).map(move |message| match message {
             Ok(chunk) => Ok(frame(&chunk, format)),
-            // The subscriber fell behind the channel. The lines are not lost -
-            // they are in the history the next connection will replay - so say
-            // so rather than pretending the stream is intact.
-            Err(_) => Ok::<_, Error>(Bytes::from(
+            // Subscriber fell behind the channel; say so rather than pretend.
+            Err(_) => Ok::<_, std::io::Error>(Bytes::from(
                 "event: lagged\ndata: some lines were skipped; reload to see them\n\n",
             )),
         });
 
-        // The channel closes when the scheduler forgets the job, which it does
-        // once the log is in the database. Saying so beats letting the
-        // connection simply end - a browser reads that as a drop and
-        // reconnects, and would fetch the whole log again.
-        let ended = stream_iter([Ok::<_, Error>(done())]);
+        // Say the log is done, or a browser reads a plain close as a drop and refetches everything.
+        let ended = stream_iter([Ok::<_, std::io::Error>(done())]);
 
-        return HttpResponse::Ok()
-            .content_type("text/event-stream")
-            .append_header(("Cache-Control", "no-cache"))
-            // Without this a reverse proxy will sit on the response until the
-            // job ends, which is exactly what streaming is for avoiding.
-            .append_header(("X-Accel-Buffering", "no"))
-            .streaming(history.chain(live).chain(ended));
+        return Response::streaming(StatusCode::OK, history.chain(live).chain(ended))
+            .header("content-type", "text/event-stream")
+            .header("Cache-Control", "no-cache")
+            // Otherwise a reverse proxy buffers until the job ends.
+            .header("X-Accel-Buffering", "no");
     }
 
-    // Otherwise it is finished, and complete, in the database.
+    // Otherwise it's finished, and complete, in the database.
     let chunks = match queue::read_logs(&db, &job_id, -1).await {
         Ok(chunks) => chunks,
         Err(error) => return ApiError::from(error).into_response(),
@@ -140,50 +113,45 @@ pub async fn stream_logs(
     let mut body: Vec<Bytes> = chunks.iter().map(|chunk| frame(chunk, format)).collect();
     body.push(done());
 
-    HttpResponse::Ok()
-        .content_type("text/event-stream")
-        .append_header(("Cache-Control", "no-cache"))
-        .append_header(("X-Accel-Buffering", "no"))
-        .streaming(stream_iter(body.into_iter().map(Ok::<_, Error>)))
+    Response::streaming(
+        StatusCode::OK,
+        stream_iter(body.into_iter().map(Ok::<_, std::io::Error>)),
+    )
+    .header("content-type", "text/event-stream")
+    .header("Cache-Control", "no-cache")
+    .header("X-Accel-Buffering", "no")
 }
 
-/// The log as plain lines, with no SSE framing - what "open raw" in a new tab
-/// points at, and what a person piping a build's output through `grep` wants.
-///
-/// A running job's output still streams: the response just stays open,
-/// appending each line as it arrives, until the executor forgets the job -
-/// the same close a finished [`stream_logs`] answer gets from `done()`, minus
-/// the event a plain GET has no framing to carry.
-#[get("/jobs/{id}/raw")]
+/// The log as plain lines, no SSE framing - what "open raw" and `grep`-piping want.
+/// A running job's output still streams; the response just stays open until it ends.
+#[get("/api/v1/jobs/{id}/raw")]
 pub async fn raw_logs(
-    request: HttpRequest,
-    path: web::Path<String>,
-    db: web::Data<Db>,
-    executor: web::Data<Arc<dyn JobExecutor>>,
-) -> impl Responder {
-    let job_id = path.into_inner();
-
-    if let Err(response) = authorize_job_read(&request, &db, &job_id).await {
+    OptionalClaims(claims): OptionalClaims,
+    Path(job_id): Path<String>,
+    Inject(db): Inject<Db>,
+    Inject(config): Inject<JwtConfig>,
+    Inject(executor): Inject<Executor>,
+) -> Response {
+    if let Err(response) = authorize_job_read(claims.as_ref(), &config, &db, &job_id).await {
         return response;
     }
 
     let handle = Handle::new(job_id.clone());
 
-    if let Ok(tail) = executor.logs(&handle).await {
+    if let Ok(tail) = executor.0.logs(&handle).await {
         let history = stream_iter(tail.history.into_iter().map(|chunk| Ok(raw_line(&chunk))));
 
         let live = BroadcastStream::new(tail.live).map(|message| match message {
             Ok(chunk) => Ok(raw_line(&chunk)),
-            Err(_) => Ok::<_, Error>(Bytes::from(
+            Err(_) => Ok::<_, std::io::Error>(Bytes::from(
                 "\n[some lines were skipped; reload to see them]\n",
             )),
         });
 
-        return HttpResponse::Ok()
-            .content_type("text/plain; charset=utf-8")
-            .append_header(("Cache-Control", "no-cache"))
-            .append_header(("X-Accel-Buffering", "no"))
-            .streaming(history.chain(live));
+        return Response::streaming(StatusCode::OK, history.chain(live))
+            .header("content-type", "text/plain; charset=utf-8")
+            .header("Cache-Control", "no-cache")
+            .header("X-Accel-Buffering", "no");
     }
 
     let chunks = match queue::read_logs(&db, &job_id, -1).await {
@@ -193,14 +161,14 @@ pub async fn raw_logs(
 
     let body: Vec<Bytes> = chunks.iter().map(raw_line).collect();
 
-    HttpResponse::Ok()
-        .content_type("text/plain; charset=utf-8")
-        .streaming(stream_iter(body.into_iter().map(Ok::<_, Error>)))
+    Response::streaming(
+        StatusCode::OK,
+        stream_iter(body.into_iter().map(Ok::<_, std::io::Error>)),
+    )
+    .header("content-type", "text/plain; charset=utf-8")
 }
 
-/// One log line, as it was written, with the newline `frame` has to strip
-/// back out for `Format::Text` - a raw view has nothing else to keep it
-/// from ending the line itself.
+/// One log line as written - a raw view has nothing else to end the line with.
 pub fn raw_line(chunk: &LogChunk) -> Bytes {
     Bytes::from(format!("{}\n", chunk.line))
 }
@@ -210,10 +178,7 @@ pub fn done() -> Bytes {
     Bytes::from("event: done\ndata: end of log\n\n")
 }
 
-/// One line, as an SSE frame.
-///
-/// A line containing a newline would end the frame early and the rest would be
-/// read as a new event, so any that survived the reader are flattened.
+/// One line as an SSE frame - embedded newlines are flattened, or they'd end the frame early.
 pub fn frame(chunk: &LogChunk, format: Format) -> Bytes {
     let data = match format {
         Format::Text => chunk.line.replace(['\n', '\r'], " "),
@@ -228,12 +193,7 @@ pub fn frame(chunk: &LogChunk, format: Format) -> Bytes {
     ))
 }
 
-/// A log line as an escaped element.
-///
-/// Built through `Element`, whose `text` escapes, rather than by formatting a
-/// string: build output is written by whoever owns the repository, and a line
-/// containing `<script>` must reach the page as characters rather than as a
-/// tag.
+/// Built through `Element` (which escapes), since build output can contain `<script>`.
 fn html_line(chunk: &LogChunk) -> String {
     let class = match chunk.stream {
         LogStream::Stdout => "log-line",
@@ -245,4 +205,9 @@ fn html_line(chunk: &LogChunk) -> String {
         .text(&chunk.line)
         .render()
         .replace(['\n', '\r'], " ")
+}
+
+pub fn register_routes() {
+    let _ = stream_logs as fn(_, _, _, _, _, _) -> _;
+    let _ = raw_logs as fn(_, _, _, _, _) -> _;
 }

@@ -23,8 +23,7 @@ pub async fn sync_models() {
         }
     }
 
-    // Discover new models (on disk but not in DB)
-    // warm_model_cache internally calls fetch_* which skips paths already in DB
+    // Discovers new models too - fetch_* skips paths already in DB.
     warm_model_cache().await;
 }
 

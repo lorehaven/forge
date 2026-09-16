@@ -44,9 +44,7 @@ pub async fn create(db: &Db, new: &NewComment) -> Result<Comment, WorkbenchError
     from_row(&row)
 }
 
-/// Looked up before a delete, to resolve back to the issue (and from there the
-/// project) an authorization check needs - a comment's own row carries no
-/// project id.
+/// Used before delete to resolve the project id for auth - the row has none.
 pub async fn read(db: &Db, id: &str) -> Result<Option<Comment>, WorkbenchError> {
     let pool = pool(db)?;
     let schema = schema();

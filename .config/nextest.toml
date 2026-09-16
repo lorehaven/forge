@@ -29,3 +29,13 @@ db-shared-schema = { max-threads = 1 }
 [[profile.default.overrides]]
 filter = 'binary(integration)'
 test-group = 'db-shared-schema'
+
+[[profile.default.overrides]]
+# A real `cargo search` against the self-hosted `ennor` registry - skipped by
+# default (see `cli/toolbox/tests/unit/live_tests.rs`'s header comment for
+# why: it was observed to fail with a clean-but-empty result, unreproducibly,
+# even under deliberate heavy concurrent load). This retry only matters when
+# a developer opts in locally with `TOOLBOX_TEST_LIVE_REGISTRY=1` to actually
+# exercise the live call - kept as a light safety net for that case.
+filter = 'package(forge-toolbox) and test(fetch_latest_registry_version_finds_a_known_package)'
+retries = { backoff = "fixed", count = 3, delay = "1s" }

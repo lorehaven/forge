@@ -1,11 +1,11 @@
 use crate::support;
 
-use actix_web::test as actix_test;
+use http::{Method, StatusCode};
 use serde_json::Value;
 use support::WithDockerStorageRoot as WithStorageRoot;
 use warehouse_service::routers::docker::manifest::put_image::{
     DOCKER_MANIFEST_LIST_V2, DOCKER_MANIFEST_V2, DescriptorKind, OCI_IMAGE_INDEX_V1,
-    OCI_IMAGE_MANIFEST_V1, handle, is_supported_manifest_media_type, normalize_manifest_body,
+    OCI_IMAGE_MANIFEST_V1, is_supported_manifest_media_type, normalize_manifest_body,
     normalize_media_type, populate_descriptor_size,
 };
 use warehouse_service::utils::sha256::sha256_hex;
@@ -114,35 +114,58 @@ fn write_blob(storage: &WithStorageRoot, content: &[u8]) -> String {
     format!("sha256:{hex}")
 }
 
-#[actix_web::test]
+async fn app() -> (
+    std::sync::Arc<dyn quench_http::endpoint::Endpoint>,
+    std::sync::Arc<quench_http::di::Container>,
+) {
+    warehouse_service::routers::docker::manifest::put_image::register_routes();
+    let container = support::container_builder().build().await.unwrap();
+    support::app(container).await
+}
+
+fn put(
+    path: &str,
+    content_type: Option<&str>,
+    body: &[u8],
+    container: &std::sync::Arc<quench_http::di::Container>,
+) -> quench_http::request::Request {
+    match content_type {
+        Some(ct) => support::raw_req(Method::PUT, path, &[("content-type", ct)], body, container),
+        None => support::raw_req(Method::PUT, path, &[], body, container),
+    }
+}
+
+#[tokio::test]
 async fn handle_rejects_an_unsupported_content_type() {
     let _storage = WithStorageRoot::new();
-    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
-    let req = actix_test::TestRequest::put()
-        .uri("/my-repo/manifests/latest")
-        .insert_header(("Content-Type", "text/plain"))
-        .set_payload(br#"{"schemaVersion": 2}"#.to_vec())
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(
-        resp.status(),
-        actix_web::http::StatusCode::UNSUPPORTED_MEDIA_TYPE
-    );
+    let (app, container) = app().await;
+    let resp = app
+        .call(put(
+            "/v2/my-repo/manifests/latest",
+            Some("text/plain"),
+            br#"{"schemaVersion": 2}"#,
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn handle_rejects_an_invalid_manifest_body() {
     let _storage = WithStorageRoot::new();
-    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
-    let req = actix_test::TestRequest::put()
-        .uri("/my-repo/manifests/latest")
-        .set_payload(b"not json".to_vec())
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::BAD_REQUEST);
+    let (app, container) = app().await;
+    let resp = app
+        .call(put(
+            "/v2/my-repo/manifests/latest",
+            None,
+            b"not json",
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn handle_stores_the_manifest_by_digest_and_writes_the_tag() {
     let storage = WithStorageRoot::new();
     let body = br#"{"schemaVersion": 2}"#;
@@ -153,15 +176,14 @@ async fn handle_stores_the_manifest_by_digest_and_writes_the_tag() {
     let normalized = normalize_manifest_body(body).await.unwrap();
     let expected_digest = format!("sha256:{}", sha256_hex(&normalized));
 
-    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
-    let req = actix_test::TestRequest::put()
-        .uri("/my-repo/manifests/latest")
-        .set_payload(body.to_vec())
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::CREATED);
+    let (app, container) = app().await;
+    let resp = app
+        .call(put("/v2/my-repo/manifests/latest", None, body, &container))
+        .await;
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    let (headers, _) = support::parts(resp).await;
     assert_eq!(
-        resp.headers().get("Docker-Content-Digest").unwrap(),
+        headers.get("docker-content-digest").unwrap(),
         expected_digest.as_str()
     );
 
@@ -183,41 +205,47 @@ async fn handle_stores_the_manifest_by_digest_and_writes_the_tag() {
     assert_eq!(std::fs::read_to_string(&tag_path).unwrap(), expected_digest);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn handle_does_not_write_a_tag_when_the_reference_is_already_a_digest() {
     let storage = WithStorageRoot::new();
     let body = br#"{"schemaVersion": 2}"#;
     let digest = format!("sha256:{}", sha256_hex(body));
 
-    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
-    let req = actix_test::TestRequest::put()
-        .uri(&format!("/my-repo/manifests/{digest}"))
-        .set_payload(body.to_vec())
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::CREATED);
+    let (app, container) = app().await;
+    let resp = app
+        .call(put(
+            &format!("/v2/my-repo/manifests/{digest}"),
+            None,
+            body,
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::CREATED);
 
     let tags_dir = storage.dir.path().join("my-repo").join("tags");
     assert!(!tags_dir.exists() || std::fs::read_dir(&tags_dir).unwrap().count() == 0);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn handle_fills_in_descriptor_sizes_from_blobs_already_on_disk() {
     let storage = WithStorageRoot::new();
     let blob_digest = write_blob(&storage, b"layer content");
     let body = format!(r#"{{"schemaVersion": 2, "config": {{"digest": "{blob_digest}"}}}}"#);
 
-    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
-    let req = actix_test::TestRequest::put()
-        .uri("/my-repo/manifests/latest")
-        .set_payload(body.into_bytes())
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::CREATED);
+    let (app, container) = app().await;
+    let resp = app
+        .call(put(
+            "/v2/my-repo/manifests/latest",
+            None,
+            body.as_bytes(),
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::CREATED);
 
-    let digest_header = resp
-        .headers()
-        .get("Docker-Content-Digest")
+    let (headers, _) = support::parts(resp).await;
+    let digest_header = headers
+        .get("docker-content-digest")
         .unwrap()
         .to_str()
         .unwrap()
@@ -236,17 +264,20 @@ async fn handle_fills_in_descriptor_sizes_from_blobs_already_on_disk() {
     assert_eq!(value["config"]["size"], "layer content".len());
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn handle_rejects_a_manifest_referencing_a_blob_that_does_not_exist() {
     let _storage = WithStorageRoot::new();
     let missing_digest = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
     let body = format!(r#"{{"schemaVersion": 2, "config": {{"digest": "{missing_digest}"}}}}"#);
 
-    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
-    let req = actix_test::TestRequest::put()
-        .uri("/my-repo/manifests/latest")
-        .set_payload(body.into_bytes())
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::BAD_REQUEST);
+    let (app, container) = app().await;
+    let resp = app
+        .call(put(
+            "/v2/my-repo/manifests/latest",
+            None,
+            body.as_bytes(),
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }

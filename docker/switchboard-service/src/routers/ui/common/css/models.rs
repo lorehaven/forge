@@ -2,7 +2,6 @@ use quench_web::prelude::CssRule;
 
 pub fn models_rules() -> Vec<CssRule> {
     vec![
-        // Models dashboard
         CssRule::new(".models-dashboard-content")
             .property("display", "flex")
             .property("flex-direction", "column")

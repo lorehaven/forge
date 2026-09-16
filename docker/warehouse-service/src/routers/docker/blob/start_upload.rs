@@ -1,7 +1,7 @@
 use crate::domain::docker_error;
 use crate::routers::docker::{blob_exists, repository_path, validate_digest};
-use actix_web::{HttpResponse, Responder, post, web};
-use quench_starter::prelude::error;
+use quench_http::prelude::{Path, Query, Response, http::StatusCode, post};
+use quench_starter::http::domain::error;
 use serde::Deserialize;
 use uuid::Uuid;
 
@@ -11,44 +11,41 @@ pub struct MountQuery {
     pub from: Option<String>,
 }
 
-#[post("/{name:.*}/blobs/uploads/")]
-pub async fn handle(path: web::Path<String>, query: web::Query<MountQuery>) -> impl Responder {
-    let name = path.into_inner();
+#[post("/v2/{name:.*}/blobs/uploads/")]
+pub async fn handle(Path(name): Path<String>, Query(query): Query<MountQuery>) -> Response {
     if repository_path(&name).is_none() {
         return error::response(
-            actix_web::http::StatusCode::BAD_REQUEST,
+            StatusCode::BAD_REQUEST,
             docker_error::NAME_UNKNOWN,
             "invalid repository name",
         );
     }
 
-    // Attempt cross-repository mount
     if let (Some(digest), Some(_)) = (&query.mount, &query.from) {
         if !validate_digest(digest) {
             return error::response(
-                actix_web::http::StatusCode::BAD_REQUEST,
+                StatusCode::BAD_REQUEST,
                 error::UNSUPPORTED,
                 "invalid digest",
             );
         }
 
         if blob_exists(digest).await {
-            return HttpResponse::Created()
-                .append_header(("Location", format!("/v2/{}/blobs/{}", name, digest)))
-                .append_header(("Docker-Content-Digest", digest.clone()))
-                .finish();
+            return Response::new(StatusCode::CREATED)
+                .header("location", format!("/v2/{}/blobs/{}", name, digest))
+                .header("docker-content-digest", digest);
         }
     }
 
     start_regular_upload(name).await
 }
 
-async fn start_regular_upload(name: String) -> HttpResponse {
+async fn start_regular_upload(name: String) -> Response {
     let uuid = Uuid::new_v4().to_string();
 
     let Some(repo_path) = repository_path(&name) else {
         return error::response(
-            actix_web::http::StatusCode::BAD_REQUEST,
+            StatusCode::BAD_REQUEST,
             docker_error::NAME_UNKNOWN,
             "invalid repository name",
         );
@@ -57,7 +54,7 @@ async fn start_regular_upload(name: String) -> HttpResponse {
 
     if tokio::fs::create_dir_all(&upload_dir).await.is_err() {
         return error::response(
-            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+            StatusCode::INTERNAL_SERVER_ERROR,
             error::UNSUPPORTED,
             "internal server error",
         );
@@ -67,15 +64,18 @@ async fn start_regular_upload(name: String) -> HttpResponse {
 
     if tokio::fs::File::create(&file_path).await.is_err() {
         return error::response(
-            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+            StatusCode::INTERNAL_SERVER_ERROR,
             error::UNSUPPORTED,
             "internal server error",
         );
     }
 
-    HttpResponse::Accepted()
-        .append_header(("Location", format!("/v2/{}/blobs/uploads/{}", name, uuid)))
-        .append_header(("Docker-Upload-UUID", uuid))
-        .append_header(("Range", "0-0"))
-        .finish()
+    Response::new(StatusCode::ACCEPTED)
+        .header("location", format!("/v2/{}/blobs/uploads/{}", name, uuid))
+        .header("docker-upload-uuid", &uuid)
+        .header("range", "0-0")
+}
+
+pub fn register_routes() {
+    let _ = handle as fn(_, _) -> _;
 }

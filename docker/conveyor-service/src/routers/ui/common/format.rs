@@ -2,11 +2,7 @@
 
 use chrono::{DateTime, Utc};
 
-/// How long ago, in the coarsest unit that is still informative.
-///
-/// A build log is read minutes after it ran, so "3m ago" answers the question
-/// a timestamp makes the reader work out. Exact times are in the title
-/// attribute wherever this is used.
+/// Coarsest still-informative unit - exact times live in the title attribute instead.
 pub fn relative(when: DateTime<Utc>) -> String {
     let seconds = (Utc::now() - when).num_seconds();
 

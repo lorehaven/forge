@@ -1,25 +1,49 @@
-//! Self-service "My Account" - the one page a signed-in user (any role) can
-//! reach to edit their own profile, change their password, and turn MFA on
-//! or off. `admin.rs` is deliberately not reused for this even though the
-//! two share `crate::realm`: that page is gated on the `gatehouse` catalog's
-//! admin actions, and every signed-in user - not just those with
-//! `edit-user` - needs to be able to manage their own account.
+//! Self-service "My Account": any signed-in user edits their own profile,
+//! password, and MFA. Not `admin.rs`, which gates on catalog admin actions.
 
 use crate::catalog::PermissionCatalog;
 use crate::realm::{self, RealmError, UserChanges};
 use crate::ui::common::{UiPageKind, render_page, ui_path};
-use actix_web::{HttpRequest, HttpResponse, Responder, get, post, web};
-use quench_auth::actix::routers::ui::get_user_from_req;
-use quench_auth::prelude::{Claims, JwtConfig, Role, SessionDb, User};
+use async_trait::async_trait;
+use http::StatusCode;
+use quench_auth::domain::auth::{Role, User};
+use quench_auth::domain::jwt::{Claims, JwtConfig};
+use quench_auth::domain::session::SessionDb;
+use quench_auth::http::routers::ui::get_user_from_req;
 use quench_db::prelude::Db;
+use quench_http::prelude::{
+    Form, FromRequest, HttpError, Inject, Query, Request, Response, get, post,
+};
 use quench_web::prelude::*;
 use serde::Deserialize;
-use std::sync::Arc;
+use std::collections::HashMap;
 
-async fn actor_or_redirect(req: &HttpRequest, config: &JwtConfig) -> Result<Claims, HttpResponse> {
-    get_user_from_req(req, config)
-        .await
-        .ok_or_else(super::auth::login_redirect)
+/// Claims, or the login redirect - not `HttpError`, which can't carry a redirect.
+pub enum Actor {
+    Claims(Claims),
+    Redirect(Response),
+}
+
+impl Actor {
+    fn or_redirect(self) -> Result<Claims, Response> {
+        match self {
+            Self::Claims(claims) => Ok(claims),
+            Self::Redirect(resp) => Err(resp),
+        }
+    }
+}
+
+#[async_trait]
+impl FromRequest for Actor {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        let Ok(config) = req.container().get::<JwtConfig>() else {
+            return Ok(Self::Redirect(super::auth::login_redirect()));
+        };
+        match get_user_from_req(req, &config).await {
+            Some(claims) => Ok(Self::Claims(claims)),
+            None => Ok(Self::Redirect(super::auth::login_redirect())),
+        }
+    }
 }
 
 /// Feedback carried across the redirect that follows every write here.
@@ -31,14 +55,13 @@ pub struct Notice {
     pub ok: Option<String>,
 }
 
-#[get("/account")]
+#[get("/ui/account")]
 pub async fn account_page(
-    req: HttpRequest,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    notice: web::Query<Notice>,
-) -> impl Responder {
-    let actor = match actor_or_redirect(&req, &config).await {
+    actor: Actor,
+    Query(notice): Query<Notice>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    let actor = match actor.or_redirect() {
         Ok(actor) => actor,
         Err(response) => return response,
     };
@@ -51,23 +74,19 @@ pub async fn account_page(
     render_account_page(&user, &notice)
 }
 
-/// The profile-and-password form, read as a flat map for the same reason
-/// `admin.rs::save_user` does: not every field is always present, and a
-/// missing one means "leave alone", not "clear".
-#[post("/account")]
+/// Flat map like `admin.rs::save_user` - a missing field means leave alone.
+#[post("/ui/account")]
 pub async fn save_account(
-    req: HttpRequest,
-    form: web::Form<std::collections::HashMap<String, String>>,
-    config: web::Data<JwtConfig>,
-    catalog: web::Data<PermissionCatalog>,
-    db: web::Data<Db>,
-    sessions: web::Data<Arc<SessionDb>>,
-) -> impl Responder {
-    let actor = match actor_or_redirect(&req, &config).await {
+    actor: Actor,
+    Form(form): Form<HashMap<String, String>>,
+    Inject(catalog): Inject<PermissionCatalog>,
+    Inject(db): Inject<Db>,
+    Inject(sessions): Inject<SessionDb>,
+) -> Response {
+    let actor = match actor.or_redirect() {
         Ok(actor) => actor,
         Err(response) => return response,
     };
-    let form = form.into_inner();
 
     let changes = UserChanges {
         password: form
@@ -100,20 +119,18 @@ pub async fn save_account(
     }
 }
 
-fn non_empty(form: &std::collections::HashMap<String, String>, key: &str) -> Option<String> {
+fn non_empty(form: &HashMap<String, String>, key: &str) -> Option<String> {
     form.get(key)
         .map(String::as_str)
         .filter(|value| !value.is_empty())
         .map(str::to_string)
 }
 
-// ---------------------------------------------------------------------------
-// MFA enrollment
-// ---------------------------------------------------------------------------
+// --- MFA enrollment ---
 
-#[get("/account/mfa/enroll")]
-pub async fn mfa_enroll_page(req: HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
-    let actor = match actor_or_redirect(&req, &config).await {
+#[get("/ui/account/mfa/enroll")]
+pub async fn mfa_enroll_page(actor: Actor) -> Response {
+    let actor = match actor.or_redirect() {
         Ok(actor) => actor,
         Err(response) => return response,
     };
@@ -133,14 +150,13 @@ pub struct MfaEnrollForm {
     pub code: String,
 }
 
-#[post("/account/mfa/enroll")]
+#[post("/ui/account/mfa/enroll")]
 pub async fn mfa_enroll_submit(
-    req: HttpRequest,
-    form: web::Form<MfaEnrollForm>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    let actor = match actor_or_redirect(&req, &config).await {
+    actor: Actor,
+    Form(form): Form<MfaEnrollForm>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    let actor = match actor.or_redirect() {
         Ok(actor) => actor,
         Err(response) => return response,
     };
@@ -148,11 +164,7 @@ pub async fn mfa_enroll_submit(
     match realm::enable_mfa(&db, &actor.sub, &form.secret, &form.code).await {
         Ok(()) => redirect("/account?ok=mfa_enabled"),
         Err(RealmError::MfaCodeInvalid) => {
-            // Re-rendered directly, not redirected: the not-yet-persisted
-            // secret only ever travels in a POST body, never a URL, so a
-            // failed attempt has to show the same secret again rather than
-            // bounce through a GET that would have to carry it in the query
-            // string instead.
+            // Re-rendered directly, not redirected - the secret never travels in a URL.
             let uri = crate::mfa::provisioning_uri(&form.secret, &actor.sub).unwrap_or_default();
             render_mfa_enroll_page(&form.secret, &uri, true)
         }
@@ -163,13 +175,9 @@ pub async fn mfa_enroll_submit(
     }
 }
 
-#[post("/account/mfa/disable")]
-pub async fn mfa_disable(
-    req: HttpRequest,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    let actor = match actor_or_redirect(&req, &config).await {
+#[post("/ui/account/mfa/disable")]
+pub async fn mfa_disable(actor: Actor, Inject(db): Inject<Db>) -> Response {
+    let actor = match actor.or_redirect() {
         Ok(actor) => actor,
         Err(response) => return response,
     };
@@ -180,11 +188,9 @@ pub async fn mfa_disable(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Rendering
-// ---------------------------------------------------------------------------
+// --- Rendering ---
 
-pub fn render_account_page(user: &User, notice: &Notice) -> HttpResponse {
+pub fn render_account_page(user: &User, notice: &Notice) -> Response {
     let mut profile_form = form()
         .attr("method", "post")
         .attr("action", ui_path("/account"))
@@ -298,7 +304,7 @@ pub fn render_account_page(user: &User, notice: &Notice) -> HttpResponse {
     };
 
     render_page(
-        HttpResponse::Ok(),
+        StatusCode::OK,
         content().class("admin-content").child(
             div()
                 .class("admin-container")
@@ -309,7 +315,7 @@ pub fn render_account_page(user: &User, notice: &Notice) -> HttpResponse {
     )
 }
 
-pub fn render_mfa_enroll_page(secret: &str, uri: &str, error: bool) -> HttpResponse {
+pub fn render_mfa_enroll_page(secret: &str, uri: &str, error: bool) -> Response {
     let mut enroll_form = form()
         .attr("method", "post")
         .attr("action", ui_path("/account/mfa/enroll"))
@@ -364,7 +370,7 @@ pub fn render_mfa_enroll_page(secret: &str, uri: &str, error: bool) -> HttpRespo
     }
 
     render_page(
-        HttpResponse::Ok(),
+        StatusCode::OK,
         content().class("admin-content").child(
             div().class("admin-container").child(
                 div()
@@ -406,9 +412,7 @@ pub fn notice_banner(notice: &Notice) -> Option<Element> {
     Some(p().class("admin-notice ok").attr("data-i18n", key))
 }
 
-/// Same reasoning as `admin.rs`'s own allowlist: only a `RealmError::i18n_key`
-/// that could actually reach this page is trusted onto it, so a hand-crafted
-/// `?err=` cannot put arbitrary text on the page.
+/// Same allowlist reasoning as `admin.rs` - a hand-crafted `?err=` can't inject text.
 pub fn known_error_key(candidate: &str) -> Option<&'static str> {
     [
         RealmError::PasswordEmpty,
@@ -421,15 +425,13 @@ pub fn known_error_key(candidate: &str) -> Option<&'static str> {
     .find(|known| *known == candidate)
 }
 
-fn redirect(path: &str) -> HttpResponse {
-    HttpResponse::Found()
-        .append_header(("Location", ui_path(path)))
-        .finish()
+fn redirect(path: &str) -> Response {
+    Response::new(StatusCode::FOUND).header("Location", ui_path(path))
 }
 
-pub fn error_page(err: &RealmError) -> HttpResponse {
+pub fn error_page(err: &RealmError) -> Response {
     render_page(
-        HttpResponse::build(err.status()),
+        err.status(),
         content().class("admin-content").child(
             div().class("admin-container").child(
                 p().class("admin-notice error")
@@ -438,4 +440,12 @@ pub fn error_page(err: &RealmError) -> HttpResponse {
         ),
         UiPageKind::Account,
     )
+}
+
+pub fn register_routes() {
+    let _ = account_page as fn(_, _, _) -> _;
+    let _ = save_account as fn(_, _, _, _, _) -> _;
+    let _ = mfa_enroll_page as fn(_) -> _;
+    let _ = mfa_enroll_submit as fn(_, _, _) -> _;
+    let _ = mfa_disable as fn(_, _) -> _;
 }

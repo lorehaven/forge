@@ -1,10 +1,5 @@
-//! The records conveyor keeps, and the vocabulary the rest of the service
-//! speaks in.
-//!
-//! These types mirror the `conveyor` schema installed by foundry
-//! (`docker/foundry-service/migrations/conveyor/`). They are defined alongside
-//! that migration deliberately: a status string that exists in one and not the
-//! other is the kind of drift nobody notices until a run is stuck.
+//! The records conveyor keeps. Mirrors the `conveyor` schema foundry installs
+//! (`docker/foundry-service/migrations/conveyor/`) - keep both in sync.
 
 pub mod artifact;
 pub mod job;

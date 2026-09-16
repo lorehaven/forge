@@ -1,5 +1,5 @@
-use actix_web::{HttpResponse, Responder, get, http::header::ContentType, web};
-pub use quench_starter::actix::routers::ui::{is_ui_authenticated, ui_asset_path, ui_path};
+use quench_http::prelude::{Path, Response, get};
+pub use quench_starter::http::routers::ui::{is_ui_authenticated, ui_asset_path, ui_path};
 use quench_web::prelude::*;
 use std::sync::LazyLock;
 
@@ -143,24 +143,22 @@ pub fn ui_header_split(
         )
 }
 
-#[get("/assets/{path:.*}")]
-pub async fn assets(path: web::Path<String>) -> impl Responder {
-    quench_starter::actix::routers::ui::serve_assets(path, "dist/assets").await
+#[get("/ui/assets/{path:.*}")]
+pub async fn assets(Path(path): Path<String>) -> Response {
+    quench_starter::http::routers::ui::serve_assets(&path, "dist/assets").await
 }
 
 pub(super) fn render_page(
-    mut builder: actix_web::HttpResponseBuilder,
+    status: http::StatusCode,
     content: Element,
     page_kind: UiPageKind,
-) -> HttpResponse {
+) -> Response {
     let shell = match page_kind {
         UiPageKind::Home => &*UI_SHELL_HOME,
         UiPageKind::ModelsDashboard => &*UI_SHELL_MODELS_DASHBOARD,
         UiPageKind::VllmManagement => &*UI_SHELL_VLLM_MANAGEMENT,
     };
-    builder
-        .content_type(ContentType::html())
-        .body(shell.page(div().class("page").child(content)))
+    Response::html(status, shell.page(div().class("page").child(content)))
 }
 
 pub(super) enum UiPageKind {
@@ -169,6 +167,6 @@ pub(super) enum UiPageKind {
     VllmManagement,
 }
 
-pub(super) fn ui_login_redirect() -> HttpResponse {
-    quench_starter::actix::routers::ui::ui_login_redirect()
+pub(super) fn ui_login_redirect() -> Response {
+    quench_starter::http::routers::ui::ui_login_redirect()
 }

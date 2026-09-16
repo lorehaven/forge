@@ -1,7 +1,7 @@
 use crate::domain::docker_error;
 use crate::routers::docker::registry::storage::{TagListError, list_tags_for_repository};
-use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
-use quench_starter::prelude::error;
+use quench_http::prelude::{Path, Query, Response, get, http::StatusCode};
+use quench_starter::http::domain::error;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize)]
@@ -10,32 +10,30 @@ struct TagsResponse {
     tags: Vec<String>,
 }
 
-#[derive(Deserialize)]
-struct TagsQuery {
+#[derive(Deserialize, Default)]
+pub struct TagsQuery {
     n: Option<usize>,
     last: Option<String>,
 }
 
-#[get("/{name:.+}/tags/list")]
-pub async fn handle(req: HttpRequest, path: web::Path<String>) -> impl Responder {
-    let name = path.into_inner();
-
-    let query = web::Query::<TagsQuery>::from_query(req.query_string()).ok();
-    let n = query.as_ref().and_then(|q| q.n).unwrap_or(100);
-    let last = query.as_ref().and_then(|q| q.last.clone());
+#[get("/v2/{name:.+}/tags/list")]
+pub async fn handle(Path(name): Path<String>, query: Query<TagsQuery>) -> Response {
+    let query = query.0;
+    let n = query.n.unwrap_or(100);
+    let last = query.last;
 
     let tags = match list_tags_for_repository(&name) {
         Ok(tags) => tags,
         Err(TagListError::InvalidName) => {
             return error::response(
-                actix_web::http::StatusCode::BAD_REQUEST,
+                StatusCode::BAD_REQUEST,
                 docker_error::NAME_UNKNOWN,
                 "invalid repository name",
             );
         }
         Err(TagListError::NotFound) => {
             return error::response(
-                actix_web::http::StatusCode::NOT_FOUND,
+                StatusCode::NOT_FOUND,
                 docker_error::NAME_UNKNOWN,
                 "repository name not known to registry",
             );
@@ -50,7 +48,14 @@ pub async fn handle(req: HttpRequest, path: web::Path<String>) -> impl Responder
 
     let page: Vec<String> = tags.into_iter().skip(start).take(n).collect();
 
-    let mut response = HttpResponse::Ok();
+    let mut response = Response::json(
+        StatusCode::OK,
+        &TagsResponse {
+            name: name.clone(),
+            tags: page.clone(),
+        },
+    )
+    .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR));
 
     if page.len() == n
         && let Some(last_item) = page.last()
@@ -59,8 +64,12 @@ pub async fn handle(req: HttpRequest, path: web::Path<String>) -> impl Responder
             "</v2/{}/tags/list?n={}&last={}>; rel=\"next\"",
             name, n, last_item
         );
-        response.append_header(("Link", link));
+        response = response.header("link", link);
     }
 
-    response.json(TagsResponse { name, tags: page })
+    response
+}
+
+pub fn register_routes() {
+    let _ = handle as fn(_, _) -> _;
 }

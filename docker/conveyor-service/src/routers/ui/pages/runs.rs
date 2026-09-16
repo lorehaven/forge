@@ -1,55 +1,37 @@
-//! One run: what it built, what each job did, and its output.
-//!
-//! Logs stream over server-sent events. A finished job's log arrives complete
-//! and the stream ends; a running job's arrives as it happens. The page does
-//! not need to know which, because the endpoint does not either.
-//!
-//! Everything else on the page - the pills, the durations, the artifacts - is
-//! polled, because none of it is append-only the way a log is. A run's state
-//! lives in the database rather than in the worker holding it, so any replica
-//! can answer, which the log stream cannot claim.
-//!
-//! The poll deliberately does not re-render the job bodies. Replacing those
-//! every two seconds would tear down whatever log stream is open inside them,
-//! which is why the mutable parts of each job carry their own id and arrive as
-//! out-of-band swaps around the `<details>` rather than through them.
+//! One run: what it built, what each job did, and its output. Logs stream
+//! over SSE; everything else (pills, durations, artifacts) is polled instead.
 
 use crate::domain::{Artifact, Job, Repo, Run, Status};
 use crate::routers::ui::common::{
-    UiPageKind, format, is_ui_authenticated, render_page, status_pill, ui_login_redirect,
-    ui_login_redirect_for, ui_path,
+    PageAuth, PageGate, format, render_page, status_pill, ui_login_redirect, ui_path,
 };
 use crate::scheduler::{queue, repos};
-use actix_web::{HttpRequest, HttpResponse, Responder, get, http::header::ContentType, post, web};
-use quench_auth::prelude::JwtConfig;
 use quench_db::prelude::Db;
+use quench_http::prelude::{Inject, Path, Query, Response, get, http::StatusCode, post};
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 
-/// How often a moving run is asked about. Fast enough that a job changing state
-/// feels immediate, slow enough that a page left open overnight on a finished
-/// run costs nothing - it stops entirely once the run rests.
+/// Polling stops entirely once the run rests, so an overnight-open page costs nothing.
 const POLL_INTERVAL: &str = "every 2s";
 
-#[get("/runs/{id}")]
+#[get("/ui/runs/{id}")]
 pub(super) async fn run_page(
-    request: HttpRequest,
-    path: web::Path<String>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    if !is_ui_authenticated(&request, &config).await {
+    PageAuth(authenticated): PageAuth,
+    Path(id): Path<String>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    if !authenticated {
         return ui_login_redirect();
     }
 
-    let run = match queue::read_run(&db, &path).await {
+    let run = match queue::read_run(&db, &id).await {
         Ok(Some(run)) => run,
         Ok(None) => return not_found(),
         Err(error) => {
-            tracing::error!("could not read run {}: {error}", path.as_str());
-            return HttpResponse::ServiceUnavailable().body(error.to_string());
+            tracing::error!("could not read run {}: {error}", id);
+            return Response::text(StatusCode::SERVICE_UNAVAILABLE, error.to_string());
         }
     };
 
@@ -60,48 +42,39 @@ pub(super) async fn run_page(
         .unwrap_or_default();
 
     render_page(
-        HttpResponse::Ok(),
+        StatusCode::OK,
         content()
             .class("home-content")
             .child(page(&run, repo.as_ref(), &jobs, &artifacts)),
-        UiPageKind::Home,
     )
 }
 
-/// What the page reports it already has, so the fragment can tell whether the
-/// job list it is answering about is the one the browser is looking at.
+/// What the page already has, so the fragment can tell if its job list is stale.
 #[derive(Deserialize)]
 pub(super) struct StateQuery {
     jobs: Option<usize>,
 }
 
-/// The polled half of the run page.
-///
-/// Answers with the state block htmx swaps in place, plus out-of-band elements
-/// for the parts that live outside it. The whole job list is sent only when the
-/// browser's count disagrees with the database's - that is the run being
-/// planned, where the page went from no jobs to all of them, and the only
-/// moment at which replacing the list can cost nothing.
-#[get("/runs/{id}/state")]
+/// The polled half of the run page. The whole job list is sent only when the
+/// browser's count disagrees with the database's (the run being planned).
+#[get("/ui/runs/{id}/state")]
 pub(super) async fn run_state(
-    request: HttpRequest,
-    path: web::Path<String>,
-    query: web::Query<StateQuery>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    // The fragment-aware form: this is polled every two seconds, so it is the
-    // request most likely to be the one that meets an expired session.
-    if !is_ui_authenticated(&request, &config).await {
-        return ui_login_redirect_for(&request);
+    gate: PageGate,
+    Path(id): Path<String>,
+    Query(query): Query<StateQuery>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    // The fragment-aware form - polled every 2s, likeliest to meet an expired session.
+    if let Err(response) = gate.or_redirect() {
+        return response;
     }
 
-    let run = match queue::read_run(&db, &path).await {
+    let run = match queue::read_run(&db, &id).await {
         Ok(Some(run)) => run,
-        Ok(None) => return HttpResponse::NotFound().finish(),
+        Ok(None) => return Response::new(StatusCode::NOT_FOUND),
         Err(error) => {
-            tracing::error!("could not read run {}: {error}", path.as_str());
-            return HttpResponse::ServiceUnavailable().finish();
+            tracing::error!("could not read run {}: {error}", id);
+            return Response::new(StatusCode::SERVICE_UNAVAILABLE);
         }
     };
 
@@ -122,38 +95,29 @@ pub(super) async fn run_state(
         body.push_str(&oob(jobs_block(&jobs)).render());
     }
 
-    HttpResponse::Ok()
-        .content_type(ContentType::html())
-        .body(body)
+    Response::html(StatusCode::OK, body)
 }
 
-/// Restarts a failed or cancelled run and sends the browser to the new one.
-///
-/// `HX-Redirect` rather than a swap: the restart button sits inside the run
-/// it is restarting, and the result is a different run entirely - there is
-/// nothing on this page left to update in place.
-#[post("/runs/{id}/restart")]
+/// `HX-Redirect`, not a swap - the result is a different run entirely, with nothing here to update in place.
+#[post("/ui/runs/{id}/restart")]
 pub(super) async fn run_restart(
-    request: HttpRequest,
-    path: web::Path<String>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    if !is_ui_authenticated(&request, &config).await {
-        return ui_login_redirect_for(&request);
+    gate: PageGate,
+    Path(id): Path<String>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    if let Err(response) = gate.or_redirect() {
+        return response;
     }
 
-    let destination = match crate::routers::api::runs::restart_run(&db, &path).await {
+    let destination = match crate::routers::api::runs::restart_run(&db, &id).await {
         Ok(run) => run.id,
         Err(error) => {
-            tracing::warn!("restart of run {} could not start: {error}", path.as_str());
-            path.into_inner()
+            tracing::warn!("restart of run {} could not start: {error}", id);
+            id.clone()
         }
     };
 
-    HttpResponse::Ok()
-        .append_header(("HX-Redirect", ui_path(&format!("/runs/{destination}"))))
-        .finish()
+    Response::new(StatusCode::OK).header("HX-Redirect", ui_path(&format!("/runs/{destination}")))
 }
 
 /// Marks an element as replacing the one with its id, wherever that sits.
@@ -161,34 +125,27 @@ fn oob(element: Element) -> Element {
     element.attr("hx-swap-oob", "true")
 }
 
-fn not_found() -> HttpResponse {
+fn not_found() -> Response {
     render_page(
-        HttpResponse::NotFound(),
+        StatusCode::NOT_FOUND,
         content().class("home-content").child(
             div()
                 .class("home-container")
                 .child(empty_state("ui_run_not_found")),
         ),
-        UiPageKind::Home,
     )
 }
 
 fn page(run: &Run, repo: Option<&Repo>, jobs: &[Job], artifacts: &[Artifact]) -> Element {
     div()
         .class("home-container")
-        // The same three blocks the fragment answers with, rendered by the same
-        // functions. Two renderers producing markup that has to agree is how
-        // they stop agreeing.
+        // Same three blocks and functions the fragment answers with, to stay in sync.
         .child(state_block(run, repo, jobs.len()))
         .child(jobs_block(jobs))
         .child(artifacts_block(artifacts))
 }
 
-/// The run's own state, and the element that asks for it again.
-///
-/// A resting run carries no `hx-trigger`, so the swap that reports it finished
-/// is also the one that stops the polling - there is no separate signal to send
-/// and nothing to miss.
+/// A resting run carries no `hx-trigger` - the swap that reports it finished also stops the polling.
 pub fn state_block(run: &Run, repo: Option<&Repo>, job_count: usize) -> Element {
     let mut block = div()
         .attr("id", "run-state")
@@ -208,9 +165,7 @@ pub fn state_block(run: &Run, repo: Option<&Repo>, job_count: usize) -> Element 
         );
     }
 
-    // No default repeat: a failed or cancelled run stays failed until someone
-    // asks for another attempt. This is that ask - it does not rebuild stages
-    // that already passed, see `worker::execute_jobs`.
+    // A restart doesn't rebuild passed stages - see `worker::execute_jobs`.
     if run.status.is_failure() {
         block = block.child(
             button()
@@ -235,14 +190,8 @@ pub fn state_block(run: &Run, repo: Option<&Repo>, job_count: usize) -> Element 
     block
 }
 
-/// The run's jobs as a dependency graph rather than the flat list `list_jobs`
-/// returns them in: one row per dependency level, every stage in a row beside
-/// the others it does not wait on - the same stages `worker::execute_jobs`
-/// actually runs at once, laid out the way it runs them.
-///
-/// A job's own detail element (`job_block`) is unchanged and keeps its id, so
-/// the poll's out-of-band swaps for `job-state-{id}` still find their target
-/// wherever this regroups it.
+/// One row per dependency level, laid out the way `worker::execute_jobs` runs
+/// them; `job_block` keeps its id so `job-state-{id}` OOB swaps still find it.
 pub fn jobs_block(jobs: &[Job]) -> Element {
     let mut graph = div().attr("id", "run-jobs").class("job-graph");
 
@@ -269,16 +218,8 @@ pub fn jobs_block(jobs: &[Job]) -> Element {
     graph
 }
 
-/// Stages grouped into dependency levels: level 0 needs nothing, level *n*
-/// needs only stages at levels below *n*. Two stages sharing a level never
-/// depend on each other, directly or transitively - the longest `needs` chain
-/// under either of them would put it higher otherwise - so a level is exactly
-/// the set of stages a concurrent run executes at once.
-///
-/// Grouped from the run's own `Job` rows rather than the pipeline spec: an old
-/// run's page renders the same way long after the commit that produced it is
-/// gone, the same reason `stage` and `needs` were copied onto the row in the
-/// first place.
+/// Level *n* needs only levels below it - the set of stages run concurrently.
+/// Grouped from `Job` rows, not the pipeline spec, so old runs render the same.
 fn stage_levels(jobs: &[Job]) -> Vec<Vec<Vec<&Job>>> {
     let mut stage_order: Vec<&str> = Vec::new();
     let mut jobs_by_stage: HashMap<&str, Vec<&Job>> = HashMap::new();
@@ -312,13 +253,8 @@ fn stage_levels(jobs: &[Job]) -> Vec<Vec<Vec<&Job>>> {
     levels
 }
 
-/// One stage's level: one more than the deepest of whatever it needs, zero if
-/// it needs nothing this run has a job for.
-///
-/// `visiting` stops a `needs` cycle from recursing forever. The pipeline
-/// parser already refuses one - `graph::topological_order` - so this is a
-/// backstop for a row a future migration or a hand-edited database left
-/// inconsistent, not a case expected to fire.
+/// `visiting` guards a `needs` cycle - the parser already refuses one, so
+/// this is only a backstop for a hand-edited or migrated database.
 fn stage_level<'a>(
     stage: &'a str,
     needs_by_stage: &HashMap<&'a str, &'a [String]>,
@@ -345,9 +281,7 @@ fn stage_level<'a>(
     level
 }
 
-/// Always rendered, even with nothing in it: an out-of-band swap needs
-/// something already on the page to replace, and a run gains its artifacts
-/// while somebody is watching.
+/// Always rendered, even empty - an OOB swap needs something on the page to replace.
 pub fn artifacts_block(artifacts: &[Artifact]) -> Element {
     let mut block = div().attr("id", "run-artifacts");
     if !artifacts.is_empty() {
@@ -388,21 +322,16 @@ fn labelled(key: &str, value: &str) -> Element {
         .child(span().text(format!(" {value}")))
 }
 
-/// One job, as a native disclosure.
-///
-/// `<details>` gives collapse and expand with no script at all, and htmx loads
-/// the body the first time it is opened - so a run with eight jobs opens eight
-/// log streams only if somebody actually opens all eight.
+/// One job as a native `<details>` disclosure - htmx loads the log body only
+/// when opened, so eight jobs open eight streams only if all eight are opened.
 pub fn job_block(job: &Job) -> Element {
-    // Only a job that ran has output. A skipped one shows why instead, and
-    // needs no request to say so.
+    // Only a job that ran has output; a skipped one shows why instead.
     let ran = !matches!(job.status, Status::Skipped | Status::Queued);
 
     let mut summary = element("summary").class("job-head").child(job_state(job));
 
     let body = if ran {
-        // `once`, so collapsing and reopening does not fetch it again - and
-        // does not open a second stream.
+        // `once` - collapsing and reopening doesn't refetch or open a second stream.
         summary = summary
             .attr("hx-get", ui_path(&format!("/jobs/{}/log", job.id)))
             .attr("hx-target", "next .job-body")
@@ -425,15 +354,8 @@ pub fn job_block(job: &Job) -> Element {
     element("details").class("job").child(summary).child(body)
 }
 
-/// The parts of a job's headline that change while it runs.
-///
-/// Its own element so the poll can replace it without touching the `<summary>`
-/// around it: that summary carries the `click once` that fetches the log, and
-/// re-rendering it would arm the trigger again - a second click would then open
-/// a second stream over the first.
-///
-/// `.job-state` is `display: contents`, so wrapping these children changes
-/// what can be swapped and not how the row is laid out.
+/// Own element so the poll can replace it without re-rendering the `<summary>`
+/// around it, which would re-arm its `click once` log-fetch trigger.
 pub fn job_state(job: &Job) -> Element {
     div()
         .attr("id", format!("job-state-{}", job.id))
@@ -489,4 +411,10 @@ fn short_digest(digest: &str) -> String {
         Some((algorithm, hex)) => format!("{algorithm}:{}…", &hex[..hex.len().min(12)]),
         None => digest.to_string(),
     }
+}
+
+pub(super) fn register_routes() {
+    let _ = run_page as fn(_, _, _) -> _;
+    let _ = run_state as fn(_, _, _, _) -> _;
+    let _ = run_restart as fn(_, _, _) -> _;
 }

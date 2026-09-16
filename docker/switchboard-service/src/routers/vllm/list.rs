@@ -1,48 +1,54 @@
 use super::types::VllmInstance;
-use crate::routers::models::mod_impl::can;
+use crate::routers::models::mod_impl::{OptionalClaims, can};
 use crate::routers::vllm::engine::VllmEngine;
-use actix_web::{HttpResponse, Responder, get, web};
-use quench_auth::prelude::JwtConfig;
-use quench_starter::prelude::with_base_path;
+use quench_auth::domain::jwt::JwtConfig;
+use quench_http::prelude::{Inject, IntoResponse, Json, Response, get};
+use quench_starter::common::routes::with_base_path;
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 use std::sync::Arc;
 
-#[get("/list")]
-pub async fn list_instances_canonical(engine: web::Data<Arc<dyn VllmEngine>>) -> impl Responder {
+#[get("/api/v1/vllm/list")]
+pub async fn list_instances_canonical(Inject(engine): Inject<Arc<dyn VllmEngine>>) -> Response {
     list_instances_impl(engine).await
 }
 
-#[get("/instances")]
-pub async fn list_instances_alias(engine: web::Data<Arc<dyn VllmEngine>>) -> impl Responder {
+#[get("/api/v1/vllm/instances")]
+pub async fn list_instances_alias(Inject(engine): Inject<Arc<dyn VllmEngine>>) -> Response {
     list_instances_impl(engine).await
 }
 
-async fn list_instances_impl(engine: web::Data<Arc<dyn VllmEngine>>) -> impl Responder {
+async fn list_instances_impl(engine: Arc<Arc<dyn VllmEngine>>) -> Response {
     match engine.list_instances().await {
-        Ok(list) => HttpResponse::Ok().json(list),
+        Ok(list) => Json(list).into_response(),
         Err(err) => {
             tracing::error!("Failed to list vLLM instances: {}", err);
-            HttpResponse::InternalServerError().body("api_error_vllm_list_failed")
+            Response::text(
+                http::StatusCode::INTERNAL_SERVER_ERROR,
+                "api_error_vllm_list_failed",
+            )
         }
     }
 }
 
-#[get("/grid")]
+#[get("/api/v1/vllm/grid")]
 pub async fn handle_grid(
-    req: actix_web::HttpRequest,
-    config: web::Data<JwtConfig>,
-    engine: web::Data<Arc<dyn VllmEngine>>,
-) -> impl Responder {
-    let can_stop = can(&req, &config, "stop").await;
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+    Inject(engine): Inject<Arc<dyn VllmEngine>>,
+) -> Response {
+    let can_stop = can(claims.as_ref(), &config, "stop");
     match engine.list_instances().await {
         Ok(instances) => {
             let html = render_instances_grid(instances, can_stop);
-            HttpResponse::Ok().content_type("text/html").body(html)
+            Response::html(http::StatusCode::OK, html)
         }
         Err(err) => {
             tracing::error!("Failed to list vLLM instances for grid: {}", err);
-            HttpResponse::InternalServerError().body("api_error_vllm_list_failed")
+            Response::text(
+                http::StatusCode::INTERNAL_SERVER_ERROR,
+                "api_error_vllm_list_failed",
+            )
         }
     }
 }

@@ -1,14 +1,5 @@
-//! The realm's permission catalog.
-//!
-//! Which services exist, what actions each supports, and the named grant
-//! bundles ("templates") an admin can assign - all read from
-//! `config/permissions.toml` (see that file for the schema and the reasoning).
-//! This is what keeps a new service, or a new action on an existing one, out
-//! of gatehouse's Rust code: both used to be either an env var
-//! (`SERVICE_AUDIENCES`, fine on its own) or a hardcoded two-value enum (not
-//! fine - the same two options for every service, changeable only by a
-//! gatehouse release). Now both live in one file an operator edits and
-//! restarts gatehouse to pick up.
+//! The realm's permission catalog - services, actions, and grant templates,
+//! read from `config/permissions.toml` rather than hardcoded in Rust.
 
 use quench_auth::prelude::{Actions, Permissions};
 use serde::Deserialize;
@@ -20,12 +11,8 @@ struct ServiceEntry {
     label: Option<String>,
     #[serde(default)]
     actions: Vec<String>,
-    /// Kinds of resource this service accepts a scoped grant on - e.g.
-    /// conveyor's `project`. Declaring one here is what makes
-    /// `is_known_action` accept `<resource_type>:<resource_id>:<action>` as
-    /// well as a plain action name; the resource id itself is never
-    /// validated against anything, the same way `repos.id` is an opaque
-    /// string to everything that isn't conveyor.
+    /// Resource kinds this service accepts a scoped grant on (e.g. conveyor's
+    /// `project`) - enables `<resource_type>:<resource_id>:<action>` grants.
     #[serde(default)]
     resource_types: Vec<String>,
 }
@@ -54,14 +41,8 @@ pub struct PermissionCatalog {
 }
 
 impl PermissionCatalog {
-    /// Reads `PERMISSIONS_CONFIG` (default `config/permissions.toml`, relative
-    /// to gatehouse's working directory - the same convention `cert.pem` and
-    /// `i18n/` already use).
-    ///
-    /// Fails loudly rather than falling back to an empty catalog: a realm with
-    /// no grantable services is not a smaller version of the estate, it is a
-    /// broken one, and that should stop gatehouse from starting rather than
-    /// come up quietly unable to grant anything.
+    /// Reads `PERMISSIONS_CONFIG` (default `config/permissions.toml`). Fails
+    /// loudly rather than starting with an empty, broken catalog.
     pub fn load() -> anyhow::Result<Self> {
         Self::load_from(&envmnt::get_or(
             "PERMISSIONS_CONFIG",
@@ -69,9 +50,7 @@ impl PermissionCatalog {
         ))
     }
 
-    /// The path-explicit half of `load`, split out so tests do not have to
-    /// race each other over a process-global environment variable to point at
-    /// their own fixture file.
+    /// Path-explicit half of `load`, so tests don't race over the env var.
     pub fn load_from(path: &str) -> anyhow::Result<Self> {
         let file: PermissionsFile = quench_config::ConfigLoader::from_toml_file(path)
             .map_err(|err| anyhow::anyhow!("failed to load permission catalog {path}: {err}"))?;
@@ -100,9 +79,7 @@ impl PermissionCatalog {
         Ok(catalog)
     }
 
-    /// Every service in the catalog, in file order. This is also the realm's
-    /// audience list - see `main.rs`, which sets `JwtConfig::audiences` from
-    /// it rather than from `SERVICE_AUDIENCES`.
+    /// Every service, in file order - also the realm's audience list (see `main.rs`).
     pub fn service_names(&self) -> impl Iterator<Item = &str> {
         self.services.keys().map(String::as_str)
     }
@@ -132,15 +109,8 @@ impl PermissionCatalog {
         self.services.contains_key(service)
     }
 
-    /// Whether `action` is grantable on `service` - either a plain action
-    /// this service's catalog entry enumerates, or a resource-scoped grant
-    /// shaped `<resource_type>:<resource_id>:<base_action>` where
-    /// `resource_type` is one this service declares and `base_action` is
-    /// itself one of the enumerated actions. The resource id in the middle is
-    /// deliberately unchecked - gatehouse has no way to know whether a given
-    /// conveyor project id exists, and does not need to: an admin naming one
-    /// that does not exist just grants access to nothing, the same safe
-    /// direction an unparseable permissions row already fails in.
+    /// A plain enumerated action, or `<resource_type>:<resource_id>:<base_action>`
+    /// - the resource id itself is deliberately unchecked.
     pub fn is_known_action(&self, service: &str, action: &str) -> bool {
         if self
             .actions_for(service)
@@ -166,8 +136,7 @@ impl PermissionCatalog {
                 .any(|known| known == base_action)
     }
 
-    /// `service` and `service:action` entries a grant map holds that this
-    /// catalog does not recognise. Empty when everything checks out.
+    /// Unrecognised `service`/`service:action` entries; empty if all check out.
     pub fn unknown_grants(&self, permissions: &Permissions) -> Vec<String> {
         let mut unknown = Vec::new();
         for (service, actions) in permissions {
@@ -192,9 +161,7 @@ impl PermissionCatalog {
         self.templates.keys().map(String::as_str)
     }
 
-    /// What a self-registered account starts with. Empty if no default
-    /// template is configured - checked at load time, so that can only happen
-    /// deliberately, not because of a typo.
+    /// What a self-registered account starts with; empty if no default template.
     pub fn default_registration_grants(&self) -> Permissions {
         self.default_registration_template
             .as_deref()
@@ -203,10 +170,7 @@ impl PermissionCatalog {
             .unwrap_or_default()
     }
 
-    /// Every template must only grant known services/actions, and the default
-    /// registration template (if any) must exist - checked once here so a
-    /// typo in the catalog fails startup instead of silently granting nothing,
-    /// or nothing useful, to whoever hits it first.
+    /// Catalog-wide checks so a typo fails startup, not a request.
     fn validate(&self) -> anyhow::Result<()> {
         if self.services.is_empty() {
             anyhow::bail!("permission catalog has no [services.*] entries");

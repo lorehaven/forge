@@ -1,16 +1,14 @@
 use crate::domain::docker_error;
 use crate::routers::docker::{manifest_path, repository_path, validate_digest};
-use actix_web::{HttpResponse, Responder, delete, web};
-use quench_starter::prelude::error;
+use quench_http::prelude::{Path, Response, delete, http::StatusCode};
+use quench_starter::http::domain::error;
 
-#[delete("/{name:.+}/manifests/{reference}")]
-pub async fn handle(path: web::Path<(String, String)>) -> impl Responder {
-    let (name, reference) = path.into_inner();
-
+#[delete("/v2/{name:.+}/manifests/{reference}")]
+pub async fn handle(Path((name, reference)): Path<(String, String)>) -> Response {
     // Must delete by digest only
     if !validate_digest(&reference) {
         return error::response(
-            actix_web::http::StatusCode::METHOD_NOT_ALLOWED,
+            StatusCode::METHOD_NOT_ALLOWED,
             error::UNSUPPORTED,
             "manifest deletion requires a digest reference",
         );
@@ -18,7 +16,7 @@ pub async fn handle(path: web::Path<(String, String)>) -> impl Responder {
 
     let Some(repo_path) = repository_path(&name) else {
         return error::response(
-            actix_web::http::StatusCode::BAD_REQUEST,
+            StatusCode::BAD_REQUEST,
             docker_error::NAME_UNKNOWN,
             "invalid repository name",
         );
@@ -26,14 +24,14 @@ pub async fn handle(path: web::Path<(String, String)>) -> impl Responder {
 
     let Some(manifest_path) = manifest_path(&reference) else {
         return error::response(
-            actix_web::http::StatusCode::METHOD_NOT_ALLOWED,
+            StatusCode::METHOD_NOT_ALLOWED,
             error::UNSUPPORTED,
             "manifest deletion requires a digest reference",
         );
     };
     if !manifest_path.exists() {
         return error::response(
-            actix_web::http::StatusCode::NOT_FOUND,
+            StatusCode::NOT_FOUND,
             docker_error::MANIFEST_UNKNOWN,
             "manifest unknown",
         );
@@ -42,7 +40,7 @@ pub async fn handle(path: web::Path<(String, String)>) -> impl Responder {
     // Remove manifest file
     if tokio::fs::remove_file(&manifest_path).await.is_err() {
         return error::response(
-            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+            StatusCode::INTERNAL_SERVER_ERROR,
             error::UNSUPPORTED,
             "internal server error",
         );
@@ -60,5 +58,9 @@ pub async fn handle(path: web::Path<(String, String)>) -> impl Responder {
         }
     }
 
-    HttpResponse::Accepted().finish()
+    Response::new(StatusCode::ACCEPTED)
+}
+
+pub fn register_routes() {
+    let _ = handle as fn(_) -> _;
 }

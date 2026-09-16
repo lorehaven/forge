@@ -1,9 +1,9 @@
 use crate::routers::docker::registry::storage::list_repositories;
-use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
+use quench_http::prelude::{Query, Response, get, http::StatusCode};
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize)]
-struct CatalogQuery {
+#[derive(Deserialize, Default)]
+pub struct CatalogQuery {
     n: Option<usize>,
     last: Option<String>,
 }
@@ -13,12 +13,12 @@ struct CatalogResponse {
     repositories: Vec<String>,
 }
 
-#[get("/_catalog")]
-pub async fn handle(req: HttpRequest) -> impl Responder {
-    let query = web::Query::<CatalogQuery>::from_query(req.query_string()).ok();
+#[get("/v2/_catalog")]
+pub async fn handle(query: Query<CatalogQuery>) -> Response {
+    let query = query.0;
 
-    let n = query.as_ref().and_then(|q| q.n).unwrap_or(100);
-    let last = query.as_ref().and_then(|q| q.last.clone());
+    let n = query.n.unwrap_or(100);
+    let last = query.last;
 
     let repos = list_repositories();
 
@@ -30,14 +30,24 @@ pub async fn handle(req: HttpRequest) -> impl Responder {
 
     let page: Vec<String> = repos.into_iter().skip(start).take(n).collect();
 
-    let mut response = HttpResponse::Ok();
+    let mut response = Response::json(
+        StatusCode::OK,
+        &CatalogResponse {
+            repositories: page.clone(),
+        },
+    )
+    .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR));
 
     if page.len() == n
         && let Some(last_item) = page.last()
     {
         let link = format!("</v2/_catalog?n={}&last={}>; rel=\"next\"", n, last_item);
-        response.append_header(("Link", link));
+        response = response.header("link", link);
     }
 
-    response.json(CatalogResponse { repositories: page })
+    response
+}
+
+pub fn register_routes() {
+    let _ = handle as fn(_) -> _;
 }

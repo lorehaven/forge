@@ -1,16 +1,15 @@
 //! The launch-modal fit/GPU-utilization math in `routers/vllm/modals.rs`,
 //! plus light coverage of the handlers and render functions.
 
-use actix_web::App;
-use actix_web::test as actix_test;
+use quench_http::prelude::Query;
 use switchboard_service::routers::gpu::monitor::GpuInfo;
 use switchboard_service::routers::models::store::{get_store, init_model_store};
 use switchboard_service::routers::models::types::{Context, Model, ModelEstimate, Quant};
 use switchboard_service::routers::vllm::modals::{
-    LaunchModalQuery, calculate_minimum_gpu_util, empty_launch_modal, empty_stop_modal,
-    find_launch_estimate, fit_note_icon_class, get_vllm_namespace, handle_launch_modal,
-    handle_stop_modal, launch_fit_note, launch_gpu_util, parse_optional_f32, parse_optional_u32,
-    render_launch_modal, render_stop_modal, round_gpu_util_up,
+    LaunchModalQuery, StopModalQuery, calculate_minimum_gpu_util, empty_launch_modal,
+    empty_stop_modal, find_launch_estimate, fit_note_icon_class, get_vllm_namespace,
+    handle_launch_modal, handle_stop_modal, launch_fit_note, launch_gpu_util, parse_optional_f32,
+    parse_optional_u32, render_launch_modal, render_stop_modal, round_gpu_util_up,
 };
 
 fn gpu(total_gb: f64, free_gb: f64) -> GpuInfo {
@@ -325,7 +324,7 @@ fn fit_note_icon_class_maps_each_fit_class_to_its_icon() {
     );
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn get_vllm_namespace_reflects_mock_and_native_management_modes() {
     // VLLM_MANAGEMENT_MODE is process-global; this crate's env_support lock
     // (shared with every other test here that touches the same var) keeps
@@ -391,7 +390,7 @@ fn render_stop_modal_includes_the_instance_id_and_optional_model_name() {
 }
 
 // ---------------------------------------------------------------------------
-// Handlers - light smoke coverage via actix test
+// Handlers - light smoke coverage via direct calls
 // ---------------------------------------------------------------------------
 
 async fn ensure_store() {
@@ -405,54 +404,55 @@ async fn ensure_store() {
     .await;
 }
 
-#[actix_web::test]
+async fn body_text(resp: quench_http::response::Response) -> String {
+    use http_body_util::BodyExt;
+    let collected = resp
+        .into_hyper()
+        .into_body()
+        .collect()
+        .await
+        .expect("body collects");
+    String::from_utf8(collected.to_bytes().to_vec()).expect("utf8")
+}
+
+#[tokio::test]
 async fn handle_launch_modal_renders_ok_with_a_model_in_the_store() {
     ensure_store().await;
     let model = model_with_estimates(vec![estimate(Quant::FP16, Context::Size4096, 5.0, 1.0)]);
     get_store().insert_model(&model).await;
 
-    let app = actix_test::init_service(App::new().service(handle_launch_modal)).await;
-    let req = actix_test::TestRequest::get()
-        .uri(&format!("/launch-modal?model={}", model.name))
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let q = LaunchModalQuery {
+        model: Some(model.name.clone()),
+        ..query(None, None)
+    };
+    let resp = handle_launch_modal(Query(q)).await;
     assert!(resp.status().is_success());
 
-    let body = actix_test::read_body(resp).await;
-    let html = String::from_utf8(body.to_vec()).unwrap();
+    let html = body_text(resp).await;
     assert!(html.contains("launch-instance-modal"));
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn empty_launch_modal_renders_the_shell() {
-    let app = actix_test::init_service(App::new().service(empty_launch_modal)).await;
-    let req = actix_test::TestRequest::get()
-        .uri("/launch-modal/empty")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = empty_launch_modal().await;
     assert!(resp.status().is_success());
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn handle_stop_modal_renders_the_provided_id_and_model() {
-    let app = actix_test::init_service(App::new().service(handle_stop_modal)).await;
-    let req = actix_test::TestRequest::get()
-        .uri("/stop-modal?id=abc&model=llama")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let q = StopModalQuery {
+        id: "abc".to_string(),
+        model: Some("llama".to_string()),
+    };
+    let resp = handle_stop_modal(Query(q)).await;
     assert!(resp.status().is_success());
 
-    let body = actix_test::read_body(resp).await;
-    let html = String::from_utf8(body.to_vec()).unwrap();
+    let html = body_text(resp).await;
     assert!(html.contains("llama"));
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn empty_stop_modal_renders_the_shell() {
-    let app = actix_test::init_service(App::new().service(empty_stop_modal)).await;
-    let req = actix_test::TestRequest::get()
-        .uri("/stop-modal/empty")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = empty_stop_modal().await;
     assert!(resp.status().is_success());
 }

@@ -1,36 +1,32 @@
-use actix_web::Scope;
-use actix_web::web::Data;
-use quench_auth::actix::domain::sso_client::SsoConfig;
+use quench_auth::http::domain::sso_client::SsoConfig;
 use quench_auth::prelude::{JwtConfig, SessionDb, UserDb};
 use quench_starter::prelude::DbWrapper;
 use std::sync::Arc;
 
 use crate::config::ConveyorConfig;
-use crate::executors::JobExecutor;
+use crate::executors::Executor;
 use crate::providers::Providers;
 
-/// Everything the HTTP layer needs, built once at startup and cloned into each
-/// actix worker.
+/// Everything the HTTP layer needs, built once at startup and provided into
+/// the DI container in `main.rs`.
 #[derive(Clone)]
 pub struct AppState {
     pub config: ConveyorConfig,
-    pub jwt_config: Data<JwtConfig>,
-    pub sso_config: Data<SsoConfig>,
+    pub jwt_config: JwtConfig,
+    pub sso_config: SsoConfig,
     pub user_db: Arc<UserDb>,
     pub session_db: Arc<SessionDb>,
     pub db: quench_db::prelude::Db,
     /// Shared, not one per worker: a job started by the request that triggered
     /// it has to be pollable by every other request.
-    pub executor: Arc<dyn JobExecutor>,
+    pub executor: Executor,
     /// Also shared: each provider holds an HTTP client, and one per request
     /// would throw away every pooled connection.
     pub providers: Arc<Providers>,
 }
 
 impl AppState {
-    /// Build every shared value the service needs. The returned `DbWrapper` is
-    /// handed to `serve`, which owns health reporting; schema lifecycle belongs
-    /// to foundry, not here.
+    /// Builds every shared value; returned `DbWrapper` goes to `serve` for health reporting.
     pub async fn init() -> (Self, Arc<DbWrapper>) {
         let db_wrapper = DbWrapper::init_env().await;
         let config = ConveyorConfig::load();
@@ -43,8 +39,8 @@ impl AppState {
         );
 
         let state = Self {
-            jwt_config: Data::new(JwtConfig::init().await),
-            sso_config: Data::new(SsoConfig::init()),
+            jwt_config: JwtConfig::init().await,
+            sso_config: SsoConfig::init(),
             user_db: UserDb::init(db_wrapper.db.clone()).await,
             // Sessions live in the shared store, so a logout at gatehouse is
             // immediately a logout here.
@@ -52,24 +48,11 @@ impl AppState {
                 .await
                 .expect("session store unavailable"),
             db: db_wrapper.db.clone(),
-            executor: crate::executors::build(config.executor).await,
+            executor: Executor(crate::executors::build(config.executor).await),
             providers: Arc::new(Providers::from_env()),
             config,
         };
 
         (state, db_wrapper)
-    }
-
-    /// Attach every shared value to `scope` as actix app data.
-    pub fn install(self, scope: Scope) -> Scope {
-        scope
-            .app_data(Data::new(self.config))
-            .app_data(self.jwt_config)
-            .app_data(self.sso_config)
-            .app_data(Data::new(self.user_db))
-            .app_data(Data::new(self.session_db))
-            .app_data(Data::new(self.db))
-            .app_data(Data::new(self.executor))
-            .app_data(Data::from(self.providers))
     }
 }

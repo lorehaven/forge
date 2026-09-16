@@ -1,17 +1,22 @@
-use actix_web::body::to_bytes;
-use actix_web::{App, HttpResponse, test as actix_test, web};
-use gatehouse_service::ui::pages::home::{home, home_slash, render_home_page};
-use quench_auth::prelude::JwtConfig;
+use bytes::Bytes;
+use gatehouse_service::ui::pages::home::render_home_page;
+use http::{HeaderMap, Method, StatusCode, Uri};
+use http_body_util::BodyExt;
+use quench_auth::domain::jwt::JwtConfig;
+use quench_http::body::InboundBody;
+use quench_http::di::ContainerBuilder;
+use quench_http::request::Request;
+use std::sync::Arc;
 
-async fn body_text(resp: HttpResponse) -> String {
-    let body = to_bytes(resp.into_body()).await.expect("body");
-    String::from_utf8(body.to_vec()).expect("utf8")
+async fn body_text(resp: quench_http::response::Response) -> String {
+    let collected = resp.into_hyper().into_body().collect().await.expect("body");
+    String::from_utf8(collected.to_bytes().to_vec()).expect("utf8")
 }
 
 #[tokio::test]
 async fn render_home_page_without_admin_omits_the_realm_section() {
     let resp = render_home_page(false);
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    assert_eq!(resp.status(), StatusCode::OK);
     let html = body_text(resp).await;
     assert!(!html.is_empty());
     assert!(!html.contains("ui_home_group_realm"));
@@ -25,28 +30,48 @@ async fn render_home_page_with_admin_includes_the_realm_section() {
     assert!(html.contains("ui_admin_users_title"));
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn home_renders_when_auth_is_disabled() {
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(JwtConfig::for_tests()))
-            .service(home),
-    )
-    .await;
-    let req = actix_test::TestRequest::get().uri("/home").to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    gatehouse_service::ui::register_routes();
+    let container = Arc::new(
+        ContainerBuilder::new()
+            .provide(JwtConfig::for_tests())
+            .build()
+            .await
+            .unwrap(),
+    );
+    let app = quench_starter::http::discover_and_mount("/");
+
+    let req = Request::new(
+        Method::GET,
+        "/ui/home".parse::<Uri>().unwrap(),
+        HeaderMap::new(),
+        InboundBody::from_bytes(Bytes::new()),
+        container,
+    );
+    let resp = app.call(req).await;
     assert!(resp.status().is_success() || resp.status().is_redirection());
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn home_slash_renders_when_auth_is_disabled() {
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(JwtConfig::for_tests()))
-            .service(home_slash),
-    )
-    .await;
-    let req = actix_test::TestRequest::get().uri("/home/").to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    gatehouse_service::ui::register_routes();
+    let container = Arc::new(
+        ContainerBuilder::new()
+            .provide(JwtConfig::for_tests())
+            .build()
+            .await
+            .unwrap(),
+    );
+    let app = quench_starter::http::discover_and_mount("/");
+
+    let req = Request::new(
+        Method::GET,
+        "/ui/home/".parse::<Uri>().unwrap(),
+        HeaderMap::new(),
+        InboundBody::from_bytes(Bytes::new()),
+        container,
+    );
+    let resp = app.call(req).await;
     assert!(resp.status().is_success() || resp.status().is_redirection());
 }

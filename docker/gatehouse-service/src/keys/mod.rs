@@ -1,15 +1,5 @@
-//! Gatehouse's own Ed25519 signing keys.
-//!
-//! Generated at boot if none exist, held decrypted in memory (refreshed from
-//! Postgres at load and after rotation) so every sign or verify is a local
-//! lookup, never a database or network round trip on the request path -
-//! relying parties fetch the public half over `/.well-known/jwks.json`
-//! (`quench_auth::actix::domain::jwks::JwksVerifier` on their side); gatehouse
-//! resolves its own tokens directly through this same struct, implementing
-//! both `KeyResolver` and `KeySigner`.
-//!
-//! Private keys are encrypted at rest with a key derived (via SHA-256, so any
-//! passphrase-shaped string works) from `GATEHOUSE_KEY_ENCRYPTION_KEY`.
+//! Gatehouse's own Ed25519 signing keys - generated at boot, held decrypted
+//! in memory so sign/verify never round-trips the database.
 
 use crate::crypto::{decrypt, encrypt, realm_cipher};
 use async_trait::async_trait;
@@ -18,8 +8,8 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chacha20poly1305::ChaCha20Poly1305;
 use chrono::{DateTime, Utc};
 use jsonwebtoken::{DecodingKey, EncodingKey};
-use quench_auth::actix::domain::jwt::{KeyResolver, KeySigner};
-use quench_auth::actix::domain::signing::{decoding_key, encoding_key, generate_signing_key};
+use quench_auth::domain::jwt::{KeyResolver, KeySigner};
+use quench_auth::domain::signing::{decoding_key, encoding_key, generate_signing_key};
 use quench_db::prelude::{Crud, Db, Model, Repository};
 use serde::{Deserialize, Serialize};
 use std::sync::RwLock;
@@ -28,12 +18,7 @@ use std::sync::RwLock;
 struct SigningKeyRow {
     kid: String,
     algorithm: String,
-    /// Hex-encoded `nonce || ChaCha20-Poly1305(private_key_der)`. Hex rather
-    /// than raw bytea: quench-db's generic `Crud` path round-trips a model
-    /// through `jsonb_populate_record`, which does not turn a JSON
-    /// array-of-numbers (serde's default `Vec<u8>` encoding) into bytea - it
-    /// silently stores the array's own text instead. A hex `TEXT` column
-    /// sidesteps that entirely.
+    /// Hex, not raw bytea - `Crud`'s `jsonb_populate_record` round-trip mangles `Vec<u8>`.
     private_key: String,
     public_key: String,
     created_at: DateTime<Utc>,
@@ -75,9 +60,7 @@ struct LoadedKey {
 pub struct SigningKeys {
     repo: Repository<SigningKeyRow>,
     cipher: ChaCha20Poly1305,
-    /// Outstanding tokens signed by a retired key must keep verifying for the
-    /// rest of their own TTL, so a rotated-out key stays published in JWKS
-    /// until this much time has passed.
+    /// A rotated-out key stays published in JWKS this long, so outstanding tokens keep verifying.
     retire_after_secs: i64,
     keys: RwLock<Vec<LoadedKey>>,
 }
@@ -127,8 +110,7 @@ impl SigningKeys {
         Ok(())
     }
 
-    /// Retires the current active key (if any) and generates a new one to
-    /// sign with. The old key stays in JWKS until `retire_after_secs` passes.
+    /// Retires the active key and generates a new one to sign with.
     pub async fn rotate(&self) -> anyhow::Result<()> {
         let now = Utc::now();
         for mut row in self

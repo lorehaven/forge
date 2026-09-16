@@ -1,5 +1,4 @@
-//! Issues, and the transactional `seq` assignment their key display
-//! (`{project.key}-{seq}`) depends on.
+//! Issues, and the transactional `seq` assignment their key display depends on.
 
 use crate::domain::db::{WorkbenchError, pool, schema};
 use chrono::{DateTime, Utc};
@@ -20,25 +19,18 @@ pub struct Issue {
     pub priority: String,
     pub assignee: Option<String>,
     pub reporter: String,
-    /// Story points. Nullable - not every issue is sized before it starts
-    /// moving through the workflow.
+    /// Story points; nullable since not every issue is sized yet.
     pub estimate: Option<i32>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
-/// The fixed v1 workflow. No configurable per-project workflow yet - see
-/// `plans/WORKBENCH_SERVICE.md`. `blocked` sits before `todo` and `rejected`
-/// after `done`: the three original states stay in their original left-to-
-/// right order, with the two additions bracketing them as the "not actively
-/// moving forward" outliers.
+/// The fixed v1 workflow (no per-project config yet). `blocked`/`rejected`
+/// bracket the three original states as the "not moving forward" outliers.
 pub const STATUSES: [&str; 5] = ["blocked", "todo", "in-progress", "done", "rejected"];
 
 impl Issue {
-    /// `WB-3`, given the owning project's key. Not a stored column - `seq` is
-    /// the only thing on the row, so a caller who already has the project
-    /// (almost always true - it's how you found the issue) builds this rather
-    /// than paying for a join on every read.
+    /// `WB-3`; not stored - built from `seq` to avoid a join on every read.
     pub fn key(&self, project_key: &str) -> String {
         format!("{project_key}-{}", self.seq)
     }
@@ -57,14 +49,8 @@ pub struct NewIssue {
     pub estimate: Option<i32>,
 }
 
-/// Assigns `seq` and inserts the issue in one transaction.
-///
-/// `seq` is `MAX(seq) + 1` for the project, which an aggregate query cannot
-/// combine with `FOR UPDATE` (Postgres refuses that combination outright).
-/// A `pg_advisory_xact_lock` keyed on the project id stands in for the row
-/// lock instead: it serializes concurrent creates for the *same* project
-/// without touching any table, and it is released automatically at commit or
-/// rollback, so a failed insert can never leave it held.
+/// Assigns `seq` = `MAX(seq) + 1` and inserts, in one transaction; a
+/// `pg_advisory_xact_lock` on the project id serializes concurrent creates.
 pub async fn create(db: &Db, new: &NewIssue) -> Result<Issue, WorkbenchError> {
     let pool = pool(db)?;
     let schema = schema();
@@ -144,9 +130,7 @@ pub async fn read_by_seq(
     row.as_ref().map(from_row).transpose()
 }
 
-/// Every issue in a project, optionally narrowed to one status - the board
-/// view's own query (one column per status), and the plain list view's with
-/// `status` left `None`.
+/// Every issue in a project, optionally narrowed to one status (board view).
 pub async fn list_by_project(
     db: &Db,
     project_id: &str,

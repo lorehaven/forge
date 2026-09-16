@@ -2,44 +2,40 @@
 
 use crate::domain::project::{self, NewProject};
 use crate::routers::ui::common::{
-    Notice, actor, is_ui_authenticated, notice_banner, render_page, ui_login_redirect,
-    ui_login_redirect_for, ui_path,
+    ActorOrRedirect, Notice, PageAuth, notice_banner, render_page, ui_login_redirect, ui_path,
 };
-use actix_web::{HttpRequest, HttpResponse, Responder, get, post, web};
-use quench_auth::prelude::JwtConfig;
 use quench_db::prelude::Db;
+use quench_http::prelude::{Form, Inject, Query, Response, get, http::StatusCode, post};
 use quench_web::framework::dom::toggle_modal;
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 use serde::Deserialize;
 
-#[get("/home")]
+#[get("/ui/home")]
 pub(super) async fn home(
-    req: HttpRequest,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    notice: web::Query<Notice>,
-) -> impl Responder {
-    if !is_ui_authenticated(&req, &config).await {
+    PageAuth(authenticated): PageAuth,
+    Inject(db): Inject<Db>,
+    Query(notice): Query<Notice>,
+) -> Response {
+    if !authenticated {
         return ui_login_redirect();
     }
     render_home(&db, &notice).await
 }
 
-#[get("/home/")]
+#[get("/ui/home/")]
 pub(super) async fn home_slash(
-    req: HttpRequest,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    notice: web::Query<Notice>,
-) -> impl Responder {
-    if !is_ui_authenticated(&req, &config).await {
+    PageAuth(authenticated): PageAuth,
+    Inject(db): Inject<Db>,
+    Query(notice): Query<Notice>,
+) -> Response {
+    if !authenticated {
         return ui_login_redirect();
     }
     render_home(&db, &notice).await
 }
 
-async fn render_home(db: &Db, notice: &Notice) -> HttpResponse {
+async fn render_home(db: &Db, notice: &Notice) -> Response {
     let projects = project::list(db).await.unwrap_or_default();
 
     let mut grid = div().class("home-grid");
@@ -71,7 +67,7 @@ async fn render_home(db: &Db, notice: &Notice) -> HttpResponse {
     let toggle = toggle_modal("modal-overlay", "modal-center", "show");
 
     render_page(
-        HttpResponse::Ok(),
+        StatusCode::OK,
         content().class("home-content").child(
             div()
                 .class("home-container")
@@ -188,15 +184,15 @@ pub(super) struct CreateProjectForm {
     pub description: String,
 }
 
-#[post("/projects")]
+#[post("/ui/projects")]
 pub(super) async fn create_project(
-    request: HttpRequest,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    form: web::Form<CreateProjectForm>,
-) -> impl Responder {
-    let Some(claims) = actor(&request, &config).await else {
-        return ui_login_redirect_for(&request);
+    actor: ActorOrRedirect,
+    Inject(db): Inject<Db>,
+    Form(form): Form<CreateProjectForm>,
+) -> Response {
+    let claims = match actor.or_redirect() {
+        Ok(claims) => claims,
+        Err(response) => return response,
     };
 
     if form.key.trim().is_empty() || form.name.trim().is_empty() {
@@ -215,24 +211,26 @@ pub(super) async fn create_project(
     };
 
     match project::create(&db, &new).await {
-        Ok(created) => HttpResponse::Found()
-            .append_header((
-                "Location",
-                ui_path(&format!("/projects/{}/board", created.id)),
-            ))
-            .finish(),
+        Ok(created) => Response::new(StatusCode::FOUND).header(
+            "Location",
+            ui_path(&format!("/projects/{}/board", created.id)),
+        ),
         // The only uniqueness constraint a project can hit is its own `key`.
         Err(error) if error.is_unique_violation() => redirect_home(Some("key_taken")),
         Err(_) => redirect_home(Some("create_failed")),
     }
 }
 
-fn redirect_home(error: Option<&str>) -> HttpResponse {
+fn redirect_home(error: Option<&str>) -> Response {
     let location = match error {
         Some(code) => format!("{}?error={code}", ui_path("/home")),
         None => ui_path("/home"),
     };
-    HttpResponse::Found()
-        .append_header(("Location", location))
-        .finish()
+    Response::new(StatusCode::FOUND).header("Location", location)
+}
+
+pub(super) fn register_routes() {
+    let _ = home as fn(_, _, _) -> _;
+    let _ = home_slash as fn(_, _, _) -> _;
+    let _ = create_project as fn(_, _, _) -> _;
 }

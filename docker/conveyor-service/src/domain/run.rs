@@ -1,9 +1,5 @@
-//! One execution of one repository's pipeline, at one commit.
-//!
-//! A run is also its own queue entry: `status`, `claimed_by` and `claimed_at`
-//! are what the scheduler's claim loop reads and writes. Keeping the queue in
-//! the same row as the record means a run cannot be queued twice, and a
-//! restart loses nothing.
+//! One execution of one repository's pipeline. Also its own queue entry (`status`/`claimed_by`/
+//! `claimed_at`), so a run can't be queued twice and a restart loses nothing.
 
 use crate::domain::Status;
 use chrono::{DateTime, Utc};
@@ -52,13 +48,11 @@ pub struct Run {
     pub trigger: Trigger,
     /// Branch or tag ref that triggered this, in full form (`refs/heads/master`).
     pub git_ref: String,
-    /// The commit actually built. Every later decision reads this, not the ref:
-    /// the ref can move while the run is queued.
+    /// The commit actually built - every later decision reads this, not the ref, which can move while queued.
     pub sha: String,
-    /// Head commit message, kept for the UI so listing runs needs no checkout.
+    /// Head commit message, kept so listing runs needs no checkout.
     pub message: Option<String>,
-    /// Provider delivery id, when a webhook started this. Unique, which is what
-    /// makes a redelivered webhook a no-op rather than a second run.
+    /// Provider delivery id; unique, so a redelivered webhook is a no-op rather than a second run.
     pub delivery_id: Option<String>,
     pub status: Status,
 
@@ -66,18 +60,15 @@ pub struct Run {
     pub started_at: Option<DateTime<Utc>>,
     pub finished_at: Option<DateTime<Utc>>,
 
-    /// Worker that holds this run, and when it last said so. A claim that stops
-    /// being refreshed is how a worker that died is detected.
+    /// Worker holding this run, and when it last said so - a stale claim means a dead worker.
     pub claimed_by: Option<String>,
     pub claimed_at: Option<DateTime<Utc>>,
     pub attempt: i32,
 
-    /// Why the run ended the way it did, when that is not obvious from the jobs
-    /// - a missing `.conveyor.toml`, a checkout that failed, a cycle in `needs`.
+    /// Why the run ended, when not obvious from the jobs (missing `.conveyor.toml`, failed checkout, `needs` cycle).
     pub error: Option<String>,
 
-    /// The run this one restarted, if it did. Stages that passed there are
-    /// carried over rather than rebuilt - see `worker::execute_jobs`.
+    /// The run this one restarted; its passed stages are carried over - see `worker::execute_jobs`.
     pub resumed_from: Option<String>,
 }
 

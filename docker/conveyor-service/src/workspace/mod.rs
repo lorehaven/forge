@@ -6,11 +6,8 @@ pub use checkout::{CheckoutError, CheckoutRequest, HttpCredential, checkout};
 
 use std::path::{Path, PathBuf};
 
-/// A checkout on local disk, owned by one run.
-///
-/// Cleanup is [`Workspace::remove`] rather than `Drop`: removing a directory
-/// tree can fail and takes long enough to be worth awaiting, and a `Drop` that
-/// can do neither would swallow both.
+/// A checkout on local disk, owned by one run. Cleanup is [`Workspace::remove`],
+/// not `Drop` - removal can fail and is worth awaiting.
 #[derive(Debug)]
 pub struct Workspace {
     root: PathBuf,
@@ -29,26 +26,18 @@ impl Workspace {
         &self.root
     }
 
-    /// Resolves a path the pipeline named, refusing anything outside the
-    /// checkout.
-    ///
-    /// A pipeline can say `artifacts = ["../../etc/passwd"]`, and collecting it
-    /// would hand a repository author whatever the service account can read.
-    /// Symlinks are followed before the check, so a link planted in the
-    /// repository does not get around it.
+    /// Resolves a pipeline-named path, refusing anything outside the checkout
+    /// (symlinks followed first, so a planted link can't escape it).
     pub fn resolve(&self, relative: &str) -> Option<PathBuf> {
         let candidate = self.root.join(relative);
 
-        // The path may not exist yet, so canonicalize what does exist and keep
-        // the rest: `canonicalize` on a missing file is an error, not a verdict.
+        // Canonicalize only the part that exists - `canonicalize` on a missing file errors.
         let (existing, remainder) = split_at_existing(&candidate);
         let base = existing.canonicalize().ok()?;
         let root = self.root.canonicalize().ok()?;
 
-        // `join` on an empty remainder appends a trailing separator, and
-        // `stat("/a/file/")` is ENOTDIR - so a path that fully exists would
-        // come back looking like it did not. Only join when there is something
-        // left to join.
+        // Only join when non-empty - joining an empty remainder adds a trailing
+        // separator, making an existing file look missing (ENOTDIR).
         let resolved = if remainder.as_os_str().is_empty() {
             base
         } else {

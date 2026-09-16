@@ -1,11 +1,5 @@
-//! OAuth clients: the relying parties (browser authorization-code + PKCE
-//! flow) and machine identities (`client_credentials`) gatehouse issues
-//! tokens to. Seeded from `config/clients.toml` at every boot - a fixed,
-//! small set of clients the estate already knows about, not something worth
-//! a management UI for. Unlike a user's password, the config file stays the
-//! source of truth, so a changed secret or redirect URI takes effect on the
-//! next restart rather than being ignored the way `bootstrap::seed_users`
-//! ignores a changed `SERVICE_PASSWORD`.
+//! OAuth clients (relying parties + machine identities) gatehouse issues
+//! tokens to, seeded from `config/clients.toml` on every boot.
 
 use chrono::{DateTime, Utc};
 use quench_db::prelude::{Crud, Db, Model, Repository};
@@ -58,17 +52,12 @@ pub fn hash_secret(secret: &str) -> String {
 #[derive(Debug, Clone, Deserialize)]
 struct ClientEntry {
     client_id: String,
-    /// Appended to the client's own `<PREFIX>_UI_URL`/`<PREFIX>_URL` (the same
-    /// env vars `services.rs` reads for the home page). Absent for a
-    /// `client_credentials`-only client, which never redirects a browser.
+    /// Appended to `<PREFIX>_UI_URL`/`<PREFIX>_URL`. Absent for `client_credentials`-only.
     #[serde(default)]
     redirect_path: Option<String>,
     #[serde(default)]
     allowed_scopes: Vec<String>,
-    /// The env var gatehouse itself reads to get this client's secret - the
-    /// value lives once in gatehouse's own env and is mirrored into the
-    /// owning service's, the same "one value, two places" pattern
-    /// `JWT_SECRET` used before, now scoped per client.
+    /// Env var gatehouse reads for this client's secret.
     secret_env: String,
 }
 
@@ -78,10 +67,8 @@ struct ClientsFile {
     client: Vec<ClientEntry>,
 }
 
-/// Reads `CLIENTS_CONFIG` (default `config/clients.toml`) and upserts every
-/// entry whose secret is actually configured. A client with no secret set
-/// (e.g. a deployment that never enabled conveyor) is skipped with a warning
-/// rather than seeded with an empty, guessable one.
+/// Reads `CLIENTS_CONFIG` and upserts every entry with a configured secret;
+/// an unconfigured one is skipped with a warning, not seeded with a guessable one.
 pub async fn seed_clients(db: &Db) -> anyhow::Result<()> {
     let path = envmnt::get_or("CLIENTS_CONFIG", "config/clients.toml");
     let file: ClientsFile = quench_config::ConfigLoader::from_toml_file(&path)
@@ -138,9 +125,7 @@ pub async fn upsert(repo: &Repository<ClientRow>, row: ClientRow) -> anyhow::Res
     Ok(())
 }
 
-/// `<PREFIX>_UI_URL`/`<PREFIX>_URL`, uppercased from the client id, with any
-/// trailing `/ui/home` (what those vars point at today, for the home-page
-/// cards) trimmed back to the service's own base.
+/// `<PREFIX>_UI_URL`/`<PREFIX>_URL`, with any trailing `/ui/home` trimmed.
 pub fn redirect_base_url(client_id: &str) -> Option<String> {
     let prefix = client_id.to_uppercase().replace('-', "_");
     for key in [format!("{prefix}_UI_URL"), format!("{prefix}_URL")] {

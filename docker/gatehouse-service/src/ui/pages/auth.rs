@@ -1,37 +1,37 @@
-//! The one login form in the estate.
-//!
-//! The form, the credential check and the cookies live here rather than in
-//! `quench-auth`: relying parties only ever redirect a browser to this page.
+//! The one login form in the estate - form, credential check, and cookies
+//! all live here; relying parties only ever redirect a browser to this page.
 
 use crate::api::auth::issue_token_pair;
 use crate::realm::{self as gh_realm, AuthOutcome};
 use crate::ui::common::{UiPageKind, render_page, supported_locales, ui_path};
-use actix_web::{HttpRequest, HttpResponse, Responder, get, post, web};
-use quench_auth::actix::routers::ui::pages::auth::{
-    LoginQuery, redirect_target, refresh_delegation, validated_redirect,
+use async_trait::async_trait;
+use http::StatusCode;
+use quench_auth::domain::jwt::JwtConfig;
+use quench_auth::domain::realm;
+use quench_auth::domain::session::SessionDb;
+use quench_auth::domain::sso_client;
+use quench_auth::http::domain::cookies::cookie_value;
+use quench_auth::http::routers::ui::pages::auth::{
+    LoginQuery, auth_status, redirect_target, refresh_delegation, validated_redirect,
 };
-use quench_auth::prelude::realm;
-use quench_auth::prelude::{JwtConfig, SessionDb};
 use quench_db::prelude::Db;
+use quench_http::prelude::{
+    Form, FromRequest, HttpError, Inject, Query, Request, Response, get, post,
+};
 use quench_web::prelude::*;
 use serde::Deserialize;
-use std::sync::Arc;
 
 #[derive(Deserialize)]
 pub struct LoginForm {
     pub username: String,
     pub password: String,
-    /// Where to send the browser afterwards. Carried through the form so it
-    /// survives the POST; validated before use.
+    /// Where to send the browser afterwards; validated before use.
     #[serde(default)]
     pub redirect: Option<String>,
 }
 
-/// Notices this page can show beyond "wrong credentials" - one per thing that
-/// can redirect here from registration or password reset. A second, separate
-/// `web::Query` extractor rather than folding these into `LoginQuery`: that
-/// type is shared with every other service's login redirect and has no
-/// business knowing gatehouse grew a registration flow.
+/// Notices beyond "wrong credentials" - separate from `LoginQuery`, which is
+/// shared with every service's login redirect.
 #[derive(Deserialize, Default)]
 pub struct LoginNotices {
     #[serde(default)]
@@ -46,101 +46,112 @@ pub struct LoginNotices {
     pub err: Option<String>,
 }
 
-#[get("/login")]
+/// Skips the credential form if a refresh cookie is still good enough to renew.
+pub struct LoginContext {
+    silent_refresh: Option<Response>,
+    redirect: Option<String>,
+}
+
+#[async_trait]
+impl FromRequest for LoginContext {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        let redirect = redirect_target(req);
+        let silent_refresh = match cookie_value(req, &realm::refresh_cookie_name()) {
+            Some(refresh_token) => match sso_client::refresh(&refresh_token).await {
+                Some(tokens) => {
+                    let target = redirect.clone().unwrap_or_else(|| ui_path("/home"));
+                    Some(
+                        Response::new(StatusCode::FOUND)
+                            .header("Location", target)
+                            .append_header(
+                                "set-cookie",
+                                realm::session_cookie(tokens.access_token).to_string(),
+                            )
+                            .append_header(
+                                "set-cookie",
+                                realm::refresh_cookie(tokens.refresh_token).to_string(),
+                            ),
+                    )
+                }
+                None => None,
+            },
+            None => None,
+        };
+        Ok(Self {
+            silent_refresh,
+            redirect,
+        })
+    }
+}
+
+#[get("/ui/login")]
 pub async fn login(
-    request: HttpRequest,
-    query: web::Query<LoginQuery>,
-    notices: web::Query<LoginNotices>,
-) -> impl Responder {
-    match try_silent_refresh(&request).await {
+    ctx: LoginContext,
+    Query(query): Query<LoginQuery>,
+    Query(notices): Query<LoginNotices>,
+) -> Response {
+    match ctx.silent_refresh {
         Some(refreshed) => refreshed,
-        None => render_login_page(&request, query.err.as_deref() == Some("1"), &notices),
+        None => render_login_page(ctx.redirect, query.err.as_deref() == Some("1"), &notices),
     }
 }
 
-#[get("/login/")]
+#[get("/ui/login/")]
 pub async fn login_slash(
-    request: HttpRequest,
-    query: web::Query<LoginQuery>,
-    notices: web::Query<LoginNotices>,
-) -> impl Responder {
-    match try_silent_refresh(&request).await {
+    ctx: LoginContext,
+    Query(query): Query<LoginQuery>,
+    Query(notices): Query<LoginNotices>,
+) -> Response {
+    match ctx.silent_refresh {
         Some(refreshed) => refreshed,
-        None => render_login_page(&request, query.err.as_deref() == Some("1"), &notices),
+        None => render_login_page(ctx.redirect, query.err.as_deref() == Some("1"), &notices),
     }
 }
 
-/// Mirrors `quench_auth`'s `login_delegation`: skip the credential form if a
-/// `forge_refresh` cookie is still good enough to renew.
-async fn try_silent_refresh(request: &HttpRequest) -> Option<HttpResponse> {
-    let refresh_token = request
-        .cookie(&realm::refresh_cookie_name())
-        .map(|cookie| cookie.value().to_string())?;
-    let tokens = quench_auth::actix::domain::sso_client::refresh(&refresh_token).await?;
-    let target = redirect_target(request).unwrap_or_else(|| ui_path("/home"));
-    Some(
-        HttpResponse::Found()
-            .cookie(realm::session_cookie(tokens.access_token))
-            .cookie(realm::refresh_cookie(tokens.refresh_token))
-            .append_header(("Location", target))
-            .finish(),
-    )
-}
-
-#[post("/login")]
+#[post("/ui/login")]
 pub async fn login_submit(
-    form: web::Form<LoginForm>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    session_db: web::Data<Arc<SessionDb>>,
-) -> impl Responder {
+    Form(form): Form<LoginForm>,
+    Inject(config): Inject<JwtConfig>,
+    Inject(db): Inject<Db>,
+    Inject(session_db): Inject<SessionDb>,
+) -> Response {
     tracing::info!("login attempt for {}", form.username);
 
     let outcome = match gh_realm::authenticate(&db, &form.username, &form.password).await {
         Ok(outcome) => outcome,
         Err(err) => {
             tracing::error!("failed to authenticate {}: {:?}", form.username, err);
-            return HttpResponse::Found()
-                .append_header(("Location", ui_path("/login?err=1")))
-                .finish();
+            return Response::new(StatusCode::FOUND).header("Location", ui_path("/login?err=1"));
         }
     };
 
     let user = match outcome {
         AuthOutcome::Success(user) => user,
         AuthOutcome::MfaRequired { pending } => {
-            return HttpResponse::Found()
-                .append_header((
-                    "Location",
-                    mfa_challenge_url(&pending, form.redirect.as_deref(), false),
-                ))
-                .finish();
+            return Response::new(StatusCode::FOUND).header(
+                "Location",
+                mfa_challenge_url(&pending, form.redirect.as_deref(), false),
+            );
         }
         AuthOutcome::Disabled => {
             tracing::warn!("login attempt for disabled account {}", form.username);
-            return HttpResponse::Found()
-                .append_header(("Location", ui_path("/login?err=ui_login_account_disabled")))
-                .finish();
+            return Response::new(StatusCode::FOUND)
+                .header("Location", ui_path("/login?err=ui_login_account_disabled"));
         }
         AuthOutcome::Locked => {
             tracing::warn!("login attempt for locked account {}", form.username);
-            return HttpResponse::Found()
-                .append_header(("Location", ui_path("/login?err=ui_login_account_locked")))
-                .finish();
+            return Response::new(StatusCode::FOUND)
+                .header("Location", ui_path("/login?err=ui_login_account_locked"));
         }
         AuthOutcome::NotFound | AuthOutcome::WrongPassword => {
             tracing::warn!("invalid credentials for {}", form.username);
-            return HttpResponse::Found()
-                .append_header(("Location", ui_path("/login?err=1")))
-                .finish();
+            return Response::new(StatusCode::FOUND).header("Location", ui_path("/login?err=1"));
         }
     };
 
     let Ok(tokens) = issue_token_pair(&config, &session_db, &user).await else {
         tracing::error!("failed to issue tokens for {}", user.username);
-        return HttpResponse::Found()
-            .append_header(("Location", ui_path("/login?err=1")))
-            .finish();
+        return Response::new(StatusCode::FOUND).header("Location", ui_path("/login?err=1"));
     };
 
     let target = form
@@ -149,11 +160,16 @@ pub async fn login_submit(
         .and_then(validated_redirect)
         .unwrap_or_else(|| ui_path("/home"));
 
-    HttpResponse::Found()
-        .cookie(realm::session_cookie(tokens.access_token))
-        .cookie(realm::refresh_cookie(tokens.refresh_token))
-        .append_header(("Location", target))
-        .finish()
+    Response::new(StatusCode::FOUND)
+        .header("Location", target)
+        .append_header(
+            "set-cookie",
+            realm::session_cookie(tokens.access_token).to_string(),
+        )
+        .append_header(
+            "set-cookie",
+            realm::refresh_cookie(tokens.refresh_token).to_string(),
+        )
 }
 
 #[derive(Deserialize)]
@@ -165,8 +181,8 @@ pub struct MfaQuery {
     pub err: Option<String>,
 }
 
-#[get("/login/mfa")]
-pub async fn login_mfa(query: web::Query<MfaQuery>) -> impl Responder {
+#[get("/ui/login/mfa")]
+pub async fn login_mfa(Query(query): Query<MfaQuery>) -> Response {
     render_mfa_page(
         &query.pending,
         query.redirect.as_deref(),
@@ -182,57 +198,45 @@ pub struct MfaForm {
     pub redirect: Option<String>,
 }
 
-/// The code-entry step of a login that `login_submit` found to require MFA.
-/// `pending` proves the password step already happened - see
-/// [`crate::realm::authenticate_mfa`].
-#[post("/login/mfa")]
+/// Code-entry step after `login_submit` found MFA required; `pending` proves
+/// the password step already happened.
+#[post("/ui/login/mfa")]
 pub async fn login_mfa_submit(
-    form: web::Form<MfaForm>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    session_db: web::Data<Arc<SessionDb>>,
-) -> impl Responder {
+    Form(form): Form<MfaForm>,
+    Inject(config): Inject<JwtConfig>,
+    Inject(db): Inject<Db>,
+    Inject(session_db): Inject<SessionDb>,
+) -> Response {
     let outcome = match gh_realm::authenticate_mfa(&db, &form.pending, &form.code).await {
         Ok(outcome) => outcome,
         Err(err) => {
             tracing::error!("failed to verify an MFA code: {:?}", err);
-            return HttpResponse::Found()
-                .append_header(("Location", ui_path("/login?err=1")))
-                .finish();
+            return Response::new(StatusCode::FOUND).header("Location", ui_path("/login?err=1"));
         }
     };
 
     let user = match outcome {
         AuthOutcome::Success(user) => user,
         AuthOutcome::Disabled => {
-            return HttpResponse::Found()
-                .append_header(("Location", ui_path("/login?err=ui_login_account_disabled")))
-                .finish();
+            return Response::new(StatusCode::FOUND)
+                .header("Location", ui_path("/login?err=ui_login_account_disabled"));
         }
         AuthOutcome::Locked => {
-            return HttpResponse::Found()
-                .append_header(("Location", ui_path("/login?err=ui_login_account_locked")))
-                .finish();
+            return Response::new(StatusCode::FOUND)
+                .header("Location", ui_path("/login?err=ui_login_account_locked"));
         }
-        // `authenticate_mfa` never returns `MfaRequired` itself - it is the
-        // second step - and reports a stale/tampered pending token or a
-        // since-vanished account the same way as a wrong code, so an
-        // attacker cannot tell them apart.
+        // Stale token and wrong code look identical - an attacker can't tell them apart.
         AuthOutcome::MfaRequired { .. } | AuthOutcome::NotFound | AuthOutcome::WrongPassword => {
-            return HttpResponse::Found()
-                .append_header((
-                    "Location",
-                    mfa_challenge_url(&form.pending, form.redirect.as_deref(), true),
-                ))
-                .finish();
+            return Response::new(StatusCode::FOUND).header(
+                "Location",
+                mfa_challenge_url(&form.pending, form.redirect.as_deref(), true),
+            );
         }
     };
 
     let Ok(tokens) = issue_token_pair(&config, &session_db, &user).await else {
         tracing::error!("failed to issue tokens for {}", user.username);
-        return HttpResponse::Found()
-            .append_header(("Location", ui_path("/login?err=1")))
-            .finish();
+        return Response::new(StatusCode::FOUND).header("Location", ui_path("/login?err=1"));
     };
 
     let target = form
@@ -241,11 +245,16 @@ pub async fn login_mfa_submit(
         .and_then(validated_redirect)
         .unwrap_or_else(|| ui_path("/home"));
 
-    HttpResponse::Found()
-        .cookie(realm::session_cookie(tokens.access_token))
-        .cookie(realm::refresh_cookie(tokens.refresh_token))
-        .append_header(("Location", target))
-        .finish()
+    Response::new(StatusCode::FOUND)
+        .header("Location", target)
+        .append_header(
+            "set-cookie",
+            realm::session_cookie(tokens.access_token).to_string(),
+        )
+        .append_header(
+            "set-cookie",
+            realm::refresh_cookie(tokens.refresh_token).to_string(),
+        )
 }
 
 pub fn mfa_challenge_url(pending: &str, redirect: Option<&str>, err: bool) -> String {
@@ -263,48 +272,76 @@ pub fn mfa_challenge_url(pending: &str, redirect: Option<&str>, err: bool) -> St
     url
 }
 
-/// What the page shell's session watcher polls.
-///
-/// Gatehouse needs this as much as a relying party does: `/ui/home` is the
-/// estate's launcher, which is exactly the kind of page somebody leaves open.
-/// The watcher does not turn the login page into a redirect loop, because it
-/// refuses to redirect from a `/login` path in the first place.
-#[get("/status")]
-pub async fn status(request: HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
-    quench_auth::actix::routers::ui::pages::auth::auth_status(&request, &config).await
+pub struct AuthStatusResponse(Response);
+
+#[async_trait]
+impl FromRequest for AuthStatusResponse {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        let config = req
+            .container()
+            .get::<JwtConfig>()
+            .map_err(|e| HttpError::status(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        Ok(Self(auth_status(req, &config).await))
+    }
 }
 
-#[post("/refresh")]
-pub async fn refresh(request: HttpRequest) -> impl Responder {
-    refresh_delegation(&request).await
+/// What the page shell's session watcher polls - never redirects from `/login`.
+#[get("/ui/status")]
+pub async fn status(AuthStatusResponse(resp): AuthStatusResponse) -> Response {
+    resp
 }
 
-/// Realm-wide logout: revokes the session and clears the shared cookie, so
-/// every service sees the user as signed out.
-#[get("/logout")]
-pub async fn logout(request: HttpRequest, session_db: web::Data<Arc<SessionDb>>) -> impl Responder {
-    if let Some(cookie) = request.cookie(&realm::refresh_cookie_name()) {
-        let revoked = session_db.revoke_by_refresh_token(cookie.value()).await;
+pub struct RefreshResponse(Response);
+
+#[async_trait]
+impl FromRequest for RefreshResponse {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        Ok(Self(refresh_delegation(req).await))
+    }
+}
+
+#[post("/ui/refresh")]
+pub async fn refresh(RefreshResponse(resp): RefreshResponse) -> Response {
+    resp
+}
+
+pub struct LogoutContext {
+    refresh_cookie: Option<String>,
+    redirect: Option<String>,
+}
+
+#[async_trait]
+impl FromRequest for LogoutContext {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        Ok(Self {
+            refresh_cookie: cookie_value(req, &realm::refresh_cookie_name()),
+            redirect: redirect_target(req),
+        })
+    }
+}
+
+/// Realm-wide logout: revokes the session, clears the shared cookie.
+#[get("/ui/logout")]
+pub async fn logout(ctx: LogoutContext, Inject(session_db): Inject<SessionDb>) -> Response {
+    if let Some(refresh_token) = ctx.refresh_cookie {
+        let revoked = session_db.revoke_by_refresh_token(&refresh_token).await;
         tracing::debug!("logout revoke result: {revoked:?}");
     }
 
-    let target = redirect_target(&request).unwrap_or_else(|| ui_path("/login"));
+    let target = ctx.redirect.unwrap_or_else(|| ui_path("/login"));
 
-    HttpResponse::Found()
-        .cookie(realm::cleared_session_cookie())
-        .cookie(realm::cleared_refresh_cookie())
-        .append_header(("Location", target))
-        .finish()
+    Response::new(StatusCode::FOUND)
+        .header("Location", target)
+        .append_header("set-cookie", realm::cleared_session_cookie().to_string())
+        .append_header("set-cookie", realm::cleared_refresh_cookie().to_string())
 }
 
 pub fn render_login_page(
-    request: &HttpRequest,
+    redirect: Option<String>,
     error: bool,
     notices: &LoginNotices,
-) -> HttpResponse {
-    // Carried through the form so a login that started at sage returns to sage.
-    let redirect = redirect_target(request);
-
+) -> Response {
+    // Carried through so a login that started at sage returns to sage.
     let mut login_form = form()
         .attr("method", "post")
         .attr("action", ui_path("/login"))
@@ -373,8 +410,7 @@ pub fn render_login_page(
                 .attr("data-i18n", "ui_login_register"),
         );
 
-    // The page shell has no top panel here, so the card carries the estate
-    // label and the language switch itself, in a bar above the credentials.
+    // No page shell top panel here, so the card carries brand + language switch.
     let login_bar = div()
         .class("login-bar")
         .child(
@@ -394,7 +430,7 @@ pub fn render_login_page(
         .child(div().class("meta-list").child(login_form));
 
     render_page(
-        HttpResponse::Ok(),
+        StatusCode::OK,
         content().class("container-fluid login-layout").child(
             div()
                 .class("panel login-panel")
@@ -405,10 +441,7 @@ pub fn render_login_page(
     )
 }
 
-/// Only these two literal error keys are ever produced by the redirects that
-/// land here (`register.rs`'s `verify`, `reset.rs`'s reset submit) - checked
-/// against a fixed list rather than trusted from the query string, so a
-/// hand-crafted link cannot put arbitrary text on the page.
+/// Checked against a fixed list, not trusted from the query string.
 pub fn login_error_key(notices: &LoginNotices) -> Option<&'static str> {
     match notices.err.as_deref() {
         Some("ui_login_verify_invalid") => Some("ui_login_verify_invalid"),
@@ -419,9 +452,7 @@ pub fn login_error_key(notices: &LoginNotices) -> Option<&'static str> {
     }
 }
 
-/// Which "ok" banner to show, checked in an order that matters: a successful
-/// reset is more specific news than "we sent a link" would be if somehow both
-/// were set.
+/// Order matters: a successful reset is more specific than "link sent".
 pub fn login_ok_key(notices: &LoginNotices) -> Option<&'static str> {
     if notices.reset.is_some() {
         Some("ui_login_reset_ok")
@@ -436,7 +467,7 @@ pub fn login_ok_key(notices: &LoginNotices) -> Option<&'static str> {
     }
 }
 
-pub fn render_mfa_page(pending: &str, redirect: Option<&str>, error: bool) -> HttpResponse {
+pub fn render_mfa_page(pending: &str, redirect: Option<&str>, error: bool) -> Response {
     let mut mfa_form = form()
         .attr("method", "post")
         .attr("action", ui_path("/login/mfa"))
@@ -487,7 +518,7 @@ pub fn render_mfa_page(pending: &str, redirect: Option<&str>, error: bool) -> Ht
     render_auth_page("ui_login_mfa_title", mfa_form)
 }
 
-fn render_auth_page(title_key: &'static str, inner_form: Element) -> HttpResponse {
+fn render_auth_page(title_key: &'static str, inner_form: Element) -> Response {
     let bar = div()
         .class("login-bar")
         .child(
@@ -503,7 +534,7 @@ fn render_auth_page(title_key: &'static str, inner_form: Element) -> HttpRespons
         .child(div().class("meta-list").child(inner_form));
 
     render_page(
-        HttpResponse::Ok(),
+        StatusCode::OK,
         content().class("container-fluid login-layout").child(
             div()
                 .class("panel login-panel")
@@ -515,8 +546,17 @@ fn render_auth_page(title_key: &'static str, inner_form: Element) -> HttpRespons
 }
 
 /// Anything under `/ui` that is not a page sends you to the login form.
-pub fn login_redirect() -> HttpResponse {
-    HttpResponse::Found()
-        .append_header(("Location", ui_path("/login")))
-        .finish()
+pub fn login_redirect() -> Response {
+    Response::new(StatusCode::FOUND).header("Location", ui_path("/login"))
+}
+
+pub fn register_routes() {
+    let _ = login as fn(_, _, _) -> _;
+    let _ = login_slash as fn(_, _, _) -> _;
+    let _ = login_submit as fn(_, _, _, _) -> _;
+    let _ = login_mfa as fn(_) -> _;
+    let _ = login_mfa_submit as fn(_, _, _, _) -> _;
+    let _ = status as fn(_) -> _;
+    let _ = refresh as fn(_) -> _;
+    let _ = logout as fn(_, _) -> _;
 }

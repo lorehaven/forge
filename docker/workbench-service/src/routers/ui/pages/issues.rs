@@ -6,40 +6,31 @@ use crate::domain::issue_link::{self, NewIssueLink};
 use crate::domain::{project, realm_users};
 use crate::routers::api::authz::can_on_project_claims;
 use crate::routers::ui::common::{
-    Notice, actor, assignee_field, is_ui_authenticated, notice_banner, render_page,
-    ui_login_redirect, ui_login_redirect_for, ui_path,
+    ActorOrRedirect, Notice, assignee_field, notice_banner, render_page, ui_path,
 };
-use actix_web::{HttpRequest, HttpResponse, Responder, get, post, web};
-use quench_auth::prelude::JwtConfig;
 use quench_db::prelude::Db;
+use quench_http::prelude::{Form, Inject, Path, Query, Response, get, http::StatusCode, post};
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 use serde::Deserialize;
 
-#[get("/issues/{id}")]
+#[get("/ui/issues/{id}")]
 pub(super) async fn detail(
-    req: HttpRequest,
-    issue_id: web::Path<String>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    notice: web::Query<Notice>,
-) -> impl Responder {
-    if !is_ui_authenticated(&req, &config).await {
-        return ui_login_redirect();
-    }
-    let Some(claims) = actor(&req, &config).await else {
-        return ui_login_redirect();
+    actor: ActorOrRedirect,
+    Path(issue_id): Path<String>,
+    Inject(db): Inject<Db>,
+    Query(notice): Query<Notice>,
+) -> Response {
+    let claims = match actor.or_redirect() {
+        Ok(claims) => claims,
+        Err(response) => return response,
     };
 
     let Some(issue) = issue::read(&db, &issue_id).await.ok().flatten() else {
-        return HttpResponse::Found()
-            .append_header(("Location", ui_path("/home")))
-            .finish();
+        return Response::new(StatusCode::FOUND).header("Location", ui_path("/home"));
     };
     let Some(project) = project::read(&db, &issue.project_id).await.ok().flatten() else {
-        return HttpResponse::Found()
-            .append_header(("Location", ui_path("/home")))
-            .finish();
+        return Response::new(StatusCode::FOUND).header("Location", ui_path("/home"));
     };
     let comments = comment::list_by_issue(&db, &issue.id)
         .await
@@ -50,7 +41,7 @@ pub(super) async fn detail(
         .unwrap_or_default();
 
     render_page(
-        HttpResponse::Ok(),
+        StatusCode::OK,
         content().class("home-content").child(
             div()
                 .class("home-container")
@@ -216,10 +207,7 @@ fn priority_select(current: &str) -> Element {
     el
 }
 
-/// The three typed-link lists (`blocks`/`blocked_by`/`relates_to`) plus the
-/// form that creates a new one, keyed by an issue's displayed `{key}-{seq}`
-/// rather than its id - the only identifier a user typing into the field
-/// actually knows.
+/// The three typed-link lists plus the add-link form.
 fn dependencies_panel(issue_id: &str, related: &issue_link::RelatedIssues) -> Element {
     div()
         .class("panel wb-form-panel")
@@ -267,11 +255,7 @@ fn link_section(issue_id: &str, title_key: &str, links: &[issue_link::LinkedIssu
                             "action",
                             ui_path(&format!("/issues/{issue_id}/links/{}/delete", link.link_id)),
                         )
-                        // `display: contents` (see `link_rules` in `common/css.rs`) -
-                        // otherwise the form's own block box, not the button
-                        // inside it, is what `.wb-link-row`'s flex layout sizes,
-                        // and the button falls back to the shared `button`
-                        // rule's block-level `display: flex` filling it.
+                        // `display: contents` - see `link_rules` in `common/css.rs`.
                         .class("wb-link-remove-form")
                         .child(
                             button()
@@ -410,16 +394,16 @@ pub(super) struct UpdateIssueForm {
     pub estimate: String,
 }
 
-#[post("/issues/{id}")]
+#[post("/ui/issues/{id}")]
 pub(super) async fn update(
-    request: HttpRequest,
-    issue_id: web::Path<String>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    form: web::Form<UpdateIssueForm>,
-) -> impl Responder {
-    let Some(claims) = actor(&request, &config).await else {
-        return ui_login_redirect_for(&request);
+    actor: ActorOrRedirect,
+    Path(issue_id): Path<String>,
+    Inject(db): Inject<Db>,
+    Form(form): Form<UpdateIssueForm>,
+) -> Response {
+    let claims = match actor.or_redirect() {
+        Ok(claims) => claims,
+        Err(response) => return response,
     };
 
     let Some(issue) = issue::read(&db, &issue_id).await.ok().flatten() else {
@@ -473,16 +457,16 @@ pub(super) struct CreateCommentForm {
     pub body: String,
 }
 
-#[post("/issues/{id}/comments")]
+#[post("/ui/issues/{id}/comments")]
 pub(super) async fn create_comment(
-    request: HttpRequest,
-    issue_id: web::Path<String>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    form: web::Form<CreateCommentForm>,
-) -> impl Responder {
-    let Some(claims) = actor(&request, &config).await else {
-        return ui_login_redirect_for(&request);
+    actor: ActorOrRedirect,
+    Path(issue_id): Path<String>,
+    Inject(db): Inject<Db>,
+    Form(form): Form<CreateCommentForm>,
+) -> Response {
+    let claims = match actor.or_redirect() {
+        Ok(claims) => claims,
+        Err(response) => return response,
     };
 
     let Some(issue) = issue::read(&db, &issue_id).await.ok().flatten() else {
@@ -511,22 +495,21 @@ pub(super) async fn create_comment(
 
 #[derive(Deserialize)]
 pub(super) struct AddLinkForm {
-    /// The issue's displayed key (`WB-4`), not its id - the form typing this
-    /// in has no reason to know the id.
+    /// The issue's displayed key (`WB-4`), not its id.
     pub target_key: String,
     pub kind: String,
 }
 
-#[post("/issues/{id}/links")]
+#[post("/ui/issues/{id}/links")]
 pub(super) async fn add_link(
-    request: HttpRequest,
-    issue_id: web::Path<String>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    form: web::Form<AddLinkForm>,
-) -> impl Responder {
-    let Some(claims) = actor(&request, &config).await else {
-        return ui_login_redirect_for(&request);
+    actor: ActorOrRedirect,
+    Path(issue_id): Path<String>,
+    Inject(db): Inject<Db>,
+    Form(form): Form<AddLinkForm>,
+) -> Response {
+    let claims = match actor.or_redirect() {
+        Ok(claims) => claims,
+        Err(response) => return response,
     };
 
     let Some(issue) = issue::read(&db, &issue_id).await.ok().flatten() else {
@@ -572,27 +555,22 @@ pub(super) async fn add_link(
     }
 }
 
-/// `"WB-4"` -> `("WB", 4)`. `rsplit_once` rather than `split_once` because a
-/// project key itself may not contain `-`, but nothing enforces that except
-/// convention - splitting from the right is the one choice that still works
-/// if it ever does.
+/// `"WB-4"` -> `("WB", 4)`; splits from the right in case a key contains `-`.
 fn split_issue_key(key: &str) -> Option<(String, i32)> {
     let (project_key, seq) = key.trim().rsplit_once('-')?;
     let seq: i32 = seq.trim().parse().ok()?;
     Some((project_key.trim().to_string(), seq))
 }
 
-#[post("/issues/{id}/links/{link_id}/delete")]
+#[post("/ui/issues/{id}/links/{link_id}/delete")]
 pub(super) async fn remove_link(
-    request: HttpRequest,
-    path: web::Path<(String, String)>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    let (issue_id, link_id) = path.into_inner();
-
-    let Some(claims) = actor(&request, &config).await else {
-        return ui_login_redirect_for(&request);
+    actor: ActorOrRedirect,
+    Path((issue_id, link_id)): Path<(String, String)>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    let claims = match actor.or_redirect() {
+        Ok(claims) => claims,
+        Err(response) => return response,
     };
 
     let Some(issue) = issue::read(&db, &issue_id).await.ok().flatten() else {
@@ -607,23 +585,27 @@ pub(super) async fn remove_link(
     redirect_issue(&issue.id, None)
 }
 
-fn redirect_issue(issue_id: &str, error: Option<&str>) -> HttpResponse {
+fn redirect_issue(issue_id: &str, error: Option<&str>) -> Response {
     let base = ui_path(&format!("/issues/{issue_id}"));
     let location = match error {
         Some(code) => format!("{base}?error={code}"),
         None => base,
     };
-    HttpResponse::Found()
-        .append_header(("Location", location))
-        .finish()
+    Response::new(StatusCode::FOUND).header("Location", location)
 }
 
-fn redirect_home(error: Option<&str>) -> HttpResponse {
+fn redirect_home(error: Option<&str>) -> Response {
     let location = match error {
         Some(code) => format!("{}?error={code}", ui_path("/home")),
         None => ui_path("/home"),
     };
-    HttpResponse::Found()
-        .append_header(("Location", location))
-        .finish()
+    Response::new(StatusCode::FOUND).header("Location", location)
+}
+
+pub(super) fn register_routes() {
+    let _ = detail as fn(_, _, _, _) -> _;
+    let _ = update as fn(_, _, _, _) -> _;
+    let _ = create_comment as fn(_, _, _, _) -> _;
+    let _ = add_link as fn(_, _, _, _) -> _;
+    let _ = remove_link as fn(_, _, _) -> _;
 }

@@ -44,8 +44,7 @@ pub async fn create(db: &Db, new: &NewLabel) -> Result<Label, WorkbenchError> {
     from_row(&row)
 }
 
-/// Looked up before a delete or an attach/detach, to resolve back to the
-/// project an authorization check needs.
+/// Used before delete/attach/detach to resolve the project id for auth.
 pub async fn read(db: &Db, id: &str) -> Result<Option<Label>, WorkbenchError> {
     let pool = pool(db)?;
     let schema = schema();
@@ -85,8 +84,7 @@ pub async fn delete(db: &Db, id: &str) -> Result<bool, WorkbenchError> {
     Ok(result.rows_affected() > 0)
 }
 
-/// Attaches `label_id` to `issue_id`. Idempotent - applying a label a second
-/// time is a no-op, not a duplicate-key error a caller has to catch.
+/// Attaches `label_id` to `issue_id`; idempotent, not a duplicate-key error.
 pub async fn attach(db: &Db, issue_id: &str, label_id: &str) -> Result<(), WorkbenchError> {
     let pool = pool(db)?;
     let schema = schema();

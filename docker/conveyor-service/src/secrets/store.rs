@@ -1,8 +1,5 @@
-//! Reading and writing sealed values.
-//!
-//! The store never hands back a `Secret` with its value attached by accident:
-//! [`SecretRef`] is what listing returns and what the API serialises, and
-//! getting the value is a separate call that needs the key.
+//! Reading/writing sealed values. Listing never returns the value by accident -
+//! [`SecretRef`] omits it; fetching it is a separate call.
 
 use crate::scheduler::queue::{QueueError, pool, schema};
 use crate::secrets::crypto::{CryptoError, SecretKey};
@@ -102,9 +99,7 @@ pub async fn put(
     let pool = pool(db).map_err(SecretError::Queue)?;
     let schema = schema();
 
-    // Two partial unique indexes rather than one, because Postgres treats NULLs
-    // as distinct - so the conflict target differs by scope and the two cases
-    // cannot share a statement.
+    // Postgres treats NULLs as distinct, so scope/global each need their own conflict target.
     let sql = match scope {
         Scope::Global => format!(
             "INSERT INTO {schema}.secrets (id, repo_id, name, nonce, ciphertext, created_by) \
@@ -167,12 +162,8 @@ pub async fn get(
     Ok(Some(key.open(&scope.context(name), &nonce, &ciphertext)?))
 }
 
-/// What a job asked for, looked up in the order that lets a repository
-/// override the estate.
-///
-/// A declared secret that is set nowhere is an error rather than an empty
-/// string: a deploy step that runs with a blank token fails somewhere further
-/// on, in a way that takes much longer to understand.
+/// Repo secret overrides estate secret. Unset-anywhere is an error, not an
+/// empty string - a blank token fails confusingly further downstream.
 pub async fn resolve(
     db: &Db,
     key: Option<&SecretKey>,

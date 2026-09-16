@@ -1,7 +1,5 @@
-use actix_web::Scope;
-use actix_web::web::Data;
 use dashmap::DashMap;
-use quench_auth::actix::domain::sso_client::SsoConfig;
+use quench_auth::http::domain::sso_client::SsoConfig;
 use quench_auth::prelude::{JwtConfig, SessionDb, UserDb};
 use quench_starter::prelude::DbWrapper;
 use std::sync::Arc;
@@ -16,18 +14,19 @@ use crate::routers::ui::chat::ChatState;
 use crate::runtime::rate_limiter::RateLimiter;
 use crate::tools;
 
-/// Everything the HTTP layer needs, built once at startup and cloned into each actix worker.
+/// Everything the HTTP layer needs, built once at startup and provided into
+/// the DI container in `main.rs`.
 #[derive(Clone)]
 pub struct AppState {
     pub switchboard: SwitchboardClient,
     pub vllm: VllmClient,
     pub config: SageConfig,
-    pub chat_state: Data<ChatState>,
-    pub jwt_config: Data<JwtConfig>,
-    pub sso_config: Data<SsoConfig>,
+    pub chat_state: Arc<ChatState>,
+    pub jwt_config: JwtConfig,
+    pub sso_config: SsoConfig,
     pub user_db: Arc<UserDb>,
     pub session_db: Arc<SessionDb>,
-    pub tool_registry: Data<tools::ToolRegistry>,
+    pub tool_registry: Arc<tools::ToolRegistry>,
     pub search_providers: Arc<tools::SearchProviderRegistry>,
     pub metrics: Arc<MetricsCollector>,
     pub rate_limiter: Arc<Mutex<RateLimiter>>,
@@ -53,11 +52,11 @@ impl AppState {
         let state = Self {
             switchboard,
             vllm,
-            chat_state: Data::new(ChatState {
+            chat_state: Arc::new(ChatState {
                 pending_messages: DashMap::new(),
             }),
-            jwt_config: Data::new(JwtConfig::init().await),
-            sso_config: Data::new(SsoConfig::init()),
+            jwt_config: JwtConfig::init().await,
+            sso_config: SsoConfig::init(),
             user_db: UserDb::init(db_wrapper.db.clone()).await,
             session_db: SessionDb::from_env().await.expect("session store"),
             tool_registry,
@@ -69,24 +68,6 @@ impl AppState {
         };
 
         (state, db_wrapper)
-    }
-
-    /// Attach every shared value to `scope` as actix app data.
-    pub fn install(self, scope: Scope) -> Scope {
-        scope
-            .app_data(Data::new(self.switchboard))
-            .app_data(Data::new(self.vllm))
-            .app_data(Data::new(self.config))
-            .app_data(self.chat_state)
-            .app_data(self.jwt_config)
-            .app_data(self.sso_config)
-            .app_data(Data::new(self.user_db))
-            .app_data(Data::new(self.session_db))
-            .app_data(self.tool_registry)
-            .app_data(Data::new(self.search_providers))
-            .app_data(Data::new(self.metrics))
-            .app_data(Data::new(self.rate_limiter))
-            .app_data(Data::new(self.cost_tracker))
     }
 }
 
@@ -138,7 +119,7 @@ fn init_tool_registry(
     db: quench_db::prelude::Db,
     switchboard: SwitchboardClient,
     vllm: VllmClient,
-) -> Data<tools::ToolRegistry> {
+) -> Arc<tools::ToolRegistry> {
     let mut registry = tools::ToolRegistry::with_profile(profile.clone());
 
     registry.register(
@@ -191,5 +172,5 @@ fn init_tool_registry(
         Box::new(tools::code_executor::CodeExecutor),
     );
 
-    Data::new(registry)
+    Arc::new(registry)
 }

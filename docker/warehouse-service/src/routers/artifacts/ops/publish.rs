@@ -1,38 +1,25 @@
-//! `PUT /api/v1/artifacts/{program}/{platform}/{version_code}` - publish a
-//! build.
-//!
-//! The body is the raw artifact file, nothing else - there is no separate
-//! metadata payload. What the URL asserts (`{program}`, `{platform}`,
-//! `{version_code}`) is checked one of two ways:
-//!
-//! * `android` - decoded from the archive's own `AndroidManifest.xml` and
-//!   rejected with `422` if the decoded package/version doesn't match the URL;
-//! * everything else - trusted from the URL, since there is no manifest this
-//!   service can read. `?format=` is then required, and `?version_name=`,
-//!   `?label=`, `?arch=` and `?filename=` are taken as given.
-//!
-//! Either way `size_bytes` and `sha256` are computed from the stream, and a
-//! `(program, platform, version_code)` that already exists is a `409`.
+//! `PUT .../{version_code}` - publish a build. Android identity is verified against its manifest
+//! (422 on mismatch); other platforms trust the URL and require `?format=`. Republishing is `409`.
 
 use crate::domain::apk_manifest::{self, ApkManifestError};
 use crate::domain::artifact::{ArtifactMetadata, ArtifactVersion, Platform};
-use crate::routers::artifacts::ops::{ArtifactView, actor, disabled, error, not_found};
+use crate::routers::artifacts::ops::{Actor, ArtifactView, disabled, error, not_found};
 use crate::routers::artifacts::{
     artifact_file_path, artifact_staging_path, default_filename, validate_filename,
     validate_program,
 };
-use actix_web::http::StatusCode;
-use actix_web::{HttpRequest, HttpResponse, Responder, put, web};
+use crate::routers::docker::RawBody;
 use chrono::Utc;
 use futures_util::StreamExt;
+use http_body_util::BodyExt;
 use quench_db::prelude::{Crud, Db};
+use quench_http::prelude::{Inject, Path, Query, Response, http::StatusCode, put};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use sqlx::types::Json;
 use tokio::io::AsyncWriteExt;
 
-/// Query parameters. All optional at the type level; `format` is required for
-/// non-android platforms and that is enforced in [`publish`].
+/// `format` is required for non-android platforms; enforced in [`publish`].
 #[derive(Debug, Default, Deserialize)]
 pub struct PublishParams {
     pub format: Option<String>,
@@ -42,43 +29,31 @@ pub struct PublishParams {
     pub filename: Option<String>,
 }
 
-#[put("/{program}/{platform}/{version_code}")]
-#[tracing::instrument(skip(body, request))]
+#[put("/api/v1/artifacts/{program}/{platform}/{version_code}")]
+#[tracing::instrument(skip(body))]
 pub async fn handle(
-    request: HttpRequest,
-    db: web::Data<Db>,
-    path: web::Path<(String, String, i64)>,
-    params: web::Query<PublishParams>,
-    mut body: web::Payload,
-) -> impl Responder {
-    let (program, platform_raw, version_code) = path.into_inner();
+    Actor(actor): Actor,
+    Inject(db): Inject<Db>,
+    Path((program, platform_raw, version_code)): Path<(String, String, i64)>,
+    Query(params): Query<PublishParams>,
+    body: RawBody,
+) -> Response {
     let Some(platform) = Platform::parse(&platform_raw) else {
         return error(StatusCode::UNPROCESSABLE_ENTITY, "unknown platform");
     };
-    publish(
-        request,
-        db.get_ref(),
-        program,
-        platform,
-        version_code,
-        params.into_inner(),
-        &mut body,
-    )
-    .await
+    publish(actor, &db, program, platform, version_code, params, body.0).await
 }
 
-/// The publish itself, once the platform has been resolved. Shared with the
-/// `/api/v1/apk` alias (`super::super::alias`), which calls it with
-/// [`Platform::Android`].
+/// The publish itself, once platform is resolved. Shared with the `/api/v1/apk` alias.
 pub async fn publish(
-    request: HttpRequest,
+    actor: String,
     db: &Db,
     program: String,
     platform: Platform,
     version_code: i64,
     params: PublishParams,
-    body: &mut web::Payload,
-) -> HttpResponse {
+    body: quench_http::body::InboundBody,
+) -> Response {
     if !crate::routers::artifacts_enabled() {
         return disabled();
     }
@@ -93,7 +68,6 @@ pub async fn publish(
         );
     }
 
-    // Resolve the stored `format` before touching disk.
     let format = if platform == Platform::Android {
         "apk".to_string()
     } else {
@@ -162,8 +136,6 @@ pub async fn publish(
             }
         };
 
-    // Identity: proven from the archive for android, taken from the URL
-    // otherwise.
     let (version_name, label, metadata, arch) = if platform == Platform::Android {
         let meta = match parse_manifest(staging_path.clone()).await {
             Ok(meta) => meta,
@@ -242,7 +214,7 @@ pub async fn publish(
         sha256,
         label,
         metadata: Json(metadata),
-        uploaded_by: actor(&request),
+        uploaded_by: actor,
         yanked: false,
         created_at: Utc::now(),
     };
@@ -252,11 +224,11 @@ pub async fn publish(
         return error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string());
     }
 
-    HttpResponse::Created().json(ArtifactView::from(&version))
+    Response::json(StatusCode::CREATED, &ArtifactView::from(&version))
+        .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
 }
 
-/// A conservative charset for the stored `format` tag - it becomes part of a
-/// derived filename, so keep it to what a file extension can safely hold.
+/// Conservative charset - `format` becomes part of a derived filename.
 fn is_format_token(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 32
@@ -266,16 +238,12 @@ fn is_format_token(value: &str) -> bool {
 }
 
 /// Streams `body` into `staging`, returning its size and hex SHA-256.
-///
-/// A local sibling of `routers::files::ops::upload`'s own streaming loop
-/// rather than a shared helper - the two registries don't otherwise share
-/// code, and duplicating ~15 lines beats coupling artifact publishing to the
-/// files module's internals.
+/// A local sibling of `files::ops::upload`'s loop - not shared, to avoid coupling the two.
 async fn stream_to_disk(
-    body: &mut web::Payload,
+    body: quench_http::body::InboundBody,
     staging: &std::path::Path,
     limit: u64,
-) -> Result<(u64, String), HttpResponse> {
+) -> Result<(u64, String), Response> {
     let mut file = tokio::fs::File::create(staging).await.map_err(|_| {
         error(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -286,7 +254,8 @@ async fn stream_to_disk(
     let mut size: u64 = 0;
     let mut hasher = Sha256::new();
 
-    while let Some(chunk) = body.next().await {
+    let mut stream = body.into_data_stream();
+    while let Some(chunk) = stream.next().await {
         let chunk =
             chunk.map_err(|_| error(StatusCode::BAD_REQUEST, "the upload was interrupted"))?;
 
@@ -317,16 +286,8 @@ async fn stream_to_disk(
     Ok((size, hex::encode(hasher.finalize())))
 }
 
-/// Decodes the manifest on a blocking thread - `zip`'s central-directory scan
-/// and `axmldecoder`'s parse are both synchronous, and an APK's central
-/// directory sits at the *end* of the file.
-///
-/// Returns the parse error rather than an `HttpResponse` - `HttpResponse`
-/// isn't `Send`, so it can't cross the `spawn_blocking` boundary; the caller
-/// turns this into a response once back on the async side.
-async fn parse_manifest(
-    path: std::path::PathBuf,
-) -> Result<apk_manifest::ApkMetadata, HttpResponse> {
+/// Decodes the manifest on a blocking thread - `zip`/`axmldecoder` are both synchronous.
+async fn parse_manifest(path: std::path::PathBuf) -> Result<apk_manifest::ApkMetadata, Response> {
     let result = tokio::task::spawn_blocking(move || {
         std::fs::File::open(&path)
             .map_err(|_| ManifestReadError::Reopen)
@@ -352,4 +313,8 @@ async fn parse_manifest(
 enum ManifestReadError {
     Reopen,
     Manifest(ApkManifestError),
+}
+
+pub fn register_routes() {
+    let _ = handle as fn(_, _, _, _, _) -> _;
 }

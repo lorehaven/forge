@@ -1,12 +1,18 @@
-use actix_web::body::to_bytes;
-use actix_web::{App, HttpResponse, test as actix_test, web};
+use bytes::Bytes;
 use gatehouse_service::api::auth::user_scope;
 use gatehouse_service::catalog::PermissionCatalog;
 use gatehouse_service::realm::{self, RealmError};
 use gatehouse_service::test_support::auth_disabled_guard;
 use gatehouse_service::ui::pages::admin::*;
-use quench_auth::prelude::{Claims, JwtConfig, Permissions, Role, SessionDb, User};
+use http::{HeaderMap, Method, StatusCode, Uri};
+use http_body_util::BodyExt;
+use quench_auth::domain::auth::{Permissions, Role, User};
+use quench_auth::domain::jwt::{Claims, JwtConfig};
+use quench_auth::domain::session::SessionDb;
 use quench_db::prelude::Db;
+use quench_http::di::ContainerBuilder;
+use quench_http::endpoint::Endpoint;
+use quench_http::request::Request;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -52,9 +58,19 @@ fn claims_for(user: &User) -> Claims {
     )
 }
 
-async fn body_text(resp: HttpResponse) -> String {
-    let body = to_bytes(resp.into_body()).await.expect("body");
-    String::from_utf8(body.to_vec()).expect("utf8")
+async fn body_text(resp: quench_http::response::Response) -> String {
+    let collected = resp.into_hyper().into_body().collect().await.expect("body");
+    String::from_utf8(collected.to_bytes().to_vec()).expect("utf8")
+}
+
+fn location(resp: quench_http::response::Response) -> String {
+    resp.into_hyper()
+        .headers()
+        .get("location")
+        .expect("location header")
+        .to_str()
+        .expect("utf8")
+        .to_string()
 }
 
 fn catalog() -> PermissionCatalog {
@@ -148,14 +164,14 @@ fn notice_banner_is_none_without_a_recognised_key() {
     assert!(
         notice_banner(&Notice {
             err: Some("not-a-real-error".to_string()),
-            ok: None,
+            ok: None
         })
         .is_none()
     );
     assert!(
         notice_banner(&Notice {
             err: None,
-            ok: Some("not-a-real-outcome".to_string()),
+            ok: Some("not-a-real-outcome".to_string())
         })
         .is_none()
     );
@@ -188,7 +204,7 @@ fn notice_banner_shows_every_known_ok_outcome() {
 #[tokio::test]
 async fn forbidden_page_renders_403() {
     let resp = forbidden_page();
-    assert_eq!(resp.status(), actix_web::http::StatusCode::FORBIDDEN);
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     let html = body_text(resp).await;
     assert!(html.contains("ui_admin_forbidden"));
 }
@@ -196,7 +212,7 @@ async fn forbidden_page_renders_403() {
 #[tokio::test]
 async fn error_page_renders_with_the_error_s_own_status() {
     let resp = error_page(&RealmError::NotFound);
-    assert_eq!(resp.status(), actix_web::http::StatusCode::NOT_FOUND);
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     let html = body_text(resp).await;
     assert!(html.contains(RealmError::NotFound.i18n_key()));
 }
@@ -218,8 +234,7 @@ async fn render_list_shows_the_empty_state_with_no_users() {
         .await
         .ok();
 
-    let data = web::Data::new(db);
-    let resp = render_list(&data, &claims, &Notice::default()).await;
+    let resp = render_list(&db, &claims, &Notice::default()).await;
     let html = body_text(resp).await;
     assert!(html.contains("ui_admin_users_title"));
 }
@@ -236,9 +251,7 @@ async fn render_list_shows_create_panel_only_when_actor_can_create() {
     )
     .await;
 
-    let data = web::Data::new(db);
-
-    let admin_resp = render_list(&data, &claims_for(&admin), &Notice::default()).await;
+    let admin_resp = render_list(&db, &claims_for(&admin), &Notice::default()).await;
     let admin_html = body_text(admin_resp).await;
     assert!(admin_html.contains("ui_admin_create_title"));
     assert!(
@@ -246,7 +259,7 @@ async fn render_list_shows_create_panel_only_when_actor_can_create() {
         "admin sees themself tagged"
     );
 
-    let plain_resp = render_list(&data, &claims_for(&plain), &Notice::default()).await;
+    let plain_resp = render_list(&db, &claims_for(&plain), &Notice::default()).await;
     let plain_html = body_text(plain_resp).await;
     assert!(!plain_html.contains("ui_admin_create_title"));
 }
@@ -277,7 +290,7 @@ fn render_edit_as_admin_shows_the_role_select_and_delete_panel() {
     let claims = claims_for(&admin);
 
     let resp = render_edit(&catalog, &target, &claims, &Notice::default());
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    assert_eq!(resp.status(), StatusCode::OK);
 }
 
 #[tokio::test]
@@ -411,25 +424,75 @@ async fn render_edit_reflects_a_locked_and_disabled_account() {
 }
 
 // -----------------------------------------------------------------
+// HTTP handlers - every route here takes a private `admin_actor!`-generated
+// extractor, so these go through the real discovered router.
+// -----------------------------------------------------------------
+
+async fn admin_app(
+    config: JwtConfig,
+    db: Db,
+) -> (Arc<dyn Endpoint>, Arc<quench_http::di::Container>) {
+    gatehouse_service::ui::pages::admin::register_routes();
+    let container = ContainerBuilder::new()
+        .provide(config)
+        .provide(catalog())
+        .provide(db)
+        .provide_arc(sessions())
+        .build()
+        .await
+        .unwrap();
+    (
+        quench_starter::http::discover_and_mount("/"),
+        Arc::new(container),
+    )
+}
+
+fn get(path: &str, container: &Arc<quench_http::di::Container>) -> Request {
+    Request::new(
+        Method::GET,
+        path.parse::<Uri>().unwrap(),
+        HeaderMap::new(),
+        quench_http::body::InboundBody::from_bytes(Bytes::new()),
+        container.clone(),
+    )
+}
+
+fn post(path: &str, container: &Arc<quench_http::di::Container>) -> Request {
+    Request::new(
+        Method::POST,
+        path.parse::<Uri>().unwrap(),
+        HeaderMap::new(),
+        quench_http::body::InboundBody::from_bytes(Bytes::new()),
+        container.clone(),
+    )
+}
+
+fn post_form(
+    path: &str,
+    pairs: &[(&str, &str)],
+    container: &Arc<quench_http::di::Container>,
+) -> Request {
+    let encoded = serde_urlencoded::to_string(pairs).unwrap();
+    Request::new(
+        Method::POST,
+        path.parse::<Uri>().unwrap(),
+        HeaderMap::new(),
+        quench_http::body::InboundBody::from_bytes(Bytes::from(encoded)),
+        container.clone(),
+    )
+}
+
+// -----------------------------------------------------------------
 // HTTP handlers - the "not signed in" guard branch
 // -----------------------------------------------------------------
 
-#[actix_web::test]
+#[tokio::test]
 async fn users_page_redirects_to_login_when_not_signed_in() {
     let db = db().await;
     let mut config = JwtConfig::for_tests();
     config.auth_enabled = true;
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(config))
-            .app_data(web::Data::new(db))
-            .service(users_page),
-    )
-    .await;
-    let req = actix_test::TestRequest::get()
-        .uri("/admin/users")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = admin_app(config, db).await;
+    let resp = app.call(get("/ui/admin/users", &container)).await;
     assert!(resp.status().is_redirection());
 }
 
@@ -437,280 +500,169 @@ async fn users_page_redirects_to_login_when_not_signed_in() {
 // HTTP handlers - auth disabled (bypass claims, sub="admin")
 // -----------------------------------------------------------------
 
-#[actix_web::test]
+#[tokio::test]
 async fn users_page_renders_for_the_bypass_admin() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
     seed_user(&db, "admin", vec![Role::Admin], &[]).await;
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(JwtConfig::for_tests()))
-            .app_data(web::Data::new(db))
-            .service(users_page),
-    )
-    .await;
-    let req = actix_test::TestRequest::get()
-        .uri("/admin/users")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let (app, container) = admin_app(JwtConfig::for_tests(), db).await;
+    let resp = app.call(get("/ui/admin/users", &container)).await;
+    assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn users_page_slash_renders_for_the_bypass_admin() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
     seed_user(&db, "admin", vec![Role::Admin], &[]).await;
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(JwtConfig::for_tests()))
-            .app_data(web::Data::new(db))
-            .service(users_page_slash),
-    )
-    .await;
-    let req = actix_test::TestRequest::get()
-        .uri("/admin/users/")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let (app, container) = admin_app(JwtConfig::for_tests(), db).await;
+    let resp = app.call(get("/ui/admin/users/", &container)).await;
+    assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn edit_user_renders_a_known_user_and_404s_an_unknown_one() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
     seed_user(&db, "admin", vec![Role::Admin], &[]).await;
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(JwtConfig::for_tests()))
-            .app_data(web::Data::new(catalog()))
-            .app_data(web::Data::new(db))
-            .service(edit_user),
-    )
-    .await;
-    let req = actix_test::TestRequest::get()
-        .uri("/admin/users/admin")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let (app, container) = admin_app(JwtConfig::for_tests(), db).await;
 
-    let req = actix_test::TestRequest::get()
-        .uri("/admin/users/no-such-user")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = app.call(get("/ui/admin/users/admin", &container)).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let resp = app
+        .call(get("/ui/admin/users/no-such-user", &container))
+        .await;
     assert!(resp.status().is_redirection());
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn create_user_creates_a_user_and_redirects_to_its_editor() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
     seed_user(&db, "admin", vec![Role::Admin], &[]).await;
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(JwtConfig::for_tests()))
-            .app_data(web::Data::new(catalog()))
-            .app_data(web::Data::new(db))
-            .service(create_user),
-    )
-    .await;
-    let req = actix_test::TestRequest::post()
-        .uri("/admin/users")
-        .set_form([
-            ("username", "brandnew"),
-            ("password", "correct-horse"),
-            ("role", "user"),
-        ])
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::FOUND);
-    let location = resp
-        .headers()
-        .get(actix_web::http::header::LOCATION)
-        .unwrap()
-        .to_str()
-        .unwrap();
+    let (app, container) = admin_app(JwtConfig::for_tests(), db).await;
+    let resp = app
+        .call(post_form(
+            "/ui/admin/users",
+            &[
+                ("username", "brandnew"),
+                ("password", "correct-horse"),
+                ("role", "user"),
+            ],
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::FOUND);
+    let location = location(resp);
     assert!(location.contains("brandnew"));
     assert!(location.contains("ok=created"));
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn create_user_reports_a_duplicate_username_via_the_list_redirect() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
     seed_user(&db, "admin", vec![Role::Admin], &[]).await;
     seed_user(&db, "brandnew", vec![Role::User], &[]).await;
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(JwtConfig::for_tests()))
-            .app_data(web::Data::new(catalog()))
-            .app_data(web::Data::new(db))
-            .service(create_user),
-    )
-    .await;
-    let req = actix_test::TestRequest::post()
-        .uri("/admin/users")
-        .set_form([
-            ("username", "brandnew"),
-            ("password", "correct-horse"),
-            ("role", "user"),
-        ])
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::FOUND);
-    let location = resp
-        .headers()
-        .get(actix_web::http::header::LOCATION)
-        .unwrap()
-        .to_str()
-        .unwrap();
-    assert!(location.contains("/admin/users?err="));
+    let (app, container) = admin_app(JwtConfig::for_tests(), db).await;
+    let resp = app
+        .call(post_form(
+            "/ui/admin/users",
+            &[
+                ("username", "brandnew"),
+                ("password", "correct-horse"),
+                ("role", "user"),
+            ],
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::FOUND);
+    assert!(location(resp).contains("/admin/users?err="));
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn save_user_updates_permissions_via_the_checkbox_matrix() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
     seed_user(&db, "admin", vec![Role::Admin], &[]).await;
     seed_user(&db, "target", vec![Role::User], &[]).await;
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(JwtConfig::for_tests()))
-            .app_data(web::Data::new(catalog()))
-            .app_data(web::Data::new(db))
-            .app_data(web::Data::new(sessions()))
-            .service(save_user),
-    )
-    .await;
-    let req = actix_test::TestRequest::post()
-        .uri("/admin/users/target")
-        .set_form([("perm_conveyor_read", "on")])
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::FOUND);
-    let location = resp
-        .headers()
-        .get(actix_web::http::header::LOCATION)
-        .unwrap()
-        .to_str()
-        .unwrap();
-    assert!(location.contains("ok=saved"));
+    let (app, container) = admin_app(JwtConfig::for_tests(), db).await;
+    let resp = app
+        .call(post_form(
+            "/ui/admin/users/target",
+            &[("perm_conveyor_read", "on")],
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::FOUND);
+    assert!(location(resp).contains("ok=saved"));
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn save_user_reports_not_found_for_an_unknown_target() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
     seed_user(&db, "admin", vec![Role::Admin], &[]).await;
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(JwtConfig::for_tests()))
-            .app_data(web::Data::new(catalog()))
-            .app_data(web::Data::new(db))
-            .app_data(web::Data::new(sessions()))
-            .service(save_user),
-    )
-    .await;
-    let req = actix_test::TestRequest::post()
-        .uri("/admin/users/no-such-user")
-        .set_form(Vec::<(&str, &str)>::new())
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::FOUND);
-    let location = resp
-        .headers()
-        .get(actix_web::http::header::LOCATION)
-        .unwrap()
-        .to_str()
-        .unwrap();
-    assert!(location.contains("/admin/users?err="));
+    let (app, container) = admin_app(JwtConfig::for_tests(), db).await;
+    let resp = app
+        .call(post_form("/ui/admin/users/no-such-user", &[], &container))
+        .await;
+    assert_eq!(resp.status(), StatusCode::FOUND);
+    assert!(location(resp).contains("/admin/users?err="));
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn apply_template_reports_an_unknown_template() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
     seed_user(&db, "admin", vec![Role::Admin], &[]).await;
     seed_user(&db, "target", vec![Role::User], &[]).await;
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(JwtConfig::for_tests()))
-            .app_data(web::Data::new(catalog()))
-            .app_data(web::Data::new(db))
-            .app_data(web::Data::new(sessions()))
-            .service(apply_template),
-    )
-    .await;
-    let req = actix_test::TestRequest::post()
-        .uri("/admin/users/target/template")
-        .set_form([("template", "no-such-template")])
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::FOUND);
+    let (app, container) = admin_app(JwtConfig::for_tests(), db).await;
+    let resp = app
+        .call(post_form(
+            "/ui/admin/users/target/template",
+            &[("template", "no-such-template")],
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::FOUND);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn disable_user_then_enable_user_round_trip() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
     seed_user(&db, "admin", vec![Role::Admin], &[]).await;
     seed_user(&db, "target", vec![Role::User], &[]).await;
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(JwtConfig::for_tests()))
-            .app_data(web::Data::new(db))
-            .service(disable_user)
-            .service(enable_user),
-    )
-    .await;
+    let (app, container) = admin_app(JwtConfig::for_tests(), db).await;
 
-    let req = actix_test::TestRequest::post()
-        .uri("/admin/users/target/disable")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::FOUND);
-    let location = resp
-        .headers()
-        .get(actix_web::http::header::LOCATION)
-        .unwrap()
-        .to_str()
-        .unwrap();
-    assert!(location.contains("ok=saved"));
+    let resp = app
+        .call(post("/ui/admin/users/target/disable", &container))
+        .await;
+    assert_eq!(resp.status(), StatusCode::FOUND);
+    assert!(location(resp).contains("ok=saved"));
 
-    let req = actix_test::TestRequest::post()
-        .uri("/admin/users/target/enable")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::FOUND);
+    let resp = app
+        .call(post("/ui/admin/users/target/enable", &container))
+        .await;
+    assert_eq!(resp.status(), StatusCode::FOUND);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn disable_user_rejects_disabling_yourself() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
     seed_user(&db, "admin", vec![Role::Admin], &[]).await;
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(JwtConfig::for_tests()))
-            .app_data(web::Data::new(db))
-            .service(disable_user),
-    )
-    .await;
-    let req = actix_test::TestRequest::post()
-        .uri("/admin/users/admin/disable")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::FOUND);
-    let location = resp
-        .headers()
-        .get(actix_web::http::header::LOCATION)
-        .unwrap()
-        .to_str()
-        .unwrap();
-    assert!(location.contains("err="));
+    let (app, container) = admin_app(JwtConfig::for_tests(), db).await;
+    let resp = app
+        .call(post("/ui/admin/users/admin/disable", &container))
+        .await;
+    assert_eq!(resp.status(), StatusCode::FOUND);
+    assert!(location(resp).contains("err="));
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn unlock_user_clears_a_lockout() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
@@ -721,95 +673,46 @@ async fn unlock_user_clears_a_lockout() {
             .await
             .ok();
     }
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(JwtConfig::for_tests()))
-            .app_data(web::Data::new(db))
-            .service(unlock_user),
-    )
-    .await;
-    let req = actix_test::TestRequest::post()
-        .uri("/admin/users/target/unlock")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::FOUND);
-    let location = resp
-        .headers()
-        .get(actix_web::http::header::LOCATION)
-        .unwrap()
-        .to_str()
-        .unwrap();
-    assert!(location.contains("ok=saved"));
+    let (app, container) = admin_app(JwtConfig::for_tests(), db).await;
+    let resp = app
+        .call(post("/ui/admin/users/target/unlock", &container))
+        .await;
+    assert_eq!(resp.status(), StatusCode::FOUND);
+    assert!(location(resp).contains("ok=saved"));
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn disable_user_mfa_turns_it_off() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
     seed_user(&db, "admin", vec![Role::Admin], &[]).await;
     seed_user(&db, "target", vec![Role::User], &[]).await;
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(JwtConfig::for_tests()))
-            .app_data(web::Data::new(db))
-            .service(disable_user_mfa),
-    )
-    .await;
-    let req = actix_test::TestRequest::post()
-        .uri("/admin/users/target/mfa/disable")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::FOUND);
-    let location = resp
-        .headers()
-        .get(actix_web::http::header::LOCATION)
-        .unwrap()
-        .to_str()
-        .unwrap();
-    assert!(location.contains("ok=saved"));
+    let (app, container) = admin_app(JwtConfig::for_tests(), db).await;
+    let resp = app
+        .call(post("/ui/admin/users/target/mfa/disable", &container))
+        .await;
+    assert_eq!(resp.status(), StatusCode::FOUND);
+    assert!(location(resp).contains("ok=saved"));
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn delete_user_removes_someone_else_but_not_yourself() {
     let _guard = auth_disabled_guard().await;
     let db = db().await;
     seed_user(&db, "admin", vec![Role::Admin], &[]).await;
     seed_user(&db, "target", vec![Role::User], &[]).await;
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(JwtConfig::for_tests()))
-            .app_data(web::Data::new(db))
-            .app_data(web::Data::new(sessions()))
-            .service(delete_user),
-    )
-    .await;
+    let (app, container) = admin_app(JwtConfig::for_tests(), db).await;
 
-    let req = actix_test::TestRequest::post()
-        .uri("/admin/users/admin/delete")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::FOUND);
-    let location = resp
-        .headers()
-        .get(actix_web::http::header::LOCATION)
-        .unwrap()
-        .to_str()
-        .unwrap();
-    assert!(
-        location.contains("err="),
-        "deleting yourself should fail: {location}"
-    );
+    let resp = app
+        .call(post("/ui/admin/users/admin/delete", &container))
+        .await;
+    assert_eq!(resp.status(), StatusCode::FOUND);
+    let loc = location(resp);
+    assert!(loc.contains("err="), "deleting yourself should fail: {loc}");
 
-    let req = actix_test::TestRequest::post()
-        .uri("/admin/users/target/delete")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::FOUND);
-    let location = resp
-        .headers()
-        .get(actix_web::http::header::LOCATION)
-        .unwrap()
-        .to_str()
-        .unwrap();
-    assert!(location.contains("ok=deleted"));
+    let resp = app
+        .call(post("/ui/admin/users/target/delete", &container))
+        .await;
+    assert_eq!(resp.status(), StatusCode::FOUND);
+    assert!(location(resp).contains("ok=deleted"));
 }

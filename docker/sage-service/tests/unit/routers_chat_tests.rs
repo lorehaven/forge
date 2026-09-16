@@ -4,15 +4,18 @@
 //! error/not-found branches here; everything else is fully reachable
 //! in-process with fake or empty backing services.
 
-use actix_web::http::StatusCode;
-use actix_web::web::Data;
-use actix_web::{App, test};
+use bytes::Bytes;
+use http::{HeaderMap, Method, StatusCode, Uri};
+use http_body_util::BodyExt;
+use quench_http::di::ContainerBuilder;
+use quench_http::endpoint::Endpoint;
+use quench_http::request::Request;
 use sage_service::clients::switchboard::SwitchboardClient;
 use sage_service::clients::vllm::VllmClient;
 use sage_service::config::SageConfig;
 use sage_service::observability::cost_tracking::CostTracker;
 use sage_service::observability::metrics::MetricsCollector;
-use sage_service::routers::chat::scope;
+use sage_service::routers::chat;
 use sage_service::tools::capabilities::get_profile;
 use std::sync::Arc;
 
@@ -45,45 +48,68 @@ fn ensure_switchboard_env() {
     envmnt::set("SWITCHBOARD_URL", "http://127.0.0.1:1");
 }
 
-async fn app_data() -> (
-    Data<SwitchboardClient>,
-    Data<VllmClient>,
-    Data<SageConfig>,
-    Data<Arc<MetricsCollector>>,
-    Data<Arc<CostTracker>>,
-) {
+async fn app() -> (Arc<dyn Endpoint>, Arc<quench_http::di::Container>) {
     ensure_switchboard_env();
+    chat::register_routes();
+    let container = ContainerBuilder::new()
+        .provide(SwitchboardClient::new())
+        .provide(VllmClient::new())
+        .provide(config())
+        .provide_arc(Arc::new(MetricsCollector::new()))
+        .provide_arc(Arc::new(CostTracker::new()))
+        .build()
+        .await
+        .unwrap();
     (
-        Data::new(SwitchboardClient::new()),
-        Data::new(VllmClient::new()),
-        Data::new(config()),
-        Data::new(Arc::new(MetricsCollector::new())),
-        Data::new(Arc::new(CostTracker::new())),
+        quench_starter::http::discover_and_mount("/"),
+        Arc::new(container),
     )
 }
 
-#[actix_web::test]
-async fn chat_returns_not_found_for_an_unknown_instance() {
-    let (switchboard, vllm, config, metrics, costs) = app_data().await;
-    let app = test::init_service(
-        App::new()
-            .app_data(switchboard)
-            .app_data(vllm)
-            .app_data(config)
-            .app_data(metrics)
-            .app_data(costs)
-            .service(scope()),
+fn req(method: Method, path: &str, container: &Arc<quench_http::di::Container>) -> Request {
+    Request::new(
+        method,
+        path.parse::<Uri>().unwrap(),
+        HeaderMap::new(),
+        quench_http::body::InboundBody::from_bytes(Bytes::new()),
+        container.clone(),
     )
-    .await;
+}
 
-    let req = test::TestRequest::post()
-        .uri("/api/v1/chat")
-        .set_json(serde_json::json!({
-            "instance_id": "does-not-exist",
-            "message": "hello"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
+fn json_req(
+    method: Method,
+    path: &str,
+    body: serde_json::Value,
+    container: &Arc<quench_http::di::Container>,
+) -> Request {
+    let mut headers = HeaderMap::new();
+    headers.insert("content-type", "application/json".parse().unwrap());
+    Request::new(
+        method,
+        path.parse::<Uri>().unwrap(),
+        headers,
+        quench_http::body::InboundBody::from_bytes(Bytes::from(serde_json::to_vec(&body).unwrap())),
+        container.clone(),
+    )
+}
+
+async fn json_body(resp: quench_http::response::Response) -> serde_json::Value {
+    let collected = resp.into_hyper().into_body().collect().await.expect("body");
+    serde_json::from_slice(&collected.to_bytes()).expect("valid json body")
+}
+
+#[tokio::test]
+async fn chat_returns_not_found_for_an_unknown_instance() {
+    let (app, container) = app().await;
+
+    let resp = app
+        .call(json_req(
+            Method::POST,
+            "/api/v1/chat",
+            serde_json::json!({"instance_id": "does-not-exist", "message": "hello"}),
+            &container,
+        ))
+        .await;
 
     // `SwitchboardClient::new()` talks to a real switchboard that isn't
     // running here, so this either surfaces as a 500 (switchboard
@@ -96,27 +122,16 @@ async fn chat_returns_not_found_for_an_unknown_instance() {
     ));
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn capabilities_reports_the_configured_profiles_tools_sorted() {
-    let (switchboard, vllm, config, metrics, costs) = app_data().await;
-    let app = test::init_service(
-        App::new()
-            .app_data(switchboard)
-            .app_data(vllm)
-            .app_data(config)
-            .app_data(metrics)
-            .app_data(costs)
-            .service(scope()),
-    )
-    .await;
+    let (app, container) = app().await;
 
-    let req = test::TestRequest::get()
-        .uri("/api/v1/chat/capabilities")
-        .to_request();
-    let resp = test::call_service(&app, req).await;
+    let resp = app
+        .call(req(Method::GET, "/api/v1/chat/capabilities", &container))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let body: serde_json::Value = test::read_body_json(resp).await;
+    let body = json_body(resp).await;
     assert_eq!(body["profile"], "web_assistant");
     let tools = body["available_tools"].as_array().expect("tools array");
     let mut sorted = tools.clone();
@@ -124,114 +139,71 @@ async fn capabilities_reports_the_configured_profiles_tools_sorted() {
     assert_eq!(tools, &sorted, "tools must already be sorted");
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn get_metrics_returns_an_empty_profile_list_with_no_activity() {
-    let (switchboard, vllm, config, metrics, costs) = app_data().await;
-    let app = test::init_service(
-        App::new()
-            .app_data(switchboard)
-            .app_data(vllm)
-            .app_data(config)
-            .app_data(metrics)
-            .app_data(costs)
-            .service(scope()),
-    )
-    .await;
+    let (app, container) = app().await;
 
-    let req = test::TestRequest::get()
-        .uri("/api/v1/chat/metrics")
-        .to_request();
-    let resp = test::call_service(&app, req).await;
+    let resp = app
+        .call(req(Method::GET, "/api/v1/chat/metrics", &container))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let body: serde_json::Value = test::read_body_json(resp).await;
+    let body = json_body(resp).await;
     assert_eq!(body["profiles"].as_array().expect("array").len(), 0);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn get_metrics_by_profile_is_not_found_for_an_unknown_profile() {
-    let (switchboard, vllm, config, metrics, costs) = app_data().await;
-    let app = test::init_service(
-        App::new()
-            .app_data(switchboard)
-            .app_data(vllm)
-            .app_data(config)
-            .app_data(metrics)
-            .app_data(costs)
-            .service(scope()),
-    )
-    .await;
+    let (app, container) = app().await;
 
-    let req = test::TestRequest::get()
-        .uri("/api/v1/chat/metrics/nonexistent-profile")
-        .to_request();
-    let resp = test::call_service(&app, req).await;
+    let resp = app
+        .call(req(
+            Method::GET,
+            "/api/v1/chat/metrics/nonexistent-profile",
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn get_costs_returns_empty_lists_with_no_activity() {
-    let (switchboard, vllm, config, metrics, costs) = app_data().await;
-    let app = test::init_service(
-        App::new()
-            .app_data(switchboard)
-            .app_data(vllm)
-            .app_data(config)
-            .app_data(metrics)
-            .app_data(costs)
-            .service(scope()),
-    )
-    .await;
+    let (app, container) = app().await;
 
-    let req = test::TestRequest::get()
-        .uri("/api/v1/chat/costs")
-        .to_request();
-    let resp = test::call_service(&app, req).await;
+    let resp = app
+        .call(req(Method::GET, "/api/v1/chat/costs", &container))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let body: serde_json::Value = test::read_body_json(resp).await;
+    let body = json_body(resp).await;
     assert_eq!(body["users"].as_array().expect("array").len(), 0);
     assert_eq!(body["profiles"].as_array().expect("array").len(), 0);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn get_user_costs_is_not_found_for_an_unknown_user() {
-    let (switchboard, vllm, config, metrics, costs) = app_data().await;
-    let app = test::init_service(
-        App::new()
-            .app_data(switchboard)
-            .app_data(vllm)
-            .app_data(config)
-            .app_data(metrics)
-            .app_data(costs)
-            .service(scope()),
-    )
-    .await;
+    let (app, container) = app().await;
 
-    let req = test::TestRequest::get()
-        .uri("/api/v1/chat/costs/user/nobody")
-        .to_request();
-    let resp = test::call_service(&app, req).await;
+    let resp = app
+        .call(req(
+            Method::GET,
+            "/api/v1/chat/costs/user/nobody",
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn get_context_status_reports_zero_usage_for_a_fresh_profile() {
-    let (switchboard, vllm, config, metrics, costs) = app_data().await;
-    let app = test::init_service(
-        App::new()
-            .app_data(switchboard)
-            .app_data(vllm)
-            .app_data(config)
-            .app_data(metrics)
-            .app_data(costs)
-            .service(scope()),
-    )
-    .await;
+    let (app, container) = app().await;
 
-    let req = test::TestRequest::get()
-        .uri("/api/v1/chat/context-status/web_assistant")
-        .to_request();
-    let resp = test::call_service(&app, req).await;
+    let resp = app
+        .call(req(
+            Method::GET,
+            "/api/v1/chat/context-status/web_assistant",
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
 }

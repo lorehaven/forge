@@ -1,9 +1,9 @@
 use crate::support;
-
-use actix_web::test as actix_test;
+use http::{Method, StatusCode};
+use quench_http::endpoint::Endpoint;
 use support::WithCratesStorageRoot as WithStorageRoot;
 use warehouse_service::routers::crates::search::{
-    compare_versions, find_max_version, handle, parse_semver,
+    self, compare_versions, find_max_version, parse_semver,
 };
 
 fn publish(storage: &WithStorageRoot, name: &str, version: &str) {
@@ -94,38 +94,44 @@ async fn find_max_version_ignores_files_only_directories() {
 // handle
 // -----------------------------------------------------------------
 
-#[actix_web::test]
-async fn handle_rejects_an_empty_query() {
-    let _storage = WithStorageRoot::new();
-    let app = actix_test::init_service(
-        actix_web::App::new().service(actix_web::web::scope("/api/v1/crates").service(handle)),
-    )
-    .await;
-    let req = actix_test::TestRequest::get()
-        .uri("/api/v1/crates?q=")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::BAD_REQUEST);
+async fn app() -> (
+    std::sync::Arc<dyn Endpoint>,
+    std::sync::Arc<quench_http::di::Container>,
+) {
+    search::register_routes();
+    let container = support::container_builder().build().await.unwrap();
+    support::app(container).await
 }
 
-#[actix_web::test]
+#[tokio::test]
+async fn handle_rejects_an_empty_query() {
+    let _storage = WithStorageRoot::new();
+    let (app, container) = app().await;
+
+    let resp = app
+        .call(support::req(Method::GET, "/api/v1/crates?q=", &container))
+        .await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
 async fn handle_finds_crates_whose_name_contains_the_query_case_insensitively() {
     let storage = WithStorageRoot::new();
     publish(&storage, "my-http-client", "1.0.0");
     publish(&storage, "unrelated-crate", "1.0.0");
     publish(&storage, "index", "should-be-skipped");
+    let (app, container) = app().await;
 
-    let app = actix_test::init_service(
-        actix_web::App::new().service(actix_web::web::scope("/api/v1/crates").service(handle)),
-    )
-    .await;
-    let req = actix_test::TestRequest::get()
-        .uri("/api/v1/crates?q=HTTP")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let resp = app
+        .call(support::req(
+            Method::GET,
+            "/api/v1/crates?q=HTTP",
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
 
-    let body: serde_json::Value = actix_test::read_body_json(resp).await;
+    let body = support::json_body(resp).await;
     let crates = body["crates"].as_array().unwrap();
     assert_eq!(crates.len(), 1);
     assert_eq!(crates[0]["name"], "my-http-client");
@@ -133,41 +139,41 @@ async fn handle_finds_crates_whose_name_contains_the_query_case_insensitively() 
     assert_eq!(body["meta"]["total"], 1);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn handle_paginates_results() {
     let storage = WithStorageRoot::new();
     for name in ["match-a", "match-b", "match-c"] {
         publish(&storage, name, "1.0.0");
     }
+    let (app, container) = app().await;
 
-    let app = actix_test::init_service(
-        actix_web::App::new().service(actix_web::web::scope("/api/v1/crates").service(handle)),
-    )
-    .await;
-    let req = actix_test::TestRequest::get()
-        .uri("/api/v1/crates?q=match&per_page=2&page=2")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    let body: serde_json::Value = actix_test::read_body_json(resp).await;
+    let resp = app
+        .call(support::req(
+            Method::GET,
+            "/api/v1/crates?q=match&per_page=2&page=2",
+            &container,
+        ))
+        .await;
+    let body = support::json_body(resp).await;
     let crates = body["crates"].as_array().unwrap();
     assert_eq!(crates.len(), 1);
     assert_eq!(crates[0]["name"], "match-c");
     assert_eq!(body["meta"]["total"], 3);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn handle_skips_a_crate_directory_with_no_version_subdirectories() {
     let storage = WithStorageRoot::new();
     std::fs::create_dir_all(storage.dir.path().join("match-empty")).unwrap();
+    let (app, container) = app().await;
 
-    let app = actix_test::init_service(
-        actix_web::App::new().service(actix_web::web::scope("/api/v1/crates").service(handle)),
-    )
-    .await;
-    let req = actix_test::TestRequest::get()
-        .uri("/api/v1/crates?q=match")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    let body: serde_json::Value = actix_test::read_body_json(resp).await;
+    let resp = app
+        .call(support::req(
+            Method::GET,
+            "/api/v1/crates?q=match",
+            &container,
+        ))
+        .await;
+    let body = support::json_body(resp).await;
     assert_eq!(body["meta"]["total"], 0);
 }

@@ -1,15 +1,9 @@
-//! Seeding the realm's accounts.
-//!
-//! Gatehouse is the only service that writes users, so this lives here rather
-//! than in `quench-auth` - a relying party has no business creating an account.
+//! Seeding the realm's accounts - lives here since only gatehouse writes users.
 
 use quench_auth::prelude::{Permissions, Role, User};
 use quench_db::prelude::{Crud, Db};
 
-/// Creates the admin and machine-to-machine accounts if they are missing.
-///
-/// Existing users are never overwritten - once the realm has an account, its
-/// password is whatever people last set, not what the environment says.
+/// Creates admin/machine accounts if missing; never overwrites an existing user.
 pub async fn seed_users(db: &Db) {
     if !envmnt::is_or("AUTH_BOOTSTRAP", false) {
         tracing::info!("AUTH_BOOTSTRAP is off, leaving the realm's users alone");
@@ -25,8 +19,7 @@ pub async fn seed_users(db: &Db) {
     )
     .await;
 
-    // The machine-to-machine identity, e.g. sage calling switchboard. Optional:
-    // a deployment with no service-to-service traffic does not need it.
+    // Machine-to-machine identity (e.g. sage calling switchboard) - optional.
     let tech_user = envmnt::get_or("SERVICE_TECH_USERNAME", "");
     let tech_password = envmnt::get_or("SERVICE_TECH_PASSWORD", "");
     if tech_user.is_empty() || tech_password.is_empty() {
@@ -47,9 +40,7 @@ async fn seed(db: &Db, username: &str, password: &str, role: Role, label: &str) 
         return;
     }
 
-    // No permissions: both seeded accounts hold a wildcard role, which grants
-    // everything without any of it being written down. Enumerating grants here
-    // would go stale as soon as the estate gained a service.
+    // No permissions - both seeded accounts hold a wildcard role instead.
     let Ok(user) = User::new(
         username.to_string(),
         password.to_string(),

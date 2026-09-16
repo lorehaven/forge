@@ -1,15 +1,21 @@
-use actix_web::body::to_bytes;
-use actix_web::{App, HttpResponse, test as actix_test, web};
+use bytes::Bytes;
 use gatehouse_service::email::{LoggingSender, Sender};
 use gatehouse_service::realm;
 use gatehouse_service::tokens::VerificationTokens;
 use gatehouse_service::ui::pages::reset::{
-    ResetNotice, forgot_password_page, forgot_password_page_slash, forgot_password_submit,
-    render_forgot_password_page, render_reset_password_page, reset_password_page,
-    reset_password_submit,
+    ResetNotice, ResetPasswordForm, ResetPasswordQuery, forgot_password_page,
+    forgot_password_page_slash, render_forgot_password_page, render_reset_password_page,
+    reset_password_page, reset_password_submit,
 };
-use quench_auth::prelude::{Permissions, Role, SessionDb};
+use http::{HeaderMap, Method, StatusCode, Uri};
+use http_body_util::BodyExt;
+use quench_auth::domain::auth::{Permissions, Role};
+use quench_auth::domain::session::SessionDb;
+use quench_cache::CacheStore;
 use quench_db::prelude::Db;
+use quench_http::di::ContainerBuilder;
+use quench_http::endpoint::Endpoint;
+use quench_http::prelude::{Form, Inject, Query, Request};
 use std::sync::Arc;
 
 async fn db() -> Db {
@@ -27,21 +33,27 @@ fn catalog() -> gatehouse_service::catalog::PermissionCatalog {
     result
 }
 
-fn mailer() -> web::Data<Arc<dyn Sender>> {
-    web::Data::new(Arc::new(LoggingSender) as Arc<dyn Sender>)
+fn mailer() -> Arc<dyn Sender> {
+    Arc::new(LoggingSender)
 }
 
-fn verification_tokens() -> web::Data<Arc<VerificationTokens>> {
-    web::Data::new(Arc::new(VerificationTokens::in_memory()))
+fn sessions() -> Arc<SessionDb> {
+    SessionDb::init(CacheStore::in_memory())
 }
 
-fn sessions() -> web::Data<Arc<SessionDb>> {
-    web::Data::new(SessionDb::init(quench_cache::CacheStore::in_memory()))
+async fn body_text(resp: quench_http::response::Response) -> String {
+    let collected = resp.into_hyper().into_body().collect().await.expect("body");
+    String::from_utf8(collected.to_bytes().to_vec()).expect("utf8")
 }
 
-async fn body_text(resp: HttpResponse) -> String {
-    let body = to_bytes(resp.into_body()).await.expect("body");
-    String::from_utf8(body.to_vec()).expect("utf8")
+fn location(resp: quench_http::response::Response) -> String {
+    resp.into_hyper()
+        .headers()
+        .get("location")
+        .expect("location header")
+        .to_str()
+        .expect("utf8")
+        .to_string()
 }
 
 // -----------------------------------------------------------------
@@ -51,7 +63,7 @@ async fn body_text(resp: HttpResponse) -> String {
 #[tokio::test]
 async fn render_forgot_password_page_renders_ok() {
     let resp = render_forgot_password_page();
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    assert_eq!(resp.status(), StatusCode::OK);
     let html = body_text(resp).await;
     assert!(html.contains("ui_forgot_password_title"));
 }
@@ -78,52 +90,64 @@ async fn render_reset_password_page_without_error_omits_the_banner() {
 // HTTP handlers
 // -----------------------------------------------------------------
 
-#[actix_web::test]
+#[tokio::test]
 async fn forgot_password_page_renders() {
-    let app = actix_test::init_service(App::new().service(forgot_password_page)).await;
-    let req = actix_test::TestRequest::get()
-        .uri("/forgot-password")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let resp = forgot_password_page().await;
+    assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn forgot_password_page_slash_renders() {
-    let app = actix_test::init_service(App::new().service(forgot_password_page_slash)).await;
-    let req = actix_test::TestRequest::get()
-        .uri("/forgot-password/")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let resp = forgot_password_page_slash().await;
+    assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[actix_web::test]
-async fn forgot_password_submit_redirects_regardless_of_whether_the_account_exists() {
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(db().await))
-            .app_data(mailer())
-            .app_data(verification_tokens())
-            .service(forgot_password_submit),
-    )
-    .await;
-    let req = actix_test::TestRequest::post()
-        .uri("/forgot-password")
-        .set_form([("username", "no-such-user")])
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::FOUND);
-    let location = resp
-        .headers()
-        .get(actix_web::http::header::LOCATION)
-        .unwrap()
-        .to_str()
+async fn reset_app(db: Db) -> (Arc<dyn Endpoint>, Arc<quench_http::di::Container>) {
+    gatehouse_service::ui::pages::reset::register_routes();
+    let container = ContainerBuilder::new()
+        .provide(db)
+        .provide(mailer())
+        .provide_arc(Arc::new(VerificationTokens::in_memory()))
+        .provide_arc(sessions())
+        .build()
+        .await
         .unwrap();
-    assert!(location.contains("reset_requested=1"));
+    (
+        quench_starter::http::discover_and_mount("/"),
+        Arc::new(container),
+    )
 }
 
-#[actix_web::test]
+fn post_form(
+    path: &str,
+    pairs: &[(&str, &str)],
+    container: &Arc<quench_http::di::Container>,
+) -> Request {
+    let encoded = serde_urlencoded::to_string(pairs).unwrap();
+    Request::new(
+        Method::POST,
+        path.parse::<Uri>().unwrap(),
+        HeaderMap::new(),
+        quench_http::body::InboundBody::from_bytes(Bytes::from(encoded)),
+        container.clone(),
+    )
+}
+
+#[tokio::test]
+async fn forgot_password_submit_redirects_regardless_of_whether_the_account_exists() {
+    let (app, container) = reset_app(db().await).await;
+    let resp = app
+        .call(post_form(
+            "/ui/forgot-password",
+            &[("username", "no-such-user")],
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::FOUND);
+    assert!(location(resp).contains("reset_requested=1"));
+}
+
+#[tokio::test]
 async fn forgot_password_submit_sends_a_link_for_a_real_account_with_an_email() {
     let db = db().await;
     realm::register(
@@ -136,58 +160,46 @@ async fn forgot_password_submit_sends_a_link_for_a_real_account_with_an_email() 
     .await
     .expect("register");
 
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(db))
-            .app_data(mailer())
-            .app_data(verification_tokens())
-            .service(forgot_password_submit),
-    )
-    .await;
-    let req = actix_test::TestRequest::post()
-        .uri("/forgot-password")
-        .set_form([("username", "alice")])
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::FOUND);
+    let (app, container) = reset_app(db).await;
+    let resp = app
+        .call(post_form(
+            "/ui/forgot-password",
+            &[("username", "alice")],
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::FOUND);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn reset_password_page_renders() {
-    let app = actix_test::init_service(App::new().service(reset_password_page)).await;
-    let req = actix_test::TestRequest::get()
-        .uri("/reset-password?token=abc")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
-}
-
-#[actix_web::test]
-async fn reset_password_submit_rejects_an_unknown_token() {
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(db().await))
-            .app_data(sessions())
-            .app_data(verification_tokens())
-            .service(reset_password_submit),
+    let resp = reset_password_page(
+        Query(ResetPasswordQuery {
+            token: "abc".to_string(),
+        }),
+        Query(ResetNotice::default()),
     )
     .await;
-    let req = actix_test::TestRequest::post()
-        .uri("/reset-password")
-        .set_form([("token", "not-a-real-token"), ("password", "new-password")])
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::FOUND);
-    let location = resp
-        .headers()
-        .get(actix_web::http::header::LOCATION)
-        .unwrap()
-        .to_str()
-        .unwrap();
-    assert!(location.contains("ui_login_reset_invalid"));
+    assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[actix_web::test]
+#[tokio::test]
+async fn reset_password_submit_rejects_an_unknown_token() {
+    let resp = reset_password_submit(
+        Form(ResetPasswordForm {
+            token: "not-a-real-token".to_string(),
+            password: "new-password".to_string(),
+        }),
+        Inject(Arc::new(db().await)),
+        Inject(sessions()),
+        Inject(Arc::new(VerificationTokens::in_memory())),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::FOUND);
+    assert!(location(resp).contains("ui_login_reset_invalid"));
+}
+
+#[tokio::test]
 async fn reset_password_submit_changes_the_password_for_a_valid_token() {
     let db = db().await;
     realm::create(
@@ -213,25 +225,16 @@ async fn reset_password_submit_changes_the_password_for_a_valid_token() {
         .await
         .expect("issue token");
 
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(db))
-            .app_data(sessions())
-            .app_data(web::Data::new(tokens))
-            .service(reset_password_submit),
+    let resp = reset_password_submit(
+        Form(ResetPasswordForm {
+            token: token.clone(),
+            password: "new-password".to_string(),
+        }),
+        Inject(Arc::new(db)),
+        Inject(sessions()),
+        Inject(tokens),
     )
     .await;
-    let req = actix_test::TestRequest::post()
-        .uri("/reset-password")
-        .set_form([("token", token.as_str()), ("password", "new-password")])
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::FOUND);
-    let location = resp
-        .headers()
-        .get(actix_web::http::header::LOCATION)
-        .unwrap()
-        .to_str()
-        .unwrap();
-    assert!(location.contains("reset=1"));
+    assert_eq!(resp.status(), StatusCode::FOUND);
+    assert!(location(resp).contains("reset=1"));
 }

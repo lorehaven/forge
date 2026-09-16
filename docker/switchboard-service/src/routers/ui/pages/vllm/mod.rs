@@ -1,36 +1,38 @@
-use crate::routers::ui::common;
+use crate::routers::models::mod_impl::{OptionalClaims, can};
+use crate::routers::ui::UiAuthenticated;
 use crate::routers::ui::common::{UiPageKind, render_page};
-use actix_web::{HttpResponse, Responder, get, web};
-use quench_auth::actix::routers::ui::get_user_from_req;
-use quench_auth::prelude::JwtConfig;
-use quench_starter::prelude::with_base_path;
+use quench_auth::domain::jwt::JwtConfig;
+use quench_http::prelude::{Inject, Response, get};
+use quench_starter::common::routes::with_base_path;
 use quench_web::prelude::*;
 
-#[get("/vllm/manage")]
+#[get("/ui/vllm/manage")]
 pub(super) async fn vllm_manage(
-    req: actix_web::HttpRequest,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
-    if get_user_from_req(&req, &config).await.is_none() {
-        return common::ui_login_redirect();
+    UiAuthenticated(authenticated): UiAuthenticated,
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+) -> Response {
+    if !authenticated {
+        return crate::routers::ui::common::ui_login_redirect();
     }
-    render_vllm_manage_page(crate::routers::models::mod_impl::can(&req, &config, "launch").await)
+    render_vllm_manage_page(can(claims.as_ref(), &config, "launch"))
 }
 
-#[get("/vllm/manage/")]
+#[get("/ui/vllm/manage/")]
 pub(super) async fn vllm_manage_slash(
-    req: actix_web::HttpRequest,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
-    if get_user_from_req(&req, &config).await.is_none() {
-        return common::ui_login_redirect();
+    UiAuthenticated(authenticated): UiAuthenticated,
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+) -> Response {
+    if !authenticated {
+        return crate::routers::ui::common::ui_login_redirect();
     }
-    render_vllm_manage_page(crate::routers::models::mod_impl::can(&req, &config, "launch").await)
+    render_vllm_manage_page(can(claims.as_ref(), &config, "launch"))
 }
 
-fn render_vllm_manage_page(can_launch: bool) -> HttpResponse {
+fn render_vllm_manage_page(can_launch: bool) -> Response {
     render_page(
-        HttpResponse::Ok(),
+        http::StatusCode::OK,
         content()
             .class("vllm-manage-content")
             .child(
@@ -103,4 +105,9 @@ fn confirm_stop_instance_modal() -> Element {
     div()
         .attr("id", "confirm-stop-instance-modal")
         .class("estimates-modal")
+}
+
+pub(super) fn register_routes() {
+    let _ = vllm_manage as fn(_, _, _) -> _;
+    let _ = vllm_manage_slash as fn(_, _, _) -> _;
 }

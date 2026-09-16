@@ -1,17 +1,20 @@
 //! `launch_instance`/`launch_instance_form` handlers and the private
 //! `parse_optional_{u16,u32,f32}` helpers behind the form's string fields.
 
-use crate::env_support::env_lock;
-use actix_web::App;
-use actix_web::http::StatusCode;
-use actix_web::test as actix_test;
-use actix_web::web::Data;
 use async_trait::async_trait;
-use quench_auth::prelude::JwtConfig;
+use bytes::Bytes;
+use http::{HeaderMap, Method, StatusCode, Uri};
+use http_body_util::BodyExt;
+use quench_auth::domain::jwt::JwtConfig;
+use quench_http::body::InboundBody;
+use quench_http::di::ContainerBuilder;
+use quench_http::prelude::{Form, FromRequest, Inject, Json, Request};
 use std::sync::{Arc, Mutex};
+use switchboard_service::routers::models::mod_impl::OptionalClaims;
 use switchboard_service::routers::vllm::engine::VllmEngine;
 use switchboard_service::routers::vllm::launch::{
-    parse_optional_f32, parse_optional_u16, parse_optional_u32,
+    launch_instance, launch_instance_form, parse_optional_f32, parse_optional_u16,
+    parse_optional_u32,
 };
 use switchboard_service::routers::vllm::types::{LaunchRequest, VllmInstance};
 
@@ -90,152 +93,120 @@ impl VllmEngine for RecordingEngine {
 
 type LastRequest = Arc<Mutex<Option<LaunchRequest>>>;
 
-fn engine_data(fail: bool) -> (Data<Arc<dyn VllmEngine>>, LastRequest) {
+fn engine(fail: bool) -> (Inject<Arc<dyn VllmEngine>>, LastRequest) {
     let last_request: LastRequest = Arc::new(Mutex::new(None));
     let engine: Arc<dyn VllmEngine> = Arc::new(RecordingEngine {
         last_request: last_request.clone(),
         fail,
     });
-    (Data::new(engine), last_request)
+    (Inject(Arc::new(engine)), last_request)
 }
 
-#[actix_web::test]
+fn config(auth_enabled: bool) -> Inject<JwtConfig> {
+    let mut config = JwtConfig::for_tests();
+    config.auth_enabled = auth_enabled;
+    Inject(Arc::new(config))
+}
+
+fn launch_request_json(value: serde_json::Value) -> Json<LaunchRequest> {
+    Json(serde_json::from_value(value).expect("valid LaunchRequest json"))
+}
+
+/// `LaunchRequestForm` is private to `launch.rs`, so this goes through a
+/// real `Form::from_request` over a constructed `Request` - the same
+/// urlencoded-body parsing a real request would go through.
+async fn launch_request_form(
+    pairs: &[(&str, &str)],
+) -> Form<switchboard_service::routers::vllm::launch::LaunchRequestForm> {
+    let encoded = serde_urlencoded::to_string(pairs).unwrap();
+    let container = Arc::new(ContainerBuilder::new().build().await.unwrap());
+    let mut req = Request::new(
+        Method::POST,
+        "/api/v1/vllm/instances/form".parse::<Uri>().unwrap(),
+        HeaderMap::new(),
+        InboundBody::from_bytes(Bytes::from(encoded)),
+        container,
+    );
+    Form::from_request(&mut req)
+        .await
+        .expect("form deserializes")
+}
+
+async fn body_json<T: serde::de::DeserializeOwned>(resp: quench_http::response::Response) -> T {
+    let collected = resp
+        .into_hyper()
+        .into_body()
+        .collect()
+        .await
+        .expect("body collects");
+    serde_json::from_slice(&collected.to_bytes()).expect("valid json body")
+}
+
+#[tokio::test]
 async fn launch_instance_is_forbidden_without_the_launch_permission() {
-    let _guard = env_lock().lock().await;
-    unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", "true") };
+    let (engine, _) = engine(false);
+    let req = launch_request_json(serde_json::json!({
+        "model": "llama-3-8b", "host": "0.0.0.0", "port": 8000,
+        "enable_prefix_caching": false
+    }));
 
-    let (engine, _) = engine_data(false);
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(Data::new(JwtConfig::for_tests()))
-            .app_data(engine)
-            .service(switchboard_service::routers::vllm::launch::launch_instance),
-    )
-    .await;
-
-    let req = actix_test::TestRequest::post()
-        .uri("/instances")
-        .set_json(serde_json::json!({
-            "model": "llama-3-8b", "host": "0.0.0.0", "port": 8000,
-            "enable_prefix_caching": false
-        }))
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = launch_instance(OptionalClaims(None), config(true), req, engine).await;
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
-
-    unsafe { std::env::remove_var("SERVICE_AUTH_ENABLED") };
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn launch_instance_rejects_an_empty_model_name() {
-    let _guard = env_lock().lock().await;
-    unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", "false") };
+    let (engine, _) = engine(false);
+    let req = launch_request_json(serde_json::json!({
+        "model": "   ", "host": "0.0.0.0", "port": 8000,
+        "enable_prefix_caching": false
+    }));
 
-    let (engine, _) = engine_data(false);
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(Data::new(JwtConfig::for_tests()))
-            .app_data(engine)
-            .service(switchboard_service::routers::vllm::launch::launch_instance),
-    )
-    .await;
-
-    let req = actix_test::TestRequest::post()
-        .uri("/instances")
-        .set_json(serde_json::json!({
-            "model": "   ", "host": "0.0.0.0", "port": 8000,
-            "enable_prefix_caching": false
-        }))
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = launch_instance(OptionalClaims(None), config(false), req, engine).await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-
-    unsafe { std::env::remove_var("SERVICE_AUTH_ENABLED") };
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn launch_instance_succeeds_and_returns_the_instance_as_json() {
-    let _guard = env_lock().lock().await;
-    unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", "false") };
+    let (engine, last_request) = engine(false);
+    let req = launch_request_json(serde_json::json!({
+        "model": "llama-3-8b", "host": "0.0.0.0", "port": 8000,
+        "enable_prefix_caching": true
+    }));
 
-    let (engine, last_request) = engine_data(false);
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(Data::new(JwtConfig::for_tests()))
-            .app_data(engine)
-            .service(switchboard_service::routers::vllm::launch::launch_instance),
-    )
-    .await;
-
-    let req = actix_test::TestRequest::post()
-        .uri("/instances")
-        .set_json(serde_json::json!({
-            "model": "llama-3-8b", "host": "0.0.0.0", "port": 8000,
-            "enable_prefix_caching": true
-        }))
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = launch_instance(OptionalClaims(None), config(false), req, engine).await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
 
-    let body: VllmInstance = actix_test::read_body_json(resp).await;
+    let body: VllmInstance = body_json(resp).await;
     assert_eq!(body.model, "llama-3-8b");
     assert!(last_request.lock().unwrap().is_some());
-
-    unsafe { std::env::remove_var("SERVICE_AUTH_ENABLED") };
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn launch_instance_maps_an_engine_error_to_500() {
-    let _guard = env_lock().lock().await;
-    unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", "false") };
+    let (engine, _) = engine(true);
+    let req = launch_request_json(serde_json::json!({
+        "model": "llama-3-8b", "host": "0.0.0.0", "port": 8000,
+        "enable_prefix_caching": false
+    }));
 
-    let (engine, _) = engine_data(true);
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(Data::new(JwtConfig::for_tests()))
-            .app_data(engine)
-            .service(switchboard_service::routers::vllm::launch::launch_instance),
-    )
-    .await;
-
-    let req = actix_test::TestRequest::post()
-        .uri("/instances")
-        .set_json(serde_json::json!({
-            "model": "llama-3-8b", "host": "0.0.0.0", "port": 8000,
-            "enable_prefix_caching": false
-        }))
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = launch_instance(OptionalClaims(None), config(false), req, engine).await;
     assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
-
-    unsafe { std::env::remove_var("SERVICE_AUTH_ENABLED") };
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn launch_instance_form_maps_every_field_and_defaults_the_rest() {
-    let _guard = env_lock().lock().await;
-    unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", "false") };
-
-    let (engine, last_request) = engine_data(false);
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(Data::new(JwtConfig::for_tests()))
-            .app_data(engine)
-            .service(switchboard_service::routers::vllm::launch::launch_instance_form),
-    )
+    let (engine, last_request) = engine(false);
+    let form = launch_request_form(&[
+        ("model", "llama-3-8b"),
+        ("namespace", "  "),
+        ("port", "not-a-number"),
+        ("max_model_len", "4096"),
+        ("prefix_caching", "true"),
+    ])
     .await;
 
-    let req = actix_test::TestRequest::post()
-        .uri("/instances/form")
-        .set_form([
-            ("model", "llama-3-8b"),
-            ("namespace", "  "),
-            ("port", "not-a-number"),
-            ("max_model_len", "4096"),
-            ("prefix_caching", "true"),
-        ])
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = launch_instance_form(OptionalClaims(None), config(false), form, engine).await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
 
     let sent = last_request
@@ -250,30 +221,13 @@ async fn launch_instance_form_maps_every_field_and_defaults_the_rest() {
     assert_eq!(sent.max_model_len, Some(4096));
     assert!(sent.enable_prefix_caching); // via the legacy `prefix_caching` alias
     assert_eq!(sent.gpu_memory_utilization, Some(0.90)); // default
-
-    unsafe { std::env::remove_var("SERVICE_AUTH_ENABLED") };
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn launch_instance_form_is_forbidden_without_the_launch_permission() {
-    let _guard = env_lock().lock().await;
-    unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", "true") };
+    let (engine, _) = engine(false);
+    let form = launch_request_form(&[("model", "llama-3-8b")]).await;
 
-    let (engine, _) = engine_data(false);
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(Data::new(JwtConfig::for_tests()))
-            .app_data(engine)
-            .service(switchboard_service::routers::vllm::launch::launch_instance_form),
-    )
-    .await;
-
-    let req = actix_test::TestRequest::post()
-        .uri("/instances/form")
-        .set_form([("model", "llama-3-8b")])
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = launch_instance_form(OptionalClaims(None), config(true), form, engine).await;
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
-
-    unsafe { std::env::remove_var("SERVICE_AUTH_ENABLED") };
 }

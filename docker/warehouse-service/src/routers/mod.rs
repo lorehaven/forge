@@ -5,12 +5,18 @@ pub mod docker;
 pub mod files;
 pub mod ui;
 
-/// Read fresh on every call rather than cached in a `LazyLock` - a
-/// process-global cache initialized from whichever env var value happened to
-/// be set the first time anything touched it would make this untestable
-/// (every test in the binary would be stuck with whatever the first test set,
-/// or the real default). The cost is a `HashMap` lookup per storage-path
-/// resolution, negligible next to the filesystem I/O around it.
+/// Links every route module in - an unreferenced `.rlib` module is dead-code-eliminated
+/// before `inventory` ever sees its routes.
+pub fn register_routes() {
+    admin::register_routes();
+    artifacts::register_routes();
+    crates::register_routes();
+    docker::register_routes();
+    files::register_routes();
+    ui::register_routes();
+}
+
+/// Read fresh every call, not `LazyLock`-cached - a process-global cache would make this untestable.
 pub fn crates_storage_root() -> String {
     envmnt::get_or("CRATES_STORAGE_PATH", "./storage/crates")
 }
@@ -19,10 +25,7 @@ pub fn docker_storage_root() -> String {
     envmnt::get_or("STORAGE_PATH", "./storage/docker")
 }
 
-/// Root of the multi-platform artifact store. `ARTIFACT_STORAGE_PATH` is the
-/// current name; `APK_STORAGE_PATH` is honoured as a fallback so a deployment
-/// that set the old var keeps working (its APK subtree is relocated once on
-/// boot - see `crate::relocate_legacy_apk_storage`).
+/// Root of the artifact store. `APK_STORAGE_PATH` is an honored fallback for the old var name.
 pub fn artifact_storage_root() -> String {
     for key in ["ARTIFACT_STORAGE_PATH", "APK_STORAGE_PATH"] {
         if envmnt::exists(key) {
@@ -44,8 +47,7 @@ static FEATURE_FLAGS: std::sync::LazyLock<FeatureFlags> =
         docker: feature_enabled("FEATURE_DOCKER_ENABLED", false),
         crates: feature_enabled("FEATURE_CRATES_ENABLED", false),
         files: feature_enabled("FEATURE_FILES_ENABLED", false),
-        // `FEATURE_APK_ENABLED` kept as a fallback: the store it gated is now
-        // the whole artifact store, Android included.
+        // `FEATURE_APK_ENABLED` is a fallback - it now gates the whole artifact store.
         artifacts: feature_enabled("FEATURE_ARTIFACTS_ENABLED", false)
             || feature_enabled("FEATURE_APK_ENABLED", false),
     });

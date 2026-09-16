@@ -1,13 +1,5 @@
-//! Status pills.
-//!
-//! The one piece of vocabulary conveyor adds to the estate's stylesheet: every
-//! page that lists runs, jobs or steps shows the same six states, and they have
-//! to read the same everywhere.
-//!
-//! Colours are the theme's own variables (`libs/quench-web/src/framework/theme`)
-//! rather than literals, so a pill follows a theme change instead of fighting
-//! it. The estate's palette has no blue, which is why an in-flight run is amber
-//! rather than the blue other CI tools use.
+//! Status pills for the six run/job/step states, shared across every listing page.
+//! Colours use theme variables, not literals, so pills follow theme changes.
 
 use quench_web::prelude::CssRule;
 
@@ -43,9 +35,7 @@ pub fn status_rules() -> Vec<CssRule> {
             .child(CssRule::new("&::before").property("animation", "conveyor-pulse 1.2s infinite")),
         CssRule::new(".status-success").property("color", "var(--bs-success-500)"),
         CssRule::new(".status-failed").property("color", "var(--bs-danger)"),
-        // Cancelled and skipped are both neutral, because neither says anything
-        // about the code. Cancelled is the brighter of the two: somebody did it
-        // on purpose and may want to know which run it was.
+        // Neutral: neither says anything about the code. Cancelled is brighter.
         CssRule::new(".status-cancelled").property("color", "var(--bs-gray-300)"),
         CssRule::new(".status-skipped").property("color", "var(--bs-gray-600)"),
         CssRule::new("@keyframes conveyor-pulse")

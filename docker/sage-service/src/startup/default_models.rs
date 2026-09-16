@@ -7,29 +7,12 @@ use tokio::sync::Mutex;
 use crate::clients::switchboard::{SwitchboardClient, VllmInstance};
 use crate::config::{DefaultModel, SageConfig};
 
-/// How many times the monitor retries a default model that never reaches `running` before giving
-/// up and moving to the next one; without this, one unlaunchable model would block every model behind it, since launches are serialized.
+/// Retries before giving up on an unlaunchable model and moving on -
+/// launches are serialized, so one stuck model would block the rest.
 pub const MAX_LAUNCH_ATTEMPTS: u32 = 3;
 
-/// Instances this process's own monitor has launched, keyed by instance id
-/// with the `started_at` switchboard reported at launch time.
-///
-/// During a rolling update the new pod's monitor typically launches a
-/// default model within its first tick, before Kubernetes has even noticed
-/// the pod is ready - well before the old pod receives SIGTERM. If shutdown
-/// stopped every active instance matching a configured model name, the old
-/// pod would tear down the instance the new pod just launched out from under
-/// it.
-///
-/// `owns` decides what shutdown is allowed to stop: an instance this process
-/// itself launched and that nothing has relaunched since (compared by
-/// `started_at`, not just id - the id is stable across relaunches of the
-/// same model/port, so id alone can't tell "still mine" from "replaced"),
-/// *or* an instance that already existed before this process even started,
-/// which this process merely inherited (e.g. left running by an earlier
-/// crash) and is still responsible for cleaning up. What it excludes is
-/// exactly the rolling-update case: an instance that appeared after this
-/// process started but that a *different* process launched.
+/// Instances this monitor launched, by id + `started_at` - both, so a
+/// rolling update's new pod can't have the old pod tear its launch down.
 #[derive(Clone)]
 pub struct LaunchedInstances {
     launches: Arc<Mutex<HashMap<String, DateTime<Utc>>>>,
@@ -213,9 +196,8 @@ pub async fn request_model_launch(
     }
 }
 
-/// Gracefully stop the default models on shutdown: SIGTERM each active instance that matches a
-/// configured model *and* that this process itself launched (see `LaunchedInstances`), never one
-/// a newer sage replica already relaunched. Best-effort; no-op unless `stop_models_on_shutdown` is enabled.
+/// SIGTERMs instances this process launched (see `LaunchedInstances`), never
+/// ones a newer replica relaunched. Best-effort; no-op unless enabled.
 pub async fn shutdown(
     switchboard: &SwitchboardClient,
     config: &SageConfig,

@@ -1,15 +1,19 @@
-use actix_web::body::MessageBody;
-use actix_web::{App, test as actix_test, web};
-use quench_auth::prelude::JwtConfig;
-use quench_db::{Db, InMemoryDb};
+use crate::support;
+
+use http::{Method, StatusCode};
+use http_body_util::BodyExt;
+use quench_auth::domain::jwt::JwtConfig;
+use quench_db::InMemoryDb;
+use quench_db::prelude::Db;
+use quench_http::endpoint::Endpoint;
 use warehouse_service::routers::ui::pages::files::browse::{
-    BrowseFile, BrowseView, PreviewKind, Selection, TreeNode, build_tree, files_browse,
-    preview_kind, render_browse_page,
+    BrowseFile, BrowseView, PreviewKind, Selection, TreeNode, build_tree, preview_kind,
+    render_browse_page,
 };
 
-fn body_html(resp: actix_web::HttpResponse) -> String {
-    let body = resp.into_body().try_into_bytes().unwrap();
-    String::from_utf8(body.to_vec()).unwrap()
+async fn body_html(resp: quench_http::response::Response) -> String {
+    let collected = resp.into_hyper().into_body().collect().await.unwrap();
+    String::from_utf8(collected.to_bytes().to_vec()).unwrap()
 }
 
 fn jwt_config(auth_enabled: bool) -> JwtConfig {
@@ -18,8 +22,8 @@ fn jwt_config(auth_enabled: bool) -> JwtConfig {
     config
 }
 
-fn in_memory_db() -> web::Data<Db> {
-    web::Data::new(Db::InMemory(InMemoryDb::new()))
+fn in_memory_db() -> Db {
+    Db::InMemory(InMemoryDb::new())
 }
 
 fn file(path: &str, size: i64) -> BrowseFile {
@@ -78,23 +82,27 @@ fn preview_kind_classifies_by_extension() {
 // render_browse_page
 // ---------------------------------------------------------------------------
 
-#[test]
-fn an_unknown_storage_renders_a_not_found_notice() {
+#[tokio::test]
+async fn an_unknown_storage_renders_a_not_found_notice() {
     let mut v = view(Selection::Dir(String::new()), TreeNode::default());
     v.storage_exists = false;
-    assert!(body_html(render_browse_page(&v)).contains("ui_storage_not_found"));
+    assert!(
+        body_html(render_browse_page(&v))
+            .await
+            .contains("ui_storage_not_found")
+    );
 }
 
-#[test]
-fn a_denied_read_renders_a_forbidden_notice_and_no_tree() {
+#[tokio::test]
+async fn a_denied_read_renders_a_forbidden_notice_and_no_tree() {
     let mut v = view(Selection::Dir(String::new()), TreeNode::default());
     v.read_denied = true;
-    let html = body_html(render_browse_page(&v));
+    let html = body_html(render_browse_page(&v)).await;
     assert!(html.contains("api_error_forbidden"));
 }
 
-#[test]
-fn a_selected_image_renders_an_inline_preview_and_a_download_link() {
+#[tokio::test]
+async fn a_selected_image_renders_an_inline_preview_and_a_download_link() {
     let tree = build_tree(&[file("photos/IMG_0001.jpg", 2048)]);
     let v = view(
         Selection::File {
@@ -103,7 +111,7 @@ fn a_selected_image_renders_an_inline_preview_and_a_download_link() {
         },
         tree,
     );
-    let html = body_html(render_browse_page(&v));
+    let html = body_html(render_browse_page(&v)).await;
 
     // Preview points at the inline download.
     assert!(html.contains("<img"));
@@ -118,8 +126,8 @@ fn a_selected_image_renders_an_inline_preview_and_a_download_link() {
     assert!(!html.contains("/files/delete-file"));
 }
 
-#[test]
-fn the_delete_form_appears_only_for_a_manager() {
+#[tokio::test]
+async fn the_delete_form_appears_only_for_a_manager() {
     let tree = build_tree(&[file("a.txt", 3)]);
     let mut v = view(
         Selection::File {
@@ -129,14 +137,14 @@ fn the_delete_form_appears_only_for_a_manager() {
         tree,
     );
     v.can_manage = true;
-    let html = body_html(render_browse_page(&v));
+    let html = body_html(render_browse_page(&v)).await;
     assert!(html.contains("/files/delete-file"));
     assert!(html.contains("button-danger-sm"));
     assert!(html.contains("ui_file_delete"));
 }
 
-#[test]
-fn an_unpreviewable_type_says_so() {
+#[tokio::test]
+async fn an_unpreviewable_type_says_so() {
     let tree = build_tree(&[file("backup.zip", 9)]);
     let v = view(
         Selection::File {
@@ -145,20 +153,20 @@ fn an_unpreviewable_type_says_so() {
         },
         tree,
     );
-    let html = body_html(render_browse_page(&v));
+    let html = body_html(render_browse_page(&v)).await;
     assert!(html.contains("ui_file_preview_none"));
     assert!(!html.contains("<img"));
 }
 
-#[test]
-fn a_directory_selection_lists_its_children_with_a_tree() {
+#[tokio::test]
+async fn a_directory_selection_lists_its_children_with_a_tree() {
     let tree = build_tree(&[
         file("photos/a.jpg", 1),
         file("photos/b.jpg", 2),
         file("top.txt", 3),
     ]);
     let v = view(Selection::Dir("photos".to_string()), tree);
-    let html = body_html(render_browse_page(&v));
+    let html = body_html(render_browse_page(&v)).await;
 
     assert!(html.contains("a.jpg"));
     assert!(html.contains("b.jpg"));
@@ -168,73 +176,77 @@ fn a_directory_selection_lists_its_children_with_a_tree() {
     assert!(html.contains("ui_files_up"));
 }
 
-#[test]
-fn the_truncation_notice_shows_when_the_tree_was_capped() {
+#[tokio::test]
+async fn the_truncation_notice_shows_when_the_tree_was_capped() {
     let mut v = view(
         Selection::Dir(String::new()),
         build_tree(&[file("a.txt", 1)]),
     );
     v.truncated = true;
-    assert!(body_html(render_browse_page(&v)).contains("ui_storage_files_truncated"));
+    assert!(
+        body_html(render_browse_page(&v))
+            .await
+            .contains("ui_storage_files_truncated")
+    );
 }
 
 // ---------------------------------------------------------------------------
 // HTTP handler
 // ---------------------------------------------------------------------------
 
-#[actix_web::test]
+async fn app(
+    jwt_config: JwtConfig,
+    db: Db,
+) -> (
+    std::sync::Arc<dyn Endpoint>,
+    std::sync::Arc<quench_http::di::Container>,
+) {
+    warehouse_service::routers::ui::pages::files::browse::register_routes();
+    let container = support::container_builder()
+        .provide(jwt_config)
+        .provide(db)
+        .build()
+        .await
+        .unwrap();
+    support::app(container).await
+}
+
+#[tokio::test]
 async fn files_browse_redirects_to_login_when_unauthenticated() {
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(jwt_config(true)))
-            .app_data(in_memory_db())
-            .service(files_browse),
-    )
-    .await;
-    let req = actix_test::TestRequest::get()
-        .uri("/files/browse?storage=phone_backup")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(jwt_config(true), in_memory_db()).await;
+    let resp = app
+        .call(support::req(
+            Method::GET,
+            "/ui/files/browse?storage=phone_backup",
+            &container,
+        ))
+        .await;
     assert!(resp.status().is_redirection());
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn files_browse_without_a_storage_sends_you_to_pick_one() {
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(jwt_config(false)))
-            .app_data(in_memory_db())
-            .service(files_browse),
-    )
-    .await;
-    let req = actix_test::TestRequest::get()
-        .uri("/files/browse")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(jwt_config(false), in_memory_db()).await;
+    let resp = app
+        .call(support::req(Method::GET, "/ui/files/browse", &container))
+        .await;
     assert!(resp.status().is_redirection());
-    let location = resp
-        .headers()
-        .get(actix_web::http::header::LOCATION)
-        .unwrap()
-        .to_str()
-        .unwrap();
+    let (headers, _) = support::parts(resp).await;
+    let location = support::location(&headers);
     assert!(location.contains("/ui/files/storages"), "{location}");
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn files_browse_renders_a_not_found_notice_for_an_unknown_storage() {
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(jwt_config(false)))
-            .app_data(in_memory_db())
-            .service(files_browse),
-    )
-    .await;
-    let req = actix_test::TestRequest::get()
-        .uri("/files/browse?storage=does_not_exist")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
-    let html = String::from_utf8(actix_test::read_body(resp).await.to_vec()).unwrap();
+    let (app, container) = app(jwt_config(false), in_memory_db()).await;
+    let resp = app
+        .call(support::req(
+            Method::GET,
+            "/ui/files/browse?storage=does_not_exist",
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let html = body_html(resp).await;
     assert!(html.contains("ui_storage_not_found"));
 }

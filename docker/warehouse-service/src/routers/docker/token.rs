@@ -1,9 +1,22 @@
 use crate::docker_token::{DockerClaims, DockerTokenConfig};
-use actix_web::{HttpRequest, HttpResponse, Responder, get, http::header, web};
+use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::{Duration, Utc};
-use quench_auth::prelude::UserDb;
+use quench_auth::domain::auth::UserDb;
+use quench_http::prelude::{
+    FromRequest, HttpError, Inject, Query, Request, Response, get, http::StatusCode,
+};
 use serde::{Deserialize, Serialize};
+
+/// The raw `Authorization` header, read via a local extractor (quench-http has none built in).
+pub struct AuthorizationHeader(pub Option<String>);
+
+#[async_trait]
+impl FromRequest for AuthorizationHeader {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        Ok(Self(req.header("authorization").map(str::to_string)))
+    }
+}
 
 #[derive(Deserialize)]
 pub struct TokenQuery {
@@ -23,32 +36,29 @@ pub struct TokenResponse {
 
 #[get("/token")]
 pub async fn handle(
-    req: HttpRequest,
-    config: web::Data<DockerTokenConfig>,
-    user_db: web::Data<std::sync::Arc<UserDb>>,
-    query: web::Query<TokenQuery>,
-) -> impl Responder {
+    AuthorizationHeader(authorization): AuthorizationHeader,
+    Inject(config): Inject<DockerTokenConfig>,
+    Inject(user_db): Inject<UserDb>,
+    Query(query): Query<TokenQuery>,
+) -> Response {
     // Validate Basic authentication (or allow anonymous if disabled)
-    let username = match validate_basic(&req, &config, &user_db).await {
+    let username = match validate_basic(authorization.as_deref(), &config, &user_db).await {
         Some(u) => u,
         None => {
-            return HttpResponse::Unauthorized()
-                .append_header(("WWW-Authenticate", "Basic realm=\"registry\""))
-                .finish();
+            return Response::new(StatusCode::UNAUTHORIZED)
+                .header("www-authenticate", "Basic realm=\"registry\"");
         }
     };
 
     // Validate service
     if query.service != config.service_name {
-        return HttpResponse::BadRequest().finish();
+        return Response::new(StatusCode::BAD_REQUEST);
     }
 
     let now = Utc::now();
     let exp = now + Duration::minutes(10);
 
-    // Registry tokens stay single-audience: they are minted for this service's
-    // docker endpoint only, never for the realm at large - and never leave
-    // warehouse, so they carry no `aud` list at all, just `service`.
+    // Single-audience: this endpoint only, no realm-wide `aud` list.
     let claims = DockerClaims {
         sub: username,
         service: query.service.clone(),
@@ -59,18 +69,20 @@ pub async fn handle(
 
     let token = config.encode(&claims).unwrap();
 
-    HttpResponse::Ok().json(TokenResponse {
-        token,
-        expires_in: 600,
-        issued_at: now.to_rfc3339(),
-    })
+    Response::json(
+        StatusCode::OK,
+        &TokenResponse {
+            token,
+            expires_in: 600,
+            issued_at: now.to_rfc3339(),
+        },
+    )
+    .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
 }
 
-/// Basic auth only - the docker registry protocol's own exchange. There is no
-/// UI-session fallback: a docker client never carries the realm cookie, and
-/// the estate's SSO flow has no say over this endpoint.
+/// Basic auth only - a docker client never carries the realm session cookie.
 async fn validate_basic(
-    req: &HttpRequest,
+    authorization: Option<&str>,
     config: &DockerTokenConfig,
     user_db: &UserDb,
 ) -> Option<String> {
@@ -78,11 +90,7 @@ async fn validate_basic(
         return Some("anonymous".to_string());
     }
 
-    let header_value = req
-        .headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|h| h.to_str().ok())?;
-    let encoded = header_value.strip_prefix("Basic ")?;
+    let encoded = authorization?.strip_prefix("Basic ")?;
     validate_basic_encoded(encoded, user_db).await
 }
 
@@ -96,4 +104,8 @@ pub async fn validate_basic_encoded(encoded: &str, user_db: &UserDb) -> Option<S
     } else {
         None
     }
+}
+
+pub fn register_routes() {
+    let _ = handle as fn(_, _, _, _) -> _;
 }

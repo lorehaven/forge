@@ -3,12 +3,9 @@ use crate::routers::docker::registry::storage::{
 };
 use crate::routers::docker::{manifest_path, repository_path, validate_digest};
 use crate::routers::ui::PageQuery;
-use crate::routers::ui::common::{
-    UiPageKind, is_ui_authenticated, render_page, ui_login_redirect, ui_path,
-};
-use actix_web::{HttpRequest, HttpResponse, Responder, get, post, web};
-use quench_auth::prelude::JwtConfig;
-use quench_starter::prelude::with_base_path;
+use crate::routers::ui::common::{PageAuth, UiPageKind, render_page, ui_login_redirect, ui_path};
+use quench_http::prelude::{Form, Query, Response, get, http::StatusCode, post};
+use quench_starter::common::routes::with_base_path;
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 use std::collections::BTreeMap;
@@ -32,87 +29,76 @@ struct RepoTreeNode {
     full_repo: Option<String>,
 }
 
-#[get("/docker/catalog")]
+#[get("/ui/docker/catalog")]
 pub async fn docker_catalog(
-    req: HttpRequest,
-    query: web::Query<PageQuery>,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
-    if !is_ui_authenticated(&req, &config).await {
+    PageAuth(authenticated): PageAuth,
+    Query(query): Query<PageQuery>,
+) -> Response {
+    if !authenticated {
         return ui_login_redirect();
     }
     render_catalog_page(query.repo.clone(), query.tag.clone())
 }
 
-#[get("/docker/catalog/")]
+#[get("/ui/docker/catalog/")]
 pub async fn docker_catalog_slash(
-    req: HttpRequest,
-    query: web::Query<PageQuery>,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
-    if !is_ui_authenticated(&req, &config).await {
+    PageAuth(authenticated): PageAuth,
+    Query(query): Query<PageQuery>,
+) -> Response {
+    if !authenticated {
         return ui_login_redirect();
     }
     render_catalog_page(query.repo.clone(), query.tag.clone())
 }
 
-#[get("/docker/delete-image-modal")]
+#[get("/ui/docker/delete-image-modal")]
 pub async fn delete_image_modal(
-    req: HttpRequest,
-    query: web::Query<DeleteImageModalQuery>,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
-    if !is_ui_authenticated(&req, &config).await {
+    PageAuth(authenticated): PageAuth,
+    Query(query): Query<DeleteImageModalQuery>,
+) -> Response {
+    if !authenticated {
         return ui_login_redirect();
     }
 
-    HttpResponse::Ok()
-        .content_type(actix_web::http::header::ContentType::html())
-        .body(render_delete_image_modal(&query))
+    Response::html(StatusCode::OK, render_delete_image_modal(&query))
 }
 
-#[get("/docker/delete-image-modal/empty")]
-pub async fn empty_delete_image_modal(
-    req: HttpRequest,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
-    if !is_ui_authenticated(&req, &config).await {
+#[get("/ui/docker/delete-image-modal/empty")]
+pub async fn empty_delete_image_modal(PageAuth(authenticated): PageAuth) -> Response {
+    if !authenticated {
         return ui_login_redirect();
     }
 
-    HttpResponse::Ok()
-        .content_type(actix_web::http::header::ContentType::html())
-        .body(empty_delete_image_modal_html())
+    Response::html(StatusCode::OK, empty_delete_image_modal_html())
 }
 
-#[post("/docker/delete-image")]
+#[post("/ui/docker/delete-image")]
 pub async fn delete_image(
-    req: HttpRequest,
-    form: web::Form<DeleteImageForm>,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
-    if !is_ui_authenticated(&req, &config).await {
+    PageAuth(authenticated): PageAuth,
+    Form(form): Form<DeleteImageForm>,
+) -> Response {
+    if !authenticated {
         return ui_login_redirect();
     }
 
     if !validate_digest(&form.digest) {
-        return HttpResponse::BadRequest().body("api_error_digest_required");
+        return Response::text(StatusCode::BAD_REQUEST, "api_error_digest_required");
     }
 
     let Some(repo_path) = repository_path(&form.repository) else {
-        return HttpResponse::BadRequest().body("api_error_invalid_repository");
+        return Response::text(StatusCode::BAD_REQUEST, "api_error_invalid_repository");
     };
     let Some(manifest_path) = manifest_path(&form.digest) else {
-        return HttpResponse::BadRequest().body("api_error_invalid_digest");
+        return Response::text(StatusCode::BAD_REQUEST, "api_error_invalid_digest");
     };
 
     if !manifest_path.exists() {
-        return HttpResponse::NotFound().body("api_error_manifest_unknown");
+        return Response::text(StatusCode::NOT_FOUND, "api_error_manifest_unknown");
     }
 
     if let Err(err) = tokio::fs::remove_file(&manifest_path).await {
         tracing::error!("Failed to delete manifest: {}", err);
-        return HttpResponse::InternalServerError().body("api_error_internal");
+        return Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal");
     }
 
     let tags_dir = repo_path.join("tags");
@@ -125,12 +111,10 @@ pub async fn delete_image(
         }
     }
 
-    HttpResponse::NoContent()
-        .append_header((
-            "HX-Redirect",
-            with_base_path(&format!("/ui/docker/catalog?repo={}", form.repository)),
-        ))
-        .finish()
+    Response::new(StatusCode::NO_CONTENT).header(
+        "HX-Redirect",
+        with_base_path(&format!("/ui/docker/catalog?repo={}", form.repository)),
+    )
 }
 
 pub fn render_delete_image_modal(query: &DeleteImageModalQuery) -> String {
@@ -234,7 +218,7 @@ fn empty_delete_image_modal_element() -> Element {
 pub fn render_catalog_page(
     selected_repo: Option<String>,
     selected_tag: Option<String>,
-) -> HttpResponse {
+) -> Response {
     let repositories = list_repositories();
     let tree = build_repo_tree(&repositories);
 
@@ -279,7 +263,7 @@ pub fn render_catalog_page(
         .child(render_metadata_panel(repo.as_deref(), selected_meta));
 
     render_page(
-        HttpResponse::Ok(),
+        StatusCode::OK,
         content()
             .class("container-fluid py-4")
             .child(div().class("split-view").child(left).child(right))
@@ -328,7 +312,7 @@ fn render_metadata_panel(repo: Option<&str>, selected_meta: Option<&TagMetadata>
                                 ui_path("/docker/delete-image-modal"),
                                 encode_query_component(repo.unwrap_or("")),
                                 encode_query_component(&meta.tag),
-                                encode_query_component(&meta.digest),
+                                encode_query_component(&meta.digest)
                             ),
                         )
                         .attr("hx-target", "#confirm-delete-image-modal")
@@ -540,4 +524,12 @@ fn encode_query_component(value: &str) -> String {
         }
     }
     encoded
+}
+
+pub fn register_routes() {
+    let _ = docker_catalog as fn(_, _) -> _;
+    let _ = docker_catalog_slash as fn(_, _) -> _;
+    let _ = delete_image_modal as fn(_, _) -> _;
+    let _ = empty_delete_image_modal as fn(_) -> _;
+    let _ = delete_image as fn(_, _) -> _;
 }

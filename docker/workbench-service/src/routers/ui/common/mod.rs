@@ -1,8 +1,9 @@
-use actix_web::{HttpRequest, HttpResponse, Responder, get, http::header::ContentType, web};
-use quench_auth::actix::routers::ui::get_user_from_req;
-pub use quench_auth::prelude::Claims;
-use quench_auth::prelude::JwtConfig;
-pub use quench_starter::actix::routers::ui::{
+use async_trait::async_trait;
+pub use quench_auth::domain::jwt::Claims;
+use quench_auth::domain::jwt::JwtConfig;
+use quench_auth::http::routers::ui::get_user_from_req;
+use quench_http::prelude::{FromRequest, HttpError, Path, Request, Response, get};
+pub use quench_starter::http::routers::ui::{
     is_ui_authenticated, ui_asset_path, ui_login_redirect_for, ui_path,
 };
 use quench_web::prelude::*;
@@ -59,35 +60,70 @@ fn ui_header() -> Element {
         )
 }
 
-#[get("/assets/{path:.*}")]
-pub async fn assets(path: web::Path<String>) -> impl Responder {
-    quench_starter::actix::routers::ui::serve_assets(path, "dist/assets").await
+#[get("/ui/assets/{path:.*}")]
+pub async fn assets(Path(path): Path<String>) -> Response {
+    quench_starter::http::routers::ui::serve_assets(&path, "dist/assets").await
 }
 
-pub fn render_page(mut builder: actix_web::HttpResponseBuilder, content: Element) -> HttpResponse {
-    builder
-        .content_type(ContentType::html())
-        .body(UI_SHELL.page(div().class("page").child(content)))
+pub fn render_page(status: http::StatusCode, content: Element) -> Response {
+    Response::html(status, UI_SHELL.page(div().class("page").child(content)))
 }
 
-pub fn ui_login_redirect() -> HttpResponse {
-    quench_starter::actix::routers::ui::ui_login_redirect()
+pub fn ui_login_redirect() -> Response {
+    quench_starter::http::routers::ui::ui_login_redirect()
 }
 
-/// The signed-in identity behind a browser request - a bearer token if one is
-/// already in the request's extensions (there never is, on the UI side, but
-/// `get_user_from_req` checks both so API and UI code share one entry point),
-/// otherwise the realm session cookie. `None` means "not signed in", not
-/// "auth disabled" - `get_user_from_req` folds that into a synthetic
-/// all-access `Claims` already.
-pub async fn actor(request: &HttpRequest, config: &JwtConfig) -> Option<Claims> {
+/// The signed-in identity from the session cookie. `None` means "not signed
+/// in", not "auth disabled" - that folds into a synthetic all-access `Claims`.
+pub async fn actor(request: &Request, config: &JwtConfig) -> Option<Claims> {
     get_user_from_req(request, config).await
 }
 
-/// What a redirect after a mutating form carries back to the page it returns
-/// to - an error code or a success code, rendered as a plain (untranslated)
-/// banner. These are operational messages about a form submission, not core
-/// UI chrome, so unlike labels and buttons they are not run through i18n.
+/// Whether the request carries a usable realm session - for pages that only
+/// gate rendering, not needing the identity itself.
+pub struct PageAuth(pub bool);
+
+#[async_trait]
+impl FromRequest for PageAuth {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        let Ok(config) = req.container().get::<JwtConfig>() else {
+            return Ok(Self(false));
+        };
+        Ok(Self(is_ui_authenticated(req, &config).await))
+    }
+}
+
+/// Claims, or the redirect to send instead. Not a plain `Result<_, HttpError>`
+/// since `HttpError::into_response` can't render a redirect.
+pub enum ActorOrRedirect {
+    Claims(Claims),
+    Redirect(Response),
+}
+
+impl ActorOrRedirect {
+    pub fn or_redirect(self) -> Result<Claims, Response> {
+        match self {
+            Self::Claims(claims) => Ok(claims),
+            Self::Redirect(resp) => Err(resp),
+        }
+    }
+}
+
+#[async_trait]
+impl FromRequest for ActorOrRedirect {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        let Ok(config) = req.container().get::<JwtConfig>() else {
+            return Ok(Self::Redirect(ui_login_redirect_for(req)));
+        };
+        match actor(req, &config).await {
+            Some(claims) => Ok(Self::Claims(claims)),
+            None => Ok(Self::Redirect(ui_login_redirect_for(req))),
+        }
+    }
+}
+
+/// A post-mutation redirect's status code, rendered as an untranslated
+/// banner - not run through i18n since it's operational, not chrome.
 #[derive(Deserialize, Default)]
 pub struct Notice {
     #[serde(default)]
@@ -109,12 +145,8 @@ pub fn notice_banner(notice: &Notice) -> Option<Element> {
     None
 }
 
-/// The assignee `<select>` plus its "assign to me" shortcut, shared by the
-/// create-issue and issue-detail forms. "Unassigned" and "Me" come first -
-/// before the (potentially long) alphabetical list of everyone else in the
-/// realm - since those are the two choices actually made most often.
-/// `current_user` is deliberately excluded from that alphabetical tail so it
-/// never appears twice.
+/// Assignee `<select>` + "assign to me" shortcut. "Unassigned"/"Me" come
+/// first; `current_user` is excluded from the alphabetical tail.
 pub fn assignee_field(
     current_user: &str,
     users: &[crate::domain::realm_users::RealmUser],
@@ -166,4 +198,8 @@ pub fn assignee_field(
             .class("wb-assign-me")
             .attr("data-i18n", "ui_assign_to_me"),
     )
+}
+
+pub fn register_routes() {
+    let _ = assets as fn(_) -> _;
 }

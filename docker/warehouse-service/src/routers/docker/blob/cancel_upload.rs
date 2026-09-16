@@ -1,33 +1,35 @@
 use crate::domain::docker_error;
 use crate::routers::docker::upload_path;
-use actix_web::{HttpResponse, Responder, delete, web};
-use quench_starter::prelude::error;
+use quench_http::prelude::{Path, Response, delete, http::StatusCode};
+use quench_starter::http::domain::error;
 
-#[delete("/{name:.+}/blobs/uploads/{uuid}")]
-pub async fn handle(path: web::Path<(String, String)>) -> impl Responder {
-    let (name, uuid) = path.into_inner();
-
+#[delete("/v2/{name:.+}/blobs/uploads/{uuid}")]
+pub async fn handle(Path((name, uuid)): Path<(String, String)>) -> Response {
     let Some(upload_path) = upload_path(&name, &uuid) else {
         return error::response(
-            actix_web::http::StatusCode::BAD_REQUEST,
+            StatusCode::BAD_REQUEST,
             docker_error::NAME_UNKNOWN,
             "invalid repository name",
         );
     };
     if !upload_path.exists() {
         return error::response(
-            actix_web::http::StatusCode::NOT_FOUND,
+            StatusCode::NOT_FOUND,
             docker_error::BLOB_UNKNOWN,
             "blob upload unknown to registry",
         );
     }
 
     match tokio::fs::remove_file(&upload_path).await {
-        Ok(_) => HttpResponse::NoContent().finish(),
+        Ok(_) => Response::new(StatusCode::NO_CONTENT),
         Err(_) => error::response(
-            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+            StatusCode::INTERNAL_SERVER_ERROR,
             error::UNSUPPORTED,
             "internal server error",
         ),
     }
+}
+
+pub fn register_routes() {
+    let _ = handle as fn(_) -> _;
 }

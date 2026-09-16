@@ -1,5 +1,4 @@
-use actix_web::HttpResponse;
-use actix_web::http::StatusCode;
+use quench_http::prelude::http::StatusCode;
 use quench_web::prelude::*;
 use warehouse_service::routers::ui::common::{
     SUPPORTED_LOCALES, UiPageKind, render_page, supported_locales, ui_header, ui_login_redirect,
@@ -39,7 +38,7 @@ fn render_page_wraps_content_in_the_matching_shell_for_every_page_kind() {
         UiPageKind::Files,
         UiPageKind::Artifacts,
     ] {
-        let resp = render_page(HttpResponse::Ok(), div().text("marker-content"), kind);
+        let resp = render_page(StatusCode::OK, div().text("marker-content"), kind);
         assert_eq!(resp.status(), StatusCode::OK);
     }
 }

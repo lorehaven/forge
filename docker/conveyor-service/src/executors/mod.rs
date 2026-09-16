@@ -1,8 +1,5 @@
-//! Where a job's steps actually run.
-//!
-//! One trait, one implementation per place the work can happen, chosen from
-//! configuration at startup. The scheduler holds an `Arc<dyn JobExecutor>` and
-//! does not know which it has.
+//! Where a job's steps actually run - one trait, chosen from config at startup; the scheduler
+//! holds an `Arc<dyn JobExecutor>` and doesn't know which it has.
 
 use crate::config::ExecutorKind;
 use std::sync::Arc;
@@ -21,11 +18,11 @@ pub use kubernetes::KubernetesExecutor;
 pub use mock::{MockExecutor, MockOutcome};
 pub use native::NativeExecutor;
 
-/// Builds the executor a deployment asked for.
-///
-/// Async because reaching a cluster is: `Client::try_default` reads a
-/// kubeconfig or the pod's service account, and either can fail in a way worth
-/// reporting rather than panicking through.
+/// Newtype so `ContainerBuilder::provide_arc` has a `Sized` type to key by - `dyn JobExecutor` isn't one.
+#[derive(Clone)]
+pub struct Executor(pub Arc<dyn JobExecutor>);
+
+/// Async because reaching a cluster is: `Client::try_default` can fail in a way worth reporting, not panicking through.
 pub async fn build(kind: ExecutorKind) -> Arc<dyn JobExecutor> {
     match kind {
         ExecutorKind::Native => Arc::new(NativeExecutor::new()),
@@ -37,10 +34,7 @@ pub async fn build(kind: ExecutorKind) -> Arc<dyn JobExecutor> {
         }
         ExecutorKind::Kubernetes => match KubernetesExecutor::connect().await {
             Ok(executor) => Arc::new(executor),
-            // Deliberately not a silent fall back to native. This deployment
-            // asked for isolation, and running a repository's pipeline inside
-            // conveyor's own container instead is the one substitution that
-            // must never happen quietly.
+            // Never silently falls back to native - that would break the isolation this deployment asked for.
             Err(error) => {
                 tracing::error!(
                     "CONVEYOR_EXECUTOR=kubernetes but the cluster is unreachable: {error}. \
@@ -55,11 +49,7 @@ pub async fn build(kind: ExecutorKind) -> Arc<dyn JobExecutor> {
     }
 }
 
-/// Stands in for an executor that could not be built.
-///
-/// Every job fails, with the reason. The alternative - falling back to the
-/// native executor - would run a repository's pipeline with this service's
-/// privileges on a deployment that explicitly asked for it not to.
+/// Stands in for an executor that couldn't be built - every job fails with the reason, rather than falling back to native.
 struct UnavailableExecutor {
     reason: String,
 }

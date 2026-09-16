@@ -1,8 +1,5 @@
-//! The realm's one at-rest encryption key, shared by everything gatehouse
-//! encrypts with it - signing keys (`keys.rs`) and MFA secrets (`mfa.rs`).
-//! Derived (via SHA-256, so any passphrase-shaped string works) from
-//! `GATEHOUSE_KEY_ENCRYPTION_KEY` rather than used directly, so the env var
-//! itself never has to be exactly 32 bytes.
+//! The realm's one at-rest encryption key (signing keys, MFA secrets),
+//! SHA-256-derived from `GATEHOUSE_KEY_ENCRYPTION_KEY` so it need not be 32 bytes.
 
 use chacha20poly1305::aead::{Aead, KeyInit};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
@@ -14,9 +11,7 @@ pub fn realm_cipher() -> anyhow::Result<ChaCha20Poly1305> {
     Ok(ChaCha20Poly1305::new(&Key::from(derived)))
 }
 
-/// `nonce || ChaCha20-Poly1305(plaintext)`, ready to hex-encode for storage -
-/// see `keys.rs`'s `SigningKeyRow::private_key` doc comment for why hex
-/// rather than raw bytea.
+/// `nonce || ChaCha20-Poly1305(plaintext)`, ready to hex-encode for storage.
 pub fn encrypt(cipher: &ChaCha20Poly1305, plaintext: &[u8]) -> Vec<u8> {
     use rand_core::RngCore;
     let mut nonce_bytes = [0u8; 12];

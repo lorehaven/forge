@@ -3,69 +3,67 @@
 //! `tests/unit/routers_ui_pages_pipelines_tests.rs`, which covers only the
 //! pure pager/header helpers.
 
-use crate::support::{database, register_repo};
-use actix_web::http::StatusCode;
-use actix_web::web::Data;
-use actix_web::{App, test as actix_test};
+use crate::support::{self, database, register_repo};
 use conveyor_service::config::ConveyorConfig;
 use conveyor_service::domain::Trigger;
-use conveyor_service::routers::ui;
 use conveyor_service::scheduler::projects::{self, NewProject};
 use conveyor_service::scheduler::queue::{self, NewRun};
-use quench_auth::prelude::JwtConfig;
+use http::{Method, StatusCode};
+use quench_auth::domain::jwt::JwtConfig;
 use quench_db::prelude::Db;
+use quench_http::di::ContainerBuilder;
+use quench_http::endpoint::Endpoint;
+use std::sync::Arc;
 
-fn app_with(
-    db: Db,
-    config: JwtConfig,
-) -> App<
-    impl actix_web::dev::ServiceFactory<
-        actix_web::dev::ServiceRequest,
-        Config = (),
-        Response = actix_web::dev::ServiceResponse,
-        Error = actix_web::Error,
-        InitError = (),
-    >,
-> {
-    App::new()
-        .app_data(Data::new(db))
-        .app_data(Data::new(config.clone()))
-        .app_data(Data::new(ConveyorConfig::default()))
-        .service(ui::scope(config))
+async fn app(db: Db, config: JwtConfig) -> (Arc<dyn Endpoint>, Arc<quench_http::di::Container>) {
+    conveyor_service::routers::ui::register_routes();
+    let container = ContainerBuilder::new()
+        .provide(db)
+        .provide(config)
+        .provide(ConveyorConfig::default())
+        .build()
+        .await
+        .unwrap();
+    (
+        quench_starter::http::discover_and_mount("/"),
+        Arc::new(container),
+    )
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn runs_list_page_renders_ok_with_no_runs() {
     let Some((db, _guard)) = database().await else {
-        return crate::support::skipped("runs_list_page_renders_ok_with_no_runs");
+        return support::skipped("runs_list_page_renders_ok_with_no_runs");
     };
-    let app = actix_test::init_service(app_with(db, JwtConfig::for_tests())).await;
+    let (app, container) = app(db, JwtConfig::for_tests()).await;
 
-    let req = actix_test::TestRequest::get().uri("/ui/runs").to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = app
+        .call(support::req(Method::GET, "/ui/runs", &container))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn runs_list_page_reports_not_found_for_an_unknown_project_scope() {
     let Some((db, _guard)) = database().await else {
-        return crate::support::skipped(
-            "runs_list_page_reports_not_found_for_an_unknown_project_scope",
-        );
+        return support::skipped("runs_list_page_reports_not_found_for_an_unknown_project_scope");
     };
-    let app = actix_test::init_service(app_with(db, JwtConfig::for_tests())).await;
+    let (app, container) = app(db, JwtConfig::for_tests()).await;
 
-    let req = actix_test::TestRequest::get()
-        .uri("/ui/runs?project=does-not-exist")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = app
+        .call(support::req(
+            Method::GET,
+            "/ui/runs?project=does-not-exist",
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn runs_list_page_lists_a_queued_run_scoped_to_its_project_and_a_later_page() {
     let Some((db, _guard)) = database().await else {
-        return crate::support::skipped(
+        return support::skipped(
             "runs_list_page_lists_a_queued_run_scoped_to_its_project_and_a_later_page",
         );
     };
@@ -84,24 +82,24 @@ async fn runs_list_page_lists_a_queued_run_scoped_to_its_project_and_a_later_pag
     )
     .await
     .expect("enqueue");
-    let app = actix_test::init_service(app_with(db.clone(), JwtConfig::for_tests())).await;
+    let (app, container) = app(db.clone(), JwtConfig::for_tests()).await;
 
-    let req = actix_test::TestRequest::get()
-        .uri(&format!("/ui/runs?project={}&page=1", repo.project_id))
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = app
+        .call(support::req(
+            Method::GET,
+            &format!("/ui/runs?project={}&page=1", repo.project_id),
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
-    let body = actix_test::read_body(resp).await;
-    let html = String::from_utf8(body.to_vec()).unwrap();
+    let html = support::body_text(resp).await;
     assert!(html.contains("tests/widget"));
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn runs_list_page_scoped_to_an_unrelated_project_shows_no_runs() {
     let Some((db, _guard)) = database().await else {
-        return crate::support::skipped(
-            "runs_list_page_scoped_to_an_unrelated_project_shows_no_runs",
-        );
+        return support::skipped("runs_list_page_scoped_to_an_unrelated_project_shows_no_runs");
     };
     let repo = register_repo(&db, "widget", "https://example.test/widget.git").await;
     queue::enqueue(
@@ -127,14 +125,16 @@ async fn runs_list_page_scoped_to_an_unrelated_project_shows_no_runs() {
     )
     .await
     .expect("create the project");
-    let app = actix_test::init_service(app_with(db, JwtConfig::for_tests())).await;
+    let (app, container) = app(db, JwtConfig::for_tests()).await;
 
-    let req = actix_test::TestRequest::get()
-        .uri(&format!("/ui/runs?project={}", other_project.id))
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let resp = app
+        .call(support::req(
+            Method::GET,
+            &format!("/ui/runs?project={}", other_project.id),
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
-    let body = actix_test::read_body(resp).await;
-    let html = String::from_utf8(body.to_vec()).unwrap();
+    let html = support::body_text(resp).await;
     assert!(!html.contains("tests/widget"));
 }

@@ -10,9 +10,7 @@ pub fn sha256_hex(data: impl AsRef<[u8]>) -> String {
     hex_of(hasher.finalize())
 }
 
-/// Hex SHA-256 of a file's contents, read in 64 KiB chunks so hashing a
-/// multi-gigabyte blob costs one small buffer rather than the whole file in
-/// memory. Used when finalising a Docker blob upload.
+/// Hex SHA-256 of a file, read in 64 KiB chunks so a multi-GB blob costs one small buffer.
 pub async fn sha256_file(path: impl AsRef<Path>) -> std::io::Result<String> {
     let mut file = tokio::fs::File::open(path).await?;
     let mut hasher = Sha256::new();

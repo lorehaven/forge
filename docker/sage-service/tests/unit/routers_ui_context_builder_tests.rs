@@ -1,6 +1,5 @@
 //! Unit tests for `routers/ui/context_builder.rs`.
 
-use actix_web::web::Data;
 use quench_db::InMemoryDb;
 use quench_db::prelude::{Crud, Db};
 use sage_service::domain::conversation::ConversationContext;
@@ -147,9 +146,9 @@ async fn seeded_db(conversation_id: &str) -> Db {
     db
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn build_conversation_context_sorts_and_scopes_to_one_conversation() {
-    let db = Data::new(seeded_db("conv-1").await);
+    let db = seeded_db("conv-1").await;
 
     let ctx = build_conversation_context(&db, "conv-1", 2048)
         .await

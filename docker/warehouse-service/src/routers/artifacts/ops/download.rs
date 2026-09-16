@@ -1,21 +1,32 @@
-//! `GET /api/v1/artifacts/{program}/{platform}/{version_code}/download` -
-//! fetch the bytes.
+//! `GET .../{version_code}/download` and `.../latest/download` in one handler - see `super::latest`.
 
 use crate::domain::artifact::{ArtifactVersion, Platform};
 use crate::routers::artifacts::artifact_file_path;
-use crate::routers::artifacts::ops::{disabled, error, not_found};
-use actix_web::http::StatusCode;
-use actix_web::{HttpResponse, Responder, get, web};
+use crate::routers::artifacts::ops::{disabled, error, latest, not_found};
 use quench_db::prelude::{Crud, Db};
+use quench_http::prelude::{Inject, Path, Response, get, http::StatusCode};
 
-#[get("/{program}/{platform}/{version_code}/download")]
+#[get("/api/v1/artifacts/{program}/{platform}/{version_code}/download")]
 #[tracing::instrument]
-pub async fn handle(db: web::Data<Db>, path: web::Path<(String, String, i64)>) -> impl Responder {
+pub async fn handle(
+    Inject(db): Inject<Db>,
+    Path((program, platform_raw, version_code_raw)): Path<(String, String, String)>,
+) -> Response {
     if !crate::routers::artifacts_enabled() {
         return disabled();
     }
 
-    let (program, platform_raw, version_code) = path.into_inner();
+    if version_code_raw == "latest" {
+        return match latest::resolve_latest(&db, &program, &platform_raw).await {
+            Ok(Some(version)) => serve(&version).await,
+            Ok(None) => not_found("program has no offerable version for this platform"),
+            Err(response) => response,
+        };
+    }
+
+    let Ok(version_code) = version_code_raw.parse::<i64>() else {
+        return not_found("program or version not found");
+    };
     let Some(platform) = Platform::parse(&platform_raw) else {
         return not_found("program or version not found");
     };
@@ -29,9 +40,8 @@ pub async fn handle(db: web::Data<Db>, path: web::Path<(String, String, i64)>) -
     serve(&version).await
 }
 
-/// Shared by `download::handle`, `latest::download` and the `/api/v1/apk`
-/// alias, once each has resolved which [`ArtifactVersion`] it means.
-pub async fn serve(version: &ArtifactVersion) -> HttpResponse {
+/// Shared by `handle` and the `/api/v1/apk` alias once each resolves the version.
+pub async fn serve(version: &ArtifactVersion) -> Response {
     let Some(platform) = Platform::parse(&version.platform) else {
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -58,12 +68,15 @@ pub async fn serve(version: &ArtifactVersion) -> HttpResponse {
         "application/octet-stream"
     };
 
-    HttpResponse::Ok()
-        .content_type(content_type)
-        .append_header(("Content-Length", data.len()))
-        .append_header((
-            "Content-Disposition",
+    // `from_bytes` sets content-length itself.
+    Response::from_bytes(StatusCode::OK, data.into())
+        .header("content-type", content_type)
+        .header(
+            "content-disposition",
             format!("attachment; filename=\"{}\"", version.filename),
-        ))
-        .body(data)
+        )
+}
+
+pub fn register_routes() {
+    let _ = handle as fn(_, _) -> _;
 }

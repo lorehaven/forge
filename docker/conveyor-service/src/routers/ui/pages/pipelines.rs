@@ -1,17 +1,12 @@
-//! The full pipeline history: every run, not just the front page's capped
-//! handful - paged, and optionally scoped to one project's branch of the tree
-//! the same way `/projects/{id}` scopes the front page itself.
+//! The full pipeline history, paged - optionally scoped the same way `/projects/{id}` scopes the front page.
 
 use super::shared;
 use crate::config::ConveyorConfig;
 use crate::domain::{Project, Repo, Run};
-use crate::routers::ui::common::{
-    UiPageKind, is_ui_authenticated, render_page, ui_login_redirect, ui_path,
-};
+use crate::routers::ui::common::{PageAuth, render_page, ui_login_redirect, ui_path};
 use crate::scheduler::{projects, queue, repos};
-use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
-use quench_auth::prelude::JwtConfig;
 use quench_db::prelude::Db;
+use quench_http::prelude::{Inject, Query, Response, get, http::StatusCode};
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 use serde::Deserialize;
@@ -24,15 +19,14 @@ pub(super) struct RunsListQuery {
     project: Option<String>,
 }
 
-#[get("/runs")]
+#[get("/ui/runs")]
 pub(super) async fn runs_list_page(
-    request: HttpRequest,
-    query: web::Query<RunsListQuery>,
-    config: web::Data<JwtConfig>,
-    conveyor_config: web::Data<ConveyorConfig>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    if !is_ui_authenticated(&request, &config).await {
+    PageAuth(authenticated): PageAuth,
+    Query(query): Query<RunsListQuery>,
+    Inject(conveyor_config): Inject<ConveyorConfig>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    if !authenticated {
         return ui_login_redirect();
     }
 
@@ -64,7 +58,7 @@ pub(super) async fn runs_list_page(
         .unwrap_or_default();
 
     render_page(
-        HttpResponse::Ok(),
+        StatusCode::OK,
         content().class("home-content").child(page_body(
             &runs,
             &repositories,
@@ -73,25 +67,21 @@ pub(super) async fn runs_list_page(
             page,
             page_count(total, page_size),
         )),
-        UiPageKind::Home,
     )
 }
 
-fn not_found() -> HttpResponse {
+fn not_found() -> Response {
     render_page(
-        HttpResponse::NotFound(),
+        StatusCode::NOT_FOUND,
         content().class("home-content").child(
             div()
                 .class("home-container")
                 .child(empty_state("ui_project_not_found")),
         ),
-        UiPageKind::Home,
     )
 }
 
-/// How many pages `page_size` rows at a time makes of `total` rows - at least
-/// one, even when `total` is zero, so an empty history still has a "page 1 of
-/// 1" to land on rather than a division with nothing on either side of it.
+/// At least 1, even for `total == 0`, so an empty history still has a "page 1 of 1".
 pub fn page_count(total: i64, page_size: i64) -> u32 {
     if total <= 0 {
         return 1;
@@ -161,9 +151,7 @@ pub fn pager(scope: Option<&Project>, page: u32, total_pages: u32) -> Element {
         ))
 }
 
-/// A link to `target`, when there is a page to go to - otherwise the same
-/// label, disabled, so the control does not shift position between "has more"
-/// and "does not".
+/// Disabled with the same label when there's no page to go to, so nothing shifts position.
 fn pager_link(scope: Option<&Project>, target: Option<u32>, label_key: &str) -> Element {
     match target {
         Some(page) => a()
@@ -181,4 +169,8 @@ fn page_href(scope: Option<&Project>, page: u32) -> String {
         Some(project) => ui_path(&format!("/runs?project={}&page={page}", project.id)),
         None => ui_path(&format!("/runs?page={page}")),
     }
+}
+
+pub(super) fn register_routes() {
+    let _ = runs_list_page as fn(_, _, _, _) -> _;
 }

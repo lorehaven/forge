@@ -2,9 +2,10 @@
 
 use crate::domain::label::{self, NewLabel};
 use crate::routers::api::authz::can_on_project;
-use crate::routers::api::{ApiError, json_error};
-use actix_web::{HttpRequest, HttpResponse, Responder, delete, get, post, web};
+use crate::routers::api::{ApiError, OptionalClaims, json_error};
+use quench_auth::domain::jwt::JwtConfig;
 use quench_db::prelude::Db;
+use quench_http::prelude::{Inject, Json, Path, Response, delete, get, http::StatusCode, post};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -18,22 +19,20 @@ fn default_color() -> String {
     "#888888".to_string()
 }
 
-#[post("")]
+#[post("/api/v1/projects/{id}/labels")]
 pub async fn create(
-    request: HttpRequest,
-    project_id: web::Path<String>,
-    body: web::Json<CreateLabel>,
-    db: web::Data<Db>,
-) -> impl Responder {
+    Path(project_id): Path<String>,
+    Json(body): Json<CreateLabel>,
+    Inject(db): Inject<Db>,
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+) -> Result<Response, ApiError> {
     if body.name.trim().is_empty() {
-        return json_error(actix_web::http::StatusCode::BAD_REQUEST, "name is required");
+        return Ok(json_error(StatusCode::BAD_REQUEST, "name is required"));
     }
 
-    if !can_on_project(&request, &project_id, "write") {
-        return json_error(
-            actix_web::http::StatusCode::FORBIDDEN,
-            "no write access here",
-        );
+    if !can_on_project(claims.as_ref(), &config, &project_id, "write") {
+        return Ok(json_error(StatusCode::FORBIDDEN, "no write access here"));
     }
 
     let new = NewLabel {
@@ -42,61 +41,61 @@ pub async fn create(
         color: body.color.clone(),
     };
 
-    match label::create(&db, &new).await {
-        Ok(label) => HttpResponse::Created().json(label),
-        Err(error) => ApiError::from(error).into_response(),
-    }
+    let label = label::create(&db, &new).await?;
+    Ok(json_created(&label))
 }
 
-#[get("")]
+#[get("/api/v1/projects/{id}/labels")]
 pub async fn list(
-    request: HttpRequest,
-    project_id: web::Path<String>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    if !can_on_project(&request, &project_id, "read") {
-        return json_error(
-            actix_web::http::StatusCode::FORBIDDEN,
-            "no read access here",
-        );
+    Path(project_id): Path<String>,
+    Inject(db): Inject<Db>,
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+) -> Result<Response, ApiError> {
+    if !can_on_project(claims.as_ref(), &config, &project_id, "read") {
+        return Ok(json_error(StatusCode::FORBIDDEN, "no read access here"));
     }
 
-    match label::list_by_project(&db, &project_id).await {
-        Ok(labels) => HttpResponse::Ok().json(labels),
-        Err(error) => ApiError::from(error).into_response(),
-    }
+    let labels = label::list_by_project(&db, &project_id).await?;
+    Ok(json_ok(&labels))
 }
 
-pub fn scope_under_project() -> actix_web::Scope {
-    web::scope("/{id}/labels").service(create).service(list)
-}
-
-#[delete("/{id}")]
+#[delete("/api/v1/labels/{id}")]
 pub async fn remove(
-    request: HttpRequest,
-    path: web::Path<String>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    let label = match label::read(&db, &path).await {
-        Ok(Some(label)) => label,
-        Ok(None) => return json_error(actix_web::http::StatusCode::NOT_FOUND, "no such label"),
-        Err(error) => return ApiError::from(error).into_response(),
+    Path(id): Path<String>,
+    Inject(db): Inject<Db>,
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+) -> Result<Response, ApiError> {
+    let Some(label) = label::read(&db, &id).await? else {
+        return Ok(json_error(StatusCode::NOT_FOUND, "no such label"));
     };
 
-    if !can_on_project(&request, &label.project_id, "write") {
-        return json_error(
-            actix_web::http::StatusCode::FORBIDDEN,
+    if !can_on_project(claims.as_ref(), &config, &label.project_id, "write") {
+        return Ok(json_error(
+            StatusCode::FORBIDDEN,
             "no write access to this label",
-        );
+        ));
     }
 
-    match label::delete(&db, &path).await {
-        Ok(true) => HttpResponse::NoContent().finish(),
-        Ok(false) => json_error(actix_web::http::StatusCode::NOT_FOUND, "no such label"),
-        Err(error) => ApiError::from(error).into_response(),
+    match label::delete(&db, &id).await? {
+        true => Ok(Response::new(StatusCode::NO_CONTENT)),
+        false => Ok(json_error(StatusCode::NOT_FOUND, "no such label")),
     }
 }
 
-pub fn scope() -> actix_web::Scope {
-    web::scope("/labels").service(remove)
+fn json_ok<T: serde::Serialize>(value: &T) -> Response {
+    Response::json(StatusCode::OK, value)
+        .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
+}
+
+fn json_created<T: serde::Serialize>(value: &T) -> Response {
+    Response::json(StatusCode::CREATED, value)
+        .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
+}
+
+pub fn register_routes() {
+    let _ = create as fn(_, _, _, _, _) -> _;
+    let _ = list as fn(_, _, _, _) -> _;
+    let _ = remove as fn(_, _, _, _) -> _;
 }

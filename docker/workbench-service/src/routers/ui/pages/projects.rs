@@ -4,35 +4,28 @@ use crate::domain::issue::{self, NewIssue, STATUSES};
 use crate::domain::{project, realm_users};
 use crate::routers::api::authz::can_on_project_claims;
 use crate::routers::ui::common::{
-    Notice, actor, assignee_field, is_ui_authenticated, notice_banner, render_page,
-    ui_login_redirect, ui_login_redirect_for, ui_path,
+    ActorOrRedirect, Notice, assignee_field, notice_banner, render_page, ui_path,
 };
-use actix_web::{HttpRequest, HttpResponse, Responder, get, post, web};
-use quench_auth::prelude::JwtConfig;
 use quench_db::prelude::Db;
+use quench_http::prelude::{Form, Inject, Path, Query, Response, get, http::StatusCode, post};
 use quench_web::framework::dom::toggle_modal;
 use quench_web::prelude::*;
 use serde::Deserialize;
 
-#[get("/projects/{id}/board")]
+#[get("/ui/projects/{id}/board")]
 pub(super) async fn board(
-    req: HttpRequest,
-    project_id: web::Path<String>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    notice: web::Query<Notice>,
-) -> impl Responder {
-    if !is_ui_authenticated(&req, &config).await {
-        return ui_login_redirect();
-    }
-    let Some(claims) = actor(&req, &config).await else {
-        return ui_login_redirect();
+    actor: ActorOrRedirect,
+    Path(project_id): Path<String>,
+    Inject(db): Inject<Db>,
+    Query(notice): Query<Notice>,
+) -> Response {
+    let claims = match actor.or_redirect() {
+        Ok(claims) => claims,
+        Err(response) => return response,
     };
 
     let Some(project) = project::read(&db, &project_id).await.ok().flatten() else {
-        return HttpResponse::Found()
-            .append_header(("Location", ui_path("/home")))
-            .finish();
+        return Response::new(StatusCode::FOUND).header("Location", ui_path("/home"));
     };
 
     let board_el = render_board(&db, &project.id).await;
@@ -40,7 +33,7 @@ pub(super) async fn board(
     let toggle = toggle_modal("modal-overlay", "modal-center", "show");
 
     render_page(
-        HttpResponse::Ok(),
+        StatusCode::OK,
         content().class("home-content").child(
             div()
                 .class("home-container")
@@ -71,9 +64,8 @@ pub(super) async fn board(
     )
 }
 
-/// One column per status, rebuilt fresh - shared by the full page (`board`)
-/// and the htmx fragment `transition_issue` returns after a status change (be
-/// it from the fallback `<select>` or a drag-and-drop, see `board_script`).
+/// One column per status; shared by the full page and `transition_issue`'s
+/// htmx fragment after a status change.
 async fn render_board(db: &Db, project_id: &str) -> Element {
     let mut row = div()
         .class("wb-board")
@@ -134,11 +126,8 @@ fn issue_card(project_id: &str, i: &issue::Issue) -> Element {
         .child(div().class("wb-card-key").text(format!("#{}", i.seq)))
         .child(
             a().attr("href", ui_path(&format!("/issues/{}", i.id)))
-                // Links are natively draggable in every browser, and being
-                // the nearest draggable element under the pointer wins over
-                // an ancestor's `draggable="true"` - grabbing a card by its
-                // title (the natural place to grab it) would otherwise start
-                // a browser link-drag instead of `board_script`'s card drag.
+                // Links are natively draggable and would win over the card's
+                // own drag otherwise, hijacking a grab-by-title.
                 .attr("draggable", "false")
                 .class("wb-card-title")
                 .text(i.title.clone()),
@@ -156,18 +145,8 @@ fn issue_card(project_id: &str, i: &issue::Issue) -> Element {
         .child(status_select)
 }
 
-/// Drag a card onto a column to transition it, as an alternative to the
-/// per-card `<select>` (`issue_card`) - which stays as the fallback and is
-/// what this reuses for the actual request, so the two controls can never
-/// disagree about the URL a status change posts to.
-///
-/// Delegated on `document` rather than bound to `#wb-board`'s own children:
-/// `transition_issue`'s htmx response replaces `#wb-board` wholesale (see
-/// `render_board`'s doc comment), which would tear down any listener attached
-/// directly to a card or column. The `__wbDndInit` guard matters because this
-/// script is only ever emitted once, on the full page load - the htmx
-/// fragment is `render_board`'s output alone - but is cheap insurance against
-/// a future caller including it twice.
+/// Drag-to-transition, reusing `issue_card`'s `<select>` for the actual
+/// request. Delegated on `document`, not `#wb-board`, since htmx replaces it.
 fn board_script() -> Element {
     script(
         r##"
@@ -361,16 +340,16 @@ fn default_priority() -> String {
     "medium".to_string()
 }
 
-#[post("/projects/{id}/issues")]
+#[post("/ui/projects/{id}/issues")]
 pub(super) async fn create_issue(
-    request: HttpRequest,
-    project_id: web::Path<String>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    form: web::Form<CreateIssueForm>,
-) -> impl Responder {
-    let Some(claims) = actor(&request, &config).await else {
-        return ui_login_redirect_for(&request);
+    actor: ActorOrRedirect,
+    Path(project_id): Path<String>,
+    Inject(db): Inject<Db>,
+    Form(form): Form<CreateIssueForm>,
+) -> Response {
+    let claims = match actor.or_redirect() {
+        Ok(claims) => claims,
+        Err(response) => return response,
     };
 
     if form.title.trim().is_empty() {
@@ -395,9 +374,7 @@ pub(super) async fn create_issue(
 
     match issue::create(&db, &new).await {
         Ok(_) => redirect_board(&project_id, None),
-        // The only user-typed field here that's a foreign key is `assignee`
-        // (`workbench.issues.assignee references auth.users(username)`), so
-        // a violation almost certainly means that username doesn't exist.
+        // The only user-typed foreign key here is `assignee`.
         Err(error) if error.is_foreign_key_violation() => {
             redirect_board(&project_id, Some("unknown_assignee"))
         }
@@ -410,21 +387,17 @@ pub(super) struct TransitionForm {
     pub status: String,
 }
 
-/// The board's own drag-free "move a card" control: a status `<select>` per
-/// card that posts here via htmx and swaps in the freshly rendered board -
-/// see `issue_card`.
-#[post("/projects/{project_id}/issues/{issue_id}/transition")]
+/// The drag-free "move a card" control - `issue_card`'s per-card `<select>`.
+#[post("/ui/projects/{project_id}/issues/{issue_id}/transition")]
 pub(super) async fn transition_issue(
-    request: HttpRequest,
-    path: web::Path<(String, String)>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    form: web::Form<TransitionForm>,
-) -> impl Responder {
-    let (project_id, issue_id) = path.into_inner();
-
-    let Some(claims) = actor(&request, &config).await else {
-        return ui_login_redirect_for(&request);
+    actor: ActorOrRedirect,
+    Path((project_id, issue_id)): Path<(String, String)>,
+    Inject(db): Inject<Db>,
+    Form(form): Form<TransitionForm>,
+) -> Response {
+    let claims = match actor.or_redirect() {
+        Ok(claims) => claims,
+        Err(response) => return response,
     };
 
     if issue::is_valid_status(&form.status) && can_on_project_claims(&claims, &project_id, "write")
@@ -433,18 +406,20 @@ pub(super) async fn transition_issue(
     }
 
     let board_el = render_board(&db, &project_id).await;
-    HttpResponse::Ok()
-        .content_type("text/html; charset=utf-8")
-        .body(board_el.render())
+    Response::html(StatusCode::OK, board_el.render())
 }
 
-fn redirect_board(project_id: &str, error: Option<&str>) -> HttpResponse {
+fn redirect_board(project_id: &str, error: Option<&str>) -> Response {
     let base = ui_path(&format!("/projects/{project_id}/board"));
     let location = match error {
         Some(code) => format!("{base}?error={code}"),
         None => base,
     };
-    HttpResponse::Found()
-        .append_header(("Location", location))
-        .finish()
+    Response::new(StatusCode::FOUND).header("Location", location)
+}
+
+pub(super) fn register_routes() {
+    let _ = board as fn(_, _, _, _) -> _;
+    let _ = create_issue as fn(_, _, _, _) -> _;
+    let _ = transition_issue as fn(_, _, _, _) -> _;
 }

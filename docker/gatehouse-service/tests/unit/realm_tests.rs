@@ -112,7 +112,7 @@ fn every_realm_error_has_a_status_message_and_i18n_key() {
 fn unknown_grants_message_lists_the_offending_grants() {
     let error = RealmError::UnknownGrants(vec!["sage:oops".to_string()]);
     assert!(error.message().contains("sage:oops"));
-    assert_eq!(error.status(), actix_web::http::StatusCode::BAD_REQUEST);
+    assert_eq!(error.status(), http::StatusCode::BAD_REQUEST);
 }
 
 // -- create ----------------------------------------------------------

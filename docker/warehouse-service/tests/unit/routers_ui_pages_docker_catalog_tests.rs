@@ -1,12 +1,11 @@
 use crate::support;
 
-use actix_web::body::MessageBody;
-use actix_web::{App, test as actix_test, web};
-use quench_auth::prelude::JwtConfig;
+use http::{Method, StatusCode};
+use http_body_util::BodyExt;
+use quench_auth::domain::jwt::JwtConfig;
 use support::WithDockerStorageRoot as WithStorageRoot;
 use warehouse_service::routers::ui::pages::docker::catalog::{
-    DeleteImageModalQuery, delete_image, delete_image_modal, docker_catalog, docker_catalog_slash,
-    empty_delete_image_modal, empty_delete_image_modal_html, render_catalog_page,
+    DeleteImageModalQuery, empty_delete_image_modal_html, render_catalog_page,
     render_delete_image_modal,
 };
 
@@ -30,66 +29,67 @@ fn write_tag(
 
 const DIGEST: &str = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
-fn body_html(resp: actix_web::HttpResponse) -> String {
-    let body = resp.into_body().try_into_bytes().unwrap();
-    String::from_utf8(body.to_vec()).unwrap()
+async fn body_html(resp: quench_http::response::Response) -> String {
+    let collected = resp.into_hyper().into_body().collect().await.unwrap();
+    String::from_utf8(collected.to_bytes().to_vec()).unwrap()
 }
 
 // -----------------------------------------------------------------
 // render_catalog_page
 // -----------------------------------------------------------------
 
-#[test]
-fn render_catalog_page_with_no_repositories_renders_ok() {
+#[tokio::test]
+async fn render_catalog_page_with_no_repositories_renders_ok() {
     let _storage = WithStorageRoot::new();
     let resp = render_catalog_page(None, None);
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
-    let html = body_html(resp);
+    assert_eq!(resp.status(), StatusCode::OK);
+    let html = body_html(resp).await;
     assert!(html.contains("ui_repositories"));
 }
 
-#[test]
-fn render_catalog_page_lists_repositories_in_the_tree() {
+#[tokio::test]
+async fn render_catalog_page_lists_repositories_in_the_tree() {
     let storage = WithStorageRoot::new();
     write_tag(&storage, "my/repo", "latest", DIGEST, None);
     write_tag(&storage, "other-repo", "v1", DIGEST, None);
 
     let resp = render_catalog_page(None, None);
-    let html = body_html(resp);
+    let html = body_html(resp).await;
     assert!(html.contains("other-repo"));
     assert!(html.contains("my"));
 }
 
-#[test]
-fn render_catalog_page_with_an_unknown_selected_repo_ignores_the_selection() {
+#[tokio::test]
+async fn render_catalog_page_with_an_unknown_selected_repo_ignores_the_selection() {
     let storage = WithStorageRoot::new();
     write_tag(&storage, "my-repo", "latest", DIGEST, None);
 
     let resp = render_catalog_page(Some("no-such-repo".to_string()), None);
-    let html = body_html(resp);
+    let html = body_html(resp).await;
     assert!(html.contains("ui_empty_select_tag"));
 }
 
-#[test]
-fn render_catalog_page_with_a_selected_repo_and_tag_shows_metadata() {
+#[tokio::test]
+async fn render_catalog_page_with_a_selected_repo_and_tag_shows_metadata() {
     let storage = WithStorageRoot::new();
     let manifest = r#"{"mediaType": "application/vnd.oci.image.manifest.v1+json"}"#;
     write_tag(&storage, "my-repo", "latest", DIGEST, Some(manifest));
 
     let resp = render_catalog_page(Some("my-repo".to_string()), Some("latest".to_string()));
-    let html = body_html(resp);
+    let html = body_html(resp).await;
     assert!(html.contains("ui_meta_for") || html.contains("latest"));
     assert!(html.contains(DIGEST));
     assert!(html.contains("ui_delete_image"));
 }
 
-#[test]
-fn render_catalog_page_with_a_selected_repo_but_unknown_tag_shows_the_tag_list_without_metadata() {
+#[tokio::test]
+async fn render_catalog_page_with_a_selected_repo_but_unknown_tag_shows_the_tag_list_without_metadata()
+ {
     let storage = WithStorageRoot::new();
     write_tag(&storage, "my-repo", "latest", DIGEST, None);
 
     let resp = render_catalog_page(Some("my-repo".to_string()), Some("no-such-tag".to_string()));
-    let html = body_html(resp);
+    let html = body_html(resp).await;
     assert!(html.contains("ui_empty_select_tag"));
 }
 
@@ -150,160 +150,141 @@ fn jwt_config(auth_enabled: bool) -> JwtConfig {
     config
 }
 
-#[actix_web::test]
+async fn app(
+    jwt_config: JwtConfig,
+) -> (
+    std::sync::Arc<dyn quench_http::endpoint::Endpoint>,
+    std::sync::Arc<quench_http::di::Container>,
+) {
+    warehouse_service::routers::ui::pages::docker::catalog::register_routes();
+    let container = support::container_builder()
+        .provide(jwt_config)
+        .build()
+        .await
+        .unwrap();
+    support::app(container).await
+}
+
+#[tokio::test]
 async fn docker_catalog_redirects_to_login_when_unauthenticated() {
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(jwt_config(true)))
-            .service(docker_catalog),
-    )
-    .await;
-    let req = actix_test::TestRequest::get()
-        .uri("/docker/catalog")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(jwt_config(true)).await;
+    let resp = app
+        .call(support::req(Method::GET, "/ui/docker/catalog", &container))
+        .await;
     assert!(resp.status().is_redirection());
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn docker_catalog_slash_redirects_to_login_when_unauthenticated() {
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(jwt_config(true)))
-            .service(docker_catalog_slash),
-    )
-    .await;
-    let req = actix_test::TestRequest::get()
-        .uri("/docker/catalog/")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(jwt_config(true)).await;
+    let resp = app
+        .call(support::req(Method::GET, "/ui/docker/catalog/", &container))
+        .await;
     assert!(resp.status().is_redirection());
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn docker_catalog_renders_the_page_when_authenticated() {
     let _storage = WithStorageRoot::new();
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(jwt_config(false)))
-            .service(docker_catalog),
-    )
-    .await;
-    let req = actix_test::TestRequest::get()
-        .uri("/docker/catalog")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let (app, container) = app(jwt_config(false)).await;
+    let resp = app
+        .call(support::req(Method::GET, "/ui/docker/catalog", &container))
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn delete_image_modal_redirects_to_login_when_unauthenticated() {
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(jwt_config(true)))
-            .service(delete_image_modal),
-    )
-    .await;
-    let req = actix_test::TestRequest::get()
-        .uri("/docker/delete-image-modal?repository=my-repo&digest=sha256:abc")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert!(resp.status().is_redirection());
-}
-
-#[actix_web::test]
-async fn delete_image_modal_renders_when_authenticated() {
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(jwt_config(false)))
-            .service(delete_image_modal),
-    )
-    .await;
-    let req = actix_test::TestRequest::get()
-        .uri(&format!(
-            "/docker/delete-image-modal?repository=my-repo&digest={DIGEST}"
+    let (app, container) = app(jwt_config(true)).await;
+    let resp = app
+        .call(support::req(
+            Method::GET,
+            "/ui/docker/delete-image-modal?repository=my-repo&digest=sha256:abc",
+            &container,
         ))
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+        .await;
+    assert!(resp.status().is_redirection());
 }
 
-#[actix_web::test]
+#[tokio::test]
+async fn delete_image_modal_renders_when_authenticated() {
+    let (app, container) = app(jwt_config(false)).await;
+    let resp = app
+        .call(support::req(
+            Method::GET,
+            &format!("/ui/docker/delete-image-modal?repository=my-repo&digest={DIGEST}"),
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
 async fn empty_delete_image_modal_redirects_to_login_when_unauthenticated() {
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(jwt_config(true)))
-            .service(empty_delete_image_modal),
-    )
-    .await;
-    let req = actix_test::TestRequest::get()
-        .uri("/docker/delete-image-modal/empty")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(jwt_config(true)).await;
+    let resp = app
+        .call(support::req(
+            Method::GET,
+            "/ui/docker/delete-image-modal/empty",
+            &container,
+        ))
+        .await;
     assert!(resp.status().is_redirection());
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn empty_delete_image_modal_renders_when_authenticated() {
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(jwt_config(false)))
-            .service(empty_delete_image_modal),
-    )
-    .await;
-    let req = actix_test::TestRequest::get()
-        .uri("/docker/delete-image-modal/empty")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let (app, container) = app(jwt_config(false)).await;
+    let resp = app
+        .call(support::req(
+            Method::GET,
+            "/ui/docker/delete-image-modal/empty",
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn delete_image_redirects_to_login_when_unauthenticated() {
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(jwt_config(true)))
-            .service(delete_image),
-    )
-    .await;
-    let req = actix_test::TestRequest::post()
-        .uri("/docker/delete-image")
-        .set_form([("repository", "my-repo"), ("digest", DIGEST)])
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(jwt_config(true)).await;
+    let resp = app
+        .call(support::form_req(
+            Method::POST,
+            "/ui/docker/delete-image",
+            &[("repository", "my-repo"), ("digest", DIGEST)],
+            &container,
+        ))
+        .await;
     assert!(resp.status().is_redirection());
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn delete_image_rejects_an_invalid_digest_when_authenticated() {
     let _storage = WithStorageRoot::new();
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(jwt_config(false)))
-            .service(delete_image),
-    )
-    .await;
-    let req = actix_test::TestRequest::post()
-        .uri("/docker/delete-image")
-        .set_form([("repository", "my-repo"), ("digest", "not-a-digest")])
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::BAD_REQUEST);
+    let (app, container) = app(jwt_config(false)).await;
+    let resp = app
+        .call(support::form_req(
+            Method::POST,
+            "/ui/docker/delete-image",
+            &[("repository", "my-repo"), ("digest", "not-a-digest")],
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn delete_image_reports_not_found_for_a_missing_manifest() {
     let _storage = WithStorageRoot::new();
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(jwt_config(false)))
-            .service(delete_image),
-    )
-    .await;
-    let req = actix_test::TestRequest::post()
-        .uri("/docker/delete-image")
-        .set_form([("repository", "my-repo"), ("digest", DIGEST)])
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::NOT_FOUND);
+    let (app, container) = app(jwt_config(false)).await;
+    let resp = app
+        .call(support::form_req(
+            Method::POST,
+            "/ui/docker/delete-image",
+            &[("repository", "my-repo"), ("digest", DIGEST)],
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }

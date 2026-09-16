@@ -6,11 +6,8 @@ fn tool_tag_regex() -> Regex {
     Regex::new(r"(?s)<tool_?call>").unwrap()
 }
 
-/// Find the first balanced JSON object (`{...}`) in `s`, returning its byte
-/// range. Brace counting skips braces that appear inside JSON strings and
-/// honours backslash escapes, so nested objects and braces within string
-/// values are handled correctly. Structural characters are ASCII, so byte
-/// scanning is safe even when string contents are multi-byte UTF-8.
+/// The first balanced JSON object's byte range; brace-counts skip braces
+/// inside strings (honoring backslash escapes) so nesting parses correctly.
 fn find_json_object(s: &str) -> Option<(usize, usize)> {
     let bytes = s.as_bytes();
     let start = s.find('{')?;
@@ -43,15 +40,8 @@ fn find_json_object(s: &str) -> Option<(usize, usize)> {
     None
 }
 
-/// Parse tool calls from model output following the Qwen format:
-/// Format 1: <tool_call>{"type": "function", "function": {"name": "web_search", "arguments": {"query": "..."}}}</tool_call>
-/// Format 2: <toolcall>{"type": "search", "name": "websearch", "arguments": {"query": "..."}}</toolcall>
-///
-/// For each opening tag we extract the first balanced JSON object that follows
-/// and parse that, rather than requiring the closing brace to sit right before
-/// the closing tag. This tolerates trailing junk the model sometimes appends
-/// (e.g. a stray `;` after the object), mismatched or missing closing tags, and
-/// braces nested inside the arguments.
+/// Parses Qwen-format tool calls: takes the first balanced JSON object after
+/// each opening tag, tolerating trailing junk and mismatched closing tags.
 pub fn parse_tool_calls(content: &str) -> Vec<ToolCall> {
     let mut calls = Vec::new();
 
@@ -148,9 +138,8 @@ fn normalize_tool_name(name: &str) -> String {
     }
 }
 
-/// Remove tool call syntax from content to get clean display text: for each opening tag, drop the
-/// tag, its balanced JSON object, trailing punctuation/whitespace, and the closing tag if present.
-/// Residual bare tags (with no JSON) are stripped last.
+/// Strips each tag, its balanced JSON object, and trailing punctuation;
+/// residual bare tags with no JSON are stripped last.
 pub fn strip_tool_calls(content: &str) -> String {
     // Removes optional trailing junk then a closing tag right after the object.
     let close_re = Regex::new(r"(?s)^[;,\s]*</tool_?call>").unwrap();

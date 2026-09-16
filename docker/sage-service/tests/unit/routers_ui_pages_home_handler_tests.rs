@@ -8,14 +8,19 @@
 //! its body (loading projects/conversations/messages and rendering).
 
 use crate::env_support::env_lock;
-use actix_web::{App, test as actix_test, web};
-use quench_auth::prelude::JwtConfig;
+use bytes::Bytes;
+use http::{HeaderMap, Method, StatusCode, Uri};
+use http_body_util::BodyExt;
+use quench_auth::domain::jwt::JwtConfig;
 use quench_db::InMemoryDb;
 use quench_db::prelude::{Crud, Db};
+use quench_http::di::ContainerBuilder;
+use quench_http::endpoint::Endpoint;
+use quench_http::request::Request;
 use sage_service::clients::switchboard::SwitchboardClient;
 use sage_service::domain::models::{Conversation, Message, Project};
 use sage_service::routers::ui::chat::ChatState;
-use sage_service::routers::ui::pages::home::{home, home_slash};
+use std::sync::Arc;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -23,8 +28,8 @@ fn db() -> Db {
     Db::InMemory(InMemoryDb::new())
 }
 
-fn sage_config() -> web::Data<sage_service::config::SageConfig> {
-    web::Data::new(sage_service::config::SageConfig {
+fn sage_config() -> sage_service::config::SageConfig {
+    sage_service::config::SageConfig {
         system_prompt: "sys".to_string(),
         default_models: Vec::new(),
         supported_models: Vec::new(),
@@ -33,13 +38,13 @@ fn sage_config() -> web::Data<sage_service::config::SageConfig> {
         capability_profile: sage_service::tools::capabilities::get_profile("web_assistant")
             .expect("web_assistant profile exists"),
         stop_models_on_shutdown: false,
-    })
+    }
 }
 
-fn chat_state() -> web::Data<ChatState> {
-    web::Data::new(ChatState {
+fn chat_state() -> ChatState {
+    ChatState {
         pending_messages: dashmap::DashMap::new(),
-    })
+    }
 }
 
 /// A `SwitchboardClient` whose `get_vllm_instances()` succeeds against a
@@ -49,10 +54,11 @@ async fn switchboard_returning(instances: serde_json::Value) -> SwitchboardClien
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/api/v1/token"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "access_token": "test-token",
-            "expires_in": 3600
-        })))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(
+                serde_json::json!({"access_token": "test-token", "expires_in": 3600}),
+            ),
+        )
         .mount(&server)
         .await;
     Mock::given(method("GET"))
@@ -73,68 +79,79 @@ async fn switchboard_returning(instances: serde_json::Value) -> SwitchboardClien
     SwitchboardClient::new()
 }
 
-macro_rules! test_app {
-    ($db:expr, $switchboard:expr) => {
-        actix_test::init_service(
-            App::new()
-                .app_data(web::Data::new(JwtConfig::for_tests()))
-                .app_data(web::Data::new($switchboard))
-                .app_data(web::Data::new($db))
-                .app_data(chat_state())
-                .app_data(sage_config())
-                .service(home)
-                .service(home_slash),
-        )
+async fn app(
+    jwt_config: JwtConfig,
+    db: Db,
+    switchboard: SwitchboardClient,
+) -> (Arc<dyn Endpoint>, Arc<quench_http::di::Container>) {
+    sage_service::routers::ui::pages::home::register_routes();
+    let container = ContainerBuilder::new()
+        .provide(jwt_config)
+        .provide(switchboard)
+        .provide(db)
+        .provide_arc(Arc::new(chat_state()))
+        .provide(sage_config())
+        .build()
         .await
-    };
+        .unwrap();
+    (
+        quench_starter::http::discover_and_mount("/"),
+        Arc::new(container),
+    )
+}
+
+fn req(path: &str, container: &Arc<quench_http::di::Container>) -> Request {
+    Request::new(
+        Method::GET,
+        path.parse::<Uri>().unwrap(),
+        HeaderMap::new(),
+        quench_http::body::InboundBody::from_bytes(Bytes::new()),
+        container.clone(),
+    )
+}
+
+async fn body_text(resp: quench_http::response::Response) -> String {
+    let collected = resp.into_hyper().into_body().collect().await.expect("body");
+    String::from_utf8_lossy(&collected.to_bytes()).into_owned()
 }
 
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
-#[actix_web::test]
+#[tokio::test]
 async fn home_redirects_to_login_when_unauthenticated() {
     let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
     let switchboard = switchboard_returning(serde_json::json!([])).await;
     let mut config = JwtConfig::for_tests();
     config.auth_enabled = true;
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(config))
-            .app_data(web::Data::new(switchboard))
-            .app_data(web::Data::new(db()))
-            .app_data(chat_state())
-            .app_data(sage_config())
-            .service(home),
-    )
-    .await;
-    let req = actix_test::TestRequest::get().uri("/home").to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(config, db(), switchboard).await;
+
+    let resp = app.call(req("/ui/home", &container)).await;
     assert!(resp.status().is_redirection());
 }
 
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
-#[actix_web::test]
+#[tokio::test]
 async fn home_renders_the_page_with_no_conversations() {
     let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
     let switchboard = switchboard_returning(serde_json::json!([])).await;
-    let app = test_app!(db(), switchboard);
-    let req = actix_test::TestRequest::get().uri("/home").to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let (app, container) = app(JwtConfig::for_tests(), db(), switchboard).await;
+
+    let resp = app.call(req("/ui/home", &container)).await;
+    assert_eq!(resp.status(), StatusCode::OK);
 }
 
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
-#[actix_web::test]
+#[tokio::test]
 async fn home_slash_renders_the_page_too() {
     let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
     let switchboard = switchboard_returning(serde_json::json!([])).await;
-    let app = test_app!(db(), switchboard);
-    let req = actix_test::TestRequest::get().uri("/home/").to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let (app, container) = app(JwtConfig::for_tests(), db(), switchboard).await;
+
+    let resp = app.call(req("/ui/home/", &container)).await;
+    assert_eq!(resp.status(), StatusCode::OK);
 }
 
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
-#[actix_web::test]
+#[tokio::test]
 async fn home_lists_only_the_callers_own_projects_and_conversations() {
     let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
     let switchboard = switchboard_returning(serde_json::json!([])).await;
@@ -171,24 +188,20 @@ async fn home_lists_only_the_callers_own_projects_and_conversations() {
         .await
         .unwrap();
 
-    let app = test_app!(db, switchboard);
+    let (app, container) = app(JwtConfig::for_tests(), db, switchboard).await;
     // `render_home_page` only names the *active* project (see
     // `routers_ui_pages_home_render_tests`'s own
     // `render_home_page_shows_a_project_and_its_files_when_active`), so
     // request "Mine" as the active one via `project_id` to see it named.
-    let req = actix_test::TestRequest::get()
-        .uri("/home?project_id=p1")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    let body = actix_test::read_body(resp).await;
-    let html = String::from_utf8(body.to_vec()).unwrap();
+    let resp = app.call(req("/ui/home?project_id=p1", &container)).await;
+    let html = body_text(resp).await;
     assert!(html.contains("Mine"));
     assert!(!html.contains("Someone else's"));
     assert!(html.contains("Chat"));
 }
 
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
-#[actix_web::test]
+#[tokio::test]
 async fn home_loads_the_active_conversations_message_history() {
     let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
     let switchboard = switchboard_returning(serde_json::json!([])).await;
@@ -216,13 +229,11 @@ async fn home_loads_the_active_conversations_message_history() {
         .await
         .unwrap();
 
-    let app = test_app!(db, switchboard);
-    let req = actix_test::TestRequest::get()
-        .uri("/home?conversation_id=c1")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
-    let body = actix_test::read_body(resp).await;
-    let html = String::from_utf8(body.to_vec()).unwrap();
+    let (app, container) = app(JwtConfig::for_tests(), db, switchboard).await;
+    let resp = app
+        .call(req("/ui/home?conversation_id=c1", &container))
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let html = body_text(resp).await;
     assert!(html.contains("hello there"));
 }

@@ -1,13 +1,5 @@
-//! The slide-out nav drawer's entry list.
-//!
-//! `.modal-overlay`/`.modal-side`/`.modal-content` themselves are styled by
-//! quench-web's own shared stylesheet (`quench-web/src/framework/styles/
-//! common/modal.rs`) - conveyor only needs to style what it put inside that
-//! content: the two-entry list `common::nav::panel()` builds. Palantir's
-//! equivalent (`side-nav-bar`/`side-nav-bar-entry`) lives in its own
-//! hand-written SCSS, which conveyor has no access to and wouldn't want
-//! anyway - conveyor's other pages are entirely `CssRule`, so this stays in
-//! that language rather than introducing a second styling mechanism.
+//! Styles for the nav drawer's entry list only - the modal shell itself is
+//! quench-web's shared stylesheet.
 
 use quench_web::prelude::CssRule;
 

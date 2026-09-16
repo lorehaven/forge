@@ -4,9 +4,10 @@
 use crate::domain::issue;
 use crate::domain::issue_link::{self, NewIssueLink};
 use crate::routers::api::authz::can_on_project;
-use crate::routers::api::{ApiError, json_error};
-use actix_web::{HttpRequest, HttpResponse, Responder, delete, get, post, web};
+use crate::routers::api::{ApiError, OptionalClaims, json_error};
+use quench_auth::domain::jwt::JwtConfig;
 use quench_db::prelude::Db;
+use quench_http::prelude::{Inject, Json, Path, Response, delete, get, http::StatusCode, post};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -15,42 +16,41 @@ pub struct CreateIssueLink {
     pub kind: String,
 }
 
-#[post("")]
+#[post("/api/v1/issues/{id}/links")]
 pub async fn create(
-    request: HttpRequest,
-    issue_id: web::Path<String>,
-    body: web::Json<CreateIssueLink>,
-    db: web::Data<Db>,
-) -> impl Responder {
+    Path(issue_id): Path<String>,
+    Json(body): Json<CreateIssueLink>,
+    Inject(db): Inject<Db>,
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+) -> Result<Response, ApiError> {
     if !issue_link::is_valid_kind(&body.kind) {
-        return json_error(
-            actix_web::http::StatusCode::BAD_REQUEST,
+        return Ok(json_error(
+            StatusCode::BAD_REQUEST,
             &format!(
                 "unknown kind '{}'; must be one of {:?}",
                 body.kind,
                 issue_link::KINDS
             ),
-        );
+        ));
     }
 
-    if body.linked_issue_id == *issue_id {
-        return json_error(
-            actix_web::http::StatusCode::BAD_REQUEST,
+    if body.linked_issue_id == issue_id {
+        return Ok(json_error(
+            StatusCode::BAD_REQUEST,
             "an issue cannot link to itself",
-        );
+        ));
     }
 
-    let issue = match issue::read(&db, &issue_id).await {
-        Ok(Some(issue)) => issue,
-        Ok(None) => return json_error(actix_web::http::StatusCode::NOT_FOUND, "no such issue"),
-        Err(error) => return ApiError::from(error).into_response(),
+    let Some(issue) = issue::read(&db, &issue_id).await? else {
+        return Ok(json_error(StatusCode::NOT_FOUND, "no such issue"));
     };
 
-    if !can_on_project(&request, &issue.project_id, "write") {
-        return json_error(
-            actix_web::http::StatusCode::FORBIDDEN,
+    if !can_on_project(claims.as_ref(), &config, &issue.project_id, "write") {
+        return Ok(json_error(
+            StatusCode::FORBIDDEN,
             "no write access to this issue",
-        );
+        ));
     }
 
     let new = NewIssueLink {
@@ -59,75 +59,73 @@ pub async fn create(
         kind: body.kind.clone(),
     };
 
-    match issue_link::create(&db, &new).await {
-        Ok(link) => HttpResponse::Created().json(link),
-        Err(error) => ApiError::from(error).into_response(),
-    }
+    let link = issue_link::create(&db, &new).await?;
+    Ok(json_created(&link))
 }
 
-/// The three lists (`blocks`, `blocked_by`, `relates_to`) a detail page
-/// renders, each resolved to the linked issue's key/title/status.
-#[get("")]
+/// The three lists a detail page renders, resolved to key/title/status.
+#[get("/api/v1/issues/{id}/links")]
 pub async fn list(
-    request: HttpRequest,
-    issue_id: web::Path<String>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    let issue = match issue::read(&db, &issue_id).await {
-        Ok(Some(issue)) => issue,
-        Ok(None) => return json_error(actix_web::http::StatusCode::NOT_FOUND, "no such issue"),
-        Err(error) => return ApiError::from(error).into_response(),
+    Path(issue_id): Path<String>,
+    Inject(db): Inject<Db>,
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+) -> Result<Response, ApiError> {
+    let Some(issue) = issue::read(&db, &issue_id).await? else {
+        return Ok(json_error(StatusCode::NOT_FOUND, "no such issue"));
     };
 
-    if !can_on_project(&request, &issue.project_id, "read") {
-        return json_error(
-            actix_web::http::StatusCode::FORBIDDEN,
+    if !can_on_project(claims.as_ref(), &config, &issue.project_id, "read") {
+        return Ok(json_error(
+            StatusCode::FORBIDDEN,
             "no read access to this issue",
-        );
+        ));
     }
 
-    match issue_link::related(&db, &issue.id).await {
-        Ok(related) => HttpResponse::Ok().json(related),
-        Err(error) => ApiError::from(error).into_response(),
-    }
+    let related = issue_link::related(&db, &issue.id).await?;
+    Ok(json_ok(&related))
 }
 
-pub fn scope_under_issue() -> actix_web::Scope {
-    web::scope("/{id}/links").service(create).service(list)
-}
-
-#[delete("/{id}")]
+#[delete("/api/v1/issue-links/{id}")]
 pub async fn remove(
-    request: HttpRequest,
-    path: web::Path<String>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    let link = match issue_link::read(&db, &path).await {
-        Ok(Some(link)) => link,
-        Ok(None) => return json_error(actix_web::http::StatusCode::NOT_FOUND, "no such link"),
-        Err(error) => return ApiError::from(error).into_response(),
+    Path(id): Path<String>,
+    Inject(db): Inject<Db>,
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+) -> Result<Response, ApiError> {
+    let Some(link) = issue_link::read(&db, &id).await? else {
+        return Ok(json_error(StatusCode::NOT_FOUND, "no such link"));
     };
 
-    let issue = match issue::read(&db, &link.issue_id).await {
-        Ok(Some(issue)) => issue,
-        Ok(None) => return json_error(actix_web::http::StatusCode::NOT_FOUND, "no such issue"),
-        Err(error) => return ApiError::from(error).into_response(),
+    let Some(issue) = issue::read(&db, &link.issue_id).await? else {
+        return Ok(json_error(StatusCode::NOT_FOUND, "no such issue"));
     };
 
-    if !can_on_project(&request, &issue.project_id, "write") {
-        return json_error(
-            actix_web::http::StatusCode::FORBIDDEN,
+    if !can_on_project(claims.as_ref(), &config, &issue.project_id, "write") {
+        return Ok(json_error(
+            StatusCode::FORBIDDEN,
             "no write access to this link",
-        );
+        ));
     }
 
-    match issue_link::delete(&db, &path).await {
-        Ok(true) => HttpResponse::NoContent().finish(),
-        Ok(false) => json_error(actix_web::http::StatusCode::NOT_FOUND, "no such link"),
-        Err(error) => ApiError::from(error).into_response(),
+    match issue_link::delete(&db, &id).await? {
+        true => Ok(Response::new(StatusCode::NO_CONTENT)),
+        false => Ok(json_error(StatusCode::NOT_FOUND, "no such link")),
     }
 }
 
-pub fn scope() -> actix_web::Scope {
-    web::scope("/issue-links").service(remove)
+fn json_ok<T: serde::Serialize>(value: &T) -> Response {
+    Response::json(StatusCode::OK, value)
+        .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
+}
+
+fn json_created<T: serde::Serialize>(value: &T) -> Response {
+    Response::json(StatusCode::CREATED, value)
+        .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
+}
+
+pub fn register_routes() {
+    let _ = create as fn(_, _, _, _, _) -> _;
+    let _ = list as fn(_, _, _, _) -> _;
+    let _ = remove as fn(_, _, _, _) -> _;
 }

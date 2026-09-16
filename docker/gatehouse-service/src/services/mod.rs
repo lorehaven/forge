@@ -1,8 +1,4 @@
-//! The estate gatehouse knows how to send you to.
-//!
-//! A service appears on the home page when its URL is configured and its
-//! feature flag is not turned off. That way a deployment lists exactly what it
-//! actually runs, and gatehouse needs no code change to gain or lose one.
+//! Services gatehouse can send you to - shown when URL configured and flag not off.
 
 pub struct ServiceLink {
     pub url: String,

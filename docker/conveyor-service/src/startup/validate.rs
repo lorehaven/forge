@@ -1,13 +1,5 @@
-//! What conveyor needs on `PATH`, reported at startup.
-//!
-//! Checked here rather than discovered three minutes into somebody's first run,
-//! where it costs a checkout and a confusing log line to find out.
-//!
-//! Nothing here refuses to start. Under `CONVEYOR_EXECUTOR=kubernetes` none of
-//! these tools are needed locally at all, and a deployment that has moved to it
-//! should not be held up by a check that no longer applies. What a missing tool
-//! does cost is loud: an error line naming it, and a run that fails saying the
-//! same thing.
+//! What conveyor needs on `PATH`, checked and logged at startup rather than
+//! discovered mid-run. Never fatal - under `kubernetes` executor none of it applies.
 
 use crate::config::{ConveyorConfig, ExecutorKind};
 

@@ -1,10 +1,5 @@
-//! An executor that runs nothing and says what it was told to say.
-//!
-//! For the BDD suite and for tests of the scheduler, which needs a job that
-//! fails on demand and finishes instantly - neither of which a real build
-//! gives you reliably. It also records what it was asked to run, so a test can
-//! assert that a stage was skipped by checking that no job from it ever
-//! started, rather than by inspecting the plan a second time.
+//! An executor that runs nothing and says what it was told to say - for the BDD suite and
+//! scheduler tests that need instant, on-demand outcomes a real build can't reliably give.
 
 use crate::domain::Status;
 use crate::executors::engine::{
@@ -67,8 +62,7 @@ struct Finished {
 
 #[derive(Default)]
 pub struct MockExecutor {
-    /// Keyed by job name, so a test scripts "the deploy job fails" without
-    /// knowing the id the scheduler will generate.
+    /// Keyed by job name, so a test can script "the deploy job fails" without knowing its generated id.
     outcomes: Mutex<HashMap<String, MockOutcome>>,
     default_outcome: Mutex<MockOutcome>,
     started: Mutex<Vec<JobSpec>>,
@@ -151,15 +145,13 @@ impl JobExecutor for MockExecutor {
             .map(|(index, line)| LogChunk {
                 seq: index as u64,
                 stream: Stream::Stdout,
-                // Redacted here as well, so a test written against the mock
-                // asserts the same behaviour the native executor has.
+                // Redacted here too, so a mock-based test sees native's own behaviour.
                 line: spec.redactor.apply(line),
                 at: now,
             })
             .collect();
 
-        // Every step takes the job's outcome. The mock exists to control what a
-        // job did, not to simulate a partial failure through a step list.
+        // Every step takes the job's outcome - the mock controls outcomes, not partial-failure step lists.
         let steps = spec
             .steps
             .iter()
@@ -222,9 +214,7 @@ impl JobExecutor for MockExecutor {
             .get_mut(handle.as_str())
             .ok_or_else(|| ExecError::UnknownHandle(handle.clone()))?;
 
-        // A mock job is already finished by the time anyone can cancel it, so
-        // the cancellation is recorded but does not rewrite a terminal status -
-        // which is exactly what a real executor does with a late cancel.
+        // Already finished by the time anyone can cancel it - recorded, but doesn't rewrite a terminal status.
         job.state
             .error
             .get_or_insert_with(|| "cancelled".to_string());

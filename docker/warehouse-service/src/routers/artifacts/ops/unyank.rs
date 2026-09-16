@@ -2,16 +2,22 @@
 //! yank.
 
 use crate::routers::artifacts::ops::disabled;
-use actix_web::{Responder, put, web};
 use quench_db::prelude::Db;
+use quench_http::prelude::{Inject, Path, Response, put};
 
-#[put("/{program}/{platform}/{version_code}/unyank")]
+#[put("/api/v1/artifacts/{program}/{platform}/{version_code}/unyank")]
 #[tracing::instrument]
-pub async fn handle(db: web::Data<Db>, path: web::Path<(String, String, i64)>) -> impl Responder {
+pub async fn handle(
+    Inject(db): Inject<Db>,
+    Path((program, platform_raw, version_code)): Path<(String, String, i64)>,
+) -> Response {
     if !crate::routers::artifacts_enabled() {
         return disabled();
     }
 
-    let (program, platform_raw, version_code) = path.into_inner();
     super::yank::set_yanked(&db, &program, &platform_raw, version_code, false).await
+}
+
+pub fn register_routes() {
+    let _ = handle as fn(_, _) -> _;
 }

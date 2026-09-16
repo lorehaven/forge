@@ -11,8 +11,8 @@ use tokio::sync::Mutex;
 
 /// `tokio::sync::Mutex`, not `std::sync::Mutex`: every holder here keeps the
 /// guard across an `.await` (an HTTP call, a DB round-trip), and only ever
-/// from within `#[tokio::test]`/`#[actix_web::test]` bodies, so there's no
-/// blocking-executor concern - just the ordinary async lock for the job.
+/// from within `#[tokio::test]` bodies, so there's no blocking-executor
+/// concern - just the ordinary async lock for the job.
 pub fn env_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))

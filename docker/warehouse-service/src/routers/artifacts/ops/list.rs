@@ -1,45 +1,37 @@
-//! `GET /api/v1/artifacts/{program}/{platform}` - one program's versions on
-//! one platform, newest first.
-//! `GET /api/v1/artifacts/{program}` - every platform+version for one program.
-//! `GET /api/v1/artifacts?platform=<tag>` - the catalog: the latest offerable
-//! version per `(program, platform)`, optionally filtered to one platform.
-//!
-//! The catalog is what a client's index page hits - one row per program (per
-//! platform), so it doesn't have to fetch every version just to find the
-//! newest one it can install.
+//! Per-program version listing, per-program-all-platforms listing, and the catalog (latest
+//! offerable version per program+platform) a client's index page hits.
 
 use crate::domain::artifact::{ArtifactVersion, Platform};
-use crate::routers::artifacts::ops::{ArtifactView, disabled, error, find_program_platform};
+use crate::routers::artifacts::ops::{
+    ArtifactView, disabled, error, find_program_platform, json_ok,
+};
 use crate::routers::artifacts::validate_program;
-use actix_web::http::StatusCode;
-use actix_web::{HttpResponse, Responder, get, web};
 use quench_db::prelude::{Crud, Db};
+use quench_http::prelude::{Inject, Path, Query, Response, get, http::StatusCode};
 use serde::Deserialize;
 use std::collections::HashMap;
 
 #[derive(Debug, Default, Deserialize)]
 pub struct CatalogQuery {
-    /// Restrict the catalog to one platform tag. An unknown tag yields an
-    /// empty catalog rather than an error.
+    /// An unknown tag yields an empty catalog rather than an error.
     pub platform: Option<String>,
 }
 
-#[get("/{program}/{platform}")]
+#[get("/api/v1/artifacts/{program}/{platform}")]
 #[tracing::instrument]
 pub async fn platform_versions(
-    db: web::Data<Db>,
-    path: web::Path<(String, String)>,
-) -> impl Responder {
+    Inject(db): Inject<Db>,
+    Path((program, platform_raw)): Path<(String, String)>,
+) -> Response {
     if !crate::routers::artifacts_enabled() {
         return disabled();
     }
 
-    let (program, platform_raw) = path.into_inner();
     let Some(platform) = Platform::parse(&platform_raw) else {
-        return HttpResponse::Ok().json(Vec::<ArtifactView>::new());
+        return json_ok(&Vec::<ArtifactView>::new());
     };
     if !validate_program(&program) {
-        return HttpResponse::Ok().json(Vec::<ArtifactView>::new());
+        return json_ok(&Vec::<ArtifactView>::new());
     }
 
     let mut versions = match find_program_platform(&db, &program, platform).await {
@@ -48,19 +40,18 @@ pub async fn platform_versions(
     };
     versions.sort_by_key(|v| std::cmp::Reverse(v.version_code));
 
-    HttpResponse::Ok().json(versions.iter().map(ArtifactView::from).collect::<Vec<_>>())
+    json_ok(&versions.iter().map(ArtifactView::from).collect::<Vec<_>>())
 }
 
-#[get("/{program}")]
+#[get("/api/v1/artifacts/{program}")]
 #[tracing::instrument]
-pub async fn program_versions(db: web::Data<Db>, path: web::Path<String>) -> impl Responder {
+pub async fn program_versions(Inject(db): Inject<Db>, Path(program): Path<String>) -> Response {
     if !crate::routers::artifacts_enabled() {
         return disabled();
     }
 
-    let program = path.into_inner();
     if !validate_program(&program) {
-        return HttpResponse::Ok().json(Vec::<ArtifactView>::new());
+        return json_ok(&Vec::<ArtifactView>::new());
     }
 
     let mut versions = match db
@@ -78,22 +69,21 @@ pub async fn program_versions(db: web::Data<Db>, path: web::Path<String>) -> imp
             .then(b.version_code.cmp(&a.version_code))
     });
 
-    HttpResponse::Ok().json(versions.iter().map(ArtifactView::from).collect::<Vec<_>>())
+    json_ok(&versions.iter().map(ArtifactView::from).collect::<Vec<_>>())
 }
 
-#[get("")]
+#[get("/api/v1/artifacts")]
 #[tracing::instrument]
-pub async fn catalog(db: web::Data<Db>, query: web::Query<CatalogQuery>) -> impl Responder {
+pub async fn catalog(Inject(db): Inject<Db>, Query(query): Query<CatalogQuery>) -> Response {
     if !crate::routers::artifacts_enabled() {
         return disabled();
     }
 
-    // An explicit but unknown `?platform=` tag -> empty catalog, the same
-    // non-answer an unauthorised caller gets.
+    // An unknown `?platform=` tag is an empty catalog, not an error.
     let platform_filter = match query.platform.as_deref() {
         Some(tag) => match Platform::parse(tag) {
             Some(p) => Some(p),
-            None => return HttpResponse::Ok().json(Vec::<ArtifactView>::new()),
+            None => return json_ok(&Vec::<ArtifactView>::new()),
         },
         None => None,
     };
@@ -128,5 +118,11 @@ pub async fn catalog(db: web::Data<Db>, query: web::Query<CatalogQuery>) -> impl
         .collect();
     catalog.sort_by(|a, b| a.program.cmp(&b.program).then(a.platform.cmp(&b.platform)));
 
-    HttpResponse::Ok().json(catalog)
+    json_ok(&catalog)
+}
+
+pub fn register_routes() {
+    let _ = platform_versions as fn(_, _) -> _;
+    let _ = program_versions as fn(_, _) -> _;
+    let _ = catalog as fn(_, _) -> _;
 }

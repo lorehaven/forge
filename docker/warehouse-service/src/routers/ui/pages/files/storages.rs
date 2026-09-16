@@ -1,24 +1,18 @@
 use crate::domain::storage::{self, DynamicStorage, NewStorage, StorageUpdate};
 use crate::domain::storage_file;
 use crate::routers::files::dynamic;
-use crate::routers::ui::authz::{can_manage, require_manage, ui_claims};
-use crate::routers::ui::common::{
-    UiPageKind, is_ui_authenticated, render_page, ui_login_redirect, ui_path,
-};
-use actix_web::http::header::ContentType;
-use actix_web::{HttpRequest, HttpResponse, Responder, get, post, web};
-use quench_auth::prelude::JwtConfig;
+use crate::routers::ui::authz::{ManageGate, OptionalUiClaims, can_manage};
+use crate::routers::ui::common::{PageAuth, UiPageKind, render_page, ui_login_redirect, ui_path};
 use quench_db::prelude::Db;
-use quench_starter::prelude::with_base_path;
+use quench_http::prelude::{Form, Inject, Path, Query, Response, get, http::StatusCode, post};
+use quench_starter::common::routes::with_base_path;
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 
 const GIB: f64 = 1024.0 * 1024.0 * 1024.0;
 const MIB: f64 = 1024.0 * 1024.0;
 
-// ---------------------------------------------------------------------------
-// Query / form shapes
-// ---------------------------------------------------------------------------
+// --- Query / form shapes ---
 
 #[derive(serde::Deserialize)]
 pub struct FilesQuery {
@@ -65,10 +59,7 @@ pub struct DeleteStorageModalQuery {
     pub storage: String,
 }
 
-// ---------------------------------------------------------------------------
-// View model (what `render_storages_page` consumes - kept free of `Db` so it
-// is a pure function the tests can drive directly)
-// ---------------------------------------------------------------------------
+// --- View model (kept free of `Db` so tests can drive `render_storages_page` directly) ---
 
 pub struct SelectedView {
     pub name: String,
@@ -87,43 +78,39 @@ pub struct StoragesView {
     pub selected: Option<SelectedView>,
 }
 
-// ---------------------------------------------------------------------------
-// GET /ui/files/storages
-// ---------------------------------------------------------------------------
+// --- GET /ui/files/storages ---
 
-#[get("/files/storages")]
+#[get("/ui/files/storages")]
 pub async fn files_storages(
-    req: HttpRequest,
-    query: web::Query<FilesQuery>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    handle_list(&req, &query, &config, &db).await
+    auth: PageAuth,
+    claims: OptionalUiClaims,
+    Query(query): Query<FilesQuery>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    handle_list(auth, claims, &query, &db).await
 }
 
-#[get("/files/storages/")]
+#[get("/ui/files/storages/")]
 pub async fn files_storages_slash(
-    req: HttpRequest,
-    query: web::Query<FilesQuery>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    handle_list(&req, &query, &config, &db).await
+    auth: PageAuth,
+    claims: OptionalUiClaims,
+    Query(query): Query<FilesQuery>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    handle_list(auth, claims, &query, &db).await
 }
 
 async fn handle_list(
-    req: &HttpRequest,
+    PageAuth(authenticated): PageAuth,
+    OptionalUiClaims(claims): OptionalUiClaims,
     query: &FilesQuery,
-    config: &JwtConfig,
     db: &Db,
-) -> HttpResponse {
-    if !is_ui_authenticated(req, config).await {
+) -> Response {
+    if !authenticated {
         return ui_login_redirect();
     }
 
-    let manage = ui_claims(req, config)
-        .await
-        .is_some_and(|claims| can_manage(&claims));
+    let manage = claims.is_some_and(|claims| can_manage(&claims));
 
     let static_names: Vec<String> = crate::routers::files::storages()
         .iter()
@@ -178,45 +165,42 @@ fn build_selection(name: &str, dynamic: &[DynamicStorage]) -> SelectedView {
     }
 }
 
-// ---------------------------------------------------------------------------
-// POST /ui/files/storages  (create)
-// ---------------------------------------------------------------------------
+// --- POST /ui/files/storages (create) ---
 
-#[post("/files/storages")]
+#[post("/ui/files/storages")]
 pub async fn create_storage(
-    req: HttpRequest,
-    form: web::Form<CreateStorageForm>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    if let Err(response) = require_manage(&req, &config).await {
+    gate: ManageGate,
+    Form(form): Form<CreateStorageForm>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    if let Err(response) = gate.or_response() {
         return response;
     }
     if !crate::routers::files_enabled() {
-        return HttpResponse::NotFound().body("api_error_files_disabled");
+        return Response::text(StatusCode::NOT_FOUND, "api_error_files_disabled");
     }
 
     let name = form.name.trim().to_string();
     let owner = form.owner.trim().to_string();
 
     if !crate::routers::files::valid_storage_name(&name) {
-        return HttpResponse::BadRequest().body("api_error_invalid_storage_name");
+        return Response::text(StatusCode::BAD_REQUEST, "api_error_invalid_storage_name");
     }
     if owner.is_empty() {
-        return HttpResponse::BadRequest().body("api_error_storage_owner_required");
+        return Response::text(StatusCode::BAD_REQUEST, "api_error_storage_owner_required");
     }
     if crate::routers::files::storage(&name).is_some() {
-        return HttpResponse::Conflict().body("api_error_storage_name_static_clash");
+        return Response::text(StatusCode::CONFLICT, "api_error_storage_name_static_clash");
     }
 
     let quota_bytes = match parse_scaled(&form.quota_gib, GIB) {
         Ok(Some(bytes)) => bytes,
         Ok(None) => dynamic::default_quota_bytes(),
-        Err(()) => return HttpResponse::BadRequest().body("api_error_invalid_quota"),
+        Err(()) => return Response::text(StatusCode::BAD_REQUEST, "api_error_invalid_quota"),
     };
     let max_file_bytes = match parse_scaled(&form.max_file_mib, MIB) {
         Ok(value) => value,
-        Err(()) => return HttpResponse::BadRequest().body("api_error_invalid_max_file"),
+        Err(()) => return Response::text(StatusCode::BAD_REQUEST, "api_error_invalid_max_file"),
     };
 
     let new = NewStorage {
@@ -230,42 +214,37 @@ pub async fn create_storage(
     match storage::create(&db, &new).await {
         Ok(created) => redirect_to_storage(&created.name),
         Err(problem) if problem.is_unique_violation() => {
-            HttpResponse::Conflict().body("api_error_storage_exists")
+            Response::text(StatusCode::CONFLICT, "api_error_storage_exists")
         }
         Err(problem) if problem.is_foreign_key_violation() => {
-            HttpResponse::BadRequest().body("api_error_storage_owner_unknown")
+            Response::text(StatusCode::BAD_REQUEST, "api_error_storage_owner_unknown")
         }
         Err(problem) => {
             tracing::error!("UI create dynamic storage failed: {problem}");
-            HttpResponse::InternalServerError().body("api_error_internal")
+            Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal")
         }
     }
 }
 
-// ---------------------------------------------------------------------------
-// POST /ui/files/storages/{name}/edit
-// ---------------------------------------------------------------------------
+// --- POST /ui/files/storages/{name}/edit ---
 
-#[post("/files/storages/{name}/edit")]
+#[post("/ui/files/storages/{name}/edit")]
 pub async fn edit_storage(
-    req: HttpRequest,
-    path: web::Path<String>,
-    form: web::Form<EditStorageForm>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    if let Err(response) = require_manage(&req, &config).await {
+    gate: ManageGate,
+    Path(name): Path<String>,
+    Form(form): Form<EditStorageForm>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    if let Err(response) = gate.or_response() {
         return response;
     }
     if !crate::routers::files_enabled() {
-        return HttpResponse::NotFound().body("api_error_files_disabled");
+        return Response::text(StatusCode::NOT_FOUND, "api_error_files_disabled");
     }
-
-    let name = path.into_inner();
 
     let quota_bytes = match parse_scaled(&form.quota_gib, GIB) {
         Ok(value) => value,
-        Err(()) => return HttpResponse::BadRequest().body("api_error_invalid_quota"),
+        Err(()) => return Response::text(StatusCode::BAD_REQUEST, "api_error_invalid_quota"),
     };
 
     let max_file_bytes = if checkbox_on(&form.clear_max_file) {
@@ -274,7 +253,9 @@ pub async fn edit_storage(
         match parse_scaled(&form.max_file_mib, MIB) {
             Ok(Some(bytes)) => Some(Some(bytes)),
             Ok(None) => None,
-            Err(()) => return HttpResponse::BadRequest().body("api_error_invalid_max_file"),
+            Err(()) => {
+                return Response::text(StatusCode::BAD_REQUEST, "api_error_invalid_max_file");
+            }
         }
     };
 
@@ -286,67 +267,58 @@ pub async fn edit_storage(
 
     match storage::update(&db, &name, &changes).await {
         Ok(Some(updated)) => redirect_to_storage(&updated.name),
-        Ok(None) => HttpResponse::NotFound().body("api_error_storage_not_found"),
+        Ok(None) => Response::text(StatusCode::NOT_FOUND, "api_error_storage_not_found"),
         Err(problem) => {
             tracing::error!("UI edit dynamic storage failed: {problem}");
-            HttpResponse::InternalServerError().body("api_error_internal")
+            Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal")
         }
     }
 }
 
-// ---------------------------------------------------------------------------
-// POST /ui/files/delete-storage  (+ its confirm modal)
-// ---------------------------------------------------------------------------
+// --- POST /ui/files/delete-storage (+ its confirm modal) ---
 
-#[get("/files/delete-storage-modal")]
+#[get("/ui/files/delete-storage-modal")]
 pub async fn delete_storage_modal(
-    req: HttpRequest,
-    query: web::Query<DeleteStorageModalQuery>,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
-    if !is_ui_authenticated(&req, &config).await {
+    PageAuth(authenticated): PageAuth,
+    Query(query): Query<DeleteStorageModalQuery>,
+) -> Response {
+    if !authenticated {
         return ui_login_redirect();
     }
-    HttpResponse::Ok()
-        .content_type(ContentType::html())
-        .body(render_delete_storage_modal(&query.storage))
+    Response::html(StatusCode::OK, render_delete_storage_modal(&query.storage))
 }
 
-#[get("/files/delete-storage-modal/empty")]
-pub async fn empty_delete_storage_modal(
-    req: HttpRequest,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
-    if !is_ui_authenticated(&req, &config).await {
+#[get("/ui/files/delete-storage-modal/empty")]
+pub async fn empty_delete_storage_modal(PageAuth(authenticated): PageAuth) -> Response {
+    if !authenticated {
         return ui_login_redirect();
     }
-    HttpResponse::Ok()
-        .content_type(ContentType::html())
-        .body(empty_delete_storage_modal_element().render())
+    Response::html(
+        StatusCode::OK,
+        empty_delete_storage_modal_element().render(),
+    )
 }
 
-#[post("/files/delete-storage")]
+#[post("/ui/files/delete-storage")]
 pub async fn delete_storage(
-    req: HttpRequest,
-    form: web::Form<DeleteStorageForm>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    if let Err(response) = require_manage(&req, &config).await {
+    gate: ManageGate,
+    Form(form): Form<DeleteStorageForm>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    if let Err(response) = gate.or_response() {
         return response;
     }
     if !crate::routers::files_enabled() {
-        return HttpResponse::NotFound().body("api_error_files_disabled");
+        return Response::text(StatusCode::NOT_FOUND, "api_error_files_disabled");
     }
 
     let name = form.name.clone();
 
     let Ok(Some(found)) = storage::read(&db, &name).await else {
-        return HttpResponse::NotFound().body("api_error_storage_not_found");
+        return Response::text(StatusCode::NOT_FOUND, "api_error_storage_not_found");
     };
 
-    // Mirror `routers::files::ops::storages::remove`: release each file (and
-    // its blob ref-count) before dropping the storage row.
+    // Mirrors `routers::files::ops::storages::remove`.
     if let Some(root) = dynamic::root()
         && let Ok(files) = storage_file::list_files(&db, &found.name, "").await
     {
@@ -359,39 +331,35 @@ pub async fn delete_storage(
     }
 
     match storage::delete(&db, &found.name).await {
-        Ok(_) => HttpResponse::NoContent()
-            .append_header(("HX-Redirect", with_base_path("/ui/files/storages")))
-            .finish(),
+        Ok(_) => Response::new(StatusCode::NO_CONTENT)
+            .header("HX-Redirect", with_base_path("/ui/files/storages")),
         Err(problem) => {
             tracing::error!("UI delete dynamic storage failed: {problem}");
-            HttpResponse::InternalServerError().body("api_error_internal")
+            Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal")
         }
     }
 }
 
-// ---------------------------------------------------------------------------
-// POST /ui/files/delete-file
-// ---------------------------------------------------------------------------
+// --- POST /ui/files/delete-file ---
 
-#[post("/files/delete-file")]
+#[post("/ui/files/delete-file")]
 pub async fn delete_file(
-    req: HttpRequest,
-    form: web::Form<DeleteFileForm>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    if let Err(response) = require_manage(&req, &config).await {
+    gate: ManageGate,
+    Form(form): Form<DeleteFileForm>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    if let Err(response) = gate.or_response() {
         return response;
     }
     if !crate::routers::files_enabled() {
-        return HttpResponse::NotFound().body("api_error_files_disabled");
+        return Response::text(StatusCode::NOT_FOUND, "api_error_files_disabled");
     }
 
     let storage_name = form.storage.clone();
     let path = form.path.clone();
 
     if crate::routers::files::relative(&path).is_err() {
-        return HttpResponse::BadRequest().body("api_error_invalid_path");
+        return Response::text(StatusCode::BAD_REQUEST, "api_error_invalid_path");
     }
 
     // Dynamic storage: the domain layer owns the blob ref-count and quota.
@@ -402,7 +370,10 @@ pub async fn delete_file(
         .is_some()
     {
         let Some(root) = dynamic::root() else {
-            return HttpResponse::InternalServerError().body("api_error_no_dynamic_root");
+            return Response::text(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "api_error_no_dynamic_root",
+            );
         };
         return match storage_file::delete_file(&db, &storage_name, &path, |sha256| {
             dynamic::blob_path(&root, sha256)
@@ -410,48 +381,44 @@ pub async fn delete_file(
         .await
         {
             Ok(true) => redirect_to_browse(&storage_name, parent_dir(&path)),
-            Ok(false) => HttpResponse::NotFound().body("api_error_file_not_found"),
+            Ok(false) => Response::text(StatusCode::NOT_FOUND, "api_error_file_not_found"),
             Err(problem) => {
                 tracing::error!("UI delete dynamic file failed: {problem}");
-                HttpResponse::InternalServerError().body("api_error_internal")
+                Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal")
             }
         };
     }
 
     // Static storage: a plain unlink, confined to the storage root.
     let Some(storage) = crate::routers::files::storage(&storage_name) else {
-        return HttpResponse::NotFound().body("api_error_storage_not_found");
+        return Response::text(StatusCode::NOT_FOUND, "api_error_storage_not_found");
     };
     let Ok(target) = crate::routers::files::resolve(storage, &path) else {
-        return HttpResponse::BadRequest().body("api_error_invalid_path");
+        return Response::text(StatusCode::BAD_REQUEST, "api_error_invalid_path");
     };
     if !crate::routers::files::confined(&storage.root, &target).await {
-        return HttpResponse::Forbidden().body("api_error_path_escapes_storage");
+        return Response::text(StatusCode::FORBIDDEN, "api_error_path_escapes_storage");
     }
     match tokio::fs::remove_file(&target).await {
         Ok(()) => redirect_to_browse(&storage_name, parent_dir(&path)),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-            HttpResponse::NotFound().body("api_error_file_not_found")
+            Response::text(StatusCode::NOT_FOUND, "api_error_file_not_found")
         }
         Err(err) => {
             tracing::error!("UI delete static file failed: {err}");
-            HttpResponse::InternalServerError().body("api_error_internal")
+            Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal")
         }
     }
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+// --- Helpers ---
 
 /// A checkbox is only submitted when checked, so any value present means on.
 fn checkbox_on(value: &Option<String>) -> bool {
     value.as_deref().is_some_and(|v| !v.is_empty())
 }
 
-/// Parse an optional user-entered amount in units of `scale` bytes. Blank ->
-/// `Ok(None)` ("leave / use default"); a non-negative number -> `Ok(Some(bytes))`;
-/// anything else -> `Err(())`.
+/// Parses `raw` in units of `scale` bytes; blank -> `None`, non-negative -> `Some`, else `Err`.
 fn parse_scaled(raw: &str, scale: f64) -> Result<Option<i64>, ()> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
@@ -485,28 +452,24 @@ fn mib_string(bytes: i64) -> String {
     format!("{:.2}", bytes as f64 / MIB)
 }
 
-fn redirect_to_storage(name: &str) -> HttpResponse {
-    HttpResponse::NoContent()
-        .append_header((
-            "HX-Redirect",
-            with_base_path(&format!("/ui/files/storages?storage={name}")),
-        ))
-        .finish()
+fn redirect_to_storage(name: &str) -> Response {
+    Response::new(StatusCode::NO_CONTENT).header(
+        "HX-Redirect",
+        with_base_path(&format!("/ui/files/storages?storage={name}")),
+    )
 }
 
 /// After a delete, land back on the file browser at the deleted file's parent
 /// directory - the browser is the only page that offers the delete now.
-fn redirect_to_browse(storage: &str, path: String) -> HttpResponse {
-    HttpResponse::NoContent()
-        .append_header((
-            "HX-Redirect",
-            with_base_path(&format!(
-                "/ui/files/browse?storage={}&path={}",
-                encode_query_component(storage),
-                encode_query_component(&path)
-            )),
-        ))
-        .finish()
+fn redirect_to_browse(storage: &str, path: String) -> Response {
+    Response::new(StatusCode::NO_CONTENT).header(
+        "HX-Redirect",
+        with_base_path(&format!(
+            "/ui/files/browse?storage={}&path={}",
+            encode_query_component(storage),
+            encode_query_component(&path)
+        )),
+    )
 }
 
 /// The directory a `/`-separated path sits in, or `""` for a top-level file.
@@ -517,11 +480,9 @@ fn parent_dir(path: &str) -> String {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Rendering
-// ---------------------------------------------------------------------------
+// --- Rendering ---
 
-pub fn render_storages_page(view: &StoragesView, can_manage: bool) -> HttpResponse {
+pub fn render_storages_page(view: &StoragesView, can_manage: bool) -> Response {
     let left = div()
         .class("split-left panel")
         .child(
@@ -536,7 +497,7 @@ pub fn render_storages_page(view: &StoragesView, can_manage: bool) -> HttpRespon
         .child(render_detail_panel(view, can_manage));
 
     render_page(
-        HttpResponse::Ok(),
+        StatusCode::OK,
         content()
             .class("container-fluid py-4")
             .child(div().class("split-view").child(left).child(right))
@@ -857,26 +818,14 @@ pub fn render_delete_storage_modal(name: &str) -> String {
     div()
         .attr("id", "confirm-delete-storage-modal")
         .class("open")
-        .child(
-            button()
-                .class("confirm-modal-backdrop")
-                .attr("type", "button")
-                .attr("hx-get", ui_path("/files/delete-storage-modal/empty"))
-                .attr("hx-target", "#confirm-delete-storage-modal")
-                .attr("hx-swap", "outerHTML"),
-        )
+        .child(button().class("confirm-modal-backdrop").attr("type", "button").attr("hx-get", ui_path("/files/delete-storage-modal/empty")).attr("hx-target", "#confirm-delete-storage-modal").attr("hx-swap", "outerHTML"))
         .child(
             div()
                 .class("confirm-modal-content")
                 .child(
                     div()
                         .class("confirm-modal-header")
-                        .child(
-                            div()
-                                .class("confirm-modal-title")
-                                .attr("data-i18n", "ui_storage_delete_title")
-                                .text("Delete storage"),
-                        )
+                        .child(div().class("confirm-modal-title").attr("data-i18n", "ui_storage_delete_title").text("Delete storage"))
                         .child(
                             button()
                                 .class("confirm-modal-close")
@@ -890,43 +839,25 @@ pub fn render_delete_storage_modal(name: &str) -> String {
                 .child(
                     div()
                         .class("confirm-modal-body")
-                        .child(
-                            p().attr("data-i18n", "ui_storage_delete_confirm_text").text(
-                                "Delete this storage and everything in it? This cannot be undone.",
-                            ),
-                        )
+                        .child(p().attr("data-i18n", "ui_storage_delete_confirm_text").text("Delete this storage and everything in it? This cannot be undone."))
                         .child(div().class("confirm-delete-target").text(name))
                         .child(
                             form()
                                 .class("confirm-actions")
                                 .attr("hx-post", ui_path("/files/delete-storage"))
                                 .attr("hx-swap", "none")
-                                .child(
-                                    input()
-                                        .attr("type", "hidden")
-                                        .attr("name", "name")
-                                        .attr("value", name),
-                                )
+                                .child(input().attr("type", "hidden").attr("name", "name").attr("value", name))
                                 .child(
                                     button()
                                         .class("button cancel")
                                         .attr("type", "button")
-                                        .attr(
-                                            "hx-get",
-                                            ui_path("/files/delete-storage-modal/empty"),
-                                        )
+                                        .attr("hx-get", ui_path("/files/delete-storage-modal/empty"))
                                         .attr("hx-target", "#confirm-delete-storage-modal")
                                         .attr("hx-swap", "outerHTML")
                                         .attr("data-i18n", "ui_common_cancel")
                                         .text("Cancel"),
                                 )
-                                .child(
-                                    button()
-                                        .class("button delete")
-                                        .attr("type", "submit")
-                                        .attr("data-i18n", "ui_common_delete")
-                                        .text("Delete"),
-                                ),
+                                .child(button().class("button delete").attr("type", "submit").attr("data-i18n", "ui_common_delete").text("Delete")),
                         ),
                 ),
         )
@@ -937,9 +868,7 @@ fn empty_delete_storage_modal_element() -> Element {
     div().attr("id", "confirm-delete-storage-modal")
 }
 
-// ---------------------------------------------------------------------------
-// Small element helpers
-// ---------------------------------------------------------------------------
+// --- Small element helpers ---
 
 fn field_row(label_key: &str, control: Element) -> Element {
     div()
@@ -983,4 +912,15 @@ fn encode_query_component(value: &str) -> String {
         }
     }
     encoded
+}
+
+pub fn register_routes() {
+    let _ = files_storages as fn(_, _, _, _) -> _;
+    let _ = files_storages_slash as fn(_, _, _, _) -> _;
+    let _ = create_storage as fn(_, _, _) -> _;
+    let _ = edit_storage as fn(_, _, _, _) -> _;
+    let _ = delete_storage_modal as fn(_, _) -> _;
+    let _ = empty_delete_storage_modal as fn(_) -> _;
+    let _ = delete_storage as fn(_, _, _) -> _;
+    let _ = delete_file as fn(_, _, _) -> _;
 }

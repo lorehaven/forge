@@ -1,16 +1,5 @@
-//! Reading and writing sealed git credentials.
-//!
-//! Same discipline as [`crate::secrets::store`]: [`CredentialRef`] is what
-//! listing and the API return, and it never carries the token. Getting the
-//! token is [`resolve`], called only from the checkout path with the
-//! credential key, never exposed as an endpoint.
-//!
-//! Unlike a pipeline secret, a credential is not looked up by name: a
-//! checkout has exactly one clone url, so there is at most one credential per
-//! repository or per project, full stop. `name` is kept as a label for
-//! listings and audit trails, not as part of a row's identity - the scope
-//! (which project, or which repo) is the whole identity, so `put` replaces
-//! whatever was in that scope regardless of what it was called.
+//! Reading and writing sealed git credentials. [`CredentialRef`] never carries the token; only
+//! [`resolve`] decrypts one. Scope (project or repo) is the whole identity - `name` is just a label.
 
 use crate::domain::Repo;
 use crate::scheduler::projects;
@@ -22,13 +11,10 @@ use serde::Serialize;
 use sqlx::Row;
 use uuid::Uuid;
 
-/// The variable a credential's cipher key is read from. Deliberately its own
-/// name, not `CONVEYOR_SECRET_KEY` - see the module doc comment.
+/// Deliberately its own name, not `CONVEYOR_SECRET_KEY` - see the module doc comment.
 pub const KEY_VAR: &str = "CONVEYOR_CREDENTIAL_KEY";
 
-/// The shortest token worth storing. Below this a masked preview reveals as
-/// much as it hides, the same reasoning `secrets::redact::MIN_REDACTABLE`
-/// gives for pipeline secrets.
+/// Below this, a masked preview reveals as much as it hides - same reasoning as `secrets::redact::MIN_REDACTABLE`.
 const MIN_TOKEN_LEN: usize = 4;
 
 #[derive(Debug, thiserror::Error)]
@@ -49,10 +35,7 @@ pub enum CredentialError {
     TooShort,
 }
 
-/// What a credential belongs to. Unlike [`crate::secrets::store::Scope`],
-/// neither side is optional - a credential with nothing to scope it to would
-/// apply to every repository conveyor builds, which is not a thing this
-/// estate has asked for.
+/// Unlike [`crate::secrets::store::Scope`], neither side is optional - an unscoped credential would apply to every repo.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Scope {
     Project(String),
@@ -74,9 +57,7 @@ impl Scope {
         }
     }
 
-    /// What the token is sealed against, so a row moved from one project or
-    /// repository to another fails to open rather than quietly granting a
-    /// credential to something it was never given to.
+    /// What the token is sealed against, so a moved row fails to open rather than granting access silently.
     fn context(&self) -> String {
         match self {
             Self::Project(id) => format!("project:{id}"),
@@ -94,8 +75,7 @@ pub struct CredentialRef {
     pub name: String,
     pub kind: String,
     pub username: String,
-    /// A masked fragment, e.g. `"••••…9f2a"` - enough to recognise which
-    /// token this is without being able to reconstruct it.
+    /// A masked fragment, e.g. `"••••…9f2a"` - recognisable, not reconstructible.
     pub preview: String,
     pub created_by: String,
     pub created_at: DateTime<Utc>,
@@ -108,10 +88,7 @@ pub struct ResolvedCredential {
     pub token: String,
 }
 
-/// What a caller supplies to [`put`]. Grouped into one argument rather than
-/// four so the function stays under clippy's argument-count lint - these four
-/// are exactly "what's being written," as distinct from `db`/`key`/`scope`/
-/// `created_by`, which are the context it's written through.
+/// Grouped into one argument (rather than four) to stay under clippy's argument-count lint.
 pub struct NewCredential<'a> {
     pub name: &'a str,
     pub kind: &'a str,
@@ -119,9 +96,7 @@ pub struct NewCredential<'a> {
     pub token: &'a str,
 }
 
-/// Names that read sensibly as a label. Not looked up by, so nothing forces
-/// this - but reusing `secrets::store::validate_name`'s rule beats inventing
-/// a second one.
+/// Not looked up by name, but reuses `secrets::store::validate_name`'s rule rather than inventing a second one.
 fn validate_name(name: &str) -> Result<(), CredentialError> {
     let usable = !name.is_empty()
         && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
@@ -134,10 +109,7 @@ fn validate_name(name: &str) -> Result<(), CredentialError> {
         })
 }
 
-/// Both `username` and `token` end up in an HTTP header value
-/// (`workspace::checkout` builds `Authorization: Basic ...` from them), so a
-/// carriage return or newline here would let a stored credential inject a
-/// second header into every request that uses it.
+/// Both end up in an `Authorization: Basic` header (`workspace::checkout`), so a newline would let a credential inject a second header.
 fn validate_material(username: &str, token: &str) -> Result<(), CredentialError> {
     let clean = |s: &str| !s.chars().any(|c| c.is_control());
     if !clean(username) || !clean(token) {
@@ -161,8 +133,7 @@ fn preview_of(token: &str) -> String {
     format!("••••…{tail}")
 }
 
-/// Writes the credential for `scope`, replacing whatever was there under any
-/// name.
+/// Writes the credential for `scope`, replacing whatever was there under any name.
 pub async fn put(
     db: &Db,
     key: &SecretKey,
@@ -185,8 +156,7 @@ pub async fn put(
     let pool = pool(db).map_err(CredentialError::Queue)?;
     let schema = schema();
 
-    // One partial unique index per scope column - at most one credential per
-    // project, at most one per repo, `name` playing no part in identity.
+    // One partial unique index per scope column; `name` plays no part in identity.
     let sql = match scope {
         Scope::Project(_) => format!(
             "INSERT INTO {schema}.credentials \
@@ -251,10 +221,7 @@ pub async fn show(db: &Db, scope: &Scope) -> Result<Option<CredentialRef>, Crede
     row.as_ref().map(from_row).transpose().map_err(Into::into)
 }
 
-/// Every credential, across every scope - callers filter by what the caller
-/// may read. Used only by the UI preview page; there is still no way to
-/// read a token back out through this, only the same `preview` `show` and
-/// the API already expose.
+/// Every credential across every scope; UI preview page only, still no token exposed.
 pub async fn list_all(db: &Db) -> Result<Vec<CredentialRef>, CredentialError> {
     let pool = pool(db).map_err(CredentialError::Queue)?;
     let schema = schema();
@@ -288,8 +255,7 @@ pub async fn delete(db: &Db, scope: &Scope) -> Result<bool, CredentialError> {
     Ok(result.rows_affected() > 0)
 }
 
-/// The token in `scope`, decrypted. Used by `resolve` and nowhere else -
-/// there is no API path that reaches this.
+/// The token in `scope`, decrypted. Used by `resolve` only - no API path reaches this.
 async fn material(
     db: &Db,
     key: &SecretKey,
@@ -322,19 +288,7 @@ async fn material(
     Ok(Some(ResolvedCredential { username, token }))
 }
 
-/// The credential a checkout of `repo` should authenticate with, if any.
-///
-/// A credential registered directly on the repository wins. Otherwise this
-/// walks from the repo's project up through its ancestors, nearest first,
-/// and uses the first one found - so a token set on a parent project covers
-/// every repository under it, and a more specific one lower in the tree can
-/// still override it. `None` means try the clone unauthenticated, exactly
-/// today's behaviour: a repo nobody has given a credential is assumed public.
-///
-/// The walk goes level by level via `projects::read` rather than through
-/// `projects::ancestor_chain`: that helper's rows are explicitly unordered
-/// (callers only ever check membership), while resolution here needs
-/// deterministic nearest-wins precedence.
+/// A repo credential wins; otherwise walks up through ancestor projects, nearest first. `None` means clone unauthenticated.
 pub async fn resolve(
     db: &Db,
     key: Option<&SecretKey>,
@@ -349,8 +303,7 @@ pub async fn resolve(
     }
 
     let mut project_id = Some(repo.project_id.clone());
-    // Bounds the walk against a corrupted tree; a real one is never this
-    // deep, so this never fires in practice.
+    // Bounds the walk against a corrupted tree; never fires in practice.
     for _ in 0..64 {
         let Some(id) = project_id else { break };
 

@@ -2,14 +2,13 @@ use crate::clients::switchboard::SwitchboardClient;
 use crate::clients::vllm::VllmClient;
 use crate::domain::models::{Conversation, File};
 use crate::files::{STATUS_FAILED, STATUS_PROCESSING, STATUS_READY, STATUS_UPLOADED, pipeline};
-use crate::routers::files::{FileUploadForm, create_uploaded_file};
-use actix_multipart::form::MultipartForm;
-use actix_web::{HttpResponse, Responder, get, post, web};
+use crate::routers::files::{create_uploaded_file, parse_upload_form};
+use crate::routers::ui::common::RequiredClaims;
 use chrono::Utc;
-use quench_auth::actix::routers::ui::get_user_from_req;
-use quench_auth::prelude::JwtConfig;
 use quench_db::prelude::{Crud, Db};
-use quench_starter::prelude::{human_bytes, with_base_path};
+use quench_http::prelude::{Inject, Multipart, Path, Response, get, http::StatusCode, post};
+use quench_starter::common::format::human_bytes;
+use quench_starter::common::routes::with_base_path;
 use quench_web::prelude::*;
 
 /// Short label for a file's processing status.
@@ -23,13 +22,10 @@ fn status_label(status: &str) -> &str {
     }
 }
 
-/// A compact file chip. `staged` chips (in the composer) carry a `data-file-id`, remove/retry
-/// buttons, and self-poll while processing; non-staged chips are read-only, shown under a sent message.
+/// A compact file chip. `staged` chips self-poll while processing and carry
+/// remove/retry buttons; non-staged chips are read-only, under a sent message.
 pub fn render_attachment_chip(file: &File, staged: bool) -> Element {
-    // `data-file-id` lets the composer collect staged ids at submit time (see
-    // the chat form's htmx:config-request handler). We deliberately avoid a
-    // hidden `file_ids` input: actix's urlencoded form parser (serde_urlencoded)
-    // cannot deserialize repeated keys into a Vec and errors on the whole form.
+    // No hidden `file_ids` input: `serde_urlencoded` can't deserialize repeated keys.
     let in_progress = file.status == STATUS_UPLOADED || file.status == STATUS_PROCESSING;
 
     let mut chip = div()
@@ -41,7 +37,7 @@ pub fn render_attachment_chip(file: &File, staged: bool) -> Element {
             format!("{} · {}", file.file_name, human_bytes(file.file_size)),
         );
 
-    // Poll for status while extracting/embedding, so the badge updates queued → processing → ready/failed without a reload.
+    // Polls so the badge updates queued -> processing -> ready/failed live.
     if staged && in_progress {
         chip = chip
             .attr(
@@ -49,8 +45,7 @@ pub fn render_attachment_chip(file: &File, staged: bool) -> Element {
                 with_base_path(&format!("/ui/files/chip/{}", file.id)),
             )
             .attr("hx-trigger", "every 2s")
-            // Pin target to this chip: without it htmx inherits hx-target from
-            // the enclosing chat form (.chat-history) and swaps the wrong node.
+            // Without this, htmx inherits hx-target from the chat form and swaps the wrong node.
             .attr("hx-target", "this")
             .attr("hx-swap", "outerHTML");
     }
@@ -139,8 +134,7 @@ pub fn render_attachment_chip(file: &File, staged: bool) -> Element {
     chip
 }
 
-/// A single file row in a project's sidebar "Files" section: the name is a download link
-/// (cookie auth works on the API scope), and the three-dot menu offers deletion, mirroring the conversation history rows.
+/// A file row in a project's sidebar: name links to download, menu offers deletion.
 pub fn render_project_file_row(file: &File) -> Element {
     let item_id = format!("file-item-{}", file.id);
 
@@ -208,8 +202,7 @@ pub fn render_project_file_row(file: &File) -> Element {
         )
 }
 
-/// The collapsible "Files" section for a project's sidebar, listing every file visible to the
-/// project. Returns header + (collapsed) content as siblings so the header's `nextElementSibling` toggle finds it.
+/// The collapsible "Files" sidebar section - header and content as siblings, for the toggle.
 pub fn render_project_files_section(files: &[File]) -> Element {
     let header = div()
         .class("history-section-header collapsible files-section-header")
@@ -219,7 +212,7 @@ pub fn render_project_files_section(files: &[File]) -> Element {
                 .attr("style", "display: flex; align-items: center; gap: 0.5rem;")
                 .child(i().class("fas fa-chevron-right chevron"))
                 .child(i().class("fas fa-folder-tree files-section-icon"))
-                .child(span().attr("data-i18n", "ui_sidebar_files").text("Files"))
+                .child(span().attr("data-i18n", "ui_sidebar_files").text("Files")),
         )
         .child(span().class("files-section-count").text(files.len().to_string()));
 
@@ -267,33 +260,38 @@ pub async fn load_owned_files(db: &Db, file_ids: &[String], username: &str) -> V
     files
 }
 
-/// Upload a file from the chat composer. Ensures the (possibly not-yet-sent) conversation row
-/// exists so the file's FK is valid, stores it staged (message_id NULL), and returns a chip
-/// for the composer's staging area; it's linked to the message once that message is sent.
-#[post("/attach")]
+fn html(status: StatusCode, body: impl Into<String>) -> Response {
+    Response::html(status, body)
+}
+
+/// Uploads a file from the composer, staged (message_id NULL) until the
+/// message is sent; creates the conversation row first if it isn't persisted yet.
+#[post("/ui/files/attach")]
 pub async fn attach(
-    req: actix_web::HttpRequest,
-    jwt_config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    switchboard: web::Data<SwitchboardClient>,
-    vllm: web::Data<VllmClient>,
-    form: MultipartForm<FileUploadForm>,
-) -> impl Responder {
-    let username = match get_user_from_req(&req, &jwt_config).await {
-        Some(claims) => claims.sub,
-        None => return HttpResponse::Unauthorized().finish(),
+    claims: RequiredClaims,
+    Inject(db): Inject<Db>,
+    Inject(switchboard): Inject<SwitchboardClient>,
+    Inject(vllm): Inject<VllmClient>,
+    form: Multipart,
+) -> Response {
+    let username = match claims.or_401() {
+        Ok(claims) => claims.sub,
+        Err(response) => return response,
     };
 
-    let mut form = form.into_inner();
-    let Some(conversation_id) = form.conversation_id.as_ref().map(|t| t.0.clone()) else {
-        return HttpResponse::BadRequest().body("api_error_missing_conversation_id");
+    let mut form = match parse_upload_form(form).await {
+        Ok(form) => form,
+        Err(err) => return err.into_response(),
     };
-    let project_id = form.project_id.as_ref().map(|t| t.0.clone());
+    let Some(conversation_id) = form.conversation_id.clone() else {
+        return Response::text(StatusCode::BAD_REQUEST, "api_error_missing_conversation_id");
+    };
+    let project_id = form.project_id.clone();
 
     // The conversation may not be persisted yet (fresh chat): create it so the file's conversation_id FK holds.
     let conv_repo = db.repository::<Conversation>();
     match conv_repo.read(&conversation_id).await {
-        Ok(Some(c)) if c.owner != username => return HttpResponse::Forbidden().finish(),
+        Ok(Some(c)) if c.owner != username => return Response::new(StatusCode::FORBIDDEN),
         Ok(Some(_)) => {}
         Ok(None) => {
             let now = Utc::now().to_rfc3339();
@@ -308,39 +306,38 @@ pub async fn attach(
             };
             if let Err(e) = conv_repo.create(&conv).await {
                 tracing::error!("Failed to create conversation for attachment: {}", e);
-                return HttpResponse::InternalServerError()
-                    .body("api_error_conversation_create_failed");
+                return Response::text(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "api_error_conversation_create_failed",
+                );
             }
         }
         Err(e) => {
             tracing::error!("Internal error: {}", e);
-            return HttpResponse::InternalServerError().body("api_error_internal");
+            return Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal");
         }
     }
 
     // create_uploaded_file expects exactly one scope; attach to the conversation.
     form.project_id = None;
 
-    match create_uploaded_file(&db, switchboard.get_ref(), vllm.get_ref(), &username, form).await {
-        Ok(file) => HttpResponse::Ok()
-            .content_type("text/html")
-            .body(render_attachment_chip(&file, true).render()),
+    match create_uploaded_file(&db, &switchboard, &vllm, &username, form).await {
+        Ok(file) => html(StatusCode::OK, render_attachment_chip(&file, true).render()),
         Err(resp) => resp,
     }
 }
 
 /// Remove a staged (not-yet-sent) attachment owned by the user and not yet linked to a message.
 /// Returns an empty body so the chip is swapped out.
-#[post("/detach/{file_id}")]
+#[post("/ui/files/detach/{file_id}")]
 pub async fn detach(
-    req: actix_web::HttpRequest,
-    jwt_config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    file_id: web::Path<String>,
-) -> impl Responder {
-    let username = match get_user_from_req(&req, &jwt_config).await {
-        Some(claims) => claims.sub,
-        None => return HttpResponse::Unauthorized().finish(),
+    claims: RequiredClaims,
+    Inject(db): Inject<Db>,
+    Path(file_id): Path<String>,
+) -> Response {
+    let username = match claims.or_401() {
+        Ok(claims) => claims.sub,
+        Err(response) => return response,
     };
 
     let repo = db.repository::<File>();
@@ -356,101 +353,94 @@ pub async fn detach(
     }
 
     // Empty body: htmx swaps the chip out of the staging area.
-    HttpResponse::Ok().content_type("text/html").body("")
+    html(StatusCode::OK, "")
 }
 
 /// Return the current chip for a staged file, polled while processing; an empty body (file gone) removes the chip.
-#[get("/chip/{file_id}")]
+#[get("/ui/files/chip/{file_id}")]
 pub async fn chip_status(
-    req: actix_web::HttpRequest,
-    jwt_config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    file_id: web::Path<String>,
-) -> impl Responder {
-    let username = match get_user_from_req(&req, &jwt_config).await {
-        Some(claims) => claims.sub,
-        None => return HttpResponse::Unauthorized().finish(),
+    claims: RequiredClaims,
+    Inject(db): Inject<Db>,
+    Path(file_id): Path<String>,
+) -> Response {
+    let username = match claims.or_401() {
+        Ok(claims) => claims.sub,
+        Err(response) => return response,
     };
 
     match db.repository::<File>().read(&file_id).await {
-        Ok(Some(f)) if f.owner == username => HttpResponse::Ok()
-            .content_type("text/html")
-            .body(render_attachment_chip(&f, true).render()),
-        Ok(Some(_)) => HttpResponse::Forbidden().finish(),
+        Ok(Some(f)) if f.owner == username => {
+            html(StatusCode::OK, render_attachment_chip(&f, true).render())
+        }
+        Ok(Some(_)) => Response::new(StatusCode::FORBIDDEN),
         // File no longer exists: empty body swaps the chip out.
-        Ok(None) => HttpResponse::Ok().content_type("text/html").body(""),
+        Ok(None) => html(StatusCode::OK, ""),
         Err(e) => {
             tracing::error!("Internal error: {}", e);
-            HttpResponse::InternalServerError().body("api_error_internal")
+            Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal")
         }
     }
 }
 
 /// Retry processing a failed staged file; returns a chip in the processing state so the composer resumes polling.
-#[post("/reprocess/{file_id}")]
+#[post("/ui/files/reprocess/{file_id}")]
 pub async fn reprocess(
-    req: actix_web::HttpRequest,
-    jwt_config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    switchboard: web::Data<SwitchboardClient>,
-    vllm: web::Data<VllmClient>,
-    file_id: web::Path<String>,
-) -> impl Responder {
-    let username = match get_user_from_req(&req, &jwt_config).await {
-        Some(claims) => claims.sub,
-        None => return HttpResponse::Unauthorized().finish(),
+    claims: RequiredClaims,
+    Inject(db): Inject<Db>,
+    Inject(switchboard): Inject<SwitchboardClient>,
+    Inject(vllm): Inject<VllmClient>,
+    Path(file_id): Path<String>,
+) -> Response {
+    let username = match claims.or_401() {
+        Ok(claims) => claims.sub,
+        Err(response) => return response,
     };
 
     match db.repository::<File>().read(&file_id).await {
         // Images have no text pipeline to (re)run; return the chip unchanged.
         Ok(Some(f)) if f.owner == username && crate::files::is_image_mime(&f.mime_type) => {
-            HttpResponse::Ok()
-                .content_type("text/html")
-                .body(render_attachment_chip(&f, true).render())
+            html(StatusCode::OK, render_attachment_chip(&f, true).render())
         }
         Ok(Some(mut f)) if f.owner == username => {
             pipeline::spawn_processing(
-                db.get_ref().clone(),
-                switchboard.get_ref().clone(),
-                vllm.get_ref().clone(),
+                (*db).clone(),
+                (*switchboard).clone(),
+                (*vllm).clone(),
                 f.id.clone(),
             );
             // Reflect the imminent state so the returned chip polls again.
             f.status = STATUS_PROCESSING.to_string();
             f.error_message = None;
-            HttpResponse::Ok()
-                .content_type("text/html")
-                .body(render_attachment_chip(&f, true).render())
+            html(StatusCode::OK, render_attachment_chip(&f, true).render())
         }
-        Ok(Some(_)) => HttpResponse::Forbidden().finish(),
-        Ok(None) => HttpResponse::NotFound().body("api_error_file_not_found"),
+        Ok(Some(_)) => Response::new(StatusCode::FORBIDDEN),
+        Ok(None) => Response::text(StatusCode::NOT_FOUND, "api_error_file_not_found"),
         Err(e) => {
             tracing::error!("Internal error: {}", e);
-            HttpResponse::InternalServerError().body("api_error_internal")
+            Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal")
         }
     }
 }
 
 /// Confirmation modal for deleting a project file from the sidebar, mirroring the conversation delete modal.
-#[get("/delete-modal/{file_id}")]
+#[get("/ui/files/delete-modal/{file_id}")]
 pub async fn delete_modal(
-    req: actix_web::HttpRequest,
-    jwt_config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    file_id: web::Path<String>,
-) -> impl Responder {
-    let username = match get_user_from_req(&req, &jwt_config).await {
-        Some(claims) => claims.sub,
-        None => return HttpResponse::Unauthorized().finish(),
+    claims: RequiredClaims,
+    Inject(db): Inject<Db>,
+    Path(file_id): Path<String>,
+) -> Response {
+    let username = match claims.or_401() {
+        Ok(claims) => claims.sub,
+        Err(response) => return response,
     };
 
     let name = match db.repository::<File>().read(&file_id).await {
         Ok(Some(f)) if f.owner == username => format!("\"{}\"", f.file_name),
-        Ok(Some(_)) => return HttpResponse::Forbidden().finish(),
-        Ok(None) => return HttpResponse::NotFound().body("api_error_file_not_found"),
+        Ok(Some(_)) => return Response::new(StatusCode::FORBIDDEN),
+        Ok(None) => return Response::text(StatusCode::NOT_FOUND, "api_error_file_not_found"),
         Err(e) => {
             tracing::error!("Internal error: {}", e);
-            return HttpResponse::InternalServerError().body("api_error_internal");
+            return Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal");
         }
     };
 
@@ -536,23 +526,20 @@ pub async fn delete_modal(
                 ),
         );
 
-    HttpResponse::Ok()
-        .content_type("text/html")
-        .body(modal.render())
+    html(StatusCode::OK, modal.render())
 }
 
 /// Delete a project file from the sidebar; returns a closed modal plus an out-of-band swap
 /// that removes the file's row. Blobs and chunks cascade.
-#[post("/delete/{file_id}")]
+#[post("/ui/files/delete/{file_id}")]
 pub async fn delete_file_ui(
-    req: actix_web::HttpRequest,
-    jwt_config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    file_id: web::Path<String>,
-) -> impl Responder {
-    let username = match get_user_from_req(&req, &jwt_config).await {
-        Some(claims) => claims.sub,
-        None => return HttpResponse::Unauthorized().finish(),
+    claims: RequiredClaims,
+    Inject(db): Inject<Db>,
+    Path(file_id): Path<String>,
+) -> Response {
+    let username = match claims.or_401() {
+        Ok(claims) => claims.sub,
+        Err(response) => return response,
     };
 
     let repo = db.repository::<File>();
@@ -560,14 +547,14 @@ pub async fn delete_file_ui(
         Ok(Some(f)) if f.owner == username => {
             if let Err(e) = repo.delete(&f.id).await {
                 tracing::error!("Failed to delete file {}: {}", f.id, e);
-                return HttpResponse::InternalServerError().body("api_error_internal");
+                return Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal");
             }
         }
-        Ok(Some(_)) => return HttpResponse::Forbidden().finish(),
-        Ok(None) => return HttpResponse::NotFound().body("api_error_file_not_found"),
+        Ok(Some(_)) => return Response::new(StatusCode::FORBIDDEN),
+        Ok(None) => return Response::text(StatusCode::NOT_FOUND, "api_error_file_not_found"),
         Err(e) => {
             tracing::error!("Internal error: {}", e);
-            return HttpResponse::InternalServerError().body("api_error_internal");
+            return Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal");
         }
     }
 
@@ -580,17 +567,14 @@ pub async fn delete_file_ui(
         .attr("hx-swap-oob", "delete")
         .render();
 
-    HttpResponse::Ok()
-        .content_type("text/html")
-        .body(format!("{}{}", close_modal, oob_delete))
+    html(StatusCode::OK, format!("{}{}", close_modal, oob_delete))
 }
 
-pub fn scope() -> actix_web::Scope {
-    web::scope("/files")
-        .service(attach)
-        .service(detach)
-        .service(chip_status)
-        .service(reprocess)
-        .service(delete_modal)
-        .service(delete_file_ui)
+pub fn register_routes() {
+    let _ = attach as fn(_, _, _, _, _) -> _;
+    let _ = detach as fn(_, _, _) -> _;
+    let _ = chip_status as fn(_, _, _) -> _;
+    let _ = reprocess as fn(_, _, _, _, _) -> _;
+    let _ = delete_modal as fn(_, _, _) -> _;
+    let _ = delete_file_ui as fn(_, _, _) -> _;
 }

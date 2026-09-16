@@ -1,23 +1,21 @@
-//! Password reset by email.
-//!
-//! Two steps, two pages: request a link (`/forgot-password`), then use it
-//! (`/reset-password`). Both public, like login and registration - proving
-//! you received the email is what stands in for a password here, which is
-//! the whole point of the feature.
+//! Password reset by email - two public pages, request then use the link.
 
 use crate::email;
 use crate::realm;
 use crate::tokens::{PURPOSE_RESET_PASSWORD, VerificationTokens};
 use crate::ui::common::{UiPageKind, render_page, supported_locales, ui_path};
-use actix_web::{HttpRequest, HttpResponse, Responder, get, post, web};
+use async_trait::async_trait;
+use http::StatusCode;
+use quench_auth::domain::session::SessionDb;
+use quench_db::prelude::Db;
+use quench_http::prelude::{
+    Form, FromRequest, HttpError, Inject, Query, Request, Response, get, post,
+};
 use quench_web::prelude::*;
 use serde::Deserialize;
 use std::sync::Arc;
 
-/// Shorter than a verification link (`register.rs`'s `VERIFICATION_TTL_SECS`):
-/// a password reset link is a stronger credential while it lives - it changes
-/// the password outright rather than just confirming an address - so it
-/// should not still work weeks after it was requested and forgotten.
+/// Shorter than a verification link - a reset link changes the password outright.
 const RESET_TTL_SECS: u64 = 60 * 60;
 
 #[derive(Deserialize)]
@@ -25,28 +23,46 @@ pub struct ForgotPasswordForm {
     pub username: String,
 }
 
-#[get("/forgot-password")]
-pub async fn forgot_password_page() -> impl Responder {
+#[get("/ui/forgot-password")]
+pub async fn forgot_password_page() -> Response {
     render_forgot_password_page()
 }
 
-#[get("/forgot-password/")]
-pub async fn forgot_password_page_slash() -> impl Responder {
+#[get("/ui/forgot-password/")]
+pub async fn forgot_password_page_slash() -> Response {
     render_forgot_password_page()
 }
 
-#[post("/forgot-password")]
+pub struct AbsoluteBase(String);
+
+#[async_trait]
+impl FromRequest for AbsoluteBase {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        let scheme = match req.header("x-forwarded-proto") {
+            Some(scheme) => scheme.to_string(),
+            None => req
+                .container()
+                .get::<crate::ui::common::ExternalScheme>()
+                .map(|s| s.0.to_string())
+                .unwrap_or_else(|_| "https".to_string()),
+        };
+        let host = req
+            .header("x-forwarded-host")
+            .or_else(|| req.header("host"))
+            .unwrap_or("");
+        Ok(Self(format!("{scheme}://{host}")))
+    }
+}
+
+#[post("/ui/forgot-password")]
 pub async fn forgot_password_submit(
-    request: HttpRequest,
-    form: web::Form<ForgotPasswordForm>,
-    db: web::Data<quench_db::prelude::Db>,
-    mailer: web::Data<Arc<dyn email::Sender>>,
-    tokens: web::Data<Arc<VerificationTokens>>,
-) -> impl Responder {
-    // Same redirect whether the account exists, has an email on file, or the
-    // token/send step fails - which of those happened is not something an
-    // unauthenticated caller gets to learn from the response. Real work only
-    // happens on the path that can actually send something.
+    base: AbsoluteBase,
+    Form(form): Form<ForgotPasswordForm>,
+    Inject(db): Inject<Db>,
+    Inject(mailer): Inject<Arc<dyn email::Sender>>,
+    Inject(tokens): Inject<VerificationTokens>,
+) -> Response {
+    // Same redirect regardless of outcome - the caller doesn't get to learn why.
     if let Ok(user) = realm::get(&db, &form.username).await
         && let Some(email) = &user.email
     {
@@ -55,7 +71,11 @@ pub async fn forgot_password_submit(
             .await
         {
             Ok(token) => {
-                let link = absolute_url(&request, &format!("/reset-password?token={token}"));
+                let link = format!(
+                    "{}{}",
+                    base.0,
+                    ui_path(&format!("/reset-password?token={token}"))
+                );
                 mailer
                     .send_password_reset(email, &user.username, &link)
                     .await;
@@ -83,11 +103,11 @@ pub struct ResetNotice {
     pub err: Option<String>,
 }
 
-#[get("/reset-password")]
+#[get("/ui/reset-password")]
 pub async fn reset_password_page(
-    query: web::Query<ResetPasswordQuery>,
-    notice: web::Query<ResetNotice>,
-) -> impl Responder {
+    Query(query): Query<ResetPasswordQuery>,
+    Query(notice): Query<ResetNotice>,
+) -> Response {
     render_reset_password_page(&query.token, &notice)
 }
 
@@ -97,13 +117,13 @@ pub struct ResetPasswordForm {
     pub password: String,
 }
 
-#[post("/reset-password")]
+#[post("/ui/reset-password")]
 pub async fn reset_password_submit(
-    form: web::Form<ResetPasswordForm>,
-    db: web::Data<quench_db::prelude::Db>,
-    sessions: web::Data<Arc<quench_auth::prelude::SessionDb>>,
-    tokens: web::Data<Arc<VerificationTokens>>,
-) -> impl Responder {
+    Form(form): Form<ResetPasswordForm>,
+    Inject(db): Inject<Db>,
+    Inject(sessions): Inject<SessionDb>,
+    Inject(tokens): Inject<VerificationTokens>,
+) -> Response {
     let Some(username) = tokens
         .redeem(PURPOSE_RESET_PASSWORD, &form.token)
         .await
@@ -122,12 +142,7 @@ pub async fn reset_password_submit(
     }
 }
 
-fn absolute_url(request: &HttpRequest, path: &str) -> String {
-    let info = request.connection_info().clone();
-    format!("{}://{}{}", info.scheme(), info.host(), ui_path(path))
-}
-
-pub fn render_forgot_password_page() -> HttpResponse {
+pub fn render_forgot_password_page() -> Response {
     let request_form = form()
         .attr("method", "post")
         .attr("action", ui_path("/forgot-password"))
@@ -158,7 +173,7 @@ pub fn render_forgot_password_page() -> HttpResponse {
     render_auth_page("ui_forgot_password_title", request_form)
 }
 
-pub fn render_reset_password_page(token: &str, notice: &ResetNotice) -> HttpResponse {
+pub fn render_reset_password_page(token: &str, notice: &ResetNotice) -> Response {
     let mut reset_form = form()
         .attr("method", "post")
         .attr("action", ui_path("/reset-password"))
@@ -198,7 +213,7 @@ pub fn render_reset_password_page(token: &str, notice: &ResetNotice) -> HttpResp
     render_auth_page("ui_reset_title", reset_form)
 }
 
-fn render_auth_page(title_key: &'static str, inner_form: Element) -> HttpResponse {
+fn render_auth_page(title_key: &'static str, inner_form: Element) -> Response {
     let bar = div()
         .class("login-bar")
         .child(
@@ -214,7 +229,7 @@ fn render_auth_page(title_key: &'static str, inner_form: Element) -> HttpRespons
         .child(div().class("meta-list").child(inner_form));
 
     render_page(
-        HttpResponse::Ok(),
+        StatusCode::OK,
         content().class("container-fluid login-layout").child(
             div()
                 .class("panel login-panel")
@@ -225,8 +240,14 @@ fn render_auth_page(title_key: &'static str, inner_form: Element) -> HttpRespons
     )
 }
 
-fn redirect(path: &str) -> HttpResponse {
-    HttpResponse::Found()
-        .append_header(("Location", path.to_string()))
-        .finish()
+fn redirect(path: &str) -> Response {
+    Response::new(StatusCode::FOUND).header("Location", path)
+}
+
+pub fn register_routes() {
+    let _ = forgot_password_page as fn() -> _;
+    let _ = forgot_password_page_slash as fn() -> _;
+    let _ = forgot_password_submit as fn(_, _, _, _, _) -> _;
+    let _ = reset_password_page as fn(_, _) -> _;
+    let _ = reset_password_submit as fn(_, _, _, _) -> _;
 }

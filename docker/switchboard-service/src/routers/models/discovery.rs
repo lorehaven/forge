@@ -267,7 +267,6 @@ pub async fn fetch_gguf_models() -> Vec<Model> {
 pub fn get_on_disk_model_paths() -> HashSet<String> {
     let mut on_disk_paths = HashSet::new();
 
-    // HF models
     for root in HF_ROOTS.iter() {
         for entry in WalkDir::new(root).into_iter().filter_map(Result::ok) {
             if entry.file_name() == "config.json"
@@ -278,7 +277,6 @@ pub fn get_on_disk_model_paths() -> HashSet<String> {
         }
     }
 
-    // GGUF models
     for root in GGUF_ROOTS.iter() {
         for entry in WalkDir::new(root).into_iter().filter_map(Result::ok) {
             let path = entry.path();
@@ -379,10 +377,6 @@ pub fn infer_architecture(path: &str) -> Option<(usize, usize, usize)> {
 
     let metadata = &gguf.header.metadata;
 
-    // ---------------------------------------------------------------------
-    // Layers
-    // ---------------------------------------------------------------------
-
     let layers = metadata
         .iter()
         .find(|kv| kv.key.ends_with(".block_count"))
@@ -394,10 +388,6 @@ pub fn infer_architecture(path: &str) -> Option<(usize, usize, usize)> {
             _ => None,
         })?;
 
-    // ---------------------------------------------------------------------
-    // Hidden size
-    // ---------------------------------------------------------------------
-
     let hidden = metadata
         .iter()
         .find(|kv| kv.key.ends_with(".embedding_length"))
@@ -408,10 +398,6 @@ pub fn infer_architecture(path: &str) -> Option<(usize, usize, usize)> {
             GGUFMetadataValue::Int64(v) => Some(*v as usize),
             _ => None,
         })?;
-
-    // ---------------------------------------------------------------------
-    // Context length
-    // ---------------------------------------------------------------------
 
     let context = metadata
         .iter()

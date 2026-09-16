@@ -3,47 +3,62 @@
 use crate::credentials::store::{self as credential_store, ResolvedCredential};
 use crate::domain::{Repo, Run, Trigger};
 use crate::routers::api::authz::{can_on_project, granted_project_ids};
-use crate::routers::api::{ApiError, claims, json_error};
+use crate::routers::api::{ApiError, OptionalClaims, json_error};
 use crate::scheduler::queue::{self, NewRun, QueueError};
 use crate::scheduler::{projects, repos};
 use crate::secrets::crypto::SecretKey;
 use crate::workspace::checkout::{basic_auth_header, credential_env};
-use actix_web::http::StatusCode;
-use actix_web::{HttpRequest, HttpResponse, Responder, get, post, web};
+use quench_auth::domain::jwt::{Claims, JwtConfig};
 use quench_db::prelude::Db;
+use quench_http::prelude::{
+    Bytes, FromRequest, HttpError, Inject, Path, Query, Request, Response, get, http::StatusCode,
+    post,
+};
 use serde::{Deserialize, Serialize};
 
-/// Whether `request` may perform `action` on the repository `repo_id` names.
-/// `None` when there is no such repository, so a caller can tell "forbidden"
-/// from "not found" apart.
+/// `None` when there's no such repository, so "forbidden" can be told from "not found".
 async fn repo_access(
-    request: &HttpRequest,
+    claims: Option<&Claims>,
+    config: &JwtConfig,
     db: &Db,
     repo_id: &str,
     action: &str,
 ) -> Result<Option<bool>, QueueError> {
     match repos::read(db, repo_id).await? {
         Some(repo) => Ok(Some(
-            can_on_project(request, db, &repo.project_id, action).await,
+            can_on_project(claims, config, db, &repo.project_id, action).await,
         )),
         None => Ok(None),
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 pub struct TriggerRun {
     /// Branch or tag to build. Defaults to the repository's default branch.
     #[serde(default)]
     pub git_ref: Option<String>,
-    /// The commit to build. Optional: without it conveyor asks the repository
-    /// what the ref currently points at.
+    /// The commit to build; without it conveyor asks the repository what the ref currently points at.
     #[serde(default)]
     pub sha: Option<String>,
 }
 
-/// Why [`trigger_manual`] could not start a run - shared between the JSON API
-/// handler below and the UI's "run now" button, which need to report the same
-/// failures in different shapes (a JSON error body vs. a re-rendered page).
+/// `TriggerRun`, but an absent/empty body means "every field default" - `Json<T>` alone rejects zero bytes as invalid JSON.
+pub struct MaybeTriggerRun(pub TriggerRun);
+
+#[async_trait::async_trait]
+impl FromRequest for MaybeTriggerRun {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        let Bytes(bytes) = Bytes::from_request(req).await?;
+        if bytes.is_empty() {
+            return Ok(Self(TriggerRun::default()));
+        }
+        serde_json::from_slice(&bytes)
+            .map(Self)
+            .map_err(|e| quench_http::prelude::ExtractError::InvalidJson(e.to_string()).into())
+    }
+}
+
+/// Why [`trigger_manual`] could not start a run - shared between the JSON API and the UI's "run now" button.
 #[derive(Debug, thiserror::Error)]
 pub enum TriggerError {
     #[error("no such repository")]
@@ -76,16 +91,9 @@ impl From<TriggerError> for ApiError {
     }
 }
 
-/// Starts a run by hand.
-///
-/// The pipeline's `on` patterns do not gate this - somebody asked for this run
-/// by name, and refusing would leave them no way to build a branch the patterns
-/// do not cover.
-///
-/// Without a `sha`, the ref's current commit is resolved once here, so the run
-/// records what it actually built rather than whatever the ref moves to before
-/// a worker picks it up.
-pub(crate) async fn trigger_manual(
+/// Starts a run by hand - the pipeline's `on` patterns don't gate this. Without a `sha`, the ref's
+/// current commit is resolved once here so the run records what it actually built.
+pub async fn trigger_manual(
     db: &Db,
     repo_id: &str,
     git_ref: Option<String>,
@@ -109,9 +117,7 @@ pub(crate) async fn trigger_manual(
     let sha = match sha {
         Some(sha) => sha,
         None => {
-            // The same credential a checkout would use - a private
-            // repository needs one here too, since this talks to the
-            // remote directly rather than through `workspace::checkout`.
+            // Same credential a checkout would use - this talks to the remote directly, not via `workspace::checkout`.
             let credential = resolve_credential(db, &repo).await;
             let header = credential
                 .as_ref()
@@ -133,8 +139,7 @@ pub(crate) async fn trigger_manual(
         git_ref,
         sha,
         message: None,
-        // A manual run has no delivery to be a duplicate of; asking for the
-        // same commit twice on purpose is allowed.
+        // No delivery to be a duplicate of; asking for the same commit twice on purpose is allowed.
         delivery_id: None,
         resumed_from: None,
     };
@@ -143,20 +148,15 @@ pub(crate) async fn trigger_manual(
     Ok(enqueued.run().clone())
 }
 
-/// Registered inside the `/repos` scope rather than here: actix matches scopes
-/// by prefix and stops at the first that matches, so a `/repos/...` route
-/// declared beside that scope is never reached.
-#[post("/{repo_id}/runs")]
+#[post("/api/v1/repos/{repo_id}/runs")]
 pub async fn trigger(
-    request: HttpRequest,
-    path: web::Path<String>,
-    body: Option<web::Json<TriggerRun>>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    let repo_id = path.into_inner();
-    let body = body.map(web::Json::into_inner);
-
-    match repo_access(&request, &db, &repo_id, "write").await {
+    OptionalClaims(claims): OptionalClaims,
+    Path(repo_id): Path<String>,
+    MaybeTriggerRun(body): MaybeTriggerRun,
+    Inject(db): Inject<Db>,
+    Inject(config): Inject<JwtConfig>,
+) -> Response {
+    match repo_access(claims.as_ref(), &config, &db, &repo_id, "write").await {
         Ok(Some(true)) => {}
         Ok(Some(false)) => {
             return json_error(StatusCode::FORBIDDEN, "no write access to this repository");
@@ -165,15 +165,9 @@ pub async fn trigger(
         Err(error) => return ApiError::from(error).into_response(),
     }
 
-    match trigger_manual(
-        &db,
-        &repo_id,
-        body.as_ref().and_then(|body| body.git_ref.clone()),
-        body.as_ref().and_then(|body| body.sha.clone()),
-    )
-    .await
-    {
-        Ok(run) => HttpResponse::Accepted().json(run),
+    match trigger_manual(&db, &repo_id, body.git_ref, body.sha).await {
+        Ok(run) => Response::json(StatusCode::ACCEPTED, &run)
+            .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR)),
         Err(error) => ApiError::from(error).into_response(),
     }
 }
@@ -186,14 +180,15 @@ pub struct ListQuery {
     pub limit: Option<i64>,
 }
 
-#[get("/runs")]
+#[get("/api/v1/runs")]
 pub async fn list(
-    request: HttpRequest,
-    query: web::Query<ListQuery>,
-    db: web::Data<Db>,
-) -> impl Responder {
+    OptionalClaims(claims): OptionalClaims,
+    Query(query): Query<ListQuery>,
+    Inject(db): Inject<Db>,
+    Inject(config): Inject<JwtConfig>,
+) -> Response {
     if let Some(repo_id) = &query.repo_id {
-        match repo_access(&request, &db, repo_id, "read").await {
+        match repo_access(claims.as_ref(), &config, &db, repo_id, "read").await {
             Ok(Some(true)) => {}
             Ok(Some(false)) => {
                 return json_error(StatusCode::FORBIDDEN, "no read access to this repository");
@@ -204,7 +199,8 @@ pub async fn list(
 
         return match queue::list_runs(&db, Some(repo_id.as_str()), query.limit.unwrap_or(50)).await
         {
-            Ok(runs) => HttpResponse::Ok().json(runs),
+            Ok(runs) => Response::json(StatusCode::OK, &runs)
+                .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR)),
             Err(error) => ApiError::from(error).into_response(),
         };
     }
@@ -214,13 +210,14 @@ pub async fn list(
         Err(error) => return ApiError::from(error).into_response(),
     };
 
-    // No `repo_id`: same directory-listing philosophy as `repos::list` - scope
-    // to what the caller can see rather than refusing the whole list.
-    let Some(claims) = claims(&request) else {
-        return HttpResponse::Ok().json(all);
+    // No `repo_id`: same directory-listing philosophy as `repos::list`.
+    let Some(claims) = claims else {
+        return Response::json(StatusCode::OK, &all)
+            .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR));
     };
     if claims.can("conveyor", "read") {
-        return HttpResponse::Ok().json(all);
+        return Response::json(StatusCode::OK, &all)
+            .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR));
     }
 
     let granted = granted_project_ids(&claims, "read");
@@ -242,7 +239,8 @@ pub async fn list(
         .into_iter()
         .filter(|run| visible_repo_ids.contains(&run.repo_id))
         .collect();
-    HttpResponse::Ok().json(runs)
+    Response::json(StatusCode::OK, &runs)
+        .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
 }
 
 #[derive(Serialize)]
@@ -253,26 +251,25 @@ struct RunDetail {
     artifacts: Vec<crate::domain::Artifact>,
 }
 
-#[get("/runs/{id}")]
+#[get("/api/v1/runs/{id}")]
 pub async fn read(
-    request: HttpRequest,
-    path: web::Path<String>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    let run = match queue::read_run(&db, &path).await {
+    OptionalClaims(claims): OptionalClaims,
+    Path(id): Path<String>,
+    Inject(db): Inject<Db>,
+    Inject(config): Inject<JwtConfig>,
+) -> Response {
+    let run = match queue::read_run(&db, &id).await {
         Ok(Some(run)) => run,
         Ok(None) => return json_error(StatusCode::NOT_FOUND, "no such run"),
         Err(error) => return ApiError::from(error).into_response(),
     };
 
-    match repo_access(&request, &db, &run.repo_id, "read").await {
+    match repo_access(claims.as_ref(), &config, &db, &run.repo_id, "read").await {
         Ok(Some(true)) => {}
         Ok(Some(false)) => {
             return json_error(StatusCode::FORBIDDEN, "no read access to this run");
         }
-        // The repo itself is gone but the run row survives (no cascading
-        // delete from repos to runs in that direction) - treat it the same as
-        // "no read access" rather than 404, since the run plainly exists.
+        // Repo gone but run row survives (no cascading delete) - treat as "no read access", not 404.
         Ok(None) => return json_error(StatusCode::FORBIDDEN, "no read access to this run"),
         Err(error) => return ApiError::from(error).into_response(),
     }
@@ -283,22 +280,27 @@ pub async fn read(
     };
 
     match queue::list_artifacts(&db, &run.id).await {
-        Ok(artifacts) => HttpResponse::Ok().json(RunDetail {
-            run,
-            jobs,
-            artifacts,
-        }),
+        Ok(artifacts) => Response::json(
+            StatusCode::OK,
+            &RunDetail {
+                run,
+                jobs,
+                artifacts,
+            },
+        )
+        .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR)),
         Err(error) => ApiError::from(error).into_response(),
     }
 }
 
-#[get("/jobs/{id}/logs")]
+#[get("/api/v1/jobs/{id}/logs")]
 pub async fn logs(
-    request: HttpRequest,
-    path: web::Path<String>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    match job_access(&request, &db, &path, "read").await {
+    OptionalClaims(claims): OptionalClaims,
+    Path(id): Path<String>,
+    Inject(db): Inject<Db>,
+    Inject(config): Inject<JwtConfig>,
+) -> Response {
+    match job_access(claims.as_ref(), &config, &db, &id, "read").await {
         Ok(Some(true)) => {}
         Ok(Some(false)) => {
             return json_error(StatusCode::FORBIDDEN, "no read access to this job's logs");
@@ -307,45 +309,43 @@ pub async fn logs(
         Err(error) => return ApiError::from(error).into_response(),
     }
 
-    // Reads what has been persisted, which is written when a job finishes.
-    // Live output for a job still going is phase 8's streaming endpoint.
-    match queue::read_logs(&db, &path, -1).await {
-        Ok(chunks) => HttpResponse::Ok().json(chunks),
+    // Persisted logs only, written when a job finishes; live output is the streaming endpoint.
+    match queue::read_logs(&db, &id, -1).await {
+        Ok(chunks) => Response::json(StatusCode::OK, &chunks)
+            .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR)),
         Err(error) => ApiError::from(error).into_response(),
     }
 }
 
-/// Whether `request` may perform `action` on the repository that owns the job
-/// `job_id` names. `None` when there is no such job.
+/// `None` when there is no such job.
 async fn job_access(
-    request: &HttpRequest,
+    claims: Option<&Claims>,
+    config: &JwtConfig,
     db: &Db,
     job_id: &str,
     action: &str,
 ) -> Result<Option<bool>, QueueError> {
     match queue::repo_id_for_job(db, job_id).await? {
-        Some(repo_id) => repo_access(request, db, &repo_id, action).await,
+        Some(repo_id) => repo_access(claims, config, db, &repo_id, action).await,
         None => Ok(None),
     }
 }
 
-/// Asks a run to stop.
-///
-/// Accepted rather than OK: whichever replica holds the run notices on its next
-/// poll, so the run is still winding down when this returns.
-#[post("/runs/{id}/cancel")]
+/// Accepted, not OK - whichever replica holds the run notices on its next poll; still winding down on return.
+#[post("/api/v1/runs/{id}/cancel")]
 pub async fn cancel(
-    request: HttpRequest,
-    path: web::Path<String>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    let run = match queue::read_run(&db, &path).await {
+    OptionalClaims(claims): OptionalClaims,
+    Path(id): Path<String>,
+    Inject(db): Inject<Db>,
+    Inject(config): Inject<JwtConfig>,
+) -> Response {
+    let run = match queue::read_run(&db, &id).await {
         Ok(Some(run)) => run,
         Ok(None) => return json_error(StatusCode::NOT_FOUND, "no such run"),
         Err(error) => return ApiError::from(error).into_response(),
     };
 
-    match repo_access(&request, &db, &run.repo_id, "write").await {
+    match repo_access(claims.as_ref(), &config, &db, &run.repo_id, "write").await {
         Ok(Some(true)) => {}
         Ok(Some(false)) => {
             return json_error(StatusCode::FORBIDDEN, "no write access to this run");
@@ -354,8 +354,8 @@ pub async fn cancel(
         Err(error) => return ApiError::from(error).into_response(),
     }
 
-    match queue::request_cancel(&db, &path).await {
-        Ok(true) => HttpResponse::Accepted().finish(),
+    match queue::request_cancel(&db, &id).await {
+        Ok(true) => Response::new(StatusCode::ACCEPTED),
         Ok(false) => json_error(
             StatusCode::CONFLICT,
             "this run is not queued or running; there is nothing to cancel",
@@ -389,14 +389,8 @@ impl From<RestartError> for ApiError {
     }
 }
 
-/// Starts a new run of a failed or cancelled run's commit, so nothing repeats
-/// on its own - a build only tries again when somebody asks it to.
-///
-/// The new run is its own row, not the old one requeued: the old run stays
-/// exactly as it finished, and `resumed_from` tells the worker there is an
-/// earlier attempt whose passed stages it can carry over rather than rebuild
-/// (`worker::execute_jobs`).
-pub(crate) async fn restart_run(db: &Db, run_id: &str) -> Result<Run, RestartError> {
+/// A new row, not the old one requeued - `resumed_from` tells the worker to carry over passed stages (`worker::execute_jobs`).
+pub async fn restart_run(db: &Db, run_id: &str) -> Result<Run, RestartError> {
     let source = match queue::read_run(db, run_id).await {
         Ok(Some(run)) => run,
         Ok(None) => return Err(RestartError::NotFound),
@@ -413,7 +407,7 @@ pub(crate) async fn restart_run(db: &Db, run_id: &str) -> Result<Run, RestartErr
         git_ref: source.git_ref.clone(),
         sha: source.sha.clone(),
         message: source.message.clone(),
-        // Not a redelivery: any number of restarts may follow one failure.
+        // Not a redelivery - any number of restarts may follow one failure.
         delivery_id: None,
         resumed_from: Some(source.id.clone()),
     };
@@ -424,19 +418,20 @@ pub(crate) async fn restart_run(db: &Db, run_id: &str) -> Result<Run, RestartErr
 
 /// Restarts a failed or cancelled run. `POST /runs/{id}/cancel`'s sibling:
 /// same authorization, same shape, opposite direction.
-#[post("/runs/{id}/restart")]
+#[post("/api/v1/runs/{id}/restart")]
 pub async fn restart(
-    request: HttpRequest,
-    path: web::Path<String>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    let run = match queue::read_run(&db, &path).await {
+    OptionalClaims(claims): OptionalClaims,
+    Path(id): Path<String>,
+    Inject(db): Inject<Db>,
+    Inject(config): Inject<JwtConfig>,
+) -> Response {
+    let run = match queue::read_run(&db, &id).await {
         Ok(Some(run)) => run,
         Ok(None) => return json_error(StatusCode::NOT_FOUND, "no such run"),
         Err(error) => return ApiError::from(error).into_response(),
     };
 
-    match repo_access(&request, &db, &run.repo_id, "write").await {
+    match repo_access(claims.as_ref(), &config, &db, &run.repo_id, "write").await {
         Ok(Some(true)) => {}
         Ok(Some(false)) => {
             return json_error(StatusCode::FORBIDDEN, "no write access to this run");
@@ -445,16 +440,15 @@ pub async fn restart(
         Err(error) => return ApiError::from(error).into_response(),
     }
 
-    match restart_run(&db, &path).await {
-        Ok(run) => HttpResponse::Accepted().json(run),
+    match restart_run(&db, &id).await {
+        Ok(run) => Response::json(StatusCode::ACCEPTED, &run)
+            .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR)),
         Err(error) => ApiError::from(error).into_response(),
     }
 }
 
-/// The credential a trigger's ref resolution should authenticate with, if
-/// any - same lookup `scheduler::worker`'s checkout does, but resolved
-/// fresh here rather than shared with it: this runs once per manual
-/// trigger, not per queued job, so there is no worker-held key to reuse.
+/// Same lookup `scheduler::worker`'s checkout does, but resolved fresh here
+/// since this runs once per manual trigger, not per queued job.
 async fn resolve_credential(db: &Db, repo: &Repo) -> Option<ResolvedCredential> {
     let key = match SecretKey::from_env_named(credential_store::KEY_VAR) {
         Ok(key) => key,
@@ -507,13 +501,11 @@ async fn resolve_ref(
         .ok_or_else(|| format!("{git_ref} does not exist in that repository"))
 }
 
-pub fn scope() -> actix_web::Scope {
-    web::scope("")
-        .service(list)
-        .service(read)
-        .service(logs)
-        .service(super::stream::stream_logs)
-        .service(super::stream::raw_logs)
-        .service(cancel)
-        .service(restart)
+pub fn register_routes() {
+    let _ = trigger as fn(_, _, _, _, _) -> _;
+    let _ = list as fn(_, _, _, _) -> _;
+    let _ = read as fn(_, _, _, _) -> _;
+    let _ = logs as fn(_, _, _, _) -> _;
+    let _ = cancel as fn(_, _, _, _) -> _;
+    let _ = restart as fn(_, _, _, _) -> _;
 }

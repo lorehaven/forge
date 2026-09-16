@@ -151,9 +151,8 @@ fn extract_csv(data: &[u8]) -> Result<Segment, String> {
     Ok(segment)
 }
 
-/// Flatten an HTML document into readable plain text: block-level elements become paragraphs
-/// (so the chunker can split on `\n\n`), inline markup is dropped, and non-content subtrees
-/// (scripts, styles, head) are skipped. The title, when present, is kept as segment metadata.
+/// Flattens HTML to plain text: block elements become `\n\n`-separated
+/// paragraphs, inline markup drops, scripts/styles/head are skipped.
 fn extract_html(html: &str) -> Segment {
     use scraper::{Html, Node, Selector};
 

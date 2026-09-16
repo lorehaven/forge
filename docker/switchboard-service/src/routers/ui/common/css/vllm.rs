@@ -25,8 +25,7 @@ pub fn vllm_rules() -> Vec<CssRule> {
             .property("padding", "0.1rem 0.4rem")
             .property("border-radius", "0.3rem")
             .property("font-size", "0.75rem"),
-        // Header pill telling GPU vs CPU launches apart at a glance. GPU is the
-        // norm (green); CPU is the notable case (amber).
+        // GPU (green, the norm) vs CPU (amber, notable) launch badge.
         CssRule::new(".badge-device")
             .property("flex-shrink", "0")
             .property("font-family", "monospace")

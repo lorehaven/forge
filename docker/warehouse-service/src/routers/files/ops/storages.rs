@@ -1,21 +1,17 @@
-//! Dynamic storage administration - `POST`/`PATCH`/`DELETE
-//! /api/v1/files/{storage}` provision, reconfigure and remove one - and its
-//! sync change feed, `GET /api/v1/files/{storage}/sync`.
-//!
-//! Provisioning is deliberately admin-only (the blanket `warehouse:write`
-//! grant, via `authz::has_blanket`), not owner-or-scoped: an eventual owner
-//! does not get to create their own storage or change their own quota. See
-//! `authz`'s docs for the owner-or-scoped rule that governs everything else
-//! about a dynamic storage once it exists.
+//! Dynamic storage administration (`POST`/`PATCH`/`DELETE`) and its sync feed
+//! (`GET .../sync`). Provisioning is admin-only; see `authz` for ownership rules after that.
 
 use super::{ResolvedStorage, authorize, error, forbidden, not_found, resolve_storage};
 use crate::domain::storage::{self, NewStorage, StorageUpdate};
 use crate::domain::storage_file;
+use crate::routers::files::OptionalClaims;
 use crate::routers::files::authz;
 use crate::routers::files::dynamic;
-use actix_web::http::StatusCode;
-use actix_web::{HttpRequest, HttpResponse, Responder, delete, get, patch, post, web};
+use quench_auth::domain::jwt::JwtConfig;
 use quench_db::prelude::Db;
+use quench_http::prelude::{
+    Inject, Json, Path, Query, Response, delete, get, http::StatusCode, patch, post,
+};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -30,18 +26,19 @@ pub struct CreateStorage {
     pub sync_enabled: bool,
 }
 
-#[post("")]
-#[tracing::instrument(skip(request, body))]
+#[post("/api/v1/files")]
+#[tracing::instrument(skip(claims, config, db, body))]
 pub async fn create(
-    request: HttpRequest,
-    db: web::Data<Db>,
-    body: web::Json<CreateStorage>,
-) -> impl Responder {
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+    Inject(db): Inject<Db>,
+    Json(body): Json<CreateStorage>,
+) -> Response {
     if !crate::routers::files_enabled() {
         return not_found("file storage is not enabled");
     }
 
-    if !authz::has_blanket(&request, "write") {
+    if !authz::has_blanket(claims.as_ref(), &config, "write") {
         return forbidden("write access to warehouse is required to provision a storage");
     }
 
@@ -70,7 +67,8 @@ pub async fn create(
     };
 
     match storage::create(&db, &new).await {
-        Ok(storage) => HttpResponse::Created().json(storage),
+        Ok(storage) => Response::json(StatusCode::CREATED, &storage)
+            .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR)),
         Err(problem) if problem.is_unique_violation() => error(
             StatusCode::CONFLICT,
             "a storage with that name already exists",
@@ -92,9 +90,7 @@ pub async fn create(
 pub struct PatchStorage {
     #[serde(default)]
     pub max_file_bytes: Option<i64>,
-    /// Clears `max_file_bytes` back to the deployment default. A plain
-    /// `Option<i64>` field can't tell "leave alone" from "set to null" apart
-    /// once JSON strips the distinction, so clearing it is its own flag.
+    /// Clears `max_file_bytes` back to the default - JSON can't distinguish "leave alone" from "null".
     #[serde(default)]
     pub clear_max_file_bytes: bool,
     #[serde(default)]
@@ -103,15 +99,16 @@ pub struct PatchStorage {
     pub sync_enabled: Option<bool>,
 }
 
-#[patch("/{storage}")]
-#[tracing::instrument(skip(request, body))]
+#[patch("/api/v1/files/{storage}")]
+#[tracing::instrument(skip(claims, config, db, body))]
 pub async fn patch(
-    request: HttpRequest,
-    db: web::Data<Db>,
-    storage_name: web::Path<String>,
-    body: web::Json<PatchStorage>,
-) -> impl Responder {
-    if !authz::has_blanket(&request, "write") {
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+    Inject(db): Inject<Db>,
+    Path(storage_name): Path<String>,
+    Json(body): Json<PatchStorage>,
+) -> Response {
+    if !authz::has_blanket(claims.as_ref(), &config, "write") {
         return forbidden("write access to warehouse is required to reconfigure a storage");
     }
 
@@ -128,7 +125,8 @@ pub async fn patch(
     };
 
     match storage::update(&db, &storage_name, &changes).await {
-        Ok(Some(storage)) => HttpResponse::Ok().json(storage),
+        Ok(Some(storage)) => Response::json(StatusCode::OK, &storage)
+            .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR)),
         Ok(None) => not_found("no such dynamic storage"),
         Err(problem) => {
             tracing::error!("updating dynamic storage failed: {problem}");
@@ -140,14 +138,15 @@ pub async fn patch(
     }
 }
 
-#[delete("/{storage}")]
-#[tracing::instrument(skip(request))]
+#[delete("/api/v1/files/{storage}")]
+#[tracing::instrument(skip(claims, config, db))]
 pub async fn remove(
-    request: HttpRequest,
-    db: web::Data<Db>,
-    storage_name: web::Path<String>,
-) -> impl Responder {
-    if !authz::has_blanket(&request, "write") {
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+    Inject(db): Inject<Db>,
+    Path(storage_name): Path<String>,
+) -> Response {
+    if !authz::has_blanket(claims.as_ref(), &config, "write") {
         return forbidden("write access to warehouse is required to delete a storage");
     }
 
@@ -181,7 +180,7 @@ pub async fn remove(
     }
 
     match storage::delete(&db, &storage.name).await {
-        Ok(true) => HttpResponse::NoContent().finish(),
+        Ok(true) => Response::new(StatusCode::NO_CONTENT),
         Ok(false) => not_found("no such dynamic storage"),
         Err(problem) => {
             tracing::error!("deleting dynamic storage failed: {problem}");
@@ -199,24 +198,22 @@ pub struct SyncQuery {
     pub since: i64,
 }
 
-/// `GET /api/v1/files/{storage}/sync?since=<id>` - the change feed for a
-/// `sync_enabled` storage, so a backup client can ask "what changed since my
-/// last checkpoint" instead of re-listing and re-hashing everything it
-/// already sent.
-#[get("/{storage}/sync")]
-#[tracing::instrument(skip(request))]
+/// `GET /api/v1/files/{storage}/sync?since=<id>` - change feed since a checkpoint.
+#[get("/api/v1/files/{storage}/sync")]
+#[tracing::instrument(skip(claims, config, db))]
 pub async fn sync_log(
-    request: HttpRequest,
-    db: web::Data<Db>,
-    storage_name: web::Path<String>,
-    query: web::Query<SyncQuery>,
-) -> impl Responder {
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+    Inject(db): Inject<Db>,
+    Path(storage_name): Path<String>,
+    Query(query): Query<SyncQuery>,
+) -> Response {
     let resolved = match resolve_storage(&db, &storage_name).await {
         Ok(resolved) => resolved,
-        Err(response) => return *response,
+        Err(response) => return response,
     };
 
-    if !authorize(&request, &resolved, "read") {
+    if !authorize(claims.as_ref(), &config, &resolved, "read") {
         return forbidden("read access to this storage is required");
     }
 
@@ -229,7 +226,8 @@ pub async fn sync_log(
     }
 
     match storage_file::sync_log_since(&db, &storage.name, query.since).await {
-        Ok(entries) => HttpResponse::Ok().json(entries),
+        Ok(entries) => Response::json(StatusCode::OK, &entries)
+            .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR)),
         Err(problem) => {
             tracing::error!("reading sync log failed: {problem}");
             error(
@@ -238,4 +236,11 @@ pub async fn sync_log(
             )
         }
     }
+}
+
+pub fn register_routes() {
+    let _ = create as fn(_, _, _, _) -> _;
+    let _ = patch as fn(_, _, _, _, _) -> _;
+    let _ = remove as fn(_, _, _, _) -> _;
+    let _ = sync_log as fn(_, _, _, _, _) -> _;
 }

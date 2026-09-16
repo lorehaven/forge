@@ -1,34 +1,44 @@
-use actix_web::dev::HttpServiceFactory;
-use actix_web::web;
-use quench_auth::actix::middleware::auth::Auth;
-use quench_auth::actix::middleware::require_write::RequireWrite;
-use quench_auth::prelude::JwtConfig;
+use quench_auth::domain::jwt::JwtConfig;
+use quench_auth::http::middleware::auth::Auth;
+use quench_auth::http::middleware::require_write::RequireWrite;
+use quench_http::prelude::{Endpoint, OnPathPrefix, wrap};
+use std::sync::Arc;
 
 pub mod chat;
 pub mod files;
 pub mod ui;
 
-pub fn root_scope() -> impl HttpServiceFactory {
-    web::scope("").service(ui::assets)
+/// `Auth` must wrap `RequireWrite` (outermost-first composition, unlike
+/// actix), and prefixes need `base_path` since `OnPathPrefix` sees the raw un-mounted path.
+pub fn wrap_auth(
+    app: Arc<dyn Endpoint>,
+    jwt_config: JwtConfig,
+    base_path: &str,
+) -> Arc<dyn Endpoint> {
+    let prefixes: [&'static str; 5] = [
+        Box::leak(format!("{base_path}/api/v1/files").into_boxed_str()),
+        Box::leak(format!("{base_path}/api/v1/chat").into_boxed_str()),
+        Box::leak(format!("{base_path}/ui/chat").into_boxed_str()),
+        Box::leak(format!("{base_path}/ui/projects").into_boxed_str()),
+        Box::leak(format!("{base_path}/ui/files").into_boxed_str()),
+    ];
+
+    let mut app = app;
+    for prefix in prefixes {
+        app = wrap(
+            app,
+            OnPathPrefix::new(prefix, RequireWrite::new(jwt_config.clone())),
+        );
+        app = wrap(
+            app,
+            OnPathPrefix::new(prefix, Auth::new(jwt_config.clone())),
+        );
+    }
+    app
 }
 
-/// Both scopes here have a clean method shape - upload/reprocess/delete and
-/// chat completions are the only writes, and every one of them is already a
-/// POST or DELETE - so `RequireWrite` needs no route-level exceptions.
-/// `RequireWrite` has to sit *inside* `Auth`: `Auth`'s `.wrap()` is the last
-/// one registered, so it runs first and populates the claims `RequireWrite`
-/// reads. See `require_write`'s module docs.
-pub fn base_path_scope(jwt_config: JwtConfig) -> impl HttpServiceFactory {
-    web::scope("")
-        .service(ui::scope(jwt_config.clone()))
-        .service(
-            files::scope()
-                .wrap(RequireWrite::new(jwt_config.clone()))
-                .wrap(Auth::new(jwt_config.clone())),
-        )
-        .service(
-            chat::scope()
-                .wrap(RequireWrite::new(jwt_config.clone()))
-                .wrap(Auth::new(jwt_config)),
-        )
+pub fn register_routes() {
+    chat::register_routes();
+    files::register_routes();
+    ui::register_routes();
 }

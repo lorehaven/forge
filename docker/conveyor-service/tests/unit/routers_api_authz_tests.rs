@@ -1,13 +1,10 @@
 //! `routers::api::authz` - the resource-scoped access checks on top of the
 //! blanket `conveyor:write`/`conveyor:read` grant.
 
-use actix_web::HttpMessage;
-use actix_web::test::TestRequest;
-use actix_web::web;
 use conveyor_service::routers::api::authz::{
     can_on_project_claims, can_unscoped, granted_project_ids,
 };
-use quench_auth::prelude::{Claims, JwtConfig};
+use quench_auth::domain::jwt::{Claims, JwtConfig};
 use quench_db::prelude::Db;
 
 fn claims_with_scope(scope: &str) -> Claims {
@@ -20,41 +17,38 @@ fn claims_with_scope(scope: &str) -> Claims {
     )
 }
 
-fn req_with_config(auth_enabled: bool) -> actix_web::HttpRequest {
+fn config(auth_enabled: bool) -> JwtConfig {
     let mut config = JwtConfig::for_tests();
     config.auth_enabled = auth_enabled;
-    TestRequest::default()
-        .app_data(web::Data::new(config))
-        .to_http_request()
+    config
 }
 
 #[test]
 fn can_unscoped_is_always_true_when_auth_is_disabled() {
-    let req = req_with_config(false);
-    assert!(can_unscoped(&req, "write"));
-    assert!(can_unscoped(&req, "read"));
+    let config = config(false);
+    assert!(can_unscoped(None, &config, "write"));
+    assert!(can_unscoped(None, &config, "read"));
 }
 
 #[test]
 fn can_unscoped_is_false_without_claims() {
-    let req = req_with_config(true);
-    assert!(!can_unscoped(&req, "write"));
+    let config = config(true);
+    assert!(!can_unscoped(None, &config, "write"));
 }
 
 #[test]
 fn can_unscoped_checks_the_blanket_grant() {
-    let req = req_with_config(true);
-    req.extensions_mut()
-        .insert(claims_with_scope("conveyor:write"));
-    assert!(can_unscoped(&req, "write"));
-    assert!(!can_unscoped(&req, "read"));
+    let config = config(true);
+    let claims = claims_with_scope("conveyor:write");
+    assert!(can_unscoped(Some(&claims), &config, "write"));
+    assert!(!can_unscoped(Some(&claims), &config, "read"));
 }
 
 #[test]
 fn can_unscoped_is_true_for_a_wildcard_role() {
-    let req = req_with_config(true);
-    req.extensions_mut().insert(claims_with_scope("admin"));
-    assert!(can_unscoped(&req, "write"));
+    let config = config(true);
+    let claims = claims_with_scope("admin");
+    assert!(can_unscoped(Some(&claims), &config, "write"));
 }
 
 #[test]

@@ -1,31 +1,36 @@
-use actix_web::{App, test};
-use warehouse_service::routers::docker::registry::check::{handle_get, handle_head};
+use crate::support;
 
-#[actix_web::test]
+use http::Method;
+use warehouse_service::routers::docker::register_routes;
+
+async fn app() -> (
+    std::sync::Arc<dyn quench_http::endpoint::Endpoint>,
+    std::sync::Arc<quench_http::di::Container>,
+) {
+    register_routes();
+    let container = support::container_builder().build().await.unwrap();
+    support::app(container).await
+}
+
+#[tokio::test]
 async fn get_reports_ok_with_the_distribution_api_version_header() {
-    let app = test::init_service(App::new().service(handle_get)).await;
-    let req = test::TestRequest::get().uri("/").to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let (app, container) = app().await;
+    let req = support::req(Method::GET, "/v2/", &container);
+    let resp = app.call(req).await;
+    assert_eq!(resp.status(), http::StatusCode::OK);
+    let (headers, _) = support::parts(resp).await;
     assert_eq!(
-        resp.headers()
-            .get("Docker-Distribution-API-Version")
-            .unwrap(),
+        headers.get("docker-distribution-api-version").unwrap(),
         "registry/2.0"
     );
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn head_reports_the_same_as_get() {
-    let app = test::init_service(App::new().service(handle_head)).await;
-    let req = test::TestRequest::default()
-        .method(actix_web::http::Method::HEAD)
-        .uri("/")
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
-    assert!(
-        resp.headers()
-            .contains_key("Docker-Distribution-API-Version")
-    );
+    let (app, container) = app().await;
+    let req = support::req(Method::HEAD, "/v2/", &container);
+    let resp = app.call(req).await;
+    assert_eq!(resp.status(), http::StatusCode::OK);
+    let (headers, _) = support::parts(resp).await;
+    assert!(headers.contains_key("docker-distribution-api-version"));
 }

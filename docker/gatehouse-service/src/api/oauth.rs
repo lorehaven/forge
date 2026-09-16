@@ -1,28 +1,27 @@
-//! The authorization-code + PKCE redirect flow, and the token endpoint that
-//! finishes it - plus the `client_credentials` grant machine-to-machine
-//! callers use instead of the Basic auth this replaced.
-//!
-//! `POST /api/v1/auth/login` (`crate::api::auth`) is untouched and stays the
-//! resource-owner path CLIs use directly; this module is only the OAuth
-//! client-facing surface.
+//! Authorization-code + PKCE flow, its token endpoint, and `client_credentials`
+//! - the OAuth client-facing surface; `api::auth`'s CLI login is untouched.
 
 use crate::api::auth::{issue_client_credentials_token, issue_token_pair_for_client};
 use crate::clients::{ClientRow, hash_secret};
 use crate::codes::AuthorizationCodeRow;
 use crate::ui::common::ui_path;
-use actix_web::{HttpRequest, HttpResponse, Responder, get, post, web};
+use async_trait::async_trait;
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::Utc;
-use quench_auth::prelude::{Claims, JwtConfig, SessionDb, UserDb, realm};
+use http::StatusCode;
+use quench_auth::domain::auth::UserDb;
+use quench_auth::domain::jwt::{Claims, JwtConfig};
+use quench_auth::domain::realm;
+use quench_auth::domain::session::SessionDb;
 use quench_db::prelude::{Crud, Db};
+use quench_http::prelude::{FromRequest, HttpError, Inject, Query, Request, Response, get, post};
 use rand::RngCore;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use std::sync::Arc;
 
 #[derive(Deserialize)]
-struct AuthorizeQuery {
+pub struct AuthorizeQuery {
     client_id: String,
     redirect_uri: String,
     state: String,
@@ -33,22 +32,42 @@ struct AuthorizeQuery {
     code_challenge_method: Option<String>,
 }
 
-/// No gatehouse session → hands the browser to the login form with a
-/// `redirect` back to this exact request, reusing the same guarded
-/// `?redirect=` mechanism every other login already goes through
-/// (`quench_auth::actix::routers::ui::pages::auth::validated_redirect`).
-/// A session → mints a code and sends the browser straight back to the
-/// client, invisibly when a gatehouse session already existed - the SSO
-/// moment.
+/// Raw query string (to rebuild the login redirect) plus any subject
+/// already proved by the session cookie.
+pub struct AuthorizeContext {
+    query_string: String,
+    claims: Option<Claims>,
+}
+
+#[async_trait]
+impl FromRequest for AuthorizeContext {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        let query_string = req.uri().query().unwrap_or("").to_string();
+        let config = req
+            .container()
+            .get::<JwtConfig>()
+            .map_err(|e| HttpError::status(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        let sessions = req
+            .container()
+            .get::<SessionDb>()
+            .map_err(|e| HttpError::status(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        let claims = subject_from_cookie(req, &config, &sessions).await;
+        Ok(Self {
+            query_string,
+            claims,
+        })
+    }
+}
+
+/// No session sends the browser to login with a `redirect` back here; a
+/// session mints a code straight away - the SSO moment.
 #[get("/api/v1/authorize")]
 pub async fn authorize(
-    request: HttpRequest,
-    query: web::Query<AuthorizeQuery>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    users: web::Data<Arc<UserDb>>,
-    sessions: web::Data<Arc<SessionDb>>,
-) -> impl Responder {
+    ctx: AuthorizeContext,
+    Query(query): Query<AuthorizeQuery>,
+    Inject(db): Inject<Db>,
+    Inject(users): Inject<UserDb>,
+) -> Response {
     let clients = db.repository::<ClientRow>();
     let Ok(Some(client)) = clients.read(&query.client_id).await else {
         return bad_request("unknown client");
@@ -60,27 +79,22 @@ pub async fn authorize(
         return bad_request("only S256 PKCE is supported");
     }
 
-    let Some(claims) = subject_from_cookie(&request, &config, &sessions).await else {
-        // `with_base_path`, not a literal `/api/v1/authorize`: the redirect
-        // the login form carries has to point back at the actual mounted
-        // route (e.g. `/gatehouse/api/v1/authorize`), or the browser lands on
-        // a 404 the moment it tries to follow it after logging in.
+    let Some(claims) = ctx.claims else {
+        // `with_base_path`, not a literal path, so post-login lands on the mounted route.
         let original = format!(
             "{}?{}",
-            quench_starter::prelude::with_base_path("/api/v1/authorize"),
-            request.query_string()
+            quench_starter::common::routes::with_base_path("/api/v1/authorize"),
+            ctx.query_string
         );
         let login_url = format!(
             "{}?redirect={}",
             ui_path("/login"),
             urlencoding::encode(&original)
         );
-        return HttpResponse::Found()
-            .append_header(("Location", login_url))
-            .finish();
+        return Response::new(StatusCode::FOUND).header("Location", login_url);
     };
     let Some(user) = users.get_user(&claims.sub).await else {
-        return HttpResponse::Unauthorized().finish();
+        return Response::new(StatusCode::UNAUTHORIZED);
     };
 
     let code = random_code();
@@ -109,11 +123,9 @@ pub async fn authorize(
         "{}?code={}&state={}",
         query.redirect_uri,
         urlencoding::encode(&code),
-        urlencoding::encode(&query.state),
+        urlencoding::encode(&query.state)
     );
-    HttpResponse::Found()
-        .append_header(("Location", redirect))
-        .finish()
+    Response::new(StatusCode::FOUND).header("Location", redirect)
 }
 
 #[derive(Deserialize)]
@@ -135,12 +147,12 @@ pub struct TokenRequest {
 
 #[post("/api/v1/token")]
 pub async fn token(
-    body: web::Form<TokenRequest>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    users: web::Data<Arc<UserDb>>,
-    sessions: web::Data<Arc<SessionDb>>,
-) -> impl Responder {
+    quench_http::prelude::Form(body): quench_http::prelude::Form<TokenRequest>,
+    Inject(config): Inject<JwtConfig>,
+    Inject(db): Inject<Db>,
+    Inject(users): Inject<UserDb>,
+    Inject(sessions): Inject<SessionDb>,
+) -> Response {
     match body.grant_type.as_str() {
         "authorization_code" => {
             authorization_code_grant(&body, &config, &db, &users, &sessions).await
@@ -157,7 +169,7 @@ pub async fn authorization_code_grant(
     db: &Db,
     users: &UserDb,
     sessions: &SessionDb,
-) -> HttpResponse {
+) -> Response {
     let (Some(code), Some(redirect_uri), Some(client_id), Some(client_secret)) = (
         &body.code,
         &body.redirect_uri,
@@ -194,9 +206,7 @@ pub async fn authorization_code_grant(
         return bad_request("PKCE verification failed");
     }
 
-    // Consumed before the token is issued: a failure past this point costs the
-    // caller a fresh `/authorize` round trip rather than letting the code be
-    // redeemed twice.
+    // Consumed before the token is issued, so a code is never redeemed twice.
     row.consumed_at = Some(now);
     if codes.update(&row).await.is_err() {
         return internal_error();
@@ -206,7 +216,7 @@ pub async fn authorization_code_grant(
         return bad_request("the user this code was issued to no longer exists");
     };
     match issue_token_pair_for_client(config, sessions, &user, &client.allowed_scopes).await {
-        Ok(tokens) => HttpResponse::Ok().json(tokens),
+        Ok(tokens) => json_ok(&tokens),
         Err(err) => {
             tracing::error!("failed to issue tokens for {}: {err}", user.username);
             internal_error()
@@ -219,7 +229,7 @@ pub async fn refresh_token_grant(
     config: &JwtConfig,
     users: &UserDb,
     sessions: &SessionDb,
-) -> HttpResponse {
+) -> Response {
     let Some(refresh_token) = &body.refresh_token else {
         return bad_request("refresh_token grant requires refresh_token");
     };
@@ -228,7 +238,7 @@ pub async fn refresh_token_grant(
         .await
     {
         Ok(Some(rotated)) => rotated,
-        Ok(None) => return HttpResponse::Unauthorized().finish(),
+        Ok(None) => return Response::new(StatusCode::UNAUTHORIZED),
         Err(err) => {
             tracing::error!("failed to rotate refresh token: {err}");
             return internal_error();
@@ -236,10 +246,10 @@ pub async fn refresh_token_grant(
     };
     let (session, new_refresh_token) = rotated;
     let Some(user) = users.get_user(&session.username).await else {
-        return HttpResponse::Unauthorized().finish();
+        return Response::new(StatusCode::UNAUTHORIZED);
     };
     match crate::api::auth::token_response(config, &user, &session, new_refresh_token).await {
-        Ok(tokens) => HttpResponse::Ok().json(tokens),
+        Ok(tokens) => json_ok(&tokens),
         Err(err) => {
             tracing::error!("failed to issue tokens for {}: {err}", user.username);
             internal_error()
@@ -251,7 +261,7 @@ pub async fn client_credentials_grant(
     body: &TokenRequest,
     config: &JwtConfig,
     db: &Db,
-) -> HttpResponse {
+) -> Response {
     let (Some(client_id), Some(client_secret)) = (&body.client_id, &body.client_secret) else {
         return bad_request("client_credentials requires client_id and client_secret");
     };
@@ -264,7 +274,7 @@ pub async fn client_credentials_grant(
     }
 
     match issue_client_credentials_token(config, &client.client_id, &client.allowed_scopes).await {
-        Ok(tokens) => HttpResponse::Ok().json(tokens),
+        Ok(tokens) => json_ok(&tokens),
         Err(err) => {
             tracing::error!("failed to issue a client_credentials token for {client_id}: {err}");
             internal_error()
@@ -273,12 +283,13 @@ pub async fn client_credentials_grant(
 }
 
 pub async fn subject_from_cookie(
-    request: &HttpRequest,
+    request: &Request,
     config: &JwtConfig,
     sessions: &SessionDb,
 ) -> Option<Claims> {
-    let cookie = request.cookie(&realm::session_cookie_name())?;
-    let claims = config.decode_claims(cookie.value()).await.ok()?;
+    let cookie =
+        quench_auth::http::domain::cookies::cookie_value(request, &realm::session_cookie_name())?;
+    let claims = config.decode_claims(&cookie).await.ok()?;
     let session_id = claims.sid.as_deref()?;
     sessions
         .is_active(session_id, &claims.sub)
@@ -293,10 +304,20 @@ pub fn random_code() -> String {
     URL_SAFE_NO_PAD.encode(buf)
 }
 
-fn bad_request(message: &str) -> HttpResponse {
-    quench_starter::prelude::json_error(actix_web::http::StatusCode::BAD_REQUEST, message)
+fn bad_request(message: &str) -> Response {
+    quench_starter::http::domain::api_error::json_error(StatusCode::BAD_REQUEST, message)
 }
 
-fn internal_error() -> HttpResponse {
-    HttpResponse::InternalServerError().finish()
+fn internal_error() -> Response {
+    Response::new(StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+fn json_ok<T: serde::Serialize>(value: &T) -> Response {
+    Response::json(StatusCode::OK, value)
+        .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
+}
+
+pub fn register_routes() {
+    let _ = authorize as fn(_, _, _, _) -> _;
+    let _ = token as fn(_, _, _, _, _) -> _;
 }

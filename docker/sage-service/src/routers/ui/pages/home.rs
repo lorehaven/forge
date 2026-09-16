@@ -3,15 +3,12 @@ use crate::domain::models::Conversation;
 use crate::routers::ui::chat::{
     ChatRequest, ChatState, get_conversation_message_nodes, get_siblings,
 };
-use crate::routers::ui::common;
-use crate::routers::ui::common::{UiPageKind, render_page};
-use actix_web::{HttpResponse, Responder, get, web};
-use quench_auth::actix::routers::ui::get_user_from_req;
-use quench_auth::prelude::JwtConfig;
+use crate::routers::ui::common::{ActorOrRedirect, render_page};
 use quench_db::prelude::{Crud, Db};
-use quench_starter::actix::routers::ui::pages::home::handle_home;
-use quench_starter::prelude::with_base_path;
+use quench_http::prelude::{Inject, Query, Response, get, http::StatusCode};
+use quench_starter::common::routes::with_base_path;
 use quench_web::prelude::*;
+use std::sync::Arc;
 
 #[derive(serde::Deserialize)]
 pub struct HomeQuery {
@@ -19,37 +16,23 @@ pub struct HomeQuery {
     pub project_id: Option<String>,
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_home_page(
-    req: actix_web::HttpRequest,
-    jwt_config: web::Data<JwtConfig>,
-    switchboard: web::Data<SwitchboardClient>,
-    db: web::Data<Db>,
-    chat_state: web::Data<ChatState>,
-    sage_config: web::Data<crate::config::SageConfig>,
-    query: web::Query<HomeQuery>,
-) -> impl Responder {
-    let username = match get_user_from_req(&req, &jwt_config).await {
-        Some(claims) => claims.sub,
-        None => return common::ui_login_redirect().map_into_right_body(),
-    };
-
+    username: String,
+    switchboard: Arc<SwitchboardClient>,
+    db: Arc<Db>,
+    chat_state: Arc<ChatState>,
+    sage_config: Arc<crate::config::SageConfig>,
+    query: HomeQuery,
+) -> Response {
     let instances = switchboard.get_vllm_instances().await;
 
     // Every configured default model must be running before the chat UI is usable; until then,
     // redirect to the initializing screen, which shows launch progress and sends the user back here.
-    let models_ready = matches!(
-        &instances,
-        Ok(insts)
-            if crate::routers::ui::pages::initializing::all_models_running(
-                &sage_config.default_models,
-                insts,
-            )
-    );
+    let models_ready = matches!(&instances, Ok(insts) if crate::routers::ui::pages::initializing::all_models_running(&sage_config.default_models, insts));
     if !models_ready {
-        return HttpResponse::Found()
-            .append_header(("Location", with_base_path("/ui/initializing")))
-            .finish()
-            .map_into_right_body();
+        return Response::new(StatusCode::FOUND)
+            .header("Location", with_base_path("/ui/initializing"));
     }
 
     // Fetch user's projects
@@ -141,67 +124,51 @@ async fn handle_home_page(
         _ => Vec::new(),
     };
 
-    handle_home(req, jwt_config, move || {
-        render_home_page(
-            instances,
-            projects,
-            conversations,
-            active_id,
-            active_messages,
-            sources_by_message,
-            attachments_by_message,
-            project_files,
-            auto_trigger_ai,
-            query.project_id.clone(),
-            sage_config.clone(),
-        )
-    })
-    .await
-    .map_into_left_body()
+    render_home_page(
+        instances,
+        projects,
+        conversations,
+        active_id,
+        active_messages,
+        sources_by_message,
+        attachments_by_message,
+        project_files,
+        auto_trigger_ai,
+        query.project_id.clone(),
+        sage_config,
+    )
 }
 
-#[get("/home")]
+#[get("/ui/home")]
 pub async fn home(
-    req: actix_web::HttpRequest,
-    jwt_config: web::Data<JwtConfig>,
-    switchboard: web::Data<SwitchboardClient>,
-    db: web::Data<Db>,
-    chat_state: web::Data<ChatState>,
-    sage_config: web::Data<crate::config::SageConfig>,
-    query: web::Query<HomeQuery>,
-) -> impl Responder {
-    handle_home_page(
-        req,
-        jwt_config,
-        switchboard,
-        db,
-        chat_state,
-        sage_config,
-        query,
-    )
-    .await
+    actor: ActorOrRedirect,
+    Inject(switchboard): Inject<SwitchboardClient>,
+    Inject(db): Inject<Db>,
+    Inject(chat_state): Inject<ChatState>,
+    Inject(sage_config): Inject<crate::config::SageConfig>,
+    Query(query): Query<HomeQuery>,
+) -> Response {
+    let claims = match actor.or_redirect() {
+        Ok(claims) => claims,
+        Err(response) => return response,
+    };
+    handle_home_page(claims.sub, switchboard, db, chat_state, sage_config, query).await
 }
 
-#[get("/home/")]
+#[get("/ui/home/")]
 pub async fn home_slash(
-    req: actix_web::HttpRequest,
-    jwt_config: web::Data<JwtConfig>,
-    switchboard: web::Data<SwitchboardClient>,
-    db: web::Data<Db>,
-    chat_state: web::Data<ChatState>,
-    sage_config: web::Data<crate::config::SageConfig>,
-    query: web::Query<HomeQuery>,
-) -> impl Responder {
-    handle_home_page(
-        req,
-        jwt_config,
-        switchboard,
-        db,
-        chat_state,
-        sage_config,
-        query,
-    )
-    .await
+    actor: ActorOrRedirect,
+    Inject(switchboard): Inject<SwitchboardClient>,
+    Inject(db): Inject<Db>,
+    Inject(chat_state): Inject<ChatState>,
+    Inject(sage_config): Inject<crate::config::SageConfig>,
+    Query(query): Query<HomeQuery>,
+) -> Response {
+    let claims = match actor.or_redirect() {
+        Ok(claims) => claims,
+        Err(response) => return response,
+    };
+    handle_home_page(claims.sub, switchboard, db, chat_state, sage_config, query).await
 }
 
 /// Sidebar conversation link, falling back to a localized "New chat" label for conversations
@@ -229,8 +196,8 @@ pub fn render_home_page(
     project_files: Vec<crate::domain::models::File>,
     auto_trigger_ai: Option<String>,
     project_id: Option<String>,
-    sage_config: web::Data<crate::config::SageConfig>,
-) -> HttpResponse {
+    sage_config: Arc<crate::config::SageConfig>,
+) -> Response {
     let mut model_select = select().class("model-selector").attr("id", "model-select");
 
     // Only chat-capable instances belong in the selector; embedding instances would 404 on chat completions.
@@ -414,16 +381,7 @@ pub fn render_home_page(
     let projects_header = div()
         .class(format!("history-section-header collapsible {}", projects_open_class))
         .attr("onclick", "this.classList.toggle('open'); const content = this.nextElementSibling; if(content) { content.classList.toggle('hidden'); }")
-        .child(
-            div()
-                .attr("style", "display: flex; align-items: center; gap: 0.5rem;")
-                .child(i().class("fas fa-chevron-right chevron"))
-                .child(
-                    span()
-                        .attr("data-i18n", "ui_sidebar_projects")
-                        .text("Projects"),
-                )
-        )
+        .child(div().attr("style", "display: flex; align-items: center; gap: 0.5rem;").child(i().class("fas fa-chevron-right chevron")).child(span().attr("data-i18n", "ui_sidebar_projects").text("Projects")))
         .child(
             button()
                 .class("branch-btn")
@@ -551,16 +509,7 @@ pub fn render_home_page(
             .class("history-section-header collapsible open")
             .attr("style", "margin-top: 0.75rem;")
             .attr("onclick", "this.classList.toggle('open'); const content = this.nextElementSibling; if(content) { content.classList.toggle('hidden'); }")
-            .child(
-                div()
-                    .attr("style", "display: flex; align-items: center; gap: 0.5rem;")
-                    .child(i().class("fas fa-chevron-right chevron"))
-                    .child(
-                        span()
-                            .attr("data-i18n", "ui_sidebar_history")
-                            .text(conv_header_text),
-                    )
-            )
+            .child(div().attr("style", "display: flex; align-items: center; gap: 0.5rem;").child(i().class("fas fa-chevron-right chevron")).child(span().attr("data-i18n", "ui_sidebar_history").text(conv_header_text))),
     );
 
     let mut global_content = div().class("history-section-content");
@@ -661,12 +610,7 @@ pub fn render_home_page(
                 .class("nav-dot active")
                 .attr("data-msg-id", "msg-0")
                 .attr("onclick", "const target = document.getElementById(this.dataset.msgId); if (target) { target.scrollIntoView({behavior: 'smooth', block: 'start'}); }")
-                .child(
-                    div()
-                        .class("nav-tooltip")
-                        .attr("data-i18n", "ui_chat_welcome_tooltip")
-                        .text("Hello! I am Sage...")
-                )
+                .child(div().class("nav-tooltip").attr("data-i18n", "ui_chat_welcome_tooltip").text("Hello! I am Sage...")),
         );
     } else {
         use crate::routers::ui::common::format::format_message;
@@ -836,11 +780,7 @@ pub fn render_home_page(
                 .class("nav-dot")
                 .attr("data-msg-id", &element_id)
                 .attr("onclick", "const target = document.getElementById(this.dataset.msgId); if (target) { target.scrollIntoView({behavior: 'smooth', block: 'start'}); }")
-                .child(
-                    div()
-                        .class("nav-tooltip")
-                        .text(preview)
-                );
+                .child(div().class("nav-tooltip").text(preview));
             nav_div = nav_div.child(dot);
         }
 
@@ -868,58 +808,43 @@ pub fn render_home_page(
                 .attr("id", format!("dot-ai-{}", pending_id))
                 .attr("data-msg-id", format!("ai-{}", pending_id))
                 .attr("onclick", "const target = document.getElementById(this.dataset.msgId); if (target) { target.scrollIntoView({behavior: 'smooth', block: 'start'}); }")
-                .child(
-                    div()
-                        .class("nav-tooltip")
-                        .attr("id", format!("tooltip-ai-{}", pending_id))
-                        .attr("data-i18n", "ui_chat_thinking")
-                        .text("Sage is thinking..."),
-                );
+                .child(div().class("nav-tooltip").attr("id", format!("tooltip-ai-{}", pending_id)).attr("data-i18n", "ui_chat_thinking").text("Sage is thinking..."));
             nav_div = nav_div.child(ai_dot);
         }
     }
 
     render_page(
-        HttpResponse::Ok(),
-        content().class("home-content").child(
-            div()
-                .attr("style", "display: flex; flex-direction: row; flex: 1; height: 100%; width: 100%; overflow: hidden;")
-                .child(sidebar)
-                .child(
-                    div()
-                        .class("chat-container")
-                        .child(history_div)
-                        .child(nav_div)
-                        .child(
-                            {
-                                let mut f = form()
-                                    .attr("hx-post", with_base_path("/ui/chat/send"))
-                                    .attr("hx-target", ".chat-history")
-                                    .attr("hx-swap", "beforeend")
-                                    // Collect staged attachment ids into a single
-                                    // comma-separated `file_ids` param on send.
-                                    // (serde_urlencoded can't parse repeated keys
-                                    // into a Vec, so we avoid multiple inputs.)
-                                    .attr("hx-on::config-request", "if (event.detail.path && event.detail.path.indexOf('/ui/chat/send') !== -1) { event.detail.parameters['file_ids'] = Array.from(document.querySelectorAll('#pending-attachments .attachment-chip')).map(function(c){ return c.getAttribute('data-file-id'); }).filter(Boolean).join(','); }")
-                                    // Guard on the send path: htmx:afterRequest bubbles, so the
-                                    // file-input's /ui/files/attach request would otherwise trip this
-                                    // handler and wipe the freshly-added attachment chip.
-                                    .attr("hx-on::after-request", "if(event.detail.successful && event.detail.xhr && event.detail.xhr.responseURL.indexOf('/ui/chat/send') !== -1) { document.getElementById('chat-input').value = ''; document.getElementById('chat-input').style.height = 'auto'; const pending = document.getElementById('pending-attachments'); if (pending) pending.innerHTML = ''; const history = document.querySelector('.chat-history'); history.scrollTop = history.scrollHeight; }")
-                                    .class("chat-input-wrapper")
-                                    .child(input().attr("type", "hidden").attr("id", "composer-conversation-id").attr("name", "conversation_id").attr("value", &active_id));
+        StatusCode::OK,
+        content()
+            .class("home-content")
+            .child(
+                div()
+                    .attr("style", "display: flex; flex-direction: row; flex: 1; height: 100%; width: 100%; overflow: hidden;")
+                    .child(sidebar)
+                    .child(div().class("chat-container").child(history_div).child(nav_div).child({
+                        let mut f = form()
+                            .attr("hx-post", with_base_path("/ui/chat/send"))
+                            .attr("hx-target", ".chat-history")
+                            .attr("hx-swap", "beforeend")
+                            // Staged ids join into one comma-separated `file_ids` param;
+                            // serde_urlencoded can't parse repeated keys into a Vec.
+                            .attr("hx-on::config-request", "if (event.detail.path && event.detail.path.indexOf('/ui/chat/send') !== -1) { event.detail.parameters['file_ids'] = Array.from(document.querySelectorAll('#pending-attachments .attachment-chip')).map(function(c){ return c.getAttribute('data-file-id'); }).filter(Boolean).join(','); }")
+                            // Guarded to the send path: htmx:afterRequest bubbles from /ui/files/attach too.
+                            .attr("hx-on::after-request", "if(event.detail.successful && event.detail.xhr && event.detail.xhr.responseURL.indexOf('/ui/chat/send') !== -1) { document.getElementById('chat-input').value = ''; document.getElementById('chat-input').style.height = 'auto'; const pending = document.getElementById('pending-attachments'); if (pending) pending.innerHTML = ''; const history = document.querySelector('.chat-history'); history.scrollTop = history.scrollHeight; }")
+                            .class("chat-input-wrapper")
+                            .child(input().attr("type", "hidden").attr("id", "composer-conversation-id").attr("name", "conversation_id").attr("value", &active_id));
 
-                                if let Some(ref pid) = project_id {
-                                    f = f.child(input().attr("type", "hidden").attr("id", "composer-project-id").attr("name", "project_id").attr("value", pid));
-                                }
+                        if let Some(ref pid) = project_id {
+                            f = f.child(input().attr("type", "hidden").attr("id", "composer-project-id").attr("name", "project_id").attr("value", pid));
+                        }
 
-                                f.child(input_area_container)
-                            }
-                        )
-                )
-        )
-        .child(div().attr("id", "confirm-delete-modal").class("estimates-modal"))
-        .child(
-            script(r#"
+                        f.child(input_area_container)
+                    })),
+            )
+            .child(div().attr("id", "confirm-delete-modal").class("estimates-modal"))
+            .child(
+                script(
+                    r#"
                 (function() {
                     function scrollToBottom() {
                         const history = document.querySelector('.chat-history');
@@ -943,7 +868,7 @@ pub fn render_home_page(
                         const threshold = containerRect.top + (containerRect.height / 3);
 
                         const atBottom = Math.abs(historyContainer.scrollHeight - historyContainer.scrollTop - historyContainer.clientHeight) < 100;
-                        
+
                         if (atBottom) {
                             activeIndex = messages.length - 1;
                         } else {
@@ -1013,8 +938,15 @@ pub fn render_home_page(
                         }
                     });
                 })();
-            "#.to_string()).raw()
-        ),
-        UiPageKind::Home,
+            "#
+                    .to_string(),
+                )
+                .raw(),
+            ),
     )
+}
+
+pub fn register_routes() {
+    let _ = home as fn(_, _, _, _, _, _) -> _;
+    let _ = home_slash as fn(_, _, _, _, _, _) -> _;
 }

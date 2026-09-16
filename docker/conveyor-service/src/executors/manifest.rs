@@ -1,13 +1,5 @@
-//! Turning a job into the objects a cluster needs.
-//!
-//! Kept separate from the executor, and free of any client, because this is the
-//! part worth testing: a cluster is not available in a unit test, but every
-//! decision about what gets sent to one is made here.
-//!
-//! One `batch/v1` Job per conveyor job. An init container fetches the commit
-//! into an `emptyDir` and the work container runs the steps in it, so nothing
-//! is copied in from conveyor's own disk and a fork's pipeline never touches
-//! this service's filesystem or its network identity.
+//! Turning a job into cluster objects. Kept client-free so it's unit-testable without a cluster.
+//! One `batch/v1` Job per conveyor job; an init container fetches the commit into an `emptyDir`.
 
 use crate::executors::engine::{JobCredential, JobSpec};
 use crate::workspace::checkout::basic_auth_header;
@@ -25,36 +17,24 @@ pub const WORKSPACE_PATH: &str = "/workspace";
 /// The volume the two containers share.
 const WORKSPACE_VOLUME: &str = "workspace";
 
-/// What the init container runs. Alpine's git image is small and does exactly
-/// one thing.
+/// Alpine's git image is small and does exactly one thing.
 const DEFAULT_GIT_IMAGE: &str = "alpine/git:latest";
 
 /// What a job runs in when its pipeline names no image.
 const DEFAULT_IMAGE: &str = "alpine:3.22";
 
-/// Printed to stderr before each step, so the log follower can tell which step
-/// is running and which one failed.
-///
-/// On stderr rather than stdout because a step that pipes its own stdout
-/// somewhere would otherwise swallow the marker, and the follower would lose
-/// track of where it was.
+/// Printed to stderr (not stdout, or a step piping its own stdout would swallow it) before each step.
 pub const STEP_MARKER: &str = "##conveyor-step:";
 
 /// Everything a job needs in the cluster.
 pub struct Manifest {
     pub name: String,
     pub job: Job,
-    /// Present only when the job was given secrets. Created before the job and
-    /// deleted with it.
+    /// Present only when the job was given secrets; created before the job, deleted with it.
     pub secret: Option<Secret>,
 }
 
-/// A DNS-1123 name derived from the job id.
-///
-/// Kubernetes names are lowercase alphanumerics and dashes, at most 63
-/// characters. Job ids are uuids, which qualify once the prefix is added, but
-/// this does not assume that: a future id scheme must not silently produce
-/// objects the API server rejects.
+/// DNS-1123: lowercase alphanumerics/dashes, ≤63 chars - doesn't assume job ids are uuids.
 pub fn object_name(job_id: &str) -> String {
     let cleaned: String = job_id
         .chars()
@@ -77,10 +57,7 @@ pub fn object_name(job_id: &str) -> String {
     format!("conveyor-{body}")
 }
 
-/// The labels every object conveyor creates carries.
-///
-/// `managed-by` is what makes a stray job identifiable as conveyor's, and what
-/// a cleanup would select on.
+/// `managed-by` is what a cleanup selects a stray job on.
 pub fn labels(spec: &JobSpec, name: &str) -> BTreeMap<String, String> {
     BTreeMap::from([
         (
@@ -92,11 +69,7 @@ pub fn labels(spec: &JobSpec, name: &str) -> BTreeMap<String, String> {
     ])
 }
 
-/// The shell script the work container runs.
-///
-/// `set -e` is deliberately absent: each step's failure is handled explicitly
-/// so the exit code that comes back is the failing step's own, and the marker
-/// before it says which step that was.
+/// `set -e` is deliberately absent - each step's failure is handled explicitly so its own exit code comes back.
 pub fn script(commands: &[Vec<String>]) -> String {
     let mut script = String::new();
 
@@ -117,10 +90,6 @@ pub fn script(commands: &[Vec<String>]) -> String {
 }
 
 /// Wraps a value so a shell reads it as one argument, whatever is in it.
-///
-/// The arguments were already split by conveyor; this puts them back together
-/// for `sh -c` without letting a value with a space or a quote in it become
-/// two arguments again.
 fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', r"'\''"))
 }
@@ -135,8 +104,7 @@ pub fn build(
     let name = object_name(&spec.id);
     let labels = labels(spec, &name);
 
-    // Secrets go in a Secret rather than inline in the pod spec, which anyone
-    // who can read pods can read.
+    // Not inline in the pod spec, which anyone who can read pods can read.
     let secret = (!spec.env.is_empty()).then(|| Secret {
         metadata: ObjectMeta {
             name: Some(name.clone()),
@@ -166,9 +134,7 @@ pub fn build(
             )]),
             working_dir: Some(WORKSPACE_PATH.to_string()),
             volume_mounts: Some(vec![volume_mount.clone()]),
-            // Only the checkout container ever sees this - the step
-            // container below gets a job's declared secrets and nothing
-            // else, never conveyor's own git credential.
+            // Only the checkout container sees this; the step container never gets conveyor's own git credential.
             env: credential_env_vars(source.credential.as_ref()),
             security_context: Some(hardened()),
             ..Container::default()
@@ -207,13 +173,10 @@ pub fn build(
             ..ObjectMeta::default()
         },
         spec: Some(K8sJobSpec {
-            // Conveyor owns retries: a run is retried by the queue, with its
-            // own record. A silent second attempt inside the cluster would
-            // report as one run that took twice as long.
+            // Conveyor owns retries via the queue; a silent second attempt would double-count as one run.
             backoff_limit: Some(0),
             active_deadline_seconds: Some(spec.timeout.as_secs().max(1) as i64),
-            // Deleted explicitly by `forget`; this is the backstop for a
-            // conveyor that died before it could.
+            // Backstop for a conveyor that died before `forget` could delete this.
             ttl_seconds_after_finished: Some(settings.ttl_seconds),
             template: PodTemplateSpec {
                 metadata: Some(ObjectMeta {
@@ -241,13 +204,7 @@ pub fn build(
     Manifest { name, job, secret }
 }
 
-/// The env that hands the checkout container its credential, via
-/// `http.extraheader` supplied through `GIT_CONFIG_*` - the same mechanism
-/// and the same header `workspace::checkout` builds for the local clone, so
-/// a header value never has to be embedded in `checkout_script`'s text
-/// (which would put it in argv and, since a Job's pod spec is retained by
-/// the API server for its TTL, in `kubectl get job -o yaml` too - `env`
-/// isn't better on that front, but it's one leak surface, not two).
+/// Hands the checkout container its credential via `GIT_CONFIG_*`, not embedded in `checkout_script`'s argv text.
 fn credential_env_vars(credential: Option<&JobCredential>) -> Option<Vec<EnvVar>> {
     let credential = credential?;
     let header = basic_auth_header(&credential.username, &credential.token);
@@ -271,12 +228,7 @@ fn credential_env_vars(credential: Option<&JobCredential>) -> Option<Vec<EnvVar>
     ])
 }
 
-/// What the init container runs, mirroring what `workspace::checkout` does
-/// locally: try the commit directly, fall back to fetching the ref in full.
-///
-/// The ref and sha are already validated by the time they reach here - the
-/// webhook refuses anything `git` would read as an option - and they are
-/// single-quoted regardless.
+/// Mirrors `workspace::checkout`: try the commit directly, fall back to fetching the ref in full.
 fn checkout_script(clone_url: &str, git_ref: &str, sha: &str) -> String {
     format!(
         "set -e\n\
@@ -292,11 +244,7 @@ fn checkout_script(clone_url: &str, git_ref: &str, sha: &str) -> String {
     )
 }
 
-/// The least a build container needs.
-///
-/// Not a full lockdown - a build legitimately writes files and spawns
-/// processes - but a pipeline has no business gaining privileges it was not
-/// started with.
+/// Not a full lockdown (a build legitimately writes files/spawns processes), just no privilege escalation.
 fn hardened() -> SecurityContext {
     SecurityContext {
         allow_privilege_escalation: Some(false),

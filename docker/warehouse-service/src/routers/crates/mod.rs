@@ -1,8 +1,4 @@
 use crate::routers::crates_storage_root;
-use actix_web::dev::HttpServiceFactory;
-use actix_web::middleware::NormalizePath;
-use actix_web::web;
-use ops::{download, publish, unyank, yank};
 use std::path::PathBuf;
 
 pub mod index;
@@ -10,13 +6,7 @@ pub mod ops;
 pub mod owners;
 pub mod search;
 
-// ---------------------------------------------------------------------------
-// Path helpers
-// ---------------------------------------------------------------------------
-
-/// On-disk path for a `.crate` tarball.
-///
-/// Layout: `<root>/<n>/<version>/<n>-<version>.crate`
+/// On-disk path for a `.crate` tarball: `<root>/<n>/<version>/<n>-<version>.crate`.
 pub fn crate_file_path(name: &str, version: &str) -> Option<PathBuf> {
     if !validate_crate_name(name) || !validate_version(version) {
         return None;
@@ -29,9 +19,7 @@ pub fn crate_file_path(name: &str, version: &str) -> Option<PathBuf> {
     )
 }
 
-/// On-disk path for the newline-delimited JSON sparse index file.
-///
-/// Layout: `<root>/index/<prefix>/<n>`
+/// On-disk path for the sparse index file: `<root>/index/<prefix>/<n>`.
 pub fn index_file_path(name: &str) -> Option<PathBuf> {
     if !validate_crate_name(name) {
         return None;
@@ -45,11 +33,7 @@ pub fn index_file_path(name: &str) -> Option<PathBuf> {
     )
 }
 
-/// Sparse-index directory prefix following the crates.io convention:
-/// - 1 char  → `1`
-/// - 2 chars → `2`
-/// - 3 chars → `3/<first_char>`
-/// - 4+ chars → `<first_two>/<second_two>`
+/// Sparse-index directory prefix, following the crates.io convention.
 pub fn index_prefix(name: &str) -> String {
     let lower = name.to_ascii_lowercase();
     match lower.len() {
@@ -80,26 +64,9 @@ pub fn validate_version(version: &str) -> bool {
         .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'+'))
 }
 
-// ---------------------------------------------------------------------------
-// Actix scope
-// ---------------------------------------------------------------------------
-
-pub fn scope() -> impl HttpServiceFactory {
-    web::scope("/api/v1/crates")
-        .wrap(NormalizePath::trim())
-        .service(search::handle)
-        .service(publish::handle)
-        .service(download::handle)
-        .service(unyank::handle)
-        .service(yank::handle)
-        .service(owners::list)
-        .service(owners::add)
-        .service(owners::remove)
-}
-
-pub fn scope_index() -> impl HttpServiceFactory {
-    web::scope("/index")
-        .wrap(NormalizePath::trim())
-        .service(index::get_index_config)
-        .service(index::get_crate_index)
+pub fn register_routes() {
+    search::register_routes();
+    ops::register_routes();
+    owners::register_routes();
+    index::register_routes();
 }

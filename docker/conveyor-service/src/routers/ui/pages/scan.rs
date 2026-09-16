@@ -1,36 +1,25 @@
-//! One repository's code-quality summary: clippy, unused dependencies and
-//! known vulnerabilities, read from its most recent run. See `crate::scan`
-//! for where the data actually comes from - this file only renders it.
-//!
-//! Two pages: an overview of cards (one per check, showing a headline and how
-//! many findings it has) and, per check, a detail subpage listing every
-//! finding with whatever fields the parser could pull out of it (severity,
-//! advisory date, file location, ...).
+//! Renders a repo's code-quality summary (`crate::scan` owns the data): an
+//! overview card per check, and a detail subpage listing that check's findings.
 
 use crate::domain::Repo;
-use crate::routers::ui::common::{
-    UiPageKind, format, is_ui_authenticated, render_page, ui_login_redirect, ui_path,
-};
+use crate::routers::ui::common::{PageAuth, format, render_page, ui_login_redirect, ui_path};
 use crate::scan::{CheckKind, CheckResult, Finding, ScanSummary};
 use crate::scheduler::repos;
-use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
-use quench_auth::prelude::JwtConfig;
 use quench_db::prelude::Db;
+use quench_http::prelude::{Inject, Path, Response, get, http::StatusCode};
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 
-#[get("/repos/{owner}/{name}/scan")]
+#[get("/ui/repos/{owner}/{name}/scan")]
 pub(super) async fn scan_page(
-    request: HttpRequest,
-    path: web::Path<(String, String)>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    if !is_ui_authenticated(&request, &config).await {
+    PageAuth(authenticated): PageAuth,
+    Path((owner, name)): Path<(String, String)>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    if !authenticated {
         return ui_login_redirect();
     }
 
-    let (owner, name) = path.into_inner();
     let repo = match load_repo(&db, &owner, &name).await {
         Ok(Some(repo)) => repo,
         Ok(None) => return not_found(),
@@ -43,26 +32,23 @@ pub(super) async fn scan_page(
     };
 
     render_page(
-        HttpResponse::Ok(),
+        StatusCode::OK,
         content()
             .class("home-content")
             .child(overview(&repo, &summary)),
-        UiPageKind::Home,
     )
 }
 
-#[get("/repos/{owner}/{name}/scan/{category}")]
+#[get("/ui/repos/{owner}/{name}/scan/{category}")]
 pub(super) async fn scan_detail_page(
-    request: HttpRequest,
-    path: web::Path<(String, String, String)>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    if !is_ui_authenticated(&request, &config).await {
+    PageAuth(authenticated): PageAuth,
+    Path((owner, name, category)): Path<(String, String, String)>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    if !authenticated {
         return ui_login_redirect();
     }
 
-    let (owner, name, category) = path.into_inner();
     let Some(kind) = CheckKind::from_slug(&category) else {
         return not_found();
     };
@@ -83,20 +69,19 @@ pub(super) async fn scan_detail_page(
     };
 
     render_page(
-        HttpResponse::Ok(),
+        StatusCode::OK,
         content()
             .class("home-content")
             .child(detail(&repo, kind, check)),
-        UiPageKind::Home,
     )
 }
 
-async fn load_repo(db: &Db, owner: &str, name: &str) -> Result<Option<Repo>, HttpResponse> {
+async fn load_repo(db: &Db, owner: &str, name: &str) -> Result<Option<Repo>, Response> {
     repos::find_by_owner_name(db, owner, name)
         .await
         .map_err(|error| {
             tracing::error!("could not read repository {owner}/{name}: {error}");
-            HttpResponse::ServiceUnavailable().body(error.to_string())
+            Response::text(StatusCode::SERVICE_UNAVAILABLE, error.to_string())
         })
 }
 
@@ -105,29 +90,25 @@ async fn load_summary(
     repo: &Repo,
     owner: &str,
     name: &str,
-) -> Result<ScanSummary, HttpResponse> {
+) -> Result<ScanSummary, Response> {
     crate::scan::latest(db, &repo.id).await.map_err(|error| {
         tracing::error!("could not read scan summary for {owner}/{name}: {error}");
-        HttpResponse::ServiceUnavailable().body(error.to_string())
+        Response::text(StatusCode::SERVICE_UNAVAILABLE, error.to_string())
     })
 }
 
-fn not_found() -> HttpResponse {
+fn not_found() -> Response {
     render_page(
-        HttpResponse::NotFound(),
+        StatusCode::NOT_FOUND,
         content().class("home-content").child(
             div()
                 .class("home-container")
                 .child(empty_state("ui_scan_repo_not_found")),
         ),
-        UiPageKind::Home,
     )
 }
 
-// ---------------------------------------------------------------------------
-// Overview: one card per check
-// ---------------------------------------------------------------------------
-
+// Overview: one card per check.
 pub fn overview(repo: &Repo, summary: &ScanSummary) -> Element {
     div()
         .class("home-container")
@@ -210,10 +191,7 @@ pub fn card(repo: &Repo, check: &CheckResult) -> Element {
         .child(div().class("scan-card-headline").text(&check.headline))
 }
 
-// ---------------------------------------------------------------------------
-// Detail: every finding for one check
-// ---------------------------------------------------------------------------
-
+// Detail: every finding for one check.
 pub fn detail(repo: &Repo, kind: CheckKind, check: &CheckResult) -> Element {
     let back_href = ui_path(&format!("/repos/{}/{}/scan", repo.owner, repo.name));
 
@@ -287,10 +265,7 @@ fn finding_row(finding: &Finding) -> Element {
     row
 }
 
-/// `unmaintained`/`yanked` read as warnings; anything else (a CVSS-style
-/// string, or lint's own `warning`/`error`) is passed through as-is - lint's
-/// severities already match the estate's `status-warning`/`status-failed`
-/// naming, and an audit CVSS string just falls back to the plain style.
+/// `unmaintained`/`yanked` read as warnings; other strings pass through as-is.
 fn severity_class(severity: &str) -> String {
     match severity {
         "warning" | "unmaintained" | "yanked" => {
@@ -299,4 +274,9 @@ fn severity_class(severity: &str) -> String {
         "error" => "finding-severity finding-severity-error".to_string(),
         _ => "finding-severity".to_string(),
     }
+}
+
+pub(super) fn register_routes() {
+    let _ = scan_page as fn(_, _, _) -> _;
+    let _ = scan_detail_page as fn(_, _, _) -> _;
 }

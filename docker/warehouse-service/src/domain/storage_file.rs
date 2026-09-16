@@ -1,16 +1,5 @@
-//! One dynamic storage's content: the `storage_files` names, the `blobs`
-//! they dedup through, and the `storage_sync_log` change feed a
-//! `sync_enabled` storage appends to.
-//!
-//! Unlike the rest of this domain layer, [`put_file`] and [`delete_file`] also
-//! touch the filesystem, not just Postgres: whether a blob is new - and
-//! therefore whether its bytes need writing at all - is a fact this same
-//! transaction decides, under the storage's and the content's advisory locks.
-//! Deciding it here and moving the file from the caller's staging path in a
-//! second step would let a concurrent upload of the same content observe a
-//! blob row with no file behind it yet. The move itself is a same-filesystem
-//! `rename` - metadata-only, not a copy - so holding the transaction open for
-//! it costs nothing worth avoiding.
+//! One dynamic storage's content: `storage_files`, the `blobs` they dedup through, and the sync log.
+//! `put_file`/`delete_file` move blob files inside the same locked DB transaction to avoid a race.
 
 use crate::domain::db::{StorageError, pool, schema};
 use chrono::{DateTime, Utc};
@@ -23,16 +12,8 @@ pub struct PutOutcome {
     pub existed: bool,
 }
 
-/// Records `path` in `storage_name` as pointing at `sha256`, dedup-ing
-/// against any existing blob with the same digest and enforcing the
-/// storage's quota against the *logical* size - a dedup hit still costs the
-/// uploader their quota, so there is no incentive to game it by re-uploading
-/// content someone else already stored.
-///
-/// `staging` is moved into the blob store at `blob_path` when `sha256` is new
-/// to this deployment; when it already exists, `staging` is left for the
-/// caller to remove, since the bytes it holds are already on disk under a
-/// different upload's name.
+/// Records `path` as pointing at `sha256`, dedup-ing blobs but still charging quota per-upload.
+/// Moves `staging` into the blob store only when `sha256` is new; caller removes it otherwise.
 pub async fn put_file(
     db: &Db,
     storage_name: &str,
@@ -46,15 +27,12 @@ pub async fn put_file(
     let schema = schema();
     let mut tx = pool.begin().await?;
 
-    // Serializes writers to this storage (the quota check and update below
-    // need to see a consistent `used_bytes`).
+    // Serializes writers to this storage so the quota check sees a consistent `used_bytes`.
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
         .bind(storage_name)
         .execute(&mut *tx)
         .await?;
-    // Serializes concurrent uploads of the *same content*, wherever they land -
-    // two storages backing up the same photo at once must not both decide the
-    // blob is new.
+    // Serializes concurrent uploads of the same content across storages.
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 1))")
         .bind(sha256)
         .execute(&mut *tx)
@@ -93,12 +71,7 @@ pub async fn put_file(
         return Err(StorageError::QuotaExceeded);
     }
 
-    // Whether this path is picking up a reference it didn't already hold.
-    // Re-uploading the same bytes to a path that already pointed at this
-    // exact blob adds nothing - `storage_files` below is an upsert onto the
-    // same (storage, path) key, not a second row - so `blobs.ref_count` must
-    // not move for it either, or it would never reach zero on delete and the
-    // blob would leak forever.
+    // Re-uploading identical bytes to the same path must not bump ref_count again (it'd never hit zero).
     let adding_reference = old_sha256.as_deref() != Some(sha256);
 
     if adding_reference {
@@ -114,12 +87,7 @@ pub async fn put_file(
             .await?
             .try_get("ref_count")?;
 
-        // `ref_count == 1` means this row was just inserted rather than
-        // bumped: a blob's row is deleted the moment its count reaches zero
-        // (see `release_blob`), so an existing row is never seen at zero
-        // here. Anything else is a dedup hit - the bytes are already on disk
-        // under a different reference, so `staging` is discarded rather than
-        // moved.
+        // ref_count == 1 means this row was just inserted; otherwise it's a dedup hit, discard staging.
         if ref_count == 1 {
             if let Some(parent) = blob_path.parent() {
                 tokio::fs::create_dir_all(parent)
@@ -134,13 +102,10 @@ pub async fn put_file(
         }
 
         if let Some(old_sha256) = &old_sha256 {
-            // `adding_reference` already established this differs from `sha256`.
             release_blob(&mut tx, &schema, old_sha256, None).await?;
         }
     } else {
-        // Unchanged re-upload: the blob is already fully accounted for by
-        // the existing `storage_files` row, so this path picks up no new
-        // reference and the freshly streamed (identical) bytes are redundant.
+        // Unchanged re-upload: already accounted for, streamed bytes are redundant.
         let _ = tokio::fs::remove_file(staging).await;
     }
 
@@ -184,9 +149,7 @@ pub async fn put_file(
     })
 }
 
-/// Removes `path` from `storage_name`, releasing its blob reference and
-/// refunding the quota it held. `blob_root` is only consulted (to delete the
-/// underlying file) if the release drops the blob's `ref_count` to zero.
+/// Removes `path`, releasing its blob reference and refunding quota. Deletes the file only at ref_count 0.
 pub async fn delete_file(
     db: &Db,
     storage_name: &str,
@@ -251,17 +214,8 @@ pub async fn delete_file(
     Ok(true)
 }
 
-/// Decrements a blob's `ref_count`, deleting its row - and, if `blob_path` is
-/// given, its on-disk file - once the count reaches zero.
-///
-/// `blob_path` is `None` from [`put_file`]'s overwrite case: the caller there
-/// doesn't yet know the blob store root at the point this runs and passing it
-/// through would mean threading a path two call frames deeper for a case that
-/// is not on the hot path (overwriting a path with different content). A
-/// row left at `ref_count = 0` with a file still on disk is a harmless leak,
-/// not a correctness bug - nothing reads a blob without a `storage_files` row
-/// pointing at it - so it is cleaned up lazily, the next time anything calls
-/// this with a path for the same digest.
+/// Decrements a blob's `ref_count`, deleting its row (and file, if `blob_path` given) at zero.
+/// `None` from `put_file`'s overwrite case just leaves a harmless leak, cleaned up lazily later.
 async fn release_blob(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     schema: &str,
@@ -298,10 +252,7 @@ pub struct StorageFile {
     pub size: i64,
 }
 
-/// Shallow-or-not doesn't apply here the way it does for a static storage's
-/// directory walk: `storage_files` has no notion of directories at all, so
-/// every entry whose path starts with `prefix` is a match, regardless of
-/// depth.
+/// No directory notion here - every entry whose path starts with `prefix` matches, any depth.
 pub async fn list_files(
     db: &Db,
     storage_name: &str,
@@ -314,8 +265,7 @@ pub async fn list_files(
          WHERE storage = $1 AND path LIKE $2 ORDER BY path"
     );
 
-    // `%`/`_` in a caller's own prefix are not treated as wildcards - escaped
-    // so `LIKE` only ever matches it as a literal prefix.
+    // Escape LIKE wildcards so a caller's own `%`/`_` match literally.
     let escaped = prefix
         .replace('\\', "\\\\")
         .replace('%', "\\%")
@@ -338,24 +288,8 @@ pub async fn list_files(
         .collect()
 }
 
-/// A bounded, resumable slice of [`list_files`], for a caller that cannot
-/// take the whole thing at once - the storage listing endpoint, where a
-/// backup client's own storage can hold tens of thousands of paths.
-///
-/// `after` is the last path the caller has already seen (exclusive) - `None`
-/// starts from the beginning of whichever end `desc` points at. `limit` rows
-/// are fetched, no more; asking for one extra (`limit + 1`, the caller's job)
-/// is what turns this into a peekable page rather than a second `COUNT`
-/// query. `desc` walks `path` newest-first instead of oldest-first - the
-/// comparison flips along with the sort so `after` still means the same
-/// thing either way: "past this point already".
-///
-/// Ordering and the prefix range are both taken under the `C` collation, to
-/// match `storage_files_storage_path_c_idx` (migration
-/// `warehouse/0003-storage-files-prefix-index`). Without that, a non-`C`
-/// database collation leaves no index able to bound a literal-prefix range,
-/// and the query degrades into a backward scan of the whole storage,
-/// discarding every path that sorts past the prefix before returning a row.
+/// A bounded, resumable page of [`list_files`] for storages with tens of thousands of paths.
+/// Ordering/range use the `C` collation to match its index; any other collation forces a full scan.
 pub async fn list_files_page(
     db: &Db,
     storage_name: &str,
@@ -368,14 +302,8 @@ pub async fn list_files_page(
     let schema = schema();
     let (cmp, order) = if desc { ("<", "DESC") } else { (">", "ASC") };
 
-    // The prefix match is stated two ways. `starts_with` is the exact
-    // predicate - it alone is correct. `path COLLATE "C"` between `$3`
-    // (`prefix`) and `$4` (`prefix` with its last byte bumped) is the same
-    // set restated as a range the `C`-collation index can resolve as a bound;
-    // under `C`, `[prefix, prefix++)` is exactly the paths starting with
-    // `prefix`. An empty prefix (the whole storage) has no lower bound and no
-    // successor, so both `$n IS NULL` guards drop their term and
-    // `starts_with(path, '')` matches everything.
+    // `starts_with` is the correct predicate; the `$3`/`$4` C-collation range restates it as an
+    // index-bound range. Empty prefix drops both bounds via the `IS NULL` guards.
     let sql = format!(
         "SELECT path, size FROM {schema}.storage_files \
          WHERE storage = $1 AND starts_with(path, $2) \
@@ -408,15 +336,8 @@ pub async fn list_files_page(
         .collect()
 }
 
-/// The exclusive upper bound of the half-open key range `[prefix, _)` that,
-/// under the `C` collation, holds exactly the paths beginning with `prefix`:
-/// `prefix` with its last byte incremented, trailing `0xFF` bytes dropped
-/// first since they cannot be. `None` when `prefix` is empty or all `0xFF`
-/// (no successor exists), or when bumping the last byte would break UTF-8 -
-/// the query then omits its upper bound and leans on `starts_with` alone,
-/// which costs a wider index range for such a prefix but stays correct. Every
-/// prefix this service actually lists (`photos`, `videos`, `custom:<slug>`)
-/// ends in an ASCII byte, where the successor is always well-formed.
+/// Exclusive upper bound of `[prefix, _)` under `C` collation: last byte incremented.
+/// `None` when no successor exists or bumping would break UTF-8; the query then omits the upper bound.
 pub fn prefix_upper_bound(prefix: &str) -> Option<String> {
     let mut bytes = prefix.as_bytes().to_vec();
     while let Some(last) = bytes.last_mut() {
@@ -516,8 +437,7 @@ async fn append_sync_log(
     Ok(())
 }
 
-/// Wraps a filesystem error as the SQL variant so the plumbing-heavy
-/// functions above can use one `?`-friendly error type instead of two.
+/// Wraps a filesystem error as the SQL variant for one `?`-friendly error type.
 fn sqlx_io_error(error: std::io::Error) -> StorageError {
     StorageError::Sql(sqlx::Error::Io(error))
 }

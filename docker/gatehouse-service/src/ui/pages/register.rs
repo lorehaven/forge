@@ -1,25 +1,21 @@
-//! Self-service registration.
-//!
-//! Public, like the login page next door - the account does not exist yet, so
-//! there is nothing to authenticate against. Creating the account and sending
-//! the verification link both go through the same primitives the admin pages
-//! use (`crate::realm`, `crate::tokens`), so "a new user starts with the
-//! catalog's default template" and "a verification link is single-use" are
-//! each enforced in one place, not re-implemented here.
+//! Self-service registration - public like login, reuses `crate::realm`/`crate::tokens`.
 
 use crate::catalog::PermissionCatalog;
 use crate::email;
 use crate::realm::{self, RealmError};
 use crate::tokens::{PURPOSE_VERIFY_EMAIL, VerificationTokens};
 use crate::ui::common::{UiPageKind, render_page, supported_locales, ui_path};
-use actix_web::{HttpRequest, HttpResponse, Responder, get, post, web};
+use async_trait::async_trait;
+use http::StatusCode;
+use quench_db::prelude::Db;
+use quench_http::prelude::{
+    Form, FromRequest, HttpError, Inject, Query, Request, Response, get, post,
+};
 use quench_web::prelude::*;
 use serde::Deserialize;
 use std::sync::Arc;
 
-/// A verification link is good for a day. Long enough that "I'll get to it
-/// later" still works; short enough that a link sitting in an old email
-/// unread for months is not a live credential forever.
+/// A verification link is good for a day.
 const VERIFICATION_TTL_SECS: u64 = 24 * 60 * 60;
 
 #[derive(Deserialize)]
@@ -29,13 +25,13 @@ pub struct RegisterForm {
     pub email: String,
 }
 
-#[get("/register")]
-pub async fn register_page(query: web::Query<Notice>) -> impl Responder {
+#[get("/ui/register")]
+pub async fn register_page(Query(query): Query<Notice>) -> Response {
     render_register_page(&query)
 }
 
-#[get("/register/")]
-pub async fn register_page_slash(query: web::Query<Notice>) -> impl Responder {
+#[get("/ui/register/")]
+pub async fn register_page_slash(Query(query): Query<Notice>) -> Response {
     render_register_page(&query)
 }
 
@@ -45,17 +41,36 @@ pub struct Notice {
     pub err: Option<String>,
 }
 
-#[post("/register")]
-pub async fn register_submit(
-    request: HttpRequest,
-    form: web::Form<RegisterForm>,
-    catalog: web::Data<PermissionCatalog>,
-    db: web::Data<quench_db::prelude::Db>,
-    mailer: web::Data<Arc<dyn email::Sender>>,
-    tokens: web::Data<Arc<VerificationTokens>>,
-) -> impl Responder {
-    let form = form.into_inner();
+pub struct AbsoluteBase(String);
 
+#[async_trait]
+impl FromRequest for AbsoluteBase {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        let scheme = match req.header("x-forwarded-proto") {
+            Some(scheme) => scheme.to_string(),
+            None => req
+                .container()
+                .get::<crate::ui::common::ExternalScheme>()
+                .map(|s| s.0.to_string())
+                .unwrap_or_else(|_| "https".to_string()),
+        };
+        let host = req
+            .header("x-forwarded-host")
+            .or_else(|| req.header("host"))
+            .unwrap_or("");
+        Ok(Self(format!("{scheme}://{host}")))
+    }
+}
+
+#[post("/ui/register")]
+pub async fn register_submit(
+    base: AbsoluteBase,
+    Form(form): Form<RegisterForm>,
+    Inject(catalog): Inject<PermissionCatalog>,
+    Inject(db): Inject<Db>,
+    Inject(mailer): Inject<Arc<dyn email::Sender>>,
+    Inject(tokens): Inject<VerificationTokens>,
+) -> Response {
     if form.email.trim().is_empty() || !form.email.contains('@') {
         return redirect(&ui_path("/register?err=ui_register_error_email_invalid"));
     }
@@ -72,16 +87,13 @@ pub async fn register_submit(
         .await
     {
         Ok(token) => {
-            let link = absolute_url(&request, &format!("/verify?token={token}"));
+            let link = format!("{}{}", base.0, ui_path(&format!("/verify?token={token}")));
             mailer
                 .send_verification(&form.email, &user.username, &link)
                 .await;
         }
         Err(err) => {
-            // The account exists either way - a token failure should not look
-            // like registration itself failed, since retrying would just hit
-            // "username already taken". Logged loudly because it means nobody
-            // can verify this address until it is fixed.
+            // Account exists either way - don't make this look like registration failed.
             tracing::error!(
                 "failed to issue a verification token for {}: {err}",
                 user.username
@@ -92,12 +104,12 @@ pub async fn register_submit(
     redirect(&ui_path("/login?registered=1"))
 }
 
-#[get("/verify")]
+#[get("/ui/verify")]
 pub async fn verify(
-    query: web::Query<VerifyQuery>,
-    db: web::Data<quench_db::prelude::Db>,
-    tokens: web::Data<Arc<VerificationTokens>>,
-) -> impl Responder {
+    Query(query): Query<VerifyQuery>,
+    Inject(db): Inject<Db>,
+    Inject(tokens): Inject<VerificationTokens>,
+) -> Response {
     let Some(username) = tokens
         .redeem(PURPOSE_VERIFY_EMAIL, &query.token)
         .await
@@ -120,15 +132,7 @@ pub struct VerifyQuery {
     pub token: String,
 }
 
-/// Best-effort absolute URL for `path` on this service, so a link handed to
-/// an email client - which has no notion of "the current origin" to resolve a
-/// relative one against - actually goes somewhere.
-pub fn absolute_url(request: &HttpRequest, path: &str) -> String {
-    let info = request.connection_info().clone();
-    format!("{}://{}{}", info.scheme(), info.host(), ui_path(path))
-}
-
-pub fn render_register_page(notice: &Notice) -> HttpResponse {
+pub fn render_register_page(notice: &Notice) -> Response {
     let mut register_form = form()
         .attr("method", "post")
         .attr("action", ui_path("/register"))
@@ -206,7 +210,7 @@ pub fn render_register_page(notice: &Notice) -> HttpResponse {
         );
 
     render_page(
-        HttpResponse::Ok(),
+        StatusCode::OK,
         content().class("container-fluid login-layout").child(
             div()
                 .class("panel login-panel")
@@ -234,8 +238,13 @@ pub fn known_error_key(candidate: &str) -> Option<&'static str> {
     .find(|known| *known == candidate)
 }
 
-fn redirect(path: &str) -> HttpResponse {
-    HttpResponse::Found()
-        .append_header(("Location", path.to_string()))
-        .finish()
+fn redirect(path: &str) -> Response {
+    Response::new(StatusCode::FOUND).header("Location", path)
+}
+
+pub fn register_routes() {
+    let _ = register_page as fn(_) -> _;
+    let _ = register_page_slash as fn(_) -> _;
+    let _ = register_submit as fn(_, _, _, _, _, _) -> _;
+    let _ = verify as fn(_, _, _) -> _;
 }

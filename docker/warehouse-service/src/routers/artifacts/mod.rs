@@ -1,46 +1,19 @@
-//! Multi-platform artifact storage, addressed by
-//! `{program}/{platform}/{version_code}`.
-//!
-//! `program` is a reverse-DNS application id shared across platforms
-//! (`dev.lorehaven.pedlar` on Android, Linux and Windows alike). Neither the
-//! cargo registry nor the docker registry fit an installable app bundle: for
-//! Android its identity and version aren't something a publisher types in -
-//! they are decoded from the APK's own `AndroidManifest.xml` at publish time
-//! (see [`crate::domain::apk_manifest`]), so a caller cannot get a package's
-//! catalog entry to say something the archive itself doesn't. For Linux and
-//! Windows there is no manifest this service can read, so identity is taken
-//! from the publish URL as asserted by the caller (the same `+N` build number
-//! the artifact already carries).
-//!
-//! Versions are immutable once published, same as a crate's tarball - an
-//! update is a new `version_code`, not a rewrite - so publishing rejects a
-//! `(program, platform, version_code)` that already exists rather than
-//! overwriting it.
-//!
-//! The `/api/v1/apk/*` routes are a thin alias over this module with
-//! `platform` forced to `android`, kept so the deployed Pedlar keeps working
-//! while it moves to `/api/v1/artifacts` (see [`alias`]).
+//! Multi-platform artifact storage, addressed by `{program}/{platform}/{version_code}`.
+//! Android identity is decoded from the APK manifest; other platforms trust the publish URL.
 
 use crate::domain::artifact::Platform;
 use crate::routers::artifact_storage_root;
-use actix_web::dev::HttpServiceFactory;
-use actix_web::middleware::NormalizePath;
-use actix_web::web;
-use quench_auth::actix::middleware::auth::Auth;
-use quench_auth::actix::middleware::require_write::RequireWrite;
-use quench_auth::prelude::JwtConfig;
+use quench_auth::domain::jwt::JwtConfig;
+use quench_auth::http::middleware::auth::Auth;
+use quench_auth::http::middleware::require_write::RequireWrite;
+use quench_http::prelude::{Endpoint, OnPathPrefix, wrap};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 pub mod alias;
 pub mod ops;
 
-// ---------------------------------------------------------------------------
-// Path helpers
-// ---------------------------------------------------------------------------
-
-/// On-disk directory for one published artifact.
-///
-/// Layout: `<root>/<program>/<platform>/<version_code>/`
+/// On-disk directory for one published artifact: `<root>/<program>/<platform>/<version_code>/`.
 fn artifact_dir(program: &str, platform: Platform, version_code: i64) -> Option<PathBuf> {
     if !validate_program(program) {
         return None;
@@ -53,9 +26,7 @@ fn artifact_dir(program: &str, platform: Platform, version_code: i64) -> Option<
     )
 }
 
-/// On-disk path for a published artifact's bytes. `filename` is stored on the
-/// catalog row and echoed back on download, so it is validated here to a
-/// single, separator-free path component.
+/// On-disk path for a published artifact's bytes; `filename` is validated to one path component.
 pub fn artifact_file_path(
     program: &str,
     platform: Platform,
@@ -68,11 +39,8 @@ pub fn artifact_file_path(
     Some(artifact_dir(program, platform, version_code)?.join(filename))
 }
 
-/// A temporary path an in-flight upload streams to before its identity is
-/// checked and it's renamed into place - so a request that fails partway
-/// through never leaves a partial file at the real path. The pid+counter
-/// suffix (mirroring `routers::files::ops::upload::staging_path`) keeps two
-/// concurrent publishes of the same version from sharing one staging file.
+/// Where an in-flight upload streams before its identity is checked and it's renamed into place.
+/// The pid+counter suffix keeps two concurrent publishes of the same version from colliding.
 pub fn artifact_staging_path(
     program: &str,
     platform: Platform,
@@ -91,13 +59,8 @@ pub fn artifact_staging_path(
     })
 }
 
-/// Validates a Java-style program identifier: dot-separated segments, each
-/// starting with a letter or underscore and continuing with letters, digits,
-/// or underscores, ≤255 characters overall. Stricter than crates' charset
-/// deliberately - the name becomes a path component, so ruling out
-/// `.`-adjacent oddities (`..`, a leading/trailing dot, an empty segment) up
-/// front is what keeps [`artifact_dir`] from ever needing to defend against
-/// traversal.
+/// A Java-style dot-separated identifier, ≤255 chars - strict enough that it can't traverse
+/// a path once used as one.
 pub fn validate_program(name: &str) -> bool {
     if name.is_empty() || name.len() > 255 {
         return false;
@@ -113,9 +76,7 @@ pub fn validate_program(name: &str) -> bool {
     })
 }
 
-/// A download filename: one path component, no separators, no `..`, no control
-/// bytes, ≤255 chars. Kept liberal on the rest (dots, dashes, `+`) so
-/// `pedlar-7.tar.gz` and `Mathom Setup 1.2.3.msi` both pass.
+/// One path component, no separators/`..`/control bytes, ≤255 chars; liberal otherwise.
 pub fn validate_filename(name: &str) -> bool {
     if name.is_empty() || name.len() > 255 || name == "." || name == ".." {
         return false;
@@ -125,25 +86,13 @@ pub fn validate_filename(name: &str) -> bool {
         .any(|c| c == '/' || c == '\\' || c == '\0' || c.is_control())
 }
 
-/// The stored filename for a publish that didn't supply one: `apk` gets the
-/// historical `<program>-<code>.apk`, everything else `<program>-<code>.<fmt>`.
+/// Stored filename when a publish didn't supply one.
 pub fn default_filename(program: &str, version_code: i64, format: &str) -> String {
     format!("{program}-{version_code}.{format}")
 }
 
-// ---------------------------------------------------------------------------
-// One-time storage relocation
-// ---------------------------------------------------------------------------
-
-/// Moves a pre-multi-platform APK tree from the old
-/// `<root>/<program>/<version_code>/` layout to the new
-/// `<root>/<program>/android/<version_code>/`, once, on boot.
-///
-/// Best-effort and idempotent: an already-relocated version (its `android`
-/// subdir present) is left alone, and a `rename` that fails (e.g. the new root
-/// is on a different filesystem) is logged and skipped rather than fatal - the
-/// `0004` data migration has already moved the catalog rows, so the operator
-/// can relocate the files by hand if this can't.
+/// One-time, best-effort move of the pre-multi-platform APK layout to `<program>/android/<code>/`.
+/// Idempotent; a failed rename is logged and skipped, not fatal - the operator can move it by hand.
 pub fn relocate_legacy_apk_storage() {
     let new_root = PathBuf::from(artifact_storage_root());
     let legacy_root = PathBuf::from(envmnt::get_or("APK_STORAGE_PATH", "./storage/apk"));
@@ -172,7 +121,7 @@ pub fn relocate_legacy_apk_storage() {
 
         for code_entry in code_dirs {
             let code = code_entry.file_name();
-            // `android` is the new layout's segment - already relocated.
+            // `android` means already relocated.
             if code == "android" || code.to_str().is_none_or(|c| c.parse::<i64>().is_err()) {
                 continue;
             }
@@ -211,47 +160,35 @@ pub fn relocate_legacy_apk_storage() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Actix scopes
-// ---------------------------------------------------------------------------
+/// `Auth` + `RequireWrite` over `/api/v1/artifacts` and `/api/v1/apk` - every write here is
+/// already `PUT`/`DELETE`, so the blanket `warehouse:write` grant is the right bar.
+pub fn wrap_auth(
+    app: Arc<dyn Endpoint>,
+    jwt_config: JwtConfig,
+    base_path: &str,
+) -> Arc<dyn Endpoint> {
+    let prefixes: [&'static str; 2] = [
+        Box::leak(format!("{base_path}/api/v1/artifacts").into_boxed_str()),
+        Box::leak(format!("{base_path}/api/v1/apk").into_boxed_str()),
+    ];
 
-/// Route order is load-bearing: actix tries a scope's services in
-/// registration order and stops at the first path-and-method match; it does
-/// not prefer a literal segment over a same-shaped `{version_code}`. So
-/// `/{program}/{platform}/latest[/download]` is registered before
-/// `/{program}/{platform}/{version_code}[/download]` - reversed, `latest`
-/// would be parsed as a `version_code`.
-pub fn scope(jwt_config: JwtConfig) -> impl HttpServiceFactory {
-    web::scope("/api/v1/artifacts")
-        .wrap(NormalizePath::trim())
-        .wrap(RequireWrite::new(jwt_config.clone()))
-        .wrap(Auth::new(jwt_config))
-        .service(ops::publish::handle)
-        .service(ops::latest::metadata)
-        .service(ops::latest::download)
-        .service(ops::download::handle)
-        .service(ops::metadata::handle)
-        .service(ops::list::platform_versions)
-        .service(ops::list::program_versions)
-        .service(ops::list::catalog)
-        .service(ops::yank::handle)
-        .service(ops::unyank::handle)
+    let mut app = app;
+    for prefix in prefixes {
+        app = wrap(
+            app,
+            OnPathPrefix::new(prefix, RequireWrite::new(jwt_config.clone())),
+        );
+        app = wrap(
+            app,
+            OnPathPrefix::new(prefix, Auth::new(jwt_config.clone())),
+        );
+    }
+    app
 }
 
-/// `/api/v1/apk/*` - the pre-multi-platform shape, `platform` forced to
-/// `android`. Same middleware stack; handlers live in [`alias`].
-pub fn apk_alias_scope(jwt_config: JwtConfig) -> impl HttpServiceFactory {
-    web::scope("/api/v1/apk")
-        .wrap(NormalizePath::trim())
-        .wrap(RequireWrite::new(jwt_config.clone()))
-        .wrap(Auth::new(jwt_config))
-        .service(alias::publish)
-        .service(alias::latest_metadata)
-        .service(alias::latest_download)
-        .service(alias::download)
-        .service(alias::metadata)
-        .service(alias::versions)
-        .service(alias::catalog)
-        .service(alias::yank)
-        .service(alias::unyank)
+pub fn register_routes() {
+    ops::register_routes();
+    ops::metadata::register_routes();
+    ops::download::register_routes();
+    alias::register_routes();
 }

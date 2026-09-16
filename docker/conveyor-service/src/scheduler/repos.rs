@@ -1,9 +1,5 @@
 //! Reading and writing registered repositories.
-//!
-//! Raw SQL rather than `quench-db`'s `Crud`, for the same reason the run queue
-//! is: the rows carry enums and timestamps that would need a `FromRow` shim
-//! either way, and having half the schema go through one path and half through
-//! another is worse than having all of it go through this one.
+//! Raw SQL rather than `Crud`, matching the run queue: half the schema on one path and half on another is worse.
 
 use crate::domain::{Provider, Repo};
 use crate::scheduler::queue::{QueueError, pool, schema};
@@ -90,9 +86,7 @@ pub async fn find_by_slug(
     row.as_ref().map(from_row).transpose()
 }
 
-/// Looks a repository up the way the UI does: by `owner/name` alone, with no
-/// provider to disambiguate. Unlike `find_by_slug`, this is not exposed to a
-/// webhook - a provider identifies itself, a browser URL does not.
+/// By `owner/name` alone, no provider - unlike `find_by_slug`, not exposed to a webhook.
 pub async fn find_by_owner_name(
     db: &Db,
     owner: &str,
@@ -123,10 +117,7 @@ pub async fn list(db: &Db) -> Result<Vec<Repo>, QueueError> {
     rows.iter().map(from_row).collect()
 }
 
-/// What an edit form supplies to replace a repository's fields wholesale -
-/// everything but the provider, which stays fixed once a repository exists
-/// (switching github↔generic on an existing row isn't a meaningful edit, it's
-/// a different repository).
+/// Everything but `provider`, which stays fixed - switching it isn't an edit, it's a different repo.
 #[derive(Clone, Debug)]
 pub struct RepoUpdate {
     pub owner: String,
@@ -160,9 +151,7 @@ pub async fn update(db: &Db, id: &str, changes: &RepoUpdate) -> Result<Option<Re
     row.as_ref().map(from_row).transpose()
 }
 
-/// Turns a repository on or off. Disabling keeps its history and stops it
-/// accepting triggers, which is what you want for a repository that has gone
-/// bad rather than gone away.
+/// Disabling keeps history but stops triggers - for a repo gone bad, not gone away.
 pub async fn set_enabled(db: &Db, id: &str, enabled: bool) -> Result<Option<Repo>, QueueError> {
     let pool = pool(db)?;
     let schema = schema();

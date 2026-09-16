@@ -1,44 +1,28 @@
-//! Plain file storage, addressed by path within a named storage.
-//!
-//! Neither registry fits everything the estate produces. A build output is not
-//! a crate and not an image: it has a name somebody chose, it is fetched back
-//! whole, and nothing resolves it by version. Conveyor's artifacts are the
-//! first caller, and the shape is deliberately dull - PUT a path, GET it back.
-//!
-//! ## Storages
-//!
-//! A *storage* is a name bound to a directory, configured by the operator:
-//!
-//! ```text
-//! FILE_STORAGES=artifacts=/storage/artifacts;media=/mnt/media
-//! ```
-//!
-//! Callers name the storage and never the directory, so the host's layout is
-//! not something an API client can learn or depend on. A name that is not
-//! configured is a 404 - there is no implicit creation, because a typo would
-//! otherwise silently start a new pile of files nobody is watching.
-//!
-//! ## Paths
-//!
-//! The `path` query parameter is the only caller-controlled part of where a
-//! file lands, and it is the whole attack surface of this module. See
-//! [`resolve`]: `..` is refused outright rather than normalised away, absolute
-//! paths are refused, and the result is checked against the storage root again
-//! after the filesystem has had its say, so a symlink planted inside a storage
-//! cannot be used to read or write outside it.
+//! Plain file storage, addressed by path within a named, operator-configured
+//! storage (`FILE_STORAGES=`) - `path` is the only caller-controlled part; see [`resolve`].
 
-use actix_web::dev::HttpServiceFactory;
-use actix_web::middleware::NormalizePath;
-use actix_web::web;
-use quench_auth::actix::middleware::auth::Auth;
-use quench_auth::prelude::JwtConfig;
+use async_trait::async_trait;
+use quench_auth::domain::jwt::{Claims, JwtConfig};
+use quench_auth::http::middleware::auth::Auth;
+use quench_http::prelude::{Endpoint, FromRequest, HttpError, OnPathPrefix, Request, wrap};
 use serde::Deserialize;
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 
 pub mod authz;
 pub mod dynamic;
 pub mod ops;
 pub mod pagination;
+
+/// The verified identity behind this request, if any - read from `Auth`'s extensions.
+pub struct OptionalClaims(pub Option<Claims>);
+
+#[async_trait]
+impl FromRequest for OptionalClaims {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        Ok(Self(req.extensions().get::<Claims>().cloned()))
+    }
+}
 
 /// A name bound to a directory on disk.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -51,10 +35,7 @@ pub struct Storage {
 static STORAGES: std::sync::LazyLock<Vec<Storage>> =
     std::sync::LazyLock::new(|| parse_storages(&envmnt::get_or("FILE_STORAGES", "")));
 
-/// The most a single file may be, streamed or not.
-///
-/// Matched to `MAX_REQUEST_BODY_BYTES` by default because the two limits mean
-/// the same thing here: the body *is* the file.
+/// The most a single file may be. Defaults to `MAX_REQUEST_BODY_BYTES` - here the body *is* the file.
 static MAX_FILE_BYTES: std::sync::LazyLock<u64> = std::sync::LazyLock::new(|| {
     let loader = quench_config::ConfigLoader::new("WAREHOUSE");
     loader.env_u64(
@@ -67,10 +48,7 @@ pub fn max_file_bytes() -> u64 {
     *MAX_FILE_BYTES
 }
 
-/// Whether `name` is safe to use as a storage name - static or dynamic alike.
-/// Names appear in a URL path segment, so keeping them to this set means one
-/// can never be something that has to be escaped, or something that looks
-/// like a path of its own.
+/// Whether `name` is safe as a storage name (URL path segment) - static or dynamic alike.
 pub fn valid_storage_name(name: &str) -> bool {
     !name.is_empty()
         && name
@@ -78,11 +56,8 @@ pub fn valid_storage_name(name: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
 }
 
-/// `name=path` pairs separated by `;`.
-///
-/// A malformed entry is dropped with a warning rather than taken as a fatal
-/// error: losing one storage is better than refusing to start and taking the
-/// crates and docker registries down with it.
+/// `name=path` pairs separated by `;`. A malformed entry warns and is dropped,
+/// rather than failing startup and taking the other registries down with it.
 pub fn parse_storages(raw: &str) -> Vec<Storage> {
     let mut storages: Vec<Storage> = Vec::new();
 
@@ -100,9 +75,6 @@ pub fn parse_storages(raw: &str) -> Vec<Storage> {
             continue;
         }
 
-        // The name appears in a URL path segment. Keeping it to this set means
-        // a storage can never be named something that has to be escaped, or
-        // something that looks like a path of its own.
         if !valid_storage_name(name) {
             tracing::warn!(
                 "ignoring file storage `{name}`: names may use letters, digits, `-` and `_` only"
@@ -158,9 +130,7 @@ pub fn report_storages() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Path handling
-// ---------------------------------------------------------------------------
+// --- Path handling ---
 
 /// Why a caller's path was refused.
 #[derive(Debug, PartialEq, Eq)]
@@ -187,23 +157,13 @@ impl PathError {
 }
 
 /// A caller's path, as a relative path that cannot leave the storage.
-///
-/// `..` is **rejected**, not resolved. Normalising it away is the usual
-/// approach and it is the one that keeps going wrong: `a/../../b` collapses
-/// correctly only if you also account for what `a` is, and if `a` is a symlink
-/// the lexical answer and the filesystem's answer differ. Refusing the
-/// component outright means there is no arithmetic to get wrong, and no
-/// legitimate caller needs it - the whole path is being chosen by whoever is
-/// uploading.
+/// `..` is **rejected**, not normalised - a symlink makes lexical resolution wrong anyway.
 pub fn relative(path: &str) -> Result<PathBuf, PathError> {
     if path.trim().is_empty() {
         return Err(PathError::Empty);
     }
 
-    // A NUL truncates the path at the syscall boundary, so a name that passed
-    // every check above it is not the name that gets opened. Control bytes are
-    // refused with it: they have no legitimate use and they make a path
-    // unreadable in a log.
+    // A NUL truncates at the syscall boundary; control bytes ride along too.
     if path.bytes().any(|b| b < 0x20 || b == 0x7f) {
         return Err(PathError::Invalid);
     }
@@ -232,22 +192,11 @@ pub fn resolve(storage: &Storage, path: &str) -> Result<PathBuf, PathError> {
     Ok(storage.root.join(relative(path)?))
 }
 
-/// Whether `target` is really inside `root` once the filesystem has resolved
-/// every symlink on the way.
-///
-/// [`relative`] already guarantees the path *spells* something inside the
-/// storage. This answers the different question of whether it *is*: a symlink
-/// sitting in the storage - planted by an earlier upload, or by whatever else
-/// has write access to that directory - points wherever it likes, and following
-/// it would read or overwrite a file outside.
-///
-/// The target of a write does not exist yet, so the deepest ancestor that does
-/// exist is the one checked; the file is created inside it either way.
+/// Whether `target` is really inside `root` after resolving every symlink -
+/// [`relative`] only guarantees the path *spells* something inside the storage.
 pub async fn confined(root: &Path, target: &Path) -> bool {
     let Ok(root) = tokio::fs::canonicalize(root).await else {
-        // A storage whose directory does not exist confines nothing. Callers
-        // turn this into a 404 rather than creating it: a storage root is the
-        // operator's to provide.
+        // A storage whose directory doesn't exist confines nothing.
         return false;
     };
 
@@ -257,23 +206,16 @@ pub async fn confined(root: &Path, target: &Path) -> bool {
             Ok(real) => return real.starts_with(&root),
             Err(_) => match probe.parent() {
                 Some(parent) => probe = parent,
-                // Walked past the filesystem root without finding anything
-                // that exists, which cannot happen for a path built from a
-                // storage root - but it is not a reason to allow the write.
                 None => return false,
             },
         }
     }
 }
 
-// ---------------------------------------------------------------------------
-// Query
-// ---------------------------------------------------------------------------
+// --- Query ---
 
-/// `?path=` - which file within the storage. `?disposition=inline` asks the
-/// download endpoint to serve the file for in-place rendering (a `Content-Type`
-/// guessed from the extension, `Content-Disposition: inline`) rather than as an
-/// opaque attachment - the management UI's preview pane is the only caller.
+/// `?path=` - which file. `?disposition=inline` asks for in-place rendering
+/// instead of an attachment download - used by the management UI's preview pane.
 #[derive(Debug, Deserialize)]
 pub struct FileQuery {
     #[serde(default)]
@@ -282,13 +224,8 @@ pub struct FileQuery {
     pub disposition: Option<String>,
 }
 
-/// `?prefix=&n=&last=&desc=` - which subtree to list, how much of it at once,
-/// and in which direction. `n`/`last` mirror `routers::docker::registry::
-/// catalog`'s own pagination rather than a second convention in the same
-/// service: `n` is the page size, `last` the final item's key from the
-/// previous page (exclusive). `desc` walks newest-first instead of
-/// oldest-first - a backup client's browse view wants the files it just
-/// uploaded at the top, not buried behind everything older.
+/// `?prefix=&n=&last=&desc=` - subtree, page size, last key (exclusive), and
+/// sort direction; `desc` puts newest first, for a backup client's browse view.
 #[derive(Debug, Deserialize)]
 pub struct ListQuery {
     #[serde(default)]
@@ -301,33 +238,19 @@ pub struct ListQuery {
     pub desc: bool,
 }
 
-// ---------------------------------------------------------------------------
-// Actix scope
-// ---------------------------------------------------------------------------
+// --- Auth wrapping ---
 
-/// Route order is load-bearing: the concrete `/{storage}/file` and
-/// `/{storage}/sync` have to be registered before `/{storage}`, which would
-/// otherwise match them and treat `file`/`sync` as a storage name.
-///
-/// Unlike before dynamic storages existed, there is no blanket `RequireWrite`
-/// here: a static storage's upload/delete still check the blanket
-/// `warehouse:write` grant themselves (see `ops::mod::storage_or_error`), but
-/// a dynamic storage's access depends on who owns it and what's been shared
-/// with whom, which only `authz::can_on_storage` can answer - see that
-/// module's docs for why this diverges from `RequireWrite`'s usual role.
-/// `Auth` stays mounted so every handler has claims to check.
-pub fn scope(jwt_config: JwtConfig) -> impl HttpServiceFactory {
-    web::scope("/api/v1/files")
-        .wrap(NormalizePath::trim())
-        .wrap(Auth::new(jwt_config))
-        .service(ops::storages::create)
-        .service(ops::storages::patch)
-        .service(ops::storages::remove)
-        .service(ops::storages::sync_log)
-        .service(ops::upload::handle)
-        .service(ops::download::handle)
-        .service(ops::download::head)
-        .service(ops::delete::handle)
-        .service(ops::list::storages)
-        .service(ops::list::entries)
+/// No blanket `RequireWrite`: static storages check `warehouse:write`
+/// themselves, dynamic ones defer to `authz::can_on_storage`; `Auth` stays mounted for claims.
+pub fn wrap_auth(
+    app: Arc<dyn Endpoint>,
+    jwt_config: JwtConfig,
+    base_path: &str,
+) -> Arc<dyn Endpoint> {
+    let prefix: &'static str = Box::leak(format!("{base_path}/api/v1/files").into_boxed_str());
+    wrap(app, OnPathPrefix::new(prefix, Auth::new(jwt_config)))
+}
+
+pub fn register_routes() {
+    ops::register_routes();
 }

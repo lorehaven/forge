@@ -1,9 +1,5 @@
-//! One step of one job, as it was actually executed.
-//!
-//! Named `StepRecord` rather than `Step` because the pipeline has a `Step` too
-//! (`pipeline::spec`): that one is what the author wrote, this one is what
-//! happened. They are different things and confusing them is how a run report
-//! ends up showing the template instead of the command.
+//! One step as it was actually executed. Named `StepRecord` (not `Step`) since `pipeline::spec::Step`
+//! is what the author wrote, not what happened.
 
 use crate::domain::Status;
 use chrono::{DateTime, Utc};

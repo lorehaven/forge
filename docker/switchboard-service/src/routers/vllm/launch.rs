@@ -1,31 +1,34 @@
 use super::types::{LaunchRequest, is_cpu_device};
-use crate::routers::models::mod_impl::can;
+use crate::routers::models::mod_impl::{OptionalClaims, can};
 use crate::routers::vllm::engine::VllmEngine;
-use actix_web::{HttpResponse, Responder, http::header::ContentType, post, web};
-use quench_auth::prelude::JwtConfig;
+use quench_auth::domain::jwt::JwtConfig;
+use quench_http::prelude::{Form, Inject, Json, Response, post};
 use std::sync::Arc;
 
-#[post("/instances")]
+#[post("/api/v1/vllm/instances")]
 pub async fn launch_instance(
-    http_req: actix_web::HttpRequest,
-    config: web::Data<JwtConfig>,
-    req: web::Json<LaunchRequest>,
-    engine: web::Data<Arc<dyn VllmEngine>>,
-) -> impl Responder {
-    if !can(&http_req, &config, "launch").await {
-        return HttpResponse::Forbidden().finish();
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+    Json(req): Json<LaunchRequest>,
+    Inject(engine): Inject<Arc<dyn VllmEngine>>,
+) -> Response {
+    if !can(claims.as_ref(), &config, "launch") {
+        return Response::new(http::StatusCode::FORBIDDEN);
     }
 
-    let req = req.into_inner();
     if req.model.trim().is_empty() {
-        return HttpResponse::BadRequest().body("api_error_model_name_empty");
+        return Response::text(http::StatusCode::BAD_REQUEST, "api_error_model_name_empty");
     }
 
     match engine.launch_instance(req).await {
-        Ok(instance) => HttpResponse::Accepted().json(instance),
+        Ok(instance) => Response::json(http::StatusCode::ACCEPTED, &instance)
+            .unwrap_or_else(|_| Response::new(http::StatusCode::INTERNAL_SERVER_ERROR)),
         Err(err) => {
             tracing::error!("Failed to launch vLLM instance: {}", err);
-            HttpResponse::InternalServerError().body("api_error_vllm_launch_failed")
+            Response::text(
+                http::StatusCode::INTERNAL_SERVER_ERROR,
+                "api_error_vllm_launch_failed",
+            )
         }
     }
 }
@@ -48,15 +51,15 @@ pub struct LaunchRequestForm {
     device: Option<String>,
 }
 
-#[post("/instances/form")]
+#[post("/api/v1/vllm/instances/form")]
 pub async fn launch_instance_form(
-    http_req: actix_web::HttpRequest,
-    config: web::Data<JwtConfig>,
-    form: web::Form<LaunchRequestForm>,
-    engine: web::Data<Arc<dyn VllmEngine>>,
-) -> impl Responder {
-    if !can(&http_req, &config, "launch").await {
-        return HttpResponse::Forbidden().finish();
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+    Form(form): Form<LaunchRequestForm>,
+    Inject(engine): Inject<Arc<dyn VllmEngine>>,
+) -> Response {
+    if !can(claims.as_ref(), &config, "launch") {
+        return Response::new(http::StatusCode::FORBIDDEN);
     }
 
     let device = form.device.as_deref().and_then(|value| {
@@ -106,12 +109,16 @@ pub async fn launch_instance_form(
     };
 
     match engine.launch_instance(req).await {
-        Ok(_) => HttpResponse::Accepted()
-            .content_type(ContentType::html())
-            .body(r#"<div id="launch-modal" class="modal launch-modal"></div>"#),
+        Ok(_) => Response::html(
+            http::StatusCode::ACCEPTED,
+            r#"<div id="launch-modal" class="modal launch-modal"></div>"#,
+        ),
         Err(err) => {
             tracing::error!("Failed to launch vLLM instance: {}", err);
-            HttpResponse::InternalServerError().body("api_error_vllm_launch_failed")
+            Response::text(
+                http::StatusCode::INTERNAL_SERVER_ERROR,
+                "api_error_vllm_launch_failed",
+            )
         }
     }
 }

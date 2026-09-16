@@ -68,9 +68,8 @@ impl VllmEngine for KubernetesVllmEngine {
                 .and_then(|p| p.parse::<u16>().ok())
                 .unwrap_or(8000);
 
-            // Pod phase flips to "Running" as soon as the container process starts,
-            // long before vLLM finishes loading the model. Rely on the pod's Ready
-            // condition (driven by the /health readiness probe) to tell them apart.
+            // Pod phase flips to Running before vLLM finishes loading - use the
+            // Ready condition (/health readiness probe) instead.
             let ready = pod
                 .status
                 .as_ref()
@@ -183,9 +182,7 @@ impl VllmEngine for KubernetesVllmEngine {
         let safe_model = req.model.replace(['/', '.'], "-").to_lowercase();
         let pod_name = format!("vllm-{}-{}", safe_model, req.port);
 
-        // The CPU image's entrypoint (`vllm serve`) takes the model as a
-        // positional arg; the GPU path invokes the api_server module, which
-        // wants `--model`.
+        // CPU entrypoint takes the model positionally; GPU's api_server wants `--model`.
         let mut args = if cpu {
             vec![
                 req.model.clone(),
@@ -417,7 +414,7 @@ impl VllmEngine for KubernetesVllmEngine {
             .chain(gguf_roots.split(':'))
             .filter(|s| !s.trim().is_empty())
             .map(|s| s.trim().to_string())
-            .collect::<std::collections::HashSet<_>>(); // Use HashSet to deduplicate
+            .collect::<std::collections::HashSet<_>>();
 
         for (i, root) in all_roots.into_iter().enumerate() {
             let name = format!("model-root-{}", i);
@@ -463,9 +460,7 @@ impl VllmEngine for KubernetesVllmEngine {
         });
 
         if cpu {
-            // Use the CPU image's own entrypoint (`vllm serve`); it needs no GPU
-            // devices, so a minimal securityContext with SYS_NICE is enough for
-            // vLLM's thread-priority tuning.
+            // CPU image's own entrypoint needs no GPU devices; SYS_NICE is enough.
             container["securityContext"] = json!({
                 "capabilities": { "add": ["SYS_NICE"] }
             });

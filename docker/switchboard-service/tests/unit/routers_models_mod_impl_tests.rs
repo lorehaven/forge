@@ -1,15 +1,12 @@
 //! `load_paths`, `is_admin`, and `can` from `routers/models/mod_impl.rs`.
 //!
-//! `is_admin`/`can` read `Claims` out of request extensions (the same place
-//! `Auth` middleware puts them), so these tests build requests directly
-//! rather than exercising the middleware itself.
+//! `is_admin`/`can` are pure functions over `Option<&Claims>` now (the
+//! `OptionalClaims` extractor is what reads them out of the request/cookie -
+//! see `routers_models_handlers_tests.rs` for that side), so these tests
+//! call them directly with constructed `Claims` values instead of building
+//! requests.
 
-use crate::env_support::env_lock;
-use actix_web::HttpMessage;
-use actix_web::test::TestRequest;
-use actix_web::web;
-use quench_auth::actix::domain::jwt::Claims;
-use quench_auth::prelude::JwtConfig;
+use quench_auth::domain::jwt::{Claims, JwtConfig};
 use switchboard_service::routers::models::mod_impl::{can, is_admin, load_paths};
 
 fn claims_with_scope(scope: &str) -> Claims {
@@ -22,93 +19,51 @@ fn claims_with_scope(scope: &str) -> Claims {
     )
 }
 
-#[tokio::test]
-async fn is_admin_is_always_true_when_auth_is_disabled() {
-    let _guard = env_lock().lock().await;
-    unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", "false") };
-    let config = web::Data::new(JwtConfig::for_tests());
-
-    let req = TestRequest::default().to_http_request();
-    assert!(is_admin(&req, &config).await);
-    unsafe { std::env::remove_var("SERVICE_AUTH_ENABLED") };
+fn config(auth_enabled: bool) -> JwtConfig {
+    let mut config = JwtConfig::for_tests();
+    config.auth_enabled = auth_enabled;
+    config
 }
 
-#[tokio::test]
-async fn is_admin_is_false_without_claims_or_a_session_cookie() {
-    let _guard = env_lock().lock().await;
-    unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", "true") };
-    let config = web::Data::new(JwtConfig::for_tests());
-
-    let req = TestRequest::default().to_http_request();
-    assert!(!is_admin(&req, &config).await);
-
-    unsafe { std::env::remove_var("SERVICE_AUTH_ENABLED") };
+#[test]
+fn is_admin_is_always_true_when_auth_is_disabled() {
+    assert!(is_admin(None, &config(false)));
 }
 
-#[tokio::test]
-async fn is_admin_is_true_for_a_wildcard_role_in_request_extensions() {
-    let _guard = env_lock().lock().await;
-    unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", "true") };
-    let config = web::Data::new(JwtConfig::for_tests());
-
-    let req = TestRequest::default().to_http_request();
-    req.extensions_mut().insert(claims_with_scope("admin"));
-
-    assert!(is_admin(&req, &config).await);
-    unsafe { std::env::remove_var("SERVICE_AUTH_ENABLED") };
+#[test]
+fn is_admin_is_false_without_claims() {
+    assert!(!is_admin(None, &config(true)));
 }
 
-#[tokio::test]
-async fn is_admin_is_false_for_a_non_wildcard_role() {
-    let _guard = env_lock().lock().await;
-    unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", "true") };
-    let config = web::Data::new(JwtConfig::for_tests());
-
-    let req = TestRequest::default().to_http_request();
-    req.extensions_mut()
-        .insert(claims_with_scope("switchboard:read"));
-
-    assert!(!is_admin(&req, &config).await);
-    unsafe { std::env::remove_var("SERVICE_AUTH_ENABLED") };
+#[test]
+fn is_admin_is_true_for_a_wildcard_role() {
+    let claims = claims_with_scope("admin");
+    assert!(is_admin(Some(&claims), &config(true)));
 }
 
-#[tokio::test]
-async fn can_is_always_true_when_auth_is_disabled() {
-    let _guard = env_lock().lock().await;
-    unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", "false") };
-    let config = web::Data::new(JwtConfig::for_tests());
-
-    let req = TestRequest::default().to_http_request();
-    assert!(can(&req, &config, "launch").await);
-    unsafe { std::env::remove_var("SERVICE_AUTH_ENABLED") };
+#[test]
+fn is_admin_is_false_for_a_non_wildcard_role() {
+    let claims = claims_with_scope("switchboard:read");
+    assert!(!is_admin(Some(&claims), &config(true)));
 }
 
-#[tokio::test]
-async fn can_checks_the_specific_action_against_the_service_name() {
-    let _guard = env_lock().lock().await;
-    unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", "true") };
-    let config = web::Data::new(JwtConfig::for_tests());
-
-    let req = TestRequest::default().to_http_request();
-    req.extensions_mut().insert(claims_with_scope(&format!(
-        "{}:launch",
-        config.service_name
-    )));
-
-    assert!(can(&req, &config, "launch").await);
-    assert!(!can(&req, &config, "stop").await);
-    unsafe { std::env::remove_var("SERVICE_AUTH_ENABLED") };
+#[test]
+fn can_is_always_true_when_auth_is_disabled() {
+    assert!(can(None, &config(false), "launch"));
 }
 
-#[tokio::test]
-async fn can_is_false_without_claims_or_a_session_cookie() {
-    let _guard = env_lock().lock().await;
-    unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", "true") };
-    let config = web::Data::new(JwtConfig::for_tests());
+#[test]
+fn can_checks_the_specific_action_against_the_service_name() {
+    let cfg = config(true);
+    let claims = claims_with_scope(&format!("{}:launch", cfg.service_name));
 
-    let req = TestRequest::default().to_http_request();
-    assert!(!can(&req, &config, "launch").await);
-    unsafe { std::env::remove_var("SERVICE_AUTH_ENABLED") };
+    assert!(can(Some(&claims), &cfg, "launch"));
+    assert!(!can(Some(&claims), &cfg, "stop"));
+}
+
+#[test]
+fn can_is_false_without_claims() {
+    assert!(!can(None, &config(true), "launch"));
 }
 
 #[test]

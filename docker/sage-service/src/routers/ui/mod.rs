@@ -1,82 +1,47 @@
-use actix_web::dev::HttpServiceFactory;
-use actix_web::{HttpResponse, Responder, get, web};
+use async_trait::async_trait;
 pub use common::assets;
-use quench_auth::actix::middleware::auth::Auth;
-use quench_auth::actix::middleware::require_write::RequireWrite;
-use quench_auth::prelude::JwtConfig;
-use quench_starter::prelude::with_base_path;
+use quench_auth::domain::jwt::JwtConfig;
+use quench_http::prelude::{FromRequest, HttpError, Request, Response, get};
+use quench_starter::common::routes::with_base_path;
 
 pub mod chat;
 pub mod common;
 pub mod context_builder;
 pub mod pages;
 
-// ---------------------------------------------------------------------------
-// Root redirects
-// ---------------------------------------------------------------------------
+struct UiRoot(bool);
 
-#[get("")]
-async fn root(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
-    if !common::is_ui_authenticated(&req, &config).await {
-        return common::ui_login_redirect();
+#[async_trait]
+impl FromRequest for UiRoot {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        let Ok(config) = req.container().get::<JwtConfig>() else {
+            return Ok(UiRoot(false));
+        };
+        Ok(UiRoot(common::is_ui_authenticated(req, &config).await))
     }
-    HttpResponse::Found()
-        .append_header(("Location", with_base_path("/ui/home")))
-        .finish()
 }
 
-#[get("/")]
-async fn root_slash(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
-    if !common::is_ui_authenticated(&req, &config).await {
+#[get("/ui")]
+async fn root(UiRoot(authenticated): UiRoot) -> Response {
+    if !authenticated {
         return common::ui_login_redirect();
     }
-    HttpResponse::Found()
-        .append_header(("Location", with_base_path("/ui/home")))
-        .finish()
+    Response::new(http::StatusCode::FOUND).header("Location", with_base_path("/ui/home"))
 }
 
-// ---------------------------------------------------------------------------
-// Scope
-// ---------------------------------------------------------------------------
+#[get("/ui/")]
+async fn root_slash(UiRoot(authenticated): UiRoot) -> Response {
+    if !authenticated {
+        return common::ui_login_redirect();
+    }
+    Response::new(http::StatusCode::FOUND).header("Location", with_base_path("/ui/home"))
+}
 
-pub fn scope(jwt_config: JwtConfig) -> impl HttpServiceFactory {
-    web::scope("/ui")
-        // Root
-        .service(root)
-        .service(root_slash)
-        .service(assets)
-        // Auth (public - no auth required)
-        .service(pages::auth::login)
-        .service(pages::auth::login_slash)
-        .service(pages::auth::callback)
-        .service(pages::auth::logout)
-        .service(pages::auth::auth_status)
-        .service(pages::auth::refresh)
-        // Chat, projects and files all mutate through these pages exactly as
-        // their API counterparts do (sending a message, creating a project,
-        // attaching a file), so the same permission applies here: `RequireWrite`
-        // reads the claims `Auth` just populated, which is why it has to be
-        // wrapped inside it - `Auth`'s `.wrap()` registered last, so it runs
-        // first.
-        .service(
-            chat::scope()
-                .wrap(RequireWrite::new(jwt_config.clone()))
-                .wrap(Auth::new(jwt_config.clone())),
-        )
-        .service(
-            pages::projects::scope()
-                .wrap(RequireWrite::new(jwt_config.clone()))
-                .wrap(Auth::new(jwt_config.clone())),
-        )
-        .service(
-            pages::files::scope()
-                .wrap(RequireWrite::new(jwt_config.clone()))
-                .wrap(Auth::new(jwt_config.clone())),
-        )
-        // Initializing screen (auth checked inside; gates access to home)
-        .service(pages::initializing::initializing)
-        .service(pages::initializing::initializing_status)
-        // Home (with auth)
-        .service(pages::home::home)
-        .service(pages::home::home_slash)
+pub fn register_routes() {
+    let _ = root as fn(_) -> _;
+    let _ = root_slash as fn(_) -> _;
+    let _ = assets as fn(_) -> _;
+    common::register_routes();
+    chat::register_routes();
+    pages::register_routes();
 }

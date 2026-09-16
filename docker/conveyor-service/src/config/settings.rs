@@ -1,8 +1,4 @@
-//! Conveyor's knobs, read once at startup.
-//!
-//! Everything here is environment-driven, like the rest of the estate. The
-//! defaults are the ones that make a single-node development run work; a
-//! cluster deployment overrides the executor and the work directory.
+//! Conveyor's knobs, read once at startup - environment-driven like the rest of the estate.
 
 use std::fmt;
 use std::path::PathBuf;
@@ -15,8 +11,7 @@ pub enum ExecutorKind {
     Native,
     /// One `batch/v1` Job per conveyor job.
     Kubernetes,
-    /// Records what it was asked to do and returns a scripted result. Tests
-    /// only - selecting it in a real deployment means nothing ever builds.
+    /// Tests only - a real deployment builds nothing with this selected.
     Mock,
 }
 
@@ -48,38 +43,28 @@ impl fmt::Display for ExecutorKind {
 pub struct ConveyorConfig {
     pub executor: ExecutorKind,
 
-    /// Root for per-run checkouts. Each run gets a directory beneath it, and
-    /// that directory is removed when the run finishes.
+    /// Root for per-run checkouts; each run's directory is removed when it finishes.
     pub work_dir: PathBuf,
 
-    /// How many runs this replica will execute at once. Per-repo serialisation
-    /// is separate: one repo never has two runs in flight regardless of this.
+    /// Runs this replica executes at once; per-repo serialisation is separate.
     pub max_concurrent_runs: usize,
 
     /// Ceiling on a single job, applied when the pipeline does not set its own.
     pub default_job_timeout_secs: u64,
 
-    /// Ceiling on the checkout. A fetch that hangs - an unreachable host, a
-    /// credential prompt on a server that offers no terminal - would otherwise
-    /// hold a worker until the process is restarted.
+    /// Ceiling on the checkout, so a hung fetch doesn't hold a worker forever.
     pub checkout_timeout_secs: u64,
 
-    /// A run whose worker stopped reporting for this long is considered lost
-    /// and is put back on the queue.
+    /// A run whose worker stopped reporting this long is considered lost and requeued.
     pub claim_stale_after_secs: u64,
 
-    /// Whether a pull request from a fork may run. Off by default, and it
-    /// should stay off under the native executor: a fork's `.conveyor.toml` is
-    /// written by someone outside the estate, and the native executor would run
-    /// it with this service's privileges.
+    /// Off by default, and should stay off under native: a fork's `.conveyor.toml` would run with this service's privileges.
     pub allow_fork_pr: bool,
 
     /// How many runs the front page's pipeline panel shows at once.
     pub home_recent_runs: usize,
 
-    /// At most this many of those runs may come from the same repository - the
-    /// front page is meant to show what is happening across the estate, and one
-    /// noisy repository should not push every other one off it.
+    /// Cap per repository, so one noisy repo can't push every other one off the front page.
     pub home_max_runs_per_repo: usize,
 
     /// How many runs a page of the full pipeline history shows.
@@ -150,10 +135,7 @@ impl ConveyorConfig {
     }
 }
 
-/// Reads a positive integer, keeping the default when the value is missing,
-/// unparseable, or zero. Zero deserves the same treatment as garbage here -
-/// zero workers or a zero-second timeout is a service that silently does
-/// nothing rather than one that reports a bad configuration.
+/// Reads a positive integer, defaulting on missing/unparseable/zero (zero silently does nothing, so it's treated as garbage too).
 pub fn positive(key: &str, default: usize) -> usize {
     let raw = envmnt::get_or(key, "");
     if raw.trim().is_empty() {

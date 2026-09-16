@@ -1,62 +1,80 @@
 use crate::support;
 
-use actix_web::test as actix_test;
-use support::WithDockerStorageRoot as WithStorageRoot;
-use warehouse_service::routers::docker::blob::get_upload_status::handle;
+use http::{Method, StatusCode};
 
-#[actix_web::test]
+async fn app() -> (
+    std::sync::Arc<dyn quench_http::endpoint::Endpoint>,
+    std::sync::Arc<quench_http::di::Container>,
+) {
+    warehouse_service::routers::docker::blob::get_upload_status::register_routes();
+    let container = support::container_builder().build().await.unwrap();
+    support::app(container).await
+}
+
+#[tokio::test]
 async fn handle_rejects_an_invalid_repository_name() {
-    let _storage = WithStorageRoot::new();
-    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
-    let req = actix_test::TestRequest::get()
-        .uri("/..%2fetc/blobs/uploads/some-uuid")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::BAD_REQUEST);
+    let _storage = support::WithDockerStorageRoot::new();
+    let (app, container) = app().await;
+    let resp = app
+        .call(support::req(
+            Method::GET,
+            "/v2/..%2fetc/blobs/uploads/some-uuid",
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn handle_reports_not_found_for_an_unknown_upload() {
-    let _storage = WithStorageRoot::new();
-    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
-    let req = actix_test::TestRequest::get()
-        .uri("/my-repo/blobs/uploads/no-such-upload")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::NOT_FOUND);
+    let _storage = support::WithDockerStorageRoot::new();
+    let (app, container) = app().await;
+    let resp = app
+        .call(support::req(
+            Method::GET,
+            "/v2/my-repo/blobs/uploads/no-such-upload",
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn handle_reports_a_zero_range_for_an_empty_upload() {
-    let storage = WithStorageRoot::new();
+    let storage = support::WithDockerStorageRoot::new();
     let upload_dir = storage.dir.path().join("my-repo").join("_uploads");
     std::fs::create_dir_all(&upload_dir).unwrap();
     std::fs::write(upload_dir.join("upload-1"), b"").unwrap();
 
-    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
-    let req = actix_test::TestRequest::get()
-        .uri("/my-repo/blobs/uploads/upload-1")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::NO_CONTENT);
-    assert_eq!(resp.headers().get("Range").unwrap(), "0-0");
+    let (app, container) = app().await;
+    let resp = app
+        .call(support::req(
+            Method::GET,
+            "/v2/my-repo/blobs/uploads/upload-1",
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+    let (headers, _) = support::parts(resp).await;
+    assert_eq!(headers.get("range").unwrap(), "0-0");
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn handle_reports_the_written_range_for_a_partial_upload() {
-    let storage = WithStorageRoot::new();
+    let storage = support::WithDockerStorageRoot::new();
     let upload_dir = storage.dir.path().join("my-repo").join("_uploads");
     std::fs::create_dir_all(&upload_dir).unwrap();
     std::fs::write(upload_dir.join("upload-1"), b"12345").unwrap();
 
-    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
-    let req = actix_test::TestRequest::get()
-        .uri("/my-repo/blobs/uploads/upload-1")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.headers().get("Range").unwrap(), "0-4");
-    assert_eq!(
-        resp.headers().get("Docker-Upload-UUID").unwrap(),
-        "upload-1"
-    );
+    let (app, container) = app().await;
+    let resp = app
+        .call(support::req(
+            Method::GET,
+            "/v2/my-repo/blobs/uploads/upload-1",
+            &container,
+        ))
+        .await;
+    let (headers, _) = support::parts(resp).await;
+    assert_eq!(headers.get("range").unwrap(), "0-4");
+    assert_eq!(headers.get("docker-upload-uuid").unwrap(), "upload-1");
 }

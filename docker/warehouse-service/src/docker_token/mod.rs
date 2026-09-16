@@ -1,11 +1,5 @@
-//! Docker Registry v2 bearer tokens.
-//!
-//! A docker client authenticates against `/token` with HTTP Basic and
-//! presents the bearer token it gets back to `/v2/*` - a protocol the
-//! registry spec fixes, not something the estate's SSO flow gets a say in.
-//! Tokens here are minted and verified by warehouse alone, with their own
-//! secret, entirely independent of the realm's JWKS-based tokens: nothing
-//! outside this process ever needs to read one.
+//! Docker Registry v2 bearer tokens: Basic-auth at `/token`, bearer at `/v2/*` - a fixed protocol.
+//! Minted/verified by warehouse alone with its own secret, independent of the realm's JWKS tokens.
 
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode, errors::Error};
 use serde::{Deserialize, Serialize};

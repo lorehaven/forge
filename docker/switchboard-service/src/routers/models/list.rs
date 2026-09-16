@@ -1,39 +1,38 @@
-use super::mod_impl::can;
+use super::mod_impl::{OptionalClaims, can};
 use super::store::get_store;
 use super::types::{Model, ModelEstimate, ModelFilters};
 use crate::routers::gpu::get_gpu_info;
 use crate::routers::gpu::monitor::GpuInfo;
-use actix_web::web::Json;
-use actix_web::{HttpResponse, Responder, get, post, web};
-use quench_auth::prelude::JwtConfig;
-use quench_starter::prelude::with_base_path;
+use quench_auth::domain::jwt::JwtConfig;
+use quench_http::prelude::{Inject, Json, Query, Response, get, post};
+use quench_starter::common::routes::with_base_path;
 use quench_web::prelude::*;
 
-#[post("/list")]
-pub async fn handle_list(body: Json<ModelFilters>) -> impl Responder {
+#[post("/api/v1/models/list")]
+pub async fn handle_list(Json(body): Json<ModelFilters>) -> Json<Vec<Model>> {
     let gpu = get_gpu_info().unwrap_or_default();
     let mut models = get_store().get_all_models().await;
 
     apply_filters(&mut models, &body, &gpu);
 
-    HttpResponse::Ok().json(models)
+    Json(models)
 }
 
-#[get("/grid")]
+#[get("/api/v1/models/grid")]
 pub async fn handle_grid(
-    req: actix_web::HttpRequest,
-    config: web::Data<JwtConfig>,
-    filters: web::Query<ModelFilters>,
-) -> impl Responder {
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+    Query(filters): Query<ModelFilters>,
+) -> Response {
     let gpu = get_gpu_info().unwrap_or_default();
     let mut models = get_store().get_all_models().await;
-    let can_delete = can(&req, &config, "delete-model").await;
+    let can_delete = can(claims.as_ref(), &config, "delete-model");
 
     apply_filters(&mut models, &filters, &gpu);
 
     let html = render_model_grid(models, &gpu, can_delete);
 
-    HttpResponse::Ok().content_type("text/html").body(html)
+    Response::html(http::StatusCode::OK, html)
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -44,8 +43,8 @@ pub struct EstimatesModalQuery {
     quant: Option<String>,
 }
 
-#[get("/estimates-modal")]
-pub async fn estimates_modal(query: web::Query<EstimatesModalQuery>) -> impl Responder {
+#[get("/api/v1/models/estimates-modal")]
+pub async fn estimates_modal(Query(query): Query<EstimatesModalQuery>) -> Response {
     let models = get_store().get_all_models().await;
     let gpu = get_gpu_info().unwrap_or_default();
     let model = query
@@ -58,18 +57,16 @@ pub async fn estimates_modal(query: web::Query<EstimatesModalQuery>) -> impl Res
         None => empty_estimates_modal(),
     };
 
-    HttpResponse::Ok().content_type("text/html").body(html)
+    Response::html(http::StatusCode::OK, html)
 }
 
-#[get("/estimates-modal/empty")]
-pub async fn empty_estimates_modal_endpoint() -> impl Responder {
-    HttpResponse::Ok()
-        .content_type("text/html")
-        .body(empty_estimates_modal())
+#[get("/api/v1/models/estimates-modal/empty")]
+pub async fn empty_estimates_modal_endpoint() -> Response {
+    Response::html(http::StatusCode::OK, empty_estimates_modal())
 }
 
 pub fn apply_filters(models: &mut Vec<Model>, filters: &ModelFilters, gpu: &GpuInfo) {
-    // 1. Filter by source (HF/GGUF) - default to HF if not specified or empty
+    // Defaults to HF when unspecified.
     let source = filters
         .source
         .as_deref()
@@ -78,7 +75,6 @@ pub fn apply_filters(models: &mut Vec<Model>, filters: &ModelFilters, gpu: &GpuI
     let source_lower = source.to_lowercase();
     models.retain(|m| m.source.to_lowercase() == source_lower);
 
-    // 2. Filter by search term
     if let Some(search) = &filters.search {
         let search_lower = search.to_lowercase();
         if !search_lower.is_empty() {
@@ -86,13 +82,12 @@ pub fn apply_filters(models: &mut Vec<Model>, filters: &ModelFilters, gpu: &GpuI
         }
     }
 
-    // 3. Filter by quantization
     if let Some(quant_str) = &filters.quant
         && quant_str != "ALL"
         && !quant_str.is_empty()
     {
         models.retain(|m| {
-            // Match using debug format or aliases
+            // Debug format, or a known alias.
             let m_quant_str = format!("{:?}", m.quant);
             m_quant_str == *quant_str
                 || match m.quant {
@@ -109,7 +104,6 @@ pub fn apply_filters(models: &mut Vec<Model>, filters: &ModelFilters, gpu: &GpuI
         });
     }
 
-    // 4. Filter by context size
     if let Some(context_val) = &filters.context {
         let context_num = match context_val {
             serde_json::Value::Number(n) => n.as_u64().unwrap_or(0) as usize,
@@ -122,14 +116,12 @@ pub fn apply_filters(models: &mut Vec<Model>, filters: &ModelFilters, gpu: &GpuI
         }
     }
 
-    // 5. Filter by vLLM support
     if let Some(vllm_only) = filters.vllm_only
         && vllm_only
     {
         models.retain(|m| m.vllm_supported);
     }
 
-    // 6. Sort models
     if let Some(sort) = &filters.sort {
         match sort.as_str() {
             "name_asc" => models.sort_by(|a, b| a.name.cmp(&b.name)),
@@ -403,18 +395,17 @@ pub struct DeleteModalQuery {
     name: Option<String>,
 }
 
-#[get("/delete-modal")]
-pub async fn delete_modal(query: web::Query<DeleteModalQuery>) -> impl Responder {
-    HttpResponse::Ok()
-        .content_type("text/html")
-        .body(render_delete_modal(&query.path, query.name.as_deref()))
+#[get("/api/v1/models/delete-modal")]
+pub async fn delete_modal(Query(query): Query<DeleteModalQuery>) -> Response {
+    Response::html(
+        http::StatusCode::OK,
+        render_delete_modal(&query.path, query.name.as_deref()),
+    )
 }
 
-#[get("/delete-modal/empty")]
-pub async fn empty_delete_modal_endpoint() -> impl Responder {
-    HttpResponse::Ok()
-        .content_type("text/html")
-        .body(empty_delete_modal())
+#[get("/api/v1/models/delete-modal/empty")]
+pub async fn empty_delete_modal_endpoint() -> Response {
+    Response::html(http::StatusCode::OK, empty_delete_modal())
 }
 
 fn render_estimates_modal(model: &Model, gpu: &GpuInfo, query: &EstimatesModalQuery) -> String {

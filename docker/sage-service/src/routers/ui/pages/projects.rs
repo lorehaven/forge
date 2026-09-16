@@ -1,14 +1,13 @@
-use actix_web::{HttpResponse, Responder, get, post, web};
+use crate::routers::ui::common::RequiredClaims;
 use chrono::Utc;
-use quench_auth::actix::routers::ui::get_user_from_req;
-use quench_auth::prelude::JwtConfig;
 use quench_db::prelude::{Crud, Db};
-use quench_starter::prelude::with_base_path;
+use quench_http::prelude::{Form, HttpError, Inject, Response, get, http::StatusCode, post};
+use quench_starter::common::routes::with_base_path;
 use quench_web::prelude::*;
 use uuid::Uuid;
 
-#[get("/new-modal")]
-pub async fn new_modal() -> impl Responder {
+#[get("/ui/projects/new-modal")]
+pub async fn new_modal() -> Response {
     let modal = div()
         .class("modal-backdrop")
         .attr("id", "new-project-modal")
@@ -67,9 +66,7 @@ pub async fn new_modal() -> impl Responder {
                 ),
         );
 
-    HttpResponse::Ok()
-        .content_type("text/html")
-        .body(modal.render())
+    Response::html(StatusCode::OK, modal.render())
 }
 
 #[derive(serde::Deserialize)]
@@ -77,16 +74,15 @@ pub struct CreateProjectRequest {
     pub name: String,
 }
 
-#[post("/create")]
+#[post("/ui/projects/create")]
 pub async fn create_project(
-    req: actix_web::HttpRequest,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    form: web::Form<CreateProjectRequest>,
-) -> impl Responder {
-    let username = match get_user_from_req(&req, &config).await {
-        Some(claims) => claims.sub,
-        None => return HttpResponse::Unauthorized().finish(),
+    claims: RequiredClaims,
+    Inject(db): Inject<Db>,
+    Form(form): Form<CreateProjectRequest>,
+) -> Result<Response, HttpError> {
+    let username = match claims.or_401() {
+        Ok(claims) => claims.sub,
+        Err(response) => return Ok(response),
     };
 
     let project = crate::domain::models::Project {
@@ -100,19 +96,19 @@ pub async fn create_project(
     let repo = db.repository::<crate::domain::models::Project>();
     if let Err(e) = repo.create(&project).await {
         tracing::error!("Failed to create project: {}", e);
-        return HttpResponse::InternalServerError().body("api_error_internal");
+        return Ok(Response::text(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "api_error_internal",
+        ));
     }
 
-    HttpResponse::Ok()
-        .append_header((
-            "HX-Redirect",
-            with_base_path(&format!("/ui/home?project_id={}", project.id)),
-        ))
-        .finish()
+    Ok(Response::new(StatusCode::OK).header(
+        "HX-Redirect",
+        with_base_path(&format!("/ui/home?project_id={}", project.id)),
+    ))
 }
 
-pub fn scope() -> actix_web::Scope {
-    web::scope("/projects")
-        .service(new_modal)
-        .service(create_project)
+pub fn register_routes() {
+    let _ = new_modal as fn() -> _;
+    let _ = create_project as fn(_, _, _) -> _;
 }

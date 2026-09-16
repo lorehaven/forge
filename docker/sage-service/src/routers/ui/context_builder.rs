@@ -4,7 +4,7 @@ use quench_db::prelude::Crud;
 
 /// Build conversation context from database messages
 pub async fn build_conversation_context(
-    db: &actix_web::web::Data<quench_db::prelude::Db>,
+    db: &quench_db::prelude::Db,
     conversation_id: &str,
     max_context_tokens: u32,
 ) -> Result<ConversationContext, String> {

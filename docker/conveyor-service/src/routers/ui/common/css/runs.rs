@@ -1,8 +1,4 @@
-//! The run list and the run page.
-//!
-//! Conveyor's only real addition to the estate's stylesheet beyond status
-//! pills: a table of runs, and a log viewer that has to stay readable with ten
-//! thousand lines in it.
+//! The run list and run page - a runs table, and a log viewer readable at ten thousand lines.
 
 use quench_web::prelude::CssRule;
 
@@ -49,9 +45,7 @@ pub fn runs_rules() -> Vec<CssRule> {
             .property("color", "var(--bs-gray-400)")
             .property("font-size", "0.9rem")
             .property("margin-bottom", "1rem"),
-        // ---------------------------------------------------------------
-        // Jobs
-        // ---------------------------------------------------------------
+        // --- Jobs ---
         CssRule::new(".job")
             .property("border", "0.1rem solid var(--bs-gray-700)")
             .property("border-radius", "0.3rem")
@@ -65,16 +59,13 @@ pub fn runs_rules() -> Vec<CssRule> {
             .property("background-color", "var(--bs-gray-800)")
             .property("cursor", "pointer")
             .property("user-select", "none"),
-        // A box only so the poll has something with an id to replace. `contents`
-        // keeps its children as direct flex items of `.job-head`, so the row
-        // lays out exactly as it did before there was anything to swap.
+        // Just an id for the poll to replace; `contents` keeps the row layout unchanged.
         CssRule::new(".job-state").property("display", "contents"),
         CssRule::new(".job-name")
             .property("font-weight", "600")
             .property("flex", "1"),
         CssRule::new(".job-body").property("padding", "0.5rem 0.9rem 0.9rem"),
-        // `<details>` gives collapse and expand with no script; the marker is
-        // replaced by the status pill, which already says more than a triangle.
+        // Marker replaced by the status pill, which says more than a triangle.
         CssRule::new("details.job > summary")
             .property("list-style", "none")
             .child(CssRule::new("::-webkit-details-marker").property("display", "none")),
@@ -88,11 +79,7 @@ pub fn runs_rules() -> Vec<CssRule> {
             .property("gap", "0.6rem")
             .property("padding", "0.25rem 0")
             .property("font-size", "0.85rem"),
-        // ---------------------------------------------------------------
-        // The job graph: one row per dependency level, connected top to
-        // bottom - stages in the same row run at once, the row below waits
-        // for all of them.
-        // ---------------------------------------------------------------
+        // --- Job graph: one row per dependency level, connected top to bottom. ---
         CssRule::new(".job-graph")
             .property("display", "flex")
             .property("flex-direction", "column")
@@ -113,13 +100,9 @@ pub fn runs_rules() -> Vec<CssRule> {
             .property("min-width", "18rem")
             .property("display", "flex")
             .property("flex-direction", "column"),
-        // A stage card's own jobs stack with the usual `.job` spacing, but the
-        // card itself does not add another border around them - two stages
-        // side by side already read as separate without doubling the frame.
+        // No extra border on the card - adjacent stage cards already read as separate.
         CssRule::new(".stage-card .job:last-child").property("margin-bottom", "0"),
-        // ---------------------------------------------------------------
-        // Logs
-        // ---------------------------------------------------------------
+        // --- Logs ---
         CssRule::new(".log-toolbar")
             .property("display", "flex")
             .property("justify-content", "flex-end")
@@ -173,9 +156,7 @@ pub fn runs_rules() -> Vec<CssRule> {
             .property("align-items", "baseline")
             .property("padding", "0.3rem 0")
             .property("font-size", "0.9rem"),
-        // ---------------------------------------------------------------
-        // Repo scan
-        // ---------------------------------------------------------------
+        // --- Repo scan ---
         CssRule::new(".scan-grid")
             .property("display", "grid")
             .property(
@@ -258,9 +239,7 @@ pub fn runs_rules() -> Vec<CssRule> {
         CssRule::new(".finding-severity-error")
             .property("background-color", "var(--bs-danger)")
             .property("color", "var(--bs-gray-950)"),
-        // ---------------------------------------------------------------
-        // Repo chips (home page) and the manual-run button beside them
-        // ---------------------------------------------------------------
+        // --- Repo chips and the manual-run button ---
         CssRule::new(".chip-row")
             .property("display", "flex")
             .property("gap", "0.35rem")
@@ -305,10 +284,7 @@ pub fn runs_rules() -> Vec<CssRule> {
                     .property("opacity", "0.5")
                     .property("cursor", "default"),
             ),
-        // ---------------------------------------------------------------
-        // The "view all" link beside a panel's title, and the pager below
-        // the full pipeline history's own table.
-        // ---------------------------------------------------------------
+        // --- The "view all" link beside a panel's title, and the pager below the full pipeline history's own table. ---
         CssRule::new(".panel-title-row")
             .property("display", "flex")
             .property("align-items", "center")

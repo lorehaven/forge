@@ -1,20 +1,8 @@
-//! Keeping secrets out of the log.
-//!
-//! A pipeline that echoes its environment, or a tool that prints the command it
-//! is about to run, will put an injected secret on stdout. Conveyor stores that
-//! output and shows it on a page, so the value has to be removed before it is
-//! recorded rather than after.
-//!
-//! This is a backstop, not a guarantee. A step that base64s a token and prints
-//! that gets past it, and nothing short of not injecting the secret would stop
-//! it. What it does reliably prevent is the ordinary accident.
+//! Strips injected secrets from stored step output before it's recorded.
+//! A backstop against accidents, not a guarantee - encoding a secret evades it.
 
-/// The shortest value worth replacing.
-///
-/// Below this, redaction does more harm than good: replacing every `a` in a
-/// build log destroys the log and still tells anyone reading it what the secret
-/// was. Values this short are rejected when they are written, so a redactor
-/// should never see one.
+/// Shortest value worth replacing - below this, redaction does more harm than
+/// good (e.g. masking every `a`). Shorter values are rejected on write.
 pub const MIN_REDACTABLE: usize = 4;
 
 /// What replaces a secret.

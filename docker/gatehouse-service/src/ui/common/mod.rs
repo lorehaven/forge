@@ -1,8 +1,8 @@
 //! Page shell, shared with the rest of the estate: same builder, same theme,
 //! same header, same generated stylesheet layout.
 
-use actix_web::{HttpResponse, Responder, get, http::header::ContentType, web};
-pub use quench_starter::actix::routers::ui::{is_ui_authenticated, ui_asset_path, ui_path};
+use quench_http::prelude::{Path, Response, get};
+pub use quench_starter::http::routers::ui::{is_ui_authenticated, ui_asset_path, ui_path};
 use quench_web::prelude::*;
 use std::sync::LazyLock;
 
@@ -88,9 +88,7 @@ fn ui_header(
         )
 }
 
-/// Writes `dist/assets` before the first request. Left to the first page
-/// render, a request for the stylesheet that arrives earlier is answered from
-/// whatever the previous deployment left on disk.
+/// Writes `dist/assets` before the first request, or an early stylesheet fetch gets stale content.
 pub fn ensure_assets() {
     LazyLock::force(&UI_SHELL_HOME);
     LazyLock::force(&UI_SHELL_AUTH);
@@ -98,25 +96,19 @@ pub fn ensure_assets() {
     LazyLock::force(&UI_SHELL_ACCOUNT);
 }
 
-#[get("/assets/{path:.*}")]
-pub async fn assets(path: web::Path<String>) -> impl Responder {
-    quench_starter::actix::routers::ui::serve_assets(path, "dist/assets").await
+#[get("/ui/assets/{path:.*}")]
+pub async fn assets(Path(path): Path<String>) -> Response {
+    quench_starter::http::routers::ui::serve_assets(&path, "dist/assets").await
 }
 
-pub fn render_page(
-    mut builder: actix_web::HttpResponseBuilder,
-    content: Element,
-    page_kind: UiPageKind,
-) -> HttpResponse {
+pub fn render_page(status: http::StatusCode, content: Element, page_kind: UiPageKind) -> Response {
     let shell = match page_kind {
         UiPageKind::Home => &*UI_SHELL_HOME,
         UiPageKind::Auth => &*UI_SHELL_AUTH,
         UiPageKind::Admin => &*UI_SHELL_ADMIN,
         UiPageKind::Account => &*UI_SHELL_ACCOUNT,
     };
-    builder
-        .content_type(ContentType::html())
-        .body(shell.page(div().class("page").child(content)))
+    Response::html(status, shell.page(div().class("page").child(content)))
 }
 
 pub enum UiPageKind {
@@ -125,3 +117,10 @@ pub enum UiPageKind {
     Admin,
     Account,
 }
+
+pub fn register_routes() {
+    let _ = assets as fn(_) -> _;
+}
+
+/// This listener's own scheme, for building absolute URLs; `x-forwarded-proto` still wins if set.
+pub struct ExternalScheme(pub &'static str);

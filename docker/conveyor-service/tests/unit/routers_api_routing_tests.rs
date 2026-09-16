@@ -10,18 +10,28 @@
 //! auth middleware while living under the same `/api/v1` prefix as everything
 //! that sits inside it.
 //!
+//! quench-http's router carries a version of the same risk under a different
+//! name: an ambiguous pair of patterns (a literal path segment and a `{id}`
+//! wildcard at the same position) resolves by *registration order*
+//! (link-order-dependent via `inventory`), not by a real static-first trie
+//! the way actix-router matched - so two routes shaped like that can silently
+//! swap which one wins across a rebuild. This file's job is unchanged: prove
+//! every declared route actually resolves to its handler, not just that the
+//! handler itself is correct in isolation.
+//!
 //! Route resolution is checked with auth *off*. With it on, the middleware
 //! answers 401 before matching ever happens, so "not a 404" would be true of
 //! every URL including nonsense - the test would pass against an API that had
 //! no routes at all.
 
-use actix_web::http::StatusCode;
-use actix_web::{App, test, web};
+use bytes::Bytes;
 use conveyor_service::config::ConveyorConfig;
 use conveyor_service::providers::Providers;
 use conveyor_service::routers::api;
-use quench_auth::prelude::JwtConfig;
-use quench_db::prelude::Db;
+use http::{HeaderMap, Method, StatusCode, Uri};
+use quench_auth::domain::jwt::JwtConfig;
+use quench_http::di::ContainerBuilder;
+use quench_http::request::Request;
 use std::sync::OnceLock;
 use tokio::sync::Mutex;
 
@@ -32,30 +42,58 @@ fn lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
-async fn status_with_auth(auth: bool, request: test::TestRequest) -> StatusCode {
+enum Body {
+    None,
+    Json(serde_json::Value),
+}
+
+async fn status_with_auth(auth: bool, method: Method, path: &str, body: Body) -> StatusCode {
     let _guard = lock().lock().await;
 
     // Every other test in this binary that builds a `JwtConfig` via
     // `for_tests()` (which reads `SERVICE_AUTH_ENABLED` at construction, see
-    // `quench_auth::actix::domain::jwt::JwtConfig::from_parts`) expects auth
+    // `quench_auth::domain::jwt::JwtConfig::from_parts`) expects auth
     // to default off. Leaving `true` set here after this function returns
     // would leak into whichever test the binary happens to run next.
     let previous = std::env::var("SERVICE_AUTH_ENABLED").ok();
     unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", if auth { "true" } else { "false" }) };
 
-    let db = Db::connect("").await.expect("in-memory database");
-    let app = test::init_service(
-        App::new()
-            .app_data(web::Data::new(db))
-            .app_data(web::Data::new(Providers::from_env()))
-            .app_data(web::Data::new(ConveyorConfig::default()))
-            .service(api::scope(JwtConfig::for_tests())),
-    )
-    .await;
-
-    let status = test::call_service(&app, request.to_request())
+    let db = quench_db::prelude::Db::connect("")
         .await
-        .status();
+        .expect("in-memory database");
+    let jwt_config = JwtConfig::for_tests();
+
+    api::register_routes();
+    let container = ContainerBuilder::new()
+        .provide(db)
+        .provide(jwt_config.clone())
+        .provide(ConveyorConfig::default())
+        .provide_arc(std::sync::Arc::new(Providers::from_env()))
+        .build()
+        .await
+        .unwrap();
+    let container = std::sync::Arc::new(container);
+
+    let app = quench_starter::http::discover_and_mount("/");
+    let app = api::wrap_auth(app, jwt_config, "");
+
+    let mut headers = HeaderMap::new();
+    let body_bytes = match &body {
+        Body::None => Bytes::new(),
+        Body::Json(value) => {
+            headers.insert("content-type", "application/json".parse().unwrap());
+            Bytes::from(serde_json::to_vec(value).unwrap())
+        }
+    };
+    let request = Request::new(
+        method,
+        path.parse::<Uri>().unwrap(),
+        headers,
+        quench_http::body::InboundBody::from_bytes(body_bytes),
+        container,
+    );
+
+    let status = app.call(request).await.status();
 
     match previous {
         Some(value) => unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", value) },
@@ -66,55 +104,65 @@ async fn status_with_auth(auth: bool, request: test::TestRequest) -> StatusCode 
 }
 
 /// Every route behind the realm's auth, and a request shaped to reach it.
-fn authenticated_routes() -> Vec<(&'static str, test::TestRequest)> {
+fn authenticated_routes() -> Vec<(&'static str, Method, &'static str, Body)> {
     vec![
-        ("GET /repos", test::TestRequest::get().uri("/api/v1/repos")),
+        ("GET /repos", Method::GET, "/api/v1/repos", Body::None),
         (
             "POST /repos",
-            test::TestRequest::post()
-                .uri("/api/v1/repos")
-                .set_json(serde_json::json!({
-                    "owner": "o", "name": "n", "clone_url": "file:///tmp/x"
-                })),
+            Method::POST,
+            "/api/v1/repos",
+            Body::Json(
+                serde_json::json!({ "owner": "o", "name": "n", "clone_url": "file:///tmp/x" }),
+            ),
         ),
         (
             "GET /repos/{id}",
-            test::TestRequest::get().uri("/api/v1/repos/abc"),
+            Method::GET,
+            "/api/v1/repos/abc",
+            Body::None,
         ),
         (
             "PATCH /repos/{id}",
-            test::TestRequest::patch()
-                .uri("/api/v1/repos/abc")
-                .set_json(serde_json::json!({ "enabled": true })),
+            Method::PATCH,
+            "/api/v1/repos/abc",
+            Body::Json(serde_json::json!({ "enabled": true })),
         ),
         (
             "POST /repos/{id}/enabled",
-            test::TestRequest::post()
-                .uri("/api/v1/repos/abc/enabled")
-                .set_json(serde_json::json!({ "enabled": false })),
+            Method::POST,
+            "/api/v1/repos/abc/enabled",
+            Body::Json(serde_json::json!({ "enabled": false })),
         ),
         (
             "DELETE /repos/{id}",
-            test::TestRequest::delete().uri("/api/v1/repos/abc"),
+            Method::DELETE,
+            "/api/v1/repos/abc",
+            Body::None,
         ),
         (
             "POST /repos/{id}/runs",
-            test::TestRequest::post()
-                .uri("/api/v1/repos/abc/runs")
-                .set_json(serde_json::json!({})),
+            Method::POST,
+            "/api/v1/repos/abc/runs",
+            Body::Json(serde_json::json!({})),
         ),
-        ("GET /runs", test::TestRequest::get().uri("/api/v1/runs")),
+        ("GET /runs", Method::GET, "/api/v1/runs", Body::None),
         (
             "GET /runs/{id}",
-            test::TestRequest::get().uri("/api/v1/runs/abc"),
+            Method::GET,
+            "/api/v1/runs/abc",
+            Body::None,
         ),
         (
             "POST /runs/{id}/cancel",
-            test::TestRequest::post().uri("/api/v1/runs/abc/cancel"),
+            Method::POST,
+            "/api/v1/runs/abc/cancel",
+            Body::None,
         ),
         (
             "GET /jobs/{id}/logs",
-            test::TestRequest::get().uri("/api/v1/jobs/abc/logs"),
+            Method::GET,
+            "/api/v1/jobs/abc/logs",
+            Body::None,
         ),
     ]
 }
@@ -123,61 +171,61 @@ fn authenticated_routes() -> Vec<(&'static str, test::TestRequest)> {
 // Resolution
 // ---------------------------------------------------------------------------
 
-#[actix_web::test]
+#[tokio::test]
 async fn every_declared_route_resolves_to_a_handler() {
-    for (name, request) in authenticated_routes() {
+    for (name, method, path, body) in authenticated_routes() {
         assert_ne!(
-            status_with_auth(false, request).await,
+            status_with_auth(false, method, path, body).await,
             StatusCode::NOT_FOUND,
             "{name} did not resolve"
         );
     }
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn triggering_a_run_resolves() {
     // The one that was broken, on its own so a failure names it.
     assert_ne!(
         status_with_auth(
             false,
-            test::TestRequest::post()
-                .uri("/api/v1/repos/some-id/runs")
-                .set_json(serde_json::json!({})),
+            Method::POST,
+            "/api/v1/repos/some-id/runs",
+            Body::Json(serde_json::json!({}))
         )
         .await,
         StatusCode::NOT_FOUND
     );
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn an_undeclared_route_is_a_404() {
     // The check that keeps the tests above from being tautologies.
     assert_eq!(
-        status_with_auth(false, test::TestRequest::get().uri("/api/v1/nonsense")).await,
+        status_with_auth(false, Method::GET, "/api/v1/nonsense", Body::None).await,
         StatusCode::NOT_FOUND
     );
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn an_unknown_provider_is_a_404() {
     assert_eq!(
         status_with_auth(
             false,
-            test::TestRequest::post()
-                .uri("/api/v1/webhooks/gitlab")
-                .set_payload("{}"),
+            Method::POST,
+            "/api/v1/webhooks/gitlab",
+            Body::Json(serde_json::json!({}))
         )
         .await,
         StatusCode::NOT_FOUND
     );
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn the_queue_refuses_an_in_memory_database_rather_than_using_it() {
     // A queue on top of one would look like it worked and lose every queued run
     // on restart.
     assert_eq!(
-        status_with_auth(false, test::TestRequest::get().uri("/api/v1/runs")).await,
+        status_with_auth(false, Method::GET, "/api/v1/runs", Body::None).await,
         StatusCode::SERVICE_UNAVAILABLE
     );
 }
@@ -186,26 +234,26 @@ async fn the_queue_refuses_an_in_memory_database_rather_than_using_it() {
 // Auth
 // ---------------------------------------------------------------------------
 
-#[actix_web::test]
+#[tokio::test]
 async fn the_api_needs_a_token() {
-    for (name, request) in authenticated_routes() {
+    for (name, method, path, body) in authenticated_routes() {
         assert_eq!(
-            status_with_auth(true, request).await,
+            status_with_auth(true, method, path, body).await,
             StatusCode::UNAUTHORIZED,
             "{name} should have required a token"
         );
     }
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn webhooks_are_reachable_without_a_token() {
     // A provider has no realm token; its delivery is authenticated by its
     // signature instead.
     let status = status_with_auth(
         true,
-        test::TestRequest::post()
-            .uri("/api/v1/webhooks/github")
-            .set_payload("{}"),
+        Method::POST,
+        "/api/v1/webhooks/github",
+        Body::Json(serde_json::json!({})),
     )
     .await;
 

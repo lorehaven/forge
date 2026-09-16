@@ -1,29 +1,25 @@
-//! The realm's user administration pages.
-//!
-//! Plain forms with a POST and a redirect, like the login page next door, rather
-//! than the htmx pages switchboard uses: gatehouse has no other interactive
-//! surface, and a form that works without JavaScript is one less thing between an
-//! administrator and getting back into the estate.
-//!
-//! Every mutation goes through [`crate::realm`], which the JSON API also calls -
-//! so "the realm must keep an admin" is enforced once, not once per surface.
+//! Realm user administration: plain POST-and-redirect forms, no JS required.
+//! Mutations go through [`crate::realm`], shared with the JSON API.
 
 use crate::catalog::PermissionCatalog;
 use crate::realm::{self, RealmError, UserChanges};
 use crate::ui::common::{UiPageKind, render_page, ui_path};
-use actix_web::{HttpRequest, HttpResponse, Responder, get, post, web};
-use quench_auth::actix::routers::ui::get_user_from_req;
-use quench_auth::prelude::{Actions, Claims, JwtConfig, Permissions, Role, SessionDb, User};
+use async_trait::async_trait;
+use http::StatusCode;
+use quench_auth::domain::auth::{Actions, Permissions, Role, User};
+use quench_auth::domain::jwt::{Claims, JwtConfig};
+use quench_auth::domain::session::SessionDb;
+use quench_auth::http::routers::ui::get_user_from_req;
 use quench_db::prelude::Db;
+use quench_http::prelude::{
+    Form, FromRequest, HttpError, Inject, Path, Query, Request, Response, get, post,
+};
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::sync::Arc;
 
-/// `Element` has no conditional attribute setter, and `selected`/`disabled` are
-/// exactly the attributes that want one - they are either present or absent, with
-/// no falsy value.
+/// `Element` has no conditional attribute setter for present/absent attrs.
 trait AttrIf {
     fn attr_if(self, condition: bool, key: &str, value: &str) -> Self;
 }
@@ -49,92 +45,96 @@ pub struct Notice {
     pub ok: Option<String>,
 }
 
-// ---------------------------------------------------------------------------
-// Guard
-// ---------------------------------------------------------------------------
+// --- Guard ---
 
-/// Who the caller is, once established they hold the `gatehouse` catalog
-/// action a page or form needs.
-///
-/// Three outcomes rather than two: no session goes to the login page, a session
-/// lacking the action gets a 403 page. Bouncing a signed-in, insufficiently
-/// privileged user to the login form would look like their session had expired.
-///
-/// `Claims::can` treats a wildcard role (`admin`/`service`) as satisfying any
-/// action, `gatehouse`'s included - so a real admin keeps reaching every page
-/// below with no separate check, which is exactly the "emergency" fallback
-/// these per-action gates are meant to make otherwise unnecessary.
-enum Access {
-    Yes(Claims),
-    NotSignedIn,
-    NotPermitted,
-}
-
-async fn access_for(req: &HttpRequest, config: &JwtConfig, action: &str) -> Access {
-    match get_user_from_req(req, config).await {
-        None => Access::NotSignedIn,
-        Some(claims) if claims.can("gatehouse", action) => Access::Yes(claims),
-        Some(claims) => {
-            tracing::warn!(
-                "{} opened an admin page without gatehouse:{action}",
-                claims.sub
-            );
-            Access::NotPermitted
+/// One extractor per catalog action - a route without a gate won't compile.
+macro_rules! admin_actor {
+    ($name:ident, $action:literal) => {
+        pub enum $name {
+            Yes(Claims),
+            NotSignedIn,
+            NotPermitted,
         }
-    }
-}
 
-/// Every page and every form starts here, naming the one action it needs.
-/// `Ok` carries the actor's full claims - realm rules need the username, and
-/// rendering needs to know what else this actor may do, to avoid offering a
-/// control that would only 403 if used.
-macro_rules! actor {
-    ($req:expr, $config:expr, $action:expr) => {
-        match access_for(&$req, &$config, $action).await {
-            Access::Yes(claims) => claims,
-            Access::NotSignedIn => return super::auth::login_redirect(),
-            Access::NotPermitted => return forbidden_page(),
+        #[async_trait]
+        impl FromRequest for $name {
+            async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+                let Ok(config) = req.container().get::<JwtConfig>() else {
+                    return Ok(Self::NotSignedIn);
+                };
+                match get_user_from_req(req, &config).await {
+                    None => Ok(Self::NotSignedIn),
+                    Some(claims) if claims.can("gatehouse", $action) => Ok(Self::Yes(claims)),
+                    Some(claims) => {
+                        tracing::warn!(
+                            "{} opened an admin page without gatehouse:{}",
+                            claims.sub,
+                            $action
+                        );
+                        Ok(Self::NotPermitted)
+                    }
+                }
+            }
+        }
+
+        impl $name {
+            fn claims(self) -> Result<Claims, Response> {
+                match self {
+                    Self::Yes(claims) => Ok(claims),
+                    Self::NotSignedIn => Err(super::auth::login_redirect()),
+                    Self::NotPermitted => Err(forbidden_page()),
+                }
+            }
         }
     };
 }
 
-// ---------------------------------------------------------------------------
-// Pages
-// ---------------------------------------------------------------------------
+admin_actor!(ReadUsersActor, "read-users");
+admin_actor!(CreateUserActor, "create-user");
+admin_actor!(EditUserActor, "edit-user");
+admin_actor!(DeleteUserActor, "delete-user");
+admin_actor!(ManagePermissionsActor, "manage-permissions");
 
-#[get("/admin/users")]
+// --- Pages ---
+
+#[get("/ui/admin/users")]
 pub async fn users_page(
-    req: HttpRequest,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    notice: web::Query<Notice>,
-) -> impl Responder {
-    let actor = actor!(req, config, "read-users");
+    actor: ReadUsersActor,
+    Query(notice): Query<Notice>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    let actor = match actor.claims() {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
     render_list(&db, &actor, &notice).await
 }
 
-#[get("/admin/users/")]
+#[get("/ui/admin/users/")]
 pub async fn users_page_slash(
-    req: HttpRequest,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    notice: web::Query<Notice>,
-) -> impl Responder {
-    let actor = actor!(req, config, "read-users");
+    actor: ReadUsersActor,
+    Query(notice): Query<Notice>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    let actor = match actor.claims() {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
     render_list(&db, &actor, &notice).await
 }
 
-#[get("/admin/users/{username}")]
+#[get("/ui/admin/users/{username}")]
 pub async fn edit_user(
-    req: HttpRequest,
-    path: web::Path<String>,
-    config: web::Data<JwtConfig>,
-    catalog: web::Data<PermissionCatalog>,
-    db: web::Data<Db>,
-    notice: web::Query<Notice>,
-) -> impl Responder {
-    let actor = actor!(req, config, "read-users");
-    let username = path.into_inner();
+    actor: ReadUsersActor,
+    Path(username): Path<String>,
+    Query(notice): Query<Notice>,
+    Inject(catalog): Inject<PermissionCatalog>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    let actor = match actor.claims() {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
 
     match realm::get(&db, &username).await {
         Ok(user) => render_edit(&catalog, &user, &actor, &notice),
@@ -142,9 +142,7 @@ pub async fn edit_user(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Forms
-// ---------------------------------------------------------------------------
+// --- Forms ---
 
 #[derive(Deserialize)]
 pub struct CreateForm {
@@ -154,30 +152,27 @@ pub struct CreateForm {
     pub role: Option<String>,
 }
 
-#[post("/admin/users")]
+#[post("/ui/admin/users")]
 pub async fn create_user(
-    req: HttpRequest,
-    form: web::Form<CreateForm>,
-    config: web::Data<JwtConfig>,
-    catalog: web::Data<PermissionCatalog>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    let actor = actor!(req, config, "create-user");
-    let form = form.into_inner();
+    actor: CreateUserActor,
+    Form(form): Form<CreateForm>,
+    Inject(catalog): Inject<PermissionCatalog>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    let actor = match actor.claims() {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
     let actor_is_admin = actor.has_role(Role::Admin.as_str());
-    // Only an admin's create form carries a role field at all (see
-    // `create_panel`); anyone else's submission is forced to `User` regardless
-    // of what a tampered form might claim - `realm::create` enforces the same
-    // rule, this is defense in depth, not the boundary itself.
+    // Non-admin submissions are forced to `User` here too - defense in depth,
+    // `realm::create` is the real boundary.
     let roles = if actor_is_admin {
         vec![parse_role(form.role.as_deref())]
     } else {
         vec![Role::User]
     };
 
-    // Deliberately no permissions here: a new user starts with no access, and
-    // the edit page is where it is granted. Two steps, but the first one cannot
-    // accidentally hand out the estate.
+    // No permissions on create - a new user starts with none, granted on edit.
     match realm::create(
         &db,
         &catalog,
@@ -190,8 +185,7 @@ pub async fn create_user(
     )
     .await
     {
-        // Straight to the editor, since a user with no grants cannot do anything
-        // yet and granting is the obvious next thing.
+        // Straight to the editor - granting access is the obvious next step.
         Ok(user) => redirect(&format!(
             "/admin/users/{}?ok=created",
             urlencoding::encode(&user.username)
@@ -200,45 +194,38 @@ pub async fn create_user(
     }
 }
 
-/// The edit form, read as a flat map.
-///
-/// A declared struct cannot express one field per service-and-action when the
-/// catalog defines them at runtime, so the permission controls are named
-/// `perm_<service>_<action>` and probed out of the map one at a time.
-#[post("/admin/users/{username}")]
+/// Read as a flat map: catalog actions are runtime data, so permission
+/// fields are named `perm_<service>_<action>` and probed individually.
+#[post("/ui/admin/users/{username}")]
 pub async fn save_user(
-    req: HttpRequest,
-    path: web::Path<String>,
-    form: web::Form<HashMap<String, String>>,
-    config: web::Data<JwtConfig>,
-    catalog: web::Data<PermissionCatalog>,
-    db: web::Data<Db>,
-    sessions: web::Data<Arc<SessionDb>>,
-) -> impl Responder {
-    let actor = actor!(req, config, "edit-user");
-    let username = path.into_inner();
-    let form = form.into_inner();
+    actor: EditUserActor,
+    Path(username): Path<String>,
+    Form(form): Form<HashMap<String, String>>,
+    Inject(catalog): Inject<PermissionCatalog>,
+    Inject(db): Inject<Db>,
+    Inject(sessions): Inject<SessionDb>,
+) -> Response {
+    let actor = match actor.claims() {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
     let actor_is_admin = actor.has_role(Role::Admin.as_str());
 
-    // Read before writing so a resource-scoped grant set through the API -
-    // this form has no field for one - survives a save made through the plain
-    // checkbox matrix instead of being silently dropped.
+    // Read before writing so a resource-scoped grant (no checkbox for it) survives.
     let existing_permissions = match realm::get(&db, &username).await {
         Ok(user) => user.get_permissions(),
         Err(err) => return back_to_list(&err),
     };
 
     let changes = UserChanges {
-        // An empty password box means "leave it alone", not "set an empty
-        // password" - the realm would reject the latter anyway.
+        // Empty box means "leave it alone", not "set an empty password".
         password: form
             .get("password")
             .map(String::as_str)
             .filter(|value| !value.is_empty())
             .map(str::to_string),
-        // Only an admin's form carries a role field at all (see `render_edit`);
-        // its absence means "leave roles alone", not "reset to user" - editing
-        // an admin's password must not silently demote them.
+        // Absent role field means "leave alone", not "reset to user" - avoids
+        // silently demoting an admin via their own password-only edit.
         roles: form
             .get("role")
             .map(String::as_str)
@@ -280,18 +267,19 @@ pub struct ApplyTemplateForm {
     pub template: String,
 }
 
-#[post("/admin/users/{username}/template")]
+#[post("/ui/admin/users/{username}/template")]
 pub async fn apply_template(
-    req: HttpRequest,
-    path: web::Path<String>,
-    form: web::Form<ApplyTemplateForm>,
-    config: web::Data<JwtConfig>,
-    catalog: web::Data<PermissionCatalog>,
-    db: web::Data<Db>,
-    sessions: web::Data<Arc<SessionDb>>,
-) -> impl Responder {
-    let actor = actor!(req, config, "manage-permissions");
-    let username = path.into_inner();
+    actor: ManagePermissionsActor,
+    Path(username): Path<String>,
+    Form(form): Form<ApplyTemplateForm>,
+    Inject(catalog): Inject<PermissionCatalog>,
+    Inject(db): Inject<Db>,
+    Inject(sessions): Inject<SessionDb>,
+) -> Response {
+    let actor = match actor.claims() {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
 
     match realm::apply_template(
         &db,
@@ -299,7 +287,7 @@ pub async fn apply_template(
         &sessions,
         &actor.sub,
         &username,
-        &form.into_inner().template,
+        &form.template,
     )
     .await
     {
@@ -315,16 +303,17 @@ pub async fn apply_template(
     }
 }
 
-#[post("/admin/users/{username}/delete")]
+#[post("/ui/admin/users/{username}/delete")]
 pub async fn delete_user(
-    req: HttpRequest,
-    path: web::Path<String>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    sessions: web::Data<Arc<SessionDb>>,
-) -> impl Responder {
-    let actor = actor!(req, config, "delete-user");
-    let username = path.into_inner();
+    actor: DeleteUserActor,
+    Path(username): Path<String>,
+    Inject(db): Inject<Db>,
+    Inject(sessions): Inject<SessionDb>,
+) -> Response {
+    let actor = match actor.claims() {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
 
     match realm::delete(&db, &sessions, &actor.sub, &username).await {
         Ok(()) => redirect("/admin/users?ok=deleted"),
@@ -336,19 +325,18 @@ pub async fn delete_user(
     }
 }
 
-/// Support recovery: disable/enable, unlock, and force-disable MFA. Gated on
-/// `edit-user` like `save_user` itself, rather than a new catalog action -
-/// each is a lighter-weight variant of the same "change this account"
-/// capability the save form already needs.
-#[post("/admin/users/{username}/disable")]
+/// Support recovery: disable/enable, unlock, force-disable MFA - all gated
+/// on `edit-user`, the same "change this account" capability as save.
+#[post("/ui/admin/users/{username}/disable")]
 pub async fn disable_user(
-    req: HttpRequest,
-    path: web::Path<String>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    let actor = actor!(req, config, "edit-user");
-    let username = path.into_inner();
+    actor: EditUserActor,
+    Path(username): Path<String>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    let actor = match actor.claims() {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
     if username == actor.sub {
         return back_to_edit(&username, &RealmError::SelfDisable);
     }
@@ -362,15 +350,15 @@ pub async fn disable_user(
     }
 }
 
-#[post("/admin/users/{username}/enable")]
+#[post("/ui/admin/users/{username}/enable")]
 pub async fn enable_user(
-    req: HttpRequest,
-    path: web::Path<String>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    let _actor = actor!(req, config, "edit-user");
-    let username = path.into_inner();
+    actor: EditUserActor,
+    Path(username): Path<String>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    if let Err(response) = actor.claims() {
+        return response;
+    }
 
     match realm::set_disabled(&db, &username, false).await {
         Ok(_) => redirect(&format!(
@@ -381,15 +369,15 @@ pub async fn enable_user(
     }
 }
 
-#[post("/admin/users/{username}/unlock")]
+#[post("/ui/admin/users/{username}/unlock")]
 pub async fn unlock_user(
-    req: HttpRequest,
-    path: web::Path<String>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    let _actor = actor!(req, config, "edit-user");
-    let username = path.into_inner();
+    actor: EditUserActor,
+    Path(username): Path<String>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    if let Err(response) = actor.claims() {
+        return response;
+    }
 
     match realm::unlock(&db, &username).await {
         Ok(_) => redirect(&format!(
@@ -400,18 +388,16 @@ pub async fn unlock_user(
     }
 }
 
-/// Recovery when a user has lost their authenticator - the admin never sees
-/// the secret, only whether MFA is on, and can turn it off so the user can
-/// sign in and re-enroll.
-#[post("/admin/users/{username}/mfa/disable")]
+/// Lost-authenticator recovery: admin never sees the secret, just turns MFA off.
+#[post("/ui/admin/users/{username}/mfa/disable")]
 pub async fn disable_user_mfa(
-    req: HttpRequest,
-    path: web::Path<String>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    let _actor = actor!(req, config, "edit-user");
-    let username = path.into_inner();
+    actor: EditUserActor,
+    Path(username): Path<String>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    if let Err(response) = actor.claims() {
+        return response;
+    }
 
     match realm::disable_mfa(&db, &username).await {
         Ok(()) => redirect(&format!(
@@ -422,22 +408,8 @@ pub async fn disable_user_mfa(
     }
 }
 
-/// Reads one `perm_<service>_<action>` checkbox per action the catalog
-/// declares, for every service it declares - then folds in whatever `existing`
-/// held that this form never had a box for.
-///
-/// Driven by the catalog rather than by what the form happens to contain, so a
-/// field named after a service or action this deployment does not know about
-/// is ignored here rather than rejected later - the same posture
-/// `permissions_from_form` has always taken, just with one more level of
-/// nesting now that a service can declare more than two grantable actions.
-///
-/// The fold-in matters because the checkbox matrix only ever renders and reads
-/// back plain, enumerated actions (`permission_row`, `catalog.actions_for`) - a
-/// resource-scoped grant like `conveyor:project:<id>:write`, only settable
-/// through the API today, has no checkbox here at all. Without this, saving
-/// any other change on this page - a password, a role - would rebuild the
-/// permissions map from checkboxes alone and silently erase it.
+/// Reads catalog-declared checkboxes, then folds in whatever `existing` held
+/// with no checkbox (e.g. an API-only resource-scoped grant) so it survives.
 pub fn permissions_from_form(
     catalog: &PermissionCatalog,
     form: &HashMap<String, String>,
@@ -475,17 +447,14 @@ pub fn permissions_from_form(
     result
 }
 
-/// A missing or unrecognised role is an ordinary user. Never an admin: a mangled
-/// form should not be able to grant the realm away.
+/// Missing/unrecognised role is a plain user, never admin.
 pub fn parse_role(value: Option<&str>) -> Role {
     value.and_then(Role::parse).unwrap_or(Role::User)
 }
 
-// ---------------------------------------------------------------------------
-// Rendering
-// ---------------------------------------------------------------------------
+// --- Rendering ---
 
-pub async fn render_list(db: &web::Data<Db>, actor: &Claims, notice: &Notice) -> HttpResponse {
+pub async fn render_list(db: &Db, actor: &Claims, notice: &Notice) -> Response {
     let people = match realm::list(db).await {
         Ok(people) => people,
         Err(err) => return error_page(&err),
@@ -508,13 +477,11 @@ pub async fn render_list(db: &web::Data<Db>, actor: &Claims, notice: &Notice) ->
         )
         .child(rows);
 
-    // Omitted, not disabled, for an actor who cannot create a user - there is
-    // nothing honest to disable a form control into when the whole action is
-    // out of reach.
+    // Omitted, not disabled, when the action is out of reach entirely.
     let can_create = actor.can("gatehouse", "create-user");
 
     render_page(
-        HttpResponse::Ok(),
+        StatusCode::OK,
         content().class("admin-content").child(
             div()
                 .class("admin-container")
@@ -534,8 +501,7 @@ pub fn user_row(user: &User, actor: &str) -> Element {
         .collect::<Vec<_>>()
         .join(", ");
 
-    // The wildcard is spelled out rather than shown as an empty grant list, which
-    // would read as "this admin can do nothing".
+    // Spelled out, not an empty list - which would read as "can do nothing".
     let summary = if user.has_wildcard() {
         span()
             .class("admin-grant-all")
@@ -588,10 +554,8 @@ pub fn user_row(user: &User, actor: &str) -> Element {
         )
 }
 
-/// `show_role_select` is only ever true for a literal admin - anyone else's
-/// created user is forced to `User` server-side regardless (see
-/// `create_user`), so offering the control at all would just be an invitation
-/// to a 403 the field's absence avoids entirely.
+/// `show_role_select` is true only for a literal admin - anyone else's role
+/// is forced server-side regardless, so the field's absence avoids a 403.
 pub fn create_panel(show_role_select: bool) -> Element {
     let mut create_form = form()
         .attr("method", "post")
@@ -659,7 +623,7 @@ pub fn render_edit(
     user: &User,
     actor: &Claims,
     notice: &Notice,
-) -> HttpResponse {
+) -> Response {
     let wildcard = user.has_wildcard();
     let held = user.get_permissions();
     let actor_is_admin = actor.has_role(Role::Admin.as_str());
@@ -667,11 +631,7 @@ pub fn render_edit(
     let can_delete = actor.can("gatehouse", "delete-user");
     let can_manage_perms = actor.can("gatehouse", "manage-permissions");
 
-    // Disabled, not omitted, for a wildcard target - the note below explains
-    // why. Also disabled for a viewer who can see this page (`read-users`) but
-    // cannot change it (`edit-user`) - see the `can_edit` branch: that case
-    // renders these same disabled boxes outside any `<form>`, so there is
-    // nothing for a viewer's browser to submit at all.
+    // Disabled, not omitted, for a wildcard target or a read-only viewer.
     let matrix_disabled = wildcard || !can_edit;
     let mut matrix = div().class("admin-matrix");
     for service in catalog.service_names() {
@@ -693,9 +653,8 @@ pub fn render_edit(
             )
             .child(role_select("role", &primary_role(user)))
     } else {
-        // Not editable and not submitted (see `save_user`): assigning `admin`
-        // or `service` stays behind the literal role, not a catalog action, so
-        // this reads as plain text instead of a control that would only 403.
+        // Plain text, not a control: assigning admin/service isn't a catalog
+        // action this actor holds, so a control here would only 403.
         div()
             .child(
                 label()
@@ -724,9 +683,7 @@ pub fn render_edit(
             .child(matrix);
 
         if wildcard {
-            // Shown, not hidden: an admin whose matrix rendered as all-none
-            // would look like a bug, and the note is what explains the
-            // disabled controls.
+            // Shown, not hidden - explains why the matrix reads all-none.
             edit_form = edit_form.child(
                 p().class("admin-hint")
                     .attr("data-i18n", "ui_admin_wildcard_note"),
@@ -762,9 +719,7 @@ pub fn render_edit(
                     .flatten(),
             )
     } else {
-        // A viewer who can see this account (`read-users`) but not change it
-        // (`edit-user`): the same information, no `<form>` around any of it -
-        // there is nothing here for their browser to submit.
+        // Read-only viewer: same information, no `<form>` to submit it in.
         div()
             .class("panel admin-panel")
             .child(div().class("panel-title").text(&user.username))
@@ -783,9 +738,7 @@ pub fn render_edit(
 
     let status = status_panel(user, can_edit, user.username != actor.sub);
 
-    // No delete control for yourself: the realm would refuse it, and offering a
-    // button that always fails is worse than not offering one. Also none
-    // without `delete-user`, for the same reason.
+    // No self-delete control: the realm would refuse it anyway.
     let danger = (can_delete && user.username != actor.sub).then(|| {
         div()
             .class("panel admin-panel admin-danger")
@@ -820,7 +773,7 @@ pub fn render_edit(
     });
 
     render_page(
-        HttpResponse::Ok(),
+        StatusCode::OK,
         content().class("admin-content").child(
             div()
                 .class("admin-container")
@@ -838,12 +791,8 @@ pub fn render_edit(
     )
 }
 
-/// Lifecycle and security state: when the account was created, when it last
-/// signed in, and the three "an admin can undo this" states a locked-out or
-/// mis-enrolled user cannot fix themselves. Shown to anyone who can see the
-/// page; the action forms that touch it are omitted (not disabled) for a
-/// viewer who cannot edit, same reasoning `render_edit`'s own `details`
-/// branch gives.
+/// Lifecycle/security state, plus the "an admin can undo this" actions - the
+/// latter omitted, not disabled, for a viewer who can't edit.
 pub fn status_panel(user: &User, can_edit: bool, allow_self_action: bool) -> Element {
     let mut rows = div()
         .class("meta-list")
@@ -988,15 +937,7 @@ fn format_timestamp(value: Option<chrono::DateTime<chrono::Utc>>) -> String {
     }
 }
 
-/// One service, one checkbox per action the catalog declares for it.
-///
-/// A flat set of independent boxes rather than a level select: the catalog
-/// can declare any number of actions per service (switchboard's `launch`,
-/// `stop`, `delete-model`), and there is no ordering between them to make a
-/// single-select control honest. Action names are the operator's own
-/// vocabulary from `permissions.toml`, not application copy, so they render as
-/// plain text rather than through `data-i18n` - the same treatment the
-/// service name next to them already gets.
+/// One checkbox per catalog action, flat (no inherent order between them).
 fn permission_row(
     catalog: &PermissionCatalog,
     service: &str,
@@ -1007,9 +948,7 @@ fn permission_row(
     let mut checkboxes = div().class("admin-matrix-actions");
     for action in catalog.actions_for(service) {
         let field = format!("perm_{service}_{action}");
-        // What the target actually holds - independent of whether *this*
-        // viewer may change it. Conflating the two would show a read-only
-        // viewer every box checked, not what the user in front of them holds.
+        // What the target holds, independent of whether this viewer may edit it.
         let checked = target_wildcard || held.is_some_and(|actions| actions.contains(action));
 
         let mut box_ = checkbox()
@@ -1034,10 +973,8 @@ fn permission_row(
         .child(checkboxes)
 }
 
-/// A one-click way to assign a named bundle of grants instead of checking each
-/// box by hand. Hidden entirely when the catalog defines no templates, and for
-/// a wildcard user - a role that already reaches everything has no use for a
-/// bundle that reaches less.
+/// Assigns a named grant bundle in one click. Hidden with no templates, or
+/// for a wildcard user who already reaches everything.
 fn template_picker(catalog: &PermissionCatalog, user: &User) -> Option<Element> {
     if user.has_wildcard() {
         return None;
@@ -1101,11 +1038,7 @@ fn role_select(id: &str, selected: &Role) -> Element {
     control
 }
 
-/// The role the select shows for a user holding more than one.
-///
-/// The data model allows a set; this control does not, because a wildcard makes
-/// any additional role irrelevant. Showing the most privileged one keeps the form
-/// honest about what the user can currently do.
+/// The role shown for a user holding more than one: most-privileged wins.
 fn primary_role(user: &User) -> Role {
     let roles = user.get_roles();
     for candidate in [Role::Admin, Role::Service] {
@@ -1116,11 +1049,8 @@ fn primary_role(user: &User) -> Role {
     Role::User
 }
 
-/// Success or failure from the write that redirected here.
-///
-/// The error key is checked against the ones `RealmError` can produce rather than
-/// being trusted from the query string, so a hand-crafted link cannot put
-/// arbitrary text on the page.
+/// Error key is validated against `RealmError`'s own set, not trusted
+/// from the query string - a hand-crafted link can't inject arbitrary text.
 pub fn notice_banner(notice: &Notice) -> Option<Element> {
     if let Some(key) = notice.err.as_deref().and_then(known_error_key) {
         return Some(p().class("admin-notice error").attr("data-i18n", key));
@@ -1154,17 +1084,15 @@ fn known_error_key(candidate: &str) -> Option<&'static str> {
     .find(|known| *known == candidate)
 }
 
-fn redirect(path: &str) -> HttpResponse {
-    HttpResponse::Found()
-        .append_header(("Location", ui_path(path)))
-        .finish()
+fn redirect(path: &str) -> Response {
+    Response::new(StatusCode::FOUND).header("Location", ui_path(path))
 }
 
-fn back_to_list(err: &RealmError) -> HttpResponse {
+fn back_to_list(err: &RealmError) -> Response {
     redirect(&format!("/admin/users?err={}", err.i18n_key()))
 }
 
-fn back_to_edit(username: &str, err: &RealmError) -> HttpResponse {
+fn back_to_edit(username: &str, err: &RealmError) -> Response {
     redirect(&format!(
         "/admin/users/{}?err={}",
         urlencoding::encode(username),
@@ -1172,9 +1100,9 @@ fn back_to_edit(username: &str, err: &RealmError) -> HttpResponse {
     ))
 }
 
-pub fn forbidden_page() -> HttpResponse {
+pub fn forbidden_page() -> Response {
     render_page(
-        HttpResponse::Forbidden(),
+        StatusCode::FORBIDDEN,
         content().class("admin-content").child(
             div().class("admin-container").child(
                 div()
@@ -1196,9 +1124,9 @@ pub fn forbidden_page() -> HttpResponse {
     )
 }
 
-pub fn error_page(err: &RealmError) -> HttpResponse {
+pub fn error_page(err: &RealmError) -> Response {
     render_page(
-        HttpResponse::build(err.status()),
+        err.status(),
         content().class("admin-content").child(
             div().class("admin-container").child(
                 p().class("admin-notice error")
@@ -1207,4 +1135,18 @@ pub fn error_page(err: &RealmError) -> HttpResponse {
         ),
         UiPageKind::Admin,
     )
+}
+
+pub fn register_routes() {
+    let _ = users_page as fn(_, _, _) -> _;
+    let _ = users_page_slash as fn(_, _, _) -> _;
+    let _ = edit_user as fn(_, _, _, _, _) -> _;
+    let _ = create_user as fn(_, _, _, _) -> _;
+    let _ = save_user as fn(_, _, _, _, _, _) -> _;
+    let _ = apply_template as fn(_, _, _, _, _, _) -> _;
+    let _ = delete_user as fn(_, _, _, _) -> _;
+    let _ = disable_user as fn(_, _, _) -> _;
+    let _ = enable_user as fn(_, _, _) -> _;
+    let _ = unlock_user as fn(_, _, _) -> _;
+    let _ = disable_user_mfa as fn(_, _, _) -> _;
 }

@@ -1,18 +1,19 @@
 //! Unit tests for `routers/files.rs`.
 
-use actix_multipart::form::bytes::Bytes as MultipartBytes;
-use actix_multipart::form::text::Text;
-use actix_web::App;
-use actix_web::http::StatusCode;
-use actix_web::test as actix_test;
-use actix_web::web::{Bytes, Data};
-use quench_auth::prelude::JwtConfig;
+use bytes::Bytes;
+use http::{HeaderMap, Method, StatusCode, Uri};
+use http_body_util::BodyExt;
+use quench_auth::domain::jwt::JwtConfig;
 use quench_db::InMemoryDb;
 use quench_db::prelude::{Crud, Db};
+use quench_http::di::ContainerBuilder;
+use quench_http::endpoint::Endpoint;
+use quench_http::request::Request;
 use sage_service::clients::switchboard::SwitchboardClient;
 use sage_service::clients::vllm::VllmClient;
 use sage_service::domain::models::{Conversation, File, Project};
 use sage_service::routers::files::*;
+use std::sync::Arc;
 
 #[test]
 fn extension_lookup_is_case_insensitive_and_uses_the_last_dot() {
@@ -82,23 +83,39 @@ fn ensure_switchboard_env() {
     envmnt::set("SWITCHBOARD_URL", "http://127.0.0.1:1");
 }
 
-/// A macro rather than a function: the `Service` type `init_service`
-/// returns is unnameable without adding `actix-http` as a direct
-/// dependency just for this, so it's built inline where full inference
-/// applies instead.
-macro_rules! test_app {
-    ($db:expr) => {{
-        ensure_switchboard_env();
-        actix_test::init_service(
-            App::new()
-                .app_data(Data::new($db))
-                .app_data(Data::new(JwtConfig::for_tests()))
-                .app_data(Data::new(SwitchboardClient::new()))
-                .app_data(Data::new(VllmClient::new()))
-                .service(scope()),
-        )
+async fn app(
+    db: Db,
+    jwt_config: JwtConfig,
+) -> (Arc<dyn Endpoint>, Arc<quench_http::di::Container>) {
+    ensure_switchboard_env();
+    sage_service::routers::files::register_routes();
+    let container = ContainerBuilder::new()
+        .provide(db)
+        .provide(jwt_config)
+        .provide(SwitchboardClient::new())
+        .provide(VllmClient::new())
+        .build()
         .await
-    }};
+        .unwrap();
+    (
+        quench_starter::http::discover_and_mount("/"),
+        Arc::new(container),
+    )
+}
+
+fn req(method: Method, path: &str, container: &Arc<quench_http::di::Container>) -> Request {
+    Request::new(
+        method,
+        path.parse::<Uri>().unwrap(),
+        HeaderMap::new(),
+        quench_http::body::InboundBody::from_bytes(Bytes::new()),
+        container.clone(),
+    )
+}
+
+async fn json_body<T: serde::de::DeserializeOwned>(resp: quench_http::response::Response) -> T {
+    let collected = resp.into_hyper().into_body().collect().await.expect("body");
+    serde_json::from_slice(&collected.to_bytes()).expect("valid json body")
 }
 
 async fn seed_conversation(db: &Db, id: &str, owner: &str, project_id: Option<&str>) {
@@ -147,120 +164,130 @@ async fn seed_file(db: &Db, id: &str, owner: &str, conversation_id: Option<&str>
     file
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn list_files_requires_exactly_one_scope() {
-    let app = test_app!(db());
-    let req = actix_test::TestRequest::get()
-        .uri("/api/v1/files")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(db(), JwtConfig::for_tests()).await;
+    let resp = app
+        .call(req(Method::GET, "/api/v1/files", &container))
+        .await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn list_files_reports_not_found_for_a_missing_conversation() {
-    let app = test_app!(db());
-    let req = actix_test::TestRequest::get()
-        .uri("/api/v1/files?conversation_id=missing")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(db(), JwtConfig::for_tests()).await;
+    let resp = app
+        .call(req(
+            Method::GET,
+            "/api/v1/files?conversation_id=missing",
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn list_files_is_forbidden_for_someone_elses_conversation() {
     let db = db();
     seed_conversation(&db, "conv-1", "bob", None).await;
-    let app = test_app!(db);
-    let req = actix_test::TestRequest::get()
-        .uri("/api/v1/files?conversation_id=conv-1")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(db, JwtConfig::for_tests()).await;
+    let resp = app
+        .call(req(
+            Method::GET,
+            "/api/v1/files?conversation_id=conv-1",
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn list_files_returns_the_owners_conversation_files() {
     let db = db();
     seed_conversation(&db, "conv-1", "admin", None).await;
     seed_file(&db, "file-1", "admin", Some("conv-1")).await;
-    let app = test_app!(db);
-    let req = actix_test::TestRequest::get()
-        .uri("/api/v1/files?conversation_id=conv-1")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(db, JwtConfig::for_tests()).await;
+    let resp = app
+        .call(req(
+            Method::GET,
+            "/api/v1/files?conversation_id=conv-1",
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let files: Vec<File> = actix_test::read_body_json(resp).await;
+    let files: Vec<File> = json_body(resp).await;
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].id, "file-1");
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn list_files_reports_not_found_for_a_missing_project() {
-    let app = test_app!(db());
-    let req = actix_test::TestRequest::get()
-        .uri("/api/v1/files?project_id=missing")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(db(), JwtConfig::for_tests()).await;
+    let resp = app
+        .call(req(
+            Method::GET,
+            "/api/v1/files?project_id=missing",
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn list_files_is_forbidden_for_someone_elses_project() {
     let db = db();
     seed_project(&db, "proj-1", "bob").await;
-    let app = test_app!(db);
-    let req = actix_test::TestRequest::get()
-        .uri("/api/v1/files?project_id=proj-1")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(db, JwtConfig::for_tests()).await;
+    let resp = app
+        .call(req(
+            Method::GET,
+            "/api/v1/files?project_id=proj-1",
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn get_file_returns_not_found_for_a_missing_file() {
-    let app = test_app!(db());
-    let req = actix_test::TestRequest::get()
-        .uri("/api/v1/files/missing")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(db(), JwtConfig::for_tests()).await;
+    let resp = app
+        .call(req(Method::GET, "/api/v1/files/missing", &container))
+        .await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn get_file_is_forbidden_for_a_file_owned_by_someone_else() {
     let db = db();
     seed_file(&db, "file-1", "bob", None).await;
-    let app = test_app!(db);
-    let req = actix_test::TestRequest::get()
-        .uri("/api/v1/files/file-1")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(db, JwtConfig::for_tests()).await;
+    let resp = app
+        .call(req(Method::GET, "/api/v1/files/file-1", &container))
+        .await;
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn get_file_returns_the_owners_file() {
     let db = db();
     seed_file(&db, "file-1", "admin", None).await;
-    let app = test_app!(db);
-    let req = actix_test::TestRequest::get()
-        .uri("/api/v1/files/file-1")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(db, JwtConfig::for_tests()).await;
+    let resp = app
+        .call(req(Method::GET, "/api/v1/files/file-1", &container))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn delete_file_removes_the_owners_file() {
     let db = db();
     seed_file(&db, "file-1", "admin", None).await;
-    let app = test_app!(db.clone());
-    let req = actix_test::TestRequest::delete()
-        .uri("/api/v1/files/file-1")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(db.clone(), JwtConfig::for_tests()).await;
+    let resp = app
+        .call(req(Method::DELETE, "/api/v1/files/file-1", &container))
+        .await;
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
 
     assert!(
@@ -272,133 +299,121 @@ async fn delete_file_removes_the_owners_file() {
     );
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn delete_file_is_forbidden_for_a_file_owned_by_someone_else() {
     let db = db();
     seed_file(&db, "file-1", "bob", None).await;
-    let app = test_app!(db);
-    let req = actix_test::TestRequest::delete()
-        .uri("/api/v1/files/file-1")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(db, JwtConfig::for_tests()).await;
+    let resp = app
+        .call(req(Method::DELETE, "/api/v1/files/file-1", &container))
+        .await;
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn download_file_reports_not_implemented_without_postgres() {
     let db = db();
     seed_file(&db, "file-1", "admin", None).await;
-    let app = test_app!(db);
-    let req = actix_test::TestRequest::get()
-        .uri("/api/v1/files/file-1/download")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(db, JwtConfig::for_tests()).await;
+    let resp = app
+        .call(req(
+            Method::GET,
+            "/api/v1/files/file-1/download",
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::NOT_IMPLEMENTED);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn list_chunks_returns_not_found_for_a_missing_file() {
-    let app = test_app!(db());
-    let req = actix_test::TestRequest::get()
-        .uri("/api/v1/files/missing/chunks")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(db(), JwtConfig::for_tests()).await;
+    let resp = app
+        .call(req(Method::GET, "/api/v1/files/missing/chunks", &container))
+        .await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn list_chunks_returns_an_empty_list_for_a_file_with_none() {
     let db = db();
     seed_file(&db, "file-1", "admin", None).await;
-    let app = test_app!(db);
-    let req = actix_test::TestRequest::get()
-        .uri("/api/v1/files/file-1/chunks")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(db, JwtConfig::for_tests()).await;
+    let resp = app
+        .call(req(Method::GET, "/api/v1/files/file-1/chunks", &container))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let chunks: Vec<serde_json::Value> = actix_test::read_body_json(resp).await;
+    let chunks: Vec<serde_json::Value> = json_body(resp).await;
     assert!(chunks.is_empty());
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn reprocess_file_conflicts_when_already_processing() {
     let db = db();
     let mut file = seed_file(&db, "file-1", "admin", None).await;
     file.status = sage_service::files::STATUS_PROCESSING.to_string();
     db.repository::<File>().update(&file).await.unwrap();
-    let app = test_app!(db);
-    let req = actix_test::TestRequest::post()
-        .uri("/api/v1/files/file-1/reprocess")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(db, JwtConfig::for_tests()).await;
+    let resp = app
+        .call(req(
+            Method::POST,
+            "/api/v1/files/file-1/reprocess",
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::CONFLICT);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn reprocess_file_rejects_images() {
     let db = db();
     let mut file = seed_file(&db, "file-1", "admin", None).await;
     file.mime_type = "image/png".to_string();
     db.repository::<File>().update(&file).await.unwrap();
-    let app = test_app!(db);
-    let req = actix_test::TestRequest::post()
-        .uri("/api/v1/files/file-1/reprocess")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(db, JwtConfig::for_tests()).await;
+    let resp = app
+        .call(req(
+            Method::POST,
+            "/api/v1/files/file-1/reprocess",
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn reprocess_file_returns_not_found_for_a_missing_file() {
-    let app = test_app!(db());
-    let req = actix_test::TestRequest::post()
-        .uri("/api/v1/files/missing/reprocess")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(db(), JwtConfig::for_tests()).await;
+    let resp = app
+        .call(req(
+            Method::POST,
+            "/api/v1/files/missing/reprocess",
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn every_handler_is_unauthorized_without_a_claim_when_auth_is_required() {
     // Setting `auth_enabled` on this instance directly (rather than via the
     // `SERVICE_AUTH_ENABLED` env var `JwtConfig::for_tests()` would
     // otherwise read) avoids a process-wide race with every other test in
     // this file, which all expect the default disabled/admin-bypass config.
-    ensure_switchboard_env();
     let mut jwt_config = JwtConfig::for_tests();
     jwt_config.auth_enabled = true;
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(Data::new(db()))
-            .app_data(Data::new(jwt_config))
-            .app_data(Data::new(SwitchboardClient::new()))
-            .app_data(Data::new(VllmClient::new()))
-            .service(scope()),
-    )
-    .await;
+    let (app, container) = app(db(), jwt_config).await;
 
-    for req in [
-        actix_test::TestRequest::get()
-            .uri("/api/v1/files")
-            .to_request(),
-        actix_test::TestRequest::get()
-            .uri("/api/v1/files/x")
-            .to_request(),
-        actix_test::TestRequest::delete()
-            .uri("/api/v1/files/x")
-            .to_request(),
-        actix_test::TestRequest::get()
-            .uri("/api/v1/files/x/download")
-            .to_request(),
-        actix_test::TestRequest::get()
-            .uri("/api/v1/files/x/chunks")
-            .to_request(),
-        actix_test::TestRequest::post()
-            .uri("/api/v1/files/x/reprocess")
-            .to_request(),
+    for (method, path) in [
+        (Method::GET, "/api/v1/files"),
+        (Method::GET, "/api/v1/files/x"),
+        (Method::DELETE, "/api/v1/files/x"),
+        (Method::GET, "/api/v1/files/x/download"),
+        (Method::GET, "/api/v1/files/x/chunks"),
+        (Method::POST, "/api/v1/files/x/reprocess"),
     ] {
-        let resp = actix_test::call_service(&app, req).await;
+        let resp = app.call(req(method, path, &container)).await;
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
     }
 }
@@ -415,17 +430,14 @@ fn upload_form(
     project_id: Option<&str>,
 ) -> FileUploadForm {
     FileUploadForm {
-        file: MultipartBytes {
-            data: Bytes::copy_from_slice(data),
-            content_type: None,
-            file_name: Some(file_name.to_string()),
-        },
-        conversation_id: conversation_id.map(|c| Text(c.to_string())),
-        project_id: project_id.map(|p| Text(p.to_string())),
+        file_name: Some(file_name.to_string()),
+        file_data: Bytes::copy_from_slice(data),
+        conversation_id: conversation_id.map(str::to_string),
+        project_id: project_id.map(str::to_string),
     }
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn create_uploaded_file_requires_exactly_one_scope() {
     ensure_switchboard_env();
     let db = db();
@@ -439,7 +451,7 @@ async fn create_uploaded_file_requires_exactly_one_scope() {
     assert_eq!(err.status(), StatusCode::BAD_REQUEST);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn create_uploaded_file_rejects_an_unsupported_extension() {
     ensure_switchboard_env();
     let db = db();
@@ -453,7 +465,7 @@ async fn create_uploaded_file_rejects_an_unsupported_extension() {
     assert_eq!(err.status(), StatusCode::BAD_REQUEST);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn create_uploaded_file_rejects_an_empty_file() {
     ensure_switchboard_env();
     let db = db();
@@ -467,7 +479,7 @@ async fn create_uploaded_file_rejects_an_empty_file() {
     assert_eq!(err.status(), StatusCode::BAD_REQUEST);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn create_uploaded_file_reports_not_found_for_a_missing_conversation() {
     ensure_switchboard_env();
     let db = db();
@@ -481,7 +493,7 @@ async fn create_uploaded_file_reports_not_found_for_a_missing_conversation() {
     assert_eq!(err.status(), StatusCode::NOT_FOUND);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn create_uploaded_file_is_forbidden_for_someone_elses_conversation() {
     ensure_switchboard_env();
     let db = db();
@@ -496,7 +508,7 @@ async fn create_uploaded_file_is_forbidden_for_someone_elses_conversation() {
     assert_eq!(err.status(), StatusCode::FORBIDDEN);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn create_uploaded_file_reports_not_found_for_a_missing_project() {
     ensure_switchboard_env();
     let db = db();
@@ -517,7 +529,7 @@ async fn create_uploaded_file_reports_not_found_for_a_missing_project() {
 /// Postgres and is left uncovered here; see the module docs on
 /// `create_uploaded_file` for why `InMemory` is refused rather than
 /// silently degraded.
-#[actix_web::test]
+#[tokio::test]
 async fn create_uploaded_file_refuses_to_write_without_postgres() {
     ensure_switchboard_env();
     let db = db();

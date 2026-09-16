@@ -1,8 +1,5 @@
-//! A repository conveyor is willing to build.
-//!
-//! Registration is explicit. Conveyor runs code that a repository supplies, so
-//! "any webhook that arrives" is not an acceptable trigger - a repo has to be
-//! added here before a delivery for it is worth verifying.
+//! A repository conveyor is willing to build. Registration is explicit - a repo must be added
+//! here before a webhook delivery for it is worth verifying.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -45,9 +42,7 @@ impl fmt::Display for Provider {
 pub struct Repo {
     pub id: String,
     pub provider: Provider,
-    /// Organisation or user, as the provider names it. Independent of
-    /// `project_id`: this is the provider's identity for the repo (what a
-    /// webhook slug names), not its place in conveyor's own tree.
+    /// The provider's identity for the repo (what a webhook slug names) - independent of `project_id`.
     pub owner: String,
     pub name: String,
     pub clone_url: String,

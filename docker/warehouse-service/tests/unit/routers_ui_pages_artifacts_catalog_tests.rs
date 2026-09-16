@@ -1,13 +1,15 @@
-use actix_web::body::MessageBody;
-use actix_web::{App, test as actix_test, web};
+use crate::support;
+
 use chrono::Utc;
-use quench_auth::prelude::JwtConfig;
-use quench_db::{Db, InMemoryDb};
+use http::{Method, StatusCode};
+use http_body_util::BodyExt;
+use quench_auth::domain::jwt::JwtConfig;
+use quench_db::InMemoryDb;
+use quench_db::prelude::Db;
+use quench_http::endpoint::Endpoint;
 use sqlx::types::Json;
 use warehouse_service::domain::artifact::{ArtifactMetadata, ArtifactVersion, Platform};
-use warehouse_service::routers::ui::pages::artifacts::catalog::{
-    artifacts_catalog, render_artifacts_page, unyank_version, yank_version,
-};
+use warehouse_service::routers::ui::pages::artifacts::catalog::render_artifacts_page;
 
 fn version(program: &str, platform: Platform, code: i64, yanked: bool) -> ArtifactVersion {
     ArtifactVersion {
@@ -34,9 +36,9 @@ fn version(program: &str, platform: Platform, code: i64, yanked: bool) -> Artifa
     }
 }
 
-fn body_html(resp: actix_web::HttpResponse) -> String {
-    let body = resp.into_body().try_into_bytes().unwrap();
-    String::from_utf8(body.to_vec()).unwrap()
+async fn body_html(resp: quench_http::response::Response) -> String {
+    let collected = resp.into_hyper().into_body().collect().await.unwrap();
+    String::from_utf8(collected.to_bytes().to_vec()).unwrap()
 }
 
 fn jwt_config(auth_enabled: bool) -> JwtConfig {
@@ -45,35 +47,35 @@ fn jwt_config(auth_enabled: bool) -> JwtConfig {
     config
 }
 
-fn in_memory_db() -> web::Data<Db> {
-    web::Data::new(Db::InMemory(InMemoryDb::new()))
+fn in_memory_db() -> Db {
+    Db::InMemory(InMemoryDb::new())
 }
 
 // -----------------------------------------------------------------
 // render_artifacts_page
 // -----------------------------------------------------------------
 
-#[test]
-fn render_with_no_versions_shows_the_empty_state() {
+#[tokio::test]
+async fn render_with_no_versions_shows_the_empty_state() {
     let resp = render_artifacts_page(&[], None, None, None, false);
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
-    assert!(body_html(resp).contains("ui_artifact_empty"));
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert!(body_html(resp).await.contains("ui_artifact_empty"));
 }
 
-#[test]
-fn render_lists_programs_in_the_tree() {
+#[tokio::test]
+async fn render_lists_programs_in_the_tree() {
     let versions = vec![
         version("com.example.one", Platform::Android, 1, false),
         version("com.example.two", Platform::Linux, 5, false),
     ];
-    let html = body_html(render_artifacts_page(&versions, None, None, None, false));
+    let html = body_html(render_artifacts_page(&versions, None, None, None, false)).await;
     assert!(html.contains("com.example.one"));
     assert!(html.contains("com.example.two"));
     assert!(html.contains("ui_artifact_empty_select_version"));
 }
 
-#[test]
-fn render_selects_the_newest_version_of_the_chosen_program_platform() {
+#[tokio::test]
+async fn render_selects_the_newest_version_of_the_chosen_program_platform() {
     let versions = vec![
         version("com.example.app", Platform::Android, 1, false),
         version("com.example.app", Platform::Android, 3, false),
@@ -85,13 +87,14 @@ fn render_selects_the_newest_version_of_the_chosen_program_platform() {
         Some("android"),
         None,
         false,
-    ));
+    ))
+    .await;
     assert!(html.contains("ui_artifact_meta_version_code"));
     assert!(html.contains("3.0"));
 }
 
-#[test]
-fn render_shows_a_yank_button_only_when_the_caller_may_manage() {
+#[tokio::test]
+async fn render_shows_a_yank_button_only_when_the_caller_may_manage() {
     let versions = vec![version("com.example.app", Platform::Android, 7, false)];
 
     let with_manage = body_html(render_artifacts_page(
@@ -100,7 +103,8 @@ fn render_shows_a_yank_button_only_when_the_caller_may_manage() {
         Some("android"),
         Some(7),
         true,
-    ));
+    ))
+    .await;
     assert!(with_manage.contains("ui_artifact_yank"));
     assert!(with_manage.contains("/artifacts/yank"));
 
@@ -110,13 +114,14 @@ fn render_shows_a_yank_button_only_when_the_caller_may_manage() {
         Some("android"),
         Some(7),
         false,
-    ));
+    ))
+    .await;
     assert!(!without.contains("ui_artifact_yank"));
     assert!(!without.contains("/artifacts/yank"));
 }
 
-#[test]
-fn render_offers_unyank_for_a_yanked_version() {
+#[tokio::test]
+async fn render_offers_unyank_for_a_yanked_version() {
     let versions = vec![version("com.example.app", Platform::Linux, 9, true)];
     let html = body_html(render_artifacts_page(
         &versions,
@@ -124,7 +129,8 @@ fn render_offers_unyank_for_a_yanked_version() {
         Some("linux"),
         Some(9),
         true,
-    ));
+    ))
+    .await;
     assert!(html.contains("ui_artifact_unyank"));
     assert!(html.contains("ui_status_yanked"));
 }
@@ -134,97 +140,99 @@ fn render_offers_unyank_for_a_yanked_version() {
 // deterministically reachable branches are login-redirect and disabled)
 // -----------------------------------------------------------------
 
-#[actix_web::test]
+async fn app(
+    jwt_config: JwtConfig,
+    db: Db,
+) -> (
+    std::sync::Arc<dyn Endpoint>,
+    std::sync::Arc<quench_http::di::Container>,
+) {
+    warehouse_service::routers::ui::pages::artifacts::catalog::register_routes();
+    let container = support::container_builder()
+        .provide(jwt_config)
+        .provide(db)
+        .build()
+        .await
+        .unwrap();
+    support::app(container).await
+}
+
+#[tokio::test]
 async fn catalog_redirects_to_login_when_unauthenticated() {
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(jwt_config(true)))
-            .app_data(in_memory_db())
-            .service(artifacts_catalog),
-    )
-    .await;
-    let req = actix_test::TestRequest::get()
-        .uri("/artifacts/catalog")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(jwt_config(true), in_memory_db()).await;
+    let resp = app
+        .call(support::req(
+            Method::GET,
+            "/ui/artifacts/catalog",
+            &container,
+        ))
+        .await;
     assert!(resp.status().is_redirection());
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn catalog_renders_when_authenticated() {
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(jwt_config(false)))
-            .app_data(in_memory_db())
-            .service(artifacts_catalog),
-    )
-    .await;
-    let req = actix_test::TestRequest::get()
-        .uri("/artifacts/catalog")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let (app, container) = app(jwt_config(false), in_memory_db()).await;
+    let resp = app
+        .call(support::req(
+            Method::GET,
+            "/ui/artifacts/catalog",
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn yank_redirects_to_login_without_a_session() {
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(jwt_config(true)))
-            .app_data(in_memory_db())
-            .service(yank_version),
-    )
-    .await;
-    let req = actix_test::TestRequest::post()
-        .uri("/artifacts/yank")
-        .set_form([
-            ("program", "com.example.app"),
-            ("platform", "android"),
-            ("version_code", "1"),
-        ])
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(jwt_config(true), in_memory_db()).await;
+    let resp = app
+        .call(support::form_req(
+            Method::POST,
+            "/ui/artifacts/yank",
+            &[
+                ("program", "com.example.app"),
+                ("platform", "android"),
+                ("version_code", "1"),
+            ],
+            &container,
+        ))
+        .await;
     assert!(resp.status().is_redirection());
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn yank_is_not_found_when_the_feature_is_disabled() {
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(jwt_config(false)))
-            .app_data(in_memory_db())
-            .service(yank_version),
-    )
-    .await;
-    let req = actix_test::TestRequest::post()
-        .uri("/artifacts/yank")
-        .set_form([
-            ("program", "com.example.app"),
-            ("platform", "android"),
-            ("version_code", "1"),
-        ])
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::NOT_FOUND);
+    let (app, container) = app(jwt_config(false), in_memory_db()).await;
+    let resp = app
+        .call(support::form_req(
+            Method::POST,
+            "/ui/artifacts/yank",
+            &[
+                ("program", "com.example.app"),
+                ("platform", "android"),
+                ("version_code", "1"),
+            ],
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn unyank_is_not_found_when_the_feature_is_disabled() {
-    let app = actix_test::init_service(
-        App::new()
-            .app_data(web::Data::new(jwt_config(false)))
-            .app_data(in_memory_db())
-            .service(unyank_version),
-    )
-    .await;
-    let req = actix_test::TestRequest::post()
-        .uri("/artifacts/unyank")
-        .set_form([
-            ("program", "com.example.app"),
-            ("platform", "android"),
-            ("version_code", "1"),
-        ])
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::NOT_FOUND);
+    let (app, container) = app(jwt_config(false), in_memory_db()).await;
+    let resp = app
+        .call(support::form_req(
+            Method::POST,
+            "/ui/artifacts/unyank",
+            &[
+                ("program", "com.example.app"),
+                ("platform", "android"),
+                ("version_code", "1"),
+            ],
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }

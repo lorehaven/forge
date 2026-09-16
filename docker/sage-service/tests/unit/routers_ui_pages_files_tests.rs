@@ -1,16 +1,19 @@
 //! Unit tests for `routers/ui/pages/files.rs`.
 
-use actix_web::App;
-use actix_web::http::StatusCode;
-use actix_web::test as actix_test;
-use actix_web::web::Data;
-use quench_auth::prelude::JwtConfig;
+use bytes::Bytes;
+use http::{HeaderMap, Method, StatusCode, Uri};
+use http_body_util::BodyExt;
+use quench_auth::domain::jwt::JwtConfig;
 use quench_db::InMemoryDb;
 use quench_db::prelude::{Crud, Db};
+use quench_http::di::ContainerBuilder;
+use quench_http::endpoint::Endpoint;
+use quench_http::request::Request;
 use sage_service::clients::switchboard::SwitchboardClient;
 use sage_service::clients::vllm::VllmClient;
 use sage_service::domain::models::File;
 use sage_service::routers::ui::pages::files::*;
+use std::sync::Arc;
 
 fn db() -> Db {
     Db::InMemory(InMemoryDb::new())
@@ -28,19 +31,36 @@ fn ensure_switchboard_env() {
     envmnt::set("SWITCHBOARD_URL", "http://127.0.0.1:1");
 }
 
-macro_rules! test_app {
-    ($db:expr) => {{
-        ensure_switchboard_env();
-        actix_test::init_service(
-            App::new()
-                .app_data(Data::new($db))
-                .app_data(Data::new(JwtConfig::for_tests()))
-                .app_data(Data::new(SwitchboardClient::new()))
-                .app_data(Data::new(VllmClient::new()))
-                .service(scope()),
-        )
+async fn app(db: Db) -> (Arc<dyn Endpoint>, Arc<quench_http::di::Container>) {
+    ensure_switchboard_env();
+    register_routes();
+    let container = ContainerBuilder::new()
+        .provide(db)
+        .provide(JwtConfig::for_tests())
+        .provide(SwitchboardClient::new())
+        .provide(VllmClient::new())
+        .build()
         .await
-    }};
+        .unwrap();
+    (
+        quench_starter::http::discover_and_mount("/"),
+        Arc::new(container),
+    )
+}
+
+fn req(method: Method, path: &str, container: &Arc<quench_http::di::Container>) -> Request {
+    Request::new(
+        method,
+        path.parse::<Uri>().unwrap(),
+        HeaderMap::new(),
+        quench_http::body::InboundBody::from_bytes(Bytes::new()),
+        container.clone(),
+    )
+}
+
+async fn body_text(resp: quench_http::response::Response) -> String {
+    let collected = resp.into_hyper().into_body().collect().await.expect("body");
+    String::from_utf8_lossy(&collected.to_bytes()).into_owned()
 }
 
 fn file(id: &str, owner: &str, status: &str) -> File {
@@ -194,7 +214,7 @@ async fn load_owned_files_skips_ids_the_caller_does_not_own_or_that_do_not_exist
 // detach
 // ---------------------------------------------------------------------------
 
-#[actix_test]
+#[tokio::test]
 async fn detach_removes_a_staged_file_owned_by_the_caller() {
     let db = db();
     db.repository::<File>()
@@ -202,27 +222,24 @@ async fn detach_removes_a_staged_file_owned_by_the_caller() {
         .await
         .unwrap();
 
-    let app = test_app!(db.clone());
-    let req = actix_test::TestRequest::post()
-        .uri("/files/detach/f1")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(db.clone()).await;
+    let resp = app
+        .call(req(Method::POST, "/ui/files/detach/f1", &container))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
     assert!(db.repository::<File>().read("f1").await.unwrap().is_none());
 }
 
-#[actix_test]
+#[tokio::test]
 async fn detach_leaves_a_file_already_linked_to_a_message_alone() {
     let db = db();
     let mut f = file("f1", "admin", "uploaded");
     f.message_id = Some("m1".to_string());
     db.repository::<File>().create(&f).await.unwrap();
 
-    let app = test_app!(db.clone());
-    let req = actix_test::TestRequest::post()
-        .uri("/files/detach/f1")
-        .to_request();
-    actix_test::call_service(&app, req).await;
+    let (app, container) = app(db.clone()).await;
+    app.call(req(Method::POST, "/ui/files/detach/f1", &container))
+        .await;
     assert!(db.repository::<File>().read("f1").await.unwrap().is_some());
 }
 
@@ -230,7 +247,7 @@ async fn detach_leaves_a_file_already_linked_to_a_message_alone() {
 // chip_status
 // ---------------------------------------------------------------------------
 
-#[actix_test]
+#[tokio::test]
 async fn chip_status_returns_the_rendered_chip_for_an_owned_file() {
     let db = db();
     db.repository::<File>()
@@ -238,17 +255,16 @@ async fn chip_status_returns_the_rendered_chip_for_an_owned_file() {
         .await
         .unwrap();
 
-    let app = test_app!(db);
-    let req = actix_test::TestRequest::get()
-        .uri("/files/chip/f1")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(db).await;
+    let resp = app
+        .call(req(Method::GET, "/ui/files/chip/f1", &container))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
-    let body = actix_test::read_body(resp).await;
-    assert!(String::from_utf8_lossy(&body).contains("chip-f1"));
+    let body = body_text(resp).await;
+    assert!(body.contains("chip-f1"));
 }
 
-#[actix_test]
+#[tokio::test]
 async fn chip_status_is_forbidden_for_a_file_owned_by_someone_else() {
     let db = db();
     db.repository::<File>()
@@ -256,23 +272,25 @@ async fn chip_status_is_forbidden_for_a_file_owned_by_someone_else() {
         .await
         .unwrap();
 
-    let app = test_app!(db);
-    let req = actix_test::TestRequest::get()
-        .uri("/files/chip/f1")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(db).await;
+    let resp = app
+        .call(req(Method::GET, "/ui/files/chip/f1", &container))
+        .await;
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
 }
 
-#[actix_test]
+#[tokio::test]
 async fn chip_status_returns_an_empty_body_when_the_file_is_gone() {
-    let app = test_app!(db());
-    let req = actix_test::TestRequest::get()
-        .uri("/files/chip/does-not-exist")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(db()).await;
+    let resp = app
+        .call(req(
+            Method::GET,
+            "/ui/files/chip/does-not-exist",
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
-    let body = actix_test::read_body(resp).await;
+    let body = body_text(resp).await;
     assert!(body.is_empty());
 }
 
@@ -280,7 +298,7 @@ async fn chip_status_returns_an_empty_body_when_the_file_is_gone() {
 // delete_modal / delete_file_ui
 // ---------------------------------------------------------------------------
 
-#[actix_test]
+#[tokio::test]
 async fn delete_modal_names_the_owned_file() {
     let db = db();
     db.repository::<File>()
@@ -288,27 +306,29 @@ async fn delete_modal_names_the_owned_file() {
         .await
         .unwrap();
 
-    let app = test_app!(db);
-    let req = actix_test::TestRequest::get()
-        .uri("/files/delete-modal/f1")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(db).await;
+    let resp = app
+        .call(req(Method::GET, "/ui/files/delete-modal/f1", &container))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
-    let body = actix_test::read_body(resp).await;
-    assert!(String::from_utf8_lossy(&body).contains("notes.txt"));
+    let body = body_text(resp).await;
+    assert!(body.contains("notes.txt"));
 }
 
-#[actix_test]
+#[tokio::test]
 async fn delete_modal_is_not_found_for_a_missing_file() {
-    let app = test_app!(db());
-    let req = actix_test::TestRequest::get()
-        .uri("/files/delete-modal/missing")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(db()).await;
+    let resp = app
+        .call(req(
+            Method::GET,
+            "/ui/files/delete-modal/missing",
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[actix_test]
+#[tokio::test]
 async fn delete_file_ui_deletes_an_owned_file_and_returns_an_oob_removal() {
     let db = db();
     db.repository::<File>()
@@ -316,21 +336,19 @@ async fn delete_file_ui_deletes_an_owned_file_and_returns_an_oob_removal() {
         .await
         .unwrap();
 
-    let app = test_app!(db.clone());
-    let req = actix_test::TestRequest::post()
-        .uri("/files/delete/f1")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(db.clone()).await;
+    let resp = app
+        .call(req(Method::POST, "/ui/files/delete/f1", &container))
+        .await;
     assert_eq!(resp.status(), StatusCode::OK);
     assert!(db.repository::<File>().read("f1").await.unwrap().is_none());
 
-    let body = actix_test::read_body(resp).await;
-    let html = String::from_utf8_lossy(&body);
+    let html = body_text(resp).await;
     assert!(html.contains("hx-swap-oob"));
     assert!(html.contains("file-item-f1"));
 }
 
-#[actix_test]
+#[tokio::test]
 async fn delete_file_ui_is_forbidden_for_a_file_owned_by_someone_else() {
     let db = db();
     db.repository::<File>()
@@ -338,11 +356,10 @@ async fn delete_file_ui_is_forbidden_for_a_file_owned_by_someone_else() {
         .await
         .unwrap();
 
-    let app = test_app!(db.clone());
-    let req = actix_test::TestRequest::post()
-        .uri("/files/delete/f1")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    let (app, container) = app(db.clone()).await;
+    let resp = app
+        .call(req(Method::POST, "/ui/files/delete/f1", &container))
+        .await;
     assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     assert!(db.repository::<File>().read("f1").await.unwrap().is_some());
 }

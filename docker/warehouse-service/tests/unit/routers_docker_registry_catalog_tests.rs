@@ -1,8 +1,8 @@
 use crate::support;
 
-use actix_web::{App, test};
+use http::Method;
 use support::WithDockerStorageRoot as WithStorageRoot;
-use warehouse_service::routers::docker::registry::catalog::handle;
+use warehouse_service::routers::docker::register_routes;
 
 fn with_repos(repos: &[&str]) -> WithStorageRoot {
     let storage = WithStorageRoot::new();
@@ -17,48 +17,58 @@ struct CatalogResponseForTest {
     repositories: Vec<String>,
 }
 
-#[actix_web::test]
+async fn app() -> (
+    std::sync::Arc<dyn quench_http::endpoint::Endpoint>,
+    std::sync::Arc<quench_http::di::Container>,
+) {
+    register_routes();
+    let container = support::container_builder().build().await.unwrap();
+    support::app(container).await
+}
+
+#[tokio::test]
 async fn handle_lists_every_repository_when_under_the_default_page_size() {
     let _storage = with_repos(&["alpha", "beta"]);
-    let app = test::init_service(App::new().service(handle)).await;
-    let req = test::TestRequest::get().uri("/_catalog").to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
-    assert!(!resp.headers().contains_key("Link"));
+    let (app, container) = app().await;
+    let req = support::req(Method::GET, "/v2/_catalog", &container);
+    let resp = app.call(req).await;
+    assert_eq!(resp.status(), http::StatusCode::OK);
+    let (headers, body) = support::parts(resp).await;
+    assert!(!headers.contains_key("link"));
 
-    let body: CatalogResponseForTest = test::read_body_json(resp).await;
+    let body: CatalogResponseForTest = serde_json::from_str(&body).unwrap();
     assert_eq!(
         body.repositories,
         vec!["alpha".to_string(), "beta".to_string()]
     );
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn handle_paginates_with_n_and_sets_a_link_header_when_more_remain() {
     let _storage = with_repos(&["alpha", "beta", "gamma"]);
-    let app = test::init_service(App::new().service(handle)).await;
-    let req = test::TestRequest::get().uri("/_catalog?n=2").to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
-    let link = resp.headers().get("Link").unwrap().to_str().unwrap();
+    let (app, container) = app().await;
+    let req = support::req(Method::GET, "/v2/_catalog?n=2", &container);
+    let resp = app.call(req).await;
+    assert_eq!(resp.status(), http::StatusCode::OK);
+    let (headers, body) = support::parts(resp).await;
+    let link = headers.get("link").unwrap().to_str().unwrap();
     assert!(link.contains("last=beta"), "{link}");
 
-    let body: CatalogResponseForTest = test::read_body_json(resp).await;
+    let body: CatalogResponseForTest = serde_json::from_str(&body).unwrap();
     assert_eq!(
         body.repositories,
         vec!["alpha".to_string(), "beta".to_string()]
     );
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn handle_resumes_after_the_last_seen_repository() {
     let _storage = with_repos(&["alpha", "beta", "gamma"]);
-    let app = test::init_service(App::new().service(handle)).await;
-    let req = test::TestRequest::get()
-        .uri("/_catalog?last=alpha")
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let body: CatalogResponseForTest = test::read_body_json(resp).await;
+    let (app, container) = app().await;
+    let req = support::req(Method::GET, "/v2/_catalog?last=alpha", &container);
+    let resp = app.call(req).await;
+    let body = support::json_body(resp).await;
+    let body: CatalogResponseForTest = serde_json::from_value(body).unwrap();
     assert_eq!(
         body.repositories,
         vec!["beta".to_string(), "gamma".to_string()]

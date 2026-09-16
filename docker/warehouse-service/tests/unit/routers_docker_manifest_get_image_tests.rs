@@ -1,10 +1,9 @@
 use crate::support;
 
-use actix_web::test as actix_test;
-use support::WithDockerStorageRoot as WithStorageRoot;
+use http::{Method, StatusCode};
 use warehouse_service::routers::docker::manifest::get_image::{
     DOCKER_MANIFEST_LIST_V2, DOCKER_MANIFEST_V2, OCI_IMAGE_INDEX_V1, OCI_IMAGE_MANIFEST_V1,
-    detect_manifest_media_type, handle, media_match, negotiate_media_type, parse_accept,
+    detect_manifest_media_type, media_match, negotiate_media_type, parse_accept,
 };
 use warehouse_service::utils::sha256::sha256_hex;
 
@@ -163,7 +162,7 @@ fn negotiate_media_type_is_none_when_nothing_matches() {
 // -----------------------------------------------------------------
 
 fn write_manifest_and_tag(
-    storage: &WithStorageRoot,
+    storage: &support::WithDockerStorageRoot,
     repo: &str,
     tag: &str,
     manifest: &[u8],
@@ -184,72 +183,96 @@ fn write_manifest_and_tag(
 
 const MANIFEST_JSON: &str = r#"{"schemaVersion": 2, "mediaType": "application/vnd.docker.distribution.manifest.v2+json", "config": {}, "layers": []}"#;
 
-#[actix_web::test]
+async fn app() -> (
+    std::sync::Arc<dyn quench_http::endpoint::Endpoint>,
+    std::sync::Arc<quench_http::di::Container>,
+) {
+    warehouse_service::routers::docker::manifest::get_image::register_routes();
+    let container = support::container_builder().build().await.unwrap();
+    support::app(container).await
+}
+
+#[tokio::test]
 async fn handle_rejects_an_invalid_repository_name() {
-    let _storage = WithStorageRoot::new();
-    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
-    let req = actix_test::TestRequest::get()
-        .uri("/..%2fetc/manifests/latest")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::BAD_REQUEST);
+    let _storage = support::WithDockerStorageRoot::new();
+    let (app, container) = app().await;
+    let resp = app
+        .call(support::req(
+            Method::GET,
+            "/v2/..%2fetc/manifests/latest",
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn handle_reports_manifest_unknown_for_a_missing_tag() {
-    let _storage = WithStorageRoot::new();
-    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
-    let req = actix_test::TestRequest::get()
-        .uri("/my-repo/manifests/latest")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::NOT_FOUND);
+    let _storage = support::WithDockerStorageRoot::new();
+    let (app, container) = app().await;
+    let resp = app
+        .call(support::req(
+            Method::GET,
+            "/v2/my-repo/manifests/latest",
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn handle_serves_a_manifest_resolved_by_tag() {
-    let storage = WithStorageRoot::new();
+    let storage = support::WithDockerStorageRoot::new();
     let digest = write_manifest_and_tag(&storage, "my-repo", "latest", MANIFEST_JSON.as_bytes());
 
-    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
-    let req = actix_test::TestRequest::get()
-        .uri("/my-repo/manifests/latest")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let (app, container) = app().await;
+    let resp = app
+        .call(support::req(
+            Method::GET,
+            "/v2/my-repo/manifests/latest",
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let (headers, body) = support::parts(resp).await;
     assert_eq!(
-        resp.headers().get("Docker-Content-Digest").unwrap(),
+        headers.get("docker-content-digest").unwrap(),
         digest.as_str()
     );
-    let body = actix_test::read_body(resp).await;
-    assert_eq!(&body[..], MANIFEST_JSON.as_bytes());
+    assert_eq!(body, MANIFEST_JSON);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn handle_serves_a_manifest_resolved_directly_by_digest() {
-    let storage = WithStorageRoot::new();
+    let storage = support::WithDockerStorageRoot::new();
     let digest = write_manifest_and_tag(&storage, "my-repo", "latest", MANIFEST_JSON.as_bytes());
 
-    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
-    let req = actix_test::TestRequest::get()
-        .uri(&format!("/my-repo/manifests/{digest}"))
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    let (app, container) = app().await;
+    let resp = app
+        .call(support::req(
+            Method::GET,
+            &format!("/v2/my-repo/manifests/{digest}"),
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn handle_rejects_a_tag_reference_containing_a_backslash() {
     // `validate_tag_reference` only rejects a backslash or more than one
     // path component - a tag like `not..valid` has neither (no `/` in
     // it, so `Path::new` sees one `Normal` component) and is syntactically
     // "valid" even though no such tag exists; that case is covered by
     // `handle_reports_manifest_unknown_for_a_missing_tag` instead.
-    let _storage = WithStorageRoot::new();
-    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
-    let req = actix_test::TestRequest::get()
-        .uri("/my-repo/manifests/a%5Cb")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::BAD_REQUEST);
+    let _storage = support::WithDockerStorageRoot::new();
+    let (app, container) = app().await;
+    let resp = app
+        .call(support::req(
+            Method::GET,
+            "/v2/my-repo/manifests/a%5Cb",
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }

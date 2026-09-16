@@ -3,8 +3,11 @@ use crate::routers::docker::{
     blob_path, manifest_path, repository_path, validate_digest, validate_tag_reference,
 };
 use crate::utils::sha256::sha256_hex;
-use actix_web::{HttpRequest, HttpResponse, Responder, put, web};
-use quench_starter::prelude::error;
+use async_trait::async_trait;
+use quench_http::prelude::{
+    Bytes, FromRequest, HttpError, Path, Request, Response, http::StatusCode, put,
+};
+use quench_starter::http::domain::error;
 use serde_json::{Number, Value};
 
 pub const DOCKER_MANIFEST_V2: &str = "application/vnd.docker.distribution.manifest.v2+json";
@@ -13,25 +16,29 @@ pub const DOCKER_MANIFEST_LIST_V2: &str =
 pub const OCI_IMAGE_MANIFEST_V1: &str = "application/vnd.oci.image.manifest.v1+json";
 pub const OCI_IMAGE_INDEX_V1: &str = "application/vnd.oci.image.index.v1+json";
 
-#[put("/{name:.+}/manifests/{reference}")]
-pub async fn handle(
-    req: HttpRequest,
-    path: web::Path<(String, String)>,
-    body: web::Bytes,
-) -> impl Responder {
-    let (name, reference) = path.into_inner();
+/// The `Content-Type` header, read via a local extractor (quench-http has none built in).
+pub struct ContentTypeHeader(Option<String>);
 
-    let content_type = req
-        .headers()
-        .get("Content-Type")
-        .and_then(|v| v.to_str().ok())
-        .and_then(normalize_media_type);
+#[async_trait]
+impl FromRequest for ContentTypeHeader {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        Ok(Self(req.header("content-type").map(str::to_string)))
+    }
+}
+
+#[put("/v2/{name:.+}/manifests/{reference}")]
+pub async fn handle(
+    Path((name, reference)): Path<(String, String)>,
+    ContentTypeHeader(content_type_raw): ContentTypeHeader,
+    Bytes(body): Bytes,
+) -> Response {
+    let content_type = content_type_raw.as_deref().and_then(normalize_media_type);
 
     if let Some(ct) = content_type
         && !is_supported_manifest_media_type(ct)
     {
         return error::response(
-            actix_web::http::StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
             error::UNSUPPORTED,
             "manifest media type unsupported",
         );
@@ -40,11 +47,7 @@ pub async fn handle(
     let body = match normalize_manifest_body(&body).await {
         Ok(body) => body,
         Err(message) => {
-            return error::response(
-                actix_web::http::StatusCode::BAD_REQUEST,
-                error::UNSUPPORTED,
-                message,
-            );
+            return error::response(StatusCode::BAD_REQUEST, error::UNSUPPORTED, message);
         }
     };
 
@@ -53,7 +56,7 @@ pub async fn handle(
 
     let Some(repo_path) = repository_path(&name) else {
         return error::response(
-            actix_web::http::StatusCode::BAD_REQUEST,
+            StatusCode::BAD_REQUEST,
             docker_error::NAME_UNKNOWN,
             "invalid repository name",
         );
@@ -61,7 +64,7 @@ pub async fn handle(
 
     if tokio::fs::create_dir_all(&repo_path).await.is_err() {
         return error::response(
-            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+            StatusCode::INTERNAL_SERVER_ERROR,
             error::UNSUPPORTED,
             "internal server error",
         );
@@ -70,7 +73,7 @@ pub async fn handle(
     // Save manifest by digest
     let Some(manifest_path) = manifest_path(&digest) else {
         return error::response(
-            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+            StatusCode::INTERNAL_SERVER_ERROR,
             error::UNSUPPORTED,
             "internal server error",
         );
@@ -81,7 +84,7 @@ pub async fn handle(
 
     if tokio::fs::write(&manifest_path, &body).await.is_err() {
         return error::response(
-            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+            StatusCode::INTERNAL_SERVER_ERROR,
             error::UNSUPPORTED,
             "internal server error",
         );
@@ -91,7 +94,7 @@ pub async fn handle(
     if !validate_digest(&reference) {
         if !validate_tag_reference(&reference) {
             return error::response(
-                actix_web::http::StatusCode::BAD_REQUEST,
+                StatusCode::BAD_REQUEST,
                 error::UNSUPPORTED,
                 "invalid manifest reference",
             );
@@ -105,10 +108,9 @@ pub async fn handle(
         let _ = tokio::fs::write(&tag_path, digest.as_bytes()).await;
     }
 
-    HttpResponse::Created()
-        .append_header(("Location", format!("/v2/{name}/manifests/{reference}")))
-        .append_header(("Docker-Content-Digest", digest))
-        .finish()
+    Response::new(StatusCode::CREATED)
+        .header("location", format!("/v2/{name}/manifests/{reference}"))
+        .header("docker-content-digest", digest)
 }
 
 pub async fn normalize_manifest_body(body: &[u8]) -> Result<Vec<u8>, &'static str> {
@@ -190,4 +192,8 @@ pub fn is_supported_manifest_media_type(media_type: &str) -> bool {
         media_type,
         DOCKER_MANIFEST_V2 | DOCKER_MANIFEST_LIST_V2 | OCI_IMAGE_MANIFEST_V1 | OCI_IMAGE_INDEX_V1
     )
+}
+
+pub fn register_routes() {
+    let _ = handle as fn(_, _, _) -> _;
 }

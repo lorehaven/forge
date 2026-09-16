@@ -1,12 +1,12 @@
 //! Unit tests for `providers/generic.rs`, and for the parts of
 //! `providers/mod.rs` that are not GitHub's.
 
-use actix_web::http::header::{HeaderMap, HeaderName, HeaderValue};
 use chrono::Utc;
 use conveyor_service::domain::{Provider, Repo, Status, Trigger};
 use conveyor_service::providers::{
     CommitState, CommitStatusReport, GenericProvider, GitProvider, Providers, sign_sha256,
 };
+use http::{HeaderMap, HeaderName, HeaderValue};
 use serde_json::json;
 
 const SECRET: &[u8] = b"shared with the sender";

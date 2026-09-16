@@ -1,12 +1,5 @@
-//! TOTP-based multi-factor authentication.
-//!
-//! Lives here rather than in `quench-auth` because verifying a code is
-//! interactive - only gatehouse's own login page ever challenges for one, no
-//! relying party's machine-to-machine path does - the same reasoning
-//! `keys.rs`'s signing-key crypto stays out of the shared library too.
-//! `User.mfa_secret` is an opaque, already-encrypted string as far as
-//! `quench-auth` is concerned; this module is the only code that ever
-//! decrypts or checks it.
+//! TOTP-based MFA. Lives here, not `quench-auth`, since only gatehouse's own
+//! login ever challenges for a code - the only code that decrypts the secret.
 
 use crate::crypto::{decrypt, encrypt, realm_cipher};
 use hmac::{Hmac, KeyInit, Mac};
@@ -15,10 +8,8 @@ use totp_rs::{Algorithm, Builder, Secret, Totp};
 
 const ISSUER: &str = "Forge";
 
-/// How long a "you already gave the right password, now give a code" token
-/// stays good for. Short enough that a stolen intermediate value is useless
-/// by the time anyone could do anything with it; long enough that fumbling
-/// an authenticator app open doesn't time out.
+/// Password-verified pending-MFA token lifetime - short enough a stolen one
+/// is useless, long enough not to time out fumbling for an authenticator app.
 const PENDING_TTL_SECS: i64 = 120;
 
 fn totp(secret: Secret, username: &str) -> anyhow::Result<Totp> {
@@ -34,15 +25,12 @@ fn totp(secret: Secret, username: &str) -> anyhow::Result<Totp> {
         .map_err(|err| anyhow::anyhow!("failed to build TOTP: {err}"))
 }
 
-/// A fresh random secret, base32-encoded for display (an authenticator app's
-/// "enter this code manually" fallback when it can't scan a QR).
+/// Fresh random secret, base32-encoded for manual-entry display.
 pub fn generate_secret() -> anyhow::Result<String> {
     Ok(Secret::generate().to_base32())
 }
 
-/// Encrypted at rest under the same key `keys.rs` uses for signing keys - see
-/// `crypto::realm_cipher`. `secret` is the base32 string from
-/// `generate_secret`.
+/// Encrypted at rest under the same key `keys.rs` uses for signing keys.
 pub fn encrypt_secret(secret: &str) -> anyhow::Result<String> {
     let cipher = realm_cipher()?;
     Ok(hex::encode(encrypt(&cipher, secret.as_bytes())))
@@ -55,10 +43,7 @@ pub fn decrypt_secret(encrypted_hex: &str) -> anyhow::Result<String> {
     Ok(String::from_utf8(plaintext)?)
 }
 
-/// `otpauth://totp/...` for a QR code or manual entry, shown once at
-/// enrollment - never reconstructable afterward without the plaintext
-/// secret, which is why enrollment is a one-shot "here it is, now prove you
-/// saved it" flow rather than something revisitable.
+/// `otpauth://totp/...` for the enrollment QR - shown once, never rebuilt.
 pub fn provisioning_uri(secret: &str, username: &str) -> anyhow::Result<String> {
     let secret = Secret::try_from_base32(secret)
         .map_err(|err| anyhow::anyhow!("invalid secret: {err:?}"))?;
@@ -67,8 +52,7 @@ pub fn provisioning_uri(secret: &str, username: &str) -> anyhow::Result<String> 
         .map_err(|err| anyhow::anyhow!("failed to build provisioning URI: {err}"))
 }
 
-/// Whether `code` is a valid current TOTP code for `secret` (base32, as
-/// returned by `generate_secret`/stored decrypted).
+/// Whether `code` is a valid current TOTP code for `secret` (base32).
 pub fn verify_code(secret: &str, code: &str) -> bool {
     let Ok(secret) = Secret::try_from_base32(secret) else {
         return false;
@@ -87,10 +71,8 @@ fn pending_key() -> anyhow::Result<Vec<u8>> {
     Ok(Sha256::digest(material.as_bytes()).to_vec())
 }
 
-/// Signs `username` plus an expiry into an opaque token, carried through the
-/// login → MFA-challenge form as a hidden field rather than a second
-/// server-side session store - see the module doc comment on why a stolen
-/// one is only useful for two minutes.
+/// Signs `username` plus an expiry, carried as a hidden form field instead
+/// of a server-side session store.
 pub fn sign_pending(username: &str) -> anyhow::Result<String> {
     let expires_at = chrono::Utc::now().timestamp() + PENDING_TTL_SECS;
     let payload = format!("{username}:{expires_at}");
@@ -101,8 +83,7 @@ pub fn sign_pending(username: &str) -> anyhow::Result<String> {
     Ok(format!("{payload}:{signature}"))
 }
 
-/// The username a pending token was signed for, if the signature checks out
-/// and it has not expired.
+/// The username a pending token was signed for, if valid and unexpired.
 pub fn verify_pending(token: &str) -> Option<String> {
     let (payload, signature) = token.rsplit_once(':')?;
     let (username, expires_at) = payload.rsplit_once(':')?;

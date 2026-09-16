@@ -82,10 +82,8 @@ fn detail_from_metadata(metadata: &Option<serde_json::Value>) -> Option<String> 
     None
 }
 
-/// Cosine-search the embedded chunks visible to a conversation (its own files, its project's
-/// files, and files of sibling conversations in the same project). `project_id_hint` scopes the
-/// search when the conversation row doesn't exist yet (first message of a project chat); when
-/// the conversation exists, its own project link takes precedence.
+/// Cosine-searches chunks visible to a conversation (its own/project's/sibling
+/// files). `project_id_hint` scopes it before the conversation row exists.
 pub async fn search_chunks(
     db: &Db,
     switchboard: &SwitchboardClient,
@@ -248,9 +246,8 @@ pub async fn load_sources_for_messages(
     map
 }
 
-/// Build the system-prompt addition for a conversation with uploaded files: a list of available
-/// files plus, when enabled, excerpts relevant to the current message. Returns the prompt text
-/// and injected hits (for source attribution), or `None` if the conversation has no ready files.
+/// Builds the system-prompt addition: file list plus relevant excerpts.
+/// Returns text and injected hits (for attribution), or `None` if no ready files.
 pub async fn augment_system_prompt(
     db: &Db,
     switchboard: &SwitchboardClient,

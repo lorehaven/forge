@@ -1,11 +1,7 @@
-// Router helpers return `Result<T, HttpResponse>` so callers can `?` an early
-// response straight out. actix-web's `HttpResponse` is a large type, which
-// trips `clippy::result_large_err` on that pattern - boxing every such
-// signature buys nothing on a cold error path.
-#![allow(clippy::result_large_err)]
+//! Sage - the estate's AI workspace service.
 
-use actix_web::web;
-use quench_starter::prelude::*;
+// Router `Result<T, Response>` early-returns trip this; boxing buys nothing.
+#![allow(clippy::result_large_err)]
 
 pub mod clients;
 pub mod config;
@@ -16,14 +12,3 @@ pub mod routers;
 pub mod runtime;
 pub mod startup;
 pub mod tools;
-
-pub fn root_scope() -> impl HttpServiceFactory {
-    routers::root_scope()
-}
-
-pub fn base_path_scope(state: startup::AppState) -> impl HttpServiceFactory {
-    let jwt_config = state.jwt_config.get_ref().clone();
-    state
-        .install(web::scope(""))
-        .service(routers::base_path_scope(jwt_config))
-}

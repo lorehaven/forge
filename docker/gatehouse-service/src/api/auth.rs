@@ -1,12 +1,15 @@
-//! The realm's token API. This lives in gatehouse rather than in `quench-auth`
-//! because only gatehouse serves it: a relying party verifies tokens, it never
-//! issues them.
+//! The realm's token API - lives here, not `quench-auth`, since only
+//! gatehouse issues tokens; relying parties only verify them.
 
 use crate::realm::{self as gh_realm, AuthOutcome};
-use actix_web::{HttpRequest, HttpResponse, Responder, cookie::Cookie, get, post, web};
-use quench_auth::prelude::realm;
-use quench_auth::prelude::{Claims, JwtConfig, Permissions, Session, SessionDb, User, UserDb};
+use async_trait::async_trait;
+use http::StatusCode;
+use quench_auth::domain::auth::{Permissions, User, UserDb};
+use quench_auth::domain::jwt::{Claims, JwtConfig};
+use quench_auth::domain::realm;
+use quench_auth::domain::session::{Session, SessionDb};
 use quench_db::prelude::Db;
+use quench_http::prelude::{FromRequest, HttpError, Inject, Json, Request, Response, get, post};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
@@ -28,33 +31,32 @@ pub struct TokenResponse {
     pub expires_in: i64,
 }
 
-/// Machine-facing login has no code-entry step of its own, so an
-/// `MfaRequired` outcome is reported as a distinct error rather than issuing
-/// tokens - a caller that owns a pending token has nowhere to redeem it
-/// through this endpoint (that's `ui/pages/auth.rs`'s `/login/mfa`).
+/// No code-entry step here, so `MfaRequired` is a distinct error, not a token
+/// - redeeming it is `ui/pages/auth.rs`'s `/login/mfa`.
 #[derive(Serialize)]
 struct LoginError {
     error: &'static str,
 }
 
 impl LoginError {
-    fn response(error: &'static str) -> HttpResponse {
-        HttpResponse::Unauthorized().json(LoginError { error })
+    fn response(error: &'static str) -> Response {
+        Response::json(StatusCode::UNAUTHORIZED, &LoginError { error })
+            .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
     }
 }
 
-#[post("/login")]
+#[post("/api/v1/auth/login")]
 async fn login(
-    request: web::Json<LoginRequest>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    sessions: web::Data<SessionDb>,
-) -> impl Responder {
+    Json(request): Json<LoginRequest>,
+    Inject(config): Inject<JwtConfig>,
+    Inject(db): Inject<Db>,
+    Inject(sessions): Inject<SessionDb>,
+) -> Response {
     let outcome = match gh_realm::authenticate(&db, &request.username, &request.password).await {
         Ok(outcome) => outcome,
         Err(err) => {
             tracing::error!("Failed to authenticate {}: {:?}", request.username, err);
-            return HttpResponse::InternalServerError().finish();
+            return Response::new(StatusCode::INTERNAL_SERVER_ERROR);
         }
     };
     let user = match outcome {
@@ -67,77 +69,93 @@ async fn login(
         }
     };
     match issue_token_pair(&config, &sessions, &user).await {
-        Ok(tokens) => HttpResponse::Ok().json(tokens),
+        Ok(tokens) => json_ok(&tokens),
         Err(err) => {
             tracing::error!("Failed to create authentication session: {}", err);
-            HttpResponse::InternalServerError().finish()
+            Response::new(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
 }
 
-#[post("/refresh")]
+/// Read directly, since `refresh` needs it even with no JSON body at all.
+struct RefreshCookie(Option<String>);
+
+#[async_trait]
+impl FromRequest for RefreshCookie {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        Ok(RefreshCookie(
+            quench_auth::http::domain::cookies::cookie_value(req, &realm::refresh_cookie_name()),
+        ))
+    }
+}
+
+#[post("/api/v1/auth/refresh")]
 async fn refresh(
-    request: HttpRequest,
-    body: Option<web::Json<RefreshRequest>>,
-    config: web::Data<JwtConfig>,
-    users: web::Data<std::sync::Arc<UserDb>>,
-    sessions: web::Data<SessionDb>,
-) -> impl Responder {
-    let cookie_refresh_token = request
-        .cookie(&realm::refresh_cookie_name())
-        .map(|cookie| cookie.value().to_string());
+    quench_http::prelude::Bytes(raw): quench_http::prelude::Bytes,
+    RefreshCookie(cookie_refresh_token): RefreshCookie,
+    Inject(config): Inject<JwtConfig>,
+    Inject(users): Inject<UserDb>,
+    Inject(sessions): Inject<SessionDb>,
+) -> Response {
+    // No body (or unparsable) means "fall back to the cookie", not a 400.
+    let body: Option<RefreshRequest> = if raw.is_empty() {
+        None
+    } else {
+        serde_json::from_slice(&raw).ok()
+    };
     let cookie_flow = body.is_none() && cookie_refresh_token.is_some();
     let Some(refresh_token) = body
-        .map(|request| request.refresh_token.clone())
+        .map(|request| request.refresh_token)
         .or(cookie_refresh_token)
     else {
-        return HttpResponse::BadRequest().finish();
+        return Response::new(StatusCode::BAD_REQUEST);
     };
     let rotated = match sessions
         .rotate(&refresh_token, config.refresh_token_ttl_secs)
         .await
     {
         Ok(Some(rotated)) => rotated,
-        Ok(None) => return HttpResponse::Unauthorized().finish(),
+        Ok(None) => return Response::new(StatusCode::UNAUTHORIZED),
         Err(err) => {
             tracing::error!("Failed to rotate refresh token: {}", err);
-            return HttpResponse::InternalServerError().finish();
+            return Response::new(StatusCode::INTERNAL_SERVER_ERROR);
         }
     };
     let (session, refresh_token) = rotated;
     let Some(user) = users.get_user(&session.username).await else {
-        return HttpResponse::Unauthorized().finish();
+        return Response::new(StatusCode::UNAUTHORIZED);
     };
     match token_response(&config, &user, &session, refresh_token).await {
-        Ok(tokens) if cookie_flow => {
-            let access_cookie = access_cookie(&config, tokens.access_token.clone());
-            let refresh_cookie = refresh_cookie(&config, tokens.refresh_token.clone());
-            HttpResponse::Ok()
-                .cookie(access_cookie)
-                .cookie(refresh_cookie)
-                .json(tokens)
-        }
-        Ok(tokens) => HttpResponse::Ok().json(tokens),
+        Ok(tokens) if cookie_flow => json_ok(&tokens)
+            .append_header(
+                "set-cookie",
+                realm::session_cookie(tokens.access_token.clone()).to_string(),
+            )
+            .append_header(
+                "set-cookie",
+                realm::refresh_cookie(tokens.refresh_token.clone()).to_string(),
+            ),
+        Ok(tokens) => json_ok(&tokens),
         Err(err) => {
             tracing::error!("Failed to issue access token: {}", err);
-            HttpResponse::InternalServerError().finish()
+            Response::new(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
 }
 
-#[post("/logout")]
+#[post("/api/v1/auth/logout")]
 async fn logout(
-    request: web::Json<RefreshRequest>,
-    sessions: web::Data<SessionDb>,
-) -> impl Responder {
+    Json(request): Json<RefreshRequest>,
+    Inject(sessions): Inject<SessionDb>,
+) -> Response {
     match sessions
         .revoke_by_refresh_token(&request.refresh_token)
         .await
     {
-        Ok(_) => HttpResponse::NoContent().finish(),
+        Ok(_) => Response::new(StatusCode::NO_CONTENT),
         Err(err) => {
             tracing::error!("Failed to revoke session: {}", err);
-            HttpResponse::InternalServerError().finish()
+            Response::new(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
 }
@@ -147,25 +165,50 @@ pub struct UserInfo {
     pub sub: String,
     pub roles: Vec<String>,
     pub audiences: Vec<String>,
-    /// The `service:action` grants the token carries. Empty for a wildcard
-    /// role - `admin` in `roles` is what says "everything", and `/api/v1/me`
-    /// is the endpoint that resolves that into an answer per service.
+    /// `service:action` grants; empty for a wildcard role (`admin` says it all).
     pub permissions: Permissions,
 }
 
-/// Subject and roles behind a valid access token. Relying parties use this to
-/// resolve an identity without reading the realm's tables themselves.
-#[get("/userinfo")]
-async fn userinfo(
-    request: HttpRequest,
-    config: web::Data<JwtConfig>,
-    sessions: web::Data<SessionDb>,
-) -> impl Responder {
-    match access_claims(&request, &config, &sessions).await {
-        Some(claims) => HttpResponse::Ok().json(UserInfo {
-            // Roles only: the permission entries are reported separately rather
-            // than mixed into the role list, which is what splitting the raw
-            // scope string used to do.
+struct MaybeAccessClaims(Option<Claims>);
+
+/// Separate from `SubjectClaims` - this only ever accepts a bearer header,
+/// never the session cookie or dev-mode bypass.
+#[async_trait]
+impl FromRequest for MaybeAccessClaims {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        let config = req
+            .container()
+            .get::<JwtConfig>()
+            .map_err(|e| HttpError::status(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        let sessions = req
+            .container()
+            .get::<SessionDb>()
+            .map_err(|e| HttpError::status(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+        let Some(token) = super::users::bearer_token(req) else {
+            return Ok(MaybeAccessClaims(None));
+        };
+        let Ok(claims) = config.decode_claims(&token).await else {
+            return Ok(MaybeAccessClaims(None));
+        };
+        let Some(session_id) = claims.sid.clone() else {
+            return Ok(MaybeAccessClaims(None));
+        };
+        let active = sessions
+            .is_active(&session_id, &claims.sub)
+            .await
+            .unwrap_or(false);
+        Ok(MaybeAccessClaims(
+            (claims.allows(&config.service_name) && active).then_some(claims),
+        ))
+    }
+}
+
+#[get("/api/v1/auth/userinfo")]
+async fn userinfo(MaybeAccessClaims(claims): MaybeAccessClaims) -> Response {
+    match claims {
+        Some(claims) => json_ok(&UserInfo {
+            // Roles only - permissions are reported separately, not mixed in.
             roles: claims
                 .roles()
                 .into_iter()
@@ -175,16 +218,15 @@ async fn userinfo(
             sub: claims.sub,
             audiences: claims.aud,
         }),
-        None => HttpResponse::Unauthorized().finish(),
+        None => Response::new(StatusCode::UNAUTHORIZED),
     }
 }
 
-pub fn scope() -> actix_web::Scope {
-    web::scope("/api/v1/auth")
-        .service(login)
-        .service(refresh)
-        .service(logout)
-        .service(userinfo)
+pub fn register_routes() {
+    let _ = login as fn(_, _, _, _) -> _;
+    let _ = refresh as fn(_, _, _, _, _) -> _;
+    let _ = logout as fn(_, _) -> _;
+    let _ = userinfo as fn(_) -> _;
 }
 
 pub async fn issue_token_pair(
@@ -198,11 +240,8 @@ pub async fn issue_token_pair(
     Ok(token_response(config, user, &session, refresh_token).await?)
 }
 
-/// Same as `issue_token_pair`, but for the `authorization_code` grant
-/// (`crate::api::oauth`): the token's audience is narrowed to the requesting
-/// client rather than every service the user happens to hold grants on - the
-/// whole point of a relying party fetching its own token instead of trusting
-/// a realm-wide one.
+/// Like `issue_token_pair`, but for `authorization_code` (`api::oauth`):
+/// audience narrowed to the requesting client, not every grant the user holds.
 pub(crate) async fn issue_token_pair_for_client(
     config: &JwtConfig,
     sessions: &SessionDb,
@@ -228,10 +267,8 @@ pub(crate) async fn issue_token_pair_for_client(
     })
 }
 
-/// The `client_credentials` grant: an access-only token identifying the
-/// client itself rather than a user, scoped to the wildcard `service` role -
-/// the same access Basic auth used to grant sage against switchboard. No
-/// session, so no refresh token either; a client just asks again.
+/// `client_credentials` grant: access-only token for the client itself,
+/// scoped to `service`. No session, so no refresh token either.
 pub(crate) async fn issue_client_credentials_token(
     config: &JwtConfig,
     client_id: &str,
@@ -275,15 +312,7 @@ pub async fn token_response(
     })
 }
 
-/// The scope claim: roles, then one `service:action` entry per granted
-/// action. A service granted several actions gets one token per action
-/// (`sage:read sage:write`), not a combined one - the wire format is a flat
-/// list of space-separated tokens either way, and that keeps the parser on
-/// the other end (`Claims::permissions`) simple.
-///
-/// A wildcard role emits the role alone. Expanding it into a grant per service
-/// would make the token bigger, go stale when the estate gained a service, and
-/// tell a reader less - `admin` is the more informative claim.
+/// Scope claim: roles, then `service:action` per grant (wildcard roles emit the role alone).
 pub fn user_scope(user: &User) -> String {
     let mut entries: Vec<String> = user
         .get_roles()
@@ -302,15 +331,7 @@ pub fn user_scope(user: &User) -> String {
     entries.join(" ")
 }
 
-/// Services this user's token is valid for.
-///
-/// The point of narrowing: the audience check already in every relying party's
-/// middleware then rejects a user with no grant, so service-level access
-/// enforces itself without a single line changing outside gatehouse.
-///
-/// Gatehouse is always included. It serves the login page, the home page and
-/// refresh, so a token that excluded it would leave the user unable to reach the
-/// thing that would grant them anything.
+/// Audiences this token is valid for; gatehouse itself is always included (serves login/refresh).
 pub fn user_audiences(config: &JwtConfig, user: &User) -> Vec<String> {
     if user.has_wildcard() {
         return config.audiences.clone();
@@ -320,37 +341,14 @@ pub fn user_audiences(config: &JwtConfig, user: &User) -> Vec<String> {
     wanted.push(config.service_name.clone());
 
     let mut audiences = config.narrow_audiences(&wanted);
-    // `narrow_audiences` filters against SERVICE_AUDIENCES, which need not list
-    // gatehouse itself.
+    // SERVICE_AUDIENCES need not list gatehouse itself.
     if !audiences.contains(&config.service_name) {
         audiences.push(config.service_name.clone());
     }
     audiences
 }
 
-/// Realm-wide session cookie. The `config` argument is no longer read - the
-/// name is shared across services now - but is kept so call sites do not churn.
-pub fn access_cookie(_config: &JwtConfig, token: String) -> Cookie<'static> {
-    realm::session_cookie(token)
-}
-
-pub fn refresh_cookie(_config: &JwtConfig, token: String) -> Cookie<'static> {
-    realm::refresh_cookie(token)
-}
-
-async fn access_claims(
-    request: &HttpRequest,
-    config: &JwtConfig,
-    sessions: &SessionDb,
-) -> Option<Claims> {
-    let token = request
-        .headers()
-        .get("Authorization")?
-        .to_str()
-        .ok()?
-        .strip_prefix("Bearer ")?;
-    let claims = config.decode_claims(token).await.ok()?;
-    let session_id = claims.sid.as_deref()?;
-    let active = sessions.is_active(session_id, &claims.sub).await.ok()?;
-    (claims.allows(&config.service_name) && active).then_some(claims)
+fn json_ok<T: Serialize>(value: &T) -> Response {
+    Response::json(StatusCode::OK, value)
+        .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
 }

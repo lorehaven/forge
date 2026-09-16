@@ -1,7 +1,7 @@
 use crate::routers::gpu::get_gpu_info;
 use crate::routers::models::store::get_store;
-use actix_web::{HttpResponse, Responder, get, web};
-use quench_starter::prelude::with_base_path;
+use quench_http::prelude::{Query, Response, get};
+use quench_starter::common::routes::with_base_path;
 use quench_web::prelude::*;
 
 #[derive(serde::Deserialize)]
@@ -28,48 +28,54 @@ pub struct StopModalQuery {
     pub model: Option<String>,
 }
 
-#[get("/launch-modal")]
-pub async fn handle_launch_modal(query: web::Query<LaunchModalQuery>) -> impl Responder {
+#[get("/api/v1/vllm/launch-modal")]
+pub async fn handle_launch_modal(Query(query): Query<LaunchModalQuery>) -> Response {
     let models = get_store().get_all_models().await;
     let gpu = get_gpu_info().unwrap_or_default();
     let html = format!(
         "<!-- launch-instance-modal -->{}",
         render_launch_modal(models, &query, &gpu)
     );
-    HttpResponse::Ok().content_type("text/html").body(html)
+    Response::html(http::StatusCode::OK, html)
 }
 
-#[get("/launch-modal/empty")]
-pub async fn empty_launch_modal() -> impl Responder {
-    HttpResponse::Ok().content_type("text/html").body(format!(
-        "<!-- launch-instance-modal -->{}",
-        div()
-            .attr("id", "launch-modal")
-            .attr("data-testid", "launch-instance-modal")
-            .class("modal launch-modal launch-instance-modal")
-            .render()
-    ))
+#[get("/api/v1/vllm/launch-modal/empty")]
+pub async fn empty_launch_modal() -> Response {
+    Response::html(
+        http::StatusCode::OK,
+        format!(
+            "<!-- launch-instance-modal -->{}",
+            div()
+                .attr("id", "launch-modal")
+                .attr("data-testid", "launch-instance-modal")
+                .class("modal launch-modal launch-instance-modal")
+                .render()
+        ),
+    )
 }
 
-#[get("/stop-modal")]
-pub async fn handle_stop_modal(query: web::Query<StopModalQuery>) -> impl Responder {
+#[get("/api/v1/vllm/stop-modal")]
+pub async fn handle_stop_modal(Query(query): Query<StopModalQuery>) -> Response {
     let html = format!(
         "<!-- stop-instance-modal -->{}",
         render_stop_modal(&query.id, query.model.as_deref())
     );
-    HttpResponse::Ok().content_type("text/html").body(html)
+    Response::html(http::StatusCode::OK, html)
 }
 
-#[get("/stop-modal/empty")]
-pub async fn empty_stop_modal() -> impl Responder {
-    HttpResponse::Ok().content_type("text/html").body(format!(
-        "<!-- stop-instance-modal -->{}",
-        div()
-            .attr("id", "confirm-stop-instance-modal")
-            .attr("data-testid", "stop-instance-modal")
-            .class("estimates-modal stop-instance-modal")
-            .render()
-    ))
+#[get("/api/v1/vllm/stop-modal/empty")]
+pub async fn empty_stop_modal() -> Response {
+    Response::html(
+        http::StatusCode::OK,
+        format!(
+            "<!-- stop-instance-modal -->{}",
+            div()
+                .attr("id", "confirm-stop-instance-modal")
+                .attr("data-testid", "stop-instance-modal")
+                .class("estimates-modal stop-instance-modal")
+                .render()
+        ),
+    )
 }
 
 pub fn render_launch_modal(
@@ -498,9 +504,7 @@ fn task_fields(query: &LaunchModalQuery) -> Element {
         .attr("hx-target", "#launch-modal")
         .attr("hx-swap", "outerHTML")
         .attr("hx-include", "#launch-form");
-    // "auto" leaves the runner flags off (vLLM infers from the model);
-    // "embed" launches with --runner pooling --convert embed so
-    // /v1/embeddings is served for embedding models.
+    // "embed" launches with --runner pooling --convert embed for /v1/embeddings.
     for (value, text) in [("", "auto"), ("generate", "generate"), ("embed", "embed")] {
         let mut opt = option().attr("value", value).text(text);
         if selected_task == value {

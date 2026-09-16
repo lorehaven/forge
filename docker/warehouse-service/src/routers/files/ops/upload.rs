@@ -1,21 +1,18 @@
-//! `PUT /api/v1/files/{storage}/file?path=…` - store a file.
-//!
-//! The body is streamed to disk rather than buffered, so a large upload costs
-//! a file descriptor and a 64KB buffer rather than its own size in memory,
-//! and the size limit is enforced as the bytes arrive instead of after the
-//! last one - true for both storage kinds below, which differ only in what
-//! happens once the whole body has landed and its digest is known.
+//! `PUT /api/v1/files/{storage}/file?path=…` - streamed to disk, size limit
+//! enforced as bytes arrive. Storage kinds differ only in what happens once the digest is known.
 
 use super::{ResolvedStorage, authorize, dynamic_path, error, forbidden, resolve_storage};
 use crate::domain::storage_file;
-use crate::routers::files::{FileQuery, dynamic, max_file_bytes};
-use actix_web::http::StatusCode;
-use actix_web::{HttpRequest, HttpResponse, Responder, put, web};
+use crate::routers::docker::RawBody;
+use crate::routers::files::{FileQuery, OptionalClaims, dynamic, max_file_bytes};
 use futures_util::StreamExt;
+use http_body_util::BodyExt;
+use quench_auth::domain::jwt::JwtConfig;
 use quench_db::prelude::Db;
+use quench_http::prelude::{Inject, Path, Query, Response, http::StatusCode, put};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use std::path::{Path, PathBuf};
+use std::path::{Path as FsPath, PathBuf};
 use tokio::io::AsyncWriteExt;
 
 #[derive(Serialize)]
@@ -25,41 +22,39 @@ pub struct Stored {
     pub digest: String,
 }
 
-#[put("/{storage}/file")]
-#[tracing::instrument(skip(body, request))]
+#[put("/api/v1/files/{storage}/file")]
+#[tracing::instrument(skip(body, claims, config, db))]
 pub async fn handle(
-    request: HttpRequest,
-    db: web::Data<Db>,
-    storage: web::Path<String>,
-    query: web::Query<FileQuery>,
-    mut body: web::Payload,
-) -> impl Responder {
-    let storage_name = storage.into_inner();
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+    Inject(db): Inject<Db>,
+    Path(storage_name): Path<String>,
+    Query(query): Query<FileQuery>,
+    body: RawBody,
+) -> Response {
     let resolved = match resolve_storage(&db, &storage_name).await {
         Ok(resolved) => resolved,
-        Err(response) => return *response,
+        Err(response) => return response,
     };
 
-    if !authorize(&request, &resolved, "write") {
+    if !authorize(claims.as_ref(), &config, &resolved, "write") {
         return forbidden("write access to this storage is required");
     }
 
     match resolved {
-        ResolvedStorage::Static(storage) => handle_static(storage, &query.path, &mut body).await,
-        ResolvedStorage::Dynamic(storage) => {
-            handle_dynamic(&db, &storage, &query.path, &mut body).await
-        }
+        ResolvedStorage::Static(storage) => handle_static(storage, &query.path, body).await,
+        ResolvedStorage::Dynamic(storage) => handle_dynamic(&db, &storage, &query.path, body).await,
     }
 }
 
 async fn handle_static(
     storage: &'static crate::routers::files::Storage,
     path: &str,
-    body: &mut web::Payload,
-) -> HttpResponse {
+    body: RawBody,
+) -> Response {
     let target = match super::static_target_or_error(storage, path).await {
         Ok(target) => target,
-        Err(response) => return *response,
+        Err(response) => return response,
     };
 
     if let Some(parent) = target.parent()
@@ -82,9 +77,7 @@ async fn handle_static(
 
     let existed = tokio::fs::try_exists(&target).await.unwrap_or(false);
 
-    // Written beside the target and renamed into place at the end. A dropped
-    // connection halfway through therefore leaves the previous version intact
-    // rather than a truncated file that looks complete.
+    // Renamed into place at the end, so a dropped connection leaves the old version intact.
     let staging = staging_path(&target);
 
     let outcome = stream_to_disk(body, &staging, max_file_bytes()).await;
@@ -120,22 +113,24 @@ async fn handle_static(
 
     // 201 for a new file, 200 for a replacement - so a caller that cares can
     // tell whether it overwrote something without asking first.
-    if existed {
-        HttpResponse::Ok().json(stored)
+    let status = if existed {
+        StatusCode::OK
     } else {
-        HttpResponse::Created().json(stored)
-    }
+        StatusCode::CREATED
+    };
+    Response::json(status, &stored)
+        .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
 }
 
 async fn handle_dynamic(
     db: &Db,
     storage: &crate::domain::storage::DynamicStorage,
     path: &str,
-    body: &mut web::Payload,
-) -> HttpResponse {
+    body: RawBody,
+) -> Response {
     let path = match dynamic_path(path) {
         Ok(path) => path,
-        Err(response) => return *response,
+        Err(response) => return response,
     };
 
     let Some(root) = dynamic::root() else {
@@ -196,11 +191,13 @@ async fn handle_dynamic(
                 storage.name
             );
 
-            if outcome.existed {
-                HttpResponse::Ok().json(stored)
+            let status = if outcome.existed {
+                StatusCode::OK
             } else {
-                HttpResponse::Created().json(stored)
-            }
+                StatusCode::CREATED
+            };
+            Response::json(status, &stored)
+                .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
         }
         Err(problem) => {
             let _ = tokio::fs::remove_file(&staging).await;
@@ -231,7 +228,7 @@ enum StreamError {
 }
 
 impl StreamError {
-    fn into_response(self) -> HttpResponse {
+    fn into_response(self) -> Response {
         match self {
             Self::TooLarge(limit) => error(
                 StatusCode::PAYLOAD_TOO_LARGE,
@@ -248,8 +245,8 @@ impl StreamError {
 
 /// Streams the body into `staging`, returning its size and hex SHA-256.
 async fn stream_to_disk(
-    body: &mut web::Payload,
-    staging: &Path,
+    body: RawBody,
+    staging: &FsPath,
     limit: u64,
 ) -> Result<(u64, String), StreamError> {
     let mut file = tokio::fs::File::create(staging)
@@ -259,7 +256,8 @@ async fn stream_to_disk(
     let mut size: u64 = 0;
     let mut hasher = Sha256::new();
 
-    while let Some(chunk) = body.next().await {
+    let mut stream = body.0.into_data_stream();
+    while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|_| StreamError::Read)?;
 
         size = size.saturating_add(chunk.len() as u64);
@@ -280,12 +278,8 @@ async fn stream_to_disk(
     Ok((size, hex::encode(hasher.finalize())))
 }
 
-/// A sibling of the target, so the rename that follows stays on one filesystem.
-///
-/// The process id and a counter keep two uploads of the same path from sharing
-/// a staging file, which would otherwise interleave their bytes and leave the
-/// loser's digest describing the winner's content.
-pub fn staging_path(target: &Path) -> PathBuf {
+/// A sibling of the target (same filesystem); pid+counter keep concurrent uploads from colliding.
+pub fn staging_path(target: &FsPath) -> PathBuf {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -304,4 +298,8 @@ pub fn staging_path(target: &Path) -> PathBuf {
         Some(parent) => parent.join(unique),
         None => PathBuf::from(unique),
     }
+}
+
+pub fn register_routes() {
+    let _ = handle as fn(_, _, _, _, _, _) -> _;
 }

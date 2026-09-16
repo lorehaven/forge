@@ -1,17 +1,16 @@
 use crate::routers::crates::{
     crate_file_path, index_file_path, validate_crate_name, validate_version,
 };
-use actix_web::{HttpResponse, Responder, put, web};
+use crate::routers::docker::RawBody;
+use crate::routers::docker::token::AuthorizationHeader;
 use futures_util::StreamExt;
+use http_body_util::BodyExt;
+use quench_http::prelude::{Response, http::StatusCode, put};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fmt::Write;
 use tokio::io::AsyncWriteExt;
-
-// ---------------------------------------------------------------------------
-// Wire-format structs (cargo publish binary payload → metadata JSON)
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]
 struct PublishMetadata {
@@ -41,10 +40,6 @@ struct PublishDep {
     #[serde(default)]
     explicit_name_in_toml: Option<String>,
 }
-
-// ---------------------------------------------------------------------------
-// Index record (newline-delimited JSON written to the sparse index)
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Serialize)]
 struct IndexRecord {
@@ -78,10 +73,6 @@ struct IndexDep {
     package: Option<String>,
 }
 
-// ---------------------------------------------------------------------------
-// Response types
-// ---------------------------------------------------------------------------
-
 #[derive(Serialize)]
 pub struct PublishWarnings {
     invalid_categories: Vec<String>,
@@ -94,36 +85,28 @@ pub struct PublishResponse {
     warnings: PublishWarnings,
 }
 
-// ---------------------------------------------------------------------------
-// Handler
-// ---------------------------------------------------------------------------
-
-#[put("/new")]
+#[put("/api/v1/crates/new")]
 #[tracing::instrument(skip(body))]
-pub async fn handle(req: actix_web::HttpRequest, mut body: web::Payload) -> impl Responder {
-    if req.headers().get("Authorization").is_none() {
+pub async fn handle(
+    AuthorizationHeader(authorization): AuthorizationHeader,
+    RawBody(body): RawBody,
+) -> Response {
+    let mut body = body.into_data_stream();
+
+    if authorization.is_none() {
         while body.next().await.is_some() {}
-        return error_response(
-            actix_web::http::StatusCode::UNAUTHORIZED,
-            "missing authorization token",
-        );
+        return error_response(StatusCode::UNAUTHORIZED, "missing authorization token");
     }
 
-    // ------------------------------------------------------------------
-    // 1. Collect initial bytes to parse JSON length
-    // ------------------------------------------------------------------
     let mut buffer = Vec::new();
     while buffer.len() < 4 {
         match body.next().await {
             Some(Ok(chunk)) => buffer.extend_from_slice(&chunk),
             Some(Err(e)) => {
-                return error_response(actix_web::http::StatusCode::BAD_REQUEST, &e.to_string());
+                return error_response(StatusCode::BAD_REQUEST, &e.to_string());
             }
             None => {
-                return error_response(
-                    actix_web::http::StatusCode::BAD_REQUEST,
-                    "payload too short",
-                );
+                return error_response(StatusCode::BAD_REQUEST, "payload too short");
             }
         }
     }
@@ -133,13 +116,10 @@ pub async fn handle(req: actix_web::HttpRequest, mut body: web::Payload) -> impl
         match body.next().await {
             Some(Ok(chunk)) => buffer.extend_from_slice(&chunk),
             Some(Err(e)) => {
-                return error_response(actix_web::http::StatusCode::BAD_REQUEST, &e.to_string());
+                return error_response(StatusCode::BAD_REQUEST, &e.to_string());
             }
             None => {
-                return error_response(
-                    actix_web::http::StatusCode::BAD_REQUEST,
-                    "payload truncated (metadata)",
-                );
+                return error_response(StatusCode::BAD_REQUEST, "payload truncated (metadata)");
             }
         }
     }
@@ -149,7 +129,7 @@ pub async fn handle(req: actix_web::HttpRequest, mut body: web::Payload) -> impl
         Ok(m) => m,
         Err(e) => {
             return error_response(
-                actix_web::http::StatusCode::BAD_REQUEST,
+                StatusCode::BAD_REQUEST,
                 &format!("invalid metadata JSON: {e}"),
             );
         }
@@ -162,44 +142,32 @@ pub async fn handle(req: actix_web::HttpRequest, mut body: web::Payload) -> impl
             .unwrap(),
     ) as usize;
 
-    // ------------------------------------------------------------------
-    // 2. Validate name & version
-    // ------------------------------------------------------------------
     if !validate_crate_name(&meta.name) {
-        return error_response(
-            actix_web::http::StatusCode::UNPROCESSABLE_ENTITY,
-            "invalid crate name",
-        );
+        return error_response(StatusCode::UNPROCESSABLE_ENTITY, "invalid crate name");
     }
     if !validate_version(&meta.vers) {
-        return error_response(
-            actix_web::http::StatusCode::UNPROCESSABLE_ENTITY,
-            "invalid version string",
-        );
+        return error_response(StatusCode::UNPROCESSABLE_ENTITY, "invalid version string");
     }
 
     let Some(crate_path) = crate_file_path(&meta.name, &meta.vers) else {
         return error_response(
-            actix_web::http::StatusCode::UNPROCESSABLE_ENTITY,
+            StatusCode::UNPROCESSABLE_ENTITY,
             "invalid crate name or version",
         );
     };
 
     if tokio::fs::metadata(&crate_path).await.is_ok() {
         return error_response(
-            actix_web::http::StatusCode::CONFLICT,
+            StatusCode::CONFLICT,
             "this version has already been published",
         );
     }
 
-    // ------------------------------------------------------------------
-    // 3. Persist .crate tarball and compute SHA-256 incrementally
-    // ------------------------------------------------------------------
     if let Some(parent) = crate_path.parent()
         && tokio::fs::create_dir_all(parent).await.is_err()
     {
         return error_response(
-            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+            StatusCode::INTERNAL_SERVER_ERROR,
             "failed to create storage directory",
         );
     }
@@ -209,7 +177,7 @@ pub async fn handle(req: actix_web::HttpRequest, mut body: web::Payload) -> impl
         Err(e) => {
             tracing::error!("Failed to create crate file {:?}: {}", crate_path, e);
             return error_response(
-                actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+                StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to create crate file",
             );
         }
@@ -218,26 +186,25 @@ pub async fn handle(req: actix_web::HttpRequest, mut body: web::Payload) -> impl
     let mut hasher = Sha256::new();
     let mut written_len = 0;
 
-    // Write any leftover bytes from buffer after the metadata
+    // Leftover bytes from buffer after the metadata.
     let initial_crate_data = &buffer[crate_len_offset + 4..];
     if !initial_crate_data.is_empty() {
         hasher.update(initial_crate_data);
         if let Err(e) = file.write_all(initial_crate_data).await {
             tracing::error!("Failed to write initial crate data: {}", e);
             return error_response(
-                actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+                StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to write crate data",
             );
         }
         written_len += initial_crate_data.len();
     }
 
-    // Stream the rest of the body
     while let Some(chunk) = body.next().await {
         let chunk = match chunk {
             Ok(c) => c,
             Err(e) => {
-                return error_response(actix_web::http::StatusCode::BAD_REQUEST, &e.to_string());
+                return error_response(StatusCode::BAD_REQUEST, &e.to_string());
             }
         };
 
@@ -252,7 +219,7 @@ pub async fn handle(req: actix_web::HttpRequest, mut body: web::Payload) -> impl
             if let Err(e) = file.write_all(to_write).await {
                 tracing::error!("Failed to write crate chunk: {}", e);
                 return error_response(
-                    actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    StatusCode::INTERNAL_SERVER_ERROR,
                     "failed to write crate chunk",
                 );
             }
@@ -265,19 +232,13 @@ pub async fn handle(req: actix_web::HttpRequest, mut body: web::Payload) -> impl
     }
 
     if written_len < crate_len {
-        return error_response(
-            actix_web::http::StatusCode::BAD_REQUEST,
-            "payload truncated (crate tarball)",
-        );
+        return error_response(StatusCode::BAD_REQUEST, "payload truncated (crate tarball)");
     }
 
     if let Err(e) = file.flush().await {
         tracing::error!("Failed to flush crate file: {}", e);
     }
 
-    // ------------------------------------------------------------------
-    // 4. Finalize checksum and build index record
-    // ------------------------------------------------------------------
     let digest = hasher.finalize();
     let mut cksum = String::with_capacity(digest.len() * 2);
     for byte in digest {
@@ -320,18 +281,15 @@ pub async fn handle(req: actix_web::HttpRequest, mut body: web::Payload) -> impl
         Ok(s) => format!("{s}\n"),
         Err(_) => {
             return error_response(
-                actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+                StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to serialize index record",
             );
         }
     };
 
-    // ------------------------------------------------------------------
-    // 5. Append to sparse index file
-    // ------------------------------------------------------------------
     let Some(index_path) = index_file_path(&meta.name) else {
         return error_response(
-            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+            StatusCode::INTERNAL_SERVER_ERROR,
             "failed to resolve index path",
         );
     };
@@ -340,7 +298,7 @@ pub async fn handle(req: actix_web::HttpRequest, mut body: web::Payload) -> impl
         && tokio::fs::create_dir_all(parent).await.is_err()
     {
         return error_response(
-            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+            StatusCode::INTERNAL_SERVER_ERROR,
             "failed to create index directory",
         );
     }
@@ -355,7 +313,7 @@ pub async fn handle(req: actix_web::HttpRequest, mut body: web::Payload) -> impl
         Err(e) => {
             tracing::error!("Failed to open index file {:?}: {}", index_path, e);
             return error_response(
-                actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+                StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to open index file",
             );
         }
@@ -364,26 +322,33 @@ pub async fn handle(req: actix_web::HttpRequest, mut body: web::Payload) -> impl
     if let Err(e) = index_file.write_all(record_line.as_bytes()).await {
         tracing::error!("Failed to write to index file {:?}: {}", index_path, e);
         return error_response(
-            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+            StatusCode::INTERNAL_SERVER_ERROR,
             "failed to write index entry",
         );
     }
 
-    // ------------------------------------------------------------------
-    // 6. Respond
-    // ------------------------------------------------------------------
-    HttpResponse::Ok().json(PublishResponse {
-        warnings: PublishWarnings {
-            invalid_categories: vec![],
-            invalid_badges: vec![],
-            other: vec![],
+    Response::json(
+        StatusCode::OK,
+        &PublishResponse {
+            warnings: PublishWarnings {
+                invalid_categories: vec![],
+                invalid_badges: vec![],
+                other: vec![],
+            },
         },
-    })
+    )
+    .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
 }
 
-fn error_response(status: actix_web::http::StatusCode, detail: &str) -> HttpResponse {
+fn error_response(status: StatusCode, detail: &str) -> Response {
     tracing::warn!("Crate publish error ({}): {}", status, detail);
-    HttpResponse::build(status).json(serde_json::json!({
-        "errors": [{ "detail": detail }]
-    }))
+    Response::json(
+        status,
+        &serde_json::json!({ "errors": [{ "detail": detail }] }),
+    )
+    .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
+}
+
+pub fn register_routes() {
+    let _ = handle as fn(_, _) -> _;
 }

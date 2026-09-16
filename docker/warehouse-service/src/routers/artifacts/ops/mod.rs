@@ -1,10 +1,12 @@
 //! The handlers, and what they all share.
 
 use crate::domain::artifact::{ArtifactVersion, Platform};
-use actix_web::{HttpMessage, HttpRequest, HttpResponse, http::StatusCode};
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use quench_auth::prelude::Claims;
+use quench_auth::domain::jwt::{Claims, JwtConfig};
+use quench_auth::http::routers::ui::get_user_from_req;
 use quench_db::prelude::{Crud, Db};
+use quench_http::prelude::{FromRequest, HttpError, Request, Response, http::StatusCode};
 use serde::Serialize;
 use serde_json::json;
 
@@ -16,13 +18,8 @@ pub mod publish;
 pub mod unyank;
 pub mod yank;
 
-/// What an artifact's catalog row looks like over the wire - every read
-/// endpoint (`metadata`, `list`, `latest`) returns this shape, so a caller
-/// only has to parse one schema regardless of which of them it hit.
-/// `id` is deliberately not exposed: it is this module's own
-/// `<program>/<platform>@<version_code>` storage key, not something a caller
-/// constructs or needs. `min_sdk_version` / `target_sdk_version` /
-/// `permissions` are Android-only and come out empty for other platforms.
+/// The wire shape every read endpoint returns. `id` is omitted (internal storage key only);
+/// `min_sdk_version`/`target_sdk_version`/`permissions` are Android-only, empty elsewhere.
 #[derive(Serialize)]
 pub struct ArtifactView {
     pub program: String,
@@ -66,9 +63,7 @@ impl From<&ArtifactVersion> for ArtifactView {
     }
 }
 
-/// The highest `version_code` in `versions` that isn't yanked - what
-/// `latest` and the catalog listing both resolve to. `None` when every
-/// version has been yanked.
+/// The highest non-yanked `version_code`, or `None` if every version is yanked.
 pub fn latest_of(versions: &[ArtifactVersion]) -> Option<&ArtifactVersion> {
     versions
         .iter()
@@ -76,14 +71,12 @@ pub fn latest_of(versions: &[ArtifactVersion]) -> Option<&ArtifactVersion> {
         .max_by_key(|version| version.version_code)
 }
 
-/// Every row for one program on one platform. `Crud::find_by` only does
-/// single-column equality, so the platform is filtered here - the same
-/// post-filter `list::catalog` already does after a `list()`.
+/// Every row for one program+platform; `Crud::find_by` is equality-only, so platform is post-filtered.
 pub async fn find_program_platform(
     db: &Db,
     program: &str,
     platform: Platform,
-) -> Result<Vec<ArtifactVersion>, HttpResponse> {
+) -> Result<Vec<ArtifactVersion>, Response> {
     let rows = db
         .repository::<ArtifactVersion>()
         .find_by("program", program)
@@ -95,31 +88,51 @@ pub async fn find_program_platform(
         .collect())
 }
 
-pub fn error(status: StatusCode, message: &str) -> HttpResponse {
-    HttpResponse::build(status).json(json!({ "error": message }))
+pub fn json_ok<T: Serialize>(value: &T) -> Response {
+    Response::json(StatusCode::OK, value)
+        .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
 }
 
-pub fn not_found(message: &str) -> HttpResponse {
+pub fn error(status: StatusCode, message: &str) -> Response {
+    Response::json(status, &json!({ "error": message }))
+        .unwrap_or_else(|_| Response::text(status, message))
+}
+
+pub fn not_found(message: &str) -> Response {
     error(StatusCode::NOT_FOUND, message)
 }
 
-/// "Artifact storage is not enabled" and "no such program/version" both answer
-/// the same 404, deliberately: whether this deployment *could* serve artifacts
-/// is not something an unauthorised caller learns by asking.
-pub fn disabled() -> HttpResponse {
+/// Same 404 as "no such version" - whether artifacts are enabled isn't for an unauthorized caller to learn.
+pub fn disabled() -> Response {
     not_found("artifact storage is not enabled")
 }
 
-/// Who is making this request, for the catalog's `uploaded_by` column.
-///
-/// `Auth` (mounted around the whole scope) has already put [`Claims`] in the
-/// request's extensions by the time a handler runs. With auth disabled there
-/// is nothing there at all, so this falls back to a fixed name the same way
-/// `workbench`/`conveyor`'s own `actor()` helpers do.
-pub fn actor(request: &HttpRequest) -> String {
-    request
-        .extensions()
-        .get::<Claims>()
-        .map(|claims| claims.sub.clone())
-        .unwrap_or_else(|| "dev".to_string())
+/// Who is making this request, for `uploaded_by`. Falls back to "dev" when auth is disabled.
+pub struct Actor(pub String);
+
+#[async_trait]
+impl FromRequest for Actor {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        if let Some(claims) = req.extensions().get::<Claims>() {
+            return Ok(Self(claims.sub.clone()));
+        }
+        // Auth disabled or extensions not populated yet - same fallback as other actor helpers.
+        let Ok(config) = req.container().get::<JwtConfig>() else {
+            return Ok(Self("dev".to_string()));
+        };
+        let username = get_user_from_req(req, &config)
+            .await
+            .map(|claims| claims.sub)
+            .unwrap_or_else(|| "dev".to_string());
+        Ok(Self(username))
+    }
+}
+
+pub fn register_routes() {
+    download::register_routes();
+    list::register_routes();
+    metadata::register_routes();
+    publish::register_routes();
+    unyank::register_routes();
+    yank::register_routes();
 }

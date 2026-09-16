@@ -1,7 +1,11 @@
-use actix_web::HttpResponse;
+use bytes::Bytes;
+use http::{HeaderMap, Method, StatusCode, Uri};
+use quench_http::di::ContainerBuilder;
+use quench_http::request::Request;
 use quench_web::prelude::*;
 use sage_service::routers::ui::common::supported_locales;
-use sage_service::routers::ui::common::{SUPPORTED_LOCALES, UiPageKind, render_page, ui_header};
+use sage_service::routers::ui::common::{SUPPORTED_LOCALES, render_page, ui_header};
+use std::sync::Arc;
 
 #[test]
 fn supported_locales_matches_the_fixed_list() {
@@ -25,25 +29,25 @@ fn ui_header_renders_every_combination_of_optional_controls() {
     }
 }
 
-#[actix_web::test]
-async fn render_page_produces_html_wrapping_the_given_content() {
-    let response = render_page(
-        HttpResponse::Ok(),
-        div().text("hello from a test"),
-        UiPageKind::Home,
-    );
-    assert_eq!(response.status(), actix_web::http::StatusCode::OK);
+#[test]
+fn render_page_produces_html_wrapping_the_given_content() {
+    let response = render_page(StatusCode::OK, div().text("hello from a test"));
+    assert_eq!(response.status(), StatusCode::OK);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn assets_reports_not_found_for_a_missing_file() {
-    use actix_web::{App, test};
-    use sage_service::routers::ui::common::assets;
+    sage_service::routers::ui::common::register_routes();
+    let container = Arc::new(ContainerBuilder::new().build().await.unwrap());
+    let app = quench_starter::http::discover_and_mount("/");
 
-    let app = test::init_service(App::new().service(assets)).await;
-    let req = test::TestRequest::get()
-        .uri("/assets/does-not-exist.css")
-        .to_request();
-    let resp = test::call_service(&app, req).await;
+    let req = Request::new(
+        Method::GET,
+        "/ui/assets/does-not-exist.css".parse::<Uri>().unwrap(),
+        HeaderMap::new(),
+        quench_http::body::InboundBody::from_bytes(Bytes::new()),
+        container,
+    );
+    let resp = app.call(req).await;
     assert!(!resp.status().is_success());
 }

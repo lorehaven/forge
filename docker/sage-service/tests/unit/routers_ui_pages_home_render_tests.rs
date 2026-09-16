@@ -1,8 +1,9 @@
-use actix_web::web;
+use http_body_util::BodyExt;
 use sage_service::clients::switchboard::VllmInstance;
 use sage_service::domain::models::{Conversation, Message, Project};
 use sage_service::routers::ui::pages::home::{conv_title_link, render_home_page};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 fn instance(id: &str, task: Option<&str>) -> VllmInstance {
     VllmInstance {
@@ -22,8 +23,8 @@ fn instance(id: &str, task: Option<&str>) -> VllmInstance {
     }
 }
 
-fn sage_config() -> web::Data<sage_service::config::SageConfig> {
-    web::Data::new(sage_service::config::SageConfig {
+fn sage_config() -> Arc<sage_service::config::SageConfig> {
+    Arc::new(sage_service::config::SageConfig {
         system_prompt: "sys".to_string(),
         default_models: Vec::new(),
         supported_models: Vec::new(),
@@ -66,10 +67,8 @@ async fn render(
         project_id,
         sage_config(),
     );
-    let body = actix_web::body::to_bytes(resp.into_body())
-        .await
-        .unwrap_or_default();
-    String::from_utf8_lossy(&body).into_owned()
+    let collected = resp.into_hyper().into_body().collect().await.unwrap();
+    String::from_utf8_lossy(&collected.to_bytes()).into_owned()
 }
 
 #[test]
@@ -86,7 +85,7 @@ fn conv_title_link_uses_the_title_when_present() {
     assert!(rendered.contains("My conversation"));
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn render_home_page_shows_the_welcome_message_with_no_active_conversation() {
     let html = render(
         Ok(vec![instance("i1", None)]),
@@ -100,7 +99,7 @@ async fn render_home_page_shows_the_welcome_message_with_no_active_conversation(
     assert!(!html.contains("disabled=\"disabled\""));
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn render_home_page_disables_the_composer_without_a_chat_capable_model() {
     // Only an embedding-task instance is available, which the chat selector must exclude.
     let html = render(
@@ -115,7 +114,7 @@ async fn render_home_page_disables_the_composer_without_a_chat_capable_model() {
     assert!(html.contains("no-model-warning"));
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn render_home_page_shows_a_switchboard_unavailable_message_on_error() {
     let html = render(
         Err(anyhow::anyhow!("connection refused")),
@@ -128,7 +127,7 @@ async fn render_home_page_shows_a_switchboard_unavailable_message_on_error() {
     assert!(html.contains("ui_chat_switchboard_unavailable"));
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn render_home_page_lists_conversations_and_marks_the_active_one() {
     let conversations = vec![
         Conversation {
@@ -161,7 +160,7 @@ async fn render_home_page_lists_conversations_and_marks_the_active_one() {
     assert!(html.contains("history-item-active-conv"));
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn render_home_page_renders_message_history_with_branch_controls_for_siblings() {
     let root = message("root", "user", "hello", "active-conv");
     let sib_a = message("a", "assistant", "answer a", "active-conv");
@@ -181,7 +180,7 @@ async fn render_home_page_renders_message_history_with_branch_controls_for_sibli
     assert!(html.contains("1/2") || html.contains("2/2"));
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn render_home_page_shows_a_project_and_its_files_when_active() {
     let project = Project {
         id: "p1".to_string(),
@@ -202,7 +201,7 @@ async fn render_home_page_shows_a_project_and_its_files_when_active() {
     assert!(html.contains("project_id=p1"));
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn render_home_page_includes_every_configured_search_provider() {
     let html = render(
         Ok(vec![instance("i1", None)]),

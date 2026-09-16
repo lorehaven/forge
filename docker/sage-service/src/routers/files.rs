@@ -2,12 +2,16 @@ use crate::clients::switchboard::SwitchboardClient;
 use crate::clients::vllm::VllmClient;
 use crate::domain::models::{Conversation, File, FileChunk, Project};
 use crate::files::{STATUS_UPLOADED, pipeline};
-use actix_multipart::form::{MultipartForm, bytes::Bytes as MultipartBytes, text::Text};
-use actix_web::{HttpRequest, HttpResponse, Responder, delete, get, post, web};
+use async_trait::async_trait;
+use bytes::Bytes;
 use chrono::Utc;
-use quench_auth::actix::routers::ui::get_user_from_req;
-use quench_auth::prelude::JwtConfig;
+use quench_auth::domain::jwt::JwtConfig;
+use quench_auth::http::routers::ui::get_user_from_req;
 use quench_db::prelude::{Crud, Db};
+use quench_http::prelude::{
+    FromRequest, HttpError, Inject, Multipart, Path, Query, Request, Response, delete, get,
+    http::StatusCode, post,
+};
 use uuid::Uuid;
 
 const DEFAULT_MAX_FILE_SIZE_MB: u64 = 25;
@@ -20,10 +24,8 @@ fn db_schema() -> String {
     envmnt::get_or("DB_SCHEMA", "sage")
 }
 
-/// Every extension the upload endpoint accepts, paired with the MIME type the
-/// file is stored as. Single source of truth: uploads are validated against it
-/// and the composer's file picker builds its `accept` filter from it, so the
-/// two cannot drift apart.
+/// Single source of truth for accepted extensions - both upload validation
+/// and the composer's file-picker `accept` filter read from this.
 pub const ALLOWED_UPLOAD_TYPES: &[(&str, &str)] = &[
     // Images (sent to vision models, not text-extracted)
     ("png", "image/png"),
@@ -98,18 +100,45 @@ pub fn upload_accept_attribute() -> String {
         .join(",")
 }
 
-#[derive(MultipartForm)]
 pub struct FileUploadForm {
-    #[multipart(limit = "100MB")]
-    pub file: MultipartBytes,
-    pub conversation_id: Option<Text<String>>,
-    pub project_id: Option<Text<String>>,
+    pub file_name: Option<String>,
+    pub file_data: Bytes,
+    pub conversation_id: Option<String>,
+    pub project_id: Option<String>,
+}
+
+/// Reads a `multipart/form-data` body into a `FileUploadForm`. The real,
+/// user-facing size limit is `max_file_size_bytes()`, checked below.
+pub(crate) async fn parse_upload_form(mut form: Multipart) -> Result<FileUploadForm, HttpError> {
+    let mut file_name = None;
+    let mut file_data = Bytes::new();
+    let mut conversation_id = None;
+    let mut project_id = None;
+
+    while let Some(field) = form.next_field().await? {
+        match field.name() {
+            Some("file") => {
+                file_name = field.file_name().map(|s| s.to_string());
+                file_data = field.bytes().await?;
+            }
+            Some("conversation_id") => conversation_id = Some(field.text().await?),
+            Some("project_id") => project_id = Some(field.text().await?),
+            _ => {}
+        }
+    }
+
+    Ok(FileUploadForm {
+        file_name,
+        file_data,
+        conversation_id,
+        project_id,
+    })
 }
 
 /// Log the underlying error and return the generic `api_error_*` code the UI resolves via i18n.
-fn internal_error<E: std::fmt::Display>(e: E) -> HttpResponse {
+fn internal_error<E: std::fmt::Display>(e: E) -> Response {
     tracing::error!("Internal error: {}", e);
-    HttpResponse::InternalServerError().body("api_error_internal")
+    Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal")
 }
 
 /// Validate and store an uploaded file, then start background processing. Shared by the JSON
@@ -120,38 +149,56 @@ pub async fn create_uploaded_file(
     vllm: &VllmClient,
     username: &str,
     form: FileUploadForm,
-) -> Result<File, HttpResponse> {
+) -> Result<File, Response> {
     let (conversation_id, project_id) = match (&form.conversation_id, &form.project_id) {
-        (Some(c), None) => (Some(c.0.clone()), None),
-        (None, Some(p)) => (None, Some(p.0.clone())),
+        (Some(c), None) => (Some(c.clone()), None),
+        (None, Some(p)) => (None, Some(p.clone())),
         _ => {
-            return Err(HttpResponse::BadRequest().body("api_error_file_scope_required"));
+            return Err(Response::text(
+                StatusCode::BAD_REQUEST,
+                "api_error_file_scope_required",
+            ));
         }
     };
 
-    let Some(file_name) = form.file.file_name.clone() else {
-        return Err(HttpResponse::BadRequest().body("api_error_missing_file_name"));
+    let Some(file_name) = form.file_name.clone() else {
+        return Err(Response::text(
+            StatusCode::BAD_REQUEST,
+            "api_error_missing_file_name",
+        ));
     };
 
     let Some(mime_type) = allowed_mime_type(&file_name) else {
-        return Err(HttpResponse::BadRequest().body("api_error_unsupported_file_type"));
+        return Err(Response::text(
+            StatusCode::BAD_REQUEST,
+            "api_error_unsupported_file_type",
+        ));
     };
 
     let max_size = max_file_size_bytes();
-    if form.file.data.len() as u64 > max_size {
-        return Err(HttpResponse::PayloadTooLarge().body("api_error_file_too_large"));
+    if form.file_data.len() as u64 > max_size {
+        return Err(Response::text(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "api_error_file_too_large",
+        ));
     }
-    if form.file.data.is_empty() {
-        return Err(HttpResponse::BadRequest().body("api_error_file_empty"));
+    if form.file_data.is_empty() {
+        return Err(Response::text(
+            StatusCode::BAD_REQUEST,
+            "api_error_file_empty",
+        ));
     }
 
     // The upload target must exist and belong to the requesting user.
     if let Some(cid) = &conversation_id {
         match db.repository::<Conversation>().read(cid).await {
             Ok(Some(c)) if c.owner == username => {}
-            Ok(Some(_)) => return Err(HttpResponse::Forbidden().finish()),
+            Ok(Some(_)) => return Err(Response::new(StatusCode::FORBIDDEN)),
             Ok(None) => {
-                return Err(HttpResponse::NotFound().body("api_error_conversation_not_found"));
+                return Err(Response::text(
+                    StatusCode::NOT_FOUND,
+                    "api_error_conversation_not_found",
+                ));
             }
             Err(e) => return Err(internal_error(e)),
         }
@@ -159,8 +206,13 @@ pub async fn create_uploaded_file(
     if let Some(pid) = &project_id {
         match db.repository::<Project>().read(pid).await {
             Ok(Some(p)) if p.owner == username => {}
-            Ok(Some(_)) => return Err(HttpResponse::Forbidden().finish()),
-            Ok(None) => return Err(HttpResponse::NotFound().body("api_error_project_not_found")),
+            Ok(Some(_)) => return Err(Response::new(StatusCode::FORBIDDEN)),
+            Ok(None) => {
+                return Err(Response::text(
+                    StatusCode::NOT_FOUND,
+                    "api_error_project_not_found",
+                ));
+            }
             Err(e) => return Err(internal_error(e)),
         }
     }
@@ -169,8 +221,7 @@ pub async fn create_uploaded_file(
     if let Db::Postgres(pg_db) = db {
         let schema = db_schema();
         let count_sql = format!(
-            "SELECT count(*) FROM {schema}.files \
-             WHERE conversation_id = $1 OR project_id = $2"
+            "SELECT count(*) FROM {schema}.files WHERE conversation_id = $1 OR project_id = $2"
         );
         let (count,): (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(count_sql.as_str()))
             .bind(&conversation_id)
@@ -179,7 +230,10 @@ pub async fn create_uploaded_file(
             .await
             .map_err(internal_error)?;
         if count as u64 >= max_files {
-            return Err(HttpResponse::UnprocessableEntity().body("api_error_file_limit_reached"));
+            return Err(Response::text(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "api_error_file_limit_reached",
+            ));
         }
     }
 
@@ -191,7 +245,7 @@ pub async fn create_uploaded_file(
         owner: username.to_string(),
         file_name,
         mime_type: mime_type.to_string(),
-        file_size: form.file.data.len() as i64,
+        file_size: form.file_data.len() as i64,
         conversation_id,
         project_id,
         message_id: None,
@@ -209,10 +263,7 @@ pub async fn create_uploaded_file(
         Db::Postgres(pg_db) => {
             let schema = db_schema();
             let insert_file = format!(
-                "INSERT INTO {schema}.files \
-                 (id, owner, file_name, mime_type, file_size, conversation_id, project_id, \
-                  status, error_message, created_at, updated_at) \
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"
+                "INSERT INTO {schema}.files (id, owner, file_name, mime_type, file_size, conversation_id, project_id, status, error_message, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"
             );
             let insert_blob =
                 format!("INSERT INTO {schema}.file_blobs (file_id, data) VALUES ($1, $2)");
@@ -235,7 +286,7 @@ pub async fn create_uploaded_file(
                     .await?;
                 sqlx::query(sqlx::AssertSqlSafe(insert_blob.as_str()))
                     .bind(&file.id)
-                    .bind(form.file.data.as_ref())
+                    .bind(form.file_data.as_ref())
                     .execute(&mut *tx)
                     .await?;
                 tx.commit().await?;
@@ -245,7 +296,10 @@ pub async fn create_uploaded_file(
 
             if let Err(e) = result {
                 tracing::error!("Failed to store uploaded file: {}", e);
-                return Err(HttpResponse::InternalServerError().body("api_error_internal"));
+                return Err(Response::text(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "api_error_internal",
+                ));
             }
 
             if !is_image {
@@ -259,36 +313,63 @@ pub async fn create_uploaded_file(
 
             Ok(file)
         }
-        Db::InMemory(_) => Err(HttpResponse::NotImplemented().body("api_error_postgres_required")),
+        Db::InMemory(_) => Err(Response::text(
+            StatusCode::NOT_IMPLEMENTED,
+            "api_error_postgres_required",
+        )),
     }
 }
 
-#[post("")]
-pub async fn upload_file(
-    req: HttpRequest,
-    jwt_config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    switchboard: web::Data<SwitchboardClient>,
-    vllm: web::Data<VllmClient>,
-    form: MultipartForm<FileUploadForm>,
-) -> impl Responder {
-    let username = match get_user_from_req(&req, &jwt_config).await {
-        Some(claims) => claims.sub,
-        None => return HttpResponse::Unauthorized().finish(),
-    };
+/// Username or the 401 to answer - `HttpError::into_response` only renders
+/// fixed text, so this travels as the success value instead.
+pub enum Username {
+    Ok(String),
+    Unauthorized,
+}
 
-    match create_uploaded_file(
-        &db,
-        switchboard.get_ref(),
-        vllm.get_ref(),
-        &username,
-        form.into_inner(),
-    )
-    .await
-    {
-        Ok(file) => HttpResponse::Created().json(&file),
-        Err(resp) => resp,
+impl Username {
+    pub fn or_401(self) -> Result<String, Response> {
+        match self {
+            Self::Ok(username) => Ok(username),
+            Self::Unauthorized => Err(Response::new(StatusCode::UNAUTHORIZED)),
+        }
     }
+}
+
+#[async_trait]
+impl FromRequest for Username {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        let Ok(config) = req.container().get::<JwtConfig>() else {
+            return Ok(Self::Unauthorized);
+        };
+        match get_user_from_req(req, &config).await {
+            Some(claims) => Ok(Self::Ok(claims.sub)),
+            None => Ok(Self::Unauthorized),
+        }
+    }
+}
+
+#[post("/api/v1/files")]
+pub async fn upload_file(
+    username: Username,
+    Inject(db): Inject<Db>,
+    Inject(switchboard): Inject<SwitchboardClient>,
+    Inject(vllm): Inject<VllmClient>,
+    form: Multipart,
+) -> Result<Response, HttpError> {
+    let username = match username.or_401() {
+        Ok(username) => username,
+        Err(response) => return Ok(response),
+    };
+    let form = parse_upload_form(form).await?;
+
+    Ok(
+        match create_uploaded_file(&db, &switchboard, &vllm, &username, form).await {
+            Ok(file) => Response::json(StatusCode::CREATED, &file)
+                .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR)),
+            Err(resp) => resp,
+        },
+    )
 }
 
 #[derive(serde::Deserialize)]
@@ -297,48 +378,52 @@ pub struct ListFilesQuery {
     pub project_id: Option<String>,
 }
 
-#[get("")]
+#[get("/api/v1/files")]
 pub async fn list_files(
-    req: HttpRequest,
-    jwt_config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    query: web::Query<ListFilesQuery>,
-) -> impl Responder {
-    let username = match get_user_from_req(&req, &jwt_config).await {
-        Some(claims) => claims.sub,
-        None => return HttpResponse::Unauthorized().finish(),
+    username: Username,
+    Inject(db): Inject<Db>,
+    Query(query): Query<ListFilesQuery>,
+) -> Response {
+    let username = match username.or_401() {
+        Ok(username) => username,
+        Err(response) => return response,
     };
 
     match (&query.conversation_id, &query.project_id) {
         (Some(cid), None) => {
             let conversation = match db.repository::<Conversation>().read(cid).await {
                 Ok(Some(c)) if c.owner == username => c,
-                Ok(Some(_)) => return HttpResponse::Forbidden().finish(),
+                Ok(Some(_)) => return Response::new(StatusCode::FORBIDDEN),
                 Ok(None) => {
-                    return HttpResponse::NotFound().body("api_error_conversation_not_found");
+                    return Response::text(
+                        StatusCode::NOT_FOUND,
+                        "api_error_conversation_not_found",
+                    );
                 }
                 Err(e) => return internal_error(e),
             };
 
             match visible_files_for_conversation(&db, &conversation).await {
-                Ok(files) => HttpResponse::Ok().json(files),
+                Ok(files) => json_ok(&files),
                 Err(e) => internal_error(e),
             }
         }
         (None, Some(pid)) => {
             match db.repository::<Project>().read(pid).await {
                 Ok(Some(p)) if p.owner == username => {}
-                Ok(Some(_)) => return HttpResponse::Forbidden().finish(),
-                Ok(None) => return HttpResponse::NotFound().body("api_error_project_not_found"),
+                Ok(Some(_)) => return Response::new(StatusCode::FORBIDDEN),
+                Ok(None) => {
+                    return Response::text(StatusCode::NOT_FOUND, "api_error_project_not_found");
+                }
                 Err(e) => return internal_error(e),
             }
 
             match visible_files_for_project(&db, pid).await {
-                Ok(files) => HttpResponse::Ok().json(files),
+                Ok(files) => json_ok(&files),
                 Err(e) => internal_error(e),
             }
         }
-        _ => HttpResponse::BadRequest().body("api_error_file_scope_required"),
+        _ => Response::text(StatusCode::BAD_REQUEST, "api_error_file_scope_required"),
     }
 }
 
@@ -352,11 +437,7 @@ pub async fn visible_files_for_conversation(
         Db::Postgres(pg_db) => {
             let schema = db_schema();
             let query = format!(
-                "SELECT f.* FROM {schema}.files f \
-                 LEFT JOIN {schema}.conversations c ON f.conversation_id = c.id \
-                 WHERE f.conversation_id = $1 \
-                    OR ($2::text IS NOT NULL AND (f.project_id = $2 OR c.project_id = $2)) \
-                 ORDER BY f.created_at"
+                "SELECT f.* FROM {schema}.files f LEFT JOIN {schema}.conversations c ON f.conversation_id = c.id WHERE f.conversation_id = $1 OR ($2::text IS NOT NULL AND (f.project_id = $2 OR c.project_id = $2)) ORDER BY f.created_at"
             );
             sqlx::query_as::<_, File>(sqlx::AssertSqlSafe(query.as_str()))
                 .bind(&conversation.id)
@@ -404,10 +485,7 @@ pub async fn visible_files_for_project(db: &Db, project_id: &str) -> Result<Vec<
         Db::Postgres(pg_db) => {
             let schema = db_schema();
             let query = format!(
-                "SELECT f.* FROM {schema}.files f \
-                 LEFT JOIN {schema}.conversations c ON f.conversation_id = c.id \
-                 WHERE f.project_id = $1 OR c.project_id = $1 \
-                 ORDER BY f.created_at"
+                "SELECT f.* FROM {schema}.files f LEFT JOIN {schema}.conversations c ON f.conversation_id = c.id WHERE f.project_id = $1 OR c.project_id = $1 ORDER BY f.created_at"
             );
             sqlx::query_as::<_, File>(sqlx::AssertSqlSafe(query.as_str()))
                 .bind(project_id)
@@ -442,9 +520,8 @@ pub async fn visible_files_for_project(db: &Db, project_id: &str) -> Result<Vec<
     }
 }
 
-/// Attach staged files (message_id IS NULL) to a sent user message. Only files
-/// owned by `username` and belonging to `conversation_id` are linked, so a
-/// forged file id in the form cannot steal another user's or scope's file.
+/// Links staged files to a sent message; only files owned by `username` in
+/// `conversation_id` qualify, so a forged id can't steal another user's file.
 pub async fn link_files_to_message(
     db: &Db,
     file_ids: &[String],
@@ -460,8 +537,7 @@ pub async fn link_files_to_message(
     };
     let schema = db_schema();
     let sql = format!(
-        "UPDATE {schema}.files SET message_id = $1, updated_at = $2 \
-         WHERE id = ANY($3) AND owner = $4 AND conversation_id = $5 AND message_id IS NULL"
+        "UPDATE {schema}.files SET message_id = $1, updated_at = $2 WHERE id = ANY($3) AND owner = $4 AND conversation_id = $5 AND message_id IS NULL"
     );
     sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(message_id)
@@ -509,43 +585,44 @@ pub async fn files_by_message(
     map
 }
 
-async fn load_owned_file(db: &Db, file_id: &str, username: &str) -> Result<File, HttpResponse> {
+async fn load_owned_file(db: &Db, file_id: &str, username: &str) -> Result<File, Response> {
     match db.repository::<File>().read(file_id).await {
         Ok(Some(f)) if f.owner == username => Ok(f),
-        Ok(Some(_)) => Err(HttpResponse::Forbidden().finish()),
-        Ok(None) => Err(HttpResponse::NotFound().body("api_error_file_not_found")),
+        Ok(Some(_)) => Err(Response::new(StatusCode::FORBIDDEN)),
+        Ok(None) => Err(Response::text(
+            StatusCode::NOT_FOUND,
+            "api_error_file_not_found",
+        )),
         Err(e) => Err(internal_error(e)),
     }
 }
 
-#[get("/{file_id}")]
+#[get("/api/v1/files/{file_id}")]
 pub async fn get_file(
-    req: HttpRequest,
-    jwt_config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    file_id: web::Path<String>,
-) -> impl Responder {
-    let username = match get_user_from_req(&req, &jwt_config).await {
-        Some(claims) => claims.sub,
-        None => return HttpResponse::Unauthorized().finish(),
+    username: Username,
+    Inject(db): Inject<Db>,
+    Path(file_id): Path<String>,
+) -> Response {
+    let username = match username.or_401() {
+        Ok(username) => username,
+        Err(response) => return response,
     };
 
     match load_owned_file(&db, &file_id, &username).await {
-        Ok(file) => HttpResponse::Ok().json(file),
+        Ok(file) => json_ok(&file),
         Err(resp) => resp,
     }
 }
 
-#[get("/{file_id}/download")]
+#[get("/api/v1/files/{file_id}/download")]
 pub async fn download_file(
-    req: HttpRequest,
-    jwt_config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    file_id: web::Path<String>,
-) -> impl Responder {
-    let username = match get_user_from_req(&req, &jwt_config).await {
-        Some(claims) => claims.sub,
-        None => return HttpResponse::Unauthorized().finish(),
+    username: Username,
+    Inject(db): Inject<Db>,
+    Path(file_id): Path<String>,
+) -> Response {
+    let username = match username.or_401() {
+        Ok(username) => username,
+        Err(response) => return response,
     };
 
     let file = match load_owned_file(&db, &file_id, &username).await {
@@ -553,7 +630,7 @@ pub async fn download_file(
         Err(resp) => return resp,
     };
 
-    match db.get_ref() {
+    match &*db {
         Db::Postgres(pg_db) => {
             let schema = db_schema();
             let query = format!("SELECT data FROM {schema}.file_blobs WHERE file_id = $1");
@@ -575,34 +652,36 @@ pub async fn download_file(
                     } else {
                         "attachment"
                     };
-                    HttpResponse::Ok()
-                        .content_type(file.mime_type.clone())
-                        .append_header((
+                    Response::from_bytes(StatusCode::OK, Bytes::from(data))
+                        .header("content-type", &file.mime_type)
+                        .header(
                             "Content-Disposition",
                             format!("{}; filename=\"{}\"", disposition, safe_name),
-                        ))
-                        .body(data)
+                        )
                 }
-                Ok(None) => HttpResponse::NotFound().body("api_error_file_content_not_found"),
+                Ok(None) => {
+                    Response::text(StatusCode::NOT_FOUND, "api_error_file_content_not_found")
+                }
                 Err(e) => internal_error(e),
             }
         }
-        Db::InMemory(_) => HttpResponse::NotImplemented().body("api_error_postgres_required"),
+        Db::InMemory(_) => {
+            Response::text(StatusCode::NOT_IMPLEMENTED, "api_error_postgres_required")
+        }
     }
 }
 
-#[post("/{file_id}/reprocess")]
+#[post("/api/v1/files/{file_id}/reprocess")]
 pub async fn reprocess_file(
-    req: HttpRequest,
-    jwt_config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    switchboard: web::Data<SwitchboardClient>,
-    vllm: web::Data<VllmClient>,
-    file_id: web::Path<String>,
-) -> impl Responder {
-    let username = match get_user_from_req(&req, &jwt_config).await {
-        Some(claims) => claims.sub,
-        None => return HttpResponse::Unauthorized().finish(),
+    username: Username,
+    Inject(db): Inject<Db>,
+    Inject(switchboard): Inject<SwitchboardClient>,
+    Inject(vllm): Inject<VllmClient>,
+    Path(file_id): Path<String>,
+) -> Response {
+    let username = match username.or_401() {
+        Ok(username) => username,
+        Err(response) => return response,
     };
 
     let file = match load_owned_file(&db, &file_id, &username).await {
@@ -611,32 +690,35 @@ pub async fn reprocess_file(
     };
 
     if file.status == crate::files::STATUS_PROCESSING {
-        return HttpResponse::Conflict().body("api_error_file_already_processing");
+        return Response::text(StatusCode::CONFLICT, "api_error_file_already_processing");
     }
     // Images have no text pipeline to (re)run; they are ready once stored.
     if crate::files::is_image_mime(&file.mime_type) {
-        return HttpResponse::UnprocessableEntity().body("api_error_image_not_processable");
+        return Response::text(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "api_error_image_not_processable",
+        );
     }
 
     pipeline::spawn_processing(
-        db.get_ref().clone(),
-        switchboard.get_ref().clone(),
-        vllm.get_ref().clone(),
+        (*db).clone(),
+        (*switchboard).clone(),
+        (*vllm).clone(),
         file.id.clone(),
     );
-    HttpResponse::Accepted().json(file)
+    Response::json(StatusCode::ACCEPTED, &file)
+        .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
 }
 
-#[get("/{file_id}/chunks")]
+#[get("/api/v1/files/{file_id}/chunks")]
 pub async fn list_chunks(
-    req: HttpRequest,
-    jwt_config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    file_id: web::Path<String>,
-) -> impl Responder {
-    let username = match get_user_from_req(&req, &jwt_config).await {
-        Some(claims) => claims.sub,
-        None => return HttpResponse::Unauthorized().finish(),
+    username: Username,
+    Inject(db): Inject<Db>,
+    Path(file_id): Path<String>,
+) -> Response {
+    let username = match username.or_401() {
+        Ok(username) => username,
+        Err(response) => return response,
     };
 
     let file = match load_owned_file(&db, &file_id, &username).await {
@@ -644,19 +726,18 @@ pub async fn list_chunks(
         Err(resp) => return resp,
     };
 
-    match db.get_ref() {
+    match &*db {
         Db::Postgres(pg_db) => {
             let schema = db_schema();
             let query = format!(
-                "SELECT id, file_id, chunk_index, content, embedding_model, metadata, created_at \
-                 FROM {schema}.file_chunks WHERE file_id = $1 ORDER BY chunk_index"
+                "SELECT id, file_id, chunk_index, content, embedding_model, metadata, created_at FROM {schema}.file_chunks WHERE file_id = $1 ORDER BY chunk_index"
             );
             match sqlx::query_as::<_, FileChunk>(sqlx::AssertSqlSafe(query.as_str()))
                 .bind(&file.id)
                 .fetch_all(pg_db.pool())
                 .await
             {
-                Ok(chunks) => HttpResponse::Ok().json(chunks),
+                Ok(chunks) => json_ok(&chunks),
                 Err(e) => internal_error(e),
             }
         }
@@ -667,23 +748,22 @@ pub async fn list_chunks(
                     .filter(|c| c.file_id == file.id)
                     .collect();
                 chunks.sort_by_key(|c| c.chunk_index);
-                HttpResponse::Ok().json(chunks)
+                json_ok(&chunks)
             }
             Err(e) => internal_error(e),
         },
     }
 }
 
-#[delete("/{file_id}")]
+#[delete("/api/v1/files/{file_id}")]
 pub async fn delete_file(
-    req: HttpRequest,
-    jwt_config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-    file_id: web::Path<String>,
-) -> impl Responder {
-    let username = match get_user_from_req(&req, &jwt_config).await {
-        Some(claims) => claims.sub,
-        None => return HttpResponse::Unauthorized().finish(),
+    username: Username,
+    Inject(db): Inject<Db>,
+    Path(file_id): Path<String>,
+) -> Response {
+    let username = match username.or_401() {
+        Ok(username) => username,
+        Err(response) => return response,
     };
 
     let file = match load_owned_file(&db, &file_id, &username).await {
@@ -693,18 +773,22 @@ pub async fn delete_file(
 
     // Blobs and chunks are removed by ON DELETE CASCADE.
     match db.repository::<File>().delete(&file.id).await {
-        Ok(()) => HttpResponse::NoContent().finish(),
+        Ok(()) => Response::new(StatusCode::NO_CONTENT),
         Err(e) => internal_error(e),
     }
 }
 
-pub fn scope() -> actix_web::Scope {
-    web::scope("/api/v1/files")
-        .service(upload_file)
-        .service(list_files)
-        .service(download_file)
-        .service(reprocess_file)
-        .service(list_chunks)
-        .service(get_file)
-        .service(delete_file)
+fn json_ok<T: serde::Serialize>(value: &T) -> Response {
+    Response::json(StatusCode::OK, value)
+        .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
+}
+
+pub fn register_routes() {
+    let _ = upload_file as fn(_, _, _, _, _) -> _;
+    let _ = list_files as fn(_, _, _) -> _;
+    let _ = get_file as fn(_, _, _) -> _;
+    let _ = download_file as fn(_, _, _) -> _;
+    let _ = reprocess_file as fn(_, _, _, _, _) -> _;
+    let _ = list_chunks as fn(_, _, _) -> _;
+    let _ = delete_file as fn(_, _, _) -> _;
 }

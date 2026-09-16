@@ -1,4 +1,5 @@
-use actix_web::body::MessageBody;
+use http_body_util::BodyExt;
+use quench_http::prelude::http::StatusCode;
 use warehouse_service::routers::ui::pages::home::render_home_page;
 
 /// `docker_enabled`/`crates_enabled` read a `LazyLock` fixed for the
@@ -7,12 +8,12 @@ use warehouse_service::routers::ui::pages::home::render_home_page;
 /// tests), so this can't control which branch runs - it just asserts
 /// the page renders successfully and always carries the title, which
 /// holds regardless of which branch that turns out to be.
-#[test]
-fn render_home_page_always_renders_ok_with_the_home_title() {
+#[tokio::test]
+async fn render_home_page_always_renders_ok_with_the_home_title() {
     let resp = render_home_page();
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
-    let body = resp.into_body().try_into_bytes().unwrap();
-    let html = String::from_utf8(body.to_vec()).unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let collected = resp.into_hyper().into_body().collect().await.expect("body");
+    let html = String::from_utf8_lossy(&collected.to_bytes()).into_owned();
     assert!(html.contains("ui_home_title"));
     // Exactly one of "no services" or a service section should show,
     // never both and never neither.

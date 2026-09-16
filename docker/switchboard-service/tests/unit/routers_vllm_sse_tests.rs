@@ -2,79 +2,86 @@
 //! stream over a broadcast channel; this proves the framing and that a
 //! subscriber sees what's sent after it subscribes.
 
-use actix_web::web::Data;
-use actix_web::{App, test};
+use http_body_util::BodyExt;
+use quench_http::prelude::Inject;
+use std::sync::Arc;
 use switchboard_service::routers::vllm::sse::{
     VllmBroadcaster, handle_sse_alias, handle_sse_canonical,
 };
 
 fn broadcaster() -> (
-    Data<VllmBroadcaster>,
+    Inject<VllmBroadcaster>,
     tokio::sync::broadcast::Sender<String>,
 ) {
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
-    (Data::new(VllmBroadcaster(tx.clone())), tx)
+    (Inject(Arc::new(VllmBroadcaster(tx.clone()))), tx)
 }
 
-// The response body is a live `BroadcastStream` that only ends once every
-// `Sender` is gone (the `App`'s own `Data<VllmBroadcaster>` clone included) -
-// `test::read_body` reads to stream end, so it would hang forever against a
-// channel with a sender still alive. Drop the `App` (which owns the other
-// clone) and the local `tx` before reading, so the channel actually closes.
-
-#[actix_web::test]
+#[tokio::test]
 async fn canonical_sse_route_streams_a_broadcast_message_as_an_sse_event() {
-    let (data, tx) = broadcaster();
-    let app = test::init_service(App::new().app_data(data).service(handle_sse_canonical)).await;
-
-    let req = test::TestRequest::get().uri("/sse").to_request();
-    let resp = test::call_service(&app, req).await;
+    let (broadcaster, tx) = broadcaster();
+    let resp = handle_sse_canonical(broadcaster)
+        .await
+        .expect("sse response");
     assert!(resp.status().is_success());
-    assert_eq!(
-        resp.headers().get("content-type").unwrap(),
-        "text/event-stream"
-    );
 
     tx.send("<div>hello</div>".to_string()).unwrap();
-    drop(app);
+    // Drop every sender so the never-ending broadcast stream actually
+    // closes before collecting the body waits for end-of-stream.
     drop(tx);
-    let body = test::read_body(resp).await;
-    let text = String::from_utf8(body.to_vec()).unwrap();
+
+    let hyper_resp = resp.into_hyper();
+    assert_eq!(
+        hyper_resp.headers().get("content-type").unwrap(),
+        "text/event-stream"
+    );
+    let collected = hyper_resp
+        .into_body()
+        .collect()
+        .await
+        .expect("stream collects cleanly");
+    let text = String::from_utf8(collected.to_bytes().to_vec()).unwrap();
     assert!(text.contains("event: vllm-instances"));
     assert!(text.contains("<div>hello</div>"));
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn sse_event_strips_newlines_from_the_html_payload() {
-    let (data, tx) = broadcaster();
-    let app = test::init_service(App::new().app_data(data).service(handle_sse_canonical)).await;
-
-    let req = test::TestRequest::get().uri("/sse").to_request();
-    let resp = test::call_service(&app, req).await;
+    let (broadcaster, tx) = broadcaster();
+    let resp = handle_sse_canonical(broadcaster)
+        .await
+        .expect("sse response");
 
     tx.send("<div>\nline one\nline two\n</div>".to_string())
         .unwrap();
-    drop(app);
     drop(tx);
-    let body = test::read_body(resp).await;
-    let text = String::from_utf8(body.to_vec()).unwrap();
+
+    let collected = resp
+        .into_hyper()
+        .into_body()
+        .collect()
+        .await
+        .expect("stream collects cleanly");
+    let text = String::from_utf8(collected.to_bytes().to_vec()).unwrap();
     assert!(text.contains("line oneline two"));
     assert!(!text.contains("line one\nline two"));
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn alias_sse_route_behaves_the_same_as_canonical() {
-    let (data, tx) = broadcaster();
-    let app = test::init_service(App::new().app_data(data).service(handle_sse_alias)).await;
-
-    let req = test::TestRequest::get().uri("/instances/sse").to_request();
-    let resp = test::call_service(&app, req).await;
+    let (broadcaster, tx) = broadcaster();
+    let resp = handle_sse_alias(broadcaster).await.expect("sse response");
     assert!(resp.status().is_success());
 
     tx.send("alias-payload".to_string()).unwrap();
-    drop(app);
     drop(tx);
-    let body = test::read_body(resp).await;
-    let text = String::from_utf8(body.to_vec()).unwrap();
+
+    let collected = resp
+        .into_hyper()
+        .into_body()
+        .collect()
+        .await
+        .expect("stream collects cleanly");
+    let text = String::from_utf8(collected.to_bytes().to_vec()).unwrap();
     assert!(text.contains("alias-payload"));
 }

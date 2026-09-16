@@ -1,14 +1,11 @@
 use crate::domain::artifact::ArtifactVersion;
 use crate::routers::artifacts::ops::yank::set_yanked;
 use crate::routers::ui::PageQuery;
-use crate::routers::ui::authz::{require_manage, ui_claims};
-use crate::routers::ui::common::{
-    UiPageKind, is_ui_authenticated, render_page, ui_login_redirect, ui_path,
-};
-use actix_web::{HttpRequest, HttpResponse, Responder, get, post, web};
-use quench_auth::prelude::JwtConfig;
+use crate::routers::ui::authz::{ManageGate, OptionalUiClaims, can_manage};
+use crate::routers::ui::common::{PageAuth, UiPageKind, render_page, ui_login_redirect, ui_path};
 use quench_db::prelude::{Crud, Db};
-use quench_starter::prelude::with_base_path;
+use quench_http::prelude::{Form, Inject, Query, Response, get, http::StatusCode, post};
+use quench_starter::common::routes::with_base_path;
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 use std::collections::BTreeMap;
@@ -20,43 +17,39 @@ pub struct ArtifactActionForm {
     pub version_code: i64,
 }
 
-// ---------------------------------------------------------------------------
-// GET /ui/artifacts/catalog
-// ---------------------------------------------------------------------------
+// --- GET /ui/artifacts/catalog ---
 
-#[get("/artifacts/catalog")]
+#[get("/ui/artifacts/catalog")]
 pub async fn artifacts_catalog(
-    req: HttpRequest,
-    query: web::Query<PageQuery>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    render(&req, query, &config, &db).await
+    auth: PageAuth,
+    claims: OptionalUiClaims,
+    Query(query): Query<PageQuery>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    render(auth, claims, query, &db).await
 }
 
-#[get("/artifacts/catalog/")]
+#[get("/ui/artifacts/catalog/")]
 pub async fn artifacts_catalog_slash(
-    req: HttpRequest,
-    query: web::Query<PageQuery>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    render(&req, query, &config, &db).await
+    auth: PageAuth,
+    claims: OptionalUiClaims,
+    Query(query): Query<PageQuery>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    render(auth, claims, query, &db).await
 }
 
 async fn render(
-    req: &HttpRequest,
-    query: web::Query<PageQuery>,
-    config: &JwtConfig,
+    PageAuth(authenticated): PageAuth,
+    OptionalUiClaims(claims): OptionalUiClaims,
+    query: PageQuery,
     db: &Db,
-) -> HttpResponse {
-    if !is_ui_authenticated(req, config).await {
+) -> Response {
+    if !authenticated {
         return ui_login_redirect();
     }
 
-    let can_manage = ui_claims(req, config)
-        .await
-        .is_some_and(|claims| crate::routers::ui::authz::can_manage(&claims));
+    let can_manage = claims.is_some_and(|claims| can_manage(&claims));
 
     // A disabled feature or an unreachable database renders an empty catalog,
     // the same non-answer the JSON API gives an unauthorised caller.
@@ -79,71 +72,55 @@ async fn render(
     )
 }
 
-// ---------------------------------------------------------------------------
-// POST /ui/artifacts/yank  |  /ui/artifacts/unyank
-// ---------------------------------------------------------------------------
+// --- POST /ui/artifacts/yank | /ui/artifacts/unyank ---
 
-#[post("/artifacts/yank")]
+#[post("/ui/artifacts/yank")]
 pub async fn yank_version(
-    req: HttpRequest,
-    form: web::Form<ArtifactActionForm>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    set_yank_state(req, form, config, db, true).await
+    gate: ManageGate,
+    Form(form): Form<ArtifactActionForm>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    set_yank_state(gate, form, &db, true).await
 }
 
-#[post("/artifacts/unyank")]
+#[post("/ui/artifacts/unyank")]
 pub async fn unyank_version(
-    req: HttpRequest,
-    form: web::Form<ArtifactActionForm>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    set_yank_state(req, form, config, db, false).await
+    gate: ManageGate,
+    Form(form): Form<ArtifactActionForm>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    set_yank_state(gate, form, &db, false).await
 }
 
 async fn set_yank_state(
-    req: HttpRequest,
-    form: web::Form<ArtifactActionForm>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
+    gate: ManageGate,
+    form: ArtifactActionForm,
+    db: &Db,
     yanked: bool,
-) -> HttpResponse {
-    if let Err(response) = require_manage(&req, &config).await {
+) -> Response {
+    if let Err(response) = gate.or_response() {
         return response;
     }
 
     if !crate::routers::artifacts_enabled() {
-        return HttpResponse::NotFound().body("api_error_artifacts_disabled");
+        return Response::text(StatusCode::NOT_FOUND, "api_error_artifacts_disabled");
     }
 
-    let outcome = set_yanked(
-        &db,
-        &form.program,
-        &form.platform,
-        form.version_code,
-        yanked,
-    )
-    .await;
+    let outcome = set_yanked(db, &form.program, &form.platform, form.version_code, yanked).await;
     if !outcome.status().is_success() {
         return outcome;
     }
 
-    HttpResponse::NoContent()
-        .append_header((
-            "HX-Redirect",
-            with_base_path(&format!(
-                "/ui/artifacts/catalog?repo={}&platform={}&tag={}",
-                form.program, form.platform, form.version_code
-            )),
-        ))
-        .finish()
+    Response::new(StatusCode::NO_CONTENT).header(
+        "HX-Redirect",
+        with_base_path(&format!(
+            "/ui/artifacts/catalog?repo={}&platform={}&tag={}",
+            form.program, form.platform, form.version_code
+        )),
+    )
 }
 
-// ---------------------------------------------------------------------------
-// Rendering
-// ---------------------------------------------------------------------------
+// --- Rendering ---
 
 /// program -> platform -> its versions, newest `version_code` first.
 type Tree<'a> = BTreeMap<&'a str, BTreeMap<&'a str, Vec<&'a ArtifactVersion>>>;
@@ -154,7 +131,7 @@ pub fn render_artifacts_page(
     selected_platform: Option<&str>,
     selected_code: Option<i64>,
     can_manage: bool,
-) -> HttpResponse {
+) -> Response {
     let mut tree: Tree = BTreeMap::new();
     for version in versions {
         tree.entry(version.program.as_str())
@@ -205,7 +182,7 @@ pub fn render_artifacts_page(
         ));
 
     render_page(
-        HttpResponse::Ok(),
+        StatusCode::OK,
         content()
             .class("container-fluid py-4")
             .child(div().class("split-view").child(left).child(right)),
@@ -514,4 +491,11 @@ fn meta_row_value(label_key: &str, value: Element) -> Element {
         .class("meta-row")
         .child(div().class("meta-label").attr("data-i18n", label_key))
         .child(div().class("meta-value mono").child(value))
+}
+
+pub fn register_routes() {
+    let _ = artifacts_catalog as fn(_, _, _, _) -> _;
+    let _ = artifacts_catalog_slash as fn(_, _, _, _) -> _;
+    let _ = yank_version as fn(_, _, _) -> _;
+    let _ = unyank_version as fn(_, _, _) -> _;
 }

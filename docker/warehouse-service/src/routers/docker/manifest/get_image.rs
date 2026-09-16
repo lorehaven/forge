@@ -2,23 +2,24 @@ use crate::domain::docker_error;
 use crate::routers::docker::{
     manifest_path, repository_path, validate_digest, validate_tag_reference,
 };
-use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
-use quench_starter::prelude::error;
+use quench_http::prelude::{Path, Response, get, http::StatusCode};
+use quench_starter::http::domain::error;
 
-#[get("/{name:.+}/manifests/{reference}")]
-pub async fn handle(req: HttpRequest, path: web::Path<(String, String)>) -> impl Responder {
-    let (name, reference) = path.into_inner();
+#[get("/v2/{name:.+}/manifests/{reference}")]
+pub async fn handle(
+    Path((name, reference)): Path<(String, String)>,
+    accept: super::AcceptHeader,
+) -> Response {
+    let resolved =
+        match resolve_manifest_response(accept.0.as_deref().unwrap_or(""), &name, &reference).await
+        {
+            Ok(v) => v,
+            Err(resp) => return resp,
+        };
 
-    let resolved = match resolve_manifest_response(&req, &name, &reference).await {
-        Ok(v) => v,
-        Err(resp) => return resp,
-    };
-
-    HttpResponse::Ok()
-        .append_header(("Content-Type", resolved.media_type))
-        .append_header(("Docker-Content-Digest", resolved.digest))
-        .append_header(("Content-Length", resolved.data.len()))
-        .body(resolved.data)
+    Response::from_bytes(StatusCode::OK, resolved.data.into())
+        .header("content-type", resolved.media_type)
+        .header("docker-content-digest", &resolved.digest)
 }
 
 pub(super) struct ResolvedManifestResponse {
@@ -28,13 +29,13 @@ pub(super) struct ResolvedManifestResponse {
 }
 
 pub(super) async fn resolve_manifest_response(
-    req: &HttpRequest,
+    accept: &str,
     name: &str,
     reference: &str,
-) -> Result<ResolvedManifestResponse, HttpResponse> {
+) -> Result<ResolvedManifestResponse, Response> {
     let repo_path = repository_path(name).ok_or_else(|| {
         error::response(
-            actix_web::http::StatusCode::BAD_REQUEST,
+            StatusCode::BAD_REQUEST,
             docker_error::NAME_UNKNOWN,
             "invalid repository name",
         )
@@ -46,7 +47,7 @@ pub(super) async fn resolve_manifest_response(
     } else {
         if !validate_tag_reference(reference) {
             return Err(error::response(
-                actix_web::http::StatusCode::BAD_REQUEST,
+                StatusCode::BAD_REQUEST,
                 error::UNSUPPORTED,
                 "invalid manifest reference",
             ));
@@ -56,7 +57,7 @@ pub(super) async fn resolve_manifest_response(
             Ok(d) => d.trim().to_string(),
             Err(_) => {
                 return Err(error::response(
-                    actix_web::http::StatusCode::NOT_FOUND,
+                    StatusCode::NOT_FOUND,
                     docker_error::MANIFEST_UNKNOWN,
                     "manifest unknown",
                 ));
@@ -66,7 +67,7 @@ pub(super) async fn resolve_manifest_response(
 
     if !validate_digest(&digest) {
         return Err(error::response(
-            actix_web::http::StatusCode::NOT_FOUND,
+            StatusCode::NOT_FOUND,
             docker_error::MANIFEST_UNKNOWN,
             "manifest unknown",
         ));
@@ -74,7 +75,7 @@ pub(super) async fn resolve_manifest_response(
 
     let Some(manifest_path) = manifest_path(&digest) else {
         return Err(error::response(
-            actix_web::http::StatusCode::NOT_FOUND,
+            StatusCode::NOT_FOUND,
             docker_error::MANIFEST_UNKNOWN,
             "manifest unknown",
         ));
@@ -83,7 +84,7 @@ pub(super) async fn resolve_manifest_response(
         Ok(d) => d,
         Err(_) => {
             return Err(error::response(
-                actix_web::http::StatusCode::NOT_FOUND,
+                StatusCode::NOT_FOUND,
                 docker_error::MANIFEST_UNKNOWN,
                 "manifest unknown",
             ));
@@ -95,19 +96,12 @@ pub(super) async fn resolve_manifest_response(
         Some(mt) => mt,
         None => {
             return Err(error::response(
-                actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+                StatusCode::INTERNAL_SERVER_ERROR,
                 error::UNSUPPORTED,
                 "manifest media type unsupported",
             ));
         }
     };
-
-    // Strict RFC negotiation
-    let accept = req
-        .headers()
-        .get("Accept")
-        .and_then(|h| h.to_str().ok())
-        .unwrap_or("");
 
     // Docker clients probe with varying Accept headers; prefer serving what's stored over a strict 406.
     let chosen = negotiate_media_type(accept, &[stored_media_type]).unwrap_or(stored_media_type);
@@ -269,4 +263,8 @@ pub fn parse_accept(header: &str) -> Vec<MediaRange> {
             Some(MediaRange { value, q })
         })
         .collect()
+}
+
+pub fn register_routes() {
+    let _ = handle as fn(_, _) -> _;
 }

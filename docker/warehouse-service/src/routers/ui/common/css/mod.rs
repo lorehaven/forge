@@ -8,12 +8,7 @@ pub mod table;
 pub mod tree;
 pub mod utility;
 
-/// The rendered CSS is a deterministic function of fixed rule data, so
-/// writing it more than once is always redundant - guarded by a `Once`
-/// rather than just calling `fs::write` every time so that several `UI_SHELL_*`
-/// `LazyLock`s (or a shell and a direct test of this function) racing to
-/// initialize concurrently can't interleave two writes to the same path and
-/// have a reader observe a half-written file in between.
+/// Guarded by `Once` so concurrent callers can't interleave writes to the same file.
 pub fn ensure_warehouse_css() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {

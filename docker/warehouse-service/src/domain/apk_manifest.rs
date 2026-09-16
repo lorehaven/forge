@@ -1,24 +1,5 @@
-//! Deriving package identity from an APK's own `AndroidManifest.xml`.
-//!
-//! An app store cannot trust whatever a publisher *claims* a package's name
-//! and version are - two APKs uploaded under the same "name" a client picked
-//! would silently overwrite each other's history, or worse, let an attacker
-//! ship an update to someone else's listing. The manifest that Android itself
-//! reads at install time is the one fact that can't be faked without also
-//! rebuilding the archive, so publish-time identity comes from decoding it
-//! server-side, not from a caller-supplied field.
-//!
-//! `AndroidManifest.xml` inside a built APK is not text - it is a compiled
-//! binary format. Both `aapt` and `aapt2` (verified against the fixtures
-//! under `tests/fixtures/apk/`) write the `android:` attributes this module
-//! reads (`versionCode`, `versionName`, `minSdkVersion`, `targetSdkVersion`,
-//! `label`, `uses-permission`'s `name`) as an explicit namespaced name in
-//! [`axmldecoder`]'s output, not resolved down to a plain `versionCode` the
-//! way its own resource-string table (built for a different encoding some
-//! other toolchain apparently produces) would suggest - [`attr`] checks the
-//! namespaced form first and falls back to the bare name so either encoding
-//! works. `package` is an ordinary unnamespaced attribute and comes through
-//! as-is either way.
+//! Derives package identity server-side from an APK's `AndroidManifest.xml` -
+//! a caller-supplied name/version can't be trusted. `attr` checks namespaced and bare forms.
 
 use axmldecoder::{Element, Node};
 use std::io::{Read, Seek};
@@ -26,8 +7,7 @@ use std::io::{Read, Seek};
 /// The one file inside the archive this module looks at.
 const MANIFEST_ENTRY: &str = "AndroidManifest.xml";
 
-/// Looks up an `android:`-namespaced attribute, falling back to the bare
-/// name - see this module's doc comment for why both forms are checked.
+/// Checks the `android:`-namespaced form first, then the bare name.
 fn attr<'a>(element: &'a Element, name: &str) -> Option<&'a String> {
     element
         .get_attributes()
@@ -35,11 +15,7 @@ fn attr<'a>(element: &'a Element, name: &str) -> Option<&'a String> {
         .or_else(|| element.get_attributes().get(name))
 }
 
-/// A prefix [`axmldecoder`] renders an attribute value as when it is a
-/// resource reference (`@string/app_name`, say) rather than a literal -
-/// something that can't be resolved to text without also parsing
-/// `resources.arsc`, which the decoder deliberately doesn't support. See
-/// `ResourceValue::get_value`'s fallback arm in `axmldecoder`'s source.
+/// Marks an unresolved resource reference (e.g. `@string/app_name`) `axmldecoder` can't decode to text.
 const UNRESOLVED_REFERENCE_PREFIX: &str = "ResourceValueType::";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -49,8 +25,7 @@ pub struct ApkMetadata {
     pub version_name: String,
     pub min_sdk_version: Option<i32>,
     pub target_sdk_version: Option<i32>,
-    /// `None` when the manifest's `label` is a resource reference this
-    /// module can't resolve to text, or when there is no `<application>`.
+    /// `None` for an unresolvable resource reference or a missing `<application>`.
     pub label: Option<String>,
     pub permissions: Vec<String>,
 }
@@ -69,12 +44,8 @@ pub enum ApkManifestError {
     MissingVersionCode,
 }
 
-/// Extracts package identity from an APK's `AndroidManifest.xml`.
-///
-/// Takes a seekable reader rather than a byte slice so a caller can hand it
-/// an open `File` for an upload already flushed to disk instead of buffering
-/// the whole archive in memory a second time - `zip` needs random access to
-/// read the central directory regardless of how the entry itself is stored.
+/// Extracts package identity. Takes a seekable reader (not bytes) so a flushed upload `File`
+/// doesn't need re-buffering; `zip` needs random access for the central directory either way.
 pub fn extract<R: Read + Seek>(reader: R) -> Result<ApkMetadata, ApkManifestError> {
     let mut archive = zip::ZipArchive::new(reader).map_err(|_| ApkManifestError::NotAZip)?;
 

@@ -1,54 +1,30 @@
-//! The realm's user administration API.
-//!
-//! This is one of the two callers of [`crate::realm`], the other being the admin
-//! pages. The rules live there; what is here is the JSON surface and the guards.
-//!
-//! `quench-auth`'s `UserDb` stays read-only on purpose - a relying party needs to
-//! read users for the Basic-auth service-to-service path, and must never be able
-//! to create one - so all writing happens inside this service.
-//!
-//! Every route needs one `gatehouse` catalog action - `read-users`,
-//! `create-user`, `edit-user`, `delete-user` or `manage-permissions` - enforced
-//! by that action's `action_claims!`-generated extractor appearing in the
-//! handler's arguments. An extractor rather than a middleware so that a route
-//! added to this scope without one does not compile into an open endpoint; the
-//! compiler is a better reviewer than mount order.
-//!
-//! Assigning the `admin` or `service` role is deliberately not one of these
-//! actions: it stays gated on holding the literal `admin` role, checked inline
-//! in `create_user`/`update_user` and enforced again in `realm::{create,update}`
-//! itself. A catalog action that could grant "the power to grant admin" would
-//! make `admin` optional rather than the emergency-only role it is meant to be
-//! - see `permissions.toml`'s comment on `[services.gatehouse]`.
+//! Realm user administration API - JSON surface over [`crate::realm`]; each route needs a catalog action.
 
 use crate::catalog::PermissionCatalog;
 use crate::realm::{self, RealmError, UserChanges};
-use actix_web::{
-    FromRequest, HttpRequest, HttpResponse, Responder, delete, get, patch, post, put, web,
-};
-use futures_util::future::LocalBoxFuture;
-use quench_auth::prelude::{Claims, JwtConfig, Permissions, Role, SessionDb, User, UserDb};
+use async_trait::async_trait;
+use http::StatusCode;
+use quench_auth::domain::auth::{Permissions, Role, User, UserDb};
+use quench_auth::domain::jwt::{Claims, JwtConfig};
+use quench_auth::domain::realm as auth_realm;
+use quench_auth::domain::session::SessionDb;
+use quench_auth::http::domain::cookies::cookie_value;
 use quench_db::prelude::Db;
+use quench_http::prelude::{
+    FromRequest, HttpError, Inject, Json, Path, Response, delete, get, patch, post, put,
+};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 
-// ---------------------------------------------------------------------------
-// Wire types
-// ---------------------------------------------------------------------------
+// --- Wire types ---
 
-/// A user as the API reports one.
-///
-/// A separate type rather than `User` with a skipped field: `User` is
-/// `Serialize` and reachable from elsewhere, so "the hash never leaves the
-/// service" should be a property of the type the route names, not of a
-/// derive attribute somebody could remove.
+/// Separate from `User` (not a skipped field) so "the hash never leaves" is
+/// a property of the type, not a derive attribute someone could remove.
 #[derive(Serialize, Deserialize)]
 pub struct UserView {
     pub username: String,
     pub roles: Vec<Role>,
     pub permissions: Permissions,
-    /// True when a role grants everything, so a caller does not have to know
-    /// which roles are wildcards to render the answer.
+    /// True when a role grants everything.
     pub wildcard: bool,
     pub email: Option<String>,
     pub email_verified: bool,
@@ -79,8 +55,7 @@ pub struct CreateUserRequest {
     pub email: Option<String>,
 }
 
-/// Every field optional: a `PATCH` that names only `permissions` leaves the
-/// password and roles alone.
+/// Every field optional, so a `PATCH` can touch just one.
 #[derive(Deserialize)]
 pub struct UpdateUserRequest {
     pub password: Option<String>,
@@ -94,20 +69,14 @@ pub struct ReplacePermissionsRequest {
     pub permissions: Permissions,
 }
 
-/// What the caller may do, with any wildcard already applied.
-///
-/// Not a duplicate of `/api/v1/auth/userinfo`: that reports what the token
-/// literally says, which for an admin is `admin` and nothing else. This answers
-/// "which actions may I perform on sage" per service, which is what a UI needs
-/// to decide whether to render a control.
+/// What the caller may do, wildcard already resolved - unlike `/userinfo`,
+/// which just reports the token's literal role.
 #[derive(Serialize, Deserialize)]
 pub struct Me {
     pub username: String,
     pub roles: Vec<Role>,
     pub wildcard: bool,
-    /// One entry per service the caller can reach, each holding the actions
-    /// they were granted on it (or every action the catalog declares, for a
-    /// wildcard role - see `me`).
+    /// Per-service actions granted (or every catalog action, for a wildcard).
     pub effective: Permissions,
 }
 
@@ -116,120 +85,89 @@ pub struct ApplyTemplateRequest {
     pub template: String,
 }
 
-// ---------------------------------------------------------------------------
-// Guards
-// ---------------------------------------------------------------------------
+// --- Guards ---
 
-/// A verified realm token.
-///
-/// The user API is not behind the `Auth` middleware - gatehouse cannot be, since
-/// it serves the login endpoints that mint the token in the first place - so the
-/// checks the middleware would do happen here: signature, expiry, audience, and
-/// session liveness. Accepts a bearer token or the realm session cookie, so the
-/// admin UI can call these routes from the browser.
+/// A verified realm token - not behind `Auth` middleware (gatehouse mints the
+/// token, so can't require one), so the checks happen here instead.
 pub struct SubjectClaims(pub Claims);
 
+#[async_trait]
 impl FromRequest for SubjectClaims {
-    type Error = actix_web::Error;
-    type Future = LocalBoxFuture<'static, Result<Self, Self::Error>>;
+    async fn from_request(req: &mut quench_http::prelude::Request) -> Result<Self, HttpError> {
+        let config = req
+            .container()
+            .get::<JwtConfig>()
+            .map_err(|e| HttpError::status(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    fn from_request(req: &HttpRequest, _payload: &mut actix_web::dev::Payload) -> Self::Future {
-        let req = req.clone();
-        Box::pin(async move {
-            let Some(config) = req.app_data::<web::Data<JwtConfig>>().cloned() else {
-                tracing::error!("JwtConfig missing from app_data; refusing the request");
-                return Err(actix_web::error::ErrorInternalServerError(""));
-            };
+        // Auth off is the estate-wide dev switch - no token to read.
+        if !config.auth_enabled {
+            tracing::warn!(
+                "SERVICE_AUTH_ENABLED is off: serving {} unauthenticated",
+                req.uri().path()
+            );
+            return Ok(Self(Claims::for_audiences(
+                "anonymous".to_string(),
+                vec![config.service_name.clone()],
+                Role::Admin.as_str().to_string(),
+                None,
+                60,
+            )));
+        }
 
-            // Auth off is the estate-wide dev switch: there is no token to read,
-            // so requiring one would make the API unusable rather than safe.
-            if !config.auth_enabled {
-                tracing::warn!(
-                    "SERVICE_AUTH_ENABLED is off: serving {} unauthenticated",
-                    req.path()
-                );
-                return Ok(Self(Claims::for_audiences(
-                    "anonymous".to_string(),
-                    vec![config.service_name.clone()],
-                    Role::Admin.as_str().to_string(),
-                    None,
-                    60,
-                )));
-            }
+        let token = bearer_token(req)
+            .or_else(|| cookie_value(req, &auth_realm::session_cookie_name()))
+            .ok_or_else(|| HttpError::status(StatusCode::UNAUTHORIZED, ""))?;
 
-            let token = bearer_token(&req)
-                .or_else(|| {
-                    req.cookie(&quench_auth::prelude::realm::session_cookie_name())
-                        .map(|cookie| cookie.value().to_string())
-                })
-                .ok_or_else(|| actix_web::error::ErrorUnauthorized(""))?;
+        let claims = config
+            .decode_claims(&token)
+            .await
+            .map_err(|_| HttpError::status(StatusCode::UNAUTHORIZED, ""))?;
+        if !claims.allows(&config.service_name) {
+            return Err(HttpError::status(StatusCode::UNAUTHORIZED, ""));
+        }
 
-            let claims = config
-                .decode_claims(&token)
+        // Honour revocation - a logged-out session shouldn't keep managing users.
+        if let Some(session_id) = claims.sid.as_deref() {
+            let sessions = req
+                .container()
+                .get::<SessionDb>()
+                .map_err(|e| HttpError::status(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            if !sessions
+                .is_active(session_id, &claims.sub)
                 .await
-                .map_err(|_| actix_web::error::ErrorUnauthorized(""))?;
-            if !claims.allows(&config.service_name) {
-                return Err(actix_web::error::ErrorUnauthorized(""));
+                .unwrap_or(false)
+            {
+                return Err(HttpError::status(StatusCode::UNAUTHORIZED, ""));
             }
+        }
 
-            // Honour revocation: a logged-out session must not keep managing
-            // users for the rest of the access token's lifetime.
-            if let Some(session_id) = claims.sid.as_deref() {
-                let Some(sessions) = req.app_data::<web::Data<Arc<SessionDb>>>() else {
-                    tracing::error!("SessionDb missing from app_data; refusing the request");
-                    return Err(actix_web::error::ErrorInternalServerError(""));
-                };
-                if !sessions
-                    .is_active(session_id, &claims.sub)
-                    .await
-                    .unwrap_or(false)
-                {
-                    return Err(actix_web::error::ErrorUnauthorized(""));
-                }
-            }
-
-            Ok(Self(claims))
-        })
+        Ok(Self(claims))
     }
 }
 
-/// A verified token authorized for one `gatehouse` catalog action.
-///
-/// `Claims::can` already treats a wildcard role (`admin`/`service`) as
-/// satisfying any action on any service, `gatehouse` included - so `admin`
-/// keeps working for every route below without a separate check, exactly as
-/// the "emergency" fallback it is meant to be once a route is normally
-/// reached through a narrower, catalog-granted action instead.
+/// A verified token authorized for one `gatehouse` catalog action -
+/// `Claims::can` treats a wildcard role as satisfying any action.
 macro_rules! action_claims {
     ($name:ident, $action:literal) => {
-        // Some routes only need the gate, never the claims themselves (`.0`
-        // goes unread wherever the actor's identity does not matter beyond
-        // having passed it) - allowed rather than worked around, since an
-        // unread field here is a route needing nothing more, not a bug.
+        // Some routes only need the gate, never the claims themselves.
         #[allow(dead_code)]
         pub struct $name(pub Claims);
 
+        #[async_trait]
         impl FromRequest for $name {
-            type Error = actix_web::Error;
-            type Future = LocalBoxFuture<'static, Result<Self, Self::Error>>;
-
-            fn from_request(
-                req: &HttpRequest,
-                payload: &mut actix_web::dev::Payload,
-            ) -> Self::Future {
-                let subject = SubjectClaims::from_request(req, payload);
-                Box::pin(async move {
-                    let SubjectClaims(claims) = subject.await?;
-                    if !claims.can("gatehouse", $action) {
-                        tracing::warn!(
-                            "{} lacks gatehouse:{}; refusing user administration",
-                            claims.sub,
-                            $action,
-                        );
-                        return Err(actix_web::error::ErrorForbidden(""));
-                    }
-                    Ok(Self(claims))
-                })
+            async fn from_request(
+                req: &mut quench_http::prelude::Request,
+            ) -> Result<Self, HttpError> {
+                let SubjectClaims(claims) = SubjectClaims::from_request(req).await?;
+                if !claims.can("gatehouse", $action) {
+                    tracing::warn!(
+                        "{} lacks gatehouse:{}; refusing user administration",
+                        claims.sub,
+                        $action
+                    );
+                    return Err(HttpError::status(StatusCode::FORBIDDEN, ""));
+                }
+                Ok(Self(claims))
             }
         }
     };
@@ -239,58 +177,48 @@ action_claims!(ReadUsersClaims, "read-users");
 action_claims!(CreateUserClaims, "create-user");
 action_claims!(EditUserClaims, "edit-user");
 action_claims!(DeleteUserClaims, "delete-user");
-// Guards `POST /api/v1/admin/keys/rotate` - see `crate::api::jwks`.
+// Guards `POST /api/v1/admin/keys/rotate` in `crate::api::jwks`.
 action_claims!(ManageSigningKeysClaims, "manage-signing-keys");
 action_claims!(ManagePermissionsClaims, "manage-permissions");
 
-fn bearer_token(req: &HttpRequest) -> Option<String> {
-    req.headers()
-        .get("Authorization")?
-        .to_str()
-        .ok()?
+pub(crate) fn bearer_token(req: &quench_http::prelude::Request) -> Option<String> {
+    req.header("authorization")?
         .strip_prefix("Bearer ")
         .map(str::to_string)
 }
 
-// ---------------------------------------------------------------------------
-// Routes
-// ---------------------------------------------------------------------------
-//
-// Thin: every rule lives in `crate::realm`, which the admin pages call too. What
-// is left here is turning a request into arguments and a `RealmError` into a
-// status.
+// --- Routes: thin, all rules live in `crate::realm` ---
 
-#[get("")]
-async fn list_users(_actor: ReadUsersClaims, db: web::Data<Db>) -> impl Responder {
+#[get("/api/v1/users")]
+async fn list_users(_actor: ReadUsersClaims, Inject(db): Inject<Db>) -> Response {
     match realm::list(&db).await {
         Ok(users) => {
             let views: Vec<UserView> = users.iter().map(UserView::from).collect();
-            HttpResponse::Ok().json(views)
+            json_ok(&views)
         }
         Err(err) => problem(&err),
     }
 }
 
-#[get("/{username}")]
+#[get("/api/v1/users/{username}")]
 async fn get_user(
     _actor: ReadUsersClaims,
-    path: web::Path<String>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    match realm::get(&db, &path.into_inner()).await {
-        Ok(user) => HttpResponse::Ok().json(UserView::from(&user)),
+    Path(username): Path<String>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    match realm::get(&db, &username).await {
+        Ok(user) => json_ok(&UserView::from(&user)),
         Err(err) => problem(&err),
     }
 }
 
-#[post("")]
+#[post("/api/v1/users")]
 async fn create_user(
     actor: CreateUserClaims,
-    request: web::Json<CreateUserRequest>,
-    catalog: web::Data<PermissionCatalog>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    let request = request.into_inner();
+    Json(request): Json<CreateUserRequest>,
+    Inject(catalog): Inject<PermissionCatalog>,
+    Inject(db): Inject<Db>,
+) -> Response {
     match realm::create(
         &db,
         &catalog,
@@ -303,21 +231,21 @@ async fn create_user(
     )
     .await
     {
-        Ok(user) => HttpResponse::Created().json(UserView::from(&user)),
+        Ok(user) => Response::json(StatusCode::CREATED, &UserView::from(&user))
+            .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR)),
         Err(err) => problem(&err),
     }
 }
 
-#[patch("/{username}")]
+#[patch("/api/v1/users/{username}")]
 async fn update_user(
     actor: EditUserClaims,
-    path: web::Path<String>,
-    request: web::Json<UpdateUserRequest>,
-    catalog: web::Data<PermissionCatalog>,
-    db: web::Data<Db>,
-    sessions: web::Data<Arc<SessionDb>>,
-) -> impl Responder {
-    let request = request.into_inner();
+    Path(username): Path<String>,
+    Json(request): Json<UpdateUserRequest>,
+    Inject(catalog): Inject<PermissionCatalog>,
+    Inject(db): Inject<Db>,
+    Inject(sessions): Inject<SessionDb>,
+) -> Response {
     let changes = UserChanges {
         password: request.password,
         roles: request.roles,
@@ -331,90 +259,87 @@ async fn update_user(
         &sessions,
         &actor.0.sub,
         actor.0.has_role(Role::Admin.as_str()),
-        &path.into_inner(),
+        &username,
         changes,
     )
     .await
     {
-        Ok(user) => HttpResponse::Ok().json(UserView::from(&user)),
+        Ok(user) => json_ok(&UserView::from(&user)),
         Err(err) => problem(&err),
     }
 }
 
-#[put("/{username}/permissions")]
+#[put("/api/v1/users/{username}/permissions")]
 async fn replace_permissions(
     actor: ManagePermissionsClaims,
-    path: web::Path<String>,
-    request: web::Json<ReplacePermissionsRequest>,
-    catalog: web::Data<PermissionCatalog>,
-    db: web::Data<Db>,
-    sessions: web::Data<Arc<SessionDb>>,
-) -> impl Responder {
+    Path(username): Path<String>,
+    Json(request): Json<ReplacePermissionsRequest>,
+    Inject(catalog): Inject<PermissionCatalog>,
+    Inject(db): Inject<Db>,
+    Inject(sessions): Inject<SessionDb>,
+) -> Response {
     match realm::replace_permissions(
         &db,
         &catalog,
         &sessions,
         &actor.0.sub,
-        &path.into_inner(),
-        request.into_inner().permissions,
+        &username,
+        request.permissions,
     )
     .await
     {
-        Ok(user) => HttpResponse::Ok().json(UserView::from(&user)),
+        Ok(user) => json_ok(&UserView::from(&user)),
         Err(err) => problem(&err),
     }
 }
 
-#[post("/{username}/template")]
+#[post("/api/v1/users/{username}/template")]
 async fn apply_template(
     actor: ManagePermissionsClaims,
-    path: web::Path<String>,
-    request: web::Json<ApplyTemplateRequest>,
-    catalog: web::Data<PermissionCatalog>,
-    db: web::Data<Db>,
-    sessions: web::Data<Arc<SessionDb>>,
-) -> impl Responder {
+    Path(username): Path<String>,
+    Json(request): Json<ApplyTemplateRequest>,
+    Inject(catalog): Inject<PermissionCatalog>,
+    Inject(db): Inject<Db>,
+    Inject(sessions): Inject<SessionDb>,
+) -> Response {
     match realm::apply_template(
         &db,
         &catalog,
         &sessions,
         &actor.0.sub,
-        &path.into_inner(),
-        &request.into_inner().template,
+        &username,
+        &request.template,
     )
     .await
     {
-        Ok(user) => HttpResponse::Ok().json(UserView::from(&user)),
+        Ok(user) => json_ok(&UserView::from(&user)),
         Err(err) => problem(&err),
     }
 }
 
-#[delete("/{username}")]
+#[delete("/api/v1/users/{username}")]
 async fn delete_user(
     actor: DeleteUserClaims,
-    path: web::Path<String>,
-    db: web::Data<Db>,
-    sessions: web::Data<Arc<SessionDb>>,
-) -> impl Responder {
-    match realm::delete(&db, &sessions, &actor.0.sub, &path.into_inner()).await {
-        Ok(()) => HttpResponse::NoContent().finish(),
+    Path(username): Path<String>,
+    Inject(db): Inject<Db>,
+    Inject(sessions): Inject<SessionDb>,
+) -> Response {
+    match realm::delete(&db, &sessions, &actor.0.sub, &username).await {
+        Ok(()) => Response::new(StatusCode::NO_CONTENT),
         Err(err) => problem(&err),
     }
 }
 
-/// The caller's own effective access. Any authenticated user, not just admins -
-/// it is how a page learns what to render.
-#[get("")]
+/// The caller's own effective access - any authenticated user, for page rendering.
+#[get("/api/v1/me")]
 async fn me(
     subject: SubjectClaims,
-    catalog: web::Data<PermissionCatalog>,
-    users: web::Data<Arc<UserDb>>,
-) -> impl Responder {
+    Inject(catalog): Inject<PermissionCatalog>,
+    Inject(users): Inject<UserDb>,
+) -> Response {
     let claims = subject.0;
 
-    // Read the user rather than trusting the token's scope: a grant added since
-    // the token was minted should show up here, which is what makes this the
-    // endpoint a UI polls.
+    // Read the user, not the token's scope, so a grant added since minting shows up.
     let user = users.get_user(&claims.sub).await;
     let (roles, wildcard) = match &user {
         Some(user) => (user.get_roles(), user.has_wildcard()),
@@ -436,9 +361,7 @@ async fn me(
     let effective = catalog
         .service_names()
         .filter_map(|service| {
-            // A wildcard reaches every action the catalog declares, without any
-            // of them being written down against the user - the same reason
-            // `user_scope` emits the role alone.
+            // Wildcard reaches every catalog action without any being stored.
             let actions = if wildcard {
                 catalog.actions_for(service).iter().cloned().collect()
             } else {
@@ -448,7 +371,7 @@ async fn me(
         })
         .collect();
 
-    HttpResponse::Ok().json(Me {
+    json_ok(&Me {
         username: claims.sub,
         roles,
         wildcard,
@@ -456,19 +379,15 @@ async fn me(
     })
 }
 
-pub fn scope() -> actix_web::Scope {
-    web::scope("/api/v1/users")
-        .service(list_users)
-        .service(create_user)
-        .service(get_user)
-        .service(update_user)
-        .service(replace_permissions)
-        .service(apply_template)
-        .service(delete_user)
-}
-
-pub fn me_scope() -> actix_web::Scope {
-    web::scope("/api/v1/me").service(me)
+pub fn register_routes() {
+    let _ = list_users as fn(_, _) -> _;
+    let _ = create_user as fn(_, _, _, _) -> _;
+    let _ = get_user as fn(_, _, _) -> _;
+    let _ = update_user as fn(_, _, _, _, _, _) -> _;
+    let _ = replace_permissions as fn(_, _, _, _, _, _) -> _;
+    let _ = apply_template as fn(_, _, _, _, _, _) -> _;
+    let _ = delete_user as fn(_, _, _, _) -> _;
+    let _ = me as fn(_, _, _) -> _;
 }
 
 #[derive(Serialize, Deserialize)]
@@ -476,10 +395,18 @@ pub struct Problem {
     pub error: String,
 }
 
-/// A machine-readable reason alongside the status, since "which rule did I
-/// break" is not obvious from a 409 alone.
-fn problem(err: &RealmError) -> HttpResponse {
-    HttpResponse::build(err.status()).json(Problem {
-        error: err.message(),
-    })
+fn json_ok<T: Serialize>(value: &T) -> Response {
+    Response::json(StatusCode::OK, value)
+        .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
+}
+
+/// Machine-readable reason alongside the status - a 409 alone doesn't say which rule.
+fn problem(err: &RealmError) -> Response {
+    Response::json(
+        err.status(),
+        &Problem {
+            error: err.message(),
+        },
+    )
+    .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
 }

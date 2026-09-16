@@ -1,35 +1,53 @@
-use actix_web::http::StatusCode;
-use actix_web::test as actix_test;
-use actix_web::web;
-use quench_db::{Db, InMemoryDb};
-use warehouse_service::routers::artifacts::ops::latest::{download, metadata};
+//! `latest`/`latest/download` used to be their own routes
+//! (`routers::artifacts::ops::latest::metadata`/`download`); they're now a
+//! sentinel value inside `ops::metadata::handle`/`ops::download::handle`,
+//! because quench-http's router can't safely disambiguate two same-shape
+//! overlapping patterns (`.../latest` vs `.../{version_code}`) by
+//! registration order the way actix could - see `ops::latest`'s doc
+//! comment. From an HTTP client's perspective nothing changed: `latest` is
+//! still a valid path segment on the same routes.
 
-#[actix_web::test]
+use crate::support;
+use http::{Method, StatusCode};
+use quench_db::{Db, InMemoryDb};
+use warehouse_service::routers::artifacts;
+
+#[tokio::test]
 async fn metadata_reports_not_found_when_artifact_storage_is_disabled() {
-    let app = actix_test::init_service(
-        actix_web::App::new()
-            .app_data(web::Data::new(Db::InMemory(InMemoryDb::new())))
-            .service(metadata),
-    )
-    .await;
-    let req = actix_test::TestRequest::get()
-        .uri("/com.example.app/android/latest")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    artifacts::register_routes();
+    let container = support::container_builder()
+        .provide(Db::InMemory(InMemoryDb::new()))
+        .build()
+        .await
+        .unwrap();
+    let (app, container) = support::app(container).await;
+
+    let resp = app
+        .call(support::req(
+            Method::GET,
+            "/api/v1/artifacts/com.example.app/android/latest",
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn download_reports_not_found_when_artifact_storage_is_disabled() {
-    let app = actix_test::init_service(
-        actix_web::App::new()
-            .app_data(web::Data::new(Db::InMemory(InMemoryDb::new())))
-            .service(download),
-    )
-    .await;
-    let req = actix_test::TestRequest::get()
-        .uri("/com.example.app/android/latest/download")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
+    artifacts::register_routes();
+    let container = support::container_builder()
+        .provide(Db::InMemory(InMemoryDb::new()))
+        .build()
+        .await
+        .unwrap();
+    let (app, container) = support::app(container).await;
+
+    let resp = app
+        .call(support::req(
+            Method::GET,
+            "/api/v1/artifacts/com.example.app/android/latest/download",
+            &container,
+        ))
+        .await;
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }

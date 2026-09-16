@@ -5,17 +5,19 @@
 //! properties live: verify before parsing, refuse an unregistered repository,
 //! refuse a fork, and queue exactly once per delivery.
 
-use crate::support::{database, register_repo, skipped};
-use actix_web::http::StatusCode;
-use actix_web::{App, test, web};
+use crate::support::{database, raw_req, register_repo, skipped};
 use conveyor_service::config::ConveyorConfig;
 use conveyor_service::domain::{Status, Trigger};
 use conveyor_service::providers::{Providers, sign_sha256};
 use conveyor_service::routers::api;
 use conveyor_service::scheduler::queue;
-use quench_auth::prelude::JwtConfig;
+use http::{Method, StatusCode};
+use quench_auth::domain::jwt::JwtConfig;
 use quench_db::prelude::Db;
+use quench_http::di::ContainerBuilder;
+use quench_http::endpoint::Endpoint;
 use serde_json::json;
+use std::sync::Arc;
 
 const SECRET: &str = "conveyor-webhook-tests";
 
@@ -38,29 +40,35 @@ async fn deliver(
     signing_secret: &str,
     delivery_id: &str,
 ) -> StatusCode {
+    api::register_routes();
+    let container = ContainerBuilder::new()
+        .provide(db.clone())
+        .provide(JwtConfig::for_tests())
+        .provide(config)
+        .provide_arc(Arc::new(Providers::from_env()))
+        .build()
+        .await
+        .unwrap();
+    let container = Arc::new(container);
+    let app: Arc<dyn Endpoint> = quench_starter::http::discover_and_mount("/");
+
     let raw = body.to_string();
-    let app = test::init_service(
-        App::new()
-            .app_data(web::Data::new(db.clone()))
-            .app_data(web::Data::new(Providers::from_env()))
-            .app_data(web::Data::new(config))
-            .service(api::scope(JwtConfig::for_tests())),
-    )
-    .await;
+    let signature = sign_sha256(raw.as_bytes(), signing_secret.as_bytes());
+    let headers: [(&str, &str); 4] = [
+        ("x-github-event", event),
+        ("x-github-delivery", delivery_id),
+        ("x-hub-signature-256", &signature),
+        ("content-type", "application/json"),
+    ];
 
-    let request = test::TestRequest::post()
-        .uri("/api/v1/webhooks/github")
-        .insert_header(("x-github-event", event))
-        .insert_header(("x-github-delivery", delivery_id))
-        .insert_header((
-            "x-hub-signature-256",
-            sign_sha256(raw.as_bytes(), signing_secret.as_bytes()),
-        ))
-        .insert_header(("content-type", "application/json"))
-        .set_payload(raw)
-        .to_request();
-
-    test::call_service(&app, request).await.status()
+    let request = raw_req(
+        Method::POST,
+        "/api/v1/webhooks/github",
+        &headers,
+        raw.as_bytes(),
+        &container,
+    );
+    app.call(request).await.status()
 }
 
 fn push(owner: &str, name: &str, git_ref: &str, sha: &str) -> serde_json::Value {
@@ -103,16 +111,7 @@ async fn register_github(db: &Db, owner: &str, name: &str) -> conveyor_service::
     // `register_repo` registers a `generic` one; the webhook looks a repository
     // up by provider as well as by slug.
     let schema = queue::schema();
-    quench_db::prelude::Database::execute(
-        db,
-        &format!(
-            "UPDATE {schema}.repos SET provider = 'github', owner = '{owner}', name = '{name}' \
-             WHERE id = '{}'",
-            repo.id
-        ),
-    )
-    .await
-    .expect("make it a github repository");
+    quench_db::prelude::Database::execute(db, &format!("UPDATE {schema}.repos SET provider = 'github', owner = '{owner}', name = '{name}' WHERE id = '{}'", repo.id)).await.expect("make it a github repository");
 
     conveyor_service::scheduler::repos::read(db, &repo.id)
         .await
@@ -122,7 +121,7 @@ async fn register_github(db: &Db, owner: &str, name: &str) -> conveyor_service::
 
 // ---------------------------------------------------------------------------
 
-#[actix_web::test]
+#[tokio::test]
 async fn a_signed_push_queues_a_run() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_signed_push_queues_a_run");
@@ -154,7 +153,7 @@ async fn a_signed_push_queues_a_run() {
     assert_eq!(runs[0].message.as_deref(), Some("a commit"));
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn a_bad_signature_is_rejected_and_queues_nothing() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_bad_signature_is_rejected_and_queues_nothing");
@@ -180,7 +179,7 @@ async fn a_bad_signature_is_rejected_and_queues_nothing() {
     );
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn a_redelivery_does_not_queue_a_second_run() {
     // A provider retries a delivery it did not get a prompt answer for, and a
     // second run of the same commit would double every side effect.
@@ -199,7 +198,7 @@ async fn a_redelivery_does_not_queue_a_second_run() {
     assert_eq!(run_count(&db).await, 1);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn a_delivery_for_an_unregistered_repository_is_refused() {
     // Registration is explicit on purpose: conveyor runs code the repository
     // supplies, so a delivery is not an invitation to start building it.
@@ -222,7 +221,7 @@ async fn a_delivery_for_an_unregistered_repository_is_refused() {
     assert_eq!(run_count(&db).await, 0);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn a_delivery_for_a_disabled_repository_is_accepted_and_ignored() {
     // Accepted rather than refused: a provider retries a 4xx, and there is
     // nothing here for a retry to fix.
@@ -249,7 +248,7 @@ async fn a_delivery_for_a_disabled_repository_is_accepted_and_ignored() {
     assert_eq!(run_count(&db).await, 0);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn a_pull_request_from_a_fork_is_not_built_by_default() {
     // Its pipeline is written by someone outside the estate, and under the
     // native executor it would run with this service's privileges.
@@ -273,7 +272,7 @@ async fn a_pull_request_from_a_fork_is_not_built_by_default() {
     assert_eq!(run_count(&db).await, 0, "a fork must not build by default");
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn a_pull_request_from_a_fork_builds_when_the_deployment_allows_it() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_pull_request_from_a_fork_builds_when_the_deployment_allows_it");
@@ -304,7 +303,7 @@ async fn a_pull_request_from_a_fork_builds_when_the_deployment_allows_it() {
     assert_eq!(runs[0].git_ref, "refs/pull/7/head");
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn a_same_repository_pull_request_builds_its_branch() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_same_repository_pull_request_builds_its_branch");
@@ -327,7 +326,7 @@ async fn a_same_repository_pull_request_builds_its_branch() {
     assert_eq!(runs[0].git_ref, "refs/heads/topic");
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn a_ping_is_accepted_and_queues_nothing() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_ping_is_accepted_and_queues_nothing");
@@ -349,7 +348,7 @@ async fn a_ping_is_accepted_and_queues_nothing() {
     assert_eq!(run_count(&db).await, 0);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn a_hostile_ref_is_refused_before_it_reaches_the_queue() {
     // `git` reads a leading `-` as an option, and `--upload-pack=...` where a
     // ref was expected runs a program of the sender's choosing. The ref comes
@@ -379,7 +378,7 @@ async fn a_hostile_ref_is_refused_before_it_reaches_the_queue() {
     assert_eq!(run_count(&db).await, 0);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn a_sha_that_is_not_a_sha_is_refused() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_sha_that_is_not_a_sha_is_refused");
@@ -401,7 +400,7 @@ async fn a_sha_that_is_not_a_sha_is_refused() {
     assert_eq!(run_count(&db).await, 0);
 }
 
-#[actix_web::test]
+#[tokio::test]
 async fn without_a_configured_secret_the_endpoint_refuses_to_serve() {
     // Every delivery would be unverified, which would let anyone on the network
     // start a build.

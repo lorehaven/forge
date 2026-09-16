@@ -1,5 +1,8 @@
-use actix_web::web;
-use quench_auth::prelude::JwtConfig;
+use async_trait::async_trait;
+use quench_auth::domain::jwt::{Claims, JwtConfig};
+use quench_auth::domain::realm;
+use quench_auth::http::domain::cookies::cookie_value;
+use quench_http::prelude::{FromRequest, HttpError, Request};
 use std::sync::LazyLock;
 
 pub static HF_ROOTS: LazyLock<Vec<String>> =
@@ -8,79 +11,41 @@ pub static HF_ROOTS: LazyLock<Vec<String>> =
 pub static GGUF_ROOTS: LazyLock<Vec<String>> =
     LazyLock::new(|| load_paths("GGUF_ROOTS", &["/mnt/dev/quantized"]));
 
-/// Whether the caller holds a wildcard role (admin, or the machine-to-machine
-/// `service` account).
-///
-/// Still used for `/models/running`: which models are currently loaded is
-/// operational GPU state, and this endpoint has always treated that as
-/// admin-only rather than something a `switchboard:read` grant reaches. The
-/// per-action catalog (launch/stop/delete-model) does not touch that
-/// decision, so this stays wildcard-only rather than gaining a "read" variant
-/// nobody asked for.
-///
-/// The role test is `Claims::has_wildcard` rather than a substring search on the
-/// scope claim: with permissions in the same claim, `contains("admin")` would
-/// also match a grant naming a service called `admin`. `system` is gone with it -
-/// it was never a role the realm issues.
-pub async fn is_admin(req: &actix_web::HttpRequest, config: &web::Data<JwtConfig>) -> bool {
-    if !config.auth_enabled {
-        return true;
-    }
+/// The caller's claims, from `Auth`-populated extensions or a decoded
+/// session cookie - quench-http never hands a handler the raw `Request`.
+pub struct OptionalClaims(pub Option<Claims>);
 
-    use actix_web::HttpMessage;
-    if let Some(claims) = req
-        .extensions()
-        .get::<quench_auth::actix::domain::jwt::Claims>()
-    {
-        return claims.has_wildcard();
-    }
+#[async_trait]
+impl FromRequest for OptionalClaims {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        if let Some(claims) = req.extensions().get::<Claims>() {
+            return Ok(OptionalClaims(Some(claims.clone())));
+        }
 
-    // Fallback for UI if extensions wasn't populated somehow (though Auth middleware should)
-    let Some(cookie) = req.cookie(&quench_auth::prelude::realm::session_cookie_name()) else {
-        return false;
-    };
+        let Ok(config) = req.container().get::<JwtConfig>() else {
+            return Ok(OptionalClaims(None));
+        };
+        let Some(cookie) = cookie_value(req, &realm::session_cookie_name()) else {
+            return Ok(OptionalClaims(None));
+        };
 
-    match config.decode_claims(cookie.value()).await {
-        Ok(claims) => claims.has_wildcard(),
-        Err(_) => false,
+        match config.decode_claims(&cookie).await {
+            Ok(claims) => Ok(OptionalClaims(Some(claims))),
+            Err(_) => Ok(OptionalClaims(None)),
+        }
     }
 }
 
-/// Whether the caller may perform `action` on switchboard - `"launch"`,
-/// `"stop"` or `"delete-model"`, per `config/permissions.toml`'s catalog entry
-/// for this service. A wildcard role satisfies any action without it being
-/// granted explicitly, the same as everywhere else `Claims::can` is used.
-///
-/// This is what replaced the blanket `RequireWrite` middleware for
-/// `models::scope`'s and `vllm::scope`'s write routes: those scopes no longer
-/// declare a `"write"` action in the catalog at all, on purpose, so nothing
-/// there is reachable through a coarse write grant any more - a route needs
-/// the specific action this checks.
-pub async fn can(
-    req: &actix_web::HttpRequest,
-    config: &web::Data<JwtConfig>,
-    action: &str,
-) -> bool {
-    if !config.auth_enabled {
-        return true;
-    }
+/// Whether the caller holds a wildcard role (admin/service account).
+/// `/models/running` stays admin-only via this rather than a `read` grant.
+pub fn is_admin(claims: Option<&Claims>, config: &JwtConfig) -> bool {
+    !config.auth_enabled || claims.is_some_and(Claims::has_wildcard)
+}
 
-    use actix_web::HttpMessage;
-    if let Some(claims) = req
-        .extensions()
-        .get::<quench_auth::actix::domain::jwt::Claims>()
-    {
-        return claims.can(&config.service_name, action);
-    }
-
-    let Some(cookie) = req.cookie(&quench_auth::prelude::realm::session_cookie_name()) else {
-        return false;
-    };
-
-    match config.decode_claims(cookie.value()).await {
-        Ok(claims) => claims.can(&config.service_name, action),
-        Err(_) => false,
-    }
+/// Whether the caller may perform `action` - replaces the blanket
+/// `RequireWrite` these scopes deliberately don't declare a `"write"` for.
+pub fn can(claims: Option<&Claims>, config: &JwtConfig, action: &str) -> bool {
+    !config.auth_enabled || claims.is_some_and(|c| c.can(&config.service_name, action))
 }
 
 pub fn load_paths(env_key: &str, defaults: &[&str]) -> Vec<String> {

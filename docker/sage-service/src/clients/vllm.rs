@@ -96,9 +96,8 @@ pub struct ChatCompletionDelta {
     pub tool_calls: Option<Vec<StreamingToolCall>>,
 }
 
-/// One entry of a streamed OpenAI `tool_calls` delta. vLLM emits these
-/// incrementally: the first chunk for a call carries `function.name`, later
-/// chunks append `function.arguments` fragments, all keyed by `index`.
+/// One entry of a streamed `tool_calls` delta, keyed by `index`; the first
+/// chunk carries `function.name`, later ones append `function.arguments`.
 #[derive(Debug, Deserialize, Clone)]
 pub struct StreamingToolCall {
     #[serde(default)]
@@ -115,9 +114,8 @@ pub struct StreamingFunction {
     pub arguments: Option<String>,
 }
 
-/// Convert accumulated streamed tool calls into `<tool_call>` text lines the text-based parser
-/// understands, so native OpenAI function calling flows through the same pipeline as tag-formatted
-/// calls. Drains the accumulator; entries without a name are skipped.
+/// Drains the accumulator into `<tool_call>` text lines the text-based
+/// parser understands, so native function calling reuses that pipeline.
 pub fn flush_streamed_tool_calls(
     accum: &mut std::collections::BTreeMap<usize, (String, String)>,
 ) -> Vec<String> {
@@ -183,7 +181,7 @@ impl VllmClient {
         model: &str,
         messages: Vec<ChatMessage>,
         max_tokens: Option<u32>,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<String>> + Send>>> {
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<String>> + Send + Sync>>> {
         self.chat_stream_with_tools(host, port, model, messages, max_tokens, None)
             .await
     }
@@ -196,7 +194,7 @@ impl VllmClient {
         messages: Vec<ChatMessage>,
         max_tokens: Option<u32>,
         tools: Option<Vec<serde_json::Value>>,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<String>> + Send>>> {
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<String>> + Send + Sync>>> {
         if !self.circuit_breaker.is_available() {
             tracing::warn!("vLLM circuit breaker is open");
             return Err(anyhow::anyhow!(

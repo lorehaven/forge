@@ -466,9 +466,7 @@ impl VllmEngine for NativeVllmEngine {
     }
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 pub fn extract_arg(parts: &[String], key: &str) -> Option<String> {
     parts
@@ -488,10 +486,8 @@ pub fn instance_key(model: &str, port: u16) -> String {
     format!("{}-{}", model.replace("/", "--"), port)
 }
 
-/// Ports already claimed by non-terminating launch records. A freshly spawned
-/// vLLM takes tens of seconds to actually bind its port, so an OS bind check
-/// alone reports it free in the meantime — which is how two instances ended up
-/// launched on the same port. Consulting the records closes that window.
+/// Ports claimed by non-terminating records - a fresh vLLM takes seconds to
+/// bind, so an OS check alone can report a port free twice over.
 fn claimed_ports() -> std::collections::HashSet<u16> {
     LAUNCH_RECORDS
         .read()

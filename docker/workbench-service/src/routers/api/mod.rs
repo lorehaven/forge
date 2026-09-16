@@ -1,15 +1,13 @@
-//! Workbench's HTTP API.
-//!
-//! Everything here sits behind the realm's `Auth` middleware, so a handler can
-//! assume there is a signed-in identity and only has to decide what to do.
+//! Workbench's HTTP API; everything sits behind the realm's `Auth`.
 
 use crate::domain::WorkbenchError;
-use actix_web::http::StatusCode;
-use actix_web::{HttpMessage, HttpRequest, web};
-use quench_auth::actix::middleware::auth::Auth;
-use quench_auth::actix::routers::ui::get_user_from_req;
-use quench_auth::prelude::{Claims, JwtConfig};
-pub use quench_starter::prelude::{ApiError, json_error};
+use async_trait::async_trait;
+use quench_auth::domain::jwt::{Claims, JwtConfig};
+use quench_auth::http::middleware::auth::Auth;
+use quench_http::prelude::{
+    Endpoint, FromRequest, HttpError, OnPathPrefix, Request, http::StatusCode, wrap,
+};
+pub use quench_starter::http::domain::api_error::{ApiError, json_error};
 
 pub mod authz;
 pub mod comments;
@@ -18,45 +16,40 @@ pub mod issues;
 pub mod labels;
 pub mod projects;
 
-/// The API, with auth applied where it belongs. `RequireWrite` is not mounted
-/// here, for the same reason conveyor's isn't: once a project can be scoped
-/// to a specific grant (`workbench:project:<id>:write`), the generic "holds
-/// `write` on `workbench`" check is both too strict and not specific enough -
-/// guard each route directly with `authz::can_on_project` instead. `Auth`
-/// alone still gates every route: a verified identity with `workbench` as an
-/// audience.
-pub fn scope(jwt_config: JwtConfig) -> actix_web::Scope {
-    web::scope("/api/v1")
-        .service(projects::scope().wrap(Auth::new(jwt_config.clone())))
-        .service(issues::scope().wrap(Auth::new(jwt_config.clone())))
-        .service(labels::scope().wrap(Auth::new(jwt_config.clone())))
-        .service(comments::scope().wrap(Auth::new(jwt_config.clone())))
-        .service(issue_links::scope().wrap(Auth::new(jwt_config.clone())))
-        // Catches whatever the scopes above don't own. Registration order is
-        // load-bearing (actix picks the first scope whose prefix matches), so
-        // this comes last. It has no routes of its own, so anything reaching
-        // it 404s - but `Auth` still runs first, so an unauthenticated caller
-        // gets 401 rather than being able to map the API by probing unknown
-        // paths under it.
-        .service(web::scope("").wrap(Auth::new(jwt_config)))
-}
+/// The verified identity, if any - `Auth` puts it in the request extensions.
+pub struct OptionalClaims(pub Option<Claims>);
 
-/// The verified identity behind this request, if any. `Auth` puts it in the
-/// request's extensions; every route that needs a resource-scoped check reads
-/// it from here rather than re-verifying anything.
-pub fn claims(request: &HttpRequest) -> Option<Claims> {
-    request.extensions().get::<Claims>().cloned()
+#[async_trait]
+impl FromRequest for OptionalClaims {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        Ok(OptionalClaims(req.extensions().get::<Claims>().cloned()))
+    }
 }
 
 /// Who is making this request, for `reporter` and `author` columns.
-pub async fn actor(request: &HttpRequest) -> String {
-    let Some(config) = request.app_data::<web::Data<JwtConfig>>() else {
-        return "dev".to_string();
-    };
-    get_user_from_req(request, config)
-        .await
-        .map(|claims| claims.sub)
+pub fn actor(claims: Option<&Claims>) -> String {
+    claims
+        .map(|claims| claims.sub.clone())
         .unwrap_or_else(|| "dev".to_string())
+}
+
+/// `Auth` over all of `/api/v1` (incl. its 404 fallback, so unmapped
+/// paths 401 not 404); writes are guarded per-route via `authz` instead.
+pub fn wrap_auth(
+    app: std::sync::Arc<dyn Endpoint>,
+    jwt_config: JwtConfig,
+    base_path: &str,
+) -> std::sync::Arc<dyn Endpoint> {
+    let prefix: &'static str = Box::leak(format!("{base_path}/api/v1").into_boxed_str());
+    wrap(app, OnPathPrefix::new(prefix, Auth::new(jwt_config)))
+}
+
+pub fn register_routes() {
+    comments::register_routes();
+    issue_links::register_routes();
+    issues::register_routes();
+    labels::register_routes();
+    projects::register_routes();
 }
 
 impl From<WorkbenchError> for ApiError {
@@ -76,8 +69,7 @@ impl From<WorkbenchError> for ApiError {
         }
 
         let status = match &error {
-            // Not the caller's fault and not something a retry fixes: the
-            // deployment is configured without a real database.
+            // Not the caller's fault: deployment has no real database.
             WorkbenchError::NotPostgres => StatusCode::SERVICE_UNAVAILABLE,
             WorkbenchError::Sql(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };

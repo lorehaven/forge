@@ -1,31 +1,15 @@
-//! The file browser: a navigable tree of one storage's contents on the left,
-//! an in-place preview of the selected file on the right.
-//!
-//! This is the page the storage-management view used to carry as a flat,
-//! first-200 list. It is read-first - anyone with a realm session for this
-//! service may browse and preview - and the one mutating control it offers
-//! (delete a file) reuses [`super::storages::delete_file`], held to the same
-//! `warehouse:write` bar every other management mutation is.
-//!
-//! The tree is built from a capped slice of the storage's files
-//! ([`TREE_FILE_CAP`]); a storage larger than that shows the first slice and
-//! says so, the same compromise the old list made. The preview pane points an
-//! `<img>`/`<video>`/`<audio>`/`<iframe>` at the download endpoint with
-//! `?disposition=inline`, which serves the bytes with a guessed `Content-Type`
-//! for the browser to render rather than save.
+//! The file browser: a navigable tree on the left, an in-place preview on the
+//! right. Read-first; the one mutation (delete) reuses [`super::storages::delete_file`].
 
 use crate::domain::storage;
 use crate::domain::storage_file;
 use crate::routers::files::authz::can_on_storage_claims;
 use crate::routers::files::ops::download::content_type_for;
-use crate::routers::ui::authz::{can_manage, ui_claims};
-use crate::routers::ui::common::{
-    UiPageKind, is_ui_authenticated, render_page, ui_login_redirect, ui_path,
-};
-use actix_web::{HttpRequest, HttpResponse, Responder, get, web};
-use quench_auth::prelude::JwtConfig;
+use crate::routers::ui::authz::{OptionalUiClaims, can_manage};
+use crate::routers::ui::common::{PageAuth, UiPageKind, render_page, ui_login_redirect, ui_path};
 use quench_db::prelude::Db;
-use quench_starter::prelude::with_base_path;
+use quench_http::prelude::{Inject, Query, Response, get, http::StatusCode};
+use quench_starter::common::routes::with_base_path;
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 use std::collections::BTreeMap;
@@ -34,20 +18,14 @@ use std::path::Path;
 const GIB: f64 = 1024.0 * 1024.0 * 1024.0;
 const MIB: f64 = 1024.0 * 1024.0;
 
-/// How many files the tree is built from before it stops and says there are
-/// more. Browsing here is a convenience, not the backup client's paged
-/// `GET /api/v1/files/{s}`; this is a safety bound on how much one page render
-/// will hold, not a page size - [`dynamic_files`] walks the storage a page at
-/// a time up to this many rows.
+/// Safety bound on how many files one page render holds, not a page size.
 const TREE_FILE_CAP: usize = 50_000;
 
 /// How many rows each [`storage_file::list_files_page`] call pulls while
 /// [`dynamic_files`] walks toward [`TREE_FILE_CAP`].
 const DYNAMIC_PAGE_SIZE: i64 = 2000;
 
-// ---------------------------------------------------------------------------
-// Query
-// ---------------------------------------------------------------------------
+// --- Query ---
 
 #[derive(serde::Deserialize)]
 pub struct BrowseQuery {
@@ -56,9 +34,7 @@ pub struct BrowseQuery {
     pub path: Option<String>,
 }
 
-// ---------------------------------------------------------------------------
-// View model (kept free of `Db` so `render_browse_page` is a pure function)
-// ---------------------------------------------------------------------------
+// --- View model (kept free of `Db` so `render_browse_page` is pure) ---
 
 /// One file, as fed to [`build_tree`].
 pub struct BrowseFile {
@@ -66,9 +42,7 @@ pub struct BrowseFile {
     pub size: Option<i64>,
 }
 
-/// A node in the storage's directory tree. A leaf with `is_file` set is a
-/// file; anything else is a directory (which may still be empty if the tree
-/// was built from a static walk that hit its cap mid-directory).
+/// A node in the storage's directory tree - a leaf with `is_file` set is a file.
 #[derive(Default)]
 pub struct TreeNode {
     pub children: BTreeMap<String, TreeNode>,
@@ -125,49 +99,45 @@ pub fn preview_kind(path: &str) -> PreviewKind {
     }
 }
 
-// ---------------------------------------------------------------------------
-// GET /ui/files/browse
-// ---------------------------------------------------------------------------
+// --- GET /ui/files/browse ---
 
-#[get("/files/browse")]
+#[get("/ui/files/browse")]
 pub async fn files_browse(
-    req: HttpRequest,
-    query: web::Query<BrowseQuery>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    handle(&req, &query, &config, &db).await
+    auth: PageAuth,
+    claims: OptionalUiClaims,
+    Query(query): Query<BrowseQuery>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    handle(auth, claims, &query, &db).await
 }
 
-#[get("/files/browse/")]
+#[get("/ui/files/browse/")]
 pub async fn files_browse_slash(
-    req: HttpRequest,
-    query: web::Query<BrowseQuery>,
-    config: web::Data<JwtConfig>,
-    db: web::Data<Db>,
-) -> impl Responder {
-    handle(&req, &query, &config, &db).await
+    auth: PageAuth,
+    claims: OptionalUiClaims,
+    Query(query): Query<BrowseQuery>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    handle(auth, claims, &query, &db).await
 }
 
 async fn handle(
-    req: &HttpRequest,
+    PageAuth(authenticated): PageAuth,
+    OptionalUiClaims(claims): OptionalUiClaims,
     query: &BrowseQuery,
-    config: &JwtConfig,
     db: &Db,
-) -> HttpResponse {
-    if !is_ui_authenticated(req, config).await {
+) -> Response {
+    if !authenticated {
         return ui_login_redirect();
     }
 
-    let claims = ui_claims(req, config).await;
     let manage = claims.as_ref().is_some_and(can_manage);
 
     let Some(name) = query.storage.as_deref().filter(|s| !s.is_empty()) else {
         // Nothing to browse without a storage - the storages page is where one
         // is picked.
-        return HttpResponse::Found()
-            .append_header(("Location", with_base_path("/ui/files/storages")))
-            .finish();
+        return Response::new(StatusCode::FOUND)
+            .header("Location", with_base_path("/ui/files/storages"));
     };
     let path = normalize_path(query.path.as_deref().unwrap_or(""));
 
@@ -213,9 +183,7 @@ async fn handle(
     render_browse_page(&view)
 }
 
-/// Trim, drop `.`/`..`/empty segments, rejoin with `/`. The result only ever
-/// indexes the in-memory tree and seeds an API URL that revalidates the path
-/// itself, so this is a tidy-up, not the security boundary.
+/// Trim/drop `.`/`..`/empty segments, rejoin with `/` - a tidy-up, not the security boundary.
 fn normalize_path(raw: &str) -> String {
     raw.split('/')
         .filter(|segment| !segment.is_empty() && *segment != "." && *segment != "..")
@@ -223,10 +191,7 @@ fn normalize_path(raw: &str) -> String {
         .join("/")
 }
 
-/// Walk the whole storage a page at a time, keyed by the last path seen, and
-/// build the tree from every row up to [`TREE_FILE_CAP`]. Pulling one row past
-/// the cap is what tells us the storage has more than we'll show; a page
-/// shorter than what we asked for is the end of the storage.
+/// Walks the storage a page at a time up to [`TREE_FILE_CAP`]; one row past the cap signals `truncated`.
 async fn dynamic_files(db: &Db, name: &str) -> (Vec<BrowseFile>, bool) {
     let mut files: Vec<BrowseFile> = Vec::new();
     let mut after: Option<String> = None;
@@ -258,9 +223,7 @@ async fn dynamic_files(db: &Db, name: &str) -> (Vec<BrowseFile>, bool) {
     (files, truncated)
 }
 
-/// A bounded, depth-first walk of a static storage's root. `.part` staging
-/// files are skipped, matching the JSON listing; empty directories are simply
-/// absent from the tree, which is built from file paths.
+/// A bounded, depth-first walk of a static storage's root; `.part` staging files are skipped.
 async fn static_files(root: &Path) -> (Vec<BrowseFile>, bool) {
     let mut out: Vec<BrowseFile> = Vec::new();
     let mut truncated = false;
@@ -305,9 +268,7 @@ async fn static_files(root: &Path) -> (Vec<BrowseFile>, bool) {
     (out, truncated)
 }
 
-// ---------------------------------------------------------------------------
-// Tree building / selection
-// ---------------------------------------------------------------------------
+// --- Tree building / selection ---
 
 pub fn build_tree(files: &[BrowseFile]) -> TreeNode {
     let mut root = TreeNode::default();
@@ -354,11 +315,9 @@ fn node_at<'a>(tree: &'a TreeNode, path: &str) -> Option<&'a TreeNode> {
     Some(node)
 }
 
-// ---------------------------------------------------------------------------
-// Rendering
-// ---------------------------------------------------------------------------
+// --- Rendering ---
 
-pub fn render_browse_page(view: &BrowseView) -> HttpResponse {
+pub fn render_browse_page(view: &BrowseView) -> Response {
     let left = div()
         .class("split-left panel")
         .child(
@@ -381,7 +340,7 @@ pub fn render_browse_page(view: &BrowseView) -> HttpResponse {
     let right = div().class("split-right panel").child(render_detail(view));
 
     render_page(
-        HttpResponse::Ok(),
+        StatusCode::OK,
         content()
             .class("container-fluid py-4")
             .child(div().class("split-view").child(left).child(right)),
@@ -810,9 +769,7 @@ fn render_preview(storage: &str, path: &str) -> Element {
     div().class("file-preview").child(media)
 }
 
-// ---------------------------------------------------------------------------
-// Small helpers
-// ---------------------------------------------------------------------------
+// --- Small helpers ---
 
 fn last_segment(path: &str) -> &str {
     path.rsplit('/')
@@ -863,4 +820,9 @@ fn encode_query_component(value: &str) -> String {
         }
     }
     encoded
+}
+
+pub fn register_routes() {
+    let _ = files_browse as fn(_, _, _, _) -> _;
+    let _ = files_browse_slash as fn(_, _, _, _) -> _;
 }

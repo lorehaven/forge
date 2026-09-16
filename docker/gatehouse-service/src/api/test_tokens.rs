@@ -1,28 +1,17 @@
-//! Token minting for the BDD harness (`tests/forge-bdd`), enabled only by
-//! `GATEHOUSE_TEST_MODE=true`.
-//!
-//! A scenario asks for a token with an arbitrary subject, audience, scope,
-//! and - for testing exp/iat edge cases - explicit timestamps, without a real
-//! user or session existing. This is the same shortcut the harness took when
-//! every service verified against one shared HS256 secret; now it is routed
-//! through gatehouse's real signing key, so JWKS verification at the relying
-//! party sees a legitimately-issued token instead of one it has no way to
-//! trust. Unreachable whenever the flag is unset, which is every real
-//! deployment - `main.rs` never sets `GATEHOUSE_TEST_MODE`.
+//! Token minting for the BDD harness, gated on `GATEHOUSE_TEST_MODE=true`
+//! (never set by `main.rs`) - signs with gatehouse's real key so JWKS still trusts it.
 
-use actix_web::{HttpResponse, Responder, post, web};
-use quench_auth::prelude::{Claims, JwtConfig};
+use quench_auth::domain::jwt::{Claims, JwtConfig};
+use quench_http::prelude::{Inject, Json, Response, post};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
-struct TestTokenRequest {
+pub struct TestTokenRequest {
     sub: String,
     #[serde(default)]
     aud: Vec<String>,
     scope: String,
-    /// Unix seconds. Defaults let a scenario mint an ordinary valid token;
-    /// overrides are what `with expired token` / `with future iat` scenarios
-    /// use to get a token real users never legitimately hold.
+    /// Unix seconds; overrides mint expired/future-iat tokens for edge-case scenarios.
     #[serde(default)]
     iat: Option<i64>,
     #[serde(default)]
@@ -31,11 +20,11 @@ struct TestTokenRequest {
 
 #[post("/api/v1/test/token")]
 pub async fn mint(
-    config: web::Data<JwtConfig>,
-    body: web::Json<TestTokenRequest>,
-) -> impl Responder {
+    Inject(config): Inject<JwtConfig>,
+    Json(body): Json<TestTokenRequest>,
+) -> Response {
     if !envmnt::is_or("GATEHOUSE_TEST_MODE", false) {
-        return HttpResponse::NotFound().finish();
+        return Response::new(http::StatusCode::NOT_FOUND);
     }
 
     let now = chrono::Utc::now().timestamp();
@@ -49,12 +38,18 @@ pub async fn mint(
     };
 
     match config.encode_claims(&claims).await {
-        Ok(access_token) => {
-            HttpResponse::Ok().json(serde_json::json!({ "access_token": access_token }))
-        }
+        Ok(access_token) => Response::json(
+            http::StatusCode::OK,
+            &serde_json::json!({ "access_token": access_token }),
+        )
+        .unwrap_or_else(|_| Response::new(http::StatusCode::INTERNAL_SERVER_ERROR)),
         Err(err) => {
             tracing::error!("test token mint failed: {err}");
-            HttpResponse::InternalServerError().finish()
+            Response::new(http::StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
+}
+
+pub fn register_routes() {
+    let _ = mint as fn(_, _) -> _;
 }

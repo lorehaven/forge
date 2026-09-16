@@ -1,33 +1,29 @@
-//! `DELETE /api/v1/files/{storage}/file?path=…` - remove a file.
-//!
-//! Only ever one file. A recursive delete addressed by path is one typo away
-//! from emptying a storage, and nothing in the estate needs it: conveyor's
-//! artifacts are cleaned up per run, by name.
+//! `DELETE /api/v1/files/{storage}/file?path=…` - one file only, never recursive.
 
 use super::{
     ResolvedStorage, authorize, dynamic_path, error, forbidden, not_found, resolve_storage,
 };
 use crate::domain::storage_file;
-use crate::routers::files::{FileQuery, dynamic};
-use actix_web::http::StatusCode;
-use actix_web::{HttpRequest, HttpResponse, Responder, delete, web};
+use crate::routers::files::{FileQuery, OptionalClaims, dynamic};
+use quench_auth::domain::jwt::JwtConfig;
 use quench_db::prelude::Db;
+use quench_http::prelude::{Inject, Path, Query, Response, delete, http::StatusCode};
 
-#[delete("/{storage}/file")]
-#[tracing::instrument(skip(request))]
+#[delete("/api/v1/files/{storage}/file")]
+#[tracing::instrument(skip(claims, config, db))]
 pub async fn handle(
-    request: HttpRequest,
-    db: web::Data<Db>,
-    storage: web::Path<String>,
-    query: web::Query<FileQuery>,
-) -> impl Responder {
-    let storage_name = storage.into_inner();
+    OptionalClaims(claims): OptionalClaims,
+    Inject(config): Inject<JwtConfig>,
+    Inject(db): Inject<Db>,
+    Path(storage_name): Path<String>,
+    Query(query): Query<FileQuery>,
+) -> Response {
     let resolved = match resolve_storage(&db, &storage_name).await {
         Ok(resolved) => resolved,
-        Err(response) => return *response,
+        Err(response) => return response,
     };
 
-    if !authorize(&request, &resolved, "write") {
+    if !authorize(claims.as_ref(), &config, &resolved, "write") {
         return forbidden("write access to this storage is required");
     }
 
@@ -35,13 +31,11 @@ pub async fn handle(
         ResolvedStorage::Static(storage) => {
             let target = match super::static_target_or_error(storage, &query.path).await {
                 Ok(target) => target,
-                Err(response) => return *response,
+                Err(response) => return response,
             };
 
             if !super::download::is_file(&target).await {
-                // Covers both "not there" and "there but a directory". Neither is
-                // something this endpoint will remove, and distinguishing them tells a
-                // caller what the directory tree looks like.
+                // Covers "not there" and "there but a directory" alike.
                 return not_found("no such file");
             }
 
@@ -54,12 +48,12 @@ pub async fn handle(
 
             tracing::info!("deleted `{}` from storage `{}`", query.path, storage.name);
 
-            HttpResponse::NoContent().finish()
+            Response::new(StatusCode::NO_CONTENT)
         }
         ResolvedStorage::Dynamic(storage) => {
             let path = match dynamic_path(&query.path) {
                 Ok(path) => path,
-                Err(response) => return *response,
+                Err(response) => return response,
             };
             let Some(root) = dynamic::root() else {
                 return error(
@@ -76,7 +70,7 @@ pub async fn handle(
             match deleted {
                 Ok(true) => {
                     tracing::info!("deleted `{path}` from dynamic storage `{}`", storage.name);
-                    HttpResponse::NoContent().finish()
+                    Response::new(StatusCode::NO_CONTENT)
                 }
                 Ok(false) => not_found("no such file"),
                 Err(problem) => {
@@ -89,4 +83,8 @@ pub async fn handle(
             }
         }
     }
+}
+
+pub fn register_routes() {
+    let _ = handle as fn(_, _, _, _, _) -> _;
 }

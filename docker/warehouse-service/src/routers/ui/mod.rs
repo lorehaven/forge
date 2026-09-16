@@ -1,8 +1,6 @@
-use actix_web::dev::HttpServiceFactory;
-use actix_web::{HttpResponse, Responder, get, web};
 pub use common::assets;
-use quench_auth::prelude::JwtConfig;
-use quench_starter::prelude::with_base_path;
+use quench_http::prelude::{Response, get, http::StatusCode};
+use quench_starter::common::routes::with_base_path;
 use serde::Deserialize;
 
 pub mod authz;
@@ -10,229 +8,137 @@ pub mod common;
 pub mod pages;
 
 #[derive(Deserialize)]
-pub(super) struct PageQuery {
+pub struct PageQuery {
     /// Selected crate name (or docker repository, or artifact program)
-    pub(super) repo: Option<String>,
+    pub repo: Option<String>,
     /// Selected version (or docker tag)
-    pub(super) tag: Option<String>,
+    pub tag: Option<String>,
     /// Selected platform tag - artifact catalog only; ignored elsewhere.
-    pub(super) platform: Option<String>,
+    pub platform: Option<String>,
 }
 
-// ---------------------------------------------------------------------------
-// Root redirects
-// ---------------------------------------------------------------------------
+// --- Root redirects ---
 
-#[get("")]
-pub async fn root(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
-    if !common::is_ui_authenticated(&req, &config).await {
+#[get("/ui")]
+pub async fn root(common::PageAuth(authenticated): common::PageAuth) -> Response {
+    if !authenticated {
         return common::ui_login_redirect();
     }
-    HttpResponse::Found()
-        .append_header(("Location", with_base_path("/ui/home")))
-        .finish()
+    Response::new(StatusCode::FOUND).header("Location", with_base_path("/ui/home"))
 }
 
-#[get("/")]
-pub async fn root_slash(
-    req: actix_web::HttpRequest,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
-    if !common::is_ui_authenticated(&req, &config).await {
+#[get("/ui/")]
+pub async fn root_slash(common::PageAuth(authenticated): common::PageAuth) -> Response {
+    if !authenticated {
         return common::ui_login_redirect();
     }
-    HttpResponse::Found()
-        .append_header(("Location", with_base_path("/ui/home")))
-        .finish()
+    Response::new(StatusCode::FOUND).header("Location", with_base_path("/ui/home"))
 }
 
 // Docker redirects
 
-#[get("/docker")]
-pub async fn docker_root(
-    req: actix_web::HttpRequest,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
-    if !common::is_ui_authenticated(&req, &config).await {
+#[get("/ui/docker")]
+pub async fn docker_root(common::PageAuth(authenticated): common::PageAuth) -> Response {
+    if !authenticated {
         return common::ui_login_redirect();
     }
-    HttpResponse::PermanentRedirect()
-        .append_header(("Location", with_base_path("/ui/docker/catalog")))
-        .finish()
+    Response::new(StatusCode::PERMANENT_REDIRECT)
+        .header("Location", with_base_path("/ui/docker/catalog"))
 }
 
-#[get("/docker/")]
-pub async fn docker_root_slash(
-    req: actix_web::HttpRequest,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
-    if !common::is_ui_authenticated(&req, &config).await {
+#[get("/ui/docker/")]
+pub async fn docker_root_slash(common::PageAuth(authenticated): common::PageAuth) -> Response {
+    if !authenticated {
         return common::ui_login_redirect();
     }
-    HttpResponse::PermanentRedirect()
-        .append_header(("Location", with_base_path("/ui/docker/catalog")))
-        .finish()
+    Response::new(StatusCode::PERMANENT_REDIRECT)
+        .header("Location", with_base_path("/ui/docker/catalog"))
 }
 
 // Crates redirects
 
-#[get("/crates")]
-pub async fn crates_root(
-    req: actix_web::HttpRequest,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
-    if !common::is_ui_authenticated(&req, &config).await {
+#[get("/ui/crates")]
+pub async fn crates_root(common::PageAuth(authenticated): common::PageAuth) -> Response {
+    if !authenticated {
         return common::ui_login_redirect();
     }
-    HttpResponse::PermanentRedirect()
-        .append_header(("Location", with_base_path("/ui/crates/catalog")))
-        .finish()
+    Response::new(StatusCode::PERMANENT_REDIRECT)
+        .header("Location", with_base_path("/ui/crates/catalog"))
 }
 
-#[get("/crates/")]
-pub async fn crates_root_slash(
-    req: actix_web::HttpRequest,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
-    if !common::is_ui_authenticated(&req, &config).await {
+#[get("/ui/crates/")]
+pub async fn crates_root_slash(common::PageAuth(authenticated): common::PageAuth) -> Response {
+    if !authenticated {
         return common::ui_login_redirect();
     }
-    HttpResponse::PermanentRedirect()
-        .append_header(("Location", with_base_path("/ui/crates/catalog")))
-        .finish()
+    Response::new(StatusCode::PERMANENT_REDIRECT)
+        .header("Location", with_base_path("/ui/crates/catalog"))
 }
 
 // Files redirects
 
-#[get("/files")]
-pub async fn files_root(
-    req: actix_web::HttpRequest,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
-    if !common::is_ui_authenticated(&req, &config).await {
+#[get("/ui/files")]
+pub async fn files_root(common::PageAuth(authenticated): common::PageAuth) -> Response {
+    if !authenticated {
         return common::ui_login_redirect();
     }
-    HttpResponse::PermanentRedirect()
-        .append_header(("Location", with_base_path("/ui/files/storages")))
-        .finish()
+    Response::new(StatusCode::PERMANENT_REDIRECT)
+        .header("Location", with_base_path("/ui/files/storages"))
 }
 
-#[get("/files/")]
-pub async fn files_root_slash(
-    req: actix_web::HttpRequest,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
-    if !common::is_ui_authenticated(&req, &config).await {
+#[get("/ui/files/")]
+pub async fn files_root_slash(common::PageAuth(authenticated): common::PageAuth) -> Response {
+    if !authenticated {
         return common::ui_login_redirect();
     }
-    HttpResponse::PermanentRedirect()
-        .append_header(("Location", with_base_path("/ui/files/storages")))
-        .finish()
+    Response::new(StatusCode::PERMANENT_REDIRECT)
+        .header("Location", with_base_path("/ui/files/storages"))
 }
 
 // Artifact redirects (`/apk` kept for old bookmarks)
 
-#[get("/artifacts")]
-pub async fn artifacts_root(
-    req: actix_web::HttpRequest,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
-    artifacts_redirect(req, config).await
+#[get("/ui/artifacts")]
+pub async fn artifacts_root(auth: common::PageAuth) -> Response {
+    artifacts_redirect(auth)
 }
 
-#[get("/artifacts/")]
-pub async fn artifacts_root_slash(
-    req: actix_web::HttpRequest,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
-    artifacts_redirect(req, config).await
+#[get("/ui/artifacts/")]
+pub async fn artifacts_root_slash(auth: common::PageAuth) -> Response {
+    artifacts_redirect(auth)
 }
 
-#[get("/apk")]
-pub async fn apk_root(req: actix_web::HttpRequest, config: web::Data<JwtConfig>) -> impl Responder {
-    artifacts_redirect(req, config).await
+#[get("/ui/apk")]
+pub async fn apk_root(auth: common::PageAuth) -> Response {
+    artifacts_redirect(auth)
 }
 
-#[get("/apk/")]
-pub async fn apk_root_slash(
-    req: actix_web::HttpRequest,
-    config: web::Data<JwtConfig>,
-) -> impl Responder {
-    artifacts_redirect(req, config).await
+#[get("/ui/apk/")]
+pub async fn apk_root_slash(auth: common::PageAuth) -> Response {
+    artifacts_redirect(auth)
 }
 
-async fn artifacts_redirect(
-    req: actix_web::HttpRequest,
-    config: web::Data<JwtConfig>,
-) -> HttpResponse {
-    if !common::is_ui_authenticated(&req, &config).await {
+fn artifacts_redirect(common::PageAuth(authenticated): common::PageAuth) -> Response {
+    if !authenticated {
         return common::ui_login_redirect();
     }
-    HttpResponse::PermanentRedirect()
-        .append_header(("Location", with_base_path("/ui/artifacts/catalog")))
-        .finish()
+    Response::new(StatusCode::PERMANENT_REDIRECT)
+        .header("Location", with_base_path("/ui/artifacts/catalog"))
 }
 
-// ---------------------------------------------------------------------------
-// Scope
-// ---------------------------------------------------------------------------
-
-pub fn scope() -> impl HttpServiceFactory {
-    web::scope("/ui")
-        // Root
-        .service(root)
-        .service(root_slash)
-        .service(assets)
-        // Docker
-        .service(docker_root)
-        .service(docker_root_slash)
-        // Crates redirects
-        .service(crates_root)
-        .service(crates_root_slash)
-        // Files redirects
-        .service(files_root)
-        .service(files_root_slash)
-        // Artifact redirects
-        .service(artifacts_root)
-        .service(artifacts_root_slash)
-        .service(apk_root)
-        .service(apk_root_slash)
-        // Auth
-        .service(pages::auth::login)
-        .service(pages::auth::login_slash)
-        .service(pages::auth::callback)
-        .service(pages::auth::logout)
-        .service(pages::auth::status)
-        .service(pages::auth::refresh)
-        // Home
-        .service(pages::home::home)
-        .service(pages::home::home_slash)
-        // Docker pages
-        .service(pages::docker::catalog::docker_catalog)
-        .service(pages::docker::catalog::docker_catalog_slash)
-        .service(pages::docker::catalog::delete_image)
-        .service(pages::docker::catalog::delete_image_modal)
-        .service(pages::docker::catalog::empty_delete_image_modal)
-        .service(pages::docker::tags::docker_tags)
-        // Crates pages
-        .service(pages::crates::catalog::crates_index)
-        .service(pages::crates::catalog::crates_index_slash)
-        .service(pages::crates::catalog::yank_version)
-        .service(pages::crates::catalog::unyank_version)
-        // Files pages
-        .service(pages::files::storages::files_storages)
-        .service(pages::files::storages::files_storages_slash)
-        .service(pages::files::browse::files_browse)
-        .service(pages::files::browse::files_browse_slash)
-        .service(pages::files::storages::create_storage)
-        .service(pages::files::storages::edit_storage)
-        .service(pages::files::storages::delete_storage)
-        .service(pages::files::storages::delete_storage_modal)
-        .service(pages::files::storages::empty_delete_storage_modal)
-        .service(pages::files::storages::delete_file)
-        // Artifact pages
-        .service(pages::artifacts::catalog::artifacts_catalog)
-        .service(pages::artifacts::catalog::artifacts_catalog_slash)
-        .service(pages::artifacts::catalog::yank_version)
-        .service(pages::artifacts::catalog::unyank_version)
+pub fn register_routes() {
+    let _ = root as fn(_) -> _;
+    let _ = root_slash as fn(_) -> _;
+    let _ = docker_root as fn(_) -> _;
+    let _ = docker_root_slash as fn(_) -> _;
+    let _ = crates_root as fn(_) -> _;
+    let _ = crates_root_slash as fn(_) -> _;
+    let _ = files_root as fn(_) -> _;
+    let _ = files_root_slash as fn(_) -> _;
+    let _ = artifacts_root as fn(_) -> _;
+    let _ = artifacts_root_slash as fn(_) -> _;
+    let _ = apk_root as fn(_) -> _;
+    let _ = apk_root_slash as fn(_) -> _;
+    let _ = assets as fn(_) -> _;
+    common::register_routes();
+    pages::register_routes();
 }

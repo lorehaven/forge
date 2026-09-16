@@ -1,11 +1,14 @@
 use crate::support;
 
-use actix_web::test as actix_test;
-use support::WithDockerStorageRoot as WithStorageRoot;
-use warehouse_service::routers::docker::manifest::check_exists::handle;
+use http::{Method, StatusCode};
 use warehouse_service::utils::sha256::sha256_hex;
 
-fn write_manifest_and_tag(storage: &WithStorageRoot, repo: &str, tag: &str, manifest: &[u8]) {
+fn write_manifest_and_tag(
+    storage: &support::WithDockerStorageRoot,
+    repo: &str,
+    tag: &str,
+    manifest: &[u8],
+) {
     let hex = sha256_hex(manifest);
     let digest = format!("sha256:{hex}");
 
@@ -20,29 +23,43 @@ fn write_manifest_and_tag(storage: &WithStorageRoot, repo: &str, tag: &str, mani
 
 const MANIFEST_JSON: &str = r#"{"schemaVersion": 2, "mediaType": "application/vnd.docker.distribution.manifest.v2+json", "config": {}, "layers": []}"#;
 
-#[actix_web::test]
-async fn handle_reports_not_found_for_a_missing_tag() {
-    let _storage = WithStorageRoot::new();
-    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
-    let req = actix_test::TestRequest::default()
-        .method(actix_web::http::Method::HEAD)
-        .uri("/my-repo/manifests/latest")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::NOT_FOUND);
+async fn app() -> (
+    std::sync::Arc<dyn quench_http::endpoint::Endpoint>,
+    std::sync::Arc<quench_http::di::Container>,
+) {
+    warehouse_service::routers::docker::manifest::check_exists::register_routes();
+    let container = support::container_builder().build().await.unwrap();
+    support::app(container).await
 }
 
-#[actix_web::test]
+#[tokio::test]
+async fn handle_reports_not_found_for_a_missing_tag() {
+    let _storage = support::WithDockerStorageRoot::new();
+    let (app, container) = app().await;
+    let resp = app
+        .call(support::req(
+            Method::HEAD,
+            "/v2/my-repo/manifests/latest",
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
 async fn handle_reports_ok_with_the_digest_for_an_existing_tag() {
-    let storage = WithStorageRoot::new();
+    let storage = support::WithDockerStorageRoot::new();
     write_manifest_and_tag(&storage, "my-repo", "latest", MANIFEST_JSON.as_bytes());
 
-    let app = actix_test::init_service(actix_web::App::new().service(handle)).await;
-    let req = actix_test::TestRequest::default()
-        .method(actix_web::http::Method::HEAD)
-        .uri("/my-repo/manifests/latest")
-        .to_request();
-    let resp = actix_test::call_service(&app, req).await;
-    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
-    assert!(resp.headers().contains_key("Docker-Content-Digest"));
+    let (app, container) = app().await;
+    let resp = app
+        .call(support::req(
+            Method::HEAD,
+            "/v2/my-repo/manifests/latest",
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let (headers, _) = support::parts(resp).await;
+    assert!(headers.contains_key("docker-content-digest"));
 }

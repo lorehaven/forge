@@ -3,7 +3,7 @@
 use quench_db::prelude::{Crud, Db};
 use sage_service::routers::ui::chat::*;
 
-#[actix_web::test]
+#[tokio::test]
 async fn retrieves_only_the_selected_conversation_branch() {
     let db = Db::InMemory(quench_db::InMemoryDb::new());
     let repo = db.repository::<sage_service::domain::models::Message>();

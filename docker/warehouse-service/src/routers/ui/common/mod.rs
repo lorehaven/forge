@@ -1,5 +1,9 @@
-use actix_web::{HttpResponse, Responder, get, http::header::ContentType, web};
-pub use quench_starter::actix::routers::ui::{is_ui_authenticated, ui_asset_path, ui_path};
+use async_trait::async_trait;
+use quench_auth::domain::jwt::JwtConfig;
+use quench_http::prelude::{
+    FromRequest, HttpError, Path, Request, Response, get, http::StatusCode,
+};
+pub use quench_starter::http::routers::ui::{is_ui_authenticated, ui_asset_path, ui_path};
 use quench_web::prelude::*;
 use std::sync::LazyLock;
 
@@ -133,16 +137,12 @@ pub fn ui_header(
         )
 }
 
-#[get("/assets/{path:.*}")]
-pub async fn assets(path: web::Path<String>) -> impl Responder {
-    quench_starter::actix::routers::ui::serve_assets(path, "dist/assets").await
+#[get("/ui/assets/{path:.*}")]
+pub async fn assets(Path(path): Path<String>) -> Response {
+    quench_starter::http::routers::ui::serve_assets(&path, "dist/assets").await
 }
 
-pub fn render_page(
-    mut builder: actix_web::HttpResponseBuilder,
-    content: Element,
-    page_kind: UiPageKind,
-) -> HttpResponse {
+pub fn render_page(status: StatusCode, content: Element, page_kind: UiPageKind) -> Response {
     let shell = match page_kind {
         UiPageKind::Home => &*UI_SHELL_HOME,
         UiPageKind::Docker => &*UI_SHELL_DOCKER,
@@ -150,9 +150,7 @@ pub fn render_page(
         UiPageKind::Files => &*UI_SHELL_FILES,
         UiPageKind::Artifacts => &*UI_SHELL_ARTIFACTS,
     };
-    builder
-        .content_type(ContentType::html())
-        .body(shell.page(div().class("page").child(content)))
+    Response::html(status, shell.page(div().class("page").child(content)))
 }
 
 pub enum UiPageKind {
@@ -163,6 +161,24 @@ pub enum UiPageKind {
     Artifacts,
 }
 
-pub fn ui_login_redirect() -> HttpResponse {
-    quench_starter::actix::routers::ui::ui_login_redirect()
+pub fn ui_login_redirect() -> Response {
+    quench_starter::http::routers::ui::ui_login_redirect()
+}
+
+/// Whether the request carries a usable realm session - for a page that only
+/// needs to gate rendering, not the identity behind it.
+pub struct PageAuth(pub bool);
+
+#[async_trait]
+impl FromRequest for PageAuth {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        let Ok(config) = req.container().get::<JwtConfig>() else {
+            return Ok(Self(false));
+        };
+        Ok(Self(is_ui_authenticated(req, &config).await))
+    }
+}
+
+pub fn register_routes() {
+    let _ = assets as fn(_) -> _;
 }

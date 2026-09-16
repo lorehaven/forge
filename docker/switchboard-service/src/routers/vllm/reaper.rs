@@ -5,11 +5,8 @@ use std::time::Duration;
 /// How often the reaper checks for `Failed` instances.
 const REAP_INTERVAL_SECS: u64 = 30;
 
-/// vLLM pods never restart (`restartPolicy: Never` in `kubernetes.rs`), so a
-/// crash leaves the pod parked in `Failed` phase forever - and because the
-/// launcher names pods after the model, a stale `Failed` pod blocks every
-/// future relaunch of that model with "already exists" until something
-/// deletes it. Nothing upstream does that automatically, so this does.
+/// A crashed pod (`restartPolicy: Never`) stays parked in `Failed` forever
+/// and blocks any relaunch of that model with "already exists"; this reaps it.
 pub fn spawn_reaper(engine: Arc<dyn VllmEngine>) {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(REAP_INTERVAL_SECS));
