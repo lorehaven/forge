@@ -1,4 +1,4 @@
-use anvil::cli::{Cli, Commands};
+use anvil::cli::{Cli, Commands, ConfigCommands};
 use clap::Parser;
 
 #[test]
@@ -187,6 +187,19 @@ fn parse_lint_supports_json_flag() {
     }
 }
 
+#[test]
+fn parse_config_check() {
+    let cli = Cli::parse_from(["anvil", "config", "check"]);
+    match cli.command {
+        Commands::Config { command } => assert!(matches!(command, ConfigCommands::Check)),
+        _ => panic!("expected config command"),
+    }
+}
+
+#[test]
+fn parse_config_with_no_subcommand_is_rejected() {
+    assert!(Cli::try_parse_from(["anvil", "config"]).is_err());
+}
 
 #[test]
 fn parse_semver_check_supports_package_and_baseline_rev() {

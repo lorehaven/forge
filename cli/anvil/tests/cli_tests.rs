@@ -93,3 +93,31 @@ fn deny_json_runs_through_the_full_binary_with_a_banner_free_stdout() {
             serde_json::from_str(line).expect("each stdout line is its own JSON document");
     }
 }
+
+#[test]
+fn config_check_accepts_the_estates_own_anvil_toml() {
+    anvil()
+        .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))
+        .args(["config", "check"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("valid"));
+}
+
+#[test]
+fn config_check_rejects_a_malformed_anvil_toml_and_lists_every_problem() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(
+        dir.path().join(".anvil.toml"),
+        "bogus_top_level = 1\n\n[docker.modules.core]\npackages = []\n",
+    )
+    .expect("write fixture config");
+
+    anvil()
+        .current_dir(dir.path())
+        .args(["config", "check"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("bogus_top_level"))
+        .stdout(predicate::str::contains("docker.modules.core"));
+}

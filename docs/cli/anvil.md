@@ -10,7 +10,9 @@ Anvil is the workspace build tool for the Forge Cargo workspace. It wraps `cargo
 - **Formatting**: `format [--check]` wraps `cargo fmt`.
 - **Workspace introspection**: `list [--format names|json]` enumerates workspace packages.
 - **Dependency maintenance**: `upgrade [--incompatible]`, `audit` (RustSec advisories via `cargo-audit`), `machete` (unused-dependency detection via `cargo-machete`), `deny` (licenses, banned/duplicate crates, and registry sources via `cargo-deny`, configured in `deny.toml`).
-- **API stability**: `semver-check -p <name> [--baseline-rev <rev>]` diffs a library crate's public API with `cargo-semver-checks` against a git revision (default: the commit before its last `Cargo.toml` version bump) rather than a registry version, since the crates this workspace publishes live on the private `ennor` registry that `cargo-semver-checks` can't query directly.
+- **Machine-readable output**: `--json` on `lint`, `test`/`nextest`, `audit`, `deny`, and `machete` emits each tool's own structured report (or, for `machete`/`deny`, anvil's own JSON of their parsed output) on stdout instead of streaming human-readable text — see [Machine-readable output](#machine-readable-output).
+- **Config validation**: `config check` validates `.anvil.toml` against anvil's own schema and reports every problem found in one pass (unknown fields, missing `packages`/`dockerfile`, a package override that doesn't match its module's `packages`, ...), rather than the one-error-at-a-time story a plain TOML parse gives.
+- **API stability**: `semver-check -p <name> [--baseline-rev <rev>]` diffs a library crate's public API with `cargo-semver-checks` against a git revision (default: the commit before its last `Cargo.toml` version bump) rather than a registry version, since the crates this workspace publishes live on the private `ennor` registry that `cargo-semver-checks` can't query directly. A package on its first release - no earlier commit to diff against - compares against a synthetic empty API instead of erroring, so nothing reads as a breaking change.
 - **Run/serve mode**: `run` builds and runs a package binary; with `--serve` it watches for file changes and rebuilds/restarts, with interactive hotkeys.
 - **Docker integration**: builds, tags, pushes, and releases Docker images for packages declared under `[docker.modules.*]` in `.anvil.toml`, including multi-registry pushes and per-package `build_args`.
 - **Release automation**: `release` bumps a package's patch version, commits, and then either runs the Docker release flow or `cargo publish` (+ `cargo install` when the package is also listed under `[install].packages`).
@@ -50,9 +52,23 @@ anvil audit
 anvil machete
 anvil deny
 anvil semver-check -p <name> [--baseline-rev <rev>]
+anvil config check
 ```
 
 In `run --serve` mode: `r` rebuilds immediately, `R` toggles auto-rebuild-on-change, `q`/`Q`/`e`/`E` quit.
+
+### Machine-readable output
+
+```bash
+anvil lint --json      # clippy's own `--message-format=json`
+anvil test --json      # nightly + `-Z unstable-options --format json` (no stable equivalent)
+anvil nextest --json   # nextest's own experimental `libtest-json-plus` format
+anvil audit --json     # cargo-audit's own `--format json`
+anvil deny --json      # cargo-deny's own `--format json` (moved from stderr to anvil's stdout)
+anvil machete --json   # anvil's own `{"findings": [...]}`, parsed from cargo-machete's text report
+```
+
+Every `--json` command's stdout carries nothing but that report - no banner, no status lines - so it's safe to pipe straight into a consumer (e.g. Conveyor's code-quality summary page, which parses these instead of scraping human logs). Human build/test progress still goes to stderr.
 
 ### Output control
 
@@ -111,5 +127,7 @@ packages = ["service", "worker"]
 ```
 
 `[docker].registry` is only optional when every package sets its own `registries` override. Every Docker build always receives `PROJECT_NAME` and `RESOURCES_PATH` build args derived from the module/package name; `build_args` entries are appended after those, so a package can override `RESOURCES_PATH` if it genuinely needs a different one. This lets one parameterized Dockerfile serve many packages — prefer `build_args` over forking a Dockerfile for a one-line difference.
+
+Run `anvil config check` after editing `.anvil.toml` to catch typos and structural mistakes (an unknown field, a missing `packages`/`dockerfile`, a package override that isn't in its module's `packages` list, ...) before they silently no-op in whichever subcommand would have used them.
 
 [Home](../README.md)

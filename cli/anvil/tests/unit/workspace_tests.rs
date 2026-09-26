@@ -1,6 +1,6 @@
 use anvil::commands::workspace::{
-    MacheteFinding, deny, ensure_tool_installed, format_metadata, list, machete,
-    parse_machete_output, previous_version_rev,
+    MacheteFinding, deny, empty_api_baseline, ensure_tool_installed, format_metadata, list,
+    machete, parse_machete_output, previous_version_rev,
 };
 use serde_json::json;
 
@@ -108,12 +108,62 @@ fn previous_version_rev_finds_the_commit_before_the_last_change_to_a_tracked_fil
     let rev = previous_version_rev(&manifest);
     std::env::set_current_dir(cwd).unwrap();
 
-    let rev = rev.expect("has an earlier commit");
+    let rev = rev.expect("git log itself succeeds").expect("has an earlier commit");
     assert_eq!(rev.len(), 40, "a full git SHA");
 }
 
 #[test]
-fn previous_version_rev_errors_for_a_path_git_has_never_tracked() {
+fn previous_version_rev_is_none_for_a_manifest_with_only_one_commit() {
+    // The first-release case this whole fallback exists for: the manifest
+    // has exactly one commit in its history (the one that created it), so
+    // `--skip=1` has nothing left to land on.
+    let _guard = stable_cwd_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+    let dir = tempfile::tempdir().unwrap();
+    let git = |args: &[&str]| {
+        assert!(
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(dir.path())
+                .status()
+                .unwrap()
+                .success(),
+            "git {args:?} failed"
+        );
+    };
+    let manifest = dir.path().join("Cargo.toml");
+
+    git(&["init", "-q"]);
+    git(&["config", "user.email", "anvil-test@example.com"]);
+    git(&["config", "user.name", "anvil-test"]);
+    std::fs::write(&manifest, "[package]\nname = \"a\"\nversion = \"0.1.0\"\n").unwrap();
+    git(&["add", "Cargo.toml"]);
+    git(&["commit", "-q", "-m", "first release"]);
+
+    let cwd = std::env::current_dir().unwrap();
+    std::env::set_current_dir(dir.path()).unwrap();
+    let rev = previous_version_rev(&manifest);
+    std::env::set_current_dir(cwd).unwrap();
+
+    assert!(rev.expect("git log itself succeeds").is_none());
+}
+
+#[test]
+fn empty_api_baseline_writes_a_stub_crate_matching_the_package_name() {
+    let dir = empty_api_baseline("some-package").expect("writes the stub crate");
+
+    let manifest =
+        std::fs::read_to_string(dir.path().join("Cargo.toml")).expect("stub Cargo.toml exists");
+    assert!(manifest.contains("name = \"some-package\""), "{manifest}");
+
+    let lib = std::fs::read_to_string(dir.path().join("src/lib.rs")).expect("stub src/lib.rs exists");
+    assert_eq!(lib, "", "an empty API to diff the real crate against");
+}
+
+#[test]
+fn previous_version_rev_is_none_for_a_path_git_has_never_tracked() {
     let _guard = stable_cwd_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -124,8 +174,8 @@ fn previous_version_rev_errors_for_a_path_git_has_never_tracked() {
         .join("never-committed-anvil-workspace-test.toml");
     std::fs::write(&path, "").unwrap();
 
-    let error = previous_version_rev(&path).unwrap_err();
-    assert!(error.to_string().contains("No earlier commit found"));
+    let rev = previous_version_rev(&path).expect("git log itself succeeds");
+    assert!(rev.is_none(), "no commit has ever touched this path");
 
     let _ = std::fs::remove_file(&path);
 }

@@ -6,3 +6,7 @@ mod graph_tests;
 mod parser_tests;
 #[path = "unit/spec_tests.rs"]
 mod spec_tests;
+#[path = "unit/steps_mod_tests.rs"]
+mod steps_mod_tests;
+#[path = "unit/steps_tools_tests.rs"]
+mod steps_tools_tests;

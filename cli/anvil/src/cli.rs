@@ -101,12 +101,15 @@ pub enum Commands {
     ///
     /// Diffs against a git revision rather than a registry version, since the
     /// crates this workspace publishes live on a private registry that
-    /// cargo-semver-checks can't query directly.
+    /// cargo-semver-checks can't query directly. A package on its first
+    /// release - no earlier commit to diff against - instead compares
+    /// against a synthetic empty API, so nothing reads as a breaking change.
     SemverCheck {
         /// Package to check (must have a library target)
         #[arg(short, long)]
         package: String,
-        /// Git revision to diff against (defaults to the last commit that changed the package's Cargo.toml)
+        /// Git revision to diff against (defaults to the last commit that
+        /// changed the package's Cargo.toml, or an empty API on its first release)
         #[arg(long)]
         baseline_rev: Option<String>,
     },
@@ -189,6 +192,17 @@ pub enum Commands {
         #[command(subcommand)]
         command: DockerCommands,
     },
+    /// Inspect or validate `.anvil.toml`
+    Config {
+        #[command(subcommand)]
+        command: ConfigCommands,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ConfigCommands {
+    /// Validate `.anvil.toml` against anvil's schema, reporting every error at once
+    Check,
 }
 
 #[derive(Subcommand, Debug)]

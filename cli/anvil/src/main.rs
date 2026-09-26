@@ -1,4 +1,4 @@
-use anvil::cli::{Cli, Commands, DockerCommands};
+use anvil::cli::{Cli, Commands, ConfigCommands, DockerCommands};
 use anvil::commands;
 use anvil::config;
 use anvil::util::{OutputMode, set_output_mode};
@@ -106,6 +106,9 @@ fn main() -> Result<()> {
                 commands::docker::release_all(&config)?;
             }
             DockerCommands::BuildAll => commands::docker::build_all(&config)?,
+        },
+        Commands::Config { command } => match command {
+            ConfigCommands::Check => commands::config_check::check()?,
         },
     }
 

@@ -1,4 +1,6 @@
 use anyhow::{Context, Result};
+use quench_cli::prelude::{Tone, print_status};
+use std::fs;
 use std::io::Write;
 use std::process::Command;
 
@@ -222,8 +224,11 @@ pub fn deny(json: bool) -> Result<()> {
 ///
 /// That's the state just before its most recent version bump, used as a
 /// `cargo semver-checks` baseline when the package isn't fetchable from a
-/// public registry.
-pub fn previous_version_rev(manifest: &std::path::Path) -> Result<String> {
+/// public registry. `Ok(None)` when there is no earlier commit - the
+/// manifest's only change in the available history is the one that created
+/// it, e.g. a package on its first release (see [`empty_api_baseline`] for
+/// what `semver_check` does with that).
+pub fn previous_version_rev(manifest: &std::path::Path) -> Result<Option<String>> {
     let output = Command::new("git")
         .arg("log")
         .arg("--skip=1")
@@ -239,33 +244,59 @@ pub fn previous_version_rev(manifest: &std::path::Path) -> Result<String> {
     }
 
     let rev = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    Ok(if rev.is_empty() { None } else { Some(rev) })
+}
 
-    if rev.is_empty() {
-        anyhow::bail!(
-            "No earlier commit found for {} - pass --baseline-rev explicitly",
-            manifest.display()
-        );
-    }
-
-    Ok(rev)
+/// A synthetic "nothing existed yet" crate for `cargo semver-checks
+/// --baseline-root`.
+///
+/// Used when [`previous_version_rev`] finds no earlier commit to diff
+/// against: every public item in the real crate then reads as newly added,
+/// not a break, which is the correct outcome for a package on its first
+/// release. Only `name` needs to match the real crate - semver-checks diffs
+/// public API shapes, not versions, and an empty `src/lib.rs` has none to
+/// begin with.
+pub fn empty_api_baseline(package: &str) -> Result<tempfile::TempDir> {
+    let dir = tempfile::tempdir().context("Failed to create a temporary baseline crate")?;
+    fs::create_dir_all(dir.path().join("src"))
+        .context("Failed to create the temporary baseline crate's src directory")?;
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        format!("[package]\nname = \"{package}\"\nversion = \"0.0.0\"\nedition = \"2021\"\n"),
+    )
+    .context("Failed to write the temporary baseline crate's Cargo.toml")?;
+    fs::write(dir.path().join("src/lib.rs"), "")
+        .context("Failed to write the temporary baseline crate's src/lib.rs")?;
+    Ok(dir)
 }
 
 pub fn semver_check(package: &str, baseline_rev: Option<String>) -> Result<()> {
     ensure_tool_installed("cargo-semver-checks", "cargo install cargo-semver-checks")?;
 
-    let rev = if let Some(rev) = baseline_rev {
-        rev
+    let mut cmd = Command::new("cargo");
+    cmd.arg("semver-checks").arg("--package").arg(package);
+
+    // Kept alive for the duration of the command when set - `--baseline-root`
+    // points into it, and the directory is removed as soon as this drops.
+    let _baseline_dir = if let Some(rev) = baseline_rev {
+        cmd.arg("--baseline-rev").arg(rev);
+        None
     } else {
         let pkg = resolve_package(package)?;
-        previous_version_rev(&pkg.manifest)?
+        if let Some(rev) = previous_version_rev(&pkg.manifest)? {
+            cmd.arg("--baseline-rev").arg(rev);
+            None
+        } else {
+            print_status(
+                Tone::Info,
+                "anvil",
+                &format!("{package} has no earlier version to diff against - comparing against an empty API"),
+            );
+            let dir = empty_api_baseline(package)?;
+            cmd.arg("--baseline-root").arg(dir.path());
+            Some(dir)
+        }
     };
-
-    let mut cmd = Command::new("cargo");
-    cmd.arg("semver-checks")
-        .arg("--package")
-        .arg(package)
-        .arg("--baseline-rev")
-        .arg(rev);
 
     run_command(cmd, "semver-check")
 }

@@ -14,10 +14,11 @@ use crate::steps::StepError;
 /// binaries: a deployment can be running a conveyor built against a different
 /// anvil. An unknown command here is a warning-shaped error the author can act
 /// on, not a wrong answer.
-pub const COMMANDS: [&str; 16] = [
+pub const COMMANDS: [&str; 17] = [
     "audit",
     "build",
     "clean",
+    "config",
     "deny",
     "docker",
     "format",
@@ -43,8 +44,11 @@ pub const DOCKER_COMMANDS: [&str; 6] = [
     "tag",
 ];
 
-/// Checks an `anvil` step's command word (and, for `docker`, its subcommand)
-/// against [`COMMANDS`]/[`DOCKER_COMMANDS`].
+/// `anvil config`'s own subcommands.
+pub const CONFIG_COMMANDS: [&str; 1] = ["check"];
+
+/// Checks an `anvil` step's command word (and, for `docker`/`config`, its
+/// subcommand) against [`COMMANDS`]/[`DOCKER_COMMANDS`]/[`CONFIG_COMMANDS`].
 pub fn validate(argv: &[String]) -> Result<(), StepError> {
     let command = argv.first().map(String::as_str).unwrap_or_default();
 
@@ -63,6 +67,17 @@ pub fn validate(argv: &[String]) -> Result<(), StepError> {
                 kind: "anvil docker",
                 command: sub.to_string(),
                 known: DOCKER_COMMANDS.join(", "),
+            });
+        }
+    }
+
+    if command == "config" {
+        let sub = argv.get(1).map(String::as_str).unwrap_or_default();
+        if !CONFIG_COMMANDS.contains(&sub) {
+            return Err(StepError::UnknownCommand {
+                kind: "anvil config",
+                command: sub.to_string(),
+                known: CONFIG_COMMANDS.join(", "),
             });
         }
     }

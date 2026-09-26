@@ -25,11 +25,11 @@ steps = [{step}]
 #[test]
 fn every_anvil_command_is_accepted() {
     for command in anvil::COMMANDS {
-        // `docker` needs a subcommand of its own; covered separately.
-        let args = if command == "docker" {
-            "docker build -p thing".to_string()
-        } else {
-            command.to_string()
+        // `docker`/`config` each need a subcommand of their own; covered separately.
+        let args = match command {
+            "docker" => "docker build -p thing".to_string(),
+            "config" => "config check".to_string(),
+            _ => command.to_string(),
         };
         assert!(
             validate(&Step::Anvil(args.clone())).is_ok(),
@@ -79,6 +79,29 @@ fn anvil_docker_with_no_subcommand_is_rejected() {
     // On its own it prints help and exits non-zero, which reads as a
     // mysteriously failing step.
     assert!(validate(&Step::Anvil("docker".to_string())).is_err());
+}
+
+#[test]
+fn every_anvil_config_subcommand_is_accepted() {
+    for sub in anvil::CONFIG_COMMANDS {
+        assert!(
+            validate(&Step::Anvil(format!("config {sub}"))).is_ok(),
+            "anvil config {sub} should be accepted"
+        );
+    }
+}
+
+#[test]
+fn a_mistyped_anvil_config_subcommand_is_rejected() {
+    let error = validate(&Step::Anvil("config chek".to_string())).expect_err("should be rejected");
+    let message = error.to_string();
+    assert!(message.contains("chek"), "{message}");
+    assert!(message.contains("check"), "{message}");
+}
+
+#[test]
+fn anvil_config_with_no_subcommand_is_rejected() {
+    assert!(validate(&Step::Anvil("config".to_string())).is_err());
 }
 
 // ---------------------------------------------------------------------------
