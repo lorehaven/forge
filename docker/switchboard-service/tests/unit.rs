@@ -21,6 +21,9 @@ mod routers_models_list_tests;
 #[path = "unit/routers_vllm_types_tests.rs"]
 mod routers_vllm_types_tests;
 
+#[path = "unit/routers_vllm_kubernetes_tests.rs"]
+mod routers_vllm_kubernetes_tests;
+
 #[path = "unit/routers_vllm_list_tests.rs"]
 mod routers_vllm_list_tests;
 

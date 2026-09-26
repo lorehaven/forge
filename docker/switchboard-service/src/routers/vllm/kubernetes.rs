@@ -11,6 +11,37 @@ use kube::Client;
 use kube::api::{Api, DeleteParams, ListParams, PostParams};
 use serde_json::json;
 
+/// Kubernetes Service names (and label values, which the pod also carries this string as)
+/// are capped at 63 characters and must be a valid RFC 1035 label. Long model names -
+/// especially ones with an org prefix - routinely blow past that once "vllm-" and the port
+/// are added, so a name that doesn't fit is truncated with a short content hash appended
+/// for uniqueness rather than sent to the API and rejected.
+pub fn vllm_pod_name(model: &str, port: u16) -> String {
+    const MAX_LEN: usize = 63;
+    const PREFIX: &str = "vllm-";
+
+    let safe_model = model.replace(['/', '.'], "-").to_lowercase();
+    let suffix = format!("-{port}");
+    let full = format!("{PREFIX}{safe_model}{suffix}");
+    if full.len() <= MAX_LEN {
+        return full;
+    }
+
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    safe_model.hash(&mut hasher);
+    let hash = format!("{:08x}", hasher.finish() as u32);
+
+    // -1 for the hyphen separating the truncated model from the hash.
+    let budget = MAX_LEN.saturating_sub(PREFIX.len() + suffix.len() + hash.len() + 1);
+    let mut truncated: String = safe_model.chars().take(budget).collect();
+    while truncated.ends_with('-') {
+        truncated.pop();
+    }
+
+    format!("{PREFIX}{truncated}-{hash}{suffix}")
+}
+
 pub struct KubernetesVllmEngine {
     client: Client,
     namespace: String,
@@ -179,8 +210,7 @@ impl VllmEngine for KubernetesVllmEngine {
             })
         };
 
-        let safe_model = req.model.replace(['/', '.'], "-").to_lowercase();
-        let pod_name = format!("vllm-{}-{}", safe_model, req.port);
+        let pod_name = vllm_pod_name(&req.model, req.port);
 
         // CPU entrypoint takes the model positionally; GPU's api_server wants `--model`.
         let mut args = if cpu {
