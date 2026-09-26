@@ -44,7 +44,7 @@ const OVERRIDE_FIELDS: &[&str] = &[
     "build_args",
 ];
 const INSTALL_FIELDS: &[&str] = &["packages"];
-const RELEASE_FIELDS: &[&str] = &["registry", "packages"];
+const RELEASE_FIELDS: &[&str] = &["registry", "packages", "commit_message_template"];
 
 fn join(path: &str, key: &str) -> String {
     if path.is_empty() {
@@ -178,6 +178,9 @@ pub fn validate(content: &str) -> Result<Vec<ConfigIssue>, toml::de::Error> {
         }
         if let Some(packages) = t.get("packages") {
             expect_string_array(packages, "release.packages", &mut issues);
+        }
+        if let Some(template) = t.get("commit_message_template") {
+            expect_string(template, "release.commit_message_template", &mut issues);
         }
     }
 

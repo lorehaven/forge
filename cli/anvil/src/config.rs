@@ -91,6 +91,13 @@ pub struct ReleaseConfig {
     /// List of releasable packages
     #[serde(default)]
     pub packages: Vec<String>,
+    /// Template for the version-bump commit message.
+    ///
+    /// See `commands::release::render_commit_message` for the placeholders
+    /// it supports and `commands::release::DEFAULT_COMMIT_MESSAGE_TEMPLATE`
+    /// for what an unset one falls back to.
+    #[serde(default)]
+    pub commit_message_template: Option<String>,
 }
 
 /// `quiet` suppresses the fallback warnings below.

@@ -196,6 +196,23 @@ FOO = 1
 }
 
 #[test]
+fn a_release_commit_message_template_is_a_recognised_field() {
+    let toml = "[release]\ncommit_message_template = \"release: {summary}\"\n";
+    assert_eq!(validate(toml).expect("parses"), Vec::new());
+}
+
+#[test]
+fn an_empty_release_commit_message_template_is_reported() {
+    let toml = "[release]\ncommit_message_template = \"\"\n";
+    let issues = validate(toml).expect("parses");
+    assert!(
+        issues
+            .iter()
+            .any(|i| i.path == "release.commit_message_template" && i.message.contains("must not be empty"))
+    );
+}
+
+#[test]
 fn several_simultaneous_problems_are_all_reported_at_once() {
     let toml = r#"
 bogus_top_level = 1

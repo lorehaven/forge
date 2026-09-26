@@ -1,11 +1,12 @@
 use anvil::cargo_meta;
 use anvil::commands::release::{
-    ReleaseKind, ReleasePlanItem, build_release_plan, bump_patch, bump_patch_versions,
-    changed_workspace_dependencies, collect_package_dependencies, compute_package_layers,
-    ensure_release_plan_non_empty, ensure_release_tags_absent, get_transitive_dependencies,
-    git_show_file_at_tag, is_docker_package, is_release_relevant_file, latest_package_tag,
-    package_changed_since_tag, package_tag_name, print_dry_run_plan_with_layers,
-    release_action_label, resolve_release_targets, resolve_single_package, set_manifest_version,
+    DEFAULT_COMMIT_MESSAGE_TEMPLATE, ReleaseKind, ReleasePlanItem, build_release_plan, bump_patch,
+    bump_patch_versions, changed_workspace_dependencies, collect_package_dependencies,
+    compute_package_layers, ensure_release_plan_non_empty, ensure_release_tags_absent,
+    get_transitive_dependencies, git_show_file_at_tag, is_docker_package,
+    is_release_relevant_file, latest_package_tag, package_changed_since_tag, package_tag_name,
+    print_dry_run_plan_with_layers, release_action_label, render_commit_message,
+    resolve_release_targets, resolve_single_package, set_manifest_version,
     should_install_package, tag_exists, workspace_dependencies_table,
 };
 use anvil::config::{Config, DockerConfig, DockerModuleConfig, InstallConfig};
@@ -30,7 +31,66 @@ fn plan_item(
         bump_version,
         install_after_publish,
         layer: 0,
+        needs_release: true,
     }
+}
+
+#[test]
+fn render_commit_message_default_template_matches_the_old_hardcoded_format() {
+    let plan = vec![
+        plan_item("anvil", ReleaseKind::Cargo, true, false),
+        ReleasePlanItem {
+            package: "riveter".to_string(),
+            to_version: "2.0.0".to_string(),
+            ..plan_item("riveter", ReleaseKind::Cargo, true, false)
+        },
+    ];
+    assert_eq!(
+        render_commit_message(DEFAULT_COMMIT_MESSAGE_TEMPLATE, &plan),
+        "release: bump package versions (anvil v1.0.1, riveter v2.0.0)"
+    );
+}
+
+#[test]
+fn render_commit_message_ignores_items_that_were_not_version_bumped() {
+    // A first release is `needs_release` but never touches a manifest -
+    // nothing for a version-bump commit message to say about it.
+    let plan = vec![
+        plan_item("anvil", ReleaseKind::Cargo, true, false),
+        ReleasePlanItem {
+            bump_version: false,
+            ..plan_item("brand-new-crate", ReleaseKind::Cargo, false, false)
+        },
+    ];
+    let message = render_commit_message(DEFAULT_COMMIT_MESSAGE_TEMPLATE, &plan);
+    assert_eq!(message, "release: bump package versions (anvil v1.0.1)");
+    assert!(!message.contains("brand-new-crate"));
+}
+
+#[test]
+fn render_commit_message_supports_a_changelog_placeholder() {
+    let plan = vec![
+        plan_item("anvil", ReleaseKind::Cargo, true, false),
+        ReleasePlanItem {
+            package: "riveter".to_string(),
+            to_version: "2.0.0".to_string(),
+            ..plan_item("riveter", ReleaseKind::Cargo, true, false)
+        },
+    ];
+    let rendered = render_commit_message("release ({count})\n\n{changelog}", &plan);
+    assert_eq!(
+        rendered,
+        "release (2)\n\n- anvil v1.0.1\n- riveter v2.0.0"
+    );
+}
+
+#[test]
+fn render_commit_message_with_no_bumped_packages_is_empty_summary() {
+    let plan: Vec<ReleasePlanItem> = Vec::new();
+    assert_eq!(
+        render_commit_message(DEFAULT_COMMIT_MESSAGE_TEMPLATE, &plan),
+        "release: bump package versions ()"
+    );
 }
 
 #[test]
@@ -193,23 +253,18 @@ fn workspace_dependencies_table_errors_on_invalid_toml() {
 #[test]
 fn ensure_release_plan_non_empty_is_ok_when_the_plan_has_items() {
     let plan = vec![plan_item("a", ReleaseKind::Cargo, false, false)];
-    assert!(ensure_release_plan_non_empty(false, &plan, false).is_ok());
-}
-
-#[test]
-fn ensure_release_plan_non_empty_dry_run_with_empty_plan_is_ok() {
-    assert!(ensure_release_plan_non_empty(true, &[], true).is_ok());
+    assert!(ensure_release_plan_non_empty(false, &plan).is_ok());
 }
 
 #[test]
 fn ensure_release_plan_non_empty_errors_for_all_with_nothing_to_release() {
-    let error = ensure_release_plan_non_empty(true, &[], false).unwrap_err();
+    let error = ensure_release_plan_non_empty(true, &[]).unwrap_err();
     assert!(error.to_string().contains("No packages require release"));
 }
 
 #[test]
 fn ensure_release_plan_non_empty_errors_for_a_single_target_with_no_changes() {
-    let error = ensure_release_plan_non_empty(false, &[], false).unwrap_err();
+    let error = ensure_release_plan_non_empty(false, &[]).unwrap_err();
     assert!(error.to_string().contains("no changes since its last tag"));
 }
 
@@ -277,6 +332,7 @@ fn resolve_release_targets_all_collects_release_and_docker_packages_without_dupl
         release: anvil::config::ReleaseConfig {
             registry: String::new(),
             packages: vec!["pkg-a".to_string()],
+            commit_message_template: None,
         },
         docker: DockerConfig {
             modules: std::iter::once((
@@ -314,6 +370,7 @@ fn resolve_release_targets_all_errors_when_a_configured_package_is_not_a_member(
         release: anvil::config::ReleaseConfig {
             registry: String::new(),
             packages: vec!["ghost-package".to_string()],
+            commit_message_template: None,
         },
         ..Config::default()
     };

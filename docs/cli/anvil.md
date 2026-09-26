@@ -15,7 +15,7 @@ Anvil is the workspace build tool for the Forge Cargo workspace. It wraps `cargo
 - **API stability**: `semver-check -p <name> [--baseline-rev <rev>]` diffs a library crate's public API with `cargo-semver-checks` against a git revision (default: the commit before its last `Cargo.toml` version bump) rather than a registry version, since the crates this workspace publishes live on the private `ennor` registry that `cargo-semver-checks` can't query directly. A package on its first release - no earlier commit to diff against - compares against a synthetic empty API instead of erroring, so nothing reads as a breaking change.
 - **Run/serve mode**: `run` builds and runs a package binary; with `--serve` it watches for file changes and rebuilds/restarts, with interactive hotkeys.
 - **Docker integration**: builds, tags, pushes, and releases Docker images for packages declared under `[docker.modules.*]` in `.anvil.toml`, including multi-registry pushes and per-package `build_args`.
-- **Release automation**: `release` bumps a package's patch version, commits, and then either runs the Docker release flow or `cargo publish` (+ `cargo install` when the package is also listed under `[install].packages`).
+- **Release automation**: `release` bumps a package's patch version, commits, and then either runs the Docker release flow or `cargo publish` (+ `cargo install` when the package is also listed under `[install].packages`). `--dry-run` shows the full dependency-ordered plan across every configured release/Docker package - not just the ones that happen to have changed - so it also works as a plain "what would a full release touch" report. The version-bump commit message is configurable via `[release].commit_message_template`.
 
 ## Requirements
 
@@ -88,7 +88,7 @@ anvil install [--all | -p|--package <name>]
 anvil release [--all | -p|--package <name>] [--dry-run]
 ```
 
-`anvil release --all` releases every package listed in `[release].packages` plus any package under a `[docker.modules.*]` block. `--dry-run` previews the plan without touching files or publishing anything.
+`anvil release --all` releases every package listed in `[release].packages` plus any package under a `[docker.modules.*]` block. `--dry-run` previews the *full* dependency-ordered plan - every target and its transitive dependencies, each marked either with the version bump/tag/publish action a real run would take or `(up to date)` when it has no changes to release - without touching files or publishing anything. A real run only ever acts on the packages actually marked for release.
 
 ### Docker
 
@@ -124,9 +124,12 @@ packages = ["service", "worker"]
 [release]
 registry = "forge-registry"
 packages = ["service", "worker"]
+commit_message_template = "release: bump package versions ({summary})"
 ```
 
 `[docker].registry` is only optional when every package sets its own `registries` override. Every Docker build always receives `PROJECT_NAME` and `RESOURCES_PATH` build args derived from the module/package name; `build_args` entries are appended after those, so a package can override `RESOURCES_PATH` if it genuinely needs a different one. This lets one parameterized Dockerfile serve many packages — prefer `build_args` over forking a Dockerfile for a one-line difference.
+
+`[release].commit_message_template` is optional; the line above is what an unset one already defaults to. It supports three placeholders, substituted against whichever packages a real run actually version-bumped: `{summary}` (the default's comma-joined `pkg vX.Y.Z, pkg2 vX.Y.Z`), `{changelog}` (the same packages as one `- pkg vX.Y.Z` bullet per line, for a multi-line commit body), and `{count}` (how many packages were bumped).
 
 Run `anvil config check` after editing `.anvil.toml` to catch typos and structural mistakes (an unknown field, a missing `packages`/`dockerfile`, a package override that isn't in its module's `packages` list, ...) before they silently no-op in whichever subcommand would have used them.
 

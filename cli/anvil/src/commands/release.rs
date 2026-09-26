@@ -57,27 +57,40 @@ pub struct ReleasePlanItem {
     pub bump_version: bool,
     pub install_after_publish: bool,
     pub layer: usize,
+    /// Whether this item has actually changed since its last release (or
+    /// has never been released) and would be part of a real run.
+    ///
+    /// `build_release_plan` always returns every target and its transitive
+    /// dependencies, dependency-ordered, so `--dry-run` can show the full
+    /// release graph - not just the subset a real run would touch. A real
+    /// run filters to `needs_release` items itself.
+    pub needs_release: bool,
 }
 
 pub fn release(config: &Config, package: Option<String>, all: bool, dry_run: bool) -> Result<()> {
     let metadata = cargo_meta::cargo_metadata()?;
     let targets = resolve_release_targets(config, &metadata, package, all)?;
     let mut plan = build_release_plan(config, &metadata, &targets)?;
+    plan.sort_by_key(|item| item.layer);
 
-    ensure_release_plan_non_empty(all, &plan, dry_run)?;
-    if plan.is_empty() {
+    // The full dependency-ordered graph - every target and its transitive
+    // dependencies, whether or not each one has actually changed - so a
+    // dry run answers "what would this release do across the whole
+    // workspace" rather than just "what happens to have changed right now".
+    if dry_run {
+        print_dry_run_plan_with_layers(&plan);
         return Ok(());
     }
+
+    // A real run only ever touches what actually needs releasing.
+    let mut plan: Vec<ReleasePlanItem> = plan.into_iter().filter(|item| item.needs_release).collect();
+    ensure_release_plan_non_empty(all, &plan)?;
 
     // Sort plan by layer for execution order
     plan.sort_by_key(|item| item.layer);
 
-    // Always show the dry-run first
+    // Show the plan before asking for confirmation.
     print_dry_run_plan_with_layers(&plan);
-
-    if dry_run {
-        return Ok(());
-    }
 
     // Ask for confirmation before proceeding
     if !confirm_release()? {
@@ -89,7 +102,7 @@ pub fn release(config: &Config, package: Option<String>, all: bool, dry_run: boo
     let manifests = bump_patch_versions(&metadata, &plan)?;
     if !manifests.is_empty() {
         run_build_for_bumped_packages(&plan)?;
-        create_version_commit(&metadata, &manifests, &plan)?;
+        create_version_commit(&metadata, &manifests, &plan, config)?;
         push_version_commit()?;
     }
 
@@ -290,15 +303,14 @@ pub fn build_release_plan(
         }
     }
 
-    // Compute layers for all packages to release
-    let layers = compute_package_layers(
-        &packages_to_release.iter().cloned().collect::<Vec<_>>(),
-        &dep_graph,
-    );
+    // Layers cover every target and its transitive dependencies, not just
+    // the ones that need release - `--dry-run` shows the whole graph in
+    // dependency order, including packages already up to date.
+    let layers = compute_package_layers(&all_targets, &dep_graph);
 
     // Build plan items
     let mut plan = Vec::new();
-    for package_name in &packages_to_release {
+    for package_name in &all_targets {
         let pkg = workspace
             .iter()
             .find(|pkg| &pkg.name == package_name)
@@ -309,47 +321,29 @@ pub fn build_release_plan(
             ReleaseKind::Cargo
         };
 
+        let needs_release = packages_to_release.contains(package_name);
+
         // A `publish = false` package is real (a docker package's own
         // private dependency, say) and still counts for change-detection -
         // its dependents above have already been flagged for release if it
-        // changed - but there is nothing for `cargo publish` to do with it.
+        // changed - but there is nothing for `cargo publish` to do with it,
+        // in a real run or in the dry-run graph. Only worth a note when it
+        // would otherwise have been part of a real run.
         if matches!(kind, ReleaseKind::Cargo) && pkg.publish_disabled() {
-            println!("Skipping {package_name}: `publish = false`, not cargo-publishable");
+            if needs_release {
+                println!("Skipping {package_name}: `publish = false`, not cargo-publishable");
+            }
             continue;
         }
 
         let current_version = pkg.version.clone();
         let install_after_publish = should_install_package(config, package_name);
-        let current_version_tag = package_tag_name(package_name, &current_version);
-        let current_version_tag_exists = tag_exists(&current_version_tag)?;
         let layer = layers.get(package_name).copied().unwrap_or(0);
 
-        if let Some(_last_tag) = latest_package_tag(package_name)? {
-            if current_version_tag_exists {
-                let next_version = bump_patch(&current_version)?;
-                plan.push(ReleasePlanItem {
-                    package: package_name.clone(),
-                    from_version: current_version,
-                    to_version: next_version.clone(),
-                    kind,
-                    tag_to_create: package_tag_name(package_name, &next_version),
-                    bump_version: true,
-                    install_after_publish,
-                    layer,
-                });
-            } else {
-                plan.push(ReleasePlanItem {
-                    package: package_name.clone(),
-                    from_version: current_version.clone(),
-                    to_version: current_version.clone(),
-                    kind,
-                    tag_to_create: current_version_tag,
-                    bump_version: false,
-                    install_after_publish,
-                    layer,
-                });
-            }
-        } else {
+        if !needs_release {
+            // Already released at its current version (or never configured
+            // to publish anything different) - shown as-is for the full
+            // graph, untouched by a real run.
             plan.push(ReleasePlanItem {
                 package: package_name.clone(),
                 from_version: current_version.clone(),
@@ -359,6 +353,41 @@ pub fn build_release_plan(
                 bump_version: false,
                 install_after_publish,
                 layer,
+                needs_release: false,
+            });
+            continue;
+        }
+
+        let current_version_tag = package_tag_name(package_name, &current_version);
+        let current_version_tag_exists = tag_exists(&current_version_tag)?;
+
+        if latest_package_tag(package_name)?.is_some() && current_version_tag_exists {
+            let next_version = bump_patch(&current_version)?;
+            plan.push(ReleasePlanItem {
+                package: package_name.clone(),
+                from_version: current_version,
+                to_version: next_version.clone(),
+                kind,
+                tag_to_create: package_tag_name(package_name, &next_version),
+                bump_version: true,
+                install_after_publish,
+                layer,
+                needs_release: true,
+            });
+        } else {
+            // Either never released before, or the manifest's version was
+            // already bumped ahead of the last tag by hand - either way the
+            // current version is what should be tagged, not a further bump.
+            plan.push(ReleasePlanItem {
+                package: package_name.clone(),
+                from_version: current_version.clone(),
+                to_version: current_version.clone(),
+                kind,
+                tag_to_create: current_version_tag,
+                bump_version: false,
+                install_after_publish,
+                layer,
+                needs_release: true,
             });
         }
     }
@@ -548,17 +577,13 @@ pub fn collect_package_dependencies(
     Ok(result)
 }
 
-pub fn ensure_release_plan_non_empty(
-    all: bool,
-    plan: &[ReleasePlanItem],
-    dry_run: bool,
-) -> Result<()> {
+/// `plan` here is always the `needs_release`-filtered subset.
+///
+/// The full, unfiltered dependency graph is never empty as long as any
+/// targets resolved at all, and `--dry-run` prints that directly without
+/// calling this (see `release`).
+pub fn ensure_release_plan_non_empty(all: bool, plan: &[ReleasePlanItem]) -> Result<()> {
     if !plan.is_empty() {
-        return Ok(());
-    }
-
-    if dry_run {
-        println!("No packages need release.");
         return Ok(());
     }
 
@@ -671,10 +696,53 @@ fn run_build_for_bumped_packages(plan: &[ReleasePlanItem]) -> Result<()> {
     run_command(cmd, &label)
 }
 
+/// Reproduces the message anvil always used before `[release].commit_message_template`
+/// existed, so an `.anvil.toml` that doesn't set one sees no change in behavior.
+pub const DEFAULT_COMMIT_MESSAGE_TEMPLATE: &str = "release: bump package versions ({summary})";
+
+/// Renders `[release].commit_message_template` against the bumped packages.
+///
+/// `plan` may also hold `needs_release` items that were never
+/// version-bumped (a first release, tagged as-is), which have nothing to
+/// say here.
+///
+/// Placeholders, replaced literally (no templating engine - one commit
+/// message doesn't need one):
+/// - `{summary}`: `pkg vX.Y.Z, pkg2 vX.Y.Z`, comma-joined - the whole
+///   default message's content.
+/// - `{changelog}`: the same packages, one `- pkg vX.Y.Z` bullet per line -
+///   for a template that wants a multi-line commit body.
+/// - `{count}`: how many packages were bumped.
+// These are literal placeholder tokens substituted via `str::replace`, not
+// `format!` arguments - clippy's `literal_string_with_formatting_args`
+// doesn't know the difference.
+#[allow(clippy::literal_string_with_formatting_args)]
+#[must_use]
+pub fn render_commit_message(template: &str, plan: &[ReleasePlanItem]) -> String {
+    let bumped: Vec<&ReleasePlanItem> = plan.iter().filter(|item| item.bump_version).collect();
+
+    let summary = bumped
+        .iter()
+        .map(|item| format!("{} v{}", item.package, item.to_version))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let changelog = bumped
+        .iter()
+        .map(|item| format!("- {} v{}", item.package, item.to_version))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    template
+        .replace("{summary}", &summary)
+        .replace("{changelog}", &changelog)
+        .replace("{count}", &bumped.len().to_string())
+}
+
 fn create_version_commit(
     metadata: &Value,
     manifests: &[PathBuf],
     plan: &[ReleasePlanItem],
+    config: &Config,
 ) -> Result<()> {
     let mut commit_paths = manifests.to_vec();
     let workspace_root = cargo_meta::workspace_root(metadata)?;
@@ -687,14 +755,12 @@ fn create_version_commit(
     add_cmd.arg("add").args(&commit_paths);
     run_command(add_cmd, "git add version update files")?;
 
-    let package_summaries = plan
-        .iter()
-        .filter(|item| item.bump_version)
-        .map(|item| format!("{} v{}", item.package, item.to_version))
-        .collect::<Vec<_>>()
-        .join(", ");
-
-    let commit_message = format!("release: bump package versions ({package_summaries})");
+    let template = config
+        .release
+        .commit_message_template
+        .as_deref()
+        .unwrap_or(DEFAULT_COMMIT_MESSAGE_TEMPLATE);
+    let commit_message = render_commit_message(template, plan);
 
     let mut commit_cmd = Command::new("git");
     commit_cmd.arg("commit").arg("-m").arg(commit_message);
@@ -844,6 +910,10 @@ pub fn print_dry_run_plan_with_layers(plan: &[ReleasePlanItem]) {
 
         println!("Layer {current_layer}:");
         for item in layer_items {
+            if !item.needs_release {
+                println!("  - {}: {} (up to date)", item.package, item.from_version);
+                continue;
+            }
             let version_note = if item.bump_version {
                 format!("{} -> {}", item.from_version, item.to_version)
             } else {
