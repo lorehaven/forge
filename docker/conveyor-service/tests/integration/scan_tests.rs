@@ -58,7 +58,7 @@ async fn summarises_lint_machete_and_audit_from_one_job() {
         StepState {
             ordinal: 0,
             kind: "anvil".to_string(),
-            command: "lint --all-targets --deny-warnings".to_string(),
+            command: "lint --all-targets --deny-warnings --json".to_string(),
             status: Status::Failed,
             exit_code: Some(1),
             started_at: Some(t0),
@@ -67,7 +67,7 @@ async fn summarises_lint_machete_and_audit_from_one_job() {
         StepState {
             ordinal: 1,
             kind: "anvil".to_string(),
-            command: "machete".to_string(),
+            command: "machete --json".to_string(),
             status: Status::Success,
             exit_code: Some(0),
             started_at: Some(t0 + Duration::seconds(2)),
@@ -76,7 +76,7 @@ async fn summarises_lint_machete_and_audit_from_one_job() {
         StepState {
             ordinal: 2,
             kind: "anvil".to_string(),
-            command: "audit".to_string(),
+            command: "audit --json".to_string(),
             status: Status::Success,
             exit_code: Some(0),
             started_at: Some(t0 + Duration::seconds(4)),
@@ -87,17 +87,43 @@ async fn summarises_lint_machete_and_audit_from_one_job() {
         .await
         .expect("record steps");
 
+    // Each anvil `--json` step's stdout is its report; a real run would also
+    // carry stderr progress chunks interleaved by timestamp, which `scan`
+    // now filters out (see `collect_job_checks`) - included here as
+    // `Stream::Stderr` chunks to prove that filtering actually happens
+    // rather than merely being untested.
     let logs = vec![
-        chunk(0, t0, "warning: unused variable: `x`"),
-        chunk(1, t0, "  --> src/main.rs:10:9"),
-        chunk(2, t0, "error: could not compile `foo`"),
+        chunk(
+            0,
+            t0,
+            Stream::Stdout,
+            r#"{"reason":"compiler-message","message":{"level":"warning","message":"unused variable: `x`","spans":[{"file_name":"src/main.rs","line_start":10,"column_start":9,"is_primary":true}]}}"#,
+        ),
+        chunk(1, t0, Stream::Stderr, "   Compiling foo v0.1.0"),
+        chunk(
+            2,
+            t0,
+            Stream::Stdout,
+            r#"{"reason":"compiler-message","message":{"level":"error","message":"could not compile `foo`"}}"#,
+        ),
         chunk(
             3,
             t0 + Duration::seconds(2),
-            "cargo-machete didn't find any unused dependencies in this directory. Good job!",
+            Stream::Stdout,
+            r#"{"findings":[]}"#,
         ),
-        chunk(4, t0 + Duration::seconds(4), "Scanning Cargo.lock"),
-        chunk(5, t0 + Duration::seconds(4), "0 vulnerabilities found"),
+        chunk(
+            4,
+            t0 + Duration::seconds(2),
+            Stream::Stderr,
+            "Analyzing dependencies of crates in this directory...",
+        ),
+        chunk(
+            5,
+            t0 + Duration::seconds(4),
+            Stream::Stdout,
+            r#"{"vulnerabilities":{"found":false,"count":0,"list":[]},"warnings":{}}"#,
+        ),
     ];
     queue::append_logs(&db, &job.id, &logs)
         .await
@@ -189,10 +215,10 @@ async fn a_run_with_no_quality_steps_has_an_empty_summary() {
     assert!(summary.is_empty());
 }
 
-fn chunk(seq: u64, at: chrono::DateTime<Utc>, line: &str) -> LogChunk {
+fn chunk(seq: u64, at: chrono::DateTime<Utc>, stream: Stream, line: &str) -> LogChunk {
     LogChunk {
         seq,
-        stream: Stream::Stdout,
+        stream,
         line: line.to_string(),
         at,
     }

@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use std::process::Command;
 
-use crate::util::run_command;
+use crate::util::{run_command, run_command_json};
 
 #[must_use]
 pub fn build_args(
@@ -58,8 +58,16 @@ pub fn test_args(
     test_name: Option<&str>,
     ignored: bool,
     list: bool,
+    json: bool,
 ) -> Vec<String> {
-    let mut args = vec!["test".to_string()];
+    let mut args = Vec::new();
+
+    // The stable libtest harness has no structured-output format of its own;
+    // `-Z unstable-options --format json` is nightly-only.
+    if json {
+        args.push("+nightly".to_string());
+    }
+    args.push("test".to_string());
 
     if all || package.is_none() {
         args.push("--workspace".to_string());
@@ -74,14 +82,22 @@ pub fn test_args(
         args.push(name.to_string());
     }
 
-    if ignored || list {
+    let mut trailing = Vec::new();
+    if ignored {
+        trailing.push("--ignored".to_string());
+    }
+    if list {
+        trailing.push("--list".to_string());
+    }
+    if json {
+        trailing.push("-Z".to_string());
+        trailing.push("unstable-options".to_string());
+        trailing.push("--format".to_string());
+        trailing.push("json".to_string());
+    }
+    if !trailing.is_empty() {
         args.push("--".to_string());
-        if ignored {
-            args.push("--ignored".to_string());
-        }
-        if list {
-            args.push("--list".to_string());
-        }
+        args.extend(trailing);
     }
 
     args
@@ -94,6 +110,7 @@ pub fn test(
     test_name: Option<String>,
     ignored: bool,
     list: bool,
+    json: bool,
 ) -> Result<()> {
     let mut cmd = Command::new("cargo");
     cmd.args(test_args(
@@ -102,7 +119,12 @@ pub fn test(
         test_name.as_deref(),
         ignored,
         list,
+        json,
     ));
+
+    if json {
+        return run_command_json(cmd);
+    }
 
     run_command(cmd, "test")
 }
@@ -120,8 +142,17 @@ pub fn nextest_args(
     package: Option<&str>,
     test_name: Option<&str>,
     ignored: bool,
+    json: bool,
 ) -> Vec<String> {
     let mut args = vec!["nextest".to_string(), "run".to_string()];
+
+    // nextest's own experimental structured-output format; enabling it also
+    // requires the `NEXTEST_EXPERIMENTAL_LIBTEST_JSON` env var (see `nextest`
+    // below) since it isn't stabilized yet.
+    if json {
+        args.push("--message-format".to_string());
+        args.push("libtest-json-plus".to_string());
+    }
 
     if all || package.is_none() {
         args.push("--workspace".to_string());
@@ -150,6 +181,7 @@ pub fn nextest(
     package: Option<String>,
     test_name: Option<String>,
     ignored: bool,
+    json: bool,
 ) -> Result<()> {
     which::which("cargo-nextest")
         .context("cargo-nextest not found. Install with: cargo install cargo-nextest")?;
@@ -160,7 +192,13 @@ pub fn nextest(
         package.as_deref(),
         test_name.as_deref(),
         ignored,
+        json,
     ));
+
+    if json {
+        cmd.env("NEXTEST_EXPERIMENTAL_LIBTEST_JSON", "1");
+        return run_command_json(cmd);
+    }
 
     run_command(cmd, "nextest")
 }

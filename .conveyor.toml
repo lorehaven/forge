@@ -13,12 +13,19 @@ steps = [{ anvil = "format --check" }]
 [[stage.job]]
 name  = "lint"
 image = "ossiriand.arda:8080/forge/ci/rust-builder:latest"
-steps = [{ anvil = "lint --all-targets --deny-warnings" }]
+# `--json` so the scan summary page (`crate::scan`) can parse clippy's own
+# structured diagnostics instead of scraping this step's human log - see
+# ANVIL-3. `deny`'s own step stays plain text: nothing reads its log back.
+steps = [{ anvil = "lint --all-targets --deny-warnings --json" }]
 
 [[stage.job]]
 name  = "deps"
 image = "ossiriand.arda:8080/forge/ci/rust-builder:latest"
-steps = [{ anvil = "machete" }, { anvil = "audit" }, { anvil = "deny" }]
+steps = [
+  { anvil = "machete --json" },
+  { anvil = "audit --json" },
+  { anvil = "deny" },
+]
 
 [[stage.job]]
 name  = "semver-check"

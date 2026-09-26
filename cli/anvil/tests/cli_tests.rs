@@ -51,3 +51,45 @@ fn help_flag_short_circuits_before_the_dispatch_match() {
         .success()
         .stdout(predicate::str::contains("workspace build"));
 }
+
+// `machete --json`/`deny --json` are read-only static analysis, same as the
+// non-json versions in `workspace_tests.rs` - safe to run for real. Neither
+// asserts success: this workspace having something to flag is a legitimate
+// non-zero exit, not a test failure. The point is that stdout is nothing but
+// the banner-free, parseable report - not that the report is empty.
+#[test]
+fn machete_json_runs_through_the_full_binary_with_a_banner_free_stdout() {
+    let assert = anvil()
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .args(["machete", "--json"])
+        .assert();
+    let output = assert.get_output();
+    assert!(
+        !String::from_utf8_lossy(&output.stdout).contains("Anvil CLI"),
+        "--json stdout must not carry anvil's own banner"
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("stdout is a single JSON document");
+    assert!(
+        report.get("findings").is_some_and(serde_json::Value::is_array),
+        "report has a `findings` array: {report}"
+    );
+}
+
+#[test]
+fn deny_json_runs_through_the_full_binary_with_a_banner_free_stdout() {
+    let assert = anvil()
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .args(["deny", "--json"])
+        .assert();
+    let output = assert.get_output();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("Anvil CLI"),
+        "--json stdout must not carry anvil's own banner"
+    );
+    for line in stdout.lines().filter(|line| !line.trim().is_empty()) {
+        let _: serde_json::Value =
+            serde_json::from_str(line).expect("each stdout line is its own JSON document");
+    }
+}

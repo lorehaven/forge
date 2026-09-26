@@ -1,5 +1,6 @@
 use anvil::commands::workspace::{
-    deny, ensure_tool_installed, format_metadata, list, machete, previous_version_rev,
+    MacheteFinding, deny, ensure_tool_installed, format_metadata, list, machete,
+    parse_machete_output, previous_version_rev,
 };
 use serde_json::json;
 
@@ -142,7 +143,15 @@ fn machete_runs_cargo_machete_for_real_against_this_workspace() {
     let _guard = stable_cwd_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let _ = machete();
+    let _ = machete(false);
+}
+
+#[test]
+fn machete_json_runs_cargo_machete_for_real_against_this_workspace() {
+    let _guard = stable_cwd_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _ = machete(true);
 }
 
 #[test]
@@ -150,5 +159,57 @@ fn deny_runs_cargo_deny_check_for_real_against_this_workspace() {
     let _guard = stable_cwd_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let _ = deny();
+    let _ = deny(false);
+}
+
+#[test]
+fn deny_json_runs_cargo_deny_check_for_real_against_this_workspace() {
+    let _guard = stable_cwd_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _ = deny(true);
+}
+
+#[test]
+fn parse_machete_output_reads_no_unused_dependencies_as_empty() {
+    let findings = parse_machete_output(
+        "cargo-machete didn't find any unused dependencies in this directory. Good job!\n",
+    );
+    assert!(findings.is_empty());
+}
+
+#[test]
+fn parse_machete_output_reads_one_finding_per_crate_block() {
+    let stdout = "cargo-machete found the following unused dependencies in this directory:\n\
+        workbench-service -- ./docker/workbench-service/Cargo.toml:\n\
+        \trustls\n\
+        switchboard-service -- ./docker/switchboard-service/Cargo.toml:\n\
+        \trustls\n\
+        \tserde\n\
+        \n\
+        If you believe cargo-machete has detected an unused dependency incorrectly,\n\
+        you can add the dependency to the list of dependencies to ignore.\n";
+
+    let findings = parse_machete_output(stdout);
+
+    assert_eq!(
+        findings,
+        vec![
+            MacheteFinding {
+                package: "workbench-service".to_string(),
+                manifest: "./docker/workbench-service/Cargo.toml".to_string(),
+                unused: vec!["rustls".to_string()],
+            },
+            MacheteFinding {
+                package: "switchboard-service".to_string(),
+                manifest: "./docker/switchboard-service/Cargo.toml".to_string(),
+                unused: vec!["rustls".to_string(), "serde".to_string()],
+            },
+        ]
+    );
+}
+
+#[test]
+fn parse_machete_output_ignores_unrecognised_text() {
+    assert!(parse_machete_output("Analyzing dependencies of crates in this directory...\n").is_empty());
 }

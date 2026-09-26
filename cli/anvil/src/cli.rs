@@ -56,6 +56,9 @@ pub enum Commands {
         /// Treat warnings as errors
         #[arg(long, default_value = "true")]
         deny_warnings: bool,
+        /// Emit clippy's own `--message-format=json` diagnostics instead of streaming its human output
+        #[arg(long)]
+        json: bool,
     },
     /// Format code with rustfmt
     Format {
@@ -76,11 +79,24 @@ pub enum Commands {
         incompatible: bool,
     },
     /// Audit dependencies for security vulnerabilities
-    Audit,
+    Audit {
+        /// Emit cargo-audit's own `--format json` report instead of streaming its human output
+        #[arg(long)]
+        json: bool,
+    },
     /// Find unused dependencies with cargo-machete
-    Machete,
+    Machete {
+        /// Emit a JSON array of findings instead of streaming cargo-machete's human output
+        /// (cargo-machete has no `--json` of its own, so this parses its plain-text report)
+        #[arg(long)]
+        json: bool,
+    },
     /// Check licenses, banned/duplicate crates, and registry sources with cargo-deny
-    Deny,
+    Deny {
+        /// Emit cargo-deny's own `--format json` diagnostics instead of streaming its human output
+        #[arg(long)]
+        json: bool,
+    },
     /// Check a library crate's public API for unflagged breaking changes with cargo-semver-checks
     ///
     /// Diffs against a git revision rather than a registry version, since the
@@ -110,6 +126,11 @@ pub enum Commands {
         /// List available tests (same as cargo test -- --list)
         #[arg(long)]
         list: bool,
+        /// Emit per-test JSON results instead of streaming human output.
+        /// Runs under `+nightly` with `-Z unstable-options` - the built-in
+        /// libtest harness has no stable structured-output format.
+        #[arg(long)]
+        json: bool,
     },
     /// Test the workspace with cargo-nextest (faster, parallel-by-default runner)
     Nextest {
@@ -124,6 +145,10 @@ pub enum Commands {
         /// Run only ignored tests
         #[arg(long)]
         ignored: bool,
+        /// Emit per-test JSON results (nextest's experimental `libtest-json-plus`
+        /// format) instead of streaming human output
+        #[arg(long)]
+        json: bool,
     },
     /// Install a package binary with cargo install --path
     Install {

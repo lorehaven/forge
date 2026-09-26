@@ -113,6 +113,7 @@ resources:
     image: agent:2
     host_network: true
     host_pid: true
+    share_process_namespace: true
     dns_policy: ClusterFirstWithHostNet
     volumes:
       - { name: proc, host_path: /proc }

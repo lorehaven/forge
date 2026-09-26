@@ -351,6 +351,9 @@ hostNetwork: {{ res.host_network }}
 {% if res.host_pid is defined %}
 hostPID: {{ res.host_pid }}
 {% endif %}
+{% if res.share_process_namespace is defined %}
+shareProcessNamespace: {{ res.share_process_namespace }}
+{% endif %}
 {% if res.dns_policy is defined %}
 dnsPolicy: {{ res.dns_policy }}
 {% endif %}

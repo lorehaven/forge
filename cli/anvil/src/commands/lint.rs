@@ -1,11 +1,22 @@
 use anyhow::Result;
 use std::process::Command;
 
-use crate::util::{run_command, run_command_streamed};
+use crate::util::{run_command, run_command_json, run_command_streamed};
 
 #[must_use]
-pub fn lint_args(all_targets: bool, all_features: bool, deny_warnings: bool) -> Vec<String> {
+pub fn lint_args(
+    all_targets: bool,
+    all_features: bool,
+    deny_warnings: bool,
+    json: bool,
+) -> Vec<String> {
     let mut args = vec!["clippy".to_string()];
+
+    // Clippy's own flag - a per-line stream of rustc/clippy diagnostic JSON,
+    // already stable and used by tools like rust-analyzer.
+    if json {
+        args.push("--message-format=json".to_string());
+    }
 
     if all_targets {
         args.push("--all-targets".to_string());
@@ -25,9 +36,13 @@ pub fn lint_args(all_targets: bool, all_features: bool, deny_warnings: bool) -> 
     args
 }
 
-pub fn lint(all_targets: bool, all_features: bool, deny_warnings: bool) -> Result<()> {
+pub fn lint(all_targets: bool, all_features: bool, deny_warnings: bool, json: bool) -> Result<()> {
     let mut cmd = Command::new("cargo");
-    cmd.args(lint_args(all_targets, all_features, deny_warnings));
+    cmd.args(lint_args(all_targets, all_features, deny_warnings, json));
+
+    if json {
+        return run_command_json(cmd);
+    }
 
     // Streamed, not captured: clippy's diagnostics are the whole point of the
     // command, and they need to come back in full and in color.

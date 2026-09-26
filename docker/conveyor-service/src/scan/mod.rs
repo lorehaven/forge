@@ -2,6 +2,7 @@
 //! steps - reads the last run's own step output; never triggers or shells out.
 
 use crate::domain::{Job, Run, Status};
+use crate::executors::Stream;
 use crate::scheduler::queue::{self, QueueError};
 use quench_db::prelude::Db;
 
@@ -169,9 +170,17 @@ async fn collect_job_checks(
             continue;
         };
 
+        // Lint/machete/audit now read `anvil ... --json`: its structured
+        // report is always on stdout, its human build/progress chatter
+        // always on stderr (see `cli/anvil/src/util.rs::run_command_json`).
+        // Keeping only stdout here is what makes joining possibly-many log
+        // lines back into one JSON document safe - nothing from a
+        // concurrently-written stderr line can land between them.
+        let json_only = matches!(kind, CheckKind::Lint | CheckKind::Machete | CheckKind::Audit);
         let lines: Vec<&str> = logs
             .iter()
             .filter(|chunk| chunk.at >= start && chunk.at <= end)
+            .filter(|chunk| !json_only || chunk.stream == Stream::Stdout)
             .map(|chunk| chunk.line.as_str())
             .collect();
 
@@ -256,47 +265,77 @@ impl CheckResult {
     }
 }
 
-/// `cargo`'s plain-text diagnostics, not `--message-format=json`.
+/// `anvil lint --json`: NDJSON, one `cargo`/clippy message per line (`cargo
+/// clippy --message-format=json`'s own format - anvil passes it through
+/// unmodified). Non-diagnostic lines (`compiler-artifact`, `build-finished`,
+/// ...) are how a step with zero warnings is told apart from one whose
+/// output isn't this format at all: seeing at least one recognised `reason`
+/// is enough to trust "no warning/error lines" as a real "clean", not just
+/// an unparsed log.
 pub fn parse_lint(lines: &[&str]) -> Option<(String, Vec<Finding>)> {
     let mut warnings = 0usize;
     let mut errors = 0usize;
     let mut findings: Vec<Finding> = Vec::new();
+    let mut saw_cargo_json = false;
 
     for line in lines {
         let trimmed = line.trim();
-
-        let bracketed = |prefix: &str| trimmed.split_once(prefix).map(|(_, rest)| rest.trim());
-        let (kind, title) = if let Some(rest) = trimmed.strip_prefix("warning: ") {
-            ("warning", rest.trim().to_string())
-        } else if let Some(rest) = trimmed.strip_prefix("error: ") {
-            ("error", rest.trim().to_string())
-        } else if trimmed.starts_with("warning[") {
-            ("warning", bracketed("]: ").unwrap_or(trimmed).to_string())
-        } else if trimmed.starts_with("error[") {
-            ("error", bracketed("]: ").unwrap_or(trimmed).to_string())
-        } else if let Some(location) = trimmed.strip_prefix("-->") {
-            if let Some(finding) = findings.last_mut() {
-                finding.location = Some(location.trim().to_string());
-            }
+        if trimmed.is_empty() {
             continue;
-        } else {
+        }
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) else {
             continue;
         };
+        if value.get("reason").and_then(serde_json::Value::as_str).is_none() {
+            continue;
+        }
+        saw_cargo_json = true;
 
-        if kind == "warning" {
+        let Some(message) = value.get("message") else {
+            continue;
+        };
+        let level = message
+            .get("level")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        if level != "warning" && level != "error" {
+            continue;
+        }
+
+        let title = message
+            .get("message")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+        let location = message
+            .get("spans")
+            .and_then(serde_json::Value::as_array)
+            .and_then(|spans| {
+                spans
+                    .iter()
+                    .find(|span| span.get("is_primary").and_then(serde_json::Value::as_bool) == Some(true))
+            })
+            .and_then(|span| {
+                let file = span.get("file_name")?.as_str()?;
+                let line = span.get("line_start")?.as_u64()?;
+                let column = span.get("column_start")?.as_u64()?;
+                Some(format!("{file}:{line}:{column}"))
+            });
+
+        if level == "warning" {
             warnings += 1;
         } else {
             errors += 1;
         }
         findings.push(Finding {
             title,
-            severity: Some(kind.to_string()),
+            severity: Some(level.to_string()),
+            location,
             ..Finding::default()
         });
     }
 
-    if warnings == 0 && errors == 0 {
-        // Say so rather than claiming zero - could be clean, could be unrecognised.
+    if !saw_cargo_json {
         return None;
     }
 
@@ -309,35 +348,37 @@ pub fn parse_lint(lines: &[&str]) -> Option<(String, Vec<Finding>)> {
     Some((headline, findings))
 }
 
-/// `cargo-machete`'s two shapes: a clean line, or one `crate -- path:` header
-/// per crate followed by its indented, unused dependency names.
+/// `anvil machete --json`: a single `{"findings": [{"package", "manifest",
+/// "unused"}, ...]}` line (cargo-machete has no JSON of its own; this is
+/// anvil's own report of its parsed text - see
+/// `cli/anvil/src/commands/workspace.rs`). Always present, even when
+/// `findings` is empty, so "no unused dependencies" and "nothing recognised
+/// at all" stay distinguishable.
 pub fn parse_machete(lines: &[&str]) -> Option<(String, Vec<Finding>)> {
-    if lines
-        .iter()
-        .any(|line| line.contains("didn't find any unused dependencies"))
-    {
-        return Some(("clean".to_string(), Vec::new()));
-    }
+    let joined = lines.join("\n");
+    let value: serde_json::Value = serde_json::from_str(joined.trim()).ok()?;
+    let entries = value.get("findings")?.as_array()?;
 
-    let mut current_crate: Option<&str> = None;
     let mut findings = Vec::new();
-
-    for line in lines {
-        if let Some(header) = line.strip_suffix(':').filter(|_| line.contains(" -- ")) {
-            current_crate = header.split(" -- ").next();
+    for entry in entries {
+        let Some(package) = entry.get("package").and_then(serde_json::Value::as_str) else {
             continue;
-        }
-        if line.starts_with(char::is_whitespace) && !line.trim().is_empty() {
+        };
+        let Some(unused) = entry.get("unused").and_then(serde_json::Value::as_array) else {
+            continue;
+        };
+        for dep in unused {
+            let Some(dep) = dep.as_str() else { continue };
             findings.push(Finding {
-                title: line.trim().to_string(),
-                location: current_crate.map(str::to_string),
+                title: dep.to_string(),
+                location: Some(package.to_string()),
                 ..Finding::default()
             });
         }
     }
 
     if findings.is_empty() {
-        return None;
+        return Some(("clean".to_string(), Vec::new()));
     }
 
     let headline = format!(
@@ -348,75 +389,89 @@ pub fn parse_machete(lines: &[&str]) -> Option<(String, Vec<Finding>)> {
     Some((headline, findings))
 }
 
-/// `cargo-audit`'s `Crate:`/`Title:`/... blocks, blank-line separated, plus
-/// its "N vulnerabilities found" line when there's nothing to report.
+/// `anvil audit --json`: a single `cargo-audit --format json` document (its
+/// `vulnerabilities.list` plus every `warnings.*` entry - `unmaintained`,
+/// `yanked`, ... - each shaped the same as a `list` entry). Always present,
+/// so "no findings" and "nothing recognised" stay distinguishable the same
+/// way as `parse_machete`.
 pub fn parse_audit(lines: &[&str]) -> Option<(String, Vec<Finding>)> {
-    let mut findings = Vec::new();
-    let mut block: Vec<&str> = Vec::new();
+    let joined = lines.join("\n");
+    let value: serde_json::Value = serde_json::from_str(joined.trim()).ok()?;
 
-    for line in lines {
-        if line.trim().is_empty() {
-            if let Some(finding) = audit_block(&block) {
-                findings.push(finding);
-            }
-            block.clear();
-        } else {
-            block.push(line);
-        }
+    let mut findings = Vec::new();
+    if let Some(list) = value
+        .get("vulnerabilities")
+        .and_then(|v| v.get("list"))
+        .and_then(serde_json::Value::as_array)
+    {
+        findings.extend(list.iter().filter_map(audit_entry));
     }
-    if let Some(finding) = audit_block(&block) {
-        findings.push(finding);
+    if let Some(warnings) = value.get("warnings").and_then(serde_json::Value::as_object) {
+        for entries in warnings.values().filter_map(serde_json::Value::as_array) {
+            findings.extend(entries.iter().filter_map(audit_entry));
+        }
     }
 
     if findings.is_empty() {
-        if lines
-            .iter()
-            .any(|line| line.contains("0 vulnerabilities found"))
-        {
-            return Some(("clean".to_string(), Vec::new()));
-        }
-        return None;
+        return Some(("clean".to_string(), Vec::new()));
     }
 
     let headline = format!("{} finding{}", findings.len(), plural(findings.len()));
     Some((headline, findings))
 }
 
-fn audit_block(block: &[&str]) -> Option<Finding> {
-    let mut finding = Finding::default();
-    let mut krate = None;
-    let mut version = None;
+/// One entry of `vulnerabilities.list` or a `warnings.*` list - both shaped
+/// `{"advisory": {...}, "package": {"name", "version"}, "versions": {"patched": [...]}}`.
+fn audit_entry(entry: &serde_json::Value) -> Option<Finding> {
+    let advisory = entry.get("advisory")?;
+    let title = advisory
+        .get("title")
+        .and_then(serde_json::Value::as_str)?
+        .to_string();
 
-    for line in block {
-        if let Some(v) = line.strip_prefix("Crate:") {
-            krate = Some(v.trim().to_string());
-        } else if let Some(v) = line.strip_prefix("Version:") {
-            version = Some(v.trim().to_string());
-        } else if let Some(v) = line.strip_prefix("Title:") {
-            finding.title = v.trim().to_string();
-        } else if let Some(v) = line.strip_prefix("Date:") {
-            finding.date = Some(v.trim().to_string());
-        } else if let Some(v) = line.strip_prefix("ID:") {
-            finding.id = Some(v.trim().to_string());
-        } else if let Some(v) = line.strip_prefix("Severity:") {
-            finding.severity = Some(v.trim().to_string());
-        } else if let Some(v) = line.strip_prefix("Solution:") {
-            finding.extra = Some(format!("Solution: {}", v.trim()));
-        } else if let Some(v) = line.strip_prefix("Warning:") {
-            // `unmaintained`/`yanked` - a severity of sorts when there's no CVSS one.
-            finding.severity.get_or_insert_with(|| v.trim().to_string());
-        }
-    }
+    let severity = advisory
+        .get("informational")
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| advisory.get("cvss").and_then(serde_json::Value::as_str))
+        .map(str::to_string);
 
-    if finding.title.is_empty() {
-        return None;
-    }
-    finding.location = match (krate, version) {
+    let package = entry.get("package");
+    let krate = package.and_then(|p| p.get("name")).and_then(serde_json::Value::as_str);
+    let version = package.and_then(|p| p.get("version")).and_then(serde_json::Value::as_str);
+    let location = match (krate, version) {
         (Some(krate), Some(version)) => Some(format!("{krate} {version}")),
-        (Some(krate), None) => Some(krate),
+        (Some(krate), None) => Some(krate.to_string()),
         (None, _) => None,
     };
-    Some(finding)
+
+    let extra = entry
+        .get("versions")
+        .and_then(|v| v.get("patched"))
+        .and_then(serde_json::Value::as_array)
+        .filter(|patched| !patched.is_empty())
+        .map(|patched| {
+            let versions = patched
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("Solution: Upgrade to {versions}")
+        });
+
+    Some(Finding {
+        title,
+        id: advisory
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string),
+        severity,
+        date: advisory
+            .get("date")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string),
+        location,
+        extra,
+    })
 }
 
 /// `cargo llvm-cov report`'s per-file table. Only columns 0/7/8/9 (filename,

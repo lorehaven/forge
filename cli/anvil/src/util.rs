@@ -275,6 +275,24 @@ pub fn run_command_streamed(cmd: Command, operation: &str) -> Result<()> {
     run_command_with_logging(cmd, operation, false)
 }
 
+/// Runs `cmd` for a `--json` invocation: stdin/stdout/stderr all pass straight
+/// through to anvil's own, uninterrupted.
+///
+/// No status line, no tee to a log file, no line buffering that would delay
+/// or reorder output. Every tool behind a `--json` flag here keeps its
+/// structured report on stdout and its human build/progress chatter on
+/// stderr (verified against real output, not assumed), so passthrough alone
+/// is enough to keep a consumer piping anvil's stdout from seeing anything
+/// but that report. `--silent`/`--tail` have no effect here; they govern the
+/// human-output modes, not this one.
+pub fn run_command_json(mut cmd: Command) -> Result<()> {
+    let status = cmd.status().context("Failed to execute command")?;
+    if !status.success() {
+        anyhow::bail!("command failed with status: {status}");
+    }
+    Ok(())
+}
+
 pub fn print_log_tail(log_path: &PathBuf) {
     let Ok(contents) = fs::read_to_string(log_path) else {
         return;

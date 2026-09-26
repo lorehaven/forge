@@ -93,23 +93,28 @@ pub struct ReleaseConfig {
     pub packages: Vec<String>,
 }
 
-pub fn load_config() -> Result<Config> {
+/// `quiet` suppresses the fallback warnings below.
+///
+/// Set it for a `--json` command, whose stdout is meant to be piped straight
+/// to a consumer and must carry nothing but the requested structured report
+/// (`print_status` prints to stdout, same as anvil's other status chatter).
+pub fn load_config(quiet: bool) -> Result<Config> {
+    let warn = |message: &str| {
+        if !quiet {
+            print_status(Tone::Warn, "anvil", message);
+        }
+    };
+
     let config = fs::read_to_string(".anvil.toml").map_or_else(
         |_| {
-            print_status(
-                Tone::Warn,
-                "anvil",
-                "failed to read .anvil.toml, defaulting to empty config",
-            );
+            warn("failed to read .anvil.toml, defaulting to empty config");
             Config::default()
         },
         |content| {
             toml::from_str(&content).unwrap_or_else(|err| {
-                print_status(
-                    Tone::Warn,
-                    "anvil",
-                    &format!("failed to parse .anvil.toml ({err}), defaulting to empty config"),
-                );
+                warn(&format!(
+                    "failed to parse .anvil.toml ({err}), defaulting to empty config"
+                ));
                 Config::default()
             })
         },

@@ -275,6 +275,7 @@ spec:
     spec:
       hostNetwork: true
       hostPID: true
+      shareProcessNamespace: true
       dnsPolicy: ClusterFirstWithHostNet
       containers:
       - name: node-agent

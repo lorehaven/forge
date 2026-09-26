@@ -128,3 +128,8 @@ suspicious = { level = "deny", priority = -1 }
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 multiple_crate_versions = "allow"
+# A CLI's flags are independent booleans by nature - that's what clap turns
+# `#[arg(long)]` into - so a command with several unrelated on/off flags
+# (e.g. anvil's `test --all --ignored --list --json`) trips this past 3
+# without there being a real "should be an enum" case to refactor toward.
+fn_params_excessive_bools = "allow"

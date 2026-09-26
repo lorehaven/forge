@@ -1,4 +1,4 @@
-use anvil::util::{log_file_path, print_log_tail, run_command, run_command_streamed};
+use anvil::util::{log_file_path, print_log_tail, run_command, run_command_json, run_command_streamed};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
@@ -87,6 +87,28 @@ fn run_command_streamed_reports_a_failing_status_without_a_log_path() {
 fn run_command_streamed_errors_when_the_program_does_not_exist() {
     let cmd = Command::new("definitely-not-a-real-binary-anvil-test");
     let error = run_command_streamed(cmd, "util test streamed missing binary").unwrap_err();
+    assert!(error.to_string().contains("Failed to execute"));
+}
+
+#[test]
+fn run_command_json_succeeds_for_a_zero_exit() {
+    let mut cmd = Command::new("sh");
+    cmd.args(["-c", "echo '{\"ok\":true}'"]);
+    run_command_json(cmd).expect("command succeeds");
+}
+
+#[test]
+fn run_command_json_reports_an_error_for_a_failing_status() {
+    let mut cmd = Command::new("sh");
+    cmd.args(["-c", "exit 3"]);
+    let error = run_command_json(cmd).unwrap_err();
+    assert!(error.to_string().contains("failed with status"));
+}
+
+#[test]
+fn run_command_json_errors_when_the_program_does_not_exist() {
+    let cmd = Command::new("definitely-not-a-real-binary-anvil-test");
+    let error = run_command_json(cmd).unwrap_err();
     assert!(error.to_string().contains("Failed to execute"));
 }
 

@@ -56,9 +56,8 @@ fn failed_check_with_unparseable_output_falls_back_to_log_tail() {
 #[test]
 fn parses_lint_warnings_with_location() {
     let lines = [
-        "warning: unused variable: `x`",
-        "  --> src/main.rs:10:9",
-        "warning: unused import",
+        r#"{"reason":"compiler-message","message":{"level":"warning","message":"unused variable: `x`","spans":[{"file_name":"src/main.rs","line_start":10,"column_start":9,"is_primary":true}]}}"#,
+        r#"{"reason":"compiler-message","message":{"level":"warning","message":"unused import","spans":[]}}"#,
     ];
     let (headline, findings) = parse_lint(&lines).expect("should parse");
     assert_eq!(headline, "2 warnings");
@@ -70,8 +69,10 @@ fn parses_lint_warnings_with_location() {
 }
 
 #[test]
-fn parses_bracketed_lint_diagnostics() {
-    let lines = ["error[E0308]: mismatched types"];
+fn parses_error_level_lint_diagnostics() {
+    let lines = [
+        r#"{"reason":"compiler-message","message":{"level":"error","message":"mismatched types","code":{"code":"E0308"},"spans":[]}}"#,
+    ];
     let (headline, findings) = parse_lint(&lines).expect("should parse");
     assert_eq!(headline, "1 error");
     assert_eq!(findings[0].title, "mismatched types");
@@ -79,8 +80,20 @@ fn parses_bracketed_lint_diagnostics() {
 }
 
 #[test]
+fn parse_lint_recognises_a_clean_build_and_ignores_notes() {
+    let lines = [
+        r#"{"reason":"compiler-artifact"}"#,
+        r#"{"reason":"compiler-message","message":{"level":"note","message":"ignore this"}}"#,
+        r#"{"reason":"build-finished","success":true}"#,
+    ];
+    let (headline, findings) = parse_lint(&lines).expect("should parse");
+    assert_eq!(headline, "clean");
+    assert!(findings.is_empty());
+}
+
+#[test]
 fn parses_clean_machete() {
-    let lines = ["cargo-machete didn't find any unused dependencies in this directory. Good job!"];
+    let lines = [r#"{"findings":[]}"#];
     let (headline, findings) = parse_machete(&lines).expect("should parse");
     assert_eq!(headline, "clean");
     assert!(findings.is_empty());
@@ -88,7 +101,9 @@ fn parses_clean_machete() {
 
 #[test]
 fn parses_machete_findings() {
-    let lines = ["foo -- ./crates/foo:", "    serde_yaml", "    once_cell"];
+    let lines = [
+        r#"{"findings":[{"package":"foo","manifest":"./crates/foo/Cargo.toml","unused":["serde_yaml","once_cell"]}]}"#,
+    ];
     let (headline, findings) = parse_machete(&lines).expect("should parse");
     assert_eq!(headline, "2 unused dependencies");
     assert_eq!(findings[0].title, "serde_yaml");
@@ -97,8 +112,13 @@ fn parses_machete_findings() {
 }
 
 #[test]
+fn parse_machete_is_none_for_output_that_is_not_its_json() {
+    assert!(parse_machete(&["Analyzing dependencies of crates in this directory..."]).is_none());
+}
+
+#[test]
 fn parses_clean_audit() {
-    let lines = ["Scanning Cargo.lock", "0 vulnerabilities found"];
+    let lines = [r#"{"vulnerabilities":{"found":false,"count":0,"list":[]},"warnings":{}}"#];
     let (headline, findings) = parse_audit(&lines).expect("should parse");
     assert_eq!(headline, "clean");
     assert!(findings.is_empty());
@@ -106,22 +126,24 @@ fn parses_clean_audit() {
 
 #[test]
 fn parses_audit_findings_with_all_fields() {
-    let lines = [
-        "Crate:     time",
-        "Version:   0.1.43",
-        "Title:     Potential segfault",
-        "Date:      2020-11-18",
-        "ID:        RUSTSEC-2020-0071",
-        "Severity:  6.2 (medium)",
-        "Solution:  Upgrade to >=0.2.23",
-    ];
+    let lines = [concat!(
+        r#"{"vulnerabilities":{"found":true,"count":1,"list":[{"#,
+        r#""advisory":{"id":"RUSTSEC-2020-0071","title":"Potential segfault","date":"2020-11-18","#,
+        r#""cvss":"CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H","informational":null},"#,
+        r#""package":{"name":"time","version":"0.1.43"},"#,
+        r#""versions":{"patched":[">=0.2.23"],"unaffected":[]}"#,
+        r#"}]},"warnings":{}}"#
+    )];
     let (headline, findings) = parse_audit(&lines).expect("should parse");
     assert_eq!(headline, "1 finding");
     let finding = &findings[0];
     assert_eq!(finding.title, "Potential segfault");
     assert_eq!(finding.id.as_deref(), Some("RUSTSEC-2020-0071"));
     assert_eq!(finding.date.as_deref(), Some("2020-11-18"));
-    assert_eq!(finding.severity.as_deref(), Some("6.2 (medium)"));
+    assert_eq!(
+        finding.severity.as_deref(),
+        Some("CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H")
+    );
     assert_eq!(finding.location.as_deref(), Some("time 0.1.43"));
     assert_eq!(
         finding.extra.as_deref(),
@@ -130,28 +152,27 @@ fn parses_audit_findings_with_all_fields() {
 }
 
 #[test]
-fn parses_multiple_audit_blocks_separated_by_blank_lines() {
-    let lines = [
-        "Crate:     rsa",
-        "Version:   0.9.10",
-        "Title:     Marvin Attack",
-        "Date:      2023-11-22",
-        "ID:        RUSTSEC-2023-0071",
-        "Severity:  5.9 (medium)",
-        "Solution:  No fixed upgrade is available!",
-        "",
-        "Crate:     proc-macro-error2",
-        "Version:   2.0.1",
-        "Warning:   unmaintained",
-        "Title:     proc-macro-error2 is unmaintained",
-        "Date:      2026-06-07",
-        "ID:        RUSTSEC-2026-0173",
-    ];
+fn parses_vulnerabilities_and_warnings_together() {
+    let lines = [concat!(
+        r#"{"vulnerabilities":{"found":true,"count":1,"list":[{"#,
+        r#""advisory":{"id":"RUSTSEC-2023-0071","title":"Marvin Attack","date":"2023-11-22","#,
+        r#""cvss":"CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:N/A:N","informational":null},"#,
+        r#""package":{"name":"rsa","version":"0.9.10"},"versions":{"patched":[],"unaffected":[]}}]},"#,
+        r#""warnings":{"unmaintained":[{"#,
+        r#""advisory":{"id":"RUSTSEC-2026-0173","title":"proc-macro-error2 is unmaintained","#,
+        r#""date":"2026-06-07","informational":"unmaintained"},"#,
+        r#""package":{"name":"proc-macro-error2","version":"2.0.1"},"versions":{"patched":[],"unaffected":[]}}]}}"#
+    )];
     let (headline, findings) = parse_audit(&lines).expect("should parse");
     assert_eq!(headline, "2 findings");
     assert_eq!(findings[0].id.as_deref(), Some("RUSTSEC-2023-0071"));
     assert_eq!(findings[1].id.as_deref(), Some("RUSTSEC-2026-0173"));
     assert_eq!(findings[1].severity.as_deref(), Some("unmaintained"));
+}
+
+#[test]
+fn parse_audit_is_none_for_output_that_is_not_its_json() {
+    assert!(parse_audit(&["Fetching advisory database..."]).is_none());
 }
 
 #[test]

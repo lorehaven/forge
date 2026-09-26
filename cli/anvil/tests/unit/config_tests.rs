@@ -237,7 +237,7 @@ fn load_config_defaults_when_anvil_toml_is_missing() {
     std::fs::create_dir_all(&dir).unwrap();
     std::env::set_current_dir(&dir).unwrap();
 
-    let config = load_config().expect("falls back to default rather than erroring");
+    let config = load_config(false).expect("falls back to default rather than erroring");
     assert!(config.docker.modules.is_empty());
 
     std::env::set_current_dir(&original).unwrap();
@@ -256,7 +256,7 @@ fn load_config_defaults_when_anvil_toml_is_invalid_toml() {
     std::fs::write(dir.join(".anvil.toml"), "not [ valid toml").unwrap();
     std::env::set_current_dir(&dir).unwrap();
 
-    let config = load_config().expect("falls back to default rather than erroring");
+    let config = load_config(false).expect("falls back to default rather than erroring");
     assert!(config.docker.modules.is_empty());
 
     std::env::set_current_dir(&original).unwrap();
@@ -278,7 +278,7 @@ fn load_config_parses_a_valid_anvil_toml() {
     .unwrap();
     std::env::set_current_dir(&dir).unwrap();
 
-    let config = load_config().expect("parses");
+    let config = load_config(false).expect("parses");
     assert_eq!(config.install.packages, vec!["anvil".to_string()]);
 
     std::env::set_current_dir(&original).unwrap();

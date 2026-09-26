@@ -60,12 +60,14 @@ fn parse_test_supports_package_name_and_ignored() {
             test_name,
             ignored,
             list,
+            json,
         } => {
             assert!(!all);
             assert_eq!(package.as_deref(), Some("ferrous"));
             assert_eq!(test_name.as_deref(), Some("ui_web"));
             assert!(ignored);
             assert!(!list);
+            assert!(!json);
         }
         _ => panic!("expected test command"),
     }
@@ -81,13 +83,24 @@ fn parse_test_supports_list_and_package_filter() {
             test_name,
             ignored,
             list,
+            json,
         } => {
             assert!(!all);
             assert_eq!(package.as_deref(), Some("ferrous"));
             assert!(test_name.is_none());
             assert!(!ignored);
             assert!(list);
+            assert!(!json);
         }
+        _ => panic!("expected test command"),
+    }
+}
+
+#[test]
+fn parse_test_supports_json_flag() {
+    let cli = Cli::parse_from(["anvil", "test", "--json"]);
+    match cli.command {
+        Commands::Test { json, .. } => assert!(json),
         _ => panic!("expected test command"),
     }
 }
@@ -108,21 +121,72 @@ fn parse_nextest_supports_package_name_and_ignored() {
             package,
             test_name,
             ignored,
+            json,
         } => {
             assert!(!all);
             assert_eq!(package.as_deref(), Some("ferrous"));
             assert_eq!(test_name.as_deref(), Some("ui_web"));
             assert!(ignored);
+            assert!(!json);
         }
         _ => panic!("expected nextest command"),
     }
 }
 
 #[test]
-fn parse_deny_takes_no_arguments() {
-    let cli = Cli::parse_from(["anvil", "deny"]);
-    assert!(matches!(cli.command, Commands::Deny));
+fn parse_nextest_supports_json_flag() {
+    let cli = Cli::parse_from(["anvil", "nextest", "--json"]);
+    match cli.command {
+        Commands::Nextest { json, .. } => assert!(json),
+        _ => panic!("expected nextest command"),
+    }
 }
+
+#[test]
+fn parse_deny_takes_no_positional_arguments() {
+    let cli = Cli::parse_from(["anvil", "deny"]);
+    match cli.command {
+        Commands::Deny { json } => assert!(!json),
+        _ => panic!("expected deny command"),
+    }
+}
+
+#[test]
+fn parse_deny_supports_json_flag() {
+    let cli = Cli::parse_from(["anvil", "deny", "--json"]);
+    match cli.command {
+        Commands::Deny { json } => assert!(json),
+        _ => panic!("expected deny command"),
+    }
+}
+
+#[test]
+fn parse_audit_supports_json_flag() {
+    let cli = Cli::parse_from(["anvil", "audit", "--json"]);
+    match cli.command {
+        Commands::Audit { json } => assert!(json),
+        _ => panic!("expected audit command"),
+    }
+}
+
+#[test]
+fn parse_machete_supports_json_flag() {
+    let cli = Cli::parse_from(["anvil", "machete", "--json"]);
+    match cli.command {
+        Commands::Machete { json } => assert!(json),
+        _ => panic!("expected machete command"),
+    }
+}
+
+#[test]
+fn parse_lint_supports_json_flag() {
+    let cli = Cli::parse_from(["anvil", "lint", "--json"]);
+    match cli.command {
+        Commands::Lint { json, .. } => assert!(json),
+        _ => panic!("expected lint command"),
+    }
+}
+
 
 #[test]
 fn parse_semver_check_supports_package_and_baseline_rev() {

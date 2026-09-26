@@ -42,7 +42,7 @@ fn build_args_includes_all_features_and_release_flags() {
 #[test]
 fn test_args_plain_workspace_run() {
     assert_eq!(
-        test_args(false, None, None, false, false),
+        test_args(false, None, None, false, false, false),
         vec!["test", "--workspace"]
     );
 }
@@ -50,7 +50,7 @@ fn test_args_plain_workspace_run() {
 #[test]
 fn test_args_package_and_name_filter() {
     assert_eq!(
-        test_args(false, Some("anvil"), Some("my_test"), false, false),
+        test_args(false, Some("anvil"), Some("my_test"), false, false, false),
         vec!["test", "--package", "anvil", "my_test"]
     );
 }
@@ -58,21 +58,57 @@ fn test_args_package_and_name_filter() {
 #[test]
 fn test_args_ignored_and_list_go_after_a_separator() {
     assert_eq!(
-        test_args(true, None, None, true, true),
+        test_args(true, None, None, true, true, false),
         vec!["test", "--workspace", "--", "--ignored", "--list"]
     );
 }
 
 #[test]
 fn test_args_no_separator_when_neither_ignored_nor_list() {
-    let args = test_args(true, None, None, false, false);
+    let args = test_args(true, None, None, false, false, false);
     assert!(!args.contains(&"--".to_string()));
+}
+
+#[test]
+fn test_args_json_runs_under_nightly_with_unstable_format_flags() {
+    assert_eq!(
+        test_args(false, None, None, false, false, true),
+        vec![
+            "+nightly",
+            "test",
+            "--workspace",
+            "--",
+            "-Z",
+            "unstable-options",
+            "--format",
+            "json"
+        ]
+    );
+}
+
+#[test]
+fn test_args_json_combines_with_ignored() {
+    let args = test_args(false, None, None, true, false, true);
+    assert_eq!(
+        args,
+        vec![
+            "+nightly",
+            "test",
+            "--workspace",
+            "--",
+            "--ignored",
+            "-Z",
+            "unstable-options",
+            "--format",
+            "json"
+        ]
+    );
 }
 
 #[test]
 fn nextest_args_plain_workspace_run() {
     assert_eq!(
-        nextest_args(false, None, None, false),
+        nextest_args(false, None, None, false, false),
         vec!["nextest", "run", "--workspace"]
     );
 }
@@ -80,7 +116,7 @@ fn nextest_args_plain_workspace_run() {
 #[test]
 fn nextest_args_ignored_only_and_package_and_name() {
     assert_eq!(
-        nextest_args(false, Some("anvil"), Some("my_test"), true),
+        nextest_args(false, Some("anvil"), Some("my_test"), true, false),
         vec![
             "nextest",
             "run",
@@ -89,6 +125,20 @@ fn nextest_args_ignored_only_and_package_and_name() {
             "--run-ignored",
             "ignored-only",
             "my_test"
+        ]
+    );
+}
+
+#[test]
+fn nextest_args_json_adds_message_format_before_other_flags() {
+    assert_eq!(
+        nextest_args(false, None, None, false, true),
+        vec![
+            "nextest",
+            "run",
+            "--message-format",
+            "libtest-json-plus",
+            "--workspace"
         ]
     );
 }
@@ -121,6 +171,6 @@ fn nextest_errors_with_an_install_hint_when_cargo_nextest_is_missing() {
     if which::which("cargo-nextest").is_ok() {
         return;
     }
-    let error = nextest(false, None, None, false).unwrap_err();
+    let error = nextest(false, None, None, false, false).unwrap_err();
     assert!(error.to_string().contains("cargo-nextest not found"));
 }
