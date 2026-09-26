@@ -354,6 +354,10 @@ hostPID: {{ res.host_pid }}
 {% if res.dns_policy is defined %}
 dnsPolicy: {{ res.dns_policy }}
 {% endif %}
+{% if res.host_aliases %}
+hostAliases:
+{{ res.host_aliases | to_yaml }}
+{% endif %}
 {% if res.node_name is defined %}
 nodeName: {{ res.node_name }}
 {% endif %}

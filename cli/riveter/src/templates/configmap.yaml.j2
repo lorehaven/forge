@@ -10,6 +10,10 @@ metadata:
     env: {{ env }}
 data:
 {% for key in res.data %}
+{% if "\n" in res.data[key] %}
   {{ key }}: |
     {{ res.data[key] | indent(4) }}
+{% else %}
+  {{ key }}: '{{ res.data[key] | replace("'", "''") }}'
+{% endif %}
 {% endfor %}

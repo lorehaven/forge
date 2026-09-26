@@ -13,8 +13,7 @@ data:
     listen 8080
 
     server_name example.com
-  motd: |
-    single line
+  motd: 'single line'
 ---
 apiVersion: v1
 kind: Secret

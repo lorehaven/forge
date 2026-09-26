@@ -30,3 +30,7 @@ spec:
         - name: {{ route.service_name }}
           port: {{ route.service_port }}
 {% endfor %}
+{% if res.tls_secret_name %}
+  tls:
+    secretName: {{ res.tls_secret_name }}
+{% endif %}
