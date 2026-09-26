@@ -8,9 +8,21 @@ fn db_schema() -> String {
     envmnt::get_or("DB_SCHEMA", "sage")
 }
 
+/// Master switch for image handling (`SAGE_IMAGES_ENABLED`, default true). When false, no
+/// image uploads are accepted and none are ever sent to a model, regardless of history.
+pub fn images_enabled() -> bool {
+    envmnt::get_or("SAGE_IMAGES_ENABLED", "true")
+        .parse::<bool>()
+        .unwrap_or(true)
+}
+
 /// Upper bound on images sent per request, across the current message and history. Must not
 /// exceed the vLLM instance's `--limit-mm-per-prompt`, or requests with images will fail.
+/// Zero when [`images_enabled`] is false, which makes `cap_images` strip every image.
 pub fn max_images_per_request() -> usize {
+    if !images_enabled() {
+        return 0;
+    }
     envmnt::get_u64("SAGE_MAX_IMAGES_PER_REQUEST", 2) as usize
 }
 

@@ -81,20 +81,25 @@ pub const ALLOWED_UPLOAD_TYPES: &[(&str, &str)] = &[
     ("scss", "text/css"),
 ];
 
-/// Map a file name to its stored MIME type; `None` if the extension is unsupported.
+/// Map a file name to its stored MIME type; `None` if the extension is unsupported, or if it's
+/// an image extension and `SAGE_IMAGES_ENABLED` is off (see `files::images::images_enabled`).
 pub fn allowed_mime_type(file_name: &str) -> Option<&'static str> {
     let ext = file_name.rsplit('.').next()?.to_lowercase();
+    let images_enabled = crate::files::images::images_enabled();
     ALLOWED_UPLOAD_TYPES
         .iter()
-        .find(|(e, _)| *e == ext)
+        .find(|(e, mime)| *e == ext && (images_enabled || !mime.starts_with("image/")))
         .map(|(_, mime)| *mime)
 }
 
-/// Value for the `accept` attribute of the upload inputs: every extension the
-/// server accepts, so the browser's file picker offers exactly those.
+/// Value for the `accept` attribute of the upload inputs: every extension the server accepts,
+/// so the browser's file picker offers exactly those. Excludes image extensions when
+/// `SAGE_IMAGES_ENABLED` is off, so the picker doesn't offer files the server will reject.
 pub fn upload_accept_attribute() -> String {
+    let images_enabled = crate::files::images::images_enabled();
     ALLOWED_UPLOAD_TYPES
         .iter()
+        .filter(|(_, mime)| images_enabled || !mime.starts_with("image/"))
         .map(|(ext, _)| format!(".{ext}"))
         .collect::<Vec<_>>()
         .join(",")

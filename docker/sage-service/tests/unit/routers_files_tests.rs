@@ -42,6 +42,22 @@ fn accept_attribute_covers_every_supported_extension() {
 }
 
 #[test]
+fn images_disabled_excludes_images_from_accept_and_validation() {
+    envmnt::set("SAGE_IMAGES_ENABLED", "false");
+
+    assert_eq!(allowed_mime_type("photo.png"), None);
+    assert_eq!(allowed_mime_type("notes.md"), Some("text/markdown"));
+
+    let accept = upload_accept_attribute();
+    for ext in [".png", ".jpg", ".jpeg", ".webp", ".gif"] {
+        assert!(!accept.contains(ext), "accept filter still offers {ext}");
+    }
+    assert!(accept.contains(".pdf"));
+
+    envmnt::remove("SAGE_IMAGES_ENABLED");
+}
+
+#[test]
 fn no_duplicate_extensions() {
     let mut seen: Vec<&str> = ALLOWED_UPLOAD_TYPES.iter().map(|(ext, _)| *ext).collect();
     let total = seen.len();

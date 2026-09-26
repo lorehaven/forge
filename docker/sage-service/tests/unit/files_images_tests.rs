@@ -52,3 +52,25 @@ fn data_uri_format() {
         "data:image/png;base64,YWJj"
     );
 }
+
+#[test]
+fn images_enabled_defaults_to_true() {
+    envmnt::remove("SAGE_IMAGES_ENABLED");
+    assert!(images_enabled());
+}
+
+#[test]
+fn images_enabled_reads_env_override() {
+    envmnt::set("SAGE_IMAGES_ENABLED", "false");
+    assert!(!images_enabled());
+    envmnt::remove("SAGE_IMAGES_ENABLED");
+}
+
+#[test]
+fn max_images_per_request_is_zero_when_images_disabled() {
+    envmnt::set("SAGE_IMAGES_ENABLED", "false");
+    envmnt::set("SAGE_MAX_IMAGES_PER_REQUEST", "5");
+    assert_eq!(max_images_per_request(), 0);
+    envmnt::remove("SAGE_IMAGES_ENABLED");
+    envmnt::remove("SAGE_MAX_IMAGES_PER_REQUEST");
+}
