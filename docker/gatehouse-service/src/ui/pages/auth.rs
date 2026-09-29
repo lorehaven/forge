@@ -1,18 +1,18 @@
 //! The one login form in the estate - form, credential check, and cookies
 //! all live here; relying parties only ever redirect a browser to this page.
 
-use crate::api::auth::issue_token_pair;
+use crate::api::auth::{issue_token_pair, refresh_session};
 use crate::realm::{self as gh_realm, AuthOutcome};
 use crate::ui::common::{UiPageKind, render_page, supported_locales, ui_path};
+use crate::ui::locale::{LocaleCookie, default_locale_cookie};
 use async_trait::async_trait;
 use http::StatusCode;
 use quench_auth::domain::jwt::JwtConfig;
 use quench_auth::domain::realm;
 use quench_auth::domain::session::SessionDb;
-use quench_auth::domain::sso_client;
 use quench_auth::http::domain::cookies::cookie_value;
 use quench_auth::http::routers::ui::pages::auth::{
-    LoginQuery, auth_status, redirect_target, refresh_delegation, validated_redirect,
+    LoginQuery, auth_status, redirect_target, validated_redirect,
 };
 use quench_db::prelude::Db;
 use quench_http::prelude::{
@@ -46,6 +46,17 @@ pub struct LoginNotices {
     pub err: Option<String>,
 }
 
+/// Gatehouse renews sessions itself - see `refresh_session` for why not over HTTP.
+async fn refresh_from_container(
+    req: &Request,
+    refresh_token: &str,
+) -> Option<crate::api::auth::TokenResponse> {
+    let config = req.container().get::<JwtConfig>().ok()?;
+    let db = req.container().get::<Db>().ok()?;
+    let sessions = req.container().get::<SessionDb>().ok()?;
+    refresh_session(&config, &db, &sessions, refresh_token).await
+}
+
 /// Skips the credential form if a refresh cookie is still good enough to renew.
 pub struct LoginContext {
     silent_refresh: Option<Response>,
@@ -57,7 +68,7 @@ impl FromRequest for LoginContext {
     async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
         let redirect = redirect_target(req);
         let silent_refresh = match cookie_value(req, &realm::refresh_cookie_name()) {
-            Some(refresh_token) => match sso_client::refresh(&refresh_token).await {
+            Some(refresh_token) => match refresh_from_container(req, &refresh_token).await {
                 Some(tokens) => {
                     let target = redirect.clone().unwrap_or_else(|| ui_path("/home"));
                     Some(
@@ -110,6 +121,7 @@ pub async fn login_slash(
 
 #[post("/ui/login")]
 pub async fn login_submit(
+    locale_cookie: LocaleCookie,
     Form(form): Form<LoginForm>,
     Inject(config): Inject<JwtConfig>,
     Inject(db): Inject<Db>,
@@ -160,7 +172,7 @@ pub async fn login_submit(
         .and_then(validated_redirect)
         .unwrap_or_else(|| ui_path("/home"));
 
-    Response::new(StatusCode::FOUND)
+    let response = Response::new(StatusCode::FOUND)
         .header("Location", target)
         .append_header(
             "set-cookie",
@@ -169,7 +181,11 @@ pub async fn login_submit(
         .append_header(
             "set-cookie",
             realm::refresh_cookie(tokens.refresh_token).to_string(),
-        )
+        );
+    match default_locale_cookie(&locale_cookie, user.preferred_locale.as_deref()) {
+        Some(cookie) => response.append_header("set-cookie", cookie),
+        None => response,
+    }
 }
 
 #[derive(Deserialize)]
@@ -202,6 +218,7 @@ pub struct MfaForm {
 /// the password step already happened.
 #[post("/ui/login/mfa")]
 pub async fn login_mfa_submit(
+    locale_cookie: LocaleCookie,
     Form(form): Form<MfaForm>,
     Inject(config): Inject<JwtConfig>,
     Inject(db): Inject<Db>,
@@ -245,7 +262,7 @@ pub async fn login_mfa_submit(
         .and_then(validated_redirect)
         .unwrap_or_else(|| ui_path("/home"));
 
-    Response::new(StatusCode::FOUND)
+    let response = Response::new(StatusCode::FOUND)
         .header("Location", target)
         .append_header(
             "set-cookie",
@@ -254,7 +271,11 @@ pub async fn login_mfa_submit(
         .append_header(
             "set-cookie",
             realm::refresh_cookie(tokens.refresh_token).to_string(),
-        )
+        );
+    match default_locale_cookie(&locale_cookie, user.preferred_locale.as_deref()) {
+        Some(cookie) => response.append_header("set-cookie", cookie),
+        None => response,
+    }
 }
 
 pub fn mfa_challenge_url(pending: &str, redirect: Option<&str>, err: bool) -> String {
@@ -296,7 +317,27 @@ pub struct RefreshResponse(Response);
 #[async_trait]
 impl FromRequest for RefreshResponse {
     async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
-        Ok(Self(refresh_delegation(req).await))
+        let Some(refresh_token) = cookie_value(req, &realm::refresh_cookie_name()) else {
+            return Ok(Self(Response::new(StatusCode::UNAUTHORIZED)));
+        };
+        let Some(tokens) = refresh_from_container(req, &refresh_token).await else {
+            return Ok(Self(Response::new(StatusCode::UNAUTHORIZED)));
+        };
+        let body = Response::json(
+            StatusCode::OK,
+            &serde_json::json!({ "authenticated": true }),
+        )
+        .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR));
+        Ok(Self(
+            body.append_header(
+                "set-cookie",
+                realm::session_cookie(tokens.access_token).to_string(),
+            )
+            .append_header(
+                "set-cookie",
+                realm::refresh_cookie(tokens.refresh_token).to_string(),
+            ),
+        ))
     }
 }
 
@@ -553,9 +594,9 @@ pub fn login_redirect() -> Response {
 pub fn register_routes() {
     let _ = login as fn(_, _, _) -> _;
     let _ = login_slash as fn(_, _, _) -> _;
-    let _ = login_submit as fn(_, _, _, _) -> _;
+    let _ = login_submit as fn(_, _, _, _, _) -> _;
     let _ = login_mfa as fn(_) -> _;
-    let _ = login_mfa_submit as fn(_, _, _, _) -> _;
+    let _ = login_mfa_submit as fn(_, _, _, _, _) -> _;
     let _ = status as fn(_) -> _;
     let _ = refresh as fn(_) -> _;
     let _ = logout as fn(_, _) -> _;

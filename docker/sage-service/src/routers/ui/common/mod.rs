@@ -14,28 +14,16 @@ use std::sync::LazyLock;
 pub mod css;
 pub mod format;
 
-pub const SUPPORTED_LOCALES: [&str; 5] = ["en-US", "pl-PL", "es-ES", "de-DE", "fr-FR"];
-
-pub fn supported_locales() -> Vec<String> {
-    SUPPORTED_LOCALES.iter().map(|s| s.to_string()).collect()
-}
+pub use forge_ui::{SUPPORTED_LOCALES, supported_locales};
 
 static UI_SHELL_HOME: LazyLock<AppShell> = LazyLock::new(|| {
     css::ensure_sage_css();
 
-    AppShellBuilder::new()
-        .title("Sage")
-        .supported_locales(supported_locales())
-        .default_theme(Theme::DefaultDark)
-        .supported_themes(vec![Theme::DefaultDark])
-        .header(ui_header(Some("ui_header_home"), true, false, true))
-        .links(vec![Link::new(
-            "stylesheet",
-            &ui_asset_path("/css/sage.css"),
-        )])
-        .with_nav(false)
-        .resources_prefix(ui_path(""))
-        .build()
+    forge_ui::app_shell(
+        "Sage",
+        "sage.css",
+        Some(ui_header(Some("ui_header_home"), true, false, true)),
+    )
 });
 
 pub fn ui_header(
@@ -49,25 +37,13 @@ pub fn ui_header(
         None => h2().attr("data-i18n", "header_label"),
     };
 
-    header()
-        .child(div().class("left-panel").child(title))
-        .child(
-            div()
-                .class("right-panel")
-                .child_opt(
-                    show_locale_switch.then(|| locale_switch(Some(supported_locales()), None)),
-                )
-                .child_opt(show_home.then(|| {
-                    a().attr("href", ui_path("/home"))
-                        .class("button")
-                        .attr("data-i18n", "ui_home_button")
-                }))
-                .child_opt(show_logout.then(|| {
-                    a().attr("href", ui_path("/logout"))
-                        .class("button")
-                        .attr("data-i18n", "ui_logout")
-                })),
-        )
+    forge_ui::TopBar {
+        show_home,
+        show_locale_switch,
+        user_menu_profile: show_logout.then(forge_ui::gatehouse_profile_url),
+        ..Default::default()
+    }
+    .build(title)
 }
 
 #[get("/ui/assets/{path:.*}")]

@@ -206,3 +206,5 @@ ui_login_password = Hasło
 ui_login_submit = Zaloguj
 ui_login_invalid_credentials = Nieprawidłowe dane logowania
 ui_logout = Wyloguj
+ui_profile_edit = Edytuj profil
+ui_user_menu = Menu użytkownika

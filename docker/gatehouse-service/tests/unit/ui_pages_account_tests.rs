@@ -204,6 +204,52 @@ fn post_form(
     )
 }
 
+fn post_multipart(
+    path: &str,
+    fields: &[(&str, &str)],
+    file: Option<&[u8]>,
+    container: &Arc<quench_http::di::Container>,
+) -> Request {
+    let boundary = "testboundary";
+    let mut body: Vec<u8> = Vec::new();
+    for (name, value) in fields {
+        body.extend(
+            format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n"
+            )
+            .as_bytes(),
+        );
+    }
+    if let Some(bytes) = file {
+        body.extend(
+            format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"avatar_file\"; filename=\"a.png\"\r\nContent-Type: image/png\r\n\r\n"
+            )
+            .as_bytes(),
+        );
+        body.extend(bytes);
+        body.extend(b"\r\n");
+    }
+    body.extend(format!("--{boundary}--\r\n").as_bytes());
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        "content-type",
+        format!("multipart/form-data; boundary={boundary}")
+            .parse()
+            .unwrap(),
+    );
+    Request::new(
+        Method::POST,
+        path.parse::<Uri>().unwrap(),
+        headers,
+        quench_http::body::InboundBody::from_bytes(Bytes::from(body)),
+        container.clone(),
+    )
+}
+
+const PNG_BYTES: &[u8] = &[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0];
+
 // -----------------------------------------------------------------
 // HTTP handlers - not signed in
 // -----------------------------------------------------------------
@@ -238,14 +284,84 @@ async fn save_account_updates_the_profile_and_redirects() {
     seed_user(&db, "admin").await;
     let (app, container) = account_app(JwtConfig::for_tests(), db).await;
     let resp = app
-        .call(post_form(
+        .call(post_multipart(
             "/ui/account",
-            &[("display_name", "Alice A.")],
+            &[
+                ("display_name", "Alice A."),
+                ("timezone", "Europe/Warsaw"),
+                ("preferred_locale", "pl-PL"),
+            ],
+            None,
             &container,
         ))
         .await;
     assert_eq!(resp.status(), StatusCode::FOUND);
     assert!(location(resp).contains("ok=saved"));
+}
+
+#[tokio::test]
+async fn save_account_rejects_a_timezone_or_locale_outside_the_lists() {
+    let _guard = auth_disabled_guard().await;
+    let db = db().await;
+    seed_user(&db, "admin").await;
+    let (app, container) = account_app(JwtConfig::for_tests(), db).await;
+    for field in [("timezone", "Mars/Olympus"), ("preferred_locale", "xx-XX")] {
+        let resp = app
+            .call(post_multipart("/ui/account", &[field], None, &container))
+            .await;
+        assert!(location(resp).contains("err=ui_account_error_invalid"));
+    }
+}
+
+#[tokio::test]
+async fn save_account_rejects_a_non_image_and_an_oversized_avatar() {
+    let _guard = auth_disabled_guard().await;
+    let db = db().await;
+    seed_user(&db, "admin").await;
+    let (app, container) = account_app(JwtConfig::for_tests(), db).await;
+
+    let resp = app
+        .call(post_multipart(
+            "/ui/account",
+            &[],
+            Some(b"<svg onload=x>"),
+            &container,
+        ))
+        .await;
+    assert!(location(resp).contains("err=ui_account_error_avatar_type"));
+
+    let mut big = PNG_BYTES.to_vec();
+    big.resize(300 * 1024, 0);
+    let resp = app
+        .call(post_multipart("/ui/account", &[], Some(&big), &container))
+        .await;
+    assert!(location(resp).contains("err=ui_account_error_avatar_size"));
+}
+
+#[tokio::test]
+async fn an_uploaded_avatar_is_served_back_and_absent_ones_404() {
+    let _guard = auth_disabled_guard().await;
+    let db = db().await;
+    seed_user(&db, "admin").await;
+    let (app, container) = account_app(JwtConfig::for_tests(), db).await;
+
+    let resp = app.call(get("/ui/account/avatar", &container)).await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+    let resp = app
+        .call(post_multipart(
+            "/ui/account",
+            &[],
+            Some(PNG_BYTES),
+            &container,
+        ))
+        .await;
+    assert!(location(resp).contains("ok=saved"));
+
+    let resp = app.call(get("/ui/account/avatar", &container)).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let hyper = resp.into_hyper();
+    assert_eq!(hyper.headers()["content-type"], "image/png");
 }
 
 #[tokio::test]
@@ -311,4 +427,54 @@ async fn mfa_disable_turns_mfa_back_off() {
         .await;
     assert_eq!(resp.status(), StatusCode::FOUND);
     assert!(location(resp).contains("mfa_disabled"));
+}
+
+#[tokio::test]
+async fn change_password_needs_the_current_password() {
+    let _guard = auth_disabled_guard().await;
+    let db = db().await;
+    seed_user(&db, "admin").await;
+    let (app, container) = account_app(JwtConfig::for_tests(), db.clone()).await;
+
+    // seed_user's password is "password".
+    let resp = app
+        .call(post_form(
+            "/ui/account/password",
+            &[
+                ("current_password", "wrong"),
+                ("new_password", "n3w-secret"),
+                ("confirm_password", "n3w-secret"),
+            ],
+            &container,
+        ))
+        .await;
+    assert!(location(resp).contains("err=ui_account_error_current_password"));
+
+    let resp = app
+        .call(post_form(
+            "/ui/account/password",
+            &[
+                ("current_password", "password"),
+                ("new_password", "n3w-secret"),
+                ("confirm_password", "different"),
+            ],
+            &container,
+        ))
+        .await;
+    assert!(location(resp).contains("err=ui_account_error_password_mismatch"));
+
+    let resp = app
+        .call(post_form(
+            "/ui/account/password",
+            &[
+                ("current_password", "password"),
+                ("new_password", "n3w-secret"),
+                ("confirm_password", "n3w-secret"),
+            ],
+            &container,
+        ))
+        .await;
+    assert!(location(resp).contains("ok=password_changed"));
+    let user = realm::get(&db, "admin").await.expect("user");
+    assert!(user.verify_password("n3w-secret"));
 }

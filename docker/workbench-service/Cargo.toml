@@ -24,6 +24,7 @@ async-trait = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }
 envmnt = { workspace = true }
+forge-ui = { workspace = true }
 http = { workspace = true }
 quench-auth = { workspace = true }
 quench-db = { workspace = true }
@@ -31,7 +32,6 @@ quench-http = { workspace = true }
 quench-starter = { workspace = true }
 quench-web = { workspace = true }
 quench-web-components = { workspace = true }
-rustls = { workspace = true }
 serde = { workspace = true }
 sqlx = { workspace = true }
 thiserror = { workspace = true }

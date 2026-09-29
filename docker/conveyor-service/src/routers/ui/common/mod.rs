@@ -16,55 +16,29 @@ pub mod css;
 pub mod format;
 pub mod nav;
 
-const SUPPORTED_LOCALES: [&str; 5] = ["en-US", "pl-PL", "es-ES", "de-DE", "fr-FR"];
-
-fn supported_locales() -> Vec<String> {
-    SUPPORTED_LOCALES.iter().map(|s| s.to_string()).collect()
-}
+pub use forge_ui::{SUPPORTED_LOCALES, supported_locales};
 
 fn shell(title_key: &str, show_home: bool) -> AppShell {
     css::ensure_conveyor_css();
 
-    AppShellBuilder::new()
-        .title("Conveyor")
-        .supported_locales(supported_locales())
-        .default_theme(Theme::DefaultDark)
-        .supported_themes(vec![Theme::DefaultDark])
-        .header(ui_header(title_key, show_home))
-        .links(vec![Link::new(
-            "stylesheet",
-            &ui_asset_path("/css/conveyor.css"),
-        )])
-        .with_nav(false)
-        .resources_prefix(ui_path(""))
-        .build()
+    forge_ui::app_shell(
+        "Conveyor",
+        "conveyor.css",
+        Some(ui_header(title_key, show_home)),
+    )
 }
 
 static UI_SHELL_HOME: LazyLock<AppShell> = LazyLock::new(|| shell("ui_header_home", false));
 
 fn ui_header(title_key: &str, show_home: bool) -> Element {
-    header()
-        .child(
-            div()
-                .class("left-panel")
-                .child(nav_button())
-                .child(h2().attr("data-i18n", title_key)),
-        )
-        .child(
-            div()
-                .class("right-panel")
-                .child_opt(show_home.then(|| {
-                    a().attr("href", ui_path("/home"))
-                        .class("button")
-                        .attr("data-i18n", "ui_home_button")
-                }))
-                .child(
-                    a().attr("href", ui_path("/logout"))
-                        .class("button")
-                        .attr("data-i18n", "ui_logout"),
-                ),
-        )
-        .child(nav::panel())
+    forge_ui::TopBar {
+        leading: Some(nav_button()),
+        show_home,
+        user_menu_profile: Some(forge_ui::gatehouse_profile_url()),
+        ..Default::default()
+    }
+    .build(h2().attr("data-i18n", title_key))
+    .child(nav::panel())
 }
 
 /// Writes `dist/assets` before the first request, or an early stylesheet request answers stale.

@@ -3,8 +3,8 @@
 //! Validation runs at parse time, so these also assert through
 //! `pipeline::parse` where the message an author actually sees is assembled.
 
-use conveyor_pipeline::{Step, parse};
 use conveyor_pipeline::steps::{StepError, anvil, riveter, validate, warehouse};
+use conveyor_pipeline::{Step, parse};
 
 fn pipeline_with(step: &str) -> String {
     format!(

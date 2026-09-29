@@ -10,6 +10,8 @@ ui_header_home = Conveyor
 ui_home_button = Home
 ui_nav_credentials = Credentials
 ui_logout = Log out
+ui_profile_edit = Edit profile
+ui_user_menu = User menu
 
 # ── Home ─────────────────────────────────────────────────────────────────────
 

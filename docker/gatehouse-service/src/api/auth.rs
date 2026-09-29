@@ -110,17 +110,15 @@ async fn refresh(
     else {
         return Response::new(StatusCode::BAD_REQUEST);
     };
-    let rotated = match sessions
-        .rotate(&refresh_token, config.refresh_token_ttl_secs)
-        .await
-    {
-        Ok(Some(rotated)) => rotated,
-        Ok(None) => return Response::new(StatusCode::UNAUTHORIZED),
-        Err(err) => {
-            tracing::error!("Failed to rotate refresh token: {}", err);
-            return Response::new(StatusCode::INTERNAL_SERVER_ERROR);
-        }
-    };
+    let rotated =
+        match rotate_serialized(&sessions, &refresh_token, config.refresh_token_ttl_secs).await {
+            Ok(Some(rotated)) => rotated,
+            Ok(None) => return Response::new(StatusCode::UNAUTHORIZED),
+            Err(err) => {
+                tracing::error!("Failed to rotate refresh token: {}", err);
+                return Response::new(StatusCode::INTERNAL_SERVER_ERROR);
+            }
+        };
     let (session, refresh_token) = rotated;
     let Some(user) = users.get_user(&session.username).await else {
         return Response::new(StatusCode::UNAUTHORIZED);
@@ -227,6 +225,52 @@ pub fn register_routes() {
     let _ = refresh as fn(_, _, _, _, _) -> _;
     let _ = logout as fn(_, _) -> _;
     let _ = userinfo as fn(_) -> _;
+}
+
+/// Rotation is take-then-write in the session store, so a second request for the
+/// same token that lands between the two finds neither the token nor its
+/// recovery entry and is refused. Two tabs whose session watchers fire together
+/// do exactly that. Serializing rotations here means the second one always sees
+/// the recovery entry the first left behind (the store then hands it the same
+/// pair, once).
+static ROTATION: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+async fn rotate_serialized(
+    sessions: &SessionDb,
+    refresh_token: &str,
+    ttl_secs: i64,
+) -> anyhow::Result<Option<(Session, String)>> {
+    let _one_at_a_time = ROTATION.lock().await;
+    sessions.rotate(refresh_token, ttl_secs).await
+}
+
+/// Renews a session from its refresh token, in-process. Gatehouse can't use
+/// `sso_client::refresh` on itself: that goes out over HTTP to `GATEHOUSE_URL`,
+/// which gatehouse deliberately runs without. `None` for an unknown or expired
+/// token, or when the user is gone - the caller falls back to the login form.
+pub async fn refresh_session(
+    config: &JwtConfig,
+    db: &Db,
+    sessions: &SessionDb,
+    refresh_token: &str,
+) -> Option<TokenResponse> {
+    let (session, refresh_token) =
+        match rotate_serialized(sessions, refresh_token, config.refresh_token_ttl_secs).await {
+            Ok(Some(rotated)) => rotated,
+            Ok(None) => return None,
+            Err(err) => {
+                tracing::error!("Failed to rotate refresh token: {}", err);
+                return None;
+            }
+        };
+    let user = gh_realm::get(db, &session.username).await.ok()?;
+    match token_response(config, &user, &session, refresh_token).await {
+        Ok(tokens) => Some(tokens),
+        Err(err) => {
+            tracing::error!("Failed to issue access token: {}", err);
+            None
+        }
+    }
 }
 
 pub async fn issue_token_pair(

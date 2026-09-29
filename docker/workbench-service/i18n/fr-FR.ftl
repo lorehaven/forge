@@ -62,3 +62,5 @@ ui_login_password = Mot de passe
 ui_login_submit = Connexion
 ui_login_invalid_credentials = Identifiants invalides
 ui_logout = Déconnexion
+ui_profile_edit = Modifier le profil
+ui_user_menu = Menu utilisateur

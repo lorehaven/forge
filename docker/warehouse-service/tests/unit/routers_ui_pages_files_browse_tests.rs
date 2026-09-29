@@ -114,7 +114,7 @@ async fn a_selected_image_renders_an_inline_preview_and_a_download_link() {
     let html = body_html(render_browse_page(&v)).await;
 
     // Preview points at the inline download.
-    assert!(html.contains("<img"));
+    assert!(html.contains("file-preview-media"));
     assert!(html.contains(
         "/api/v1/files/phone_backup/file?path=photos%2FIMG_0001.jpg&amp;disposition=inline"
     ));
@@ -155,7 +155,7 @@ async fn an_unpreviewable_type_says_so() {
     );
     let html = body_html(render_browse_page(&v)).await;
     assert!(html.contains("ui_file_preview_none"));
-    assert!(!html.contains("<img"));
+    assert!(!html.contains("file-preview-media"));
 }
 
 #[tokio::test]

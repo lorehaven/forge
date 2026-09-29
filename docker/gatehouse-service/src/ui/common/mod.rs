@@ -8,46 +8,25 @@ use std::sync::LazyLock;
 
 pub mod css;
 
-const SUPPORTED_LOCALES: [&str; 5] = ["en-US", "pl-PL", "es-ES", "de-DE", "fr-FR"];
-
-pub fn supported_locales() -> Vec<String> {
-    SUPPORTED_LOCALES.iter().map(|s| s.to_string()).collect()
-}
+pub use forge_ui::{SUPPORTED_LOCALES, supported_locales};
 
 fn shell(header: Option<Element>) -> AppShell {
     css::ensure_gatehouse_css();
 
-    let mut builder = AppShellBuilder::new()
-        .title("Gatehouse")
-        .supported_locales(supported_locales())
-        .default_theme(Theme::DefaultDark)
-        .supported_themes(vec![Theme::DefaultDark])
-        .links(vec![Link::new(
-            "stylesheet",
-            &ui_asset_path("/css/gatehouse.css"),
-        )])
-        .with_nav(false)
-        .resources_prefix(ui_path(""));
-
-    builder = match header {
-        Some(header) => builder.header(header),
-        None => builder.with_header(false),
-    };
-
-    builder.build()
+    forge_ui::app_shell("Gatehouse", "gatehouse.css", header)
 }
 
 static UI_SHELL_HOME: LazyLock<AppShell> =
-    LazyLock::new(|| shell(Some(ui_header("ui_home_title", true, false, true, true))));
+    LazyLock::new(|| shell(Some(ui_header("ui_home_title", true, false, true))));
 
 // The admin pages sit under the home page, so the header offers a way back to it
 // as well as a way out of the realm.
 static UI_SHELL_ADMIN: LazyLock<AppShell> =
-    LazyLock::new(|| shell(Some(ui_header("ui_admin_title", true, true, true, true))));
+    LazyLock::new(|| shell(Some(ui_header("ui_admin_title", true, true, true))));
 
 // The account page sits under the home page too, same as admin.
 static UI_SHELL_ACCOUNT: LazyLock<AppShell> =
-    LazyLock::new(|| shell(Some(ui_header("ui_account_title", true, true, false, true))));
+    LazyLock::new(|| shell(Some(ui_header("ui_account_title", true, true, true))));
 
 // The login page carries its own bar on the card, so the shell has no top
 // panel: there is nowhere to go home to and nothing to log out of either.
@@ -57,35 +36,17 @@ fn ui_header(
     title_key: &str,
     show_locale_switch: bool,
     show_home: bool,
-    show_account: bool,
     show_logout: bool,
 ) -> Element {
     let title = h2().attr("data-i18n", title_key);
 
-    header()
-        .child(div().class("left-panel").child(title))
-        .child(
-            div()
-                .class("right-panel")
-                .child_opt(
-                    show_locale_switch.then(|| locale_switch(Some(supported_locales()), None)),
-                )
-                .child_opt(show_home.then(|| {
-                    a().attr("href", ui_path("/home"))
-                        .class("button")
-                        .attr("data-i18n", "ui_home_button")
-                }))
-                .child_opt(show_account.then(|| {
-                    a().attr("href", ui_path("/account"))
-                        .class("button")
-                        .attr("data-i18n", "ui_account_button")
-                }))
-                .child_opt(show_logout.then(|| {
-                    a().attr("href", ui_path("/logout"))
-                        .class("button")
-                        .attr("data-i18n", "ui_logout")
-                })),
-        )
+    forge_ui::TopBar {
+        show_home,
+        show_locale_switch,
+        user_menu_profile: show_logout.then(|| ui_path("/account")),
+        ..Default::default()
+    }
+    .build(title)
 }
 
 /// Writes `dist/assets` before the first request, or an early stylesheet fetch gets stale content.

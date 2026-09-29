@@ -9,14 +9,7 @@ pub mod shared;
 pub mod vllm;
 
 pub fn ensure_switchboard_css() {
-    let css = switchboard_css_rules()
-        .iter()
-        .map(CssRule::render)
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    let _ = std::fs::create_dir_all("dist/assets/css");
-    let _ = std::fs::write("dist/assets/css/switchboard.css", css);
+    forge_ui::write_css("switchboard.css", &switchboard_css_rules());
 }
 
 fn switchboard_css_rules() -> Vec<CssRule> {
@@ -24,6 +17,7 @@ fn switchboard_css_rules() -> Vec<CssRule> {
     rules.extend(css::layout_rules());
     rules.extend(css::home_rules());
     rules.extend(css::login_rules());
+    rules.extend(forge_ui::css_rules());
     rules.extend(css::meta_rules());
     rules.extend(header::header_rules());
     rules.extend(shared::shared_dashboard_rules());

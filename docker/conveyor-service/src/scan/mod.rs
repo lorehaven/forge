@@ -176,7 +176,10 @@ async fn collect_job_checks(
         // Keeping only stdout here is what makes joining possibly-many log
         // lines back into one JSON document safe - nothing from a
         // concurrently-written stderr line can land between them.
-        let json_only = matches!(kind, CheckKind::Lint | CheckKind::Machete | CheckKind::Audit);
+        let json_only = matches!(
+            kind,
+            CheckKind::Lint | CheckKind::Machete | CheckKind::Audit
+        );
         let lines: Vec<&str> = logs
             .iter()
             .filter(|chunk| chunk.at >= start && chunk.at <= end)
@@ -286,7 +289,11 @@ pub fn parse_lint(lines: &[&str]) -> Option<(String, Vec<Finding>)> {
         let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) else {
             continue;
         };
-        if value.get("reason").and_then(serde_json::Value::as_str).is_none() {
+        if value
+            .get("reason")
+            .and_then(serde_json::Value::as_str)
+            .is_none()
+        {
             continue;
         }
         saw_cargo_json = true;
@@ -311,9 +318,9 @@ pub fn parse_lint(lines: &[&str]) -> Option<(String, Vec<Finding>)> {
             .get("spans")
             .and_then(serde_json::Value::as_array)
             .and_then(|spans| {
-                spans
-                    .iter()
-                    .find(|span| span.get("is_primary").and_then(serde_json::Value::as_bool) == Some(true))
+                spans.iter().find(|span| {
+                    span.get("is_primary").and_then(serde_json::Value::as_bool) == Some(true)
+                })
             })
             .and_then(|span| {
                 let file = span.get("file_name")?.as_str()?;
@@ -436,8 +443,12 @@ fn audit_entry(entry: &serde_json::Value) -> Option<Finding> {
         .map(str::to_string);
 
     let package = entry.get("package");
-    let krate = package.and_then(|p| p.get("name")).and_then(serde_json::Value::as_str);
-    let version = package.and_then(|p| p.get("version")).and_then(serde_json::Value::as_str);
+    let krate = package
+        .and_then(|p| p.get("name"))
+        .and_then(serde_json::Value::as_str);
+    let version = package
+        .and_then(|p| p.get("version"))
+        .and_then(serde_json::Value::as_str);
     let location = match (krate, version) {
         (Some(krate), Some(version)) => Some(format!("{krate} {version}")),
         (Some(krate), None) => Some(krate.to_string()),

@@ -2,14 +2,7 @@ use quench_starter::actix::routers::ui::common::css as shared;
 use quench_web::prelude::CssRule;
 
 pub fn ensure_workbench_css() {
-    let css = workbench_css_rules()
-        .iter()
-        .map(CssRule::render)
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    let _ = std::fs::create_dir_all("dist/assets/css");
-    let _ = std::fs::write("dist/assets/css/workbench.css", css);
+    forge_ui::write_css("workbench.css", &workbench_css_rules());
 }
 
 fn workbench_css_rules() -> Vec<CssRule> {
@@ -18,6 +11,7 @@ fn workbench_css_rules() -> Vec<CssRule> {
     rules.extend(shared::layout_rules());
     rules.extend(shared::home_rules());
     rules.extend(shared::login_rules());
+    rules.extend(forge_ui::css_rules());
     rules.extend(shared::meta_rules());
     rules.extend(form_rules());
     rules.extend(board_rules());

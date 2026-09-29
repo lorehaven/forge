@@ -12,52 +12,22 @@ use std::sync::LazyLock;
 
 mod css;
 
-const SUPPORTED_LOCALES: [&str; 5] = ["en-US", "pl-PL", "es-ES", "de-DE", "fr-FR"];
-
-fn supported_locales() -> Vec<String> {
-    SUPPORTED_LOCALES.iter().map(|s| s.to_string()).collect()
-}
+pub use forge_ui::{SUPPORTED_LOCALES, supported_locales};
 
 static UI_SHELL: LazyLock<AppShell> = LazyLock::new(|| {
     css::ensure_workbench_css();
 
-    AppShellBuilder::new()
-        .title("Workbench")
-        .supported_locales(supported_locales())
-        .default_theme(Theme::DefaultDark)
-        .supported_themes(vec![Theme::DefaultDark])
-        .header(ui_header())
-        .links(vec![Link::new(
-            "stylesheet",
-            &ui_asset_path("/css/workbench.css"),
-        )])
-        .with_nav(false)
-        .resources_prefix(ui_path(""))
-        .build()
+    forge_ui::app_shell("Workbench", "workbench.css", Some(ui_header()))
 });
 
 fn ui_header() -> Element {
-    header()
-        .child(
-            div()
-                .class("left-panel")
-                .child(h2().attr("data-i18n", "header_label")),
-        )
-        .child(
-            div()
-                .class("right-panel")
-                .child(locale_switch(Some(supported_locales()), None))
-                .child(
-                    a().attr("href", ui_path("/home"))
-                        .class("button")
-                        .attr("data-i18n", "ui_home_button"),
-                )
-                .child(
-                    a().attr("href", ui_path("/logout"))
-                        .class("button")
-                        .attr("data-i18n", "ui_logout"),
-                ),
-        )
+    forge_ui::TopBar {
+        show_home: true,
+        show_locale_switch: true,
+        user_menu_profile: Some(forge_ui::gatehouse_profile_url()),
+        ..Default::default()
+    }
+    .build(h2().attr("data-i18n", "header_label"))
 }
 
 #[get("/ui/assets/{path:.*}")]

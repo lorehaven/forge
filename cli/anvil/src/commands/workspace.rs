@@ -290,7 +290,9 @@ pub fn semver_check(package: &str, baseline_rev: Option<String>) -> Result<()> {
             print_status(
                 Tone::Info,
                 "anvil",
-                &format!("{package} has no earlier version to diff against - comparing against an empty API"),
+                &format!(
+                    "{package} has no earlier version to diff against - comparing against an empty API"
+                ),
             );
             let dir = empty_api_baseline(package)?;
             cmd.arg("--baseline-root").arg(dir.path());

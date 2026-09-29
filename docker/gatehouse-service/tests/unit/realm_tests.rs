@@ -99,6 +99,7 @@ fn every_realm_error_has_a_status_message_and_i18n_key() {
         RealmError::UnknownTemplate,
         RealmError::RolesRequireAdmin,
         RealmError::MfaCodeInvalid,
+        RealmError::CurrentPasswordInvalid,
         RealmError::Internal,
     ];
     for error in errors {

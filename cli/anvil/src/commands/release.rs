@@ -83,7 +83,8 @@ pub fn release(config: &Config, package: Option<String>, all: bool, dry_run: boo
     }
 
     // A real run only ever touches what actually needs releasing.
-    let mut plan: Vec<ReleasePlanItem> = plan.into_iter().filter(|item| item.needs_release).collect();
+    let mut plan: Vec<ReleasePlanItem> =
+        plan.into_iter().filter(|item| item.needs_release).collect();
     ensure_release_plan_non_empty(all, &plan)?;
 
     // Sort plan by layer for execution order

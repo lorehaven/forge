@@ -4,14 +4,7 @@ use quench_starter::actix::routers::ui::common::css;
 use quench_web::prelude::CssRule;
 
 pub fn ensure_gatehouse_css() {
-    let rules = gatehouse_css_rules()
-        .iter()
-        .map(CssRule::render)
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    let _ = std::fs::create_dir_all("dist/assets/css");
-    let _ = std::fs::write("dist/assets/css/gatehouse.css", rules);
+    forge_ui::write_css("gatehouse.css", &gatehouse_css_rules());
 }
 
 /// Shared sets plus the admin pages' own rows - just the user list/permission
@@ -22,6 +15,7 @@ pub fn gatehouse_css_rules() -> Vec<CssRule> {
     rules.extend(css::meta_rules());
     rules.extend(css::home_rules());
     rules.extend(css::login_rules());
+    rules.extend(forge_ui::css_rules());
     rules.extend(admin_rules());
     rules
 }
@@ -123,6 +117,85 @@ pub fn admin_rules() -> Vec<CssRule> {
                             .property("margin", "0")
                             .property("font-weight", "400"),
                     ),
+            ),
+        // Label left, control right, on every account form. One height for every
+        // control so text inputs, selects, the file picker and checkboxes line up.
+        CssRule::new(".form-row")
+            .property("display", "flex")
+            .property("justify-content", "space-between")
+            .property("align-items", "center")
+            .property("gap", "1rem")
+            .property("margin", "0.4rem 0")
+            .property("min-height", "3.5rem")
+            .child(CssRule::new("label").property("margin", "0")),
+        CssRule::new(".form-row > input,\n.form-row > select,\n.form-row > .file-picker")
+            .property("flex", "0 1 60%")
+            .property("width", "60%")
+            .property("height", "3.5rem")
+            .property("box-sizing", "border-box")
+            .property("margin", "0"),
+        CssRule::new(".form-row > select")
+            .property("background-color", "var(--bs-gray-800)")
+            .property("padding", "0.8rem")
+            .property("font-size", "1.2rem"),
+        CssRule::new(".form-row > input[type=checkbox]")
+            .property("flex", "0 0 auto")
+            .property("width", "1.4rem")
+            .property("height", "1.4rem")
+            .property("padding", "0")
+            .property("accent-color", "var(--bs-success-700)"),
+        CssRule::new(".file-picker")
+            .property("display", "flex")
+            .property("position", "relative")
+            .child(
+                CssRule::new(".file-picker-native")
+                    .property("position", "absolute")
+                    .property("opacity", "0")
+                    .property("width", "1px")
+                    .property("height", "1px")
+                    .property("pointer-events", "none"),
+            )
+            .child(
+                CssRule::new("label.file-picker-button")
+                    .property("display", "flex")
+                    .property("align-items", "center")
+                    .property("gap", "0.6rem")
+                    .property("flex", "0 0 auto")
+                    .property("padding", "0 1rem")
+                    .property("font-size", "1.2rem")
+                    .property("cursor", "pointer")
+                    .property("color", "var(--bs-gray-300)")
+                    .property("background-color", "var(--bs-success-900)")
+                    .property("border-radius", "0.3rem 0 0 0.3rem")
+                    .property("transition", "background-color 0.3s ease")
+                    .child(
+                        CssRule::new("&:hover")
+                            .property("background-color", "var(--bs-success-800)"),
+                    ),
+            )
+            .child(
+                CssRule::new("input.file-picker-name")
+                    .property("flex", "1 1 auto")
+                    .property("min-width", "0")
+                    .property("height", "100%")
+                    .property("box-sizing", "border-box")
+                    .property("border-radius", "0 0.3rem 0.3rem 0")
+                    .property("cursor", "default"),
+            ),
+        CssRule::new("img.account-avatar")
+            .property("border-radius", "50%")
+            .property("object-fit", "cover")
+            .property("width", "4rem")
+            .property("height", "4rem"),
+        CssRule::new(".mfa-qr")
+            .property("display", "flex")
+            .property("justify-content", "center")
+            .property("margin", "0.5rem 0")
+            .child(
+                CssRule::new("img")
+                    .property("background", "#fff")
+                    .property("padding", "0.5rem")
+                    .property("border-radius", "0.3rem"),
             ),
         CssRule::new(".admin-service")
             .property("margin", "0")

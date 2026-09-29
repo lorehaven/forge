@@ -10,14 +10,7 @@ pub mod runs;
 pub mod status;
 
 pub fn ensure_conveyor_css() {
-    let rules = conveyor_css_rules()
-        .iter()
-        .map(CssRule::render)
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    let _ = std::fs::create_dir_all("dist/assets/css");
-    let _ = std::fs::write("dist/assets/css/conveyor.css", rules);
+    forge_ui::write_css("conveyor.css", &conveyor_css_rules());
 }
 
 fn conveyor_css_rules() -> Vec<CssRule> {
@@ -26,6 +19,7 @@ fn conveyor_css_rules() -> Vec<CssRule> {
     rules.extend(css::meta_rules());
     rules.extend(css::home_rules());
     rules.extend(css::login_rules());
+    rules.extend(forge_ui::css_rules());
     rules.extend(status::status_rules());
     rules.extend(runs::runs_rules());
     rules.extend(projects::projects_rules());

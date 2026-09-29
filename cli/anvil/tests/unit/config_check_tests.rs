@@ -77,11 +77,9 @@ fn a_module_missing_packages_and_dockerfile_reports_both() {
 fn an_empty_packages_list_is_reported() {
     let toml = "[docker.modules.core]\npackages = []\ndockerfile = \"Dockerfile\"\n";
     let issues = validate(toml).expect("parses");
-    assert!(
-        issues
-            .iter()
-            .any(|i| i.path == "docker.modules.core.packages" && i.message.contains("must not be empty"))
-    );
+    assert!(issues.iter().any(
+        |i| i.path == "docker.modules.core.packages" && i.message.contains("must not be empty")
+    ));
 }
 
 #[test]
@@ -91,7 +89,8 @@ fn an_empty_dockerfile_is_reported() {
     assert!(
         issues
             .iter()
-            .any(|i| i.path == "docker.modules.core.dockerfile" && i.message.contains("must not be empty"))
+            .any(|i| i.path == "docker.modules.core.dockerfile"
+                && i.message.contains("must not be empty"))
     );
 }
 
@@ -125,7 +124,8 @@ bogus = "x"
     assert!(
         issues
             .iter()
-            .any(|i| i.path == "docker.modules.core.service.bogus" && i.message.contains("unknown field"))
+            .any(|i| i.path == "docker.modules.core.service.bogus"
+                && i.message.contains("unknown field"))
     );
 }
 
@@ -191,7 +191,8 @@ FOO = 1
 "#;
     let issues = validate(toml).expect("parses");
     assert!(issues.iter().any(|i| {
-        i.path == "docker.modules.core.service.build_args.FOO" && i.message.contains("expected a string")
+        i.path == "docker.modules.core.service.build_args.FOO"
+            && i.message.contains("expected a string")
     }));
 }
 
@@ -208,7 +209,8 @@ fn an_empty_release_commit_message_template_is_reported() {
     assert!(
         issues
             .iter()
-            .any(|i| i.path == "release.commit_message_template" && i.message.contains("must not be empty"))
+            .any(|i| i.path == "release.commit_message_template"
+                && i.message.contains("must not be empty"))
     );
 }
 
@@ -233,8 +235,16 @@ bogus_override_field = 1
     // detectable, and a single run finds all of them, not just the first.
     assert!(issues.iter().any(|i| i.path == "bogus_top_level"));
     assert!(issues.iter().any(|i| i.path == "docker.bogus_docker_field"));
-    assert!(issues.iter().any(|i| i.path == "docker.modules.core.packages"));
-    assert!(issues.iter().any(|i| i.path == "docker.modules.core.dockerfile"));
+    assert!(
+        issues
+            .iter()
+            .any(|i| i.path == "docker.modules.core.packages")
+    );
+    assert!(
+        issues
+            .iter()
+            .any(|i| i.path == "docker.modules.core.dockerfile")
+    );
     assert!(
         issues
             .iter()

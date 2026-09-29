@@ -25,6 +25,8 @@ pub enum RealmError {
     RolesRequireAdmin,
     /// Enrollment code didn't match - MFA stays off until one succeeds.
     MfaCodeInvalid,
+    /// "Change password" needs the current one, and it did not match.
+    CurrentPasswordInvalid,
     Internal,
 }
 
@@ -42,7 +44,7 @@ impl RealmError {
             | Self::SelfDelete
             | Self::SelfDisable => StatusCode::CONFLICT,
             Self::RolesRequireAdmin => StatusCode::FORBIDDEN,
-            Self::MfaCodeInvalid => StatusCode::BAD_REQUEST,
+            Self::MfaCodeInvalid | Self::CurrentPasswordInvalid => StatusCode::BAD_REQUEST,
             Self::Internal => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -65,6 +67,7 @@ impl RealmError {
                 "only an admin may assign the admin or service role".to_string()
             }
             Self::MfaCodeInvalid => "that code did not match - try again".to_string(),
+            Self::CurrentPasswordInvalid => "the current password is not correct".to_string(),
             Self::Internal => "the change could not be saved".to_string(),
         }
     }
@@ -85,6 +88,7 @@ impl RealmError {
             Self::UnknownTemplate => "ui_admin_error_unknown_template",
             Self::RolesRequireAdmin => "ui_admin_error_roles_require_admin",
             Self::MfaCodeInvalid => "ui_admin_error_mfa_code_invalid",
+            Self::CurrentPasswordInvalid => "ui_account_error_current_password",
             Self::Internal => "ui_admin_error_internal",
         }
     }
@@ -290,6 +294,44 @@ pub async fn update(
     }
     tracing::info!("updated user {username}");
     Ok(updated)
+}
+
+/// Self-service password change: the current password must verify first. A wrong
+/// one counts toward the same lockout as a failed login, so a hijacked session
+/// can't be used to guess it.
+pub async fn change_password(
+    db: &Db,
+    catalog: &PermissionCatalog,
+    sessions: &Arc<SessionDb>,
+    username: &str,
+    current: &str,
+    new: &str,
+) -> RealmResult<User> {
+    if new.is_empty() {
+        return Err(RealmError::PasswordEmpty);
+    }
+    let repo = repo(db);
+    let mut user = get(db, username).await?;
+
+    let verify_user = user.clone();
+    let plain = current.to_string();
+    let verified = tokio::task::spawn_blocking(move || verify_user.verify_password(&plain))
+        .await
+        .unwrap_or(false);
+    if !verified {
+        let (max_attempts, lockout_duration) = lockout_policy();
+        user.record_failed_login(max_attempts, lockout_duration);
+        repo.update(&user)
+            .await
+            .map_err(|err| internal("failed to record a failed password check", err))?;
+        return Err(RealmError::CurrentPasswordInvalid);
+    }
+
+    let changes = UserChanges {
+        password: Some(new.to_string()),
+        ..UserChanges::default()
+    };
+    update(db, catalog, sessions, username, false, username, changes).await
 }
 
 pub async fn replace_permissions(

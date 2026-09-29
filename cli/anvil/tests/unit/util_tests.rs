@@ -1,4 +1,6 @@
-use anvil::util::{log_file_path, print_log_tail, run_command, run_command_json, run_command_streamed};
+use anvil::util::{
+    log_file_path, print_log_tail, run_command, run_command_json, run_command_streamed,
+};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;

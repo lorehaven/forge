@@ -108,7 +108,9 @@ fn previous_version_rev_finds_the_commit_before_the_last_change_to_a_tracked_fil
     let rev = previous_version_rev(&manifest);
     std::env::set_current_dir(cwd).unwrap();
 
-    let rev = rev.expect("git log itself succeeds").expect("has an earlier commit");
+    let rev = rev
+        .expect("git log itself succeeds")
+        .expect("has an earlier commit");
     assert_eq!(rev.len(), 40, "a full git SHA");
 }
 
@@ -158,7 +160,8 @@ fn empty_api_baseline_writes_a_stub_crate_matching_the_package_name() {
         std::fs::read_to_string(dir.path().join("Cargo.toml")).expect("stub Cargo.toml exists");
     assert!(manifest.contains("name = \"some-package\""), "{manifest}");
 
-    let lib = std::fs::read_to_string(dir.path().join("src/lib.rs")).expect("stub src/lib.rs exists");
+    let lib =
+        std::fs::read_to_string(dir.path().join("src/lib.rs")).expect("stub src/lib.rs exists");
     assert_eq!(lib, "", "an empty API to diff the real crate against");
 }
 
@@ -261,5 +264,7 @@ fn parse_machete_output_reads_one_finding_per_crate_block() {
 
 #[test]
 fn parse_machete_output_ignores_unrecognised_text() {
-    assert!(parse_machete_output("Analyzing dependencies of crates in this directory...\n").is_empty());
+    assert!(
+        parse_machete_output("Analyzing dependencies of crates in this directory...\n").is_empty()
+    );
 }

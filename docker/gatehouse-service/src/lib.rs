@@ -4,6 +4,7 @@
 #![allow(clippy::result_large_err)]
 
 pub mod api;
+pub mod avatar;
 pub mod bootstrap;
 pub mod catalog;
 pub mod clients;

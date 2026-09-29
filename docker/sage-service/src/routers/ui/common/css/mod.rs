@@ -7,14 +7,7 @@ pub mod initializing;
 pub mod projects;
 
 pub fn ensure_sage_css() {
-    let css = sage_css_rules()
-        .iter()
-        .map(CssRule::render)
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    let _ = std::fs::create_dir_all("dist/assets/css");
-    let _ = std::fs::write("dist/assets/css/sage.css", css);
+    forge_ui::write_css("sage.css", &sage_css_rules());
 }
 
 fn sage_css_rules() -> Vec<CssRule> {
@@ -22,6 +15,7 @@ fn sage_css_rules() -> Vec<CssRule> {
     rules.extend(css::layout_rules());
     rules.extend(css::home_rules());
     rules.extend(css::login_rules());
+    rules.extend(forge_ui::css_rules());
     rules.extend(css::meta_rules());
     rules.extend(chat::chat_rules());
     rules.extend(files::files_rules());

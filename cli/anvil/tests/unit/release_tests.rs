@@ -3,11 +3,11 @@ use anvil::commands::release::{
     DEFAULT_COMMIT_MESSAGE_TEMPLATE, ReleaseKind, ReleasePlanItem, build_release_plan, bump_patch,
     bump_patch_versions, changed_workspace_dependencies, collect_package_dependencies,
     compute_package_layers, ensure_release_plan_non_empty, ensure_release_tags_absent,
-    get_transitive_dependencies, git_show_file_at_tag, is_docker_package,
-    is_release_relevant_file, latest_package_tag, package_changed_since_tag, package_tag_name,
+    get_transitive_dependencies, git_show_file_at_tag, is_docker_package, is_release_relevant_file,
+    latest_package_tag, package_changed_since_tag, package_tag_name,
     print_dry_run_plan_with_layers, release_action_label, render_commit_message,
-    resolve_release_targets, resolve_single_package, set_manifest_version,
-    should_install_package, tag_exists, workspace_dependencies_table,
+    resolve_release_targets, resolve_single_package, set_manifest_version, should_install_package,
+    tag_exists, workspace_dependencies_table,
 };
 use anvil::config::{Config, DockerConfig, DockerModuleConfig, InstallConfig};
 use serde_json::json;
@@ -78,10 +78,7 @@ fn render_commit_message_supports_a_changelog_placeholder() {
         },
     ];
     let rendered = render_commit_message("release ({count})\n\n{changelog}", &plan);
-    assert_eq!(
-        rendered,
-        "release (2)\n\n- anvil v1.0.1\n- riveter v2.0.0"
-    );
+    assert_eq!(rendered, "release (2)\n\n- anvil v1.0.1\n- riveter v2.0.0");
 }
 
 #[test]

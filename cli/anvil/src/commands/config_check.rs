@@ -33,7 +33,12 @@ impl fmt::Display for ConfigIssue {
 }
 
 const TOP_FIELDS: &[&str] = &["docker", "install", "release"];
-const DOCKER_FIELDS: &[&str] = &["registry", "cargo_registry", "cargo_registry_index", "modules"];
+const DOCKER_FIELDS: &[&str] = &[
+    "registry",
+    "cargo_registry",
+    "cargo_registry_index",
+    "modules",
+];
 const MODULE_FIELDS: &[&str] = &["packages", "dockerfile"];
 const OVERRIDE_FIELDS: &[&str] = &[
     "dockerfile",
@@ -56,7 +61,12 @@ fn join(path: &str, key: &str) -> String {
 
 /// Every key in `table` that isn't in `known` - the "malformed block" case
 /// this command exists for: serde silently drops these instead of erroring.
-fn unknown_fields(table: &toml::value::Table, known: &[&str], path: &str, issues: &mut Vec<ConfigIssue>) {
+fn unknown_fields(
+    table: &toml::value::Table,
+    known: &[&str],
+    path: &str,
+    issues: &mut Vec<ConfigIssue>,
+) {
     for key in table.keys() {
         if !known.contains(&key.as_str()) {
             issues.push(ConfigIssue {
@@ -93,7 +103,11 @@ fn require<'a>(
     }
 }
 
-fn expect_table<'a>(value: &'a Value, path: &str, issues: &mut Vec<ConfigIssue>) -> Option<&'a toml::value::Table> {
+fn expect_table<'a>(
+    value: &'a Value,
+    path: &str,
+    issues: &mut Vec<ConfigIssue>,
+) -> Option<&'a toml::value::Table> {
     value.as_table().or_else(|| {
         issues.push(ConfigIssue {
             path: path.to_string(),
@@ -283,7 +297,9 @@ fn check_package_override(
     if !packages.contains(&package.to_string()) {
         issues.push(ConfigIssue {
             path: override_path.clone(),
-            message: format!("overrides package `{package}`, which is not in this module's `packages` list"),
+            message: format!(
+                "overrides package `{package}`, which is not in this module's `packages` list"
+            ),
         });
     }
 
@@ -298,12 +314,14 @@ fn check_package_override(
     if table.contains_key("registry") && table.contains_key("registries") {
         issues.push(ConfigIssue {
             path: override_path.clone(),
-            message: "sets both the deprecated `registry` and `registries` - use `registries` only".to_string(),
+            message: "sets both the deprecated `registry` and `registries` - use `registries` only"
+                .to_string(),
         });
     }
 
     if let Some(build_args) = table.get("build_args")
-        && let Some(build_args_table) = expect_table(build_args, &format!("{override_path}.build_args"), issues)
+        && let Some(build_args_table) =
+            expect_table(build_args, &format!("{override_path}.build_args"), issues)
     {
         for (arg_name, arg_value) in build_args_table {
             expect_string(
@@ -326,7 +344,11 @@ pub fn check() -> Result<()> {
     let issues = match validate(&content) {
         Ok(issues) => issues,
         Err(err) => {
-            print_status(Tone::Error, "anvil", &format!(".anvil.toml is not valid TOML: {err}"));
+            print_status(
+                Tone::Error,
+                "anvil",
+                &format!(".anvil.toml is not valid TOML: {err}"),
+            );
             anyhow::bail!("config check failed");
         }
     };

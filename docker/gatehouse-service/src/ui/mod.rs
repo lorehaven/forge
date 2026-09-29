@@ -5,6 +5,7 @@ use quench_http::prelude::{FromRequest, HttpError, Request, Response, get};
 use quench_starter::common::routes::with_base_path;
 
 pub mod common;
+pub mod locale;
 pub mod pages;
 
 /// `/ui` is where the root redirects land: the service list when there is a

@@ -150,3 +150,5 @@ ui_login_password = Password
 ui_login_submit = Log in
 ui_login_invalid_credentials = Invalid credentials
 ui_logout = Log out
+ui_profile_edit = Edit profile
+ui_user_menu = User menu

@@ -62,3 +62,5 @@ ui_login_password = Contraseña
 ui_login_submit = Entrar
 ui_login_invalid_credentials = Credenciales inválidas
 ui_logout = Cerrar sesión
+ui_profile_edit = Editar perfil
+ui_user_menu = Menú de usuario

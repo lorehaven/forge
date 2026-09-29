@@ -30,6 +30,7 @@ csv = { workspace = true }
 dashmap = { workspace = true }
 envmnt = { workspace = true }
 futures-util = { workspace = true }
+forge-ui = { workspace = true }
 http = { workspace = true }
 pdf-extract = { workspace = true }
 pulldown-cmark = { workspace = true }
@@ -43,7 +44,6 @@ quench-starter = { workspace = true }
 quench-web = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
-rustls = { workspace = true }
 scraper = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

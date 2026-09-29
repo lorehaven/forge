@@ -12,14 +12,7 @@ pub mod utility;
 pub fn ensure_warehouse_css() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| {
-        let css = warehouse_css_rules()
-            .iter()
-            .map(CssRule::render)
-            .collect::<Vec<_>>()
-            .join("\n");
-
-        let _ = std::fs::create_dir_all("dist/assets/css");
-        let _ = std::fs::write("dist/assets/css/warehouse.css", css);
+        forge_ui::write_css("warehouse.css", &warehouse_css_rules());
     });
 }
 
@@ -35,5 +28,6 @@ pub fn warehouse_css_rules() -> Vec<CssRule> {
     rules.extend(css::meta_rules());
     rules.extend(css::home_rules());
     rules.extend(css::login_rules());
+    rules.extend(forge_ui::css_rules());
     rules
 }

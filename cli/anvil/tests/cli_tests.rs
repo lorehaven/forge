@@ -71,7 +71,9 @@ fn machete_json_runs_through_the_full_binary_with_a_banner_free_stdout() {
     let report: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("stdout is a single JSON document");
     assert!(
-        report.get("findings").is_some_and(serde_json::Value::is_array),
+        report
+            .get("findings")
+            .is_some_and(serde_json::Value::is_array),
         "report has a `findings` array: {report}"
     );
 }

@@ -52,6 +52,17 @@ pub fn provisioning_uri(secret: &str, username: &str) -> anyhow::Result<String> 
         .map_err(|err| anyhow::anyhow!("failed to build provisioning URI: {err}"))
 }
 
+/// The provisioning URI as an inline SVG data URI, so the page needs no image route.
+pub fn provisioning_qr_data_uri(uri: &str) -> anyhow::Result<String> {
+    use base64::Engine;
+    let svg = qrcode::QrCode::new(uri.as_bytes())?
+        .render::<qrcode::render::svg::Color>()
+        .min_dimensions(200, 200)
+        .build();
+    let encoded = base64::engine::general_purpose::STANDARD.encode(svg);
+    Ok(format!("data:image/svg+xml;base64,{encoded}"))
+}
+
 /// Whether `code` is a valid current TOTP code for `secret` (base32).
 pub fn verify_code(secret: &str, code: &str) -> bool {
     let Ok(secret) = Secret::try_from_base32(secret) else {
