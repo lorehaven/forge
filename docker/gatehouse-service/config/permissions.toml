@@ -11,6 +11,11 @@
 # Services
 # ---------------------------------------------------------------------------
 #
+# `home = true` gives the service a card on gatehouse's home page, described by
+# `description` (English; `ui_service_<name>_title`/`_desc` in the i18n files
+# translate it). The card appears once `<NAME>_UI_URL` (or `<NAME>_URL`) is set
+# and `FEATURE_<NAME>_ENABLED` is not turned off.
+#
 # `actions` is the full set of names grantable on that service - no ordering,
 # no implication between them ("write" does not imply "read"). `RequireWrite`
 # (in quench-auth) checks specifically for the `"write"` action, so a service
@@ -18,10 +23,14 @@
 
 [services.sage]
 label = "Sage"
+home = true
+description = "AI workspace: conversations, projects and files."
 actions = ["read", "write"]
 
 [services.warehouse]
 label = "Warehouse"
+home = true
+description = "Registries for crates, images and files."
 actions = ["read", "write"]
 # Lets a grant name one dynamic storage instead of "every storage warehouse
 # holds" - see `warehouse:storage:<name>:<action>` in quench-auth. A
@@ -31,6 +40,8 @@ resource_types = ["storage"]
 
 [services.conveyor]
 label = "Conveyor"
+home = true
+description = "Pipelines, builds and deployments."
 actions = ["read", "write"]
 # Lets a grant name one project (or an ancestor node, covering everything
 # nested under it) - see `conveyor:project:<id>:<action>` in quench-auth.
@@ -38,10 +49,14 @@ resource_types = ["project"]
 
 [services.switchboard]
 label = "Switchboard"
+home = true
+description = "Model orchestration and GPU instances."
 actions = ["read", "launch", "stop", "delete-model"]
 
 [services.workbench]
 label = "Workbench"
+home = true
+description = "Projects, issues and boards."
 actions = ["read", "write"]
 # Lets a grant name one project - see `workbench:project:<id>:<action>` in
 # quench-auth. Workbench's projects are flat, so this covers exactly the

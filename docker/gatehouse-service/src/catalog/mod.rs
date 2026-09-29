@@ -15,6 +15,20 @@ struct ServiceEntry {
     /// `project`) - enables `<resource_type>:<resource_id>:<action>` grants.
     #[serde(default)]
     resource_types: Vec<String>,
+    /// Offer this service as a card on gatehouse's home page. Off by default:
+    /// gatehouse's own entry, or a backend with no UI, has nothing to link to.
+    #[serde(default)]
+    home: bool,
+    /// English text for the card until (or unless) `ui_service_<name>_desc` translates it.
+    #[serde(default)]
+    description: Option<String>,
+}
+
+/// A service the home page may offer - what the catalog knows; the URL comes from the environment.
+pub struct HomeService<'a> {
+    pub name: &'a str,
+    pub label: &'a str,
+    pub description: Option<&'a str>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -82,6 +96,19 @@ impl PermissionCatalog {
     /// Every service, in file order - also the realm's audience list (see `main.rs`).
     pub fn service_names(&self) -> impl Iterator<Item = &str> {
         self.services.keys().map(String::as_str)
+    }
+
+    /// Services that asked for a home-page card, in name order.
+    pub fn home_services(&self) -> Vec<HomeService<'_>> {
+        self.services
+            .iter()
+            .filter(|(_, entry)| entry.home)
+            .map(|(name, entry)| HomeService {
+                name,
+                label: entry.label.as_deref().unwrap_or(name),
+                description: entry.description.as_deref(),
+            })
+            .collect()
     }
 
     pub fn label<'a>(&'a self, service: &'a str) -> &'a str {

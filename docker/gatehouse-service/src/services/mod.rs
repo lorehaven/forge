@@ -1,61 +1,42 @@
-//! Services gatehouse can send you to - shown when URL configured and flag not off.
+//! Services gatehouse can send you to - the catalog says which exist and want a
+//! card (`home = true`); the environment says where they are and whether they
+//! are switched on. A card shows when its URL is configured and its feature
+//! flag is not off.
+
+use crate::catalog::PermissionCatalog;
 
 pub struct ServiceLink {
     pub url: String,
-    pub title_key: &'static str,
-    pub desc_key: &'static str,
-    pub card_class: &'static str,
+    /// `ui_service_<name>_title` / `_desc`: translations, when a locale has them.
+    pub title_key: String,
+    pub desc_key: String,
+    /// Shown until a translation applies, and for a service with none.
+    pub label: String,
+    pub description: Option<String>,
+    pub card_class: String,
 }
 
-struct ServiceDefinition {
-    /// Environment prefix, e.g. `SAGE` for `SAGE_UI_URL` / `FEATURE_SAGE_ENABLED`.
-    env_prefix: &'static str,
-    title_key: &'static str,
-    desc_key: &'static str,
-    card_class: &'static str,
+/// `workbench` -> `WORKBENCH`, for `WORKBENCH_UI_URL` / `FEATURE_WORKBENCH_ENABLED`.
+fn env_prefix(name: &str) -> String {
+    name.to_ascii_uppercase().replace('-', "_")
 }
 
-const SERVICES: [ServiceDefinition; 4] = [
-    ServiceDefinition {
-        env_prefix: "CONVEYOR",
-        title_key: "ui_service_conveyor_title",
-        desc_key: "ui_service_conveyor_desc",
-        card_class: "home-card-conveyor",
-    },
-    ServiceDefinition {
-        env_prefix: "SAGE",
-        title_key: "ui_service_sage_title",
-        desc_key: "ui_service_sage_desc",
-        card_class: "home-card-sage",
-    },
-    ServiceDefinition {
-        env_prefix: "SWITCHBOARD",
-        title_key: "ui_service_switchboard_title",
-        desc_key: "ui_service_switchboard_desc",
-        card_class: "home-card-switchboard",
-    },
-    ServiceDefinition {
-        env_prefix: "WAREHOUSE",
-        title_key: "ui_service_warehouse_title",
-        desc_key: "ui_service_warehouse_desc",
-        card_class: "home-card-warehouse",
-    },
-];
-
-/// Services to offer, in declaration order.
-pub fn enabled_services() -> Vec<ServiceLink> {
-    SERVICES
-        .iter()
+/// Services to offer, in the catalog's order.
+pub fn enabled_services(catalog: &PermissionCatalog) -> Vec<ServiceLink> {
+    catalog
+        .home_services()
+        .into_iter()
         .filter_map(|service| {
-            let url = service_url(service.env_prefix)?;
-            feature_enabled(&format!("FEATURE_{}_ENABLED", service.env_prefix), true).then_some(
-                ServiceLink {
-                    url,
-                    title_key: service.title_key,
-                    desc_key: service.desc_key,
-                    card_class: service.card_class,
-                },
-            )
+            let prefix = env_prefix(service.name);
+            let url = service_url(&prefix)?;
+            feature_enabled(&format!("FEATURE_{prefix}_ENABLED"), true).then(|| ServiceLink {
+                url,
+                title_key: format!("ui_service_{}_title", service.name),
+                desc_key: format!("ui_service_{}_desc", service.name),
+                label: service.label.to_string(),
+                description: service.description.map(str::to_string),
+                card_class: format!("home-card-{}", service.name),
+            })
         })
         .collect()
 }

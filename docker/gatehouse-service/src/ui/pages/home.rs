@@ -1,11 +1,12 @@
 //! The estate's front door: every service this deployment offers, in one place.
 
-use crate::services::enabled_services;
+use crate::catalog::PermissionCatalog;
+use crate::services::{ServiceLink, enabled_services};
 use crate::ui::common::{UiPageKind, render_page};
 use async_trait::async_trait;
 use quench_auth::domain::jwt::JwtConfig;
 use quench_auth::http::routers::ui::{get_user_from_req, is_ui_authenticated};
-use quench_http::prelude::{FromRequest, HttpError, Request, Response, get};
+use quench_http::prelude::{FromRequest, HttpError, Inject, Request, Response, get};
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 
@@ -36,36 +37,36 @@ impl FromRequest for HomeAuth {
 }
 
 #[get("/ui/home")]
-pub async fn home(auth: HomeAuth) -> Response {
+pub async fn home(auth: HomeAuth, Inject(catalog): Inject<PermissionCatalog>) -> Response {
     if !auth.authenticated {
         return crate::ui::pages::auth::login_redirect();
     }
-    render_home_page(auth.admin)
+    render_home_page(auth.admin, &enabled_services(&catalog))
 }
 
 #[get("/ui/home/")]
-pub async fn home_slash(auth: HomeAuth) -> Response {
+pub async fn home_slash(auth: HomeAuth, Inject(catalog): Inject<PermissionCatalog>) -> Response {
     if !auth.authenticated {
         return crate::ui::pages::auth::login_redirect();
     }
-    render_home_page(auth.admin)
+    render_home_page(auth.admin, &enabled_services(&catalog))
 }
 
-pub fn render_home_page(admin: bool) -> Response {
-    let services = enabled_services();
-
+pub fn render_home_page(admin: bool, services: &[ServiceLink]) -> Response {
     let mut sections = div().class("home-sections");
 
     if services.is_empty() {
         sections = sections.child(empty_state("ui_home_no_services"));
     } else {
         let mut cards = div().class("home-grid");
-        for service in &services {
+        for service in services {
             cards = cards.child(service_card(
                 &service.url,
-                service.title_key,
-                service.desc_key,
-                service.card_class,
+                &service.title_key,
+                &service.label,
+                &service.desc_key,
+                service.description.as_deref().unwrap_or_default(),
+                &service.card_class,
             ));
         }
 
@@ -92,7 +93,9 @@ pub fn render_home_page(admin: bool) -> Response {
                 .child(div().class("home-grid").child(service_card(
                     &crate::ui::common::ui_path("/admin/users"),
                     "ui_admin_users_title",
+                    "",
                     "ui_admin_users_desc",
+                    "",
                     "home-card-gatehouse",
                 ))),
         );
@@ -118,19 +121,38 @@ pub fn render_home_page(admin: bool) -> Response {
     )
 }
 
-fn service_card(href: &str, title_key: &str, desc_key: &str, extra_class: &str) -> Element {
+/// `title`/`description` are the untranslated fallback text (empty where the
+/// keys are always defined).
+fn service_card(
+    href: &str,
+    title_key: &str,
+    title: &str,
+    desc_key: &str,
+    description: &str,
+    extra_class: &str,
+) -> Element {
     a().attr("href", href)
         .class(format!("home-card {extra_class}"))
         .child(
             div()
                 .class("home-card-body")
-                .child(div().class("home-card-title").attr("data-i18n", title_key))
-                .child(div().class("home-card-desc").attr("data-i18n", desc_key)),
+                .child(
+                    div()
+                        .class("home-card-title")
+                        .attr("data-i18n", title_key)
+                        .text(title),
+                )
+                .child(
+                    div()
+                        .class("home-card-desc")
+                        .attr("data-i18n", desc_key)
+                        .text(description),
+                ),
         )
         .child(div().class("home-card-arrow").text("→"))
 }
 
 pub fn register_routes() {
-    let _ = home as fn(_) -> _;
-    let _ = home_slash as fn(_) -> _;
+    let _ = home as fn(_, _) -> _;
+    let _ = home_slash as fn(_, _) -> _;
 }

@@ -54,6 +54,8 @@ ui_service_switchboard_title = Switchboard
 ui_service_switchboard_desc = Orkiestracja modeli i instancji GPU.
 ui_service_warehouse_title = Warehouse
 ui_service_warehouse_desc = Rejestry crates, obrazów i plików.
+ui_service_workbench_title = Workbench
+ui_service_workbench_desc = Projekty, zgłoszenia i tablice.
 
 ui_home_group_realm = Domena
 

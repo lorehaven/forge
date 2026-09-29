@@ -1,6 +1,6 @@
 # Gatehouse Service
 
-Gatehouse is the Forge estate's authentication service: one identity store, one login page, one session. Sage, switchboard, warehouse and conveyor verify the Ed25519-signed tokens gatehouse issues and never see a password or hold a user table of their own. It replaced a per-service `sage.users`/`switchboard.users`/`warehouse.users` split with a single `auth.users`, a shared Redis session store, and one login form (`gatehouse/ui/login`) every other service redirects a browser to. Binary and crate name: `gatehouse-service` (`docker/gatehouse-service`).
+Gatehouse is the Forge estate's authentication service: one identity store, one login page, one session. Sage, switchboard, warehouse, conveyor and workbench verify the Ed25519-signed tokens gatehouse issues and never see a password or hold a user table of their own. It replaced a per-service `sage.users`/`switchboard.users`/`warehouse.users` split with a single `auth.users`, a shared Redis session store, and one login form (`gatehouse/ui/login`) every other service redirects a browser to. Binary and crate name: `gatehouse-service` (`docker/gatehouse-service`).
 
 ## Features
 
@@ -38,7 +38,7 @@ Gatehouse is the Forge estate's authentication service: one identity store, one 
 
 ### Permission catalog and audiences
 
-`config/permissions.toml` declares `[services.*]` (label, grantable `actions`, and any `resource_types` for scoped grants like `conveyor:project:<id>:<action>`) and `[templates.*]` (named grant bundles). Gatehouse builds its JWT audience ceiling from the catalog's service list at startup — not from a `SERVICE_AUDIENCES` env var, which every *other* service in the estate still reads for its own single-service default. A token's audience is narrowed to only the services its holder was granted (`admin`/`service` roles are wildcards and get every audience); gatehouse itself is always included, since it serves the login page and refresh even for a user with no other grants.
+`config/permissions.toml` declares `[services.*]` (label, grantable `actions`, any `resource_types` for scoped grants like `conveyor:project:<id>:<action>`, and `home` / `description` for the home page) and `[templates.*]` (named grant bundles). Gatehouse builds its JWT audience ceiling from the catalog's service list at startup — not from a `SERVICE_AUDIENCES` env var, which every *other* service in the estate still reads for its own single-service default. A token's audience is narrowed to only the services its holder was granted (`admin`/`service` roles are wildcards and get every audience); gatehouse itself is always included, since it serves the login page and refresh even for a user with no other grants.
 
 A grant is `service:action` (e.g. `switchboard:launch`), enforced by whatever action a relying party's own routes declare via `Claims::can` — not a blanket read/write ladder, though a service that only needs a coarse split just lists `actions = ["read", "write"]` and gets the old two-level behaviour for free (`RequireWrite` in `quench-auth` checks specifically for `"write"`).
 
@@ -66,7 +66,7 @@ Expiry is the TTL, so nothing sweeps them; revocation is a `DEL`, so it takes ef
 
 ### The home page
 
-After signing in, `/ui/home` lists the services this deployment offers, built from a small fixed table (`src/services.rs`) of four entries — `CONVEYOR`, `SAGE`, `SWITCHBOARD`, `WAREHOUSE` — each keyed by an environment-variable prefix. A service appears when its URL is configured (`{PREFIX}_UI_URL` or `{PREFIX}_URL`) and its feature flag is not turned off (`FEATURE_{PREFIX}_ENABLED`, default `true`), so the page reflects what actually runs rather than a hardcoded list; a deployment that runs only warehouse needs no flags at all. Adding a service to the estate is a new `ServiceDefinition` entry plus its i18n strings — no other code change. The UI itself is built from the same shell, theme and generated stylesheet as every other service: `quench-starter`'s shared CSS rule sets, `AppShellBuilder` with `Theme::DefaultDark`, and the same five locales; `dist/assets` is generated at startup, so there is nothing to build or commit.
+After signing in, `/ui/home` lists the services this deployment offers. Which services exist comes from the permission catalog: an entry in `config/permissions.toml` with `home = true` (and an optional English `description`) asks for a card, titled by its `label`. Where it lives and whether it is switched on comes from the environment, keyed by the upper-cased service name: the card appears when `{NAME}_UI_URL` (or `{NAME}_URL`) is set and `FEATURE_{NAME}_ENABLED` is not turned off (default `true`), so the page reflects what actually runs — a deployment that runs only warehouse needs no flags at all. Gatehouse's own entry has no `home`, so it never gets a card. The card's text is `ui_service_<name>_title` / `ui_service_<name>_desc` when a locale defines them, and the catalog's `label` / `description` otherwise. Adding a service to the estate is therefore a stanza in `permissions.toml` plus its URL in the environment — no gatehouse code change, and the translations are optional. The UI itself is built from the same shell, theme and generated stylesheet as every other service: `quench-starter`'s shared CSS rule sets, `AppShellBuilder` with `Theme::DefaultDark`, and the same five locales; `dist/assets` is generated at startup, so there is nothing to build or commit.
 
 ### Signing and the redirect flow
 
@@ -97,8 +97,8 @@ Every other service in the estate needs `GATEHOUSE_URL` in turn: there is no per
 | `AUTH_DB_SCHEMA` | realm schema name, default `auth` |
 | `AUTH_COOKIE_NAME` / `AUTH_REFRESH_COOKIE_NAME` | session/refresh cookie names, default `forge_session` / `forge_refresh` |
 | `AUTH_COOKIE_DOMAIN` | parent domain for cross-subdomain SSO; unset means host-only |
-| `{SAGE,SWITCHBOARD,WAREHOUSE,CONVEYOR}_UI_URL` / `..._URL` | per-service links shown on `/ui/home` |
-| `FEATURE_{SAGE,SWITCHBOARD,WAREHOUSE,CONVEYOR}_ENABLED` | hide a configured service from `/ui/home` (default `true`) |
+| `{NAME}_UI_URL` / `..._URL` | per-service links shown on `/ui/home` |
+| `FEATURE_{NAME}_ENABLED` | hide a configured service from `/ui/home` (default `true`) |
 
 In local dev (`foreman.toml`) gatehouse runs on port 5443 under base path `/gatehouse` with no `needs` (it is the destination, not a client of anything). It is the one service `foreman` deliberately unsets `GATEHOUSE_URL`/`GATEHOUSE_CLIENT_ID` for.
 
