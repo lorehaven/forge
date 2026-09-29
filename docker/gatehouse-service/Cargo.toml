@@ -39,6 +39,7 @@ quench-cache = { workspace = true, features = ["redis"] }
 quench-config = { workspace = true }
 quench-db = { workspace = true }
 quench-http = { workspace = true }
+quench-mail = { workspace = true }
 quench-starter = { workspace = true }
 quench-web = { workspace = true }
 quench-web-components = { workspace = true }

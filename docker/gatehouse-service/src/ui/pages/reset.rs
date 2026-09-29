@@ -1,22 +1,22 @@
 //! Password reset by email - two public pages, request then use the link.
 
-use crate::email;
+use crate::PublicBase;
+use crate::email::{self, Recipient};
+use crate::ratelimit::{ClientIp, RateLimiter, policy};
 use crate::realm;
 use crate::tokens::{PURPOSE_RESET_PASSWORD, VerificationTokens};
 use crate::ui::common::{UiPageKind, render_page, supported_locales, ui_path};
-use async_trait::async_trait;
+use crate::ui::locale::BrowserLocale;
 use http::StatusCode;
 use quench_auth::domain::session::SessionDb;
 use quench_db::prelude::Db;
-use quench_http::prelude::{
-    Form, FromRequest, HttpError, Inject, Query, Request, Response, get, post,
-};
+use quench_http::prelude::{Form, Inject, Query, Response, get, post};
 use quench_web::prelude::*;
 use serde::Deserialize;
 use std::sync::Arc;
 
 /// Shorter than a verification link - a reset link changes the password outright.
-const RESET_TTL_SECS: u64 = 60 * 60;
+pub const RESET_TTL_SECS: u64 = 60 * 60;
 
 #[derive(Deserialize)]
 pub struct ForgotPasswordForm {
@@ -33,35 +33,32 @@ pub async fn forgot_password_page_slash() -> Response {
     render_forgot_password_page()
 }
 
-pub struct AbsoluteBase(String);
-
-#[async_trait]
-impl FromRequest for AbsoluteBase {
-    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
-        let scheme = match req.header("x-forwarded-proto") {
-            Some(scheme) => scheme.to_string(),
-            None => req
-                .container()
-                .get::<crate::ui::common::ExternalScheme>()
-                .map(|s| s.0.to_string())
-                .unwrap_or_else(|_| "https".to_string()),
-        };
-        let host = req
-            .header("x-forwarded-host")
-            .or_else(|| req.header("host"))
-            .unwrap_or("");
-        Ok(Self(format!("{scheme}://{host}")))
-    }
-}
-
 #[post("/ui/forgot-password")]
+// One DI extractor per argument - the framework has no struct-of-extractors.
+#[allow(clippy::too_many_arguments)]
 pub async fn forgot_password_submit(
-    base: AbsoluteBase,
     Form(form): Form<ForgotPasswordForm>,
     Inject(db): Inject<Db>,
     Inject(mailer): Inject<Arc<dyn email::Sender>>,
+    Inject(base): Inject<PublicBase>,
+    browser_locale: BrowserLocale,
+    ip: ClientIp,
+    Inject(limiter): Inject<RateLimiter>,
     Inject(tokens): Inject<VerificationTokens>,
 ) -> Response {
+    // Counted by what was asked (client, submitted name), never by whether the
+    // account exists - so being refused reveals nothing about it, and a refusal
+    // is the one outcome allowed to differ from the redirect below.
+    let verdict = limiter
+        .check_all(&[
+            ("reset-ip", &ip.0, policy::RESET_IP),
+            ("reset-user", &form.username, policy::RESET_USER),
+        ])
+        .await;
+    if !verdict.is_allowed() {
+        return redirect(&ui_path("/login?err=ui_login_rate_limited"));
+    }
+
     // Same redirect regardless of outcome - the caller doesn't get to learn why.
     if let Ok(user) = realm::get(&db, &form.username).await
         && let Some(email) = &user.email
@@ -73,12 +70,25 @@ pub async fn forgot_password_submit(
             Ok(token) => {
                 let link = format!(
                     "{}{}",
-                    base.0,
+                    base.as_str(),
                     ui_path(&format!("/reset-password?token={token}"))
                 );
-                mailer
-                    .send_password_reset(email, &user.username, &link)
-                    .await;
+                let recipient = Recipient {
+                    address: email,
+                    username: &user.username,
+                    locale: user
+                        .preferred_locale
+                        .as_deref()
+                        .or(browser_locale.0.as_deref()),
+                };
+                if let Err(err) = mailer.send_password_reset(&recipient, &link).await {
+                    // Same redirect either way - the caller must not learn whether
+                    // the account exists, or whether mail is working.
+                    tracing::error!(
+                        "failed to send the password reset email for {}: {err}",
+                        user.username
+                    );
+                }
             }
             Err(err) => {
                 tracing::error!(
@@ -213,7 +223,7 @@ pub fn render_reset_password_page(token: &str, notice: &ResetNotice) -> Response
     render_auth_page("ui_reset_title", reset_form)
 }
 
-fn render_auth_page(title_key: &'static str, inner_form: Element) -> Response {
+pub(super) fn render_auth_page(title_key: &'static str, inner_form: Element) -> Response {
     let bar = div()
         .class("login-bar")
         .child(
@@ -247,7 +257,7 @@ fn redirect(path: &str) -> Response {
 pub fn register_routes() {
     let _ = forgot_password_page as fn() -> _;
     let _ = forgot_password_page_slash as fn() -> _;
-    let _ = forgot_password_submit as fn(_, _, _, _, _) -> _;
+    let _ = forgot_password_submit as fn(_, _, _, _, _, _, _, _) -> _;
     let _ = reset_password_page as fn(_, _) -> _;
     let _ = reset_password_submit as fn(_, _, _, _) -> _;
 }

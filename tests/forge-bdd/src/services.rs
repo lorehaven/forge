@@ -342,6 +342,9 @@ impl Fixture {
             .env("SERVER_ADDR", "127.0.0.1:5443")
             .env("SERVER_HTTP_REDIRECT_ADDR", "127.0.0.1:5080")
             .env("BASE_PATH", "/gatehouse")
+            // Emailed links come from configuration, never the request's Host
+            // header - pin it to the address this suite reaches gatehouse on.
+            .env("PUBLIC_BASE_URL", "http://127.0.0.1:5443")
             .env("SERVICE_AUTH_ENABLED", "true")
             // Plain HTTP, deterministically: gatehouse ships no certificate of
             // its own, but the dev environment (foreman) symlinks one in, and the

@@ -1,22 +1,22 @@
 //! Self-service registration - public like login, reuses `crate::realm`/`crate::tokens`.
 
+use crate::PublicBase;
 use crate::catalog::PermissionCatalog;
-use crate::email;
+use crate::email::{self, Recipient};
+use crate::ratelimit::{ClientIp, RateLimiter, policy};
 use crate::realm::{self, RealmError};
 use crate::tokens::{PURPOSE_VERIFY_EMAIL, VerificationTokens};
 use crate::ui::common::{UiPageKind, render_page, supported_locales, ui_path};
-use async_trait::async_trait;
+use crate::ui::locale::BrowserLocale;
 use http::StatusCode;
 use quench_db::prelude::Db;
-use quench_http::prelude::{
-    Form, FromRequest, HttpError, Inject, Query, Request, Response, get, post,
-};
+use quench_http::prelude::{Form, Inject, Query, Response, get, post};
 use quench_web::prelude::*;
 use serde::Deserialize;
 use std::sync::Arc;
 
 /// A verification link is good for a day.
-const VERIFICATION_TTL_SECS: u64 = 24 * 60 * 60;
+pub const VERIFICATION_TTL_SECS: u64 = 24 * 60 * 60;
 
 #[derive(Deserialize)]
 pub struct RegisterForm {
@@ -41,43 +41,40 @@ pub struct Notice {
     pub err: Option<String>,
 }
 
-pub struct AbsoluteBase(String);
-
-#[async_trait]
-impl FromRequest for AbsoluteBase {
-    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
-        let scheme = match req.header("x-forwarded-proto") {
-            Some(scheme) => scheme.to_string(),
-            None => req
-                .container()
-                .get::<crate::ui::common::ExternalScheme>()
-                .map(|s| s.0.to_string())
-                .unwrap_or_else(|_| "https".to_string()),
-        };
-        let host = req
-            .header("x-forwarded-host")
-            .or_else(|| req.header("host"))
-            .unwrap_or("");
-        Ok(Self(format!("{scheme}://{host}")))
-    }
-}
-
 #[post("/ui/register")]
+// One DI extractor per argument - the framework has no struct-of-extractors.
+#[allow(clippy::too_many_arguments)]
 pub async fn register_submit(
-    base: AbsoluteBase,
     Form(form): Form<RegisterForm>,
     Inject(catalog): Inject<PermissionCatalog>,
     Inject(db): Inject<Db>,
     Inject(mailer): Inject<Arc<dyn email::Sender>>,
+    Inject(base): Inject<PublicBase>,
+    browser_locale: BrowserLocale,
+    ip: ClientIp,
+    Inject(limiter): Inject<RateLimiter>,
     Inject(tokens): Inject<VerificationTokens>,
 ) -> Response {
-    if form.email.trim().is_empty() || !form.email.contains('@') {
+    // The same check the mailer applies, so an address that could never be
+    // delivered to is refused here rather than after the account exists.
+    let email = form.email.trim();
+    if email.parse::<quench_mail::Address>().is_err() {
         return redirect(&ui_path("/register?err=ui_register_error_email_invalid"));
     }
 
-    let user = match realm::register(&db, &catalog, &form.username, &form.password, &form.email)
-        .await
-    {
+    // Each registration mails a stranger's address, so it is limited per client
+    // and per address (one victim cannot be flooded through many usernames).
+    let verdict = limiter
+        .check_all(&[
+            ("register-ip", &ip.0, policy::REGISTER_IP),
+            ("register-email", email, policy::REGISTER_EMAIL),
+        ])
+        .await;
+    if !verdict.is_allowed() {
+        return redirect(&ui_path("/register?err=ui_register_error_rate_limited"));
+    }
+
+    let user = match realm::register(&db, &catalog, &form.username, &form.password, email).await {
         Ok(user) => user,
         Err(err) => return redirect(&format!("{}?err={}", ui_path("/register"), err.i18n_key())),
     };
@@ -87,10 +84,23 @@ pub async fn register_submit(
         .await
     {
         Ok(token) => {
-            let link = format!("{}{}", base.0, ui_path(&format!("/verify?token={token}")));
-            mailer
-                .send_verification(&form.email, &user.username, &link)
-                .await;
+            let link = format!(
+                "{}{}",
+                base.as_str(),
+                ui_path(&format!("/verify?token={token}"))
+            );
+            let recipient = Recipient {
+                address: email,
+                username: &user.username,
+                locale: browser_locale.0.as_deref(),
+            };
+            if let Err(err) = mailer.send_verification(&recipient, &link).await {
+                // The account exists either way; the user can ask for another link.
+                tracing::error!(
+                    "failed to send the verification email to {email} for {}: {err}",
+                    user.username
+                );
+            }
         }
         Err(err) => {
             // Account exists either way - don't make this look like registration failed.
@@ -227,6 +237,9 @@ pub fn known_error_key(candidate: &str) -> Option<&'static str> {
     if candidate == "ui_register_error_email_invalid" {
         return Some("ui_register_error_email_invalid");
     }
+    if candidate == "ui_register_error_rate_limited" {
+        return Some("ui_register_error_rate_limited");
+    }
     [
         RealmError::UsernameEmpty,
         RealmError::PasswordEmpty,
@@ -245,6 +258,6 @@ fn redirect(path: &str) -> Response {
 pub fn register_routes() {
     let _ = register_page as fn(_) -> _;
     let _ = register_page_slash as fn(_) -> _;
-    let _ = register_submit as fn(_, _, _, _, _, _) -> _;
+    let _ = register_submit as fn(_, _, _, _, _, _, _, _, _) -> _;
     let _ = verify as fn(_, _, _) -> _;
 }

@@ -554,3 +554,70 @@ async fn concurrent_refreshes_with_one_token_all_succeed_for_two_tabs() {
     }
     assert_eq!(failures, 0, "a concurrent refresh was refused");
 }
+
+#[test]
+fn login_recognises_the_rate_limited_error_and_the_resend_notice() {
+    let limited = LoginNotices {
+        err: Some("ui_login_rate_limited".into()),
+        ..LoginNotices::default()
+    };
+    assert_eq!(login_error_key(&limited), Some("ui_login_rate_limited"));
+
+    let resent = LoginNotices {
+        resend_requested: Some("1".into()),
+        ..LoginNotices::default()
+    };
+    assert_eq!(login_ok_key(&resent), Some("ui_login_resend_requested_ok"));
+}
+
+#[test]
+fn a_reset_notice_still_outranks_the_resend_notice() {
+    let notices = LoginNotices {
+        reset: Some("1".into()),
+        resend_requested: Some("1".into()),
+        ..LoginNotices::default()
+    };
+    assert_eq!(login_ok_key(&notices), Some("ui_login_reset_ok"));
+}
+
+async fn login_page_html(notices: LoginNotices) -> String {
+    use http_body_util::BodyExt;
+    let resp = render_login_page(None, false, &notices);
+    let body = resp
+        .into_hyper()
+        .into_body()
+        .collect()
+        .await
+        .unwrap()
+        .to_bytes();
+    String::from_utf8(body.to_vec()).unwrap()
+}
+
+#[tokio::test]
+async fn the_resend_link_appears_where_a_lost_verification_email_is_the_likely_problem() {
+    for notices in [
+        LoginNotices {
+            err: Some("ui_login_email_unverified".into()),
+            ..LoginNotices::default()
+        },
+        LoginNotices {
+            registered: Some("1".into()),
+            ..LoginNotices::default()
+        },
+        LoginNotices {
+            resend_requested: Some("1".into()),
+            ..LoginNotices::default()
+        },
+    ] {
+        let html = login_page_html(notices).await;
+        assert!(html.contains("resend-verification"), "{html}");
+        assert!(html.contains("ui_login_resend_link"));
+    }
+}
+
+#[tokio::test]
+async fn an_ordinary_login_page_does_not_advertise_resending() {
+    let html = login_page_html(LoginNotices::default()).await;
+    assert!(!html.contains("resend-verification"));
+    assert!(html.contains("forgot-password"), "the other links stay");
+}

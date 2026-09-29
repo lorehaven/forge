@@ -2167,6 +2167,7 @@ dependencies = [
  "quench-config",
  "quench-db",
  "quench-http",
+ "quench-mail",
  "quench-starter",
  "quench-web",
  "quench-web-components",
@@ -4284,6 +4285,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "quench-mail"
+version = "0.1.0"
+source = "sparse+https://ennor.ddns.net/warehouse/index/"
+checksum = "9467d55e203eb098cb46d86e720169fd79cee13f7b1428dbe17876ce37966994"
+dependencies = [
+ "base64 0.23.1",
+ "chrono",
+ "rustls",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-rustls",
+ "uuid",
+ "webpki-roots",
+]
+
+[[package]]
 name = "quench-starter"
 version = "0.4.2"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
@@ -5728,7 +5745,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",

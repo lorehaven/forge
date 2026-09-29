@@ -6,7 +6,7 @@ Gatehouse is the Forge estate's authentication service: one identity store, one 
 
 - **Login, refresh, logout** over both a JSON API and OAuth2 authorization-code + PKCE, for relying parties that want their own scoped token rather than trusting a realm-wide cookie directly.
 - **A permission catalog** (`config/permissions.toml`) — the estate's one place a service's grantable actions live: which services exist, what actions each supports, and named grant templates an admin can assign in one step. Replaces both an old `SERVICE_AUDIENCES` env var and a hardcoded two-value read/write enum.
-- **Self-service registration and password reset**, gated behind an email-verification link (dev-only `LoggingSender` today — see [Configuration](#configuration)).
+- **Self-service registration and password reset**, gated behind an email-verification link, delivered by SMTP (`quench-mail`) or, when no mail server is configured, written to the log — see [Configuration](#configuration).
 - **Admin UI** for creating/editing/deleting users, and a permission checkbox matrix driven entirely by the catalog above.
 - **Ed25519 (EdDSA) token signing** with key rotation that retires rather than deletes an outgoing key, so tokens it already signed keep verifying until they expire.
 - **Shared Redis sessions**, so a logout or a permission change ends a session at every service on its next request, not whenever an access token happens to expire.
@@ -29,6 +29,7 @@ Gatehouse is the Forge estate's authentication service: one identity store, one 
 | `GET`/`POST` | `/ui/login`, `/ui/logout` | the estate's only login form |
 | `GET`/`POST` | `/ui/register`, `GET /ui/verify` | self-service account creation + email verification |
 | `GET`/`POST` | `/ui/forgot-password`, `/ui/reset-password` | password reset by emailed link |
+| `GET`/`POST` | `/ui/resend-verification` | a fresh verification link for an account whose address is still unconfirmed |
 | `GET` | `/ui/home` | every enabled service, front door after login |
 | `GET`/`POST` | `/ui/admin/users[/{username}]` | user list, editor, permission matrix, template apply, delete (admin) |
 
@@ -50,7 +51,11 @@ The admin pages check the `admin` role themselves and answer with a plain 403 pa
 
 ### Self-service registration and password reset
 
-Both flows send a link through `email::Sender`; the only implementation wired in is `LoggingSender`, which writes the link to the process log instead of an inbox. That makes both flows testable without an SMTP relay, and is explicitly not safe for a deployment real users reach — anyone reading the logs can read the credential-equivalent link. A newly self-registered user starts with `registration.default_template` from the permission catalog (`viewer` by default); an admin-created user starts with nothing, since an admin is right there to grant it.
+Both flows send a link through `email::Sender`. With `SMTP_HOST` set, `SmtpSender` delivers a text + HTML email through [`quench-mail`](https://github.com/lorehaven/quench/blob/master/docs/quench-mail.md) (verified TLS, authenticated submission); without it, `LoggingSender` writes the link to the process log instead — fine for dev and BDD, and explicitly not safe for a deployment real users reach, since anyone reading the logs can read the credential-equivalent link. Startup logs which one is active, and with SMTP configured it also checks in the background that the server accepts the login (a failure warns but does not stop gatehouse). A send failure is logged and never changes what the page answers: registration still succeeds, and a reset request still gets the same redirect whether or not the account exists or mail works. Emails are written in the recipient's saved `preferred_locale`, else the language the browser was showing (`qlocale` cookie), else English, in the UI's five languages. Links point at `PUBLIC_BASE_URL`, never at the request's `Host`. Registration refuses an address `quench-mail` could not deliver to (ASCII only, no quoted local parts).
+
+Anything that makes gatehouse send an email is **rate limited**, because each one costs real mail-relay allowance and can flood someone's inbox. Fixed windows, counted in the shared Redis (so every replica agrees): registration 20/hour per client and 3/day per email address; password reset 20/hour per client and 3/hour per submitted username; resending a verification link 20/hour per client, 3/hour per username and one a minute per username; and a global cap of `MAIL_DAILY_LIMIT` emails a day (default 250, under the relay's 300) that stops sending for everyone once spent. Counting is by what was *asked*, never by whether the account exists, so a refusal (`ui_login_rate_limited` / `ui_register_error_rate_limited`) reveals nothing about accounts; the limiter counts with an atomic set-per-window, so parallel requests cannot slip extra sends through, and it fails closed if the store errors. The client address is `X-Real-IP` (else the last `X-Forwarded-For` entry) as set by the ingress - trustworthy only behind a proxy that overwrites it (ingress-nginx with `externalTrafficPolicy: Local` does) - so every per-client limit is backed by one that does not depend on it. The unverified-login error and the registration notice on the login page link to `/ui/resend-verification`; like reset, that page answers identically whether or not the account exists, needs verification, or is disabled (admin and service accounts never need it).
+
+An account with an email address on file **cannot log in until that address is verified** (`/ui/verify`): the login is refused after the password check (`email_unverified` from the API, `ui_login_email_unverified` on the page), so the refusal doesn't reveal which addresses are unconfirmed to someone without the password. Accounts with no address, and `admin` / `service` accounts, are exempt - the seeded admin needs no verification, and an admin adding an address to their profile cannot lock the realm out. A newly self-registered user starts with `registration.default_template` from the permission catalog (`viewer` by default); an admin-created user starts with nothing, since an admin is right there to grant it.
 
 ### Sessions
 
@@ -92,6 +97,15 @@ Every other service in the estate needs `GATEHOUSE_URL` in turn: there is no per
 | `PERMISSIONS_CONFIG` | permission catalog, default `config/permissions.toml` |
 | `AUTH_BOOTSTRAP` | defaults to `true` here, unset everywhere else |
 | `SERVICE_USERNAME` / `SERVICE_PASSWORD` | the admin seeded on first boot |
+| `PUBLIC_BASE_URL` | origin (scheme + host + port, no path) that emailed links point at; falls back to the origin of `GATEHOUSE_URL`, then `http://localhost:5443`. Never taken from the request, so a forged `Host` header cannot redirect a reset link |
+| `SMTP_HOST` | mail server for verification and reset emails; **unset means links are logged, not emailed** |
+| `SMTP_PORT` | default by `SMTP_TLS`: 465 (`implicit`), 587 (`starttls`), 25 (`none`) |
+| `SMTP_TLS` | `implicit` (default), `starttls` or `none`; login is refused over `none` |
+| `SMTP_TLS_SERVER_NAME` | certificate name to validate when it differs from `SMTP_HOST` (e.g. connecting to an in-cluster service name) |
+| `SMTP_USERNAME` / `SMTP_PASSWORD` | login; set both or neither |
+| `MAIL_FROM` / `MAIL_FROM_NAME` | sender address (required with `SMTP_HOST`) and display name (default `Forge`, blank for none) |
+| `MAIL_DAILY_LIMIT` | most emails the whole gatehouse may send per day, default 250; over it, sends fail (logged) until the next UTC day |
+| `SMTP_TIMEOUT_SECS` | per-step timeout, default 15; one whole delivery is capped at three times this |
 | `AUTH_REDIRECT_HOSTS` | comma-separated relying-party origins allowed as `?redirect=` |
 | `ACCESS_TOKEN_TTL_SECS` | access token lifetime (default 900) |
 | `AUTH_DB_SCHEMA` | realm schema name, default `auth` |

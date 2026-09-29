@@ -992,6 +992,18 @@ async fn follow_verification_link(world: &mut ForgeWorld, email: String) {
     world.record_response(res).await;
 }
 
+#[when(expr = "I request a new verification email for {string}")]
+async fn request_new_verification_email(world: &mut ForgeWorld, username: String) {
+    let url = format!("{}/ui/resend-verification", world.gatehouse_url);
+    let res = no_redirect_client()
+        .post(&url)
+        .form(&[("username", username.as_str())])
+        .send()
+        .await
+        .expect("resend-verification request failed");
+    world.record_response(res).await;
+}
+
 #[when(expr = "I request a password reset for {string}")]
 async fn request_password_reset(world: &mut ForgeWorld, username: String) {
     let url = format!("{}/ui/forgot-password", world.gatehouse_url);

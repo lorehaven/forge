@@ -64,6 +64,7 @@ async fn login(
         AuthOutcome::MfaRequired { .. } => return LoginError::response("mfa_required"),
         AuthOutcome::Disabled => return LoginError::response("account_disabled"),
         AuthOutcome::Locked => return LoginError::response("account_locked"),
+        AuthOutcome::EmailUnverified => return LoginError::response("email_unverified"),
         AuthOutcome::NotFound | AuthOutcome::WrongPassword => {
             return LoginError::response("invalid_credentials");
         }

@@ -1,4 +1,4 @@
-use gatehouse_service::{VerificationTokens, clients, email, keys};
+use gatehouse_service::{PublicBase, RateLimiter, VerificationTokens, clients, email, keys};
 use quench_auth::domain::auth::UserDb;
 use quench_auth::domain::jwt::JwtConfig;
 use quench_auth::domain::session::SessionDb;
@@ -58,8 +58,13 @@ async fn main() -> std::io::Result<()> {
         .await
         .expect("session store unavailable");
 
-    // The only sender that exists today - see `email`'s module docs.
-    let mailer: Arc<dyn email::Sender> = Arc::new(email::LoggingSender);
+    // Shared with the mail budget: per-client limits and the daily cap count in
+    // the same store, so every replica sees the same totals.
+    let limiter = RateLimiter::from_env()
+        .await
+        .expect("rate limit store unavailable");
+    // SMTP when SMTP_HOST is set, otherwise the links go to the log.
+    let mailer: Arc<dyn email::Sender> = email::sender_from_env(&limiter);
     let tokens = Arc::new(
         VerificationTokens::from_env()
             .await
@@ -88,6 +93,8 @@ async fn main() -> std::io::Result<()> {
         .provide_arc(session_db)
         .provide_arc(catalog)
         .provide(mailer)
+        .provide(PublicBase::from_env())
+        .provide(limiter)
         .provide_arc(tokens)
         .provide(external_scheme)
         .build()

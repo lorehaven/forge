@@ -43,6 +43,8 @@ pub struct LoginNotices {
     #[serde(default)]
     pub reset_requested: Option<String>,
     #[serde(default)]
+    pub resend_requested: Option<String>,
+    #[serde(default)]
     pub err: Option<String>,
 }
 
@@ -155,6 +157,11 @@ pub async fn login_submit(
             return Response::new(StatusCode::FOUND)
                 .header("Location", ui_path("/login?err=ui_login_account_locked"));
         }
+        AuthOutcome::EmailUnverified => {
+            tracing::warn!("login attempt for unverified account {}", form.username);
+            return Response::new(StatusCode::FOUND)
+                .header("Location", ui_path("/login?err=ui_login_email_unverified"));
+        }
         AuthOutcome::NotFound | AuthOutcome::WrongPassword => {
             tracing::warn!("invalid credentials for {}", form.username);
             return Response::new(StatusCode::FOUND).header("Location", ui_path("/login?err=1"));
@@ -243,7 +250,10 @@ pub async fn login_mfa_submit(
                 .header("Location", ui_path("/login?err=ui_login_account_locked"));
         }
         // Stale token and wrong code look identical - an attacker can't tell them apart.
-        AuthOutcome::MfaRequired { .. } | AuthOutcome::NotFound | AuthOutcome::WrongPassword => {
+        AuthOutcome::MfaRequired { .. }
+        | AuthOutcome::EmailUnverified
+        | AuthOutcome::NotFound
+        | AuthOutcome::WrongPassword => {
             return Response::new(StatusCode::FOUND).header(
                 "Location",
                 mfa_challenge_url(&form.pending, form.redirect.as_deref(), true),
@@ -439,6 +449,18 @@ pub fn render_login_page(
         login_form = login_form.child(p().class("admin-notice ok").attr("data-i18n", key));
     }
 
+    // Offered where a lost or unread verification email is the likely problem.
+    let unverified_hint = notices.err.as_deref() == Some("ui_login_email_unverified")
+        || notices.registered.is_some()
+        || notices.resend_requested.is_some();
+    if unverified_hint {
+        login_form = login_form.child(
+            a().class("admin-hint")
+                .attr("href", ui_path("/resend-verification"))
+                .attr("data-i18n", "ui_login_resend_link"),
+        );
+    }
+
     login_form = login_form
         .child(
             a().class("admin-hint")
@@ -489,6 +511,8 @@ pub fn login_error_key(notices: &LoginNotices) -> Option<&'static str> {
         Some("ui_login_reset_invalid") => Some("ui_login_reset_invalid"),
         Some("ui_login_account_disabled") => Some("ui_login_account_disabled"),
         Some("ui_login_account_locked") => Some("ui_login_account_locked"),
+        Some("ui_login_email_unverified") => Some("ui_login_email_unverified"),
+        Some("ui_login_rate_limited") => Some("ui_login_rate_limited"),
         _ => None,
     }
 }
@@ -499,6 +523,8 @@ pub fn login_ok_key(notices: &LoginNotices) -> Option<&'static str> {
         Some("ui_login_reset_ok")
     } else if notices.reset_requested.is_some() {
         Some("ui_login_reset_requested_ok")
+    } else if notices.resend_requested.is_some() {
+        Some("ui_login_resend_requested_ok")
     } else if notices.verified.is_some() {
         Some("ui_login_verified_ok")
     } else if notices.registered.is_some() {

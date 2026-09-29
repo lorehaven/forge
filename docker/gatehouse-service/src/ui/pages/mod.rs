@@ -3,6 +3,7 @@ pub mod admin;
 pub mod auth;
 pub mod home;
 pub mod register;
+pub mod resend;
 pub mod reset;
 
 pub(super) fn register_routes() {
@@ -11,5 +12,6 @@ pub(super) fn register_routes() {
     auth::register_routes();
     home::register_routes();
     register::register_routes();
+    resend::register_routes();
     reset::register_routes();
 }

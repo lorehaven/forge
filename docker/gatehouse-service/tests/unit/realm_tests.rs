@@ -768,3 +768,93 @@ async fn unlock_clears_the_lockout_state() {
     assert!(!unlocked.is_locked());
     assert_eq!(unlocked.failed_login_attempts, 0);
 }
+
+// -- email verification gates login ---------------------------------
+
+async fn seed_with_email(db: &Db, username: &str, roles: Vec<Role>, email: Option<&str>) -> User {
+    create(
+        db,
+        &default_catalog(),
+        true,
+        username,
+        "password",
+        roles,
+        Permissions::new(),
+        email.map(str::to_string),
+    )
+    .await
+    .expect("seed user")
+}
+
+#[tokio::test]
+async fn login_is_refused_until_the_address_on_file_is_verified() {
+    let db = db().await;
+    seed_with_email(&db, "alice", vec![], Some("alice@example.com")).await;
+
+    let outcome = authenticate(&db, "alice", "password")
+        .await
+        .expect("authenticate");
+    assert!(matches!(outcome, AuthOutcome::EmailUnverified));
+
+    mark_email_verified(&db, "alice").await.expect("verify");
+    let outcome = authenticate(&db, "alice", "password")
+        .await
+        .expect("authenticate");
+    assert!(matches!(outcome, AuthOutcome::Success(_)));
+}
+
+#[tokio::test]
+async fn an_unverified_account_with_the_wrong_password_looks_like_any_wrong_password() {
+    let db = db().await;
+    seed_with_email(&db, "alice", vec![], Some("alice@example.com")).await;
+
+    let outcome = authenticate(&db, "alice", "not-the-password")
+        .await
+        .expect("authenticate");
+    assert!(matches!(outcome, AuthOutcome::WrongPassword));
+}
+
+#[tokio::test]
+async fn an_account_with_no_address_needs_no_verification() {
+    let db = db().await;
+    seed_with_email(&db, "alice", vec![], None).await;
+    seed_with_email(&db, "bob", vec![], Some("   ")).await;
+
+    for name in ["alice", "bob"] {
+        let outcome = authenticate(&db, name, "password")
+            .await
+            .expect("authenticate");
+        assert!(matches!(outcome, AuthOutcome::Success(_)), "{name}");
+    }
+}
+
+#[tokio::test]
+async fn admin_and_service_accounts_are_exempt_from_verification() {
+    let db = db().await;
+    seed_with_email(&db, "root", vec![Role::Admin], Some("root@example.com")).await;
+    seed_with_email(&db, "robot", vec![Role::Service], Some("robot@example.com")).await;
+
+    for name in ["root", "robot"] {
+        let outcome = authenticate(&db, name, "password")
+            .await
+            .expect("authenticate");
+        assert!(matches!(outcome, AuthOutcome::Success(_)), "{name}");
+    }
+}
+
+#[tokio::test]
+async fn verification_is_checked_before_asking_for_an_mfa_code() {
+    with_key();
+    let db = db().await;
+    seed_with_email(&db, "alice", vec![], Some("alice@example.com")).await;
+    let (secret, _) = begin_mfa_enrollment("alice").expect("begin enrollment");
+    let current = current_totp_code(&secret, "alice");
+    enable_mfa(&db, "alice", &secret, &current)
+        .await
+        .expect("enable mfa");
+
+    let outcome = authenticate(&db, "alice", "password")
+        .await
+        .expect("authenticate");
+    assert!(matches!(outcome, AuthOutcome::EmailUnverified));
+}

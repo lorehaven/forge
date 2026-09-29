@@ -33,6 +33,19 @@ impl FromRequest for LocaleCookie {
     }
 }
 
+/// The language the browser is showing (`qlocale`), when this estate supports
+/// it - the best guess at a stranger's language, e.g. for a registration email.
+pub struct BrowserLocale(pub Option<String>);
+
+#[async_trait]
+impl FromRequest for BrowserLocale {
+    async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
+        Ok(Self(
+            cookie_value(req, LOCALE_COOKIE).filter(|value| is_supported(value)),
+        ))
+    }
+}
+
 /// The `Set-Cookie` value to send at sign-in, if any: only when there is no explicit
 /// choice and the saved preference is a locale this estate actually supports.
 pub fn default_locale_cookie(has_cookie: &LocaleCookie, preferred: Option<&str>) -> Option<String> {

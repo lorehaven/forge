@@ -462,6 +462,19 @@ pub async fn delete(
 
 // --- Login ---
 
+/// Whether login must wait for the emailed link: an address is on file and was
+/// never confirmed. No address means nothing to confirm, and `admin` / `service`
+/// accounts are exempt - the seeded admin needs no verification, and an admin
+/// who later types an address into their profile must not lock the realm's
+/// last admin out.
+pub fn requires_email_verification(user: &User) -> bool {
+    let has_address = user
+        .email
+        .as_deref()
+        .is_some_and(|email| !email.trim().is_empty());
+    has_address && user.email_verified_at.is_none() && !wants_wildcard_role(&user.get_roles())
+}
+
 /// What happened when checking a login attempt.
 pub enum AuthOutcome {
     /// Boxed - `User` is large enough next to the data-free variants here to
@@ -471,6 +484,9 @@ pub enum AuthOutcome {
     Disabled,
     Locked,
     WrongPassword,
+    /// Password right, but the address on file was never confirmed - see
+    /// [`requires_email_verification`].
+    EmailUnverified,
     /// Password right, MFA enabled - `pending` is a short-lived signed token
     /// proving this step happened, carried through to [`authenticate_mfa`].
     MfaRequired {
@@ -522,6 +538,13 @@ pub async fn authenticate(db: &Db, username: &str, password: &str) -> RealmResul
             .await
             .map_err(|err| internal("failed to record a failed login", err))?;
         return Ok(AuthOutcome::WrongPassword);
+    }
+
+    // After the password check, so someone who doesn't know the password can't
+    // learn which addresses are unconfirmed. Before MFA: no point asking for a
+    // code from a login that is refused either way.
+    if requires_email_verification(&user) {
+        return Ok(AuthOutcome::EmailUnverified);
     }
 
     if user.mfa_enabled {
