@@ -1,0 +1,19 @@
+[package]
+name = "forge-ui"
+version = "0.1.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "Top bar pieces shared by the forge web UIs - home icon, user menu and their styles"
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+publish = false
+
+[lib]
+name = "forge_ui"
+path = "src/lib.rs"
+
+[dependencies]
+envmnt = { workspace = true }
+quench-starter = { workspace = true }
+quench-web = { workspace = true }
