@@ -122,3 +122,12 @@ ui_repos_err_write_failed = Impossible d'enregistrer. Il existe peut-être déj�
 
 ui_credentials_title = Identifiants
 ui_credentials_empty = Aucun identifiant visible pour vous.
+
+# Following a repository or project's run results
+ui_follow_start = Suivre
+ui_follow_stop = Vous suivez - cliquez pour arrêter
+ui_follow_projects_title = Suivre des projets
+ui_follow_projects_hint = Les résultats des exécutions de chaque dépôt d'un projet suivi vous sont envoyés par e-mail : les échecs et le premier succès qui suit. Choisissez les messages reçus sur la page de votre compte gatehouse.
+ui_follow_ok_followed = Vous suivez désormais ceci.
+ui_follow_ok_unfollowed = Vous ne suivez plus ceci.
+ui_follow_err_failed = Modification impossible. Réessayez.

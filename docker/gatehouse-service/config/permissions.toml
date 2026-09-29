@@ -70,7 +70,7 @@ resource_types = ["project"]
 # catalog entry can't grant "the power to grant admin".
 [services.gatehouse]
 label = "Gatehouse"
-actions = ["read-users", "create-user", "edit-user", "delete-user", "manage-permissions", "manage-signing-keys"]
+actions = ["read-users", "create-user", "edit-user", "delete-user", "manage-permissions", "manage-signing-keys", "notify"]
 
 # ---------------------------------------------------------------------------
 # Templates

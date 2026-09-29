@@ -68,9 +68,9 @@ quench-db = { registry = "ennor", version = "0.2.2" }
 quench-http = { registry = "ennor", version = "0.1.1" }
 quench-log = { registry = "ennor", version = "0.1.0" }
 quench-mail = { registry = "ennor", version = "0.1.0" }
-quench-starter = { registry = "ennor", version = "0.4.2" }
-quench-web = { registry = "ennor", version = "0.1.12" }
-quench-web-components = { registry = "ennor", version = "0.1.7" }
+quench-starter = { registry = "ennor", version = "0.4.3" }
+quench-web = { registry = "ennor", version = "0.1.13" }
+quench-web-components = { registry = "ennor", version = "0.1.8" }
 redis = { version = "1.7", features = ["tokio-comp", "cluster-async", "connection-manager"] }
 regex = { version = "1.13" }
 reqwest = { version = "0.13", default-features = false, features = [

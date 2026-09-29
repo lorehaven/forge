@@ -141,3 +141,67 @@ fn a_known_ok_value_renders_its_own_key() {
     let html = notice_banner(&notice).expect("a banner").render();
     assert!(html.contains("ui_repos_ok_deleted"));
 }
+
+#[test]
+fn the_follow_button_offers_the_opposite_of_what_is_true_now() {
+    use conveyor_service::routers::ui::pages::repos::follow_form;
+
+    let not_following = follow_form("/repos/lorehaven/palantir", false).render();
+    assert!(not_following.contains("/repos/lorehaven/palantir/follow"));
+    assert!(!not_following.contains("/unfollow"));
+    assert!(not_following.contains("ui_follow_start"));
+    assert!(not_following.contains("method=\"post\""));
+
+    let following = follow_form("/repos/lorehaven/palantir", true).render();
+    assert!(following.contains("/repos/lorehaven/palantir/unfollow"));
+    assert!(following.contains("ui_follow_stop"));
+    assert!(following.contains("repos-following"));
+}
+
+#[test]
+fn the_follow_projects_panel_lists_projects_by_path_and_is_omitted_when_empty() {
+    use conveyor_service::routers::ui::pages::repos::follow_projects_panel;
+    use std::collections::HashSet;
+
+    let root = project("root-1", "root-group", None);
+    let child = project("child-1", "child-project", Some("root-1"));
+    let all = vec![root.clone(), child.clone()];
+
+    assert!(follow_projects_panel(&[], &all, &HashSet::new()).is_none());
+
+    let followed: HashSet<&str> = ["child-1"].into_iter().collect();
+    let html = follow_projects_panel(&[&root, &child], &all, &followed)
+        .expect("a panel")
+        .render();
+    assert!(html.contains("root-group/child-project"));
+    assert!(html.contains("/projects/root-1/follow"));
+    assert!(html.contains("/projects/child-1/unfollow"));
+}
+
+#[test]
+fn only_the_known_follow_notices_are_shown() {
+    let followed = Notice {
+        err: None,
+        ok: Some("followed".into()),
+    };
+    assert!(
+        notice_banner(&followed)
+            .unwrap()
+            .render()
+            .contains("ui_follow_ok_followed")
+    );
+    let unfollowed = Notice {
+        err: None,
+        ok: Some("unfollowed".into()),
+    };
+    assert!(
+        notice_banner(&unfollowed)
+            .unwrap()
+            .render()
+            .contains("ui_follow_ok_unfollowed")
+    );
+    assert_eq!(
+        known_error_key("follow_failed"),
+        Some("ui_follow_err_failed")
+    );
+}

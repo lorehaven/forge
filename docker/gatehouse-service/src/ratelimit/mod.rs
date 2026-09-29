@@ -66,6 +66,17 @@ pub mod policy {
     pub const RESEND_USER: Limit = Limit::per_hour(3);
     pub const RESEND_COOLDOWN: Limit = Limit::per_minute(1);
 
+    /// Asking to change an email address: per account, per client, and per
+    /// destination address so one victim's inbox cannot be used as a target.
+    pub const EMAIL_CHANGE_USER: Limit = Limit::per_hour(3);
+    pub const EMAIL_CHANGE_IP: Limit = Limit::per_hour(20);
+    pub const EMAIL_CHANGE_ADDRESS: Limit = Limit::per_day(3);
+
+    /// A service's notification requests for one person, and for one kind of
+    /// them: a failing pipeline must not turn into a stream of mail.
+    pub const NOTIFY_USER: Limit = Limit::per_hour(20);
+    pub const NOTIFY_TEMPLATE: Limit = Limit::per_hour(10);
+
     /// Default cap on emails sent by the whole estate per day - a little under
     /// the relay's free allowance (300).
     pub const DEFAULT_DAILY_MAIL: usize = 250;

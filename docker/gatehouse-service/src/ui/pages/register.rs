@@ -242,6 +242,7 @@ pub fn known_error_key(candidate: &str) -> Option<&'static str> {
     }
     [
         RealmError::UsernameEmpty,
+        RealmError::UsernameInvalid,
         RealmError::PasswordEmpty,
         RealmError::AlreadyExists,
         RealmError::Internal,

@@ -122,3 +122,12 @@ ui_repos_err_write_failed = Das konnte nicht gespeichert werden. Es existiert m�
 
 ui_credentials_title = Anmeldedaten
 ui_credentials_empty = Keine Anmeldedaten für dich sichtbar.
+
+# Following a repository or project's run results
+ui_follow_start = Folgen
+ui_follow_stop = Sie folgen - klicken zum Beenden
+ui_follow_projects_title = Projekten folgen
+ui_follow_projects_hint = Laufergebnisse aller Repositories unter einem Projekt, dem Sie folgen, kommen per E-Mail: Fehlschläge und der erste Erfolg danach. Welche Nachrichten Sie erhalten, stellen Sie auf Ihrer Gatehouse-Kontoseite ein.
+ui_follow_ok_followed = Sie folgen jetzt.
+ui_follow_ok_unfollowed = Sie folgen nicht mehr.
+ui_follow_err_failed = Das ließ sich nicht ändern. Versuchen Sie es erneut.

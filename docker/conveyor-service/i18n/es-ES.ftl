@@ -122,3 +122,12 @@ ui_repos_err_write_failed = No se pudo guardar. Puede que ya exista.
 
 ui_credentials_title = Credenciales
 ui_credentials_empty = No hay credenciales visibles para ti.
+
+# Following a repository or project's run results
+ui_follow_start = Seguir
+ui_follow_stop = Siguiendo - haz clic para dejar de seguir
+ui_follow_projects_title = Seguir proyectos
+ui_follow_projects_hint = Los resultados de las ejecuciones de cada repositorio de un proyecto que sigues te llegan por correo: los fallos y el primer éxito posterior. Elige qué mensajes recibes en la página de tu cuenta de gatehouse.
+ui_follow_ok_followed = Ahora sigues esto.
+ui_follow_ok_unfollowed = Ya no sigues esto.
+ui_follow_err_failed = No se pudo cambiar. Inténtalo de nuevo.

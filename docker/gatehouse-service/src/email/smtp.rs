@@ -1,8 +1,8 @@
 //! Real delivery: submit to an SMTP server (in this estate, the in-cluster
 //! Stalwart) through `quench-mail`.
 
-use super::templates::{Kind, render};
-use super::{Recipient, SendError, Sender};
+use super::templates::render_with;
+use super::{Mail, Recipient, SendError, Sender};
 use async_trait::async_trait;
 use quench_mail::{Address, Mailbox, Mailer, Message, Security};
 use std::fmt;
@@ -167,15 +167,38 @@ impl SmtpSender {
         });
     }
 
-    async fn deliver(&self, kind: Kind, to: &Recipient<'_>, link: &str) -> Result<(), SendError> {
-        let content = render(kind, to.locale, to.username, link);
-        let message = Message::builder()
+    async fn deliver(&self, mail: &Mail<'_>, to: &Recipient<'_>) -> Result<(), SendError> {
+        let kind = mail.kind();
+        let content = match mail {
+            Mail::Notification {
+                template,
+                vars,
+                unsubscribe,
+            } => match crate::notify::catalog::find(template) {
+                Some(found) => found.render(to.locale, to.username, vars, unsubscribe),
+                None => {
+                    return Err(SendError::permanent(format!(
+                        "no such notification template: {template}"
+                    )));
+                }
+            },
+            _ => render_with(kind, to.locale, &mail.vars(to.username)),
+        };
+        let mut builder = Message::builder()
             .from_mailbox(self.from.clone())
             .to(to.address)
             .subject(&content.subject)
             .text(&content.text)
             .html(&content.html)
-            .header("Auto-Submitted", "auto-generated")
+            .header("Auto-Submitted", "auto-generated");
+        // Anything that is not part of running your own account must be easy to
+        // stop, and mail providers expect the standard one-click header (RFC 8058).
+        if let Mail::Notification { unsubscribe, .. } = mail {
+            builder = builder
+                .header("List-Unsubscribe", &format!("<{unsubscribe}>"))
+                .header("List-Unsubscribe-Post", "List-Unsubscribe=One-Click");
+        }
+        let message = builder
             .build()
             .map_err(|err| SendError::permanent(format!("could not build the message: {err}")))?;
 
@@ -197,11 +220,7 @@ impl SmtpSender {
 
 #[async_trait]
 impl Sender for SmtpSender {
-    async fn send_verification(&self, to: &Recipient<'_>, link: &str) -> Result<(), SendError> {
-        self.deliver(Kind::Verification, to, link).await
-    }
-
-    async fn send_password_reset(&self, to: &Recipient<'_>, link: &str) -> Result<(), SendError> {
-        self.deliver(Kind::PasswordReset, to, link).await
+    async fn send(&self, to: &Recipient<'_>, mail: &Mail<'_>) -> Result<(), SendError> {
+        self.deliver(mail, to).await
     }
 }

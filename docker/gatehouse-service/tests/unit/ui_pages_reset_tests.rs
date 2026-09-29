@@ -4,6 +4,7 @@ use gatehouse_service::email::{LoggingSender, Sender};
 use gatehouse_service::realm;
 use gatehouse_service::test_support::RecordingSender;
 use gatehouse_service::tokens::VerificationTokens;
+use gatehouse_service::ui::locale::BrowserLocale;
 use gatehouse_service::ui::pages::reset::{
     ResetNotice, ResetPasswordForm, ResetPasswordQuery, forgot_password_page,
     forgot_password_page_slash, render_forgot_password_page, render_reset_password_page,
@@ -213,6 +214,8 @@ async fn reset_password_submit_rejects_an_unknown_token() {
         Inject(Arc::new(db().await)),
         Inject(sessions()),
         Inject(Arc::new(VerificationTokens::in_memory())),
+        Inject(Arc::new(mailer())),
+        BrowserLocale(None),
     )
     .await;
     assert_eq!(resp.status(), StatusCode::FOUND);
@@ -253,6 +256,8 @@ async fn reset_password_submit_changes_the_password_for_a_valid_token() {
         Inject(Arc::new(db)),
         Inject(sessions()),
         Inject(tokens),
+        Inject(Arc::new(mailer())),
+        BrowserLocale(None),
     )
     .await;
     assert_eq!(resp.status(), StatusCode::FOUND);
@@ -369,19 +374,12 @@ async fn a_failing_mail_server_still_gets_the_same_redirect() {
     struct Failing;
     #[async_trait::async_trait]
     impl Sender for Failing {
-        async fn send_verification(
+        async fn send(
             &self,
             _: &gatehouse_service::email::Recipient<'_>,
-            _: &str,
+            _: &gatehouse_service::email::Mail<'_>,
         ) -> Result<(), gatehouse_service::email::SendError> {
-            Err(gatehouse_service::email::SendError::permanent("down"))
-        }
-        async fn send_password_reset(
-            &self,
-            _: &gatehouse_service::email::Recipient<'_>,
-            _: &str,
-        ) -> Result<(), gatehouse_service::email::SendError> {
-            Err(gatehouse_service::email::SendError::permanent("down"))
+            Err(gatehouse_service::email::SendError::permanent("smtp down"))
         }
     }
     let db = db().await;
@@ -494,4 +492,94 @@ async fn one_client_cannot_ask_for_resets_without_end() {
             .await
             .contains("reset_requested=1")
     );
+}
+
+async fn redeem_a_reset(
+    db: &Db,
+    address: Option<&str>,
+    confirmed: bool,
+    sender: Arc<dyn Sender>,
+) -> String {
+    realm::create(
+        db,
+        &catalog(),
+        true,
+        "alice",
+        "old-password",
+        vec![Role::User],
+        Permissions::new(),
+        address.map(str::to_string),
+    )
+    .await
+    .expect("seed user");
+    if confirmed {
+        realm::mark_email_verified(db, "alice")
+            .await
+            .expect("verify");
+    }
+    let tokens = Arc::new(VerificationTokens::in_memory());
+    let token = tokens
+        .issue(
+            gatehouse_service::tokens::PURPOSE_RESET_PASSWORD,
+            "alice",
+            3600,
+        )
+        .await
+        .expect("issue token");
+    let resp = reset_password_submit(
+        Form(ResetPasswordForm {
+            token,
+            password: "new-password".to_string(),
+        }),
+        Inject(Arc::new(db.clone())),
+        Inject(sessions()),
+        Inject(tokens),
+        Inject(Arc::new(sender)),
+        BrowserLocale(None),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::FOUND);
+    location(resp)
+}
+
+fn reset_recorder() -> (Arc<RecordingSender>, Arc<dyn Sender>) {
+    let recorder = Arc::new(RecordingSender::default());
+    let sender: Arc<dyn Sender> = recorder.clone();
+    (recorder, sender)
+}
+
+#[tokio::test]
+async fn following_a_reset_link_confirms_an_unconfirmed_address_and_tells_it() {
+    let db = db().await;
+    let (recorder, sender) = reset_recorder();
+    let target = redeem_a_reset(&db, Some("alice@example.test"), false, sender).await;
+    assert!(target.contains("reset=1"), "{target}");
+
+    // The link went to that address and was used, so the address is theirs.
+    let user = realm::get(&db, "alice").await.unwrap();
+    assert!(user.email_verified_at.is_some());
+    assert!(user.verify_password("new-password"));
+    let sent = recorder.sent_of("password-changed");
+    assert_eq!(sent.len(), 1, "{:?}", recorder.sent());
+    assert_eq!(sent[0].to, "alice@example.test");
+}
+
+#[tokio::test]
+async fn a_reset_for_a_confirmed_address_just_sends_the_notice() {
+    let db = db().await;
+    let (recorder, sender) = reset_recorder();
+    redeem_a_reset(&db, Some("alice@example.test"), true, sender).await;
+    assert_eq!(recorder.sent_of("password-changed").len(), 1);
+}
+
+#[tokio::test]
+async fn a_reset_for_an_account_without_an_address_works_and_says_nothing() {
+    let db = db().await;
+    let (recorder, sender) = reset_recorder();
+    let target = redeem_a_reset(&db, None, false, sender).await;
+    assert!(target.contains("reset=1"));
+    let user = realm::get(&db, "alice").await.unwrap();
+    assert!(user.verify_password("new-password"));
+    assert!(user.email_verified_at.is_none(), "nothing to confirm");
+    assert!(recorder.sent().is_empty());
 }

@@ -45,6 +45,10 @@ pub struct LoginNotices {
     #[serde(default)]
     pub resend_requested: Option<String>,
     #[serde(default)]
+    pub invited: Option<String>,
+    #[serde(default)]
+    pub email_changed: Option<String>,
+    #[serde(default)]
     pub err: Option<String>,
 }
 
@@ -513,6 +517,8 @@ pub fn login_error_key(notices: &LoginNotices) -> Option<&'static str> {
         Some("ui_login_account_locked") => Some("ui_login_account_locked"),
         Some("ui_login_email_unverified") => Some("ui_login_email_unverified"),
         Some("ui_login_rate_limited") => Some("ui_login_rate_limited"),
+        Some("ui_login_invite_invalid") => Some("ui_login_invite_invalid"),
+        Some("ui_login_confirm_email_invalid") => Some("ui_login_confirm_email_invalid"),
         _ => None,
     }
 }
@@ -523,6 +529,10 @@ pub fn login_ok_key(notices: &LoginNotices) -> Option<&'static str> {
         Some("ui_login_reset_ok")
     } else if notices.reset_requested.is_some() {
         Some("ui_login_reset_requested_ok")
+    } else if notices.email_changed.is_some() {
+        Some("ui_login_email_changed_ok")
+    } else if notices.invited.is_some() {
+        Some("ui_login_invite_accepted_ok")
     } else if notices.resend_requested.is_some() {
         Some("ui_login_resend_requested_ok")
     } else if notices.verified.is_some() {

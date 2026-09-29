@@ -1,3 +1,5 @@
+use conveyor_service::notifications::gatehouse::GatehouseNotifier;
+use conveyor_service::notifications::{self, Notifications};
 use conveyor_service::{routers, startup};
 use quench_http::prelude::*;
 use quench_starter::common::health::HealthState;
@@ -24,11 +26,28 @@ async fn main() -> std::io::Result<()> {
     startup::report_toolchain(&state.config);
 
     // Workers share this process but talk to it only via the DB, so serving and building scale independently.
-    conveyor_service::scheduler::spawn_pool(
+    // Run-result mail goes through gatehouse; without its address and conveyor's secret for it, off.
+    let notifications = match GatehouseNotifier::from_env() {
+        Some(notifier) => {
+            notifications::spawn_delivery(state.db.clone(), Arc::new(notifier));
+            Some(Arc::new(Notifications {
+                user_db: state.user_db.clone(),
+                auth_enabled: state.jwt_config.auth_enabled,
+            }))
+        }
+        None => {
+            tracing::info!(
+                "CLIENT_SECRET_CONVEYOR_GATEHOUSE is not set: run notifications are switched off"
+            );
+            None
+        }
+    };
+    conveyor_service::scheduler::spawn_pool_notifying(
         state.db.clone(),
         state.config.clone(),
         state.executor.0.clone(),
         state.providers.clone(),
+        notifications,
     );
 
     let health_state = HealthState::live();

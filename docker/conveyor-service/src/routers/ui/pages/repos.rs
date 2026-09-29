@@ -2,6 +2,7 @@
 //! POST+redirect forms, gated by the same project-scoped write grants the API uses.
 
 use crate::domain::{Project, Provider, Repo};
+use crate::notifications::subscriptions::{self, Scope};
 use crate::routers::api::authz::{can_on_project_claims, granted_project_ids};
 use crate::routers::ui::common::{ActorOrRedirect, render_page, ui_path};
 use crate::scheduler::repos::{NewRepo, RepoUpdate};
@@ -260,6 +261,89 @@ pub(super) async fn delete_repo(
     }
 }
 
+#[post("/ui/repos/{owner}/{name}/follow")]
+pub(super) async fn follow_repo(
+    actor: ActorOrRedirect,
+    Path((owner, name)): Path<(String, String)>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    let claims = match actor.or_redirect() {
+        Ok(claims) => claims,
+        Err(response) => return response,
+    };
+    let repo = match repos::find_by_owner_name(&db, &owner, &name).await {
+        Ok(Some(repo)) => repo,
+        _ => return redirect("/repos?err=not_found"),
+    };
+    // Following would tell someone how a project they cannot see is doing.
+    if !can_on_project_claims(&claims, &db, &repo.project_id, "read").await {
+        return redirect_to_list(Some("forbidden"));
+    }
+    match subscriptions::subscribe(&db, &claims.sub, Scope::Repo(&repo.id)).await {
+        Ok(_) => redirect("/repos?ok=followed"),
+        Err(_) => redirect_to_list(Some("follow_failed")),
+    }
+}
+
+/// Leaving needs no access check: someone who lost access can still stop the mail.
+#[post("/ui/repos/{owner}/{name}/unfollow")]
+pub(super) async fn unfollow_repo(
+    actor: ActorOrRedirect,
+    Path((owner, name)): Path<(String, String)>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    let claims = match actor.or_redirect() {
+        Ok(claims) => claims,
+        Err(response) => return response,
+    };
+    let repo = match repos::find_by_owner_name(&db, &owner, &name).await {
+        Ok(Some(repo)) => repo,
+        _ => return redirect("/repos?err=not_found"),
+    };
+    match subscriptions::unsubscribe(&db, &claims.sub, Scope::Repo(&repo.id)).await {
+        Ok(_) => redirect("/repos?ok=unfollowed"),
+        Err(_) => redirect_to_list(Some("follow_failed")),
+    }
+}
+
+#[post("/ui/projects/{id}/follow")]
+pub(super) async fn follow_project(
+    actor: ActorOrRedirect,
+    Path(id): Path<String>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    let claims = match actor.or_redirect() {
+        Ok(claims) => claims,
+        Err(response) => return response,
+    };
+    if !matches!(projects::read(&db, &id).await, Ok(Some(_))) {
+        return redirect("/repos?err=not_found");
+    }
+    if !can_on_project_claims(&claims, &db, &id, "read").await {
+        return redirect_to_list(Some("forbidden"));
+    }
+    match subscriptions::subscribe(&db, &claims.sub, Scope::Project(&id)).await {
+        Ok(_) => redirect("/repos?ok=followed"),
+        Err(_) => redirect_to_list(Some("follow_failed")),
+    }
+}
+
+#[post("/ui/projects/{id}/unfollow")]
+pub(super) async fn unfollow_project(
+    actor: ActorOrRedirect,
+    Path(id): Path<String>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    let claims = match actor.or_redirect() {
+        Ok(claims) => claims,
+        Err(response) => return response,
+    };
+    match subscriptions::unsubscribe(&db, &claims.sub, Scope::Project(&id)).await {
+        Ok(_) => redirect("/repos?ok=unfollowed"),
+        Err(_) => redirect_to_list(Some("follow_failed")),
+    }
+}
+
 // --- Rendering ---
 
 async fn render_list(db: &Db, claims: &Claims, notice: &Notice) -> Response {
@@ -272,16 +356,45 @@ async fn render_list(db: &Db, claims: &Claims, notice: &Notice) -> Response {
         .filter(|project| writable_set.contains(project.id.as_str()))
         .collect();
 
+    let followed = subscriptions::list_for_user(db, &claims.sub)
+        .await
+        .unwrap_or_default();
+    let followed_repos: HashSet<&str> = followed
+        .iter()
+        .filter_map(|s| s.repo_id.as_deref())
+        .collect();
+    let followed_projects: HashSet<&str> = followed
+        .iter()
+        .filter_map(|s| s.project_id.as_deref())
+        .collect();
+
     let mut rows = div().class("meta-list");
     if repositories.is_empty() {
         rows = rows.child(empty_state("ui_repos_empty"));
     }
     for repo in &repositories {
-        rows = rows.child(repo_row(
-            repo,
-            &project_path(&repo.project_id, &all_projects),
-            writable_set.contains(repo.project_id.as_str()),
-        ));
+        rows = rows.child(
+            repo_row(
+                repo,
+                &project_path(&repo.project_id, &all_projects),
+                writable_set.contains(repo.project_id.as_str()),
+            )
+            .child(follow_form(
+                &format!(
+                    "/repos/{}/{}",
+                    urlencoding::encode(&repo.owner),
+                    urlencoding::encode(&repo.name)
+                ),
+                followed_repos.contains(repo.id.as_str()),
+            )),
+        );
+    }
+
+    let mut readable_projects: Vec<&Project> = Vec::new();
+    for project in &all_projects {
+        if can_on_project_claims(claims, db, &project.id, "read").await {
+            readable_projects.push(project);
+        }
     }
 
     let list_panel = div()
@@ -305,6 +418,11 @@ async fn render_list(db: &Db, claims: &Claims, notice: &Notice) -> Response {
                         .attr("data-i18n", "ui_repos_back_home"),
                 )
                 .child(list_panel)
+                .child_opt(follow_projects_panel(
+                    &readable_projects,
+                    &all_projects,
+                    &followed_projects,
+                ))
                 .child_opt(create_panel(&writable_projects, &all_projects)),
         ),
     )
@@ -355,6 +473,74 @@ pub fn repo_row(repo: &Repo, project_path: &str, can_edit: bool) -> Element {
     }
 
     row
+}
+
+/// The follow/unfollow button for one repository or project. `base` is the UI path of the thing
+/// followed (`/repos/owner/name`, `/projects/id`); the form posts to `<base>/follow` or `<base>/unfollow`.
+pub fn follow_form(base: &str, following: bool) -> Element {
+    let (verb, label) = if following {
+        ("unfollow", "ui_follow_stop")
+    } else {
+        ("follow", "ui_follow_start")
+    };
+    form()
+        .class("repos-follow-form")
+        .attr("method", "post")
+        .attr("action", ui_path(&format!("{base}/{verb}")))
+        .child(
+            button()
+                .attr("type", "submit")
+                .class(if following {
+                    "button repos-follow repos-following"
+                } else {
+                    "button repos-follow"
+                })
+                .attr("data-i18n", label),
+        )
+}
+
+/// Every project the caller can read, each with a follow toggle - following one covers everything
+/// nested beneath it. Omitted when there is nothing to follow.
+pub fn follow_projects_panel(
+    readable: &[&Project],
+    all_projects: &[Project],
+    followed: &HashSet<&str>,
+) -> Option<Element> {
+    if readable.is_empty() {
+        return None;
+    }
+    let mut rows = div().class("meta-list");
+    for project in readable {
+        rows = rows.child(
+            div()
+                .class("repos-row")
+                .child(
+                    div().class("repos-row-main").child(
+                        span()
+                            .class("repos-project-path")
+                            .text(project_path(&project.id, all_projects)),
+                    ),
+                )
+                .child(follow_form(
+                    &format!("/projects/{}", urlencoding::encode(&project.id)),
+                    followed.contains(project.id.as_str()),
+                )),
+        );
+    }
+    Some(
+        div()
+            .class("panel repos-panel")
+            .child(
+                div()
+                    .class("panel-title")
+                    .attr("data-i18n", "ui_follow_projects_title"),
+            )
+            .child(
+                p().class("admin-hint")
+                    .attr("data-i18n", "ui_follow_projects_hint"),
+            )
+            .child(rows),
+    )
 }
 
 /// Omitted, not disabled, when there's nowhere the caller may register a repo.
@@ -717,6 +903,8 @@ pub fn notice_banner(notice: &Notice) -> Option<Element> {
         Some("created") => "ui_repos_ok_created",
         Some("saved") => "ui_repos_ok_saved",
         Some("deleted") => "ui_repos_ok_deleted",
+        Some("followed") => "ui_follow_ok_followed",
+        Some("unfollowed") => "ui_follow_ok_unfollowed",
         _ => return None,
     };
     Some(p().class("repos-notice ok").attr("data-i18n", key))
@@ -730,6 +918,7 @@ pub fn known_error_key(candidate: &str) -> Option<&'static str> {
         "forbidden" => Some("ui_repos_err_forbidden"),
         "not_found" => Some("ui_repos_err_not_found"),
         "create_failed" | "save_failed" | "delete_failed" => Some("ui_repos_err_write_failed"),
+        "follow_failed" => Some("ui_follow_err_failed"),
         _ => None,
     }
 }
@@ -740,4 +929,8 @@ pub(super) fn register_routes() {
     let _ = create_repo as fn(_, _, _) -> _;
     let _ = save_repo as fn(_, _, _, _) -> _;
     let _ = delete_repo as fn(_, _, _) -> _;
+    let _ = follow_repo as fn(_, _, _) -> _;
+    let _ = unfollow_repo as fn(_, _, _) -> _;
+    let _ = follow_project as fn(_, _, _) -> _;
+    let _ = unfollow_project as fn(_, _, _) -> _;
 }

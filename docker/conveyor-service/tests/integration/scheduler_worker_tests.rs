@@ -502,3 +502,59 @@ steps = ["sleep 120"]
     let run = settle(&db, &run_id).await;
     assert_eq!(run.status, Status::Cancelled, "error was {:?}", run.error);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_failed_run_queues_a_notification_for_the_people_following_the_repo() {
+    use conveyor_service::notifications::Notifications;
+    use conveyor_service::notifications::outbox;
+    use conveyor_service::notifications::subscriptions::{self, Scope};
+    use conveyor_service::scheduler::spawn_pool_notifying;
+    use quench_auth::prelude::UserDb;
+
+    let Some((db, _guard)) = database().await else {
+        return skipped("a_failed_run_queues_a_notification_for_the_people_following_the_repo");
+    };
+    envmnt::set("CONVEYOR_PUBLIC_URL", "https://forge.example.test/conveyor");
+
+    let origin =
+        Origin::with_pipeline("[[stage]]\nname = \"build\"\n[[stage.job]]\nsteps = [\"exit 1\"]\n");
+    let repo = register_repo(&db, "e2e-notify", &origin.url()).await;
+    subscriptions::subscribe(&db, "conveyor-tests", Scope::Repo(&repo.id))
+        .await
+        .expect("follow");
+
+    let work = tempfile::tempdir().expect("temp dir");
+    spawn_pool_notifying(
+        db.clone(),
+        ConveyorConfig {
+            work_dir: work.path().to_path_buf(),
+            max_concurrent_runs: 1,
+            default_job_timeout_secs: 60,
+            checkout_timeout_secs: 60,
+            ..ConveyorConfig::default()
+        },
+        Arc::new(NativeExecutor::new()),
+        Arc::new(Providers::from_env()),
+        Some(Arc::new(Notifications {
+            user_db: UserDb::init(db.clone()).await,
+            auth_enabled: false,
+        })),
+    );
+
+    let run_id = queue_run(&db, &repo.id, "refs/heads/master", &origin.sha).await;
+    assert_eq!(settle(&db, &run_id).await.status, Status::Failed);
+
+    // Queued just after the status is written, so wait for it rather than race it.
+    let mut queued = Vec::new();
+    for _ in 0..50 {
+        queued = outbox::claim_due(&db, 10).await.expect("claim");
+        if !queued.is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(queued.len(), 1, "one follower, one message");
+    assert_eq!(queued[0].username, "conveyor-tests");
+    assert_eq!(queued[0].template, "conveyor.run.failed");
+    assert_eq!(queued[0].run_id, run_id);
+}

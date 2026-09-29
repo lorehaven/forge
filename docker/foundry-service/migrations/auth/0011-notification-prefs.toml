@@ -1,0 +1,28 @@
+[[migrations]]
+id = "0011-notification-prefs"
+author = "gatehouse-service"
+since = "0.2.2"
+
+# Which kinds of service notification each person wants (see gatehouse's
+# `notify` module). A row exists only where the person's choice differs from the
+# kind's default, so changing a default later reaches everyone who never chose.
+# `key` is `username|template` - gatehouse's repository layer wants a single
+# key column - and `username` is indexed for "everything this person chose".
+# No foreign key to users: a preference outliving its account is harmless, and
+# gatehouse's users table is owned by another migration's lifecycle.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.notification_prefs (
+    key        TEXT PRIMARY KEY,
+    username   TEXT NOT NULL,
+    template   TEXT NOT NULL,
+    enabled    BOOLEAN NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS notification_prefs_username
+    ON ${schema}.notification_prefs (username);
+"""

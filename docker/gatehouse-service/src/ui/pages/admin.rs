@@ -1,8 +1,13 @@
 //! Realm user administration: plain POST-and-redirect forms, no JS required.
 //! Mutations go through [`crate::realm`], shared with the JSON API.
 
+use crate::PublicBase;
 use crate::catalog::PermissionCatalog;
+use crate::email::{Mail, Sender};
+use crate::invites;
+use crate::notices;
 use crate::realm::{self, RealmError, UserChanges};
+use crate::tokens::VerificationTokens;
 use crate::ui::common::{UiPageKind, render_page, ui_path};
 use async_trait::async_trait;
 use http::StatusCode;
@@ -18,6 +23,7 @@ use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// `Element` has no conditional attribute setter for present/absent attrs.
 trait AttrIf {
@@ -147,7 +153,12 @@ pub async fn edit_user(
 #[derive(Deserialize)]
 pub struct CreateForm {
     pub username: String,
+    /// Optional when an email address is given: that account is invited instead.
+    #[serde(default)]
     pub password: String,
+    /// With an address, the user is invited to choose their own password.
+    #[serde(default)]
+    pub email: Option<String>,
     #[serde(default)]
     pub role: Option<String>,
 }
@@ -158,6 +169,9 @@ pub async fn create_user(
     Form(form): Form<CreateForm>,
     Inject(catalog): Inject<PermissionCatalog>,
     Inject(db): Inject<Db>,
+    Inject(tokens): Inject<VerificationTokens>,
+    Inject(mailer): Inject<Arc<dyn Sender>>,
+    Inject(base): Inject<PublicBase>,
 ) -> Response {
     let actor = match actor.claims() {
         Ok(actor) => actor,
@@ -173,25 +187,103 @@ pub async fn create_user(
     };
 
     // No permissions on create - a new user starts with none, granted on edit.
-    match realm::create(
-        &db,
-        &catalog,
-        actor_is_admin,
-        &form.username,
-        &form.password,
-        roles,
-        Permissions::new(),
-        None,
-    )
-    .await
-    {
+    // An address means an invitation: the person picks their own password and
+    // the administrator never handles it (any password typed here is ignored).
+    let email = form
+        .email
+        .as_deref()
+        .map(str::trim)
+        .filter(|email| !email.is_empty());
+    let created = match email {
+        Some(email) => {
+            realm::create_invited(
+                &db,
+                &catalog,
+                actor_is_admin,
+                &form.username,
+                roles,
+                Permissions::new(),
+                email,
+            )
+            .await
+        }
+        None => {
+            realm::create(
+                &db,
+                &catalog,
+                actor_is_admin,
+                &form.username,
+                &form.password,
+                roles,
+                Permissions::new(),
+                None,
+            )
+            .await
+        }
+    };
+
+    match created {
         // Straight to the editor - granting access is the obvious next step.
-        Ok(user) => redirect(&format!(
-            "/admin/users/{}?ok=created",
-            urlencoding::encode(&user.username)
-        )),
+        Ok(user) => {
+            let outcome = if email.is_some() {
+                invite_outcome(&tokens, &**mailer, &base, &user).await
+            } else {
+                "created"
+            };
+            redirect(&format!(
+                "/admin/users/{}?ok={outcome}",
+                urlencoding::encode(&user.username)
+            ))
+        }
         Err(err) => back_to_list(&err),
     }
+}
+
+/// Sends the invitation and names what to tell the administrator.
+async fn invite_outcome(
+    tokens: &VerificationTokens,
+    mailer: &dyn Sender,
+    base: &PublicBase,
+    user: &User,
+) -> &'static str {
+    match invites::send_invite(tokens, mailer, base, user, None).await {
+        Ok(()) => "invited",
+        Err(err) => {
+            tracing::error!("could not send the invitation to {}: {err}", user.username);
+            "invite_failed"
+        }
+    }
+}
+
+/// Another invitation for an account whose address is still unconfirmed - the
+/// first was lost, expired, or never arrived.
+#[post("/ui/admin/users/{username}/invite")]
+pub async fn resend_invite(
+    actor: EditUserActor,
+    Path(username): Path<String>,
+    Inject(db): Inject<Db>,
+    Inject(tokens): Inject<VerificationTokens>,
+    Inject(mailer): Inject<Arc<dyn Sender>>,
+    Inject(base): Inject<PublicBase>,
+) -> Response {
+    if let Err(response) = actor.claims() {
+        return response;
+    }
+    let user = match realm::get(&db, &username).await {
+        Ok(user) => user,
+        Err(err) => return back_to_list(&err),
+    };
+    if user.email.as_deref().is_none_or(|e| e.trim().is_empty()) {
+        return back_to_edit(&username, &RealmError::InviteNeedsEmail);
+    }
+    if user.email_verified_at.is_some() {
+        return back_to_edit(&username, &RealmError::AlreadyConfirmed);
+    }
+    let outcome = invite_outcome(&tokens, &**mailer, &base, &user).await;
+    redirect(&format!(
+        "/admin/users/{}?ok={outcome}",
+        urlencoding::encode(&username)
+    ))
 }
 
 /// Read as a flat map: catalog actions are runtime data, so permission
@@ -204,6 +296,7 @@ pub async fn save_user(
     Inject(catalog): Inject<PermissionCatalog>,
     Inject(db): Inject<Db>,
     Inject(sessions): Inject<SessionDb>,
+    Inject(mailer): Inject<Arc<dyn Sender>>,
 ) -> Response {
     let actor = match actor.claims() {
         Ok(actor) => actor,
@@ -239,6 +332,7 @@ pub async fn save_user(
         ..UserChanges::default()
     };
 
+    let password_changed = changes.password.is_some();
     match realm::update(
         &db,
         &catalog,
@@ -250,10 +344,15 @@ pub async fn save_user(
     )
     .await
     {
-        Ok(_) => redirect(&format!(
-            "/admin/users/{}?ok=saved",
-            urlencoding::encode(&username)
-        )),
+        Ok(user) => {
+            if password_changed {
+                notices::notify(&**mailer, &user, &Mail::PasswordChanged, None).await;
+            }
+            redirect(&format!(
+                "/admin/users/{}?ok=saved",
+                urlencoding::encode(&username)
+            ))
+        }
         Err(err) => redirect(&format!(
             "/admin/users/{}?err={}",
             urlencoding::encode(&username),
@@ -394,16 +493,27 @@ pub async fn disable_user_mfa(
     actor: EditUserActor,
     Path(username): Path<String>,
     Inject(db): Inject<Db>,
+    Inject(mailer): Inject<Arc<dyn Sender>>,
 ) -> Response {
     if let Err(response) = actor.claims() {
         return response;
     }
 
+    // Only worth a notice if it was actually on.
+    let was_on = realm::get(&db, &username)
+        .await
+        .map(|user| user.mfa_enabled)
+        .unwrap_or(false);
     match realm::disable_mfa(&db, &username).await {
-        Ok(()) => redirect(&format!(
-            "/admin/users/{}?ok=saved",
-            urlencoding::encode(&username)
-        )),
+        Ok(()) => {
+            if was_on {
+                notices::notify_username(&**mailer, &db, &username, &Mail::MfaDisabled, None).await;
+            }
+            redirect(&format!(
+                "/admin/users/{}?ok=saved",
+                urlencoding::encode(&username)
+            ))
+        }
         Err(err) => back_to_edit(&username, &err),
     }
 }
@@ -583,8 +693,23 @@ pub fn create_panel(show_role_select: bool) -> Element {
                 .attr("type", "password")
                 .attr("id", "new-password")
                 .attr("name", "password")
-                .attr("autocomplete", "new-password")
-                .attr("required", "required"),
+                .attr("autocomplete", "new-password"),
+        )
+        .child(
+            label()
+                .attr("for", "new-email")
+                .attr("data-i18n", "ui_admin_new_email"),
+        )
+        .child(
+            input()
+                .attr("type", "email")
+                .attr("id", "new-email")
+                .attr("name", "email")
+                .attr("autocomplete", "off"),
+        )
+        .child(
+            p().class("admin-hint")
+                .attr("data-i18n", "ui_admin_new_email_hint"),
         );
 
     if show_role_select {
@@ -853,6 +978,21 @@ pub fn status_panel(user: &User, can_edit: bool, allow_self_action: bool) -> Ele
                 mfa_action_form(&user.username, "mfa/disable", "ui_admin_action_mfa_disable")
             }),
         ));
+
+        // Only where there is an address to confirm; an unconfirmed one can be
+        // sent another invitation.
+        if user.email.is_some() {
+            let confirmed = user.email_verified_at.is_some();
+            rows = rows.child(status_action_row(
+                "ui_admin_status_email_confirmed",
+                confirmed,
+                "ui_admin_status_yes",
+                "ui_admin_status_no",
+                (!confirmed).then(|| {
+                    mfa_action_form(&user.username, "invite", "ui_admin_action_resend_invite")
+                }),
+            ));
+        }
     } else {
         rows = rows
             .child(status_row(
@@ -879,6 +1019,16 @@ pub fn status_panel(user: &User, can_edit: bool, allow_self_action: bool) -> Ele
                     "ui_admin_status_no"
                 },
             ));
+        if user.email.is_some() {
+            rows = rows.child(status_row(
+                "ui_admin_status_email_confirmed",
+                if user.email_verified_at.is_some() {
+                    "ui_admin_status_yes"
+                } else {
+                    "ui_admin_status_no"
+                },
+            ));
+        }
     }
 
     div()
@@ -1055,13 +1205,16 @@ pub fn notice_banner(notice: &Notice) -> Option<Element> {
     if let Some(key) = notice.err.as_deref().and_then(known_error_key) {
         return Some(p().class("admin-notice error").attr("data-i18n", key));
     }
-    let key = match notice.ok.as_deref() {
-        Some("created") => "ui_admin_ok_created",
-        Some("saved") => "ui_admin_ok_saved",
-        Some("deleted") => "ui_admin_ok_deleted",
+    let (key, class) = match notice.ok.as_deref() {
+        Some("created") => ("ui_admin_ok_created", "admin-notice ok"),
+        Some("saved") => ("ui_admin_ok_saved", "admin-notice ok"),
+        Some("deleted") => ("ui_admin_ok_deleted", "admin-notice ok"),
+        Some("invited") => ("ui_admin_ok_invited", "admin-notice ok"),
+        // Created, but the email did not go out: not a success to be glossed over.
+        Some("invite_failed") => ("ui_admin_warn_invite_failed", "admin-notice error"),
         _ => return None,
     };
-    Some(p().class("admin-notice ok").attr("data-i18n", key))
+    Some(p().class(class).attr("data-i18n", key))
 }
 
 fn known_error_key(candidate: &str) -> Option<&'static str> {
@@ -1077,6 +1230,10 @@ fn known_error_key(candidate: &str) -> Option<&'static str> {
         RealmError::SelfDisable,
         RealmError::UnknownTemplate,
         RealmError::RolesRequireAdmin,
+        RealmError::UsernameInvalid,
+        RealmError::EmailInvalid,
+        RealmError::InviteNeedsEmail,
+        RealmError::AlreadyConfirmed,
         RealmError::Internal,
     ]
     .iter()
@@ -1141,12 +1298,13 @@ pub fn register_routes() {
     let _ = users_page as fn(_, _, _) -> _;
     let _ = users_page_slash as fn(_, _, _) -> _;
     let _ = edit_user as fn(_, _, _, _, _) -> _;
-    let _ = create_user as fn(_, _, _, _) -> _;
-    let _ = save_user as fn(_, _, _, _, _, _) -> _;
+    let _ = create_user as fn(_, _, _, _, _, _, _) -> _;
+    let _ = resend_invite as fn(_, _, _, _, _, _) -> _;
+    let _ = save_user as fn(_, _, _, _, _, _, _) -> _;
     let _ = apply_template as fn(_, _, _, _, _, _) -> _;
     let _ = delete_user as fn(_, _, _, _) -> _;
     let _ = disable_user as fn(_, _, _) -> _;
     let _ = enable_user as fn(_, _, _) -> _;
     let _ = unlock_user as fn(_, _, _) -> _;
-    let _ = disable_user_mfa as fn(_, _, _) -> _;
+    let _ = disable_user_mfa as fn(_, _, _, _) -> _;
 }

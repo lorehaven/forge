@@ -5,10 +5,14 @@ mod support;
 mod checkout_and_run_tests;
 #[path = "integration/credentials_store_tests.rs"]
 mod credentials_store_tests;
+#[path = "integration/notifications_tests.rs"]
+mod notifications_tests;
 #[path = "integration/routers_api_projects_secrets_credentials_tests.rs"]
 mod routers_api_projects_secrets_credentials_tests;
 #[path = "integration/routers_api_repos_runs_tests.rs"]
 mod routers_api_repos_runs_tests;
+#[path = "integration/routers_api_subscriptions_tests.rs"]
+mod routers_api_subscriptions_tests;
 #[path = "integration/routers_ui_home_tests.rs"]
 mod routers_ui_home_tests;
 #[path = "integration/routers_ui_pipelines_http_tests.rs"]

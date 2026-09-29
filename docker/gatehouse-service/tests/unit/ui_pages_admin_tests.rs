@@ -1,8 +1,11 @@
 use bytes::Bytes;
+use gatehouse_service::PublicBase;
 use gatehouse_service::api::auth::user_scope;
 use gatehouse_service::catalog::PermissionCatalog;
+use gatehouse_service::email::{LoggingSender, Sender};
 use gatehouse_service::realm::{self, RealmError};
-use gatehouse_service::test_support::auth_disabled_guard;
+use gatehouse_service::test_support::{RecordingSender, auth_disabled_guard};
+use gatehouse_service::tokens::VerificationTokens;
 use gatehouse_service::ui::pages::admin::*;
 use http::{HeaderMap, Method, StatusCode, Uri};
 use http_body_util::BodyExt;
@@ -432,11 +435,22 @@ async fn admin_app(
     config: JwtConfig,
     db: Db,
 ) -> (Arc<dyn Endpoint>, Arc<quench_http::di::Container>) {
+    admin_app_with_mailer(config, db, Arc::new(LoggingSender)).await
+}
+
+async fn admin_app_with_mailer(
+    config: JwtConfig,
+    db: Db,
+    mailer: Arc<dyn Sender>,
+) -> (Arc<dyn Endpoint>, Arc<quench_http::di::Container>) {
     gatehouse_service::ui::pages::admin::register_routes();
     let container = ContainerBuilder::new()
         .provide(config)
         .provide(catalog())
         .provide(db)
+        .provide(mailer)
+        .provide(PublicBase::resolve("https://mail.example.test", ""))
+        .provide_arc(Arc::new(VerificationTokens::in_memory()))
         .provide_arc(sessions())
         .build()
         .await
@@ -715,4 +729,389 @@ async fn delete_user_removes_someone_else_but_not_yourself() {
         .await;
     assert_eq!(resp.status(), StatusCode::FOUND);
     assert!(location(resp).contains("ok=deleted"));
+}
+
+// -----------------------------------------------------------------
+// Security notices when an administrator acts on someone's account
+// -----------------------------------------------------------------
+
+async fn seed_target(db: &Db, address: Option<&str>, confirmed: bool) {
+    realm::create(
+        db,
+        &catalog(),
+        true,
+        "target",
+        "password",
+        vec![Role::User],
+        Permissions::new(),
+        address.map(str::to_string),
+    )
+    .await
+    .expect("seed target");
+    if confirmed {
+        realm::mark_email_verified(db, "target")
+            .await
+            .expect("verify");
+    }
+}
+
+fn admin_recording() -> (Arc<RecordingSender>, Arc<dyn Sender>) {
+    let recorder = Arc::new(RecordingSender::default());
+    let sender: Arc<dyn Sender> = recorder.clone();
+    (recorder, sender)
+}
+
+#[tokio::test]
+async fn an_administrator_changing_a_password_tells_the_account_holder() {
+    let _guard = auth_disabled_guard().await;
+    let db = db().await;
+    seed_user(&db, "admin", vec![Role::Admin], &[]).await;
+    seed_target(&db, Some("target@example.test"), true).await;
+    let (recorder, sender) = admin_recording();
+    let (app, container) = admin_app_with_mailer(JwtConfig::for_tests(), db, sender).await;
+
+    let resp = app
+        .call(post_form(
+            "/ui/admin/users/target",
+            &[("password", "a-new-password-set-by-admin")],
+            &container,
+        ))
+        .await;
+    assert!(location(resp).contains("ok=saved"));
+    let sent = recorder.sent_of("password-changed");
+    assert_eq!(sent.len(), 1, "{:?}", recorder.sent());
+    assert_eq!(sent[0].to, "target@example.test");
+    assert_eq!(sent[0].username, "target");
+}
+
+#[tokio::test]
+async fn saving_other_changes_without_a_password_says_nothing() {
+    let _guard = auth_disabled_guard().await;
+    let db = db().await;
+    seed_user(&db, "admin", vec![Role::Admin], &[]).await;
+    seed_target(&db, Some("target@example.test"), true).await;
+    let (recorder, sender) = admin_recording();
+    let (app, container) = admin_app_with_mailer(JwtConfig::for_tests(), db, sender).await;
+    let resp = app
+        .call(post_form(
+            "/ui/admin/users/target",
+            &[("perm_conveyor_read", "on"), ("password", "")],
+            &container,
+        ))
+        .await;
+    assert!(location(resp).contains("ok=saved"));
+    assert!(recorder.sent().is_empty(), "{:?}", recorder.sent());
+}
+
+#[tokio::test]
+async fn no_admin_notice_for_an_unconfirmed_or_missing_address() {
+    for (address, confirmed) in [(Some("target@example.test"), false), (None, false)] {
+        let _guard = auth_disabled_guard().await;
+        let db = db().await;
+        seed_user(&db, "admin", vec![Role::Admin], &[]).await;
+        seed_target(&db, address, confirmed).await;
+        let (recorder, sender) = admin_recording();
+        let (app, container) = admin_app_with_mailer(JwtConfig::for_tests(), db, sender).await;
+        app.call(post_form(
+            "/ui/admin/users/target",
+            &[("password", "a-new-password-set-by-admin")],
+            &container,
+        ))
+        .await;
+        assert!(recorder.sent().is_empty(), "{address:?}");
+    }
+}
+
+#[tokio::test]
+async fn an_administrator_turning_off_mfa_tells_the_account_holder_only_if_it_was_on() {
+    let _guard = auth_disabled_guard().await;
+    envmnt::set(
+        "GATEHOUSE_KEY_ENCRYPTION_KEY",
+        gatehouse_service::test_support::TEST_KEY_MATERIAL,
+    );
+    let db = db().await;
+    seed_user(&db, "admin", vec![Role::Admin], &[]).await;
+    seed_target(&db, Some("target@example.test"), true).await;
+    let (recorder, sender) = admin_recording();
+    let (app, container) = admin_app_with_mailer(JwtConfig::for_tests(), db.clone(), sender).await;
+
+    // MFA never was on: no false alarm.
+    app.call(post("/ui/admin/users/target/mfa/disable", &container))
+        .await;
+    assert!(recorder.sent().is_empty());
+
+    // Turn it on, then have the administrator turn it off.
+    let (secret, _) = realm::begin_mfa_enrollment("target").expect("enrollment");
+    let code = {
+        use totp_rs::Secret;
+        totp_rs::Builder::new()
+            .with_algorithm(totp_rs::Algorithm::SHA1)
+            .with_digits(6)
+            .with_skew(1)
+            .with_step_duration(30)
+            .with_secret(Secret::try_from_base32(&secret).expect("base32"))
+            .with_account_name("target".to_string())
+            .with_issuer(Some("Forge"))
+            .build()
+            .expect("totp")
+            .generate_current()
+            .to_string()
+    };
+    realm::enable_mfa(&db, "target", &secret, &code)
+        .await
+        .expect("enable mfa");
+    app.call(post("/ui/admin/users/target/mfa/disable", &container))
+        .await;
+    let sent = recorder.sent_of("mfa-disabled");
+    assert_eq!(sent.len(), 1, "{:?}", recorder.sent());
+    assert_eq!(sent[0].to, "target@example.test");
+}
+
+// -----------------------------------------------------------------
+// Inviting users
+// -----------------------------------------------------------------
+
+async fn admin_with_recorder() -> (
+    Arc<RecordingSender>,
+    Arc<dyn Endpoint>,
+    Arc<quench_http::di::Container>,
+    Db,
+) {
+    let db = db().await;
+    seed_user(&db, "admin", vec![Role::Admin], &[]).await;
+    let (recorder, sender) = admin_recording();
+    let (app, container) = admin_app_with_mailer(JwtConfig::for_tests(), db.clone(), sender).await;
+    (recorder, app, container, db)
+}
+
+#[tokio::test]
+async fn creating_a_user_with_an_address_sends_an_invitation() {
+    let _guard = auth_disabled_guard().await;
+    let (recorder, app, container, db) = admin_with_recorder().await;
+    let resp = app
+        .call(post_form(
+            "/ui/admin/users",
+            &[("username", "newbie"), ("email", "newbie@example.test")],
+            &container,
+        ))
+        .await;
+    let target = location(resp);
+    assert!(
+        target.contains("/admin/users/newbie?ok=invited"),
+        "{target}"
+    );
+
+    let sent = recorder.sent_of("invite");
+    assert_eq!(sent.len(), 1, "{:?}", recorder.sent());
+    assert_eq!(sent[0].to, "newbie@example.test");
+    assert!(sent[0].link.contains("/accept-invite?token="));
+    let user = realm::get(&db, "newbie").await.unwrap();
+    assert!(user.email_verified_at.is_none());
+}
+
+#[tokio::test]
+async fn a_password_typed_alongside_an_address_is_ignored() {
+    let _guard = auth_disabled_guard().await;
+    let (recorder, app, container, db) = admin_with_recorder().await;
+    app.call(post_form(
+        "/ui/admin/users",
+        &[
+            ("username", "newbie"),
+            ("password", "admin-chose-this"),
+            ("email", "newbie@example.test"),
+        ],
+        &container,
+    ))
+    .await;
+    let user = realm::get(&db, "newbie").await.unwrap();
+    assert!(
+        !user.verify_password("admin-chose-this"),
+        "the person picks their own password by accepting the invitation"
+    );
+    assert_eq!(recorder.sent_of("invite").len(), 1);
+}
+
+#[tokio::test]
+async fn creating_a_user_without_an_address_still_needs_a_password_and_sends_nothing() {
+    let _guard = auth_disabled_guard().await;
+    let (recorder, app, container, db) = admin_with_recorder().await;
+    let resp = app
+        .call(post_form(
+            "/ui/admin/users",
+            &[("username", "plain"), ("password", "given-password")],
+            &container,
+        ))
+        .await;
+    assert!(location(resp).contains("ok=created"));
+    assert!(
+        realm::get(&db, "plain")
+            .await
+            .unwrap()
+            .verify_password("given-password")
+    );
+    assert!(recorder.sent().is_empty());
+
+    let resp = app
+        .call(post_form(
+            "/ui/admin/users",
+            &[("username", "nopw")],
+            &container,
+        ))
+        .await;
+    let target = location(resp);
+    assert!(target.contains("/admin/users?err="), "{target}");
+    assert!(realm::get(&db, "nopw").await.is_err());
+}
+
+#[tokio::test]
+async fn an_unusable_address_is_refused_and_creates_nothing() {
+    let _guard = auth_disabled_guard().await;
+    let (recorder, app, container, db) = admin_with_recorder().await;
+    let resp = app
+        .call(post_form(
+            "/ui/admin/users",
+            &[("username", "newbie"), ("email", "not-an-address")],
+            &container,
+        ))
+        .await;
+    assert!(location(resp).contains("err=ui_register_error_email_invalid"));
+    assert!(realm::get(&db, "newbie").await.is_err());
+    assert!(recorder.sent().is_empty());
+}
+
+#[tokio::test]
+async fn a_mail_failure_still_creates_the_account_and_says_so() {
+    struct Failing;
+    #[async_trait::async_trait]
+    impl Sender for Failing {
+        async fn send(
+            &self,
+            _: &gatehouse_service::email::Recipient<'_>,
+            _: &gatehouse_service::email::Mail<'_>,
+        ) -> Result<(), gatehouse_service::email::SendError> {
+            Err(gatehouse_service::email::SendError::transient("smtp down"))
+        }
+    }
+    let _guard = auth_disabled_guard().await;
+    let db = db().await;
+    seed_user(&db, "admin", vec![Role::Admin], &[]).await;
+    let (app, container) =
+        admin_app_with_mailer(JwtConfig::for_tests(), db.clone(), Arc::new(Failing)).await;
+    let resp = app
+        .call(post_form(
+            "/ui/admin/users",
+            &[("username", "newbie"), ("email", "newbie@example.test")],
+            &container,
+        ))
+        .await;
+    assert!(location(resp).contains("ok=invite_failed"));
+    assert!(
+        realm::get(&db, "newbie").await.is_ok(),
+        "the account exists"
+    );
+}
+
+#[tokio::test]
+async fn resending_an_invitation_mails_the_unconfirmed_address_again() {
+    let _guard = auth_disabled_guard().await;
+    let (recorder, app, container, _db) = admin_with_recorder().await;
+    app.call(post_form(
+        "/ui/admin/users",
+        &[("username", "newbie"), ("email", "newbie@example.test")],
+        &container,
+    ))
+    .await;
+    let resp = app
+        .call(post("/ui/admin/users/newbie/invite", &container))
+        .await;
+    assert!(location(resp).contains("ok=invited"));
+    let sent = recorder.sent_of("invite");
+    assert_eq!(sent.len(), 2);
+    assert_ne!(sent[0].link, sent[1].link, "a fresh token each time");
+}
+
+#[tokio::test]
+async fn resending_is_refused_for_a_confirmed_address_no_address_or_no_account() {
+    let _guard = auth_disabled_guard().await;
+    let (recorder, app, container, db) = admin_with_recorder().await;
+    seed_target(&db, Some("t@example.test"), true).await;
+    let resp = app
+        .call(post("/ui/admin/users/target/invite", &container))
+        .await;
+    assert!(location(resp).contains("err=ui_admin_error_already_confirmed"));
+
+    seed_user(&db, "bare", vec![Role::User], &[]).await;
+    let resp = app
+        .call(post("/ui/admin/users/bare/invite", &container))
+        .await;
+    assert!(location(resp).contains("err=ui_admin_error_invite_needs_email"));
+
+    let resp = app
+        .call(post("/ui/admin/users/ghost/invite", &container))
+        .await;
+    assert!(location(resp).contains("/admin/users?err="));
+    assert!(recorder.sent().is_empty());
+}
+
+#[test]
+fn the_invite_outcomes_have_banners_and_a_failure_is_styled_as_one() {
+    let banner = |ok: &str| {
+        notice_banner(&Notice {
+            err: None,
+            ok: Some(ok.to_string()),
+        })
+    };
+    assert!(banner("invited").is_some());
+    assert!(banner("invite_failed").is_some());
+    assert!(banner("made-up").is_none());
+}
+
+#[tokio::test]
+async fn the_editor_offers_a_resend_button_only_for_an_unconfirmed_address() {
+    let _guard = auth_disabled_guard().await;
+    let db = db().await;
+    let admin = seed_user(&db, "admin", vec![Role::Admin], &[]).await;
+    let catalog = catalog();
+    let claims = claims_for(&admin);
+
+    let html_for = |user: User| {
+        let catalog = &catalog;
+        let claims = &claims;
+        async move { body_text(render_edit(catalog, &user, claims, &Notice::default())).await }
+    };
+
+    seed_target(&db, Some("t@example.test"), false).await;
+    let unconfirmed = html_for(realm::get(&db, "target").await.unwrap()).await;
+    assert!(unconfirmed.contains("ui_admin_status_email_confirmed"));
+    assert!(unconfirmed.contains("ui_admin_action_resend_invite"));
+    assert!(unconfirmed.contains("/invite"));
+
+    realm::mark_email_verified(&db, "target").await.unwrap();
+    let confirmed = html_for(realm::get(&db, "target").await.unwrap()).await;
+    assert!(confirmed.contains("ui_admin_status_email_confirmed"));
+    assert!(!confirmed.contains("ui_admin_action_resend_invite"));
+
+    let bare = html_for(admin).await;
+    assert!(
+        !bare.contains("ui_admin_status_email_confirmed"),
+        "no address, no row"
+    );
+}
+
+#[tokio::test]
+async fn the_create_form_has_an_optional_email_and_no_longer_requires_a_password() {
+    let _guard = auth_disabled_guard().await;
+    let (_recorder, app, container, _db) = admin_with_recorder().await;
+    let resp = app.call(get("/ui/admin/users", &container)).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let html = body_text(resp).await;
+    assert!(html.contains("name=\"email\""), "{html}");
+    assert!(html.contains("ui_admin_new_email_hint"));
+    // The password box is still there, but no longer `required`: an invited
+    // person chooses their own.
+    let password_input = html
+        .split("<input")
+        .find(|chunk| chunk.contains("id=\"new-password\""))
+        .expect("password input");
+    assert!(!password_input.contains("required"), "{password_input}");
 }

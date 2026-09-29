@@ -1039,6 +1039,147 @@ async fn follow_reset_link(world: &mut ForgeWorld, email: String, new_password: 
     world.record_response(res).await;
 }
 
+// ---------------------------------------------------------------------------
+// Invitations and service notifications
+// ---------------------------------------------------------------------------
+
+/// gatehouse's own public origin in this suite (`PUBLIC_BASE_URL`, see
+/// `services.rs`): the only place a notification's link may point.
+const PUBLIC_ORIGIN: &str = "http://127.0.0.1:5443";
+
+fn notification_body(username: &str, template: &str) -> Value {
+    json!({
+        "username": username,
+        "template": template,
+        "vars": {
+            "project": "forge",
+            "run": "1",
+            "ref": "refs/heads/master",
+            "url": format!("{PUBLIC_ORIGIN}/conveyor/runs/1"),
+        },
+    })
+}
+
+async fn post_notification(world: &mut ForgeWorld, token: &str, body: Value) {
+    let url = format!("{}/api/v1/notify", world.gatehouse_url);
+    let res = world
+        .client
+        .post(&url)
+        .bearer_auth(token)
+        .json(&body)
+        .send()
+        .await
+        .expect("notify request failed");
+    world.record_response(res).await;
+}
+
+#[when(expr = "I invite a user {string} at {string}")]
+async fn invite_user(world: &mut ForgeWorld, username: String, email: String) {
+    let url = format!("{}/api/v1/users", world.gatehouse_url);
+    let res = world
+        .client
+        .post(&url)
+        .bearer_auth(admin_token(world))
+        .json(&json!({ "username": username, "email": email, "invite": true }))
+        .send()
+        .await
+        .expect("create user request failed");
+    world.record_response(res).await;
+}
+
+#[when(expr = "I accept the invitation emailed to {string} and choose the password {string}")]
+async fn accept_invitation(world: &mut ForgeWorld, email: String, password: String) {
+    let marker = format!("email(invite) to={email}");
+    let line = crate::services::wait_for_gatehouse_log(&marker)
+        .await
+        .unwrap_or_else(|| panic!("no invitation email logged for {email}"));
+    let link = extract_link(&line);
+    let token = link
+        .split_once("token=")
+        .expect("invitation link had no token")
+        .1;
+    let url = format!("{}/ui/accept-invite", world.gatehouse_url);
+    let res = no_redirect_client()
+        .post(&url)
+        .form(&[("token", token), ("password", password.as_str())])
+        .send()
+        .await
+        .expect("accept-invite request failed");
+    world.record_response(res).await;
+}
+
+#[when(expr = "a service notifies {string} with {string}")]
+async fn service_notifies(world: &mut ForgeWorld, username: String, template: String) {
+    let token = crate::world::mint_test_token(
+        &world.client,
+        &world.gatehouse_url,
+        "bdd-service",
+        &["gatehouse"],
+        "service",
+    )
+    .await;
+    post_notification(world, &token, notification_body(&username, &template)).await;
+}
+
+#[when(expr = "a service notifies {string} with {string} and the key {string}")]
+async fn service_notifies_with_key(
+    world: &mut ForgeWorld,
+    username: String,
+    template: String,
+    key: String,
+) {
+    let token = crate::world::mint_test_token(
+        &world.client,
+        &world.gatehouse_url,
+        "bdd-service",
+        &["gatehouse"],
+        "service",
+    )
+    .await;
+    let mut body = notification_body(&username, &template);
+    body["dedupe_key"] = json!(key);
+    post_notification(world, &token, body).await;
+}
+
+#[when(expr = "I notify {string} with {string} using my own token")]
+async fn notify_as_me(world: &mut ForgeWorld, username: String, template: String) {
+    let token = world.access_token.clone().expect("no access token");
+    post_notification(world, &token, notification_body(&username, &template)).await;
+}
+
+/// The unsubscribe link is in the notification's log line as
+/// `(unsubscribe: <link>)`; pressing the button on that page is a POST.
+#[when(expr = "I follow the unsubscribe link emailed to {string}")]
+async fn follow_unsubscribe_link(world: &mut ForgeWorld, email: String) {
+    let marker = format!("email(notification) to={email}");
+    let line = crate::services::wait_for_gatehouse_log(&marker)
+        .await
+        .unwrap_or_else(|| panic!("no notification logged for {email}"));
+    let link = line
+        .split_once("(unsubscribe: ")
+        .and_then(|(_, rest)| rest.split_once(')'))
+        .map(|(link, _)| link.to_string())
+        .expect("log line had no unsubscribe link");
+    let res = no_redirect_client()
+        .post(&link)
+        .form(&[("unsubscribe", "1")])
+        .send()
+        .await
+        .expect("unsubscribe request failed");
+    world.record_response(res).await;
+}
+
+#[then(expr = "gatehouse should have emailed {string} a {string} message")]
+async fn emailed(_world: &mut ForgeWorld, email: String, kind: String) {
+    let marker = format!("email({kind}) to={email}");
+    assert!(
+        crate::services::wait_for_gatehouse_log(&marker)
+            .await
+            .is_some(),
+        "gatehouse never logged `{marker}`"
+    );
+}
+
 /// Pulls the URL out of a `LoggingSender` line: `"...: visit {link} to ..."`.
 fn extract_link(line: &str) -> String {
     let after_visit = line

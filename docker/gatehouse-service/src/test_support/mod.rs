@@ -30,7 +30,10 @@ pub struct SentMail {
     pub to: String,
     pub username: String,
     pub locale: Option<String>,
+    /// The link the message carried; empty for notices.
     pub link: String,
+    /// The address a change notice names; empty otherwise.
+    pub detail: String,
 }
 
 /// Captures what would have been emailed, so a test can assert on the link
@@ -45,34 +48,27 @@ impl RecordingSender {
         self.sent.lock().expect("recording lock").clone()
     }
 
-    fn record(&self, kind: &'static str, to: &crate::email::Recipient<'_>, link: &str) {
-        self.sent.lock().expect("recording lock").push(SentMail {
-            kind,
-            to: to.address.to_string(),
-            username: to.username.to_string(),
-            locale: to.locale.map(str::to_string),
-            link: link.to_string(),
-        });
+    /// Only the messages of one kind.
+    pub fn sent_of(&self, kind: &str) -> Vec<SentMail> {
+        self.sent().into_iter().filter(|m| m.kind == kind).collect()
     }
 }
 
 #[async_trait::async_trait]
 impl crate::email::Sender for RecordingSender {
-    async fn send_verification(
+    async fn send(
         &self,
         to: &crate::email::Recipient<'_>,
-        link: &str,
+        mail: &crate::email::Mail<'_>,
     ) -> Result<(), crate::email::SendError> {
-        self.record("verification", to, link);
-        Ok(())
-    }
-
-    async fn send_password_reset(
-        &self,
-        to: &crate::email::Recipient<'_>,
-        link: &str,
-    ) -> Result<(), crate::email::SendError> {
-        self.record("password-reset", to, link);
+        self.sent.lock().expect("recording lock").push(SentMail {
+            kind: mail.kind().label(),
+            to: to.address.to_string(),
+            username: to.username.to_string(),
+            locale: to.locale.map(str::to_string),
+            link: mail.link().to_string(),
+            detail: mail.detail().to_string(),
+        });
         Ok(())
     }
 }

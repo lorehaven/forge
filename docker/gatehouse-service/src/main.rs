@@ -108,6 +108,7 @@ async fn main() -> std::io::Result<()> {
     gatehouse_service::api::jwks::register_routes();
     gatehouse_service::api::oauth::register_routes();
     gatehouse_service::api::test_tokens::register_routes();
+    gatehouse_service::api::notify::register_routes();
     gatehouse_service::api::users::register_routes();
     gatehouse_service::ui::register_routes();
 

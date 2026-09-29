@@ -1,10 +1,18 @@
 //! Self-service "My Account": any signed-in user edits their own profile,
 //! password, and MFA. Not `admin.rs`, which gates on catalog admin actions.
 
+use crate::PublicBase;
 use crate::avatar::{self, AvatarError};
 use crate::catalog::PermissionCatalog;
+use crate::email::{Mail, Recipient, Sender};
+use crate::email_change::{self, Ticket};
+use crate::notices;
+use crate::notify::{Preferences, Template, catalog as notification_catalog};
+use crate::ratelimit::{ClientIp, RateLimiter, policy};
 use crate::realm::{self, RealmError, UserChanges};
+use crate::tokens::VerificationTokens;
 use crate::ui::common::{SUPPORTED_LOCALES, UiPageKind, render_page, ui_path};
+use crate::ui::locale::BrowserLocale;
 use async_trait::async_trait;
 use http::StatusCode;
 use quench_auth::domain::auth::{Role, User};
@@ -18,6 +26,7 @@ use quench_http::prelude::{
 use quench_web::prelude::*;
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Claims, or the login redirect - not `HttpError`, which can't carry a redirect.
 pub enum Actor {
@@ -72,7 +81,55 @@ pub async fn account_page(
         Err(err) => return error_page(&err),
     };
 
-    render_account_page(&user, &notice)
+    // A preferences table that cannot be read must not lock the person out of
+    // the rest of their account page: show the defaults and log why.
+    let subscriptions = match Preferences::new(&db).effective(&actor.sub).await {
+        Ok(subscriptions) => subscriptions,
+        Err(err) => {
+            tracing::error!(
+                "could not read notification preferences for {}: {err}",
+                actor.sub
+            );
+            default_subscriptions()
+        }
+    };
+    render_account_page_with(&user, &notice, &subscriptions)
+}
+
+/// The catalog with everyone's starting choices - for a person who has made none.
+pub fn default_subscriptions() -> Vec<(&'static Template, bool)> {
+    notification_catalog::all()
+        .iter()
+        .map(|template| (template, template.default_on))
+        .collect()
+}
+
+/// Which kinds of service notification this person wants. A checkbox per kind;
+/// the account security mail (password, MFA, address) is not in this list
+/// because it cannot be turned off.
+#[post("/ui/account/notifications")]
+pub async fn save_notifications(
+    actor: Actor,
+    Form(form): Form<HashMap<String, String>>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    let actor = match actor.or_redirect() {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+    let preferences = Preferences::new(&db);
+    for template in notification_catalog::all() {
+        let wanted = form.contains_key(&format!("sub_{}", template.id));
+        if let Err(err) = preferences.set(&actor.sub, template, wanted).await {
+            tracing::error!(
+                "could not save the {} preference for {}: {err}",
+                template.id,
+                actor.sub
+            );
+            return redirect("/account?err=ui_admin_error_internal");
+        }
+    }
+    redirect("/account?ok=notifications_saved")
 }
 
 /// Multipart, for the avatar file: text fields are gathered into the same flat
@@ -215,6 +272,8 @@ pub async fn change_password(
     Inject(catalog): Inject<PermissionCatalog>,
     Inject(db): Inject<Db>,
     Inject(sessions): Inject<SessionDb>,
+    Inject(mailer): Inject<Arc<dyn Sender>>,
+    browser_locale: BrowserLocale,
 ) -> Response {
     let actor = match actor.or_redirect() {
         Ok(actor) => actor,
@@ -236,9 +295,120 @@ pub async fn change_password(
     )
     .await
     {
-        Ok(_) => redirect("/account?ok=password_changed"),
+        Ok(user) => {
+            notices::notify(
+                &**mailer,
+                &user,
+                &Mail::PasswordChanged,
+                browser_locale.0.as_deref(),
+            )
+            .await;
+            redirect("/account?ok=password_changed")
+        }
         Err(err) => redirect(&format!("/account?err={}", err.i18n_key())),
     }
+}
+
+#[derive(Deserialize)]
+pub struct EmailChangeForm {
+    pub email: String,
+    pub email_current_password: String,
+}
+
+/// Step one of changing your address: prove it is you (current password), name
+/// the new address, and get a link there. Nothing changes until the link is
+/// followed - see `confirm_email`.
+// One DI extractor per argument - the framework has no struct-of-extractors.
+#[allow(clippy::too_many_arguments)]
+#[post("/ui/account/email")]
+pub async fn request_email_change(
+    actor: Actor,
+    Form(form): Form<EmailChangeForm>,
+    Inject(db): Inject<Db>,
+    Inject(tokens): Inject<VerificationTokens>,
+    Inject(mailer): Inject<Arc<dyn Sender>>,
+    Inject(base): Inject<PublicBase>,
+    Inject(limiter): Inject<RateLimiter>,
+    ip: ClientIp,
+    browser_locale: BrowserLocale,
+) -> Response {
+    let actor = match actor.or_redirect() {
+        Ok(actor) => actor,
+        Err(response) => return response,
+    };
+
+    let new_email = form.email.trim();
+    if new_email.parse::<quench_mail::Address>().is_err() {
+        return redirect(&format!(
+            "/account?err={}",
+            RealmError::EmailInvalid.i18n_key()
+        ));
+    }
+
+    // Each request mails a stranger's address, so it is limited like the other
+    // endpoints that do - before the password is even looked at.
+    let verdict = limiter
+        .check_all(&[
+            ("email-change-user", &actor.sub, policy::EMAIL_CHANGE_USER),
+            ("email-change-ip", &ip.0, policy::EMAIL_CHANGE_IP),
+            (
+                "email-change-address",
+                new_email,
+                policy::EMAIL_CHANGE_ADDRESS,
+            ),
+        ])
+        .await;
+    if !verdict.is_allowed() {
+        return redirect("/account?err=ui_account_error_rate_limited");
+    }
+
+    let user = match realm::check_password(&db, &actor.sub, &form.email_current_password).await {
+        Ok(user) => user,
+        Err(err) => return redirect(&format!("/account?err={}", err.i18n_key())),
+    };
+
+    let already_theirs = user.email_verified_at.is_some()
+        && user
+            .email
+            .as_deref()
+            .is_some_and(|current| current.eq_ignore_ascii_case(new_email));
+    if already_theirs {
+        return redirect("/account?err=ui_account_error_email_same");
+    }
+
+    let ticket = Ticket {
+        username: user.username.clone(),
+        new_email: new_email.to_string(),
+    };
+    let link = match email_change::issue_link(&tokens, &base, &ticket).await {
+        Ok(link) => link,
+        Err(err) => {
+            tracing::error!(
+                "could not issue an email-change token for {}: {err}",
+                user.username
+            );
+            return redirect("/account?err=ui_account_error_email_not_sent");
+        }
+    };
+    let recipient = Recipient {
+        address: new_email,
+        username: &user.username,
+        locale: user
+            .preferred_locale
+            .as_deref()
+            .or(browser_locale.0.as_deref()),
+    };
+    if let Err(err) = mailer
+        .send(&recipient, &Mail::EmailChange { link: &link })
+        .await
+    {
+        tracing::error!(
+            "failed to send the email-change confirmation for {}: {err}",
+            user.username
+        );
+        return redirect("/account?err=ui_account_error_email_not_sent");
+    }
+    redirect("/account?ok=email_change_sent")
 }
 
 // --- MFA enrollment ---
@@ -270,6 +440,8 @@ pub async fn mfa_enroll_submit(
     actor: Actor,
     Form(form): Form<MfaEnrollForm>,
     Inject(db): Inject<Db>,
+    Inject(mailer): Inject<Arc<dyn Sender>>,
+    browser_locale: BrowserLocale,
 ) -> Response {
     let actor = match actor.or_redirect() {
         Ok(actor) => actor,
@@ -277,7 +449,17 @@ pub async fn mfa_enroll_submit(
     };
 
     match realm::enable_mfa(&db, &actor.sub, &form.secret, &form.code).await {
-        Ok(()) => redirect("/account?ok=mfa_enabled"),
+        Ok(()) => {
+            notices::notify_username(
+                &**mailer,
+                &db,
+                &actor.sub,
+                &Mail::MfaEnabled,
+                browser_locale.0.as_deref(),
+            )
+            .await;
+            redirect("/account?ok=mfa_enabled")
+        }
         Err(RealmError::MfaCodeInvalid) => {
             // Re-rendered directly, not redirected - the secret never travels in a URL.
             let uri = crate::mfa::provisioning_uri(&form.secret, &actor.sub).unwrap_or_default();
@@ -291,14 +473,36 @@ pub async fn mfa_enroll_submit(
 }
 
 #[post("/ui/account/mfa/disable")]
-pub async fn mfa_disable(actor: Actor, Inject(db): Inject<Db>) -> Response {
+pub async fn mfa_disable(
+    actor: Actor,
+    Inject(db): Inject<Db>,
+    Inject(mailer): Inject<Arc<dyn Sender>>,
+    browser_locale: BrowserLocale,
+) -> Response {
     let actor = match actor.or_redirect() {
         Ok(actor) => actor,
         Err(response) => return response,
     };
 
+    // Only worth a notice if it was actually on.
+    let was_on = realm::get(&db, &actor.sub)
+        .await
+        .map(|user| user.mfa_enabled)
+        .unwrap_or(false);
     match realm::disable_mfa(&db, &actor.sub).await {
-        Ok(()) => redirect("/account?ok=mfa_disabled"),
+        Ok(()) => {
+            if was_on {
+                notices::notify_username(
+                    &**mailer,
+                    &db,
+                    &actor.sub,
+                    &Mail::MfaDisabled,
+                    browser_locale.0.as_deref(),
+                )
+                .await;
+            }
+            redirect("/account?ok=mfa_disabled")
+        }
         Err(err) => redirect(&format!("/account?err={}", err.i18n_key())),
     }
 }
@@ -306,6 +510,14 @@ pub async fn mfa_disable(actor: Actor, Inject(db): Inject<Db>) -> Response {
 // --- Rendering ---
 
 pub fn render_account_page(user: &User, notice: &Notice) -> Response {
+    render_account_page_with(user, notice, &default_subscriptions())
+}
+
+pub fn render_account_page_with(
+    user: &User,
+    notice: &Notice,
+    subscriptions: &[(&'static Template, bool)],
+) -> Response {
     let profile_form = form()
         .attr("method", "post")
         .attr("enctype", "multipart/form-data")
@@ -347,6 +559,9 @@ pub fn render_account_page(user: &User, notice: &Notice) -> Response {
                 .attr("data-i18n", "ui_account_profile_title"),
         )
         .child(div().class("meta-list").child(profile_form));
+
+    let email_panel = email_panel(user);
+    let notifications_panel = notifications_panel(user, subscriptions);
 
     let password_panel = div()
         .class("panel admin-panel")
@@ -439,6 +654,8 @@ pub fn render_account_page(user: &User, notice: &Notice) -> Response {
                 .class("admin-container")
                 .child_opt(notice_banner(notice))
                 .child(profile_panel)
+                .child(email_panel)
+                .child(notifications_panel)
                 .child(password_panel)
                 .child(mfa_panel),
         ),
@@ -540,6 +757,127 @@ fn labeled_text(name: &str, key: &'static str, value: Option<&str>) -> Element {
             .attr("name", name)
             .attr("value", value.unwrap_or_default()),
     )
+}
+
+/// A checkbox per kind of service notification, grouped by service.
+fn notifications_panel(user: &User, subscriptions: &[(&'static Template, bool)]) -> Element {
+    let mut form_el = form()
+        .attr("method", "post")
+        .attr("action", ui_path("/account/notifications"));
+
+    let mut last_service = "";
+    for (template, wanted) in subscriptions {
+        if template.service != last_service {
+            last_service = template.service;
+            form_el = form_el.child(div().class("admin-section-title").attr(
+                "data-i18n",
+                format!("ui_notification_service_{}", template.service),
+            ));
+        }
+        let field = format!("sub_{}", template.id);
+        let mut checkbox = checkbox().attr("id", &field).attr("name", &field);
+        if *wanted {
+            checkbox = checkbox.attr("checked", "checked");
+        }
+        form_el = form_el.child(
+            div().class("admin-matrix-action").child(checkbox).child(
+                label()
+                    .attr("for", &field)
+                    .attr("data-i18n", template.label_key()),
+            ),
+        );
+    }
+    form_el = form_el
+        .child(
+            p().class("admin-hint")
+                .attr("data-i18n", "ui_account_notifications_hint"),
+        )
+        .child(
+            button()
+                .attr("type", "submit")
+                .attr("data-i18n", "ui_account_notifications_save"),
+        );
+
+    let mut body = div().class("meta-list");
+    if crate::notices::notice_address(user).is_none() {
+        body = body.child(
+            p().class("admin-hint")
+                .attr("data-i18n", "ui_account_notifications_no_address"),
+        );
+    }
+    div()
+        .class("panel admin-panel")
+        .child(
+            div()
+                .class("panel-title")
+                .attr("data-i18n", "ui_account_notifications_title"),
+        )
+        .child(body.child(form_el))
+}
+
+/// The address on file (and whether it is confirmed), and the form to change it.
+fn email_panel(user: &User) -> Element {
+    let current = match user
+        .email
+        .as_deref()
+        .map(str::trim)
+        .filter(|address| !address.is_empty())
+    {
+        Some(address) => {
+            let status = if user.email_verified_at.is_some() {
+                "ui_account_email_confirmed"
+            } else {
+                "ui_account_email_unconfirmed"
+            };
+            div()
+                .class("admin-status-row")
+                .child(span().attr("id", "current-email").text(address))
+                .child(span().class("admin-hint").attr("data-i18n", status))
+        }
+        None => div().child(
+            p().class("admin-hint")
+                .attr("data-i18n", "ui_account_email_none"),
+        ),
+    };
+
+    div()
+        .class("panel admin-panel")
+        .child(
+            div()
+                .class("panel-title")
+                .attr("data-i18n", "ui_account_email_title"),
+        )
+        .child(
+            div().class("meta-list").child(current).child(
+                form()
+                    .attr("method", "post")
+                    .attr("action", ui_path("/account/email"))
+                    .child(form_row(
+                        "email",
+                        "ui_account_email_new",
+                        input()
+                            .attr("type", "email")
+                            .attr("id", "email")
+                            .attr("name", "email")
+                            .attr("autocomplete", "email")
+                            .attr("required", "required"),
+                    ))
+                    .child(password_row(
+                        "email_current_password",
+                        "ui_account_current_password",
+                        "current-password",
+                    ))
+                    .child(
+                        p().class("admin-hint")
+                            .attr("data-i18n", "ui_account_email_hint"),
+                    )
+                    .child(
+                        button()
+                            .attr("type", "submit")
+                            .attr("data-i18n", "ui_account_email_submit"),
+                    ),
+            ),
+        )
 }
 
 fn password_row(name: &str, key: &'static str, autocomplete: &str) -> Element {
@@ -679,6 +1017,8 @@ pub fn notice_banner(notice: &Notice) -> Option<Element> {
         Some("password_changed") => "ui_account_ok_password_changed",
         Some("mfa_enabled") => "ui_account_ok_mfa_enabled",
         Some("mfa_disabled") => "ui_account_ok_mfa_disabled",
+        Some("email_change_sent") => "ui_account_ok_email_change_sent",
+        Some("notifications_saved") => "ui_account_ok_notifications_saved",
         _ => return None,
     };
     Some(p().class("admin-notice ok").attr("data-i18n", key))
@@ -691,6 +1031,7 @@ pub fn known_error_key(candidate: &str) -> Option<&'static str> {
         RealmError::NotFound,
         RealmError::MfaCodeInvalid,
         RealmError::CurrentPasswordInvalid,
+        RealmError::EmailInvalid,
         RealmError::Internal,
     ]
     .iter()
@@ -700,6 +1041,9 @@ pub fn known_error_key(candidate: &str) -> Option<&'static str> {
         "ui_account_error_avatar_type",
         "ui_account_error_avatar_size",
         "ui_account_error_password_mismatch",
+        "ui_account_error_email_same",
+        "ui_account_error_email_not_sent",
+        "ui_account_error_rate_limited",
     ])
     .find(|known| *known == candidate)
 }
@@ -725,8 +1069,10 @@ pub fn register_routes() {
     let _ = account_page as fn(_, _, _) -> _;
     let _ = save_account as fn(_, _, _, _, _) -> _;
     let _ = account_avatar as fn(_, _) -> _;
-    let _ = change_password as fn(_, _, _, _, _) -> _;
+    let _ = change_password as fn(_, _, _, _, _, _, _) -> _;
+    let _ = request_email_change as fn(_, _, _, _, _, _, _, _, _) -> _;
+    let _ = save_notifications as fn(_, _, _) -> _;
     let _ = mfa_enroll_page as fn(_) -> _;
-    let _ = mfa_enroll_submit as fn(_, _, _) -> _;
-    let _ = mfa_disable as fn(_, _) -> _;
+    let _ = mfa_enroll_submit as fn(_, _, _, _, _) -> _;
+    let _ = mfa_disable as fn(_, _, _, _) -> _;
 }

@@ -13,6 +13,7 @@ Conveyor is the Forge estate's CI/CD service. A webhook arrives, conveyor checks
 - **Concurrent jobs**: a job starts the moment every stage it needs has finished, rather than waiting its turn in declaration order — every job in a stage (there is usually more than one) runs alongside its stage-mates, exactly as it would alongside a job in an unrelated stage.
 - **Manual restarts, not automatic retries**: nothing repeats a failed run on its own. `POST /runs/{id}/restart` starts a new run of the same commit and carries over every stage that passed last time, so only what actually failed (and whatever needed it) runs again.
 - **Artifact collection**: paths a job declares are uploaded to warehouse once the job passes, since a run's checkout is deleted the moment it finishes.
+- **Following results by email.** A signed-in user can follow a repository, or a whole project (and everything nested under it), from `/repos` or the API, and is emailed when a run on it fails and when the first run passes after a failure - see [Following results](#following-results).
 - **Commit status reporting** back to GitHub (`pending`/`success`/`failure`/`error`), when a token is configured.
 - **A code-quality summary page** per repository that reads the most recent run's own `anvil lint`/`anvil machete`/`anvil audit`/`cargo llvm-cov` steps — nothing here triggers a scan; it is a best-effort read of whatever the pipeline already ran.
 
@@ -225,6 +226,17 @@ Everything else — `/projects`, `/repos`, `/repos/{id}/runs`, `/runs`, `/runs/{
 
 Conveyor's UI (`/conveyor/ui/...`) mirrors this: `/home` and the equivalent scoped `/projects/{id}` page show recent runs and the registered tree with no manual reload (htmx polling, not a second stream, since a run's state lives in the database rather than in whichever worker is holding it); `/runs` is the full paginated history (`CONVEYOR_RUNS_PAGE_SIZE` per page); `/runs/{id}` shows the run's jobs as a dependency graph — one row per level, connected top to bottom, stages that run at once drawn side by side — with logs streamed the same way `switchboard` and `sage` stream theirs (htmx's SSE extension, appending frames rather than replacing them, since a log is unbounded where those two services' payloads are whole-state replacements) and two icon buttons above each open log: one opens `/jobs/{id}/raw` in a new tab, the other copies what has streamed in so far to the clipboard. `/repos` additionally offers plain HTML forms to register, edit and delete a repository, enforcing the same project-scoped write grants as the JSON API while browsing itself stays open to any signed-in visitor; `/repos/{owner}/{name}/scan` summarises the most recent run's `anvil lint`/`machete`/`audit` and `cargo llvm-cov` (test coverage) steps, if its pipeline ran any.
 
+## Following results
+
+A person follows a repository, or a project (which covers every repository nested beneath it), and conveyor tells them by email when a run **fails** and when the first run **passes after a failure** on the same ref. Cancelled and skipped runs say nothing, and a first-ever success is not news.
+
+- **Following** needs read access to the project (like everything else here); leaving never does, so someone who lost access can still stop the mail. Each person sees and changes only their own subscriptions: `GET /api/v1/subscriptions`, `PUT`/`DELETE /api/v1/repos/{id}/subscription` and `PUT`/`DELETE /api/v1/projects/{id}/subscription`; `/repos` has a follow button per repository and a "Follow projects" panel. Following twice is fine, and deleting a repository or project removes its subscriptions.
+- **Who is told** is worked out when the run ends: everyone following the repository, or any project above it, once each. Read access is checked again at that moment, so a subscription left behind by a revoked grant (or a disabled account) sends nothing.
+- **How it is sent.** Conveyor sends no mail itself. Ending a run writes one row per recipient to `notification_outbox` (unique per run, person and kind, so a run finishing twice queues once); a background loop hands each to gatehouse's [`POST /api/v1/notify`](gatehouse-service.md) with conveyor's own machine identity (`conveyor-gatehouse`, a `client_credentials` grant) and `requested: true`, using the run id as the dedupe key. Gatehouse owns the wording, the five translations, the address, and the person's choices: someone who turned "A pipeline run failed" off on their account page stops getting it whatever they follow.
+- **Outages delay, they do not lose.** A refused or unreachable gatehouse (or mail server) leaves the row queued and it is retried after 30 s, 1 min, 2 min ... up to an hour, ten attempts in all; a claim is leased for two minutes so a crashed sender's rows are picked up again and replicas do not double-send. A message gatehouse calls malformed (`400`) or permanently undeliverable is kept with `failed_at` and `last_error` set rather than retried: `SELECT * FROM conveyor.notification_outbox WHERE failed_at IS NOT NULL`. Delivered and deliberately skipped messages (no confirmed address, opted out) are deleted.
+- **Switching it on.** Needs `GATEHOUSE_URL` (already set for login), `CLIENT_SECRET_CONVEYOR_GATEHOUSE` (the same value in gatehouse's and conveyor's env; gatehouse's `clients.toml` lists `conveyor-gatehouse`) and `CONVEYOR_PUBLIC_URL` for the link in the mail (it must sit under gatehouse's public origin). Without the secret, conveyor logs that notifications are off and nothing is queued; runs are unaffected either way.
+- **Database.** Foundry `conveyor` migration `0007-subscriptions` (`subscriptions`, `notification_outbox`) must be applied before this conveyor rolls out.
+
 ## Requirements
 
 - Postgres — conveyor refuses to start its scheduler without it.
@@ -253,6 +265,8 @@ See `.env` for the full set with commentary. The complete table:
 | `CONVEYOR_GITHUB_API` | `https://api.github.com` | For GitHub Enterprise. |
 | `CONVEYOR_STATUS_CONTEXT` | `conveyor` | The name conveyor's mark appears under. |
 | `CONVEYOR_PUBLIC_URL` | — | Where conveyor is reachable, for linking a mark back to the run. |
+| `CLIENT_SECRET_CONVEYOR_GATEHOUSE` | — | conveyor's machine identity toward gatehouse, for run-result mail. Unset switches the mail off. |
+| `GATEHOUSE_TLS_VERIFY` | `true` | Set to `false` to accept gatehouse's internal certificate when sending that mail. |
 | `WAREHOUSE_URL` | — | Where artifacts go. Unset means they are not kept. |
 | `WAREHOUSE_TECH_USERNAME` / `_PASSWORD` | — | The service account artifacts are uploaded as. |
 | `CONVEYOR_ARTIFACT_STORAGE` | `artifacts` | Which warehouse storage to put them in. |

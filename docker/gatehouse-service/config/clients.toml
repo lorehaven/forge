@@ -48,3 +48,13 @@ secret_env = "CLIENT_SECRET_WORKBENCH"
 client_id = "sage-switchboard"
 allowed_scopes = ["switchboard"]
 secret_env = "CLIENT_SECRET_SAGE_SWITCHBOARD"
+
+# conveyor's machine identity toward gatehouse's own notify endpoint - it asks
+# for run-result mail on behalf of the people following a repository.
+# client_credentials only. `allowed_scopes` is the audience; the token's actual
+# scope is the fixed wildcard `service` role, like every client_credentials
+# client above.
+[[client]]
+client_id = "conveyor-gatehouse"
+allowed_scopes = ["gatehouse"]
+secret_env = "CLIENT_SECRET_CONVEYOR_GATEHOUSE"

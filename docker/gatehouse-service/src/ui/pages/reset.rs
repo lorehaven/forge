@@ -1,7 +1,8 @@
 //! Password reset by email - two public pages, request then use the link.
 
 use crate::PublicBase;
-use crate::email::{self, Recipient};
+use crate::email::{self, Mail, Recipient};
+use crate::notices;
 use crate::ratelimit::{ClientIp, RateLimiter, policy};
 use crate::realm;
 use crate::tokens::{PURPOSE_RESET_PASSWORD, VerificationTokens};
@@ -133,6 +134,8 @@ pub async fn reset_password_submit(
     Inject(db): Inject<Db>,
     Inject(sessions): Inject<SessionDb>,
     Inject(tokens): Inject<VerificationTokens>,
+    Inject(mailer): Inject<Arc<dyn email::Sender>>,
+    browser_locale: BrowserLocale,
 ) -> Response {
     let Some(username) = tokens
         .redeem(PURPOSE_RESET_PASSWORD, &form.token)
@@ -143,7 +146,28 @@ pub async fn reset_password_submit(
     };
 
     match realm::reset_password(&db, &sessions, &username, &form.password).await {
-        Ok(()) => redirect(&ui_path("/login?reset=1")),
+        Ok(()) => {
+            // The link went to the address on file, so following it shows the
+            // address is theirs - an unconfirmed one is confirmed by this.
+            if let Ok(user) = realm::get(&db, &username).await
+                && user.email.is_some()
+                && user.email_verified_at.is_none()
+                && let Err(err) = realm::mark_email_verified(&db, &username).await
+            {
+                tracing::error!(
+                    "could not confirm the address of {username} after a reset: {err:?}"
+                );
+            }
+            notices::notify_username(
+                &**mailer,
+                &db,
+                &username,
+                &Mail::PasswordChanged,
+                browser_locale.0.as_deref(),
+            )
+            .await;
+            redirect(&ui_path("/login?reset=1"))
+        }
         Err(_) => redirect(&format!(
             "{}?token={}&err=ui_reset_error_password_empty",
             ui_path("/reset-password"),
@@ -224,6 +248,15 @@ pub fn render_reset_password_page(token: &str, notice: &ResetNotice) -> Response
 }
 
 pub(super) fn render_auth_page(title_key: &'static str, inner_form: Element) -> Response {
+    render_auth_page_with(StatusCode::OK, title_key, inner_form)
+}
+
+/// [`render_auth_page`] for a page that is an error or a "not found".
+pub(super) fn render_auth_page_with(
+    status: StatusCode,
+    title_key: &'static str,
+    inner_form: Element,
+) -> Response {
     let bar = div()
         .class("login-bar")
         .child(
@@ -239,7 +272,7 @@ pub(super) fn render_auth_page(title_key: &'static str, inner_form: Element) -> 
         .child(div().class("meta-list").child(inner_form));
 
     render_page(
-        StatusCode::OK,
+        status,
         content().class("container-fluid login-layout").child(
             div()
                 .class("panel login-panel")
@@ -259,5 +292,5 @@ pub fn register_routes() {
     let _ = forgot_password_page_slash as fn() -> _;
     let _ = forgot_password_submit as fn(_, _, _, _, _, _, _, _) -> _;
     let _ = reset_password_page as fn(_, _) -> _;
-    let _ = reset_password_submit as fn(_, _, _, _) -> _;
+    let _ = reset_password_submit as fn(_, _, _, _, _, _) -> _;
 }

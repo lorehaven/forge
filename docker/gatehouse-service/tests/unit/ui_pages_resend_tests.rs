@@ -272,17 +272,10 @@ async fn a_failing_mail_server_gets_the_same_redirect() {
     struct Failing;
     #[async_trait::async_trait]
     impl Sender for Failing {
-        async fn send_verification(
+        async fn send(
             &self,
             _: &gatehouse_service::email::Recipient<'_>,
-            _: &str,
-        ) -> Result<(), gatehouse_service::email::SendError> {
-            Err(gatehouse_service::email::SendError::transient("smtp down"))
-        }
-        async fn send_password_reset(
-            &self,
-            _: &gatehouse_service::email::Recipient<'_>,
-            _: &str,
+            _: &gatehouse_service::email::Mail<'_>,
         ) -> Result<(), gatehouse_service::email::SendError> {
             Err(gatehouse_service::email::SendError::transient("smtp down"))
         }

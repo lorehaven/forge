@@ -1,0 +1,83 @@
+[[migrations]]
+id = "0007-subscriptions"
+author = "conveyor-service"
+since = "0.1.0"
+
+# Someone following the results of a repository, or of a whole project (and
+# everything nested under it). Exactly one of `repo_id` / `project_id` is set -
+# two real foreign keys rather than a `scope_kind` + loose id, so deleting a
+# repo or project takes its subscriptions with it and nothing dangles.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.subscriptions (
+    id TEXT PRIMARY KEY,
+    username TEXT NOT NULL REFERENCES ${auth_schema}.users(username) ON DELETE CASCADE,
+    repo_id TEXT REFERENCES ${schema}.repos(id) ON DELETE CASCADE,
+    project_id TEXT REFERENCES ${schema}.projects(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT subscriptions_one_scope CHECK ((repo_id IS NULL) <> (project_id IS NULL))
+);
+"""
+
+# Partial, one per scope kind: Postgres treats NULLs as distinct, so a plain
+# unique index over (username, repo_id, project_id) would allow duplicates.
+[[migrations.changes]]
+sql = """
+CREATE UNIQUE INDEX IF NOT EXISTS subscriptions_repo_idx
+    ON ${schema}.subscriptions (username, repo_id) WHERE repo_id IS NOT NULL;
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE UNIQUE INDEX IF NOT EXISTS subscriptions_project_idx
+    ON ${schema}.subscriptions (username, project_id) WHERE project_id IS NOT NULL;
+"""
+
+# Which subscribers to ask for a repo is answered by its own index, per kind.
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS subscriptions_repo_lookup_idx
+    ON ${schema}.subscriptions (repo_id) WHERE repo_id IS NOT NULL;
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS subscriptions_project_lookup_idx
+    ON ${schema}.subscriptions (project_id) WHERE project_id IS NOT NULL;
+"""
+
+# Messages waiting to be handed to gatehouse. Written in the same breath as the
+# run finishing, sent by a background loop with retries, so gatehouse or the
+# mail server being down for a while loses nothing. A row is deleted once
+# gatehouse has answered for good (sent, or deliberately skipped); one that
+# keeps failing is kept with `failed_at` set so it can be looked at.
+#
+# (run_id, username, template) is unique so a run finishing twice - a requeue,
+# a restart of the worker at the wrong moment - queues at most one message.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.notification_outbox (
+    id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL REFERENCES ${schema}.runs(id) ON DELETE CASCADE,
+    username TEXT NOT NULL,
+    template TEXT NOT NULL,
+    vars TEXT NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_error TEXT,
+    failed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE UNIQUE INDEX IF NOT EXISTS notification_outbox_once_idx
+    ON ${schema}.notification_outbox (run_id, username, template);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS notification_outbox_due_idx
+    ON ${schema}.notification_outbox (next_attempt_at) WHERE failed_at IS NULL;
+"""

@@ -9,4 +9,4 @@ pub mod worker;
 pub use projects::NewProject;
 pub use queue::{Enqueued, NewRun, QueueError};
 pub use repos::NewRepo;
-pub use worker::spawn_pool;
+pub use worker::{spawn_pool, spawn_pool_notifying};

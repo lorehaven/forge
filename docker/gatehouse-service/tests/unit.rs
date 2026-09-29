@@ -18,16 +18,24 @@ mod clients_tests;
 mod codes_tests;
 #[path = "unit/crypto_tests.rs"]
 mod crypto_tests;
+#[path = "unit/email_change_tests.rs"]
+mod email_change_tests;
 #[path = "unit/email_live_tests.rs"]
 mod email_live_tests;
 #[path = "unit/email_tests.rs"]
 mod email_tests;
+#[path = "unit/invite_tests.rs"]
+mod invite_tests;
 #[path = "unit/keys_tests.rs"]
 mod keys_tests;
 #[path = "unit/links_tests.rs"]
 mod links_tests;
 #[path = "unit/mfa_tests.rs"]
 mod mfa_tests;
+#[path = "unit/notices_tests.rs"]
+mod notices_tests;
+#[path = "unit/notify_tests.rs"]
+mod notify_tests;
 #[path = "unit/ratelimit_tests.rs"]
 mod ratelimit_tests;
 #[path = "unit/realm_tests.rs"]
@@ -56,3 +64,7 @@ mod ui_pages_register_tests;
 mod ui_pages_resend_tests;
 #[path = "unit/ui_pages_reset_tests.rs"]
 mod ui_pages_reset_tests;
+#[path = "unit/unsubscribe_tests.rs"]
+mod unsubscribe_tests;
+#[path = "unit/username_tests.rs"]
+mod username_tests;

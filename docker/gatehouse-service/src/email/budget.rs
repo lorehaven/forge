@@ -5,7 +5,7 @@
 //! allowance that legitimate verification and reset mail also depends on. It
 //! wraps the real sender only - the logging sender costs nothing.
 
-use super::{Recipient, SendError, Sender};
+use super::{Mail, Recipient, SendError, Sender};
 use crate::ratelimit::{Limit, RateLimiter, Verdict};
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -46,13 +46,8 @@ impl BudgetedSender {
 
 #[async_trait]
 impl Sender for BudgetedSender {
-    async fn send_verification(&self, to: &Recipient<'_>, link: &str) -> Result<(), SendError> {
+    async fn send(&self, to: &Recipient<'_>, mail: &Mail<'_>) -> Result<(), SendError> {
         self.spend().await?;
-        self.inner.send_verification(to, link).await
-    }
-
-    async fn send_password_reset(&self, to: &Recipient<'_>, link: &str) -> Result<(), SendError> {
-        self.spend().await?;
-        self.inner.send_password_reset(to, link).await
+        self.inner.send(to, mail).await
     }
 }

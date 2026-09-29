@@ -18,6 +18,7 @@ pub mod repos;
 pub mod runs;
 pub mod secrets;
 pub mod stream;
+pub mod subscriptions;
 pub mod webhooks;
 
 /// The verified identity behind this request, if any - `Auth` puts it in the request's extensions.
@@ -96,6 +97,7 @@ pub fn register_routes() {
     runs::register_routes();
     secrets::register_routes();
     stream::register_routes();
+    subscriptions::register_routes();
     webhooks::register_routes();
 }
 
@@ -105,7 +107,10 @@ impl From<QueueError> for ApiError {
             && database.code().as_deref() == Some("23503")
         {
             // `registered_by` means the requesting account isn't in the realm's `users` table at all.
-            let message = if database.constraint() == Some("repos_registered_by_fkey") {
+            let message = if matches!(
+                database.constraint(),
+                Some("repos_registered_by_fkey" | "subscriptions_username_fkey")
+            ) {
                 "the account making this request is not in the realm; \
                  sign in through gatehouse, which owns the estate's users"
             } else {

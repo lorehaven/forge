@@ -1,7 +1,7 @@
 use gatehouse_service::RateLimiter;
 use gatehouse_service::email::{
-    BudgetedSender, Kind, LoggingSender, Recipient, SendError, Sender, SmtpConfig, SmtpSender,
-    TlsMode, daily_mail_limit, language, render,
+    BudgetedSender, Kind, LoggingSender, Mail, Recipient, SendError, Sender, SmtpConfig,
+    SmtpSender, TlsMode, Vars, daily_mail_limit, language, render, render_with,
 };
 use gatehouse_service::test_support::RecordingSender;
 use gatehouse_service::ui::pages::register::VERIFICATION_TTL_SECS;
@@ -564,4 +564,277 @@ async fn the_budget_is_shared_between_both_kinds_of_email() {
     let sender = BudgetedSender::new(recorder.clone(), RateLimiter::in_memory(), 1);
     sender.send_verification(&alice(), "l").await.unwrap();
     assert!(sender.send_password_reset(&alice(), "l").await.is_err());
+}
+
+// -- the other kinds ------------------------------------------------
+
+const ALL_KINDS: [Kind; 8] = [
+    Kind::Verification,
+    Kind::PasswordReset,
+    Kind::Invite,
+    Kind::EmailChange,
+    Kind::EmailChanged,
+    Kind::PasswordChanged,
+    Kind::MfaEnabled,
+    Kind::MfaDisabled,
+];
+
+fn has_link(kind: Kind) -> bool {
+    matches!(
+        kind,
+        Kind::Verification | Kind::PasswordReset | Kind::Invite | Kind::EmailChange
+    )
+}
+
+#[test]
+fn every_kind_renders_in_every_language() {
+    let link = "https://ennor.ddns.net/gatehouse/ui/x?token=abc";
+    for kind in ALL_KINDS {
+        for locale in ["en-US", "pl-PL", "de-DE", "fr-FR", "es-ES"] {
+            let mail = render_with(
+                kind,
+                Some(locale),
+                &Vars {
+                    username: "alice",
+                    link: if has_link(kind) { link } else { "" },
+                    new_email: "new@example.org",
+                },
+            );
+            let ctx = format!("{kind:?} {locale}");
+            assert!(!mail.subject.is_empty(), "{ctx}");
+            assert!(mail.text.contains("alice"), "{ctx}");
+            assert!(!mail.text.contains('{'), "unfilled placeholder in {ctx}");
+            assert!(
+                mail.html
+                    .contains(&format!("lang=\"{}\"", language(Some(locale))))
+            );
+            if has_link(kind) {
+                assert!(mail.text.contains(&format!("\n\n{link}\n\n")), "{ctx}");
+                assert!(mail.html.contains(&format!("<a href=\"{link}\">")), "{ctx}");
+            } else {
+                assert!(
+                    !mail.text.contains("http"),
+                    "a notice carries no link: {ctx}"
+                );
+                assert!(!mail.html.contains("<a "), "a notice has no anchor: {ctx}");
+            }
+        }
+    }
+}
+
+#[test]
+fn subjects_are_distinct_between_kinds_and_between_languages() {
+    for locale in ["en", "pl", "de", "fr", "es"] {
+        let mut subjects: Vec<String> = ALL_KINDS
+            .iter()
+            .map(|k| render(*k, Some(locale), "a", "l").subject)
+            .collect();
+        subjects.sort();
+        subjects.dedup();
+        assert_eq!(subjects.len(), ALL_KINDS.len(), "{locale}");
+    }
+    for kind in ALL_KINDS {
+        let en = render(kind, Some("en"), "a", "l").subject;
+        for locale in ["pl", "de", "fr", "es"] {
+            assert_ne!(
+                render(kind, Some(locale), "a", "l").subject,
+                en,
+                "{kind:?} {locale}"
+            );
+        }
+    }
+}
+
+#[test]
+fn the_new_address_appears_in_the_change_notice_and_is_escaped_in_html() {
+    let mail = render_with(
+        Kind::EmailChanged,
+        Some("en"),
+        &Vars {
+            username: "alice",
+            link: "",
+            new_email: "a&b<x>@example.org",
+        },
+    );
+    assert!(
+        mail.text.contains("changed to a&b<x>@example.org"),
+        "{}",
+        mail.text
+    );
+    assert!(
+        mail.html.contains("a&amp;b&lt;x&gt;@example.org"),
+        "{}",
+        mail.html
+    );
+    assert!(!mail.html.contains("<x>"));
+}
+
+#[test]
+fn validity_windows_stated_in_the_emails() {
+    assert!(
+        render(Kind::Invite, Some("en"), "a", "l")
+            .text
+            .contains("valid for 7 days")
+    );
+    assert!(
+        render(Kind::Invite, Some("pl"), "a", "l")
+            .text
+            .contains("7 dni")
+    );
+    assert!(
+        render(Kind::EmailChange, Some("en"), "a", "l")
+            .text
+            .contains("valid for 24 hours")
+    );
+    assert!(
+        render(Kind::EmailChange, Some("pl"), "a", "l")
+            .text
+            .contains("24 godziny")
+    );
+}
+
+#[test]
+fn mail_variants_map_to_kinds_links_and_addresses() {
+    let cases = [
+        (
+            Mail::Verification { link: "l1" },
+            Kind::Verification,
+            "l1",
+            "",
+        ),
+        (
+            Mail::PasswordReset { link: "l2" },
+            Kind::PasswordReset,
+            "l2",
+            "",
+        ),
+        (Mail::Invite { link: "l3" }, Kind::Invite, "l3", ""),
+        (
+            Mail::EmailChange { link: "l4" },
+            Kind::EmailChange,
+            "l4",
+            "",
+        ),
+        (
+            Mail::EmailChanged { new_email: "n@x.y" },
+            Kind::EmailChanged,
+            "",
+            "n@x.y",
+        ),
+        (Mail::PasswordChanged, Kind::PasswordChanged, "", ""),
+        (Mail::MfaEnabled, Kind::MfaEnabled, "", ""),
+        (Mail::MfaDisabled, Kind::MfaDisabled, "", ""),
+    ];
+    for (mail, kind, link, new_email) in cases {
+        assert_eq!(mail.kind(), kind);
+        assert_eq!(mail.link(), link);
+        assert_eq!(mail.new_email(), new_email);
+        let vars = mail.vars("alice");
+        assert_eq!(
+            (vars.username, vars.link, vars.new_email),
+            ("alice", link, new_email)
+        );
+    }
+    let labels: Vec<&str> = ALL_KINDS.iter().map(|k| k.label()).collect();
+    let mut unique = labels.clone();
+    unique.sort();
+    unique.dedup();
+    assert_eq!(
+        unique.len(),
+        labels.len(),
+        "labels are distinct: {labels:?}"
+    );
+}
+
+#[tokio::test]
+async fn the_logging_sender_accepts_every_kind() {
+    for mail in [
+        Mail::Invite {
+            link: "https://x.test/i",
+        },
+        Mail::EmailChange {
+            link: "https://x.test/c",
+        },
+        Mail::EmailChanged { new_email: "n@x.y" },
+        Mail::PasswordChanged,
+        Mail::MfaEnabled,
+        Mail::MfaDisabled,
+    ] {
+        LoggingSender.send(&alice(), &mail).await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn smtp_sender_delivers_a_notice_that_carries_no_link() {
+    let (port, received) = fake_server().await;
+    sender_for(port)
+        .send(&alice(), &Mail::PasswordChanged)
+        .await
+        .expect("delivered");
+    let mails = received.lock().unwrap();
+    let mail = &mails[0];
+    assert!(
+        mail.contains("Subject: Your password was changed\r\n"),
+        "{mail}"
+    );
+    assert!(mail.contains("To: alice@example.test\r\n"));
+    assert!(mail.contains("Auto-Submitted: auto-generated"));
+    assert!(!mail.contains("http"), "no link in a notice: {mail}");
+}
+
+#[tokio::test]
+async fn smtp_sender_names_the_new_address_in_the_change_notice() {
+    let (port, received) = fake_server().await;
+    sender_for(port)
+        .send(
+            &alice(),
+            &Mail::EmailChanged {
+                new_email: "fresh@example.org",
+            },
+        )
+        .await
+        .expect("delivered");
+    let mails = received.lock().unwrap();
+    assert!(mails[0].contains("fresh@example.org"), "{}", mails[0]);
+}
+
+#[tokio::test]
+async fn the_recording_sender_notes_kind_link_and_detail() {
+    let recorder = RecordingSender::default();
+    recorder
+        .send(
+            &alice(),
+            &Mail::Invite {
+                link: "https://x.test/i",
+            },
+        )
+        .await
+        .unwrap();
+    recorder
+        .send(&alice(), &Mail::EmailChanged { new_email: "n@x.y" })
+        .await
+        .unwrap();
+    recorder.send(&alice(), &Mail::MfaEnabled).await.unwrap();
+    let sent = recorder.sent();
+    assert_eq!(sent.len(), 3);
+    assert_eq!(
+        (sent[0].kind, sent[0].link.as_str()),
+        ("invite", "https://x.test/i")
+    );
+    assert_eq!(
+        (sent[1].kind, sent[1].detail.as_str()),
+        ("email-changed", "n@x.y")
+    );
+    assert_eq!((sent[2].kind, sent[2].link.as_str()), ("mfa-enabled", ""));
+    assert_eq!(recorder.sent_of("invite").len(), 1);
+}
+
+#[tokio::test]
+async fn the_budget_covers_the_new_kinds_too() {
+    let recorder = Arc::new(RecordingSender::default());
+    let sender = BudgetedSender::new(recorder.clone(), RateLimiter::in_memory(), 2);
+    sender.send(&alice(), &Mail::PasswordChanged).await.unwrap();
+    sender.send(&alice(), &Mail::MfaEnabled).await.unwrap();
+    assert!(sender.send(&alice(), &Mail::MfaDisabled).await.is_err());
+    assert_eq!(recorder.sent().len(), 2);
 }

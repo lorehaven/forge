@@ -5,6 +5,7 @@ use crate::config::ConveyorConfig;
 use crate::credentials::store as credential_store;
 use crate::domain::{Repo, Run, Status};
 use crate::executors::{JobCredential, JobExecutor, JobSpec, SourceSpec};
+use crate::notifications::{self, Notifications};
 use crate::pipeline::{self, Decision, EvalContext, PIPELINE_FILE};
 use crate::providers::{CommitStatusReport, Providers};
 use crate::scheduler::queue::{self, PlannedJob};
@@ -41,6 +42,8 @@ pub struct Worker {
     credential_key: Arc<Option<SecretKey>>,
     /// `None` when no warehouse is configured - artifacts report as produced-not-kept.
     artifacts: Arc<Option<WarehouseStore>>,
+    /// `None` when gatehouse is not configured to send them - runs finish the same either way.
+    notifications: Option<Arc<Notifications>>,
 }
 
 /// Starts the worker pool and janitor and returns immediately; refuses an in-memory DB.
@@ -49,6 +52,17 @@ pub fn spawn_pool(
     config: ConveyorConfig,
     executor: Arc<dyn JobExecutor>,
     providers: Arc<Providers>,
+) {
+    spawn_pool_notifying(db, config, executor, providers, None);
+}
+
+/// [`spawn_pool`] that also queues run-result notifications for subscribers.
+pub fn spawn_pool_notifying(
+    db: Db,
+    config: ConveyorConfig,
+    executor: Arc<dyn JobExecutor>,
+    providers: Arc<Providers>,
+    notifications: Option<Arc<Notifications>>,
 ) {
     if let Err(error) = queue::pool(&db) {
         tracing::error!("scheduler not started: {error}");
@@ -92,6 +106,7 @@ pub fn spawn_pool(
             key: key.clone(),
             credential_key: credential_key.clone(),
             artifacts: artifacts.clone(),
+            notifications: notifications.clone(),
         };
         tokio::spawn(worker.run_loop());
     }
@@ -195,8 +210,24 @@ impl Worker {
         )
         .await;
 
+        self.queue_notifications(&repo, &run, status).await;
+
         tracing::info!("run {} finished: {status}", run.id);
         Ok(())
+    }
+
+    /// Queues mail for the people following this repository - never fatal, a run's result must not hang on it.
+    async fn queue_notifications(&self, repo: &Repo, run: &Run, status: Status) {
+        let Some(notifications) = &self.notifications else {
+            return;
+        };
+        match notifications::on_run_finished(&self.db, notifications, repo, run, status).await {
+            Ok(0) => {}
+            Ok(queued) => tracing::info!("run {}: queued {queued} notification(s)", run.id),
+            Err(error) => {
+                tracing::warn!("could not queue notifications for run {}: {error}", run.id)
+            }
+        }
     }
 
     /// Tells the provider how the commit is doing - never fatal, just a warning if it can't.
@@ -873,7 +904,7 @@ fn describe(status: Status) -> String {
 }
 
 /// `None` unless the deployment says where it's reachable - a `localhost` link is worse than none.
-fn run_url(run_id: &str) -> Option<String> {
+pub(crate) fn run_url(run_id: &str) -> Option<String> {
     let base = envmnt::get_or("CONVEYOR_PUBLIC_URL", "");
     let base = base.trim().trim_end_matches('/');
     (!base.is_empty()).then(|| format!("{base}/ui/runs/{run_id}"))

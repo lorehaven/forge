@@ -27,6 +27,14 @@ pub enum RealmError {
     MfaCodeInvalid,
     /// "Change password" needs the current one, and it did not match.
     CurrentPasswordInvalid,
+    /// A name with characters outside the allowed set - see [`valid_username`].
+    UsernameInvalid,
+    /// Not an address mail could be delivered to.
+    EmailInvalid,
+    /// An invitation goes to an address; there was none.
+    InviteNeedsEmail,
+    /// Nothing to send: the address on file is already confirmed.
+    AlreadyConfirmed,
     Internal,
 }
 
@@ -35,10 +43,14 @@ impl RealmError {
         use http::StatusCode;
         match self {
             Self::NotFound | Self::UnknownTemplate => StatusCode::NOT_FOUND,
-            Self::UsernameEmpty | Self::PasswordEmpty | Self::UnknownGrants(_) => {
-                StatusCode::BAD_REQUEST
-            }
+            Self::UsernameEmpty
+            | Self::UsernameInvalid
+            | Self::PasswordEmpty
+            | Self::UnknownGrants(_)
+            | Self::EmailInvalid
+            | Self::InviteNeedsEmail => StatusCode::BAD_REQUEST,
             Self::AlreadyExists
+            | Self::AlreadyConfirmed
             | Self::LastAdmin
             | Self::SelfDemote
             | Self::SelfDelete
@@ -68,6 +80,12 @@ impl RealmError {
             }
             Self::MfaCodeInvalid => "that code did not match - try again".to_string(),
             Self::CurrentPasswordInvalid => "the current password is not correct".to_string(),
+            Self::UsernameInvalid => {
+                "a username may use letters, digits and . _ - @ + (up to 64 characters)".to_string()
+            }
+            Self::EmailInvalid => "that is not a valid email address".to_string(),
+            Self::InviteNeedsEmail => "an invitation needs an email address".to_string(),
+            Self::AlreadyConfirmed => "the email address is already confirmed".to_string(),
             Self::Internal => "the change could not be saved".to_string(),
         }
     }
@@ -89,12 +107,31 @@ impl RealmError {
             Self::RolesRequireAdmin => "ui_admin_error_roles_require_admin",
             Self::MfaCodeInvalid => "ui_admin_error_mfa_code_invalid",
             Self::CurrentPasswordInvalid => "ui_account_error_current_password",
+            Self::UsernameInvalid => "ui_admin_error_username_invalid",
+            Self::EmailInvalid => "ui_register_error_email_invalid",
+            Self::InviteNeedsEmail => "ui_admin_error_invite_needs_email",
+            Self::AlreadyConfirmed => "ui_admin_error_already_confirmed",
             Self::Internal => "ui_admin_error_internal",
         }
     }
 }
 
 pub type RealmResult<T> = Result<T, RealmError>;
+
+/// Longest username accepted.
+pub const MAX_USERNAME_LEN: usize = 64;
+
+/// What a username may be made of: ASCII letters and digits plus `. _ - @ +`,
+/// 1 to 64 characters. Usernames are shown on admin pages and put in URLs,
+/// mail and logs, and anyone can register one - so the set is small enough that
+/// nothing in it is markup, a path separator or a control character.
+pub fn valid_username(username: &str) -> bool {
+    !username.is_empty()
+        && username.len() <= MAX_USERNAME_LEN
+        && username
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '@' | '+'))
+}
 
 /// What to change about a user. `None` leaves a field alone.
 #[derive(Default)]
@@ -177,6 +214,9 @@ pub async fn create(
     if username.is_empty() {
         return Err(RealmError::UsernameEmpty);
     }
+    if !valid_username(username) {
+        return Err(RealmError::UsernameInvalid);
+    }
     if password.is_empty() {
         return Err(RealmError::PasswordEmpty);
     }
@@ -217,6 +257,40 @@ pub async fn create(
         .map_err(|err| internal("failed to create the user", err))?;
     tracing::info!("created user {username}");
     Ok(created)
+}
+
+/// An account created for someone else, to be finished by them: a password
+/// nobody knows, and the address they will be invited at (send the invitation
+/// with `invites::send_invite`). Until they accept, the unconfirmed address
+/// keeps the account from logging in.
+#[allow(clippy::too_many_arguments)]
+pub async fn create_invited(
+    db: &Db,
+    catalog: &PermissionCatalog,
+    actor_is_admin: bool,
+    username: &str,
+    roles: Vec<Role>,
+    permissions: Permissions,
+    email: &str,
+) -> RealmResult<User> {
+    let email = email.trim();
+    if email.is_empty() {
+        return Err(RealmError::InviteNeedsEmail);
+    }
+    if email.parse::<quench_mail::Address>().is_err() {
+        return Err(RealmError::EmailInvalid);
+    }
+    create(
+        db,
+        catalog,
+        actor_is_admin,
+        username,
+        &crate::invites::unusable_password(),
+        roles,
+        permissions,
+        Some(email.to_string()),
+    )
+    .await
 }
 
 /// Applies `changes`, holding the rules that keep the realm reachable.
@@ -310,6 +384,19 @@ pub async fn change_password(
     if new.is_empty() {
         return Err(RealmError::PasswordEmpty);
     }
+    check_password(db, username, current).await?;
+
+    let changes = UserChanges {
+        password: Some(new.to_string()),
+        ..UserChanges::default()
+    };
+    update(db, catalog, sessions, username, false, username, changes).await
+}
+
+/// The gate in front of sensitive self-service changes: the current password
+/// must verify. A wrong one counts toward the same lockout as a failed login,
+/// so a hijacked session cannot be used to guess it.
+pub async fn check_password(db: &Db, username: &str, current: &str) -> RealmResult<User> {
     let repo = repo(db);
     let mut user = get(db, username).await?;
 
@@ -326,12 +413,50 @@ pub async fn change_password(
             .map_err(|err| internal("failed to record a failed password check", err))?;
         return Err(RealmError::CurrentPasswordInvalid);
     }
+    Ok(user)
+}
 
-    let changes = UserChanges {
-        password: Some(new.to_string()),
-        ..UserChanges::default()
-    };
-    update(db, catalog, sessions, username, false, username, changes).await
+/// What changing an address left behind.
+pub struct EmailChange {
+    pub user: User,
+    /// The address that was on file *and confirmed* - the one to warn. `None`
+    /// when there was none, or it was never confirmed (then it may not be theirs).
+    pub previous_confirmed: Option<String>,
+}
+
+// Not derived: `User` holds the password hash, which must not end up in a log line.
+impl std::fmt::Debug for EmailChange {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EmailChange")
+            .field("username", &self.user.username)
+            .field("previous_confirmed", &self.previous_confirmed)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Puts `new_email` on the account as its confirmed address. The caller has
+/// already proven the new address is reachable (the confirmation link).
+pub async fn change_email(db: &Db, username: &str, new_email: &str) -> RealmResult<EmailChange> {
+    let new_email = new_email.trim();
+    if new_email.parse::<quench_mail::Address>().is_err() {
+        return Err(RealmError::EmailInvalid);
+    }
+    let repo = repo(db);
+    let mut user = get(db, username).await?;
+    let previous_confirmed = crate::notices::notice_address(&user)
+        .filter(|old| !old.eq_ignore_ascii_case(new_email))
+        .map(str::to_string);
+    user.email = Some(new_email.to_string());
+    user.email_verified_at = Some(chrono::Utc::now());
+    let user = repo
+        .update(&user)
+        .await
+        .map_err(|err| internal("failed to change the email address", err))?;
+    tracing::info!("changed the email address of {username}");
+    Ok(EmailChange {
+        user,
+        previous_confirmed,
+    })
 }
 
 pub async fn replace_permissions(

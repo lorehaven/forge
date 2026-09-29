@@ -1,7 +1,12 @@
 //! Realm user administration API - JSON surface over [`crate::realm`]; each route needs a catalog action.
 
+use crate::PublicBase;
 use crate::catalog::PermissionCatalog;
+use crate::email::{Mail, Sender};
+use crate::invites;
+use crate::notices;
 use crate::realm::{self, RealmError, UserChanges};
+use crate::tokens::VerificationTokens;
 use async_trait::async_trait;
 use http::StatusCode;
 use quench_auth::domain::auth::{Permissions, Role, User, UserDb};
@@ -14,6 +19,7 @@ use quench_http::prelude::{
     FromRequest, HttpError, Inject, Json, Path, Response, delete, get, patch, post, put,
 };
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 // --- Wire types ---
 
@@ -28,6 +34,10 @@ pub struct UserView {
     pub wildcard: bool,
     pub email: Option<String>,
     pub email_verified: bool,
+    /// Only on the response to creating an invited user: whether the invitation
+    /// email was accepted for delivery. The account exists either way.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invite_sent: Option<bool>,
 }
 
 impl From<&User> for UserView {
@@ -39,6 +49,7 @@ impl From<&User> for UserView {
             wildcard: user.has_wildcard(),
             email: user.email.clone(),
             email_verified: user.email_verified_at.is_some(),
+            invite_sent: None,
         }
     }
 }
@@ -46,6 +57,8 @@ impl From<&User> for UserView {
 #[derive(Deserialize)]
 pub struct CreateUserRequest {
     pub username: String,
+    /// Not needed for an invited user: they choose their own.
+    #[serde(default)]
     pub password: String,
     #[serde(default)]
     pub roles: Vec<Role>,
@@ -53,6 +66,10 @@ pub struct CreateUserRequest {
     pub permissions: Permissions,
     #[serde(default)]
     pub email: Option<String>,
+    /// Email the address an invitation to choose a password (and confirm the
+    /// address). The account gets a random password nobody is told.
+    #[serde(default)]
+    pub invite: bool,
 }
 
 /// Every field optional, so a `PATCH` can touch just one.
@@ -218,21 +235,54 @@ async fn create_user(
     Json(request): Json<CreateUserRequest>,
     Inject(catalog): Inject<PermissionCatalog>,
     Inject(db): Inject<Db>,
+    Inject(tokens): Inject<VerificationTokens>,
+    Inject(mailer): Inject<Arc<dyn Sender>>,
+    Inject(base): Inject<PublicBase>,
 ) -> Response {
-    match realm::create(
-        &db,
-        &catalog,
-        actor.0.has_role(Role::Admin.as_str()),
-        &request.username,
-        &request.password,
-        request.roles,
-        request.permissions,
-        request.email,
-    )
-    .await
-    {
-        Ok(user) => Response::json(StatusCode::CREATED, &UserView::from(&user))
-            .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR)),
+    let actor_is_admin = actor.0.has_role(Role::Admin.as_str());
+    let created = if request.invite {
+        match request.email.as_deref() {
+            Some(email) => {
+                realm::create_invited(
+                    &db,
+                    &catalog,
+                    actor_is_admin,
+                    &request.username,
+                    request.roles,
+                    request.permissions,
+                    email,
+                )
+                .await
+            }
+            None => Err(RealmError::InviteNeedsEmail),
+        }
+    } else {
+        realm::create(
+            &db,
+            &catalog,
+            actor_is_admin,
+            &request.username,
+            &request.password,
+            request.roles,
+            request.permissions,
+            request.email,
+        )
+        .await
+    };
+
+    match created {
+        Ok(user) => {
+            let mut view = UserView::from(&user);
+            if request.invite {
+                let sent = invites::send_invite(&tokens, &**mailer, &base, &user, None).await;
+                if let Err(err) = &sent {
+                    tracing::error!("could not send the invitation to {}: {err}", user.username);
+                }
+                view.invite_sent = Some(sent.is_ok());
+            }
+            Response::json(StatusCode::CREATED, &view)
+                .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
+        }
         Err(err) => problem(&err),
     }
 }
@@ -245,7 +295,9 @@ async fn update_user(
     Inject(catalog): Inject<PermissionCatalog>,
     Inject(db): Inject<Db>,
     Inject(sessions): Inject<SessionDb>,
+    Inject(mailer): Inject<Arc<dyn Sender>>,
 ) -> Response {
+    let password_changed = request.password.is_some();
     let changes = UserChanges {
         password: request.password,
         roles: request.roles,
@@ -264,7 +316,12 @@ async fn update_user(
     )
     .await
     {
-        Ok(user) => json_ok(&UserView::from(&user)),
+        Ok(user) => {
+            if password_changed {
+                notices::notify(&**mailer, &user, &Mail::PasswordChanged, None).await;
+            }
+            json_ok(&UserView::from(&user))
+        }
         Err(err) => problem(&err),
     }
 }
@@ -381,9 +438,9 @@ async fn me(
 
 pub fn register_routes() {
     let _ = list_users as fn(_, _) -> _;
-    let _ = create_user as fn(_, _, _, _) -> _;
+    let _ = create_user as fn(_, _, _, _, _, _, _) -> _;
     let _ = get_user as fn(_, _, _) -> _;
-    let _ = update_user as fn(_, _, _, _, _, _) -> _;
+    let _ = update_user as fn(_, _, _, _, _, _, _) -> _;
     let _ = replace_permissions as fn(_, _, _, _, _, _) -> _;
     let _ = apply_template as fn(_, _, _, _, _, _) -> _;
     let _ = delete_user as fn(_, _, _, _) -> _;

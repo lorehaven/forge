@@ -9,6 +9,7 @@ pub mod config;
 pub mod credentials;
 pub mod domain;
 pub mod executors;
+pub mod notifications;
 // Own crate so `conveyor validate` can link the parser without the service.
 pub use conveyor_pipeline as pipeline;
 pub use conveyor_pipeline::steps;

@@ -621,3 +621,26 @@ async fn an_ordinary_login_page_does_not_advertise_resending() {
     assert!(!html.contains("resend-verification"));
     assert!(html.contains("forgot-password"), "the other links stay");
 }
+
+#[test]
+fn login_recognises_the_invitation_outcomes() {
+    let accepted = LoginNotices {
+        invited: Some("1".into()),
+        ..LoginNotices::default()
+    };
+    assert_eq!(login_ok_key(&accepted), Some("ui_login_invite_accepted_ok"));
+
+    let invalid = LoginNotices {
+        err: Some("ui_login_invite_invalid".into()),
+        ..LoginNotices::default()
+    };
+    assert_eq!(login_error_key(&invalid), Some("ui_login_invite_invalid"));
+
+    // A completed reset is still the more specific message.
+    let both = LoginNotices {
+        reset: Some("1".into()),
+        invited: Some("1".into()),
+        ..LoginNotices::default()
+    };
+    assert_eq!(login_ok_key(&both), Some("ui_login_reset_ok"));
+}

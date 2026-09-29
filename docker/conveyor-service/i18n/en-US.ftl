@@ -122,3 +122,12 @@ ui_repos_err_write_failed = That could not be saved. It may already exist.
 
 ui_credentials_title = Credentials
 ui_credentials_empty = No credentials visible to you.
+
+# Following a repository or project's run results
+ui_follow_start = Follow
+ui_follow_stop = Following - click to stop
+ui_follow_projects_title = Follow projects
+ui_follow_projects_hint = Run results for every repository under a project you follow are emailed to you: failures, and the first success after one. Choose which kinds of message you get, and whether you get them at all, on your gatehouse account page.
+ui_follow_ok_followed = You now follow this.
+ui_follow_ok_unfollowed = You no longer follow this.
+ui_follow_err_failed = That could not be changed. Try again.

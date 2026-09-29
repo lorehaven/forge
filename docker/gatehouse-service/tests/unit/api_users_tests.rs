@@ -1,8 +1,11 @@
 use bytes::Bytes;
+use gatehouse_service::PublicBase;
 use gatehouse_service::api::users::*;
 use gatehouse_service::catalog::PermissionCatalog;
+use gatehouse_service::email::{LoggingSender, Sender};
 use gatehouse_service::realm::{self, RealmError};
-use gatehouse_service::test_support::service_auth_env_lock;
+use gatehouse_service::test_support::{RecordingSender, service_auth_env_lock};
+use gatehouse_service::tokens::VerificationTokens;
 use http::{HeaderMap, Method, StatusCode, Uri};
 use http_body_util::BodyExt;
 use quench_auth::domain::auth::{Role, UserDb};
@@ -53,11 +56,23 @@ async fn app(
     catalog: PermissionCatalog,
     jwt_config: JwtConfig,
 ) -> (Arc<dyn Endpoint>, Arc<quench_http::di::Container>) {
+    app_with_mailer(db, catalog, jwt_config, Arc::new(LoggingSender)).await
+}
+
+async fn app_with_mailer(
+    db: Db,
+    catalog: PermissionCatalog,
+    jwt_config: JwtConfig,
+    mailer: Arc<dyn Sender>,
+) -> (Arc<dyn Endpoint>, Arc<quench_http::di::Container>) {
     gatehouse_service::api::users::register_routes();
     let container = ContainerBuilder::new()
         .provide(jwt_config)
         .provide(db.clone())
         .provide(catalog)
+        .provide(mailer)
+        .provide(PublicBase::resolve("https://mail.example.test", ""))
+        .provide_arc(Arc::new(VerificationTokens::in_memory()))
         .provide_arc(sessions())
         .provide_arc(UserDb::init(db).await)
         .build()
@@ -376,4 +391,201 @@ async fn list_users_succeeds_for_a_wildcard_admin_role() {
         ))
         .await;
     assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn a_password_change_through_the_api_tells_a_confirmed_address_only() {
+    let _guard = auth_disabled().await;
+    let db = Db::connect("").await.expect("in-memory db");
+    let recorder = Arc::new(RecordingSender::default());
+    let sender: Arc<dyn Sender> = recorder.clone();
+    let (app, container) = app_with_mailer(
+        db.clone(),
+        permission_catalog(),
+        JwtConfig::for_tests(),
+        sender,
+    )
+    .await;
+
+    for (name, address) in [
+        ("confirmed", "c@example.test"),
+        ("unconfirmed", "u@example.test"),
+    ] {
+        app.call(json_req(
+            Method::POST,
+            "/api/v1/users",
+            serde_json::json!({ "username": name, "password": "old-password", "email": address }),
+            &container,
+        ))
+        .await;
+    }
+    realm::mark_email_verified(&db, "confirmed")
+        .await
+        .expect("verify");
+
+    for name in ["confirmed", "unconfirmed"] {
+        let resp = app
+            .call(json_req(
+                Method::PATCH,
+                &format!("/api/v1/users/{name}"),
+                serde_json::json!({ "password": "new-password" }),
+                &container,
+            ))
+            .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+    // A PATCH that leaves the password alone says nothing.
+    app.call(json_req(
+        Method::PATCH,
+        "/api/v1/users/confirmed",
+        serde_json::json!({ "roles": ["user"] }),
+        &container,
+    ))
+    .await;
+
+    let sent = recorder.sent();
+    assert_eq!(sent.len(), 1, "{sent:?}");
+    assert_eq!(
+        (sent[0].kind, sent[0].to.as_str()),
+        ("password-changed", "c@example.test")
+    );
+}
+
+async fn invite_app() -> (
+    Arc<RecordingSender>,
+    Arc<dyn Endpoint>,
+    Arc<quench_http::di::Container>,
+    Db,
+) {
+    let db = Db::connect("").await.expect("in-memory db");
+    let recorder = Arc::new(RecordingSender::default());
+    let sender: Arc<dyn Sender> = recorder.clone();
+    let (app, container) = app_with_mailer(
+        db.clone(),
+        permission_catalog(),
+        JwtConfig::for_tests(),
+        sender,
+    )
+    .await;
+    (recorder, app, container, db)
+}
+
+#[tokio::test]
+async fn creating_an_invited_user_emails_the_address_and_reports_it() {
+    let _guard = auth_disabled().await;
+    let (recorder, app, container, db) = invite_app().await;
+    let resp = app
+        .call(json_req(
+            Method::POST,
+            "/api/v1/users",
+            serde_json::json!({ "username": "newbie", "email": "newbie@example.test", "invite": true }),
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    let body: serde_json::Value = json_body(resp).await;
+    assert_eq!(body["invite_sent"], true);
+    assert_eq!(body["email"], "newbie@example.test");
+    assert_eq!(body["email_verified"], false);
+
+    let sent = recorder.sent_of("invite");
+    assert_eq!(sent.len(), 1, "{:?}", recorder.sent());
+    assert_eq!(sent[0].to, "newbie@example.test");
+    let user = realm::get(&db, "newbie").await.unwrap();
+    assert!(
+        !user.verify_password(""),
+        "no usable password until accepted"
+    );
+}
+
+#[tokio::test]
+async fn an_invitation_needs_a_valid_address() {
+    let _guard = auth_disabled().await;
+    let (recorder, app, container, db) = invite_app().await;
+    for (body, name) in [
+        (serde_json::json!({ "username": "a", "invite": true }), "a"),
+        (
+            serde_json::json!({ "username": "b", "invite": true, "email": "nonsense" }),
+            "b",
+        ),
+    ] {
+        let resp = app
+            .call(json_req(Method::POST, "/api/v1/users", body, &container))
+            .await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST, "{name}");
+        assert!(
+            realm::get(&db, name).await.is_err(),
+            "{name} was not created"
+        );
+    }
+    assert!(recorder.sent().is_empty());
+}
+
+#[tokio::test]
+async fn an_ordinary_create_neither_invites_nor_mentions_it() {
+    let _guard = auth_disabled().await;
+    let (recorder, app, container, _db) = invite_app().await;
+    let resp = app
+        .call(json_req(
+            Method::POST,
+            "/api/v1/users",
+            serde_json::json!({ "username": "plain", "password": "given-password", "email": "p@example.test" }),
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    let body: serde_json::Value = json_body(resp).await;
+    assert!(body.get("invite_sent").is_none(), "{body}");
+    assert!(recorder.sent().is_empty());
+}
+
+#[tokio::test]
+async fn a_plain_create_still_needs_a_password() {
+    let _guard = auth_disabled().await;
+    let (_recorder, app, container, _db) = invite_app().await;
+    let resp = app
+        .call(json_req(
+            Method::POST,
+            "/api/v1/users",
+            serde_json::json!({ "username": "nopw" }),
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn a_failed_invitation_email_still_creates_the_account() {
+    struct Failing;
+    #[async_trait::async_trait]
+    impl Sender for Failing {
+        async fn send(
+            &self,
+            _: &gatehouse_service::email::Recipient<'_>,
+            _: &gatehouse_service::email::Mail<'_>,
+        ) -> Result<(), gatehouse_service::email::SendError> {
+            Err(gatehouse_service::email::SendError::transient("smtp down"))
+        }
+    }
+    let _guard = auth_disabled().await;
+    let db = Db::connect("").await.expect("in-memory db");
+    let (app, container) = app_with_mailer(
+        db.clone(),
+        permission_catalog(),
+        JwtConfig::for_tests(),
+        Arc::new(Failing),
+    )
+    .await;
+    let resp = app
+        .call(json_req(
+            Method::POST,
+            "/api/v1/users",
+            serde_json::json!({ "username": "newbie", "email": "newbie@example.test", "invite": true }),
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    let body: serde_json::Value = json_body(resp).await;
+    assert_eq!(body["invite_sent"], false);
+    assert!(realm::get(&db, "newbie").await.is_ok());
 }

@@ -122,3 +122,12 @@ ui_repos_err_write_failed = Nie udało się tego zapisać. Może już istnieć.
 
 ui_credentials_title = Poświadczenia
 ui_credentials_empty = Brak poświadczeń widocznych dla Ciebie.
+
+# Following a repository or project's run results
+ui_follow_start = Obserwuj
+ui_follow_stop = Obserwujesz - kliknij, aby przestać
+ui_follow_projects_title = Obserwuj projekty
+ui_follow_projects_hint = Wyniki przebiegów wszystkich repozytoriów w obserwowanym projekcie przychodzą e-mailem: niepowodzenia oraz pierwszy sukces po nich. Rodzaje wiadomości i ich włączenie ustawisz na stronie konta w gatehouse.
+ui_follow_ok_followed = Od teraz to obserwujesz.
+ui_follow_ok_unfollowed = Już tego nie obserwujesz.
+ui_follow_err_failed = Nie udało się tego zmienić. Spróbuj ponownie.

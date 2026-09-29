@@ -10,7 +10,9 @@ mod templates;
 
 pub use budget::BudgetedSender;
 pub use smtp::{SmtpConfig, SmtpSender, TlsMode};
-pub use templates::{Kind, Rendered, language, render};
+pub use templates::{
+    Kind, Rendered, Vars, fill_with, html as render_html, language, render, render_with,
+};
 
 use crate::ratelimit::{RateLimiter, policy};
 use async_trait::async_trait;
@@ -63,32 +65,145 @@ impl fmt::Display for SendError {
 
 impl std::error::Error for SendError {}
 
-#[async_trait]
-pub trait Sender: Send + Sync {
-    async fn send_verification(&self, to: &Recipient<'_>, link: &str) -> Result<(), SendError>;
-    async fn send_password_reset(&self, to: &Recipient<'_>, link: &str) -> Result<(), SendError>;
+/// Everything gatehouse can email. A new kind of message is a new variant here,
+/// a template in [`templates`], and nothing in the transports.
+#[derive(Debug, Clone, Copy)]
+pub enum Mail<'a> {
+    Verification {
+        link: &'a str,
+    },
+    PasswordReset {
+        link: &'a str,
+    },
+    Invite {
+        link: &'a str,
+    },
+    /// To the NEW address.
+    EmailChange {
+        link: &'a str,
+    },
+    /// To the OLD address, after the change.
+    EmailChanged {
+        new_email: &'a str,
+    },
+    PasswordChanged,
+    MfaEnabled,
+    MfaDisabled,
+    /// Something another service asked gatehouse to tell the recipient (see
+    /// `crate::notify`). `unsubscribe` is the link that stops this kind of message.
+    Notification {
+        template: &'a str,
+        vars: &'a [(&'a str, &'a str)],
+        unsubscribe: &'a str,
+    },
 }
 
-/// Logs the link instead of emailing it - dev/BDD only, never a real deployment.
+impl<'a> Mail<'a> {
+    pub fn kind(&self) -> Kind {
+        match self {
+            Mail::Verification { .. } => Kind::Verification,
+            Mail::PasswordReset { .. } => Kind::PasswordReset,
+            Mail::Invite { .. } => Kind::Invite,
+            Mail::EmailChange { .. } => Kind::EmailChange,
+            Mail::EmailChanged { .. } => Kind::EmailChanged,
+            Mail::PasswordChanged => Kind::PasswordChanged,
+            Mail::MfaEnabled => Kind::MfaEnabled,
+            Mail::MfaDisabled => Kind::MfaDisabled,
+            Mail::Notification { .. } => Kind::Notification,
+        }
+    }
+
+    /// The link the message carries, empty for notices.
+    pub fn link(&self) -> &'a str {
+        match self {
+            Mail::Verification { link }
+            | Mail::PasswordReset { link }
+            | Mail::Invite { link }
+            | Mail::EmailChange { link } => link,
+            Mail::Notification { unsubscribe, .. } => unsubscribe,
+            _ => "",
+        }
+    }
+
+    /// What else identifies the message: the address a change notice names, or a
+    /// notification's template id. Empty when there is nothing.
+    pub fn detail(&self) -> &'a str {
+        match self {
+            Mail::EmailChanged { new_email } => new_email,
+            Mail::Notification { template, .. } => template,
+            _ => "",
+        }
+    }
+
+    /// The address named in the message, empty when it names none.
+    pub fn new_email(&self) -> &'a str {
+        match self {
+            Mail::EmailChanged { new_email } => new_email,
+            _ => "",
+        }
+    }
+
+    pub fn vars(&self, username: &'a str) -> Vars<'a> {
+        Vars {
+            username,
+            link: self.link(),
+            new_email: self.new_email(),
+        }
+    }
+}
+
+/// What the rest of gatehouse talks to. Implementors provide [`send`](Self::send);
+/// the two named helpers are the original entry points, kept for callers.
+#[async_trait]
+pub trait Sender: Send + Sync {
+    async fn send(&self, to: &Recipient<'_>, mail: &Mail<'_>) -> Result<(), SendError>;
+
+    async fn send_verification(&self, to: &Recipient<'_>, link: &str) -> Result<(), SendError> {
+        self.send(to, &Mail::Verification { link }).await
+    }
+
+    async fn send_password_reset(&self, to: &Recipient<'_>, link: &str) -> Result<(), SendError> {
+        self.send(to, &Mail::PasswordReset { link }).await
+    }
+}
+
+/// Logs the message instead of emailing it - dev/BDD only, never a real
+/// deployment. The `visit <link> to ...` shape of the verification and reset
+/// lines is what the BDD suite reads the links back from.
 pub struct LoggingSender;
 
 #[async_trait]
 impl Sender for LoggingSender {
-    async fn send_verification(&self, to: &Recipient<'_>, link: &str) -> Result<(), SendError> {
-        tracing::info!(
-            "email(verification) to={} user={}: visit {link} to verify this address",
-            to.address,
-            to.username
-        );
-        Ok(())
-    }
-
-    async fn send_password_reset(&self, to: &Recipient<'_>, link: &str) -> Result<(), SendError> {
-        tracing::info!(
-            "email(password-reset) to={} user={}: visit {link} to choose a new password",
-            to.address,
-            to.username
-        );
+    async fn send(&self, to: &Recipient<'_>, mail: &Mail<'_>) -> Result<(), SendError> {
+        let kind = mail.kind().label();
+        let (address, user) = (to.address, to.username);
+        match mail {
+            Mail::Verification { link } => tracing::info!(
+                "email({kind}) to={address} user={user}: visit {link} to verify this address"
+            ),
+            Mail::PasswordReset { link } => tracing::info!(
+                "email({kind}) to={address} user={user}: visit {link} to choose a new password"
+            ),
+            Mail::Invite { link } => tracing::info!(
+                "email({kind}) to={address} user={user}: visit {link} to accept the invitation"
+            ),
+            Mail::EmailChange { link } => tracing::info!(
+                "email({kind}) to={address} user={user}: visit {link} to confirm the new address"
+            ),
+            Mail::EmailChanged { new_email } => tracing::info!(
+                "email({kind}) to={address} user={user}: the address was changed to {new_email}"
+            ),
+            Mail::Notification {
+                template,
+                unsubscribe,
+                ..
+            } => tracing::info!(
+                "email({kind}) to={address} user={user}: {template} (unsubscribe: {unsubscribe})"
+            ),
+            Mail::PasswordChanged | Mail::MfaEnabled | Mail::MfaDisabled => {
+                tracing::info!("email({kind}) to={address} user={user}")
+            }
+        }
         Ok(())
     }
 }

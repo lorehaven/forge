@@ -1,5 +1,5 @@
 name = "auth"
-version = "0.2.1"
+version = "0.2.2"
 description = "Shared identity realm - the estate's users, owned by gatehouse"
 
 # One instance per database, never per service schema: the whole point is that

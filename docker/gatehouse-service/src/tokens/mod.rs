@@ -41,6 +41,14 @@ impl VerificationTokens {
         Ok(token)
     }
 
+    /// Reads a token's value without spending it - for a page that shows what a
+    /// link would do and asks for a click before doing it (so a mail scanner
+    /// that fetches links cannot trigger it).
+    pub async fn peek(&self, purpose: &str, token: &str) -> anyhow::Result<Option<String>> {
+        let value = self.store.get(&Self::key(purpose, token)).await?;
+        Ok(value.and_then(|value| value.as_str().map(str::to_string)))
+    }
+
     /// Redeems once, atomically (`GETDEL`) - a racing double-click or replay
     /// succeeds at most once.
     pub async fn redeem(&self, purpose: &str, token: &str) -> anyhow::Result<Option<String>> {
@@ -51,3 +59,6 @@ impl VerificationTokens {
 
 pub const PURPOSE_VERIFY_EMAIL: &str = "verify-email";
 pub const PURPOSE_RESET_PASSWORD: &str = "reset-password";
+pub const PURPOSE_INVITE: &str = "invite";
+pub const PURPOSE_EMAIL_CHANGE: &str = "email-change";
+pub const PURPOSE_UNSUBSCRIBE: &str = "unsubscribe";
