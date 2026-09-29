@@ -983,7 +983,7 @@ dependencies = [
 
 [[package]]
 name = "conveyor-service"
-version = "0.6.4"
+version = "0.6.5"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -2008,7 +2008,7 @@ dependencies = [
 
 [[package]]
 name = "foundry-service"
-version = "0.2.14"
+version = "0.2.15"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -2146,7 +2146,7 @@ dependencies = [
 
 [[package]]
 name = "gatehouse-service"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4829,7 +4829,7 @@ checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
 name = "sage-service"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -5610,7 +5610,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "switchboard-service"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "async-trait",
  "bytes",
@@ -6429,7 +6429,7 @@ dependencies = [
 
 [[package]]
 name = "warehouse-service"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "async-trait",
  "axmldecoder",
@@ -6872,7 +6872,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "workbench-service"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "async-trait",
  "bytes",
