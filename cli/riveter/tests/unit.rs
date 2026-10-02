@@ -18,6 +18,8 @@ mod image_updates_pure_tests;
 mod image_updates_tests;
 #[path = "unit/package_tests.rs"]
 mod package_tests;
+#[path = "unit/prune_tests.rs"]
+mod prune_tests;
 #[path = "unit/registry_tests.rs"]
 mod registry_tests;
 #[path = "unit/render_generate_tests.rs"]

@@ -480,17 +480,87 @@ impl std::fmt::Display for LiveResource {
     }
 }
 
+/// What `kubectl get -o jsonpath` is asked to print per object, tab-separated: its kind, its name, the
+/// kinds that own it, and its `spec.selector`.
+///
+/// Fields rather than `-o json` on purpose: the kinds queried include `secret`, and a prune has no
+/// business reading Secret contents into memory just to decide what to delete.
+const LISTING: &str = r#"{range .items[*]}{.kind}{"\t"}{.metadata.name}{"\t"}{.metadata.ownerReferences[*].kind}{"\t"}{.spec.selector}{"\n"}{end}"#;
+
+/// Reads [`LISTING`] output into the resources riveter itself created, leaving out the ones something
+/// else derived from them.
+///
+/// The cluster's own controllers copy a Service's or Ingress's labels onto what they generate, so the
+/// `managed-by` selector alone also matches objects riveter never made and must never delete:
+///
+/// - anything with an owner (`Certificate`s that cert-manager creates for an Ingress, the
+///   `EndpointSlice`s of a Service, `ReplicaSet`s and `Pod`s) - riveter's own objects have none;
+/// - the `Endpoints` Kubernetes keeps for a Service that has a selector. These carry no owner, so
+///   they are recognised by that Service being in the same listing. An `Endpoints` for a Service
+///   *without* a selector is the hand-written kind riveter's `endpoints` template exists for, and
+///   stays prunable.
+#[must_use]
+pub fn parse_live_listing(listing: &str) -> Vec<LiveResource> {
+    struct Row<'a> {
+        kind: String,
+        name: &'a str,
+        owned: bool,
+        selector: &'a str,
+    }
+
+    let rows: Vec<Row<'_>> = listing
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split('\t');
+            let kind = fields.next()?.trim();
+            let name = fields.next()?.trim();
+            if kind.is_empty() || name.is_empty() {
+                return None;
+            }
+            Some(Row {
+                kind: kind.to_lowercase(),
+                name,
+                owned: !fields.next().unwrap_or_default().trim().is_empty(),
+                selector: fields.next().unwrap_or_default().trim(),
+            })
+        })
+        .collect();
+
+    let selecting_services: std::collections::HashSet<&str> = rows
+        .iter()
+        .filter(|r| r.kind == "service" && !r.selector.is_empty())
+        .map(|r| r.name)
+        .collect();
+
+    rows.iter()
+        .filter(|r| !r.owned)
+        .filter(|r| !(r.kind == "endpoints" && selecting_services.contains(r.name)))
+        .map(|r| LiveResource {
+            kind: r.kind.clone(),
+            name: r.name.to_string(),
+        })
+        .collect()
+}
+
 /// Asks the cluster what it holds for this environment.
 ///
 /// Queries the kinds riveter can render, since a resource it never created is
-/// not its to remove. `raw` resources are unreachable this way — they carry
-/// whatever labels the overlay wrote — so they are never pruned.
+/// not its to remove - see [`parse_live_listing`] for the objects that merely
+/// look like it. `raw` resources are unreachable this way - they carry
+/// whatever labels the overlay wrote - so they are never pruned.
 fn live_resources(env: &str, rendered: &RenderedManifest) -> anyhow::Result<Vec<LiveResource>> {
     let kinds = crate::render::prunable_kinds().join(",");
     let selector = format!("{MANAGED_BY},env={env}");
 
     let mut cmd = kubectl(rendered);
-    cmd.args(["get", &kinds, "-l", &selector, "-o", "name"]);
+    cmd.args([
+        "get",
+        &kinds,
+        "-l",
+        &selector,
+        "-o",
+        &format!("jsonpath={LISTING}"),
+    ]);
     if let Some(namespace) = &rendered.namespace {
         cmd.args(["-n", namespace]);
     }
@@ -505,18 +575,7 @@ fn live_resources(env: &str, rendered: &RenderedManifest) -> anyhow::Result<Vec<
         String::from_utf8_lossy(&out.stderr).trim()
     );
 
-    Ok(String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .filter_map(|line| {
-            let (kind, name) = line.trim().split_once('/')?;
-            // `kubectl -o name` prints the plural, group-qualified form.
-            let kind = kind.split('.').next().unwrap_or(kind);
-            Some(LiveResource {
-                kind: kind.to_string(),
-                name: name.to_string(),
-            })
-        })
-        .collect())
+    Ok(parse_live_listing(&String::from_utf8_lossy(&out.stdout)))
 }
 
 /// Live resources this environment owns that the overlay no longer declares.

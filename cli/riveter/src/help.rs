@@ -175,7 +175,8 @@ pub const COMMANDS: &[CommandHelp] = &[
                  compares them against what the overlay renders, and deletes the\n\
                  difference. `delete` only removes what the overlay still declares, so\n\
                  without this an entry removed from an overlay would live on in the\n\
-                 cluster forever. Namespaces and `raw` resources are never pruned.",
+                 cluster forever. Namespaces and `raw` resources are never pruned, nor are\n\
+                 objects other controllers derived from yours (certificates, endpoints).",
         subcommands: &[],
         options: &[("--dry-run", "List what would be pruned, delete nothing")],
         examples: &[

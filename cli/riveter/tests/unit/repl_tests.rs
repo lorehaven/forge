@@ -228,7 +228,8 @@ fn with_fake_kubectl<T>(output: &str, body: impl FnOnce() -> T) -> T {
 
 #[test]
 fn find_orphans_reports_live_resources_the_overlay_no_longer_selects() {
-    with_fake_kubectl("deployment.apps/my-app\nservice/my-app", || {
+    // kind, name, owners, selector - the fields `prune` asks kubectl to print, tab-separated.
+    with_fake_kubectl("Deployment\tmy-app\t\t\nService\tmy-app\t\t", || {
         let rendered = manifest(vec![resource("Deployment", "my-app")], vec![]);
         let orphans = find_orphans("test-env", &rendered).unwrap();
 
@@ -239,8 +240,34 @@ fn find_orphans_reports_live_resources_the_overlay_no_longer_selects() {
 }
 
 #[test]
+fn find_orphans_leaves_alone_what_the_cluster_derived_from_declared_resources() {
+    // The listing that used to propose deleting every certificate, endpoint and endpoint slice: all of
+    // them carry riveter's labels, none of them is riveter's.
+    let listing = "Deployment\tmy-app\t\t\n\
+                   Service\tmy-app\t\t{\"app\":\"my-app\"}\n\
+                   Endpoints\tmy-app\t\t\n\
+                   EndpointSlice\tmy-app-x7k2p\tService\t\n\
+                   Certificate\tmy-app-tls\tIngress\t\n\
+                   Job\tstale-release\t\t";
+    with_fake_kubectl(listing, || {
+        let rendered = manifest(
+            vec![
+                resource("Deployment", "my-app"),
+                resource("Service", "my-app"),
+            ],
+            vec![],
+        );
+        let orphans = find_orphans("test-env", &rendered).unwrap();
+
+        // Only the Job the overlay genuinely stopped declaring.
+        assert_eq!(orphans.len(), 1, "{orphans:?}");
+        assert_eq!(orphans[0].to_string(), "job/stale-release");
+    });
+}
+
+#[test]
 fn find_orphans_is_empty_when_the_cluster_has_nothing_extra() {
-    with_fake_kubectl("deployment.apps/my-app", || {
+    with_fake_kubectl("Deployment\tmy-app\t\t", || {
         let rendered = manifest(vec![resource("Deployment", "my-app")], vec![]);
         let orphans = find_orphans("test-env", &rendered).unwrap();
         assert!(orphans.is_empty());
