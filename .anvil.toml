@@ -74,6 +74,7 @@ packages = [
     "foreman",
     "forge-toolbox",
     "pulley",
+    "rivet-package",
     "riveter",
     "warehouse-cli",
     "welder",

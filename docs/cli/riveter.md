@@ -12,6 +12,7 @@ Riveter is a Kubernetes manifest tool, powered by Rust and `minijinja` templates
 - `prune`, which finds cluster resources labelled `app.kubernetes.io/managed-by: riveter` for the environment that the overlay no longer declares, and removes them.
 - `images`, which scans overlay templates for `image:` tags and checks the registry for newer compatible tags, optionally rewriting the templates in place.
 - Variable substitution from an environment's own `.env` file (`${NAME}`, with `$${NAME}` as an escape).
+- Packages: `pack` turns an overlay into a versioned, checksummed `.rivet` archive with every image pinned to a digest, `publish`/`pull`/`remote` move it through Warehouse's rivet registry, and `install` fetches one and applies it - see [Packages](#packages).
 - An interactive REPL (the default when run with no arguments) with the same command set, aliases, and help text as the CLI.
 
 ## Requirements
@@ -43,6 +44,11 @@ riveter images
 | `delete [--scope ...] [target...]` | `d`, `del` | Render and delete via `kubectl` |
 | `prune [--dry-run]` | | Delete cluster resources the overlay no longer declares |
 | `images [--update] [--overlays-dir <dir>] [--registry-auth ...]` | | Check/update deployment image tags |
+| `pack [--version-suffix <s>] [--no-pin] [--out <dir>] [--registry-auth ...]` | | Build the environment into a `.rivet` package (CLI-only) |
+| `publish [file] [--version-suffix <s>] [--no-pin] [--out <dir>]` | | Upload a package to Warehouse, packing the environment first if no file is given (CLI-only) |
+| `pull <package> [--out <dir>]` | | Download a package and verify it (CLI-only) |
+| `install <package> [--env-file <f>] [--set K=V] [--dry-run] [--no-wait] [--timeout <s>] [--scope ...] [target...]` | `i` | Fetch a package, render it and apply it (CLI-only) |
+| `remote <list\|versions <name>>` | | Browse the packages in Warehouse (CLI-only) |
 | `repl` | | Enter the interactive shell (CLI-only; also the default with no arguments) |
 | `help [command]` | `h` | Show the command tree, or detail for one command |
 
@@ -145,6 +151,59 @@ Registry credentials are collected in ascending precedence: Docker's own config,
 
 Run `riveter` or `riveter repl` with no arguments to enter the interactive shell. REPL commands accept `--scope mutable` and `--scope=mutable` alike, matching what clap accepts on the CLI; anything else beginning with `-` is rejected rather than ignored, so a typo such as `apply --dry-runn` is an error instead of a live apply. `help` prints the full command tree with each command's subcommands and options nested beneath it; `help <command>` adds prose, the scope reference, target syntax and worked examples for one command; `help targets` prints the target syntax on its own. `riveter --help` prints that same tree — generated from one table shared by both surfaces, minus `exit` and plus `repl` — and the aliases work on the CLI too (`riveter ls`, `riveter a --dry-run deployment/api`, `riveter h apply`).
 
+## Packages
+
+A package is one whole overlay directory, versioned, as a `<name>-<version>.rivet` (a checksummed `tar.zst`; the format is [rivet-package](../libs/rivet-package.md)). The registry it lives in is [Warehouse's rivet registry](../docker/warehouse-service.md#rivet-registry). `overlays/forge/` becomes the package `forge`: the directory name *is* the package name, because the overlay's own `{% include "forge/base.yaml.j2" %}` lines spell it out, so an install puts the files back under `overlays/<name>/` and nothing needs rewriting.
+
+### Packing
+
+An overlay needs a `rivet.toml` beside its `overlay.yaml`, naming the package (it must match the directory) and giving the version you maintain by hand:
+
+```toml
+[package]
+name = "forge"
+version = "0.4.0"
+description = "the forge estate"      # optional
+# namespace defaults to the overlay's namespace_name
+
+[requires]
+riveter = ">=0.3"
+```
+
+`riveter pack` then writes `packages/forge-0.4.0.rivet`. A CI build adds build metadata with `--version-suffix`: `b123` gives `0.4.0+b123`, and the version you wrote must not already carry any. The suffix may use two tokens, expanded by riveter because a pipeline step has no shell to do it: `{timestamp}` is the UTC time as `YYYYMMDDHHMMSS`, and `{sha}` is the first seven characters of `$CONVEYOR_SHA` (or `$GITHUB_SHA`). A token that cannot be expanded - `{sha}` with no commit known, or an unknown name - is an error rather than a literal. Warehouse orders two builds of one version by comparing their build metadata as text, so start with something that sorts: `{timestamp}.{sha}` does, where a bare `b9` sorts after `b10`.
+
+What goes in, and what does not:
+
+- **Everything in the overlay directory** except dotfiles. `.env`, which holds secrets, can therefore never be packed; `.env.example` is the one dotfile that is, as the documentation of what to supply. Left-out files are listed so a missing one is explained.
+- **A Secret may only hold placeholders.** A package is readable by everyone who can read the registry, which is a wider audience than the private repository it was built from. `pack` therefore reads the overlay before `${VAR}` expansion and refuses any `secret` resource whose `data`/`string_data`/`stringData` value is not a `${VAR}` reference (naming the resource and key), and any `raw` resource that declares a Secret, since that cannot be inspected. A placeholder is how a Secret stays in an overlay at all: its value arrives at install through `--env-file` or `--set`.
+- **A symlink is an error**, not a skip: following it could pull in a file from anywhere, and dropping it would ship a package that renders differently from its overlay.
+- **Includes must stay inside the directory.** Riveter renders the overlay with a recording template loader (so an include behind a condition or built from a variable is found too) and refuses a package whose overlay loaded anything from outside `<name>/`, or anything it would not pack.
+- **Images are pinned.** Every `image:` line in `overlay.yaml` and `*.yaml.j2` that names a tag is rewritten to `repo:tag@sha256:<digest>`, resolved against the registry with a `HEAD` on the manifest (index types accepted, so a multi-arch tag pins the index; the bearer-token and Basic flows `images` already speaks). The tag stays for readability. Already-pinned lines are left alone; a `${VAR}` image or one with no tag is reported as not pinned rather than guessed at. **Packing therefore needs registry access** and fails if a digest cannot be resolved; `--no-pin` opts out. Credentials are the same as `riveter images` (`--registry-auth`, `RIVETER_REGISTRY_AUTH`, Docker config).
+- **Output is reproducible**: same input, same bytes.
+
+`pack` ends by reading back what it wrote with the check Warehouse will apply, and prints which `${VAR}`s the overlay uses that the package does not default - what the installer must supply. That list is read from the overlay's parsed values, as expansion reads them, so a `${...}` in a YAML comment is not counted.
+
+An optional `values.toml` in the overlay directory (`NAME = "default"`, strings, numbers or booleans) supplies defaults for those variables and is packed as it is.
+
+### Publishing and fetching
+
+```
+RIVETER_WAREHOUSE_URL     Warehouse, including its base path (https://host/warehouse)
+RIVETER_WAREHOUSE_TOKEN   a bearer token, or instead:
+RIVETER_GATEHOUSE_URL + RIVETER_CLIENT_ID + RIVETER_CLIENT_SECRET
+                          exchanged for a token with Gatehouse's client_credentials grant
+```
+
+Both are also read from a `.env` in the working directory. `publish` needs the `warehouse:write` grant; `pull`, `install` and `remote` need only a valid identity. A version can be published once. `pull` and `install` check the download against the digest Warehouse recorded, then validate the archive, before using it.
+
+### Installing
+
+`riveter install forge` (the newest), `forge@0.4.0`, or `./forge-0.4.0.rivet` for a local file. The package is unpacked to a scratch directory and rendered and applied exactly as `apply` would - same `--scope`, targets, `--dry-run`, rollout waiting and `kube_context` handling - so nothing is written to the working directory, and the scratch tree is deleted afterwards.
+
+Variables for the overlay's `${NAME}`s come from, lowest first: the package's `values.toml`, `--env-file <dotenv file>` (typically the overlay's own `.env`), then `--set KEY=value`. **The working directory's `.env` is not read** - an install is a function of the package and what was passed. They are held in memory, never written to disk. A variable nobody supplies is an error that names it.
+
+Every installed resource is stamped, after rendering, with the label `riveter.forge/package: <name>` and the annotation `riveter.forge/package-version: <version>` (an annotation because `0.4.0+b123` is not a legal label value), so the cluster records what is live. This is done on the rendered document rather than the overlay data because the embedded templates build their metadata by hand and not all of them honour `labels`/`annotations`; the cost is that comments in the rendered YAML are dropped. `requires.riveter` is enforced; `requires.packages` is only noted, since Riveter does not yet know what else is installed. As with `apply`, the default scope skips immutable resources such as the namespace, so a first install into a fresh cluster needs `--scope all`.
+
 ## Templates
 
 Templates live in `src/templates/` and are embedded into the binary at compile time. A resource's `kind` is lowercased and matched against `<kind>.yaml.j2`, so `kind: statefulset` and `kind: StatefulSet` both render `statefulset.yaml.j2`.
@@ -226,6 +285,10 @@ Recognised `defaults:` keys are `container_name`, `service_account`, `pull_polic
 
 Rendered manifests are written to `manifests/<env>-manifests.<scope>.yaml` (or `-manifests.selection.yaml` for targeted renders); a manifest containing a Secret is written `0600`. Riveter also writes `manifests/.gitignore` so rendered output is never committed.
 
+## Where it works
+
+Riveter reads `overlays/` and writes `manifests/` relative to the working directory. `install` cannot rely on that, so those two directories, the overlay's `.env`, and the labels/annotations a render stamps are a per-thread `Workspace` (`env::with_workspace`) that a command runs inside; outside one, everything is as it always was. It is thread-local rather than a `chdir` so tests (which share a process) cannot race each other through it, and it is restored even if the closure panics.
+
 ## Testing
 
 ```bash
@@ -246,5 +309,9 @@ To check the output against real Kubernetes schemas — which the tests above do
 ```bash
 kubeconform -strict -ignore-missing-schemas cli/riveter/tests/golden/*.expected.yaml
 ```
+
+`tests/unit/package_tests.rs` packs real overlays in temp directories: what is and is not packed (a real `.env` never is), byte-identical rebuilds, the version-suffix rules, a missing or mismatched `rivet.toml`, includes from outside the directory (including one behind a condition), symlinks, image pinning against a fake resolver (looked up once per distinct image, CRLF and a missing final newline preserved, already-pinned and templated images left alone, a failed lookup naming `--no-pin`), the values layering, and an installed package rendering from its scratch tree with every resource - namespace included - stamped. `registry_tests.rs` and `image_digest_tests.rs` run the registry client and the digest lookup against a `wiremock` server, including the bearer and Basic challenges and the client-credentials exchange.
+
+None of that proves the real stack agrees, so the package commands were also run by hand against a real Warehouse on real Postgres (migration applied through Foundry): pack, publish, a `409` on republish, `remote`, a byte-identical pull, and an install whose `kubectl` was a stub that recorded the manifest it was given. That is where the foreign key on `uploaded_by` showed up - an auth-less test publisher is `admin`, but a CI client's subject is not a user at all - and where the incomplete stamping did. Neither could have been found with the in-memory database and a mocked server.
 
 [Home](../README.md)

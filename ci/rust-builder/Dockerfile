@@ -66,6 +66,11 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 # version - a job wants the same anvil the commit it is testing was written
 # against, and that only exists as source in the checkout conveyor never
 # hands this build.
+#
+# `riveter` rides along for the same reason, and for a second one: a deployment
+# repository's pipeline (`riveter publish`) runs in this image, and a riveter
+# older than the pipeline's steps would parse there and then fail at run time.
+# Pack and publish need no kubectl, so none is installed.
 WORKDIR /usr/src/app
 COPY Cargo.toml Cargo.lock ./
 COPY cli ./cli
@@ -76,6 +81,6 @@ COPY tests ./tests
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
-    cargo build --release -p anvil && \
-    cp target/release/anvil /usr/local/cargo/bin/anvil && \
+    cargo build --release -p anvil -p riveter && \
+    cp target/release/anvil target/release/riveter /usr/local/cargo/bin/ && \
     rm -rf /usr/src/app

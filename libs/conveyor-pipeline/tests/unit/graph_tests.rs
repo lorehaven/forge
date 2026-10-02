@@ -400,3 +400,73 @@ fn decisions_explain_themselves() {
         .is_some_and(|r| r.contains("build"))
     );
 }
+
+// ---------------------------------------------------------------------------
+// A deployment repository's publish pipeline
+// ---------------------------------------------------------------------------
+
+/// The shape homecloud's `.conveyor.toml` has: validate on everything, publish only on a push to
+/// master. Kept here so the condition it relies on is tested where the language is defined.
+const PUBLISH_PIPELINE: &str = r#"
+on = { push = ["master"], pull_request = ["*"] }
+
+[[stage]]
+name = "check"
+[[stage.job]]
+name = "overlays"
+steps = [{ riveter = "--env forge pack --no-pin" }]
+
+[[stage]]
+name  = "publish"
+needs = ["check"]
+when  = "event == 'push' && branch == 'master'"
+[[stage.job]]
+name  = "forge"
+steps = [{ riveter = "--env forge publish --version-suffix {timestamp}.{sha}" }]
+"#;
+
+fn publish_decisions(event: &str, git_ref: &str) -> Vec<(String, bool)> {
+    let spec = parse(PUBLISH_PIPELINE).expect("parses");
+    plan(&spec, &EvalContext::new(event, git_ref, "abc1234"))
+        .iter()
+        .map(|stage| {
+            (
+                spec.stages[stage.index].name.clone(),
+                stage.decision == Decision::Run,
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_push_to_master_checks_and_publishes() {
+    assert_eq!(
+        publish_decisions("push", "refs/heads/master"),
+        [("check".to_string(), true), ("publish".to_string(), true)]
+    );
+}
+
+#[test]
+fn a_pull_request_checks_but_never_publishes() {
+    assert_eq!(
+        publish_decisions("pull_request", "refs/pull/7/merge"),
+        [("check".to_string(), true), ("publish".to_string(), false)]
+    );
+}
+
+#[test]
+fn a_push_to_another_branch_checks_but_never_publishes() {
+    assert_eq!(
+        publish_decisions("push", "refs/heads/feature/x"),
+        [("check".to_string(), true), ("publish".to_string(), false)]
+    );
+}
+
+#[test]
+fn a_manual_run_on_master_publishes_only_if_it_says_it_is_a_push() {
+    // `manual` is an event of its own, so a hand-started run does not publish by accident.
+    assert_eq!(
+        publish_decisions("manual", "refs/heads/master"),
+        [("check".to_string(), true), ("publish".to_string(), false)]
+    );
+}

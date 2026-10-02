@@ -131,176 +131,29 @@ Every key is checked — a misspelled one is an error, not something quietly dro
 
 The tool steps have their **command word** checked too, against what that tool actually accepts — so `{ riveter = "aply k8s/" }` is a parse error rather than a deploy stage that fails after build and test have already spent their time. Flags are not checked: clap does that, and a second copy of each tool's argument tables here would be two definitions drifting apart. `riveter repl` is refused outright, since it waits for input conveyor never sends and the job would hang until its timeout.
 
-### Artifacts
+### Publishing rivet packages
 
-A run's checkout is deleted when it finishes, so `artifacts` paths are uploaded rather than merely noted:
-
-```toml
-[[stage.job]]
-artifacts = ["target/release/thing"]
-steps     = [{ anvil = "build --release" }]
-```
-
-They go to warehouse's file storage under `conveyor/{run-id}/`, and the run records the name, the URI and a sha256 digest — visible on `GET /runs/{id}`. Collection happens only for a job that **passed**; keeping the output of a failed build would keep whatever half-written thing it left behind.
-
-A path that escapes the checkout is refused, and one the job did not produce is reported — both as warnings that do not turn a green run red, because the build itself was fine. So is one over 512MB: a build that produces something that large wants a registry, not a file store, and streaming it through this service would hold a worker and a warehouse connection for as long as it took. With no `WAREHOUSE_URL` configured nothing is recorded and the job says what it produced and did not keep: a row promising an artifact conveyor cannot produce would be worse than no row.
-
-### Triggers
-
-`on` takes `push`, `pull_request` and `tag`, each a list of glob patterns matched against the bare ref name (`master`, `release/*`). `*` crosses slashes.
-
-- Omitting `on` entirely builds **every push**.
-- Naming any event turns the others **off** — `on = { pull_request = ["*"] }` builds no pushes.
-- A tag push matches `tag` only. It does not fall back to `push`, so `push = ["*"]` does not fire twice on a release tag.
-- A manual run is always allowed, whatever the patterns say.
-
-### `when`
-
-Deliberately small: `branch`, `tag`, `event` and `sha`, compared with `==` or `!=` against a quoted literal, joined by `&&` and `||`. `&&` binds tighter. There are no parentheses and no negation operator — anything that wants them belongs in a shell step, where it shows up in the log.
-
-A ref is a branch or a tag, never both, so on a tag build `branch` is empty and `tag != ''` is how you say "only on a tag".
-
-Skipping propagates: a stage whose `when` is false is skipped, and so is everything that `needs` it. Both still appear in the run report, with the reason — a report that hides them cannot answer "why did this not deploy".
-
-### Secrets on a job
-
-A job sees a secret only if it named it in `secrets = [...]` — that is the whole access model:
+A `riveter` step can build and publish [packages](../cli/riveter.md#packages), which is how a deployment repository such as `homecloud` turns each overlay into a versioned artifact on every push:
 
 ```toml
+[on]
+push = ["master"]
+
+[[stage]]
+name = "publish"
 [[stage.job]]
-secrets = ["DEPLOY_TOKEN"]
-steps   = ["./deploy.sh"]
+name = "overlays"
+secrets = ["RIVETER_WAREHOUSE_URL", "RIVETER_GATEHOUSE_URL", "RIVETER_CLIENT_ID", "RIVETER_CLIENT_SECRET"]
+steps = [
+  { riveter = "--env forge publish --version-suffix {timestamp}.{sha}" },
+  { riveter = "--env vllm publish --version-suffix {timestamp}.{sha}" },
+]
 ```
 
-A repository's own value wins over the estate's, so a shared default can be set once and overridden where it matters. A declared secret that is set nowhere **fails the job**, rather than running a deploy step with a blank token that fails further on in a way that takes much longer to understand. See [Secrets](#secrets) below for how they get there in the first place.
+- **The version** is the one hand-edited in each overlay's `rivet.toml`, plus build metadata. Tool steps are not run through a shell, so riveter expands `{timestamp}` (UTC, `YYYYMMDDHHMMSS`) and `{sha}` (the first seven characters of `CONVEYOR_SHA`, which every job has) itself. Put the timestamp first: Warehouse breaks a tie between two builds of one version by comparing the build metadata as text, and a timestamp sorts chronologically where a commit hash does not. Warehouse refuses a version it already holds, so a re-run of the same commit publishes a new build rather than overwriting.
+- **Credentials** are secrets the job names, like any other. The client must be one Gatehouse issues `client_credentials` tokens to for the `warehouse` audience; such a token carries the estate's wildcard `service` role, which is what satisfies Warehouse's `warehouse:write` check. Give pipelines a client of their own rather than Warehouse's own login client - `conveyor-publish` in `config/clients.toml` is that, audience `warehouse` only, so a token minted for it cannot be presented to any other service. Riveter exchanges the id and secret for a token itself.
+- **Packing pins image digests**, so the job needs to reach every registry the overlays' images live in (credentials via `RIVETER_REGISTRY_AUTH`); add `--no-pin` to a step to skip that.
+- **The job's image needs a riveter that has these commands**, and the native executor needs one on `PATH`. A pipeline that names `publish` against an older riveter parses (conveyor knows the command) and then fails when it runs.
+- `riveter install` is accepted too, for a deploy stage that applies a published package instead of a checkout.
 
-## Secrets
-
-Sealed with XChaCha20-Poly1305 under `CONVEYOR_SECRET_KEY`, so the database holds ciphertext rather than tokens. Each value is bound to the scope and name it lives under, so a row copied between repositories — or renamed in place by someone with write access to the database but not the key — fails to open rather than quietly granting a secret to a repository that was never given one.
-
-| | |
-|---|---|
-| `PUT /repos/{id}/secrets/{name}` · `PUT /secrets/{name}` | Write, replacing what was there. |
-| `GET /repos/{id}/secrets` · `GET /secrets` | Names only. |
-| `DELETE /repos/{id}/secrets/{name}` · `DELETE /secrets/{name}` | Remove. |
-
-**Nothing reads a value back out.** A stolen session can overwrite a secret, which is visible, but cannot read the estate's tokens.
-
-Names must be usable as environment variables. Values shorter than 4 characters are refused: they cannot be kept out of a build log without destroying it. How a job gets access to one it's named is covered under [Secrets on a job](#secrets-on-a-job) above.
-
-### Redaction
-
-Injected values are stripped from output as it is emitted, so both the stored log and the live stream are redacted. This is a backstop, not a guarantee — a step that transforms a secret before printing it gets past it, and nothing short of not injecting the secret would stop that.
-
-### Webhook secrets
-
-A repository with a `WEBHOOK_SECRET` signs its deliveries with that; one without falls back to `CONVEYOR_WEBHOOK_SECRET`. Per repository is the better arrangement: one compromised hook does not let somebody forge deliveries for every other repository conveyor builds.
-
-## API / Webhooks
-
-All under `/conveyor/api/v1`, behind the realm's `Auth` middleware except where noted (see [Organisational tree and authorization](#organisational-tree-and-authorization) for exactly what each route then checks).
-
-Deliveries land on `POST /api/v1/webhooks/{github|generic}`, deliberately outside the realm's auth — a provider has no realm token, so a delivery is authenticated by its own HMAC signature instead. The endpoint **refuses to serve at all** without `CONVEYOR_WEBHOOK_SECRET` configured somewhere: accepting unverified deliveries would let anyone on the network start a build. The order matters, and is the same for every provider:
-
-1. read the event, to learn which repository it claims to be about — a ping, a branch deletion or a pull request being labelled is accepted and does nothing;
-2. find that repository, which must already be registered;
-3. verify the signature, with that repository's own secret if it has one, over the raw bytes;
-4. refuse a fork's pull request unless `CONVEYOR_ALLOW_FORK_PR` is set;
-5. queue the run, once per delivery id.
-
-Reading comes before verifying because the secret is per repository and the body is the only thing that says which repository this is. That is safe: step 1 is deserialisation and step 2 is a read, and nothing is acted on until the signature checks out. It does mean an unauthenticated caller can tell a registered repository from an unregistered one — a deliberate trade for per-repository secrets, and the same one every multi-tenant receiver makes. A redelivery answers `200` with the run it already made rather than queueing a second one — providers retry deliveries they did not get a prompt answer for, and a second run of the same commit would double every side effect.
-
-**GitHub** signs with `X-Hub-Signature-256` and builds `push` plus the pull-request actions that change code (`opened`, `reopened`, `synchronize`, `ready_for_review`). A fork's pull request is built from `refs/pull/N/head`, since its branch does not exist in the base repository; a same-repository one uses its branch, so `branch == '…'` in a `when` still reads the way it looks. Results go back as commit statuses: `Skipped` reports as success (nothing ran, so nothing is wrong), `Cancelled` as an error rather than a failure (the code was never shown to be broken).
-
-**Generic** is for a repository on a host conveyor has no integration with. It signs with `X-Conveyor-Signature-256` over a small payload the sender writes, and nothing is reported back:
-
-```bash
-BODY='{"delivery_id":"'$(git rev-parse HEAD)'","owner":"me","name":"thing",
-       "ref":"refs/heads/master","sha":"'$(git rev-parse HEAD)'"}'
-SIG="sha256=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$SECRET" -r | cut -d' ' -f1)"
-curl -X POST "$CONVEYOR/api/v1/webhooks/generic" \
-     -H "X-Conveyor-Signature-256: $SIG" -d "$BODY"
-```
-
-Everything else — `/projects`, `/repos`, `/repos/{id}/runs`, `/runs`, `/runs/{id}/restart`, `/jobs/{id}/logs`, `/jobs/{id}/stream`, `/jobs/{id}/raw`, `/secrets` — sits behind `Auth` and the project-scoped checks described above. A repository is registered under a project (`POST /repos` needs `project_id`), a run can be triggered by hand against a ref or an exact sha (without one, conveyor resolves the ref against the remote), and a job's logs are readable as a finished JSON array, a live server-sent-event stream (`?format=html` renders the same stream as an HTML fragment for conveyor's own UI), or as plain lines with no framing at all (`/jobs/{id}/raw`, for opening a log outside conveyor's own UI). `/runs/{id}/restart` needs the same write grant `POST /repos/{id}/runs` does, and 409s for a run that is not currently failed or cancelled — see [Restarting a run](#restarting-a-run).
-
-Conveyor's UI (`/conveyor/ui/...`) mirrors this: `/home` and the equivalent scoped `/projects/{id}` page show recent runs and the registered tree with no manual reload (htmx polling, not a second stream, since a run's state lives in the database rather than in whichever worker is holding it); `/runs` is the full paginated history (`CONVEYOR_RUNS_PAGE_SIZE` per page); `/runs/{id}` shows the run's jobs as a dependency graph — one row per level, connected top to bottom, stages that run at once drawn side by side — with logs streamed the same way `switchboard` and `sage` stream theirs (htmx's SSE extension, appending frames rather than replacing them, since a log is unbounded where those two services' payloads are whole-state replacements) and two icon buttons above each open log: one opens `/jobs/{id}/raw` in a new tab, the other copies what has streamed in so far to the clipboard. `/repos` additionally offers plain HTML forms to register, edit and delete a repository, enforcing the same project-scoped write grants as the JSON API while browsing itself stays open to any signed-in visitor; `/repos/{owner}/{name}/scan` summarises the most recent run's `anvil lint`/`machete`/`audit` and `cargo llvm-cov` (test coverage) steps, if its pipeline ran any.
-
-## Following results
-
-A person follows a repository, or a project (which covers every repository nested beneath it), and conveyor tells them by email when a run **fails** and when the first run **passes after a failure** on the same ref. Cancelled and skipped runs say nothing, and a first-ever success is not news.
-
-- **Following** needs read access to the project (like everything else here); leaving never does, so someone who lost access can still stop the mail. Each person sees and changes only their own subscriptions: `GET /api/v1/subscriptions`, `PUT`/`DELETE /api/v1/repos/{id}/subscription` and `PUT`/`DELETE /api/v1/projects/{id}/subscription`; `/repos` has a follow button per repository and a "Follow projects" panel. Following twice is fine, and deleting a repository or project removes its subscriptions.
-- **Who is told** is worked out when the run ends: everyone following the repository, or any project above it, once each. Read access is checked again at that moment, so a subscription left behind by a revoked grant (or a disabled account) sends nothing.
-- **How it is sent.** Conveyor sends no mail itself. Ending a run writes one row per recipient to `notification_outbox` (unique per run, person and kind, so a run finishing twice queues once); a background loop hands each to gatehouse's [`POST /api/v1/notify`](gatehouse-service.md) with conveyor's own machine identity (`conveyor-gatehouse`, a `client_credentials` grant) and `requested: true`, using the run id as the dedupe key. Gatehouse owns the wording, the five translations, the address, and the person's choices: someone who turned "A pipeline run failed" off on their account page stops getting it whatever they follow.
-- **Outages delay, they do not lose.** A refused or unreachable gatehouse (or mail server) leaves the row queued and it is retried after 30 s, 1 min, 2 min ... up to an hour, ten attempts in all; a claim is leased for two minutes so a crashed sender's rows are picked up again and replicas do not double-send. A message gatehouse calls malformed (`400`) or permanently undeliverable is kept with `failed_at` and `last_error` set rather than retried: `SELECT * FROM conveyor.notification_outbox WHERE failed_at IS NOT NULL`. Delivered and deliberately skipped messages (no confirmed address, opted out) are deleted.
-- **Switching it on.** Needs `GATEHOUSE_URL` (already set for login), `CLIENT_SECRET_CONVEYOR_GATEHOUSE` (the same value in gatehouse's and conveyor's env; gatehouse's `clients.toml` lists `conveyor-gatehouse`) and `CONVEYOR_PUBLIC_URL` for the link in the mail (it must sit under gatehouse's public origin). Without the secret, conveyor logs that notifications are off and nothing is queued; runs are unaffected either way.
-- **Database.** Foundry `conveyor` migration `0007-subscriptions` (`subscriptions`, `notification_outbox`) must be applied before this conveyor rolls out.
-
-## Requirements
-
-- Postgres — conveyor refuses to start its scheduler without it.
-- `git` on `PATH`, under either executor, since conveyor checks out the commit before it can even read the pipeline that commit declares.
-- Whatever the pipelines themselves call: `cargo`, `docker`, `kubectl`, `anvil`, `riveter`. Reported (not enforced) at startup if missing.
-
-## Configuration
-
-See `.env` for the full set with commentary. The complete table:
-
-| Variable | Default | |
-|---|---|---|
-| `CONVEYOR_EXECUTOR` | `native` | Where a job's steps run: `native`, `kubernetes` or `mock`. |
-| `CONVEYOR_WORK_DIR` | `/tmp/conveyor` | Root for per-run checkouts. |
-| `CONVEYOR_MAX_CONCURRENT_RUNS` | `2` | Runs in flight on this replica. |
-| `CONVEYOR_JOB_TIMEOUT_SECS` | `3600` | Ceiling on a job with no timeout of its own. |
-| `CONVEYOR_CHECKOUT_TIMEOUT_SECS` | `600` | Ceiling on the checkout. |
-| `CONVEYOR_CLAIM_STALE_AFTER_SECS` | `300` | When a silent worker's run is requeued. |
-| `CONVEYOR_ALLOW_FORK_PR` | `false` | Whether a fork's pipeline may run. |
-| `CONVEYOR_HOME_RECENT_RUNS` | `5` | Pipelines shown on the front page. |
-| `CONVEYOR_HOME_MAX_RUNS_PER_REPO` | `1` | Of those, at most this many from one repository. |
-| `CONVEYOR_RUNS_PAGE_SIZE` | `25` | Rows per page on the full pipeline history (`/ui/runs`). |
-| `CONVEYOR_SECRET_KEY` | — | 32 bytes, hex or base64, sealing the secret store. |
-| `CONVEYOR_WEBHOOK_SECRET` | — | Estate-wide signing secret, for repositories with no `WEBHOOK_SECRET`. |
-| `CONVEYOR_GITHUB_TOKEN` | — | Token with `repo:status`. Without it, builds happen but are not reported. |
-| `CONVEYOR_GITHUB_API` | `https://api.github.com` | For GitHub Enterprise. |
-| `CONVEYOR_STATUS_CONTEXT` | `conveyor` | The name conveyor's mark appears under. |
-| `CONVEYOR_PUBLIC_URL` | — | Where conveyor is reachable, for linking a mark back to the run. |
-| `CLIENT_SECRET_CONVEYOR_GATEHOUSE` | — | conveyor's machine identity toward gatehouse, for run-result mail. Unset switches the mail off. |
-| `GATEHOUSE_TLS_VERIFY` | `true` | Set to `false` to accept gatehouse's internal certificate when sending that mail. |
-| `WAREHOUSE_URL` | — | Where artifacts go. Unset means they are not kept. |
-| `WAREHOUSE_TECH_USERNAME` / `_PASSWORD` | — | The service account artifacts are uploaded as. |
-| `CONVEYOR_ARTIFACT_STORAGE` | `artifacts` | Which warehouse storage to put them in. |
-| `WAREHOUSE_TLS_VERIFY` | `true` | Set to `false` to accept the estate's internal certificates. |
-
-### Kubernetes executor
-
-Only read when `CONVEYOR_EXECUTOR=kubernetes`:
-
-| Variable | | |
-|---|---|---|
-| `CONVEYOR_K8S_NAMESPACE` | Where Jobs are created. Defaults to conveyor's own. |
-| `CONVEYOR_K8S_DEFAULT_IMAGE` | For a job whose pipeline names no `image`. |
-| `CONVEYOR_K8S_GIT_IMAGE` | The init container's image. |
-| `CONVEYOR_K8S_SERVICE_ACCOUNT` | What the pods run as. |
-| `CONVEYOR_K8S_TTL_SECONDS` | How long a finished Job lingers if conveyor never cleans it up. |
-
-## Testing
-
-Database-backed tests are skipped unless `CONVEYOR_TEST_DATABASE_URL` is set — every test truncates conveyor's tables first, so it must point at a throwaway database:
-
-```bash
-docker run --rm -d --name conveyor-test-pg \
-    -e POSTGRES_PASSWORD=postgres -p 55432:5432 pgvector/pgvector:pg18
-
-cargo run -p foundry-service -- apply \
-    --catalog docker/foundry-service/migrations \
-    --database-url postgres://postgres:postgres@localhost:55432/postgres \
-    --install conveyor
-
-CONVEYOR_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:55432/postgres \
-    cargo test -p conveyor-service
-```
-
-See [Executors: local process vs. Kubernetes](#executors-local-process-vs-kubernetes) above for what is and is not covered on the Kubernetes side — the manifest-building decisions are unit-tested, but the round trip against a real cluster has not been exercised.
-
-[Home](../README.md)
+`homecloud`, the repository the estate's own manifests live in, is the worked example: its `.conveyor.toml` runs a `check` stage (every overlay must pack) on every push and pull request, and a `publish` stage - one job per overlay - only on a push to master. It is private, so it is registered with a git credential as well as a webhook; `scripts/onboard-homecloud-ci.sh` in that repository does the registration and sets the two secrets its jobs name.

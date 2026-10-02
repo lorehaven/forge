@@ -1,0 +1,36 @@
+[package]
+name = "rivet-package"
+version = "0.1.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "The .rivet package format - manifest, deterministic packing and safe unpacking"
+keywords = ["kubernetes", "package", "deployment"]
+categories = ["development-tools", "encoding"]
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+readme = "README.md"
+
+[lib]
+name = "rivet_package"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+hex = { workspace = true }
+semver = { workspace = true }
+serde = { workspace = true }
+sha2 = { workspace = true }
+tar = { workspace = true }
+thiserror = { workspace = true }
+toml = { workspace = true }
+zstd = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[[test]]
+name = "unit"
+path = "tests/unit.rs"

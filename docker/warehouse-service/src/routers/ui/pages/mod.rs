@@ -4,6 +4,7 @@ pub mod crates;
 pub mod docker;
 pub mod files;
 pub mod home;
+pub mod rivets;
 
 pub fn register_routes() {
     artifacts::register_routes();
@@ -12,4 +13,5 @@ pub fn register_routes() {
     docker::register_routes();
     files::register_routes();
     home::register_routes();
+    rivets::register_routes();
 }

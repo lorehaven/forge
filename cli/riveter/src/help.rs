@@ -237,6 +237,135 @@ pub const COMMANDS: &[CommandHelp] = &[
         targets: false,
     },
     CommandHelp {
+        name: "pack",
+        surface: Surface::Cli,
+        aliases: &[],
+        usage: "[options]",
+        summary: "Build the environment into a .rivet package",
+        detail: "A package is one whole overlay directory: its overlay.yaml and everything\n\
+                 it includes, with every image tag pinned to a digest, as a checksummed\n\
+                 tar.zst. The overlay carries a rivet.toml naming the package (it must match\n\
+                 the directory) and giving its version. Dotfiles - .env above all - are\n\
+                 never packed. Pinning needs registry access; --no-pin skips it.",
+        subcommands: &[],
+        options: &[
+            (
+                "--version-suffix <suffix>",
+                "Append +<suffix> to the version",
+            ),
+            ("--no-pin", "Leave image tags as written"),
+            (
+                "--out <dir>",
+                "Where to write the package (default packages)",
+            ),
+            (
+                "--registry-auth <REGISTRY=USER:PASS>",
+                "Credentials for digest lookups; repeatable",
+            ),
+        ],
+        examples: &[
+            ("pack", "packages/<env>-<version>.rivet"),
+            ("pack --version-suffix b123", "a CI build: 0.4.0+b123"),
+            (
+                "pack --version-suffix {timestamp}.{sha}",
+                "0.4.0+20261002135500.1a2b3c4, which sorts by time",
+            ),
+        ],
+        targets: false,
+    },
+    CommandHelp {
+        name: "publish",
+        surface: Surface::Cli,
+        aliases: &[],
+        usage: "[options] [file]",
+        summary: "Publish a package to Warehouse",
+        detail: "Uploads a .rivet - the given file, or the current environment packed first.\n\
+                 A version can be published once. Needs RIVETER_WAREHOUSE_URL and either\n\
+                 RIVETER_WAREHOUSE_TOKEN or RIVETER_GATEHOUSE_URL with RIVETER_CLIENT_ID and\n\
+                 RIVETER_CLIENT_SECRET, and the warehouse:write grant.",
+        subcommands: &[],
+        options: &[
+            (
+                "--version-suffix <suffix>",
+                "When packing: append +<suffix>",
+            ),
+            ("--no-pin", "When packing: leave image tags as written"),
+            ("--out <dir>", "When packing: where to write the package"),
+        ],
+        examples: &[
+            ("publish", "pack the environment and upload it"),
+            (
+                "publish packages/forge-0.4.0.rivet",
+                "upload an existing file",
+            ),
+        ],
+        targets: false,
+    },
+    CommandHelp {
+        name: "pull",
+        surface: Surface::Cli,
+        aliases: &[],
+        usage: "[options] <package>",
+        summary: "Download a package and verify it",
+        detail: "Fetches name, name@version or name@latest from Warehouse, checks its digest\n\
+                 against the registry's record and validates it before saving it.",
+        subcommands: &[],
+        options: &[("--out <dir>", "Where to save it (default packages)")],
+        examples: &[("pull forge@0.4.0", "packages/forge-0.4.0.rivet")],
+        targets: false,
+    },
+    CommandHelp {
+        name: "install",
+        surface: Surface::Cli,
+        aliases: &["i"],
+        usage: "[options] <package> [target...]",
+        summary: "Fetch a package, render it and apply it",
+        detail: "The package is name, name@version, or the path of a .rivet file. It is\n\
+                 unpacked to a scratch directory and rendered and applied exactly as `apply`\n\
+                 would, with each resource labelled riveter.forge/package and annotated with\n\
+                 its version. Variables come from the package's values.toml, then --env-file,\n\
+                 then --set; the working directory's .env is not read.",
+        subcommands: &[],
+        options: &[
+            ("--env-file <file>", "Variables in dotenv format"),
+            (
+                "--set <KEY=VALUE>",
+                "One variable; repeatable, wins over all",
+            ),
+            ("--dry-run", "Pass --dry-run=client to kubectl"),
+            ("--no-wait", "Return once kubectl accepts the manifests"),
+            ("--timeout <seconds>", "Per-rollout wait, default 300"),
+            ("--scope <scope>", SCOPE_MUTABLE),
+        ],
+        examples: &[
+            (
+                "install forge --env-file overlays/forge/.env",
+                "the newest forge",
+            ),
+            (
+                "install forge@0.4.0 --dry-run",
+                "what that version would apply",
+            ),
+            ("install ./forge-0.4.0.rivet", "a local file"),
+        ],
+        targets: true,
+    },
+    CommandHelp {
+        name: "remote",
+        surface: Surface::Cli,
+        aliases: &[],
+        usage: "<list|versions>",
+        summary: "Browse the packages in Warehouse",
+        detail: "Needs the same RIVETER_WAREHOUSE_* settings as publish.",
+        subcommands: &[
+            ("list", "The newest version of every package"),
+            ("versions <name>", "Every version of one package"),
+        ],
+        options: &[],
+        examples: &[("remote versions forge", "all published forge versions")],
+        targets: false,
+    },
+    CommandHelp {
         name: "help",
         surface: Surface::Both,
         aliases: &["h"],

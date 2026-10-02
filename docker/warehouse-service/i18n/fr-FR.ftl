@@ -208,3 +208,24 @@ ui_login_invalid_credentials = Identifiants non valides
 ui_logout = Se déconnecter
 ui_profile_edit = Modifier le profil
 ui_user_menu = Menu utilisateur
+
+# ── Rivet packages ───────────────────────────────────────────────────────
+
+ui_service_rivets_title = Paquets Rivet
+ui_service_rivets_desc = Parcourez les overlays Riveter versionnés publiés pour le déploiement.
+ui_header_rivets = Warehouse - Explorateur de paquets Rivet
+ui_rivet_packages = Paquets
+ui_rivet_empty = Aucun paquet n'a encore été publié.
+ui_rivet_empty_select_version = Sélectionnez une version pour l'inspecter.
+ui_rivet_meta_name = Paquet
+ui_rivet_meta_version = Version
+ui_rivet_meta_description = Description
+ui_rivet_meta_namespace = Namespace
+ui_rivet_meta_uploaded_by = Publié par
+ui_rivet_meta_published = Publié
+ui_rivet_meta_requires_riveter = Nécessite riveter
+ui_rivet_meta_requires_packages = Nécessite les paquets
+ui_rivet_meta_install = Installer
+ui_rivet_yank = Retirer
+ui_rivet_unyank = Restaurer
+api_error_rivets_disabled = Le registre de paquets Rivet n'est pas activé sur ce déploiement.

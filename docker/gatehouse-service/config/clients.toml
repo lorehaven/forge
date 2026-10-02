@@ -58,3 +58,13 @@ secret_env = "CLIENT_SECRET_SAGE_SWITCHBOARD"
 client_id = "conveyor-gatehouse"
 allowed_scopes = ["gatehouse"]
 secret_env = "CLIENT_SECRET_CONVEYOR_GATEHOUSE"
+
+# The identity a pipeline publishes rivet packages as - `riveter publish` exchanges
+# this id and secret for a token. client_credentials only. `allowed_scopes` is the
+# audience, and it is warehouse alone: a token minted for this client cannot be
+# presented to any other service. Deliberately not warehouse's own client - that
+# secret is the relying party's login credential and has no business in a build job.
+[[client]]
+client_id = "conveyor-publish"
+allowed_scopes = ["warehouse"]
+secret_env = "CLIENT_SECRET_CONVEYOR_PUBLISH"

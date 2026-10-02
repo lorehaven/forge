@@ -271,3 +271,43 @@ impl Drop for WithArtifactStorageRoot {
         envmnt::remove("ARTIFACT_STORAGE_PATH");
     }
 }
+
+/// Turns the rivet registry on and points its storage at a fresh tempdir for one test, holding
+/// `storage_env_lock` so concurrent tests don't race each other's roots or the flag.
+pub struct WithRivets {
+    _guard: std::sync::MutexGuard<'static, ()>,
+    pub dir: tempfile::TempDir,
+}
+
+impl Default for WithRivets {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl WithRivets {
+    pub fn new() -> Self {
+        let guard = storage_env_lock()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let dir = tempfile::tempdir().expect("tempdir");
+        envmnt::set("RIVET_STORAGE_PATH", dir.path().to_str().unwrap());
+        envmnt::set("FEATURE_RIVETS_ENABLED", "true");
+        Self { _guard: guard, dir }
+    }
+
+    /// The registry switched off, still holding the lock so no other test turns it on mid-case.
+    pub fn disabled() -> Self {
+        let this = Self::new();
+        envmnt::remove("FEATURE_RIVETS_ENABLED");
+        this
+    }
+}
+
+impl Drop for WithRivets {
+    fn drop(&mut self) {
+        envmnt::remove("RIVET_STORAGE_PATH");
+        envmnt::remove("FEATURE_RIVETS_ENABLED");
+        envmnt::remove("RIVET_MAX_BYTES");
+    }
+}

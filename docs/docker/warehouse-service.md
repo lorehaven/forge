@@ -8,6 +8,7 @@ Warehouse is the Forge estate's storage service: one address for a Cargo registr
 - **Docker Registry HTTP API v2** — the standard blob/manifest/catalog routes, with its own Basic-then-Bearer token exchange independent of the realm's JWKS-based tokens.
 - **Crates registry** (`/api/v1/crates`) — publish, download, yank/unyank, owners and search, plus a sparse index. Has no real authentication yet.
 - **Artifact registry** (`/api/v1/artifacts`) — publish, download, per-program / per-platform version listing, latest-version resolution and yank/unyank for Android, Linux and Windows builds, behind the realm's normal bearer/cookie auth. Android identity comes from decoding the APK's own `AndroidManifest.xml` server-side; desktop identity is taken from the publish URL. `/api/v1/apk` remains as an `android`-only alias.
+- **Rivet registry** (`/api/v1/rivets`) — publish, download, per-package version listing, `latest` resolution by semver and yank/unyank for `.rivet` packages (a whole Riveter overlay, versioned), behind the realm's normal bearer/cookie auth. The archive is fully validated server-side, and its own `rivet.toml` must agree with the publish URL.
 - **Admin endpoints** (`/admin`) — garbage collection for both the crates and Docker storages.
 - **A small server-rendered UI** (`{BASE_PATH}/ui`) for browsing the Docker and crates catalogs, managing dynamic file storages, and yanking/unyanking artifact versions.
 
@@ -91,21 +92,42 @@ Either way `size_bytes` and `sha256` are computed from the stream, and a `(progr
 
 `/api/v1/apk/*` is kept as a thin back-compat alias for the pre-multi-platform shape (`{package}/{version_code}`, `platform` forced to `android`); it will be removed once no shipped client depends on it.
 
+### Rivet registry
+
+Everything is under `{BASE_PATH}/api/v1/rivets` and behind the realm's auth, the same `Auth` + `RequireWrite` pair the artifact registry uses — a valid realm identity to read, the blanket `warehouse:write` grant (or a wildcard role) to publish or yank. Turned on with `FEATURE_RIVETS_ENABLED`, which unlike the other flags is read on every call rather than cached.
+
+A package is addressed by `{name}/{version}`: `name` is a DNS-1123 label, `version` is semver with optional build metadata (`0.4.0+b123`). The `rivet-package` library defines the format ([docs](../libs/rivet-package.md)); this service never trusts the URL alone. `PUT` streams the body to a staging file (capped by `RIVET_MAX_BYTES`, default 64MiB compressed), then reads the whole archive and returns `422` unless it is a well-formed `tar.zst` of regular files only — no traversal, links or devices, bounded entry count and expanded size, every file matching `SHA256SUMS` — **and** its `rivet.toml` declares exactly the name and version in the URL, so the catalog can't be made to say something the archive doesn't. The file is then linked into place without clobbering (two concurrent publishes of one version: exactly one wins, the other gets `409`), and the catalog row inserted; any failure after that removes the file again, and a failed publish leaves no staging file behind.
+
+Versions are immutable, and yanking only flips a flag. `latest` is resolved by semver precedence in the service (SQL has no semver ordering): `0.10.0` beats `0.9.0`, a release beats its own pre-release, and build metadata breaks ties (compared as the `semver` crate orders it, so `b9` sorts after `b10` — zero-pad build numbers).
+
+| Method | Path | Purpose |
+|---|---|---|
+| `PUT` | `/api/v1/rivets/{name}/{version}` | publish (raw body is the `.rivet`); `201` with the catalog row, `409` if the version exists |
+| `GET` | `/api/v1/rivets/{name}/{version}` | one version's row, including the parsed manifest; `latest` accepted |
+| `GET` | `/api/v1/rivets/{name}/{version}/download` | the archive, with its digest in `x-rivet-sha256`; `latest` accepted; a yanked version still downloads by exact version |
+| `GET` | `/api/v1/rivets/{name}` | every version, newest first |
+| `GET` | `/api/v1/rivets` | catalog: latest non-yanked version per package |
+| `DELETE` | `/api/v1/rivets/{name}/{version}/yank` | hide from `latest`/the catalog, keep the file |
+| `PUT` | `/api/v1/rivets/{name}/{version}/unyank` | undo a yank |
+
+Catalog rows live in Postgres (`rivet_packages`, via foundry's `warehouse` module, migration `0005`). `uploaded_by` is the token's subject and deliberately has no foreign key to the realm's users: the usual publisher is a pipeline whose subject is an OAuth client id, which is not a user row, and a key would both reject it and cascade-delete a person's packages with their account. Files land at `<RIVET_STORAGE_PATH>/<name>/<version>/<name>-<version>.rivet`. The catalog also has a [UI page](#ui).
+
 ### UI
 
-`{BASE_PATH}/ui` is a small server-rendered UI, behind the realm cookie (`is_ui_authenticated`) — any signed-in realm identity for this service may *view* every page. It covers the Docker and crates catalogs, plus two management sections:
+`{BASE_PATH}/ui` is a small server-rendered UI, behind the realm cookie (`is_ui_authenticated`) — any signed-in realm identity for this service may *view* every page. It covers the Docker and crates catalogs, plus three management sections:
 
 | Path | Purpose |
 |---|---|
 | `/ui/files/storages` | list static + dynamic storages, browse a storage's files, and (with permission) provision / edit quota, max-file-size, sync / delete a dynamic storage, or delete a single file |
 | `/ui/artifacts/catalog` | browse published programs, their platforms and versions, and (with permission) yank / unyank a version |
+| `/ui/rivets/catalog` | browse rivet packages and their versions - requirements, the package's own `[meta]`, digest, and the `riveter install` line - and (with permission) yank / unyank a version |
 
-Every *mutation* on these pages is held to `routers::ui::authz::can_manage` — the blanket `warehouse:write` grant or a wildcard `admin`/`service` role, the same bar `routers::files::authz::has_blanket("write")` and the artifact scope's `RequireWrite` enforce on the JSON APIs. Controls that mutate are not rendered without it, and each handler re-checks; a page whose feature flag (`FEATURE_FILES_ENABLED` / `FEATURE_ARTIFACTS_ENABLED`) is off still renders read-only but every mutation answers `404`. No new gatehouse catalog entry is needed — `warehouse` already exposes `["read", "write"]` and the `editor` template grants it.
+Every *mutation* on these pages is held to `routers::ui::authz::can_manage` — the blanket `warehouse:write` grant or a wildcard `admin`/`service` role, the same bar `routers::files::authz::has_blanket("write")` and the artifact scope's `RequireWrite` enforce on the JSON APIs. Controls that mutate are not rendered without it, and each handler re-checks; a page whose feature flag (`FEATURE_FILES_ENABLED` / `FEATURE_ARTIFACTS_ENABLED` / `FEATURE_RIVETS_ENABLED`) is off still renders read-only but every mutation answers `404`. No new gatehouse catalog entry is needed — `warehouse` already exposes `["read", "write"]` and the `editor` template grants it.
 
 ## Requirements
 
 - A relying party of gatehouse: `GATEHOUSE_URL`/OAuth client config for realm sessions on the files API, the artifact API, and the UI.
-- Postgres reachable via `DATABASE_URL` for the realm's users (Docker registry Basic auth), the `artifact_versions` catalog table, and, if any dynamic storage is created, for the `storages`/`blobs`/`storage_files`/`storage_sync_log` tables — schema comes from foundry's `warehouse` catalog module.
+- Postgres reachable via `DATABASE_URL` for the realm's users (Docker registry Basic auth), the `artifact_versions` and `rivet_packages` catalog tables, and, if any dynamic storage is created, for the `storages`/`blobs`/`storage_files`/`storage_sync_log` tables — schema comes from foundry's `warehouse` catalog module.
 - `DOCKER_TOKEN_SECRET` set, unconditionally, or the process refuses to start.
 - Redis/`REDIS_URL` for the shared session store, like every other service in the realm.
 - `DYNAMIC_STORAGE_ROOT` set to a directory, if any dynamic storage is created — its content-addressed blob store lives there.
@@ -128,6 +150,9 @@ Selected environment variables:
 | `STORAGE_PATH` / `CRATES_STORAGE_PATH` / `ARTIFACT_STORAGE_PATH` | Docker / crates / artifact blob roots (`APK_STORAGE_PATH` honoured as a fallback for the last; its old `<program>/<version_code>/` APK tree is relocated to `<program>/android/<version_code>/` once on boot) |
 | `MAX_AUTH_FAILURES_PER_MINUTE` / `AUTH_FAILURE_WINDOW_SECONDS` | Docker Registry auth rate limit (defaults 30 / 60) |
 | `FEATURE_ARTIFACTS_ENABLED` | turns the artifact API on (`FEATURE_APK_ENABLED` still honoured) |
+| `FEATURE_RIVETS_ENABLED` | turns the rivet registry on |
+| `RIVET_STORAGE_PATH` | root of the rivet package store (default `./storage/rivets`) |
+| `RIVET_MAX_BYTES` | ceiling on one compressed `.rivet`, enforced as it streams (default 64MiB) |
 
 In local dev (`foreman.toml`) warehouse runs on port 6443 under base path `/warehouse`, `needs = ["gatehouse"]`, with `GATEHOUSE_CLIENT_SECRET` and `DOCKER_TOKEN_SECRET` supplied from the estate's shared secrets.
 
@@ -140,3 +165,7 @@ The management UI is covered by `routers_ui_authz_tests.rs` (the `can_manage` pr
 `apk_manifest_tests.rs` covers manifest decoding against real fixtures under `tests/fixtures/apk/` (built with the Android SDK's `aapt`/`aapt2`, not hand-crafted bytes — see that file's own doc comment for why). `routers_artifacts_*_tests.rs` and `domain_artifact_tests.rs` cover program-name / filename / platform validation, the `id_for` key shape, the `latest`/catalog selection logic and the `metadata`-flattening `ArtifactView` directly; like the files API's own handler tests, publish/download/yank's *positive* paths aren't exercised here, since `FEATURE_ARTIFACTS_ENABLED` is a process-wide `LazyLock` fixed for the whole test binary — that end-to-end coverage is BDD/cucumber's job.
 
 [Home](../README.md)
+
+`routers_rivets_tests.rs` and `domain_rivet_tests.rs` cover the rivet registry end to end, positive paths included — the handlers read their flag and storage root fresh on every call, so a test can switch them on (`support::WithRivets`) without the process-wide cache that limits the artifact tests. They check publish, download and digest, `409` on republish with the original bytes untouched, `422` for a garbage, tampered or URL-disagreeing archive with no file left behind, `413` over the size cap, semver ordering of `latest` across yank/unyank, and the catalog. Archive validation itself is tested in `rivet-package`.
+
+`routers_ui_pages_rivets_catalog_tests.rs` covers the rivet page: version order by semver rather than text (`0.10.0` above `0.9.0`), opening on the newest *offerable* version rather than a yanked newest, the manifest-derived rows, yank controls shown only to a caller who may manage, publisher-controlled text (description, `[meta]` keys and values) coming out escaped, and the handlers through their enabled paths - a yank round trip against an in-memory database, the `HX-Redirect` carrying the version `+`-encoded (a raw `+` in a query string means a space), and the home-page card appearing only when the registry is on.

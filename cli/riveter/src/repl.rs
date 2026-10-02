@@ -298,7 +298,7 @@ fn ensure_namespace_exists(env: &str, rendered: &RenderedManifest) -> anyhow::Re
         !declares_namespace,
         "namespace `{namespace}` does not exist, and this scope excludes the \
          `namespace` resource {env} declares\n\n\
-         run `riveter apply --scope all` to create it first"
+         re-run with `--scope all` to create it first"
     );
 
     anyhow::bail!(

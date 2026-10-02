@@ -208,3 +208,24 @@ ui_login_invalid_credentials = Nieprawidłowe dane logowania
 ui_logout = Wyloguj
 ui_profile_edit = Edytuj profil
 ui_user_menu = Menu użytkownika
+
+# ── Rivet packages ───────────────────────────────────────────────────────
+
+ui_service_rivets_title = Pakiety Rivet
+ui_service_rivets_desc = Przeglądaj wersjonowane overlaye Riveter opublikowane do wdrożenia.
+ui_header_rivets = Warehouse - Przeglądarka pakietów Rivet
+ui_rivet_packages = Pakiety
+ui_rivet_empty = Nie opublikowano jeszcze żadnych pakietów.
+ui_rivet_empty_select_version = Wybierz wersję, aby ją sprawdzić.
+ui_rivet_meta_name = Pakiet
+ui_rivet_meta_version = Wersja
+ui_rivet_meta_description = Opis
+ui_rivet_meta_namespace = Namespace
+ui_rivet_meta_uploaded_by = Opublikowane przez
+ui_rivet_meta_published = Opublikowano
+ui_rivet_meta_requires_riveter = Wymaga riveter
+ui_rivet_meta_requires_packages = Wymaga pakietów
+ui_rivet_meta_install = Zainstaluj
+ui_rivet_yank = Wycofaj
+ui_rivet_unyank = Przywróć
+api_error_rivets_disabled = Rejestr pakietów Rivet nie jest włączony w tym wdrożeniu.

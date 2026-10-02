@@ -26,7 +26,8 @@ docs/
 │   ├── warehouse-service.md
 │   └── workbench-service.md
 ├── libs/                   # libs/* shared crates
-│   └── conveyor-pipeline.md
+│   ├── conveyor-pipeline.md
+│   └── rivet-package.md
 ├── examples/                # examples/* runnable references
 │   └── vllm_cluster_test.md
 └── tests/                   # tests/* suites
@@ -61,6 +62,7 @@ Long-running quench-http services, each with its own Postgres schema, started lo
 ## Shared Libraries (`libs/*`)
 
 - [Conveyor Pipeline](./libs/conveyor-pipeline.md) — `.conveyor.toml` parser/planner shared by Conveyor Service and Conveyor CLI
+- [Rivet Package](./libs/rivet-package.md) — the `.rivet` package format shared by Warehouse Service and Riveter
 
 The `quench-*` crates (auth, starter, web, web-components, db, cache, client, config, cli) that every `docker/*` service and several `cli/*` tools depend on now live in the sibling [quench](https://github.com/lorehaven/quench) repository and are pulled in from the `ennor` cargo registry like any other dependency — see that repo's own docs for per-crate reference.
 
@@ -166,7 +168,7 @@ services.
 │                  #           toolbox, warehouse-cli, welder
 ├── docker/        # services: conveyor, foundry, gatehouse, sage,
 │                  #           switchboard, warehouse, workbench (each its own image)
-├── libs/          # shared crates: conveyor-pipeline
+├── libs/          # shared crates: conveyor-pipeline, rivet-package
 ├── examples/      # runnable references: vllm_cluster_test
 ├── tests/         # forge-bdd, the cross-service Cucumber suite
 ├── ci/            # CI-only images (e.g. rust-builder)

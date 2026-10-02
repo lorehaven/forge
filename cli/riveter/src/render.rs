@@ -1,4 +1,4 @@
-use crate::env::{OUTPUT_DIR, OVERLAY_DIR, manifest_path};
+use crate::env::{env_override, manifest_path, output_dir, overlay_dir, resource_metadata};
 use anyhow::Context;
 use minijinja::value::ValueKind;
 use minijinja::{Environment, Output, State, Value, context, escape_formatter};
@@ -206,12 +206,15 @@ pub fn generate_manifests_selected(
 
     let rendered = render_resources(env_name, &data, scope, selector)?;
 
-    fs::create_dir_all(OUTPUT_DIR)?;
+    fs::create_dir_all(output_dir())?;
     ignore_output_dir()?;
     let path = if selector.is_empty() {
         scoped_manifest_path(env_name, scope)
     } else {
-        format!("{OUTPUT_DIR}/{env_name}-manifests.selection.yaml")
+        format!(
+            "{}/{env_name}-manifests.selection.yaml",
+            output_dir().display()
+        )
     };
 
     let contents = join_manifests(&rendered);
@@ -251,7 +254,7 @@ pub fn generate_manifests_selected(
 /// files are build output, so the safe default is for git never to see them.
 /// An existing `.gitignore` is left alone.
 fn ignore_output_dir() -> anyhow::Result<()> {
-    let path = format!("{OUTPUT_DIR}/.gitignore");
+    let path = format!("{}/.gitignore", output_dir().display());
     if Path::new(&path).exists() {
         return Ok(());
     }
@@ -400,7 +403,7 @@ fn format_refs<'a>(refs: impl Iterator<Item = &'a ResourceRef>) -> String {
 
 fn render_overlay(env_name: &str) -> anyhow::Result<YamlValue> {
     let (env_vars, env_source) = load_env(env_name)?;
-    let overlay_src = fs::read_to_string(format!("{OVERLAY_DIR}/{env_name}/overlay.yaml"))?;
+    let overlay_src = fs::read_to_string(overlay_dir().join(env_name).join("overlay.yaml"))?;
 
     overlay_data(env_name, &overlay_src, &env_vars, env_source.as_deref())
 }
@@ -429,7 +432,7 @@ fn overlay_data<S: std::hash::BuildHasher>(
     env_source: Option<&str>,
 ) -> anyhow::Result<YamlValue> {
     let mut overlay_jinja = Environment::new();
-    overlay_jinja.set_loader(minijinja::path_loader(OVERLAY_DIR));
+    overlay_jinja.set_loader(minijinja::path_loader(overlay_dir()));
     overlay_jinja.add_global("env", env_name);
     overlay_jinja.set_formatter(yaml_bool_formatter);
 
@@ -559,6 +562,8 @@ fn render_resources(
     tpl_env.add_filter("to_yaml", to_yaml);
     tpl_env.set_formatter(yaml_bool_formatter);
 
+    let (labels, annotations) = resource_metadata();
+
     let mut out = Vec::new();
     for (res, res_ref) in resources.iter().zip(refs) {
         if !resource_in_scope(res, scope) || !selector.matches(&res_ref.kind, &res_ref.name) {
@@ -577,16 +582,183 @@ fn render_resources(
             res => res,
             env => env_name,
         })?;
-        out.push((res_ref, y.trim().to_string()));
+        let y = if labels.is_empty() && annotations.is_empty() {
+            y.trim().to_string()
+        } else {
+            stamp_rendered(&res_ref.kind, &res_ref.name, &y, &labels, &annotations)?
+        };
+        out.push((res_ref, y));
     }
     Ok(out)
+}
+
+/// Adds `labels` and `annotations` to a rendered resource's `metadata`, theirs
+/// winning over anything the template wrote.
+///
+/// Done on the rendered document rather than on the overlay's data, because the
+/// templates build their metadata by hand and not all of them honour a
+/// resource's `labels` or `annotations` - stamping the data first would leave
+/// some resources unmarked, and provenance that only covers some resources
+/// cannot be relied on. The cost is that the document is re-serialised, which
+/// drops its comments; it is only paid when there is something to stamp, which
+/// is only an installed package.
+fn stamp_rendered(
+    kind: &str,
+    name: &str,
+    yaml: &str,
+    labels: &BTreeMap<String, String>,
+    annotations: &BTreeMap<String, String>,
+) -> anyhow::Result<String> {
+    let mut doc: YamlValue = serde_yaml::from_str(yaml)
+        .with_context(|| format!("could not read the rendered {kind}/{name} to mark it"))?;
+    let metadata = doc
+        .get_mut("metadata")
+        .and_then(YamlValue::as_mapping_mut)
+        .with_context(|| {
+            format!("{kind}/{name} renders without a metadata block, so it cannot be marked")
+        })?;
+
+    for (key, additions) in [("labels", labels), ("annotations", annotations)] {
+        if additions.is_empty() {
+            continue;
+        }
+        let mut merged = match metadata.get(key) {
+            Some(YamlValue::Mapping(existing)) => existing.clone(),
+            _ => serde_yaml::Mapping::new(),
+        };
+        for (name, value) in additions {
+            merged.insert(
+                YamlValue::String(name.clone()),
+                YamlValue::String(value.clone()),
+            );
+        }
+        metadata.insert(
+            YamlValue::String(key.to_string()),
+            YamlValue::Mapping(merged),
+        );
+    }
+
+    Ok(serde_yaml::to_string(&doc)?.trim().to_string())
+}
+
+/// What an overlay pulls in when rendered: the text it renders to (before
+/// `${VAR}` expansion) and every template its includes loaded, as paths
+/// relative to the overlays directory.
+///
+/// Recorded by the loader rather than found by scanning for `include` tags, so
+/// it is exact even for an include behind a condition or built from a variable.
+#[derive(Debug)]
+pub struct OverlayScan {
+    /// The overlay after Jinja, before YAML parsing and `${VAR}` expansion.
+    pub rendered: String,
+    /// Templates loaded while rendering, sorted and unique.
+    pub includes: Vec<String>,
+}
+
+/// Renders `<overlays_dir>/<env>/overlay.yaml` far enough to see what it needs.
+pub fn scan_overlay(env_name: &str, overlays_dir: &Path) -> anyhow::Result<OverlayScan> {
+    use std::sync::{Arc, Mutex};
+
+    let overlay_path = overlays_dir.join(env_name).join("overlay.yaml");
+    let source = fs::read_to_string(&overlay_path)
+        .with_context(|| format!("failed to read {}", overlay_path.display()))?;
+
+    let loaded = Arc::new(Mutex::new(Vec::<String>::new()));
+    let recorder = Arc::clone(&loaded);
+    let root = overlays_dir.to_path_buf();
+
+    let mut jinja = Environment::new();
+    jinja.set_loader(move |name: &str| {
+        // The same refusal `path_loader` makes: nothing that leaves the root.
+        if name
+            .split('/')
+            .any(|part| part == ".." || part.contains('\\'))
+        {
+            return Ok(None);
+        }
+        match fs::read_to_string(root.join(name)) {
+            Ok(text) => {
+                recorder
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push(name.to_string());
+                Ok(Some(text))
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(minijinja::Error::new(
+                minijinja::ErrorKind::InvalidOperation,
+                "could not read template",
+            )
+            .with_source(e)),
+        }
+    });
+    jinja.add_global("env", env_name);
+    jinja.set_formatter(yaml_bool_formatter);
+
+    let rendered = jinja.render_str(&source, Value::UNDEFINED)?;
+
+    let mut includes = loaded
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
+    includes.sort();
+    includes.dedup();
+
+    Ok(OverlayScan { rendered, includes })
+}
+
+/// Every `${NAME}` a rendered overlay expands, sorted and unique, leaving out
+/// the `$${NAME}` escape that stays literal.
+#[must_use]
+pub fn referenced_vars(rendered: &str) -> Vec<String> {
+    let Ok(re) = Regex::new(VAR_PATTERN) else {
+        return Vec::new();
+    };
+    let mut names: Vec<String> = re
+        .captures_iter(rendered)
+        .filter(|c| c.get(1).is_none())
+        .map(|c| c[2].to_string())
+        .collect();
+    names.sort();
+    names.dedup();
+    names
+}
+
+/// The variables an overlay's *values* expand, which is what an install must supply.
+///
+/// Walks the parsed YAML the way expansion does - values, not keys, and not comments - so a
+/// `${...}` in a comment explaining riveter's escaping is not mistaken for a variable. Falls
+/// back to scanning the text if it will not parse, which over-reports rather than misses.
+#[must_use]
+pub fn overlay_vars(rendered: &str) -> Vec<String> {
+    fn collect(value: &YamlValue, names: &mut Vec<String>) {
+        match value {
+            YamlValue::String(text) => names.extend(referenced_vars(text)),
+            YamlValue::Mapping(map) => map.values().for_each(|v| collect(v, names)),
+            YamlValue::Sequence(items) => items.iter().for_each(|v| collect(v, names)),
+            _ => {}
+        }
+    }
+
+    let Ok(parsed) = serde_yaml::from_str::<YamlValue>(rendered) else {
+        return referenced_vars(rendered);
+    };
+    let mut names = Vec::new();
+    collect(&parsed, &mut names);
+    names.sort();
+    names.dedup();
+    names
 }
 
 fn scoped_manifest_path(env: &str, scope: ResourceScope) -> String {
     match scope {
         ResourceScope::All => manifest_path(env),
-        ResourceScope::Mutable => format!("{OUTPUT_DIR}/{env}-manifests.mutable.yaml"),
-        ResourceScope::Immutable => format!("{OUTPUT_DIR}/{env}-manifests.immutable.yaml"),
+        ResourceScope::Mutable => {
+            format!("{}/{env}-manifests.mutable.yaml", output_dir().display())
+        }
+        ResourceScope::Immutable => {
+            format!("{}/{env}-manifests.immutable.yaml", output_dir().display())
+        }
     }
 }
 
@@ -624,18 +796,14 @@ fn resource_is_immutable(res: &YamlValue) -> bool {
 ///
 /// Returns the path either way, so that error can point at the file that should
 /// have defined the variable even when the file does not exist yet.
-fn load_env(env: &str) -> anyhow::Result<(HashMap<String, String>, Option<String>)> {
-    let path = format!("{OVERLAY_DIR}/{env}/.env");
-    if !Path::new(&path).exists() {
-        return Ok((HashMap::new(), Some(path)));
-    }
-
-    let env_content = fs::read_to_string(&path)?;
+/// Parses `KEY=value` lines the way an overlay's `.env` is read: blank lines and
+/// `#` comments skipped, one pair of surrounding quotes removed, no escapes.
+#[must_use]
+pub fn parse_dotenv(content: &str) -> HashMap<String, String> {
     let mut env_vars = HashMap::new();
 
-    for line in env_content.lines() {
+    for line in content.lines() {
         let line = line.trim();
-        // Skip comments and empty lines
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
@@ -644,9 +812,8 @@ fn load_env(env: &str) -> anyhow::Result<(HashMap<String, String>, Option<String
             let key = key.trim().to_string();
             let mut value = value.trim().to_string();
 
-            // Remove surrounding quotes if present
-            if (value.starts_with('"') && value.ends_with('"'))
-                || (value.starts_with('\'') && value.ends_with('\''))
+            if (value.starts_with('"') && value.ends_with('"') && value.len() >= 2)
+                || (value.starts_with('\'') && value.ends_with('\'') && value.len() >= 2)
             {
                 value = value[1..value.len() - 1].to_string();
             }
@@ -654,6 +821,21 @@ fn load_env(env: &str) -> anyhow::Result<(HashMap<String, String>, Option<String
             env_vars.insert(key, value);
         }
     }
+
+    env_vars
+}
+
+fn load_env(env: &str) -> anyhow::Result<(HashMap<String, String>, Option<String>)> {
+    if let Some(vars) = env_override() {
+        return Ok((vars, Some("the values given at install".to_string())));
+    }
+
+    let path = format!("{}/{env}/.env", overlay_dir().display());
+    if !Path::new(&path).exists() {
+        return Ok((HashMap::new(), Some(path)));
+    }
+
+    let env_vars = parse_dotenv(&fs::read_to_string(&path)?);
 
     Ok((env_vars, Some(path)))
 }

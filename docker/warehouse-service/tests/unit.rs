@@ -7,6 +7,8 @@ mod apk_manifest_tests;
 mod docker_token_tests;
 #[path = "unit/domain_artifact_tests.rs"]
 mod domain_artifact_tests;
+#[path = "unit/domain_rivet_tests.rs"]
+mod domain_rivet_tests;
 #[path = "unit/domain_storage_file_tests.rs"]
 mod domain_storage_file_tests;
 #[path = "unit/files_confinement_tests.rs"]
@@ -99,6 +101,8 @@ mod routers_files_ops_upload_tests;
 mod routers_files_pagination_tests;
 #[path = "unit/routers_mod_tests.rs"]
 mod routers_mod_tests;
+#[path = "unit/routers_rivets_tests.rs"]
+mod routers_rivets_tests;
 #[path = "unit/routers_ui_authz_tests.rs"]
 mod routers_ui_authz_tests;
 #[path = "unit/routers_ui_common_css_mod_tests.rs"]
@@ -127,5 +131,7 @@ mod routers_ui_pages_files_browse_tests;
 mod routers_ui_pages_files_storages_tests;
 #[path = "unit/routers_ui_pages_home_tests.rs"]
 mod routers_ui_pages_home_tests;
+#[path = "unit/routers_ui_pages_rivets_catalog_tests.rs"]
+mod routers_ui_pages_rivets_catalog_tests;
 #[path = "unit/utils_sha256_tests.rs"]
 mod utils_sha256_tests;

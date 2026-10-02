@@ -1,0 +1,50 @@
+[[migrations]]
+id = "0005-rivet-packages"
+author = "warehouse-service"
+since = "0.4.0"
+
+# One row per published `.rivet` package - a whole overlay, versioned. `id` is
+# `<name>@<version>` rather than a surrogate key, for the same reason as
+# `artifact_versions`: it is the identity a caller addresses
+# (`PUT /api/v1/rivets/{name}/{version}`), and a text key keeps this on
+# `quench-db`'s generic `Crud`.
+#
+# `name` and `version` are read from the archive's own `rivet.toml` at publish
+# time and checked against the URL, not taken on the caller's word, so a
+# consumer of this catalog can trust them. `version` is full semver, build
+# metadata included (`0.4.0+b123`); "latest" is resolved by semver precedence
+# in the service rather than in SQL, which has no semver ordering.
+#
+# `manifest` keeps the whole parsed `rivet.toml` as JSON (requirements and the
+# free-form `[meta]` table included) so a catalog or UI can show it without
+# reopening the archive.
+#
+# `uploaded_by` is the token's subject, and deliberately has no foreign key to
+# the realm's users: the usual publisher is a pipeline, whose subject is an
+# OAuth client id (`conveyor`), not a row in `users`. A key would reject every
+# machine publish - and cascade-delete a person's packages with their account.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.rivet_packages (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    version TEXT NOT NULL,
+    description TEXT,
+    namespace TEXT,
+    filename TEXT NOT NULL,
+    size_bytes BIGINT NOT NULL,
+    sha256 TEXT NOT NULL,
+    manifest JSONB NOT NULL DEFAULT '{}'::jsonb,
+    uploaded_by TEXT NOT NULL,
+    yanked BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (name, version)
+);
+"""
+
+# "Versions of this package" - the per-package listing and latest resolution.
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS rivet_packages_name_idx
+    ON ${schema}.rivet_packages (name, created_at DESC);
+"""

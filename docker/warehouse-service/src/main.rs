@@ -83,7 +83,9 @@ async fn main() -> std::io::Result<()> {
 
     let base_path_app = quench_starter::http::discover_and_mount(base_path.clone());
     let base_path_app = routers::files::wrap_auth(base_path_app, jwt_config.clone(), &base_path);
-    let base_path_app = routers::artifacts::wrap_auth(base_path_app, jwt_config, &base_path);
+    let base_path_app =
+        routers::artifacts::wrap_auth(base_path_app, jwt_config.clone(), &base_path);
+    let base_path_app = routers::rivets::wrap_auth(base_path_app, jwt_config, &base_path);
 
     // WarehouseAuth self-restricts to /v2/* and passes /token through, so wrapping the whole tree is safe.
     let loader = quench_config::ConfigLoader::new("WAREHOUSE");

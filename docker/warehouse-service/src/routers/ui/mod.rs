@@ -9,7 +9,7 @@ pub mod pages;
 
 #[derive(Deserialize)]
 pub struct PageQuery {
-    /// Selected crate name (or docker repository, or artifact program)
+    /// Selected crate name (or docker repository, artifact program, or rivet package)
     pub repo: Option<String>,
     /// Selected version (or docker tag)
     pub tag: Option<String>,
@@ -125,6 +125,26 @@ fn artifacts_redirect(common::PageAuth(authenticated): common::PageAuth) -> Resp
         .header("Location", with_base_path("/ui/artifacts/catalog"))
 }
 
+// Rivet redirects
+
+#[get("/ui/rivets")]
+pub async fn rivets_root(common::PageAuth(authenticated): common::PageAuth) -> Response {
+    if !authenticated {
+        return common::ui_login_redirect();
+    }
+    Response::new(StatusCode::PERMANENT_REDIRECT)
+        .header("Location", with_base_path("/ui/rivets/catalog"))
+}
+
+#[get("/ui/rivets/")]
+pub async fn rivets_root_slash(common::PageAuth(authenticated): common::PageAuth) -> Response {
+    if !authenticated {
+        return common::ui_login_redirect();
+    }
+    Response::new(StatusCode::PERMANENT_REDIRECT)
+        .header("Location", with_base_path("/ui/rivets/catalog"))
+}
+
 pub fn register_routes() {
     let _ = root as fn(_) -> _;
     let _ = root_slash as fn(_) -> _;
@@ -136,6 +156,8 @@ pub fn register_routes() {
     let _ = files_root_slash as fn(_) -> _;
     let _ = artifacts_root as fn(_) -> _;
     let _ = artifacts_root_slash as fn(_) -> _;
+    let _ = rivets_root as fn(_) -> _;
+    let _ = rivets_root_slash as fn(_) -> _;
     let _ = apk_root as fn(_) -> _;
     let _ = apk_root_slash as fn(_) -> _;
     let _ = assets as fn(_) -> _;

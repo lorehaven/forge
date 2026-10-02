@@ -61,6 +61,16 @@ static UI_SHELL_ARTIFACTS: LazyLock<AppShell> = LazyLock::new(|| {
     )
 });
 
+static UI_SHELL_RIVETS: LazyLock<AppShell> = LazyLock::new(|| {
+    css::ensure_warehouse_css();
+
+    forge_ui::app_shell(
+        "Warehouse — Rivets",
+        "warehouse.css",
+        Some(ui_header(Some("ui_header_rivets"), true, true, true)),
+    )
+});
+
 pub fn ui_header(
     title_key: Option<&str>,
     show_locale_switch: bool,
@@ -93,6 +103,7 @@ pub fn render_page(status: StatusCode, content: Element, page_kind: UiPageKind) 
         UiPageKind::Crates => &*UI_SHELL_CRATES,
         UiPageKind::Files => &*UI_SHELL_FILES,
         UiPageKind::Artifacts => &*UI_SHELL_ARTIFACTS,
+        UiPageKind::Rivets => &*UI_SHELL_RIVETS,
     };
     Response::html(status, shell.page(div().class("page").child(content)))
 }
@@ -103,6 +114,7 @@ pub enum UiPageKind {
     Crates,
     Files,
     Artifacts,
+    Rivets,
 }
 
 pub fn ui_login_redirect() -> Response {

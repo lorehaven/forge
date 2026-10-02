@@ -39,6 +39,8 @@ quench-http = { workspace = true }
 quench-starter = { workspace = true }
 quench-web = { workspace = true }
 quench-web-components = { workspace = true }
+rivet-package = { workspace = true }
+semver = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

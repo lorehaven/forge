@@ -2,6 +2,9 @@ use anyhow::Result;
 use clap::{CommandFactory, Parser};
 use riveter::cli::{ApplyScope, Cli, Cmd, EnvCmd};
 use riveter::env::{env_list, env_set, env_show, resolve_env};
+use riveter::package_cmd::{
+    InstallArgs, install_command, pack_command, publish_command, pull_command, remote_command,
+};
 use riveter::render::ResourceScope;
 use riveter::render::{Selector, generate_manifests_selected, list_resources};
 use riveter::repl::{
@@ -118,6 +121,65 @@ fn main() -> Result<()> {
             let overlays_dir = overlays_dir.unwrap_or_else(|| riveter::env::OVERLAY_DIR.into());
             riveter::image_updates::check_image_updates(&overlays_dir, update, &registry_auth)
         }
+        Some(Cmd::Pack {
+            version_suffix,
+            no_pin,
+            out,
+            registry_auth,
+        }) => {
+            let env = resolve_env(cli.env.as_deref())?;
+            pack_command(
+                &env,
+                version_suffix.as_deref(),
+                no_pin,
+                &out,
+                &registry_auth,
+            )?;
+            Ok(())
+        }
+        Some(Cmd::Publish {
+            file,
+            version_suffix,
+            no_pin,
+            out,
+            registry_auth,
+        }) => {
+            let env = match &file {
+                Some(_) => None,
+                None => Some(resolve_env(cli.env.as_deref())?),
+            };
+            publish_command(
+                env.as_deref(),
+                file.as_deref(),
+                version_suffix.as_deref(),
+                no_pin,
+                &out,
+                &registry_auth,
+            )
+        }
+        Some(Cmd::Pull { package, out }) => pull_command(&package, &out),
+        Some(Cmd::Install {
+            package,
+            env_file,
+            sets,
+            dry_run,
+            no_wait,
+            timeout,
+            scope,
+            targets,
+        }) => install_command(&InstallArgs {
+            package: &package,
+            env_file: env_file.as_deref(),
+            sets: &sets,
+            dry_run,
+            wait: WaitPolicy {
+                enabled: !no_wait,
+                timeout_seconds: timeout,
+            },
+            scope,
+            targets: &targets,
+        }),
+        Some(Cmd::Remote { cmd }) => remote_command(&cmd),
         Some(Cmd::Help { command }) => print_help(command.as_deref()),
         Some(Cmd::Repl) | None => repl(),
     }

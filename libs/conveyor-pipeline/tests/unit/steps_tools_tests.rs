@@ -130,6 +130,52 @@ fn riveters_short_aliases_work() {
 }
 
 #[test]
+fn the_package_commands_are_accepted() {
+    for args in [
+        "pack",
+        "publish --version-suffix {timestamp}.{sha}",
+        "pull forge@0.4.0 --out packages",
+        "install forge --scope all --dry-run",
+        "i forge",
+        "remote list",
+        "images",
+    ] {
+        assert!(
+            validate(&Step::Riveter(args.to_string())).is_ok(),
+            "riveter {args} should be accepted"
+        );
+    }
+}
+
+#[test]
+fn riveters_global_env_option_may_precede_the_command() {
+    for args in [
+        "--env forge pack",
+        "-e forge publish",
+        "--env=forge publish --no-pin",
+        "-eforge pack",
+        "--env forge --env vllm apply",
+    ] {
+        assert!(
+            validate(&Step::Riveter(args.to_string())).is_ok(),
+            "riveter {args} should be accepted"
+        );
+    }
+}
+
+#[test]
+fn a_command_hidden_behind_the_env_option_is_still_checked() {
+    let error = validate(&Step::Riveter("--env forge pakc".to_string())).expect_err("rejected");
+    assert!(error.to_string().contains("pakc"), "{error}");
+
+    let error = validate(&Step::Riveter("--env forge repl".to_string())).expect_err("rejected");
+    assert!(matches!(error, StepError::Interactive { .. }), "{error:?}");
+
+    // `--env` with nothing after it has no command at all.
+    assert!(validate(&Step::Riveter("--env forge".to_string())).is_err());
+}
+
+#[test]
 fn a_mistyped_riveter_command_is_rejected() {
     let error = validate(&Step::Riveter("aply k8s/".to_string())).expect_err("should be rejected");
     let message = error.to_string();

@@ -5,5 +5,8 @@ pub mod config;
 pub mod env;
 pub mod help;
 pub mod image_updates;
+pub mod package;
+pub mod package_cmd;
+pub mod registry;
 pub mod render;
 pub mod repl;

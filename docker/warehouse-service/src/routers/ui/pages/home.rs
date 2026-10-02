@@ -1,5 +1,7 @@
 use crate::routers::ui::common::{PageAuth, UiPageKind, render_page, ui_login_redirect, ui_path};
-use crate::routers::{artifacts_enabled, crates_enabled, docker_enabled, files_enabled};
+use crate::routers::{
+    artifacts_enabled, crates_enabled, docker_enabled, files_enabled, rivets_enabled,
+};
 use quench_http::prelude::{Response, get, http::StatusCode};
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
@@ -74,6 +76,16 @@ pub fn render_home_page() -> Response {
             "ui_service_artifacts_title",
             "ui_service_artifacts_desc",
             "home-card-artifacts",
+        ));
+    }
+
+    if rivets_enabled() {
+        has_service_cards = true;
+        service_cards = service_cards.child(service_card(
+            &ui_path("/rivets/catalog"),
+            "ui_service_rivets_title",
+            "ui_service_rivets_desc",
+            "home-card-rivets",
         ));
     }
 

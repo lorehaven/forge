@@ -81,6 +81,7 @@ reqwest = { version = "0.13", default-features = false, features = [
   "multipart",
   "form",
 ] }
+rivet-package = { path = "libs/rivet-package", registry = "ennor", version = "0.1.0" }
 rustyline = { version = "18.0" }
 scraper = { version = "0.27" }
 semver = { version = "1.0" }
@@ -93,6 +94,7 @@ sha2 = { version = "0.11" }
 sqlx = { version = "0.9", features = ["runtime-tokio", "tls-rustls-ring", "postgres", "macros", "json", "chrono", "uuid"] }
 strum = { version = "0.28" }
 strum_macros = { version = "0.28" }
+tar = { version = "0.4", default-features = false }
 tempfile = { version = "3.27" }
 thiserror = { version = "2.0" }
 tokio = { version = "1.53", features = ["full"] }
@@ -107,6 +109,7 @@ tracing-subscriber = { version = "0.3" }
 uuid = { version = "1.26", features = ["v4"] }
 urlencoding = { version = "2.1" }
 walkdir = { version = "2.5" }
+zstd = { version = "0.13" }
 zip = { version = "8", default-features = false, features = ["deflate"] }
 which = { version = "8.0" }
 wiremock = { version = "0.6" }

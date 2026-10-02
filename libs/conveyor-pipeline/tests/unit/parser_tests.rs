@@ -118,6 +118,59 @@ steps = [
 }
 
 #[test]
+fn a_package_publishing_pipeline_parses() {
+    // The shape a homecloud repository would use: publish each overlay on a push to master.
+    let spec = parse(
+        r#"
+[on]
+push = ["master"]
+
+[[stage]]
+name = "publish"
+[[stage.job]]
+name = "forge"
+secrets = ["RIVETER_WAREHOUSE_URL", "RIVETER_GATEHOUSE_URL", "RIVETER_CLIENT_ID", "RIVETER_CLIENT_SECRET"]
+steps = [
+  { riveter = "--env forge publish --version-suffix {timestamp}.{sha}" },
+  { riveter = "--env vllm publish --version-suffix {timestamp}.{sha}" },
+]
+"#,
+    )
+    .expect("parses");
+
+    let steps = &spec.stages[0].jobs[0].steps;
+    assert_eq!(steps.len(), 2);
+
+    // Tokens reach riveter untouched: braces are not shell syntax, and riveter expands them.
+    let argv = conveyor_pipeline::steps::argv(&steps[0]).expect("argv");
+    assert_eq!(
+        argv,
+        [
+            "riveter",
+            "--env",
+            "forge",
+            "publish",
+            "--version-suffix",
+            "{timestamp}.{sha}"
+        ]
+    );
+}
+
+#[test]
+fn a_typo_in_a_package_step_is_caught_at_parse_time() {
+    let error = parse(
+        r#"
+[[stage]]
+name = "publish"
+[[stage.job]]
+steps = [{ riveter = "--env forge publsh" }]
+"#,
+    )
+    .expect_err("rejected");
+    assert!(error.to_string().contains("publsh"), "{error}");
+}
+
+#[test]
 fn job_options_are_carried_through() {
     let spec = parse(
         r#"

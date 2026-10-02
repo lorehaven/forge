@@ -122,6 +122,83 @@ pub enum Cmd {
         #[arg(long = "registry-auth", value_name = "REGISTRY=USER:PASS")]
         registry_auth: Vec<String>,
     },
+    /// Build the current environment's overlay into a `.rivet` package
+    Pack {
+        /// Build metadata appended to the manifest's version, e.g. `b123` makes `0.4.0` into `0.4.0+b123`; `{timestamp}` and `{sha}` expand to the UTC time and the commit
+        #[arg(long, value_name = "SUFFIX")]
+        version_suffix: Option<String>,
+        /// Do not pin image tags to digests; packing then needs no registry access
+        #[arg(long)]
+        no_pin: bool,
+        /// Directory to write the package to
+        #[arg(long, value_name = "DIR", default_value = "packages")]
+        out: std::path::PathBuf,
+        /// Registry credentials for digest lookups, repeatable
+        #[arg(long = "registry-auth", value_name = "REGISTRY=USER:PASS")]
+        registry_auth: Vec<String>,
+    },
+    /// Publish a package to Warehouse, packing the current environment first if no file is given
+    Publish {
+        /// A `.rivet` file to publish; omit to pack the current environment
+        #[arg(value_name = "FILE")]
+        file: Option<std::path::PathBuf>,
+        /// Build metadata appended to the version when packing; takes `{timestamp}` and `{sha}`
+        #[arg(long, value_name = "SUFFIX")]
+        version_suffix: Option<String>,
+        /// Do not pin image tags to digests when packing
+        #[arg(long)]
+        no_pin: bool,
+        /// Directory to write the package to when packing
+        #[arg(long, value_name = "DIR", default_value = "packages")]
+        out: std::path::PathBuf,
+        /// Registry credentials for digest lookups, repeatable
+        #[arg(long = "registry-auth", value_name = "REGISTRY=USER:PASS")]
+        registry_auth: Vec<String>,
+    },
+    /// Download a package from Warehouse and verify it
+    Pull {
+        /// `name`, `name@version` or `name@latest`
+        #[arg(value_name = "PACKAGE")]
+        package: String,
+        /// Directory to save the package in
+        #[arg(long, value_name = "DIR", default_value = "packages")]
+        out: std::path::PathBuf,
+    },
+    /// Install a package: fetch it, render it and apply it with kubectl
+    ///
+    /// The package may be `name`, `name@version`, or the path of a `.rivet`
+    /// file. Variables come from the package's own `values.toml`, then
+    /// `--env-file`, then `--set`; the working directory's `.env` is not read.
+    #[command(visible_alias = "i")]
+    Install {
+        /// `name[@version]` from Warehouse, or a `.rivet` file
+        #[arg(value_name = "PACKAGE")]
+        package: String,
+        /// A dotenv-format file of variables, e.g. the overlay's own `.env`
+        #[arg(long, value_name = "FILE")]
+        env_file: Option<std::path::PathBuf>,
+        /// One variable as KEY=value, repeatable; wins over everything else
+        #[arg(long = "set", value_name = "KEY=VALUE")]
+        sets: Vec<String>,
+        /// Pass --dry-run=client to kubectl; nothing reaches the cluster
+        #[arg(long)]
+        dry_run: bool,
+        /// Return as soon as kubectl accepts the manifests, without waiting for the rollout
+        #[arg(long)]
+        no_wait: bool,
+        /// Seconds to wait for each rollout before giving up
+        #[arg(long, value_name = "SECONDS", default_value_t = 300)]
+        timeout: u64,
+        #[arg(long, value_enum, default_value_t = ApplyScope::Mutable, help = SCOPE_HELP)]
+        scope: ApplyScope,
+        #[arg(value_name = "TARGET", help = TARGET_HELP)]
+        targets: Vec<String>,
+    },
+    /// Browse the packages in Warehouse
+    Remote {
+        #[command(subcommand)]
+        cmd: RemoteCmd,
+    },
     /// Start the interactive REPL (also the default with no arguments)
     Repl,
     /// Show help, or detail for one command
@@ -140,6 +217,18 @@ pub enum ApplyScope {
     Immutable,
     /// Every resource
     All,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum RemoteCmd {
+    /// List the newest version of every package
+    #[command(visible_alias = "ls")]
+    List,
+    /// List every version of one package
+    Versions {
+        /// Package name
+        name: String,
+    },
 }
 
 #[derive(Subcommand, Debug)]

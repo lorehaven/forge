@@ -3,6 +3,7 @@ pub mod artifacts;
 pub mod crates;
 pub mod docker;
 pub mod files;
+pub mod rivets;
 pub mod ui;
 
 /// Links every route module in - an unreferenced `.rlib` module is dead-code-eliminated
@@ -13,6 +14,7 @@ pub fn register_routes() {
     crates::register_routes();
     docker::register_routes();
     files::register_routes();
+    rivets::register_routes();
     ui::register_routes();
 }
 
@@ -33,6 +35,11 @@ pub fn artifact_storage_root() -> String {
         }
     }
     "./storage/artifacts".to_string()
+}
+
+/// Root of the rivet package store.
+pub fn rivet_storage_root() -> String {
+    envmnt::get_or("RIVET_STORAGE_PATH", "./storage/rivets")
 }
 
 struct FeatureFlags {
@@ -78,4 +85,9 @@ pub fn files_enabled() -> bool {
 
 pub fn artifacts_enabled() -> bool {
     FEATURE_FLAGS.artifacts
+}
+
+/// Read fresh every call, unlike the other flags, so a test can turn it on for one case.
+pub fn rivets_enabled() -> bool {
+    feature_enabled("FEATURE_RIVETS_ENABLED", false)
 }

@@ -40,6 +40,14 @@ static VERSION_RE: LazyLock<Regex> = LazyLock::new(|| {
         .unwrap()
 });
 
+/// Splits an `image:` line into its indentation and unquoted value.
+pub(crate) fn match_image_line(line: &str) -> Option<(&str, &str)> {
+    let captures = IMAGE_LINE_RE.captures(line)?;
+    let indent = captures.name("indent")?.as_str();
+    let value = captures.name("image")?.as_str().trim_matches(['"', '\'']);
+    Some((indent, value))
+}
+
 /// A parsed `registry/repository:tag` reference.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImageRef {
@@ -423,7 +431,7 @@ fn docker_hub_tags(client: &Client, repository: &str) -> Result<Vec<String>, Fet
 
 /// Requests a Bearer token from the realm a `WWW-Authenticate` challenge
 /// names, per the Docker Registry token-auth protocol.
-fn bearer_token(
+pub(crate) fn bearer_token(
     client: &Client,
     www_authenticate: &str,
     basic_auth_header: Option<&str>,
@@ -927,4 +935,147 @@ pub fn check_image_updates(overlays_dir: &Path, apply: bool, cli_auth: &[String]
         return Ok(());
     }
     bail!("one or more images could not be checked; see the Errors table above");
+}
+
+/// Media types a registry may answer a manifest request with. Asking for the
+/// index types too means a multi-arch tag resolves to the index digest rather
+/// than to whichever single-platform manifest the registry would default to.
+const MANIFEST_ACCEPT: &str = "application/vnd.oci.image.index.v1+json, \
+    application/vnd.docker.distribution.manifest.list.v2+json, \
+    application/vnd.oci.image.manifest.v1+json, \
+    application/vnd.docker.distribution.manifest.v2+json";
+
+/// Whether `value` is `sha256:` followed by 64 hex digits.
+#[must_use]
+pub fn is_sha256_digest(value: &str) -> bool {
+    value
+        .strip_prefix("sha256:")
+        .is_some_and(|hex| hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit()))
+}
+
+/// The digest `image`'s tag currently points at, from one registry scheme.
+///
+/// Asks with `HEAD` and reads `Docker-Content-Digest`; a registry that omits
+/// the header gets a `GET`, hashed locally, since a manifest's digest is the
+/// SHA-256 of its exact bytes.
+pub fn resolve_digest(
+    client: &Client,
+    image: &ImageRef,
+    auth: &RegistryAuth,
+    scheme: &str,
+) -> Result<String, FetchError> {
+    let url = format!(
+        "{scheme}://{}/v2/{}/manifests/{}",
+        image.registry,
+        encode_repository_path(&image.repository),
+        urlencoding::encode(&image.tag)
+    );
+    let send = |method: reqwest::Method, authorization: Option<&str>| {
+        let mut request = client
+            .request(method, &url)
+            .header(reqwest::header::ACCEPT, MANIFEST_ACCEPT);
+        if let Some(header) = authorization {
+            request = request.header(
+                AUTHORIZATION,
+                HeaderValue::from_str(header)
+                    .map_err(|err| FetchError::Other(format!("invalid auth header: {err}")))?,
+            );
+        }
+        request
+            .send()
+            .map_err(|err| FetchError::Unreachable(format!("failed to reach {url}: {err}")))
+    };
+
+    let mut authorization: Option<String> = None;
+    let mut response = send(reqwest::Method::HEAD, None)?;
+
+    if matches!(
+        response.status(),
+        reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN
+    ) {
+        let challenge = response
+            .headers()
+            .get(reqwest::header::WWW_AUTHENTICATE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_string();
+        let basic = auth.basic_header(&image.registry);
+        let default_scope = format!("repository:{}:pull", image.repository);
+        let candidate = bearer_token(client, &challenge, basic.as_deref(), &default_scope)
+            .map(|token| format!("Bearer {token}"))
+            .or(basic)
+            .ok_or_else(|| {
+                FetchError::Denied(format!(
+                    "registry {} requires authentication",
+                    image.registry
+                ))
+            })?;
+
+        response = send(reqwest::Method::HEAD, Some(&candidate))?;
+        if !response.status().is_success() {
+            return Err(FetchError::Denied(format!(
+                "registry {} denied access to {}: HTTP {}",
+                image.registry,
+                image.repository,
+                response.status()
+            )));
+        }
+        authorization = Some(candidate);
+    }
+
+    if !response.status().is_success() {
+        return Err(FetchError::Other(format!(
+            "HTTP {} for {url}",
+            response.status()
+        )));
+    }
+
+    if let Some(digest) = response
+        .headers()
+        .get("docker-content-digest")
+        .and_then(|value| value.to_str().ok())
+        .filter(|digest| is_sha256_digest(digest))
+    {
+        return Ok(digest.to_string());
+    }
+
+    let body = send(reqwest::Method::GET, authorization.as_deref())?
+        .bytes()
+        .map_err(|err| FetchError::Other(format!("could not read {url}: {err}")))?;
+    Ok(format!("sha256:{}", rivet_package::sha256_hex(&body)))
+}
+
+/// Resolves image digests against the registries the images name, trying
+/// `https` and falling back to `http` for a registry that does not answer TLS.
+#[derive(Debug)]
+pub struct RegistryDigests {
+    client: Client,
+    auth: RegistryAuth,
+}
+
+impl RegistryDigests {
+    /// Credentials come from the same sources `riveter images` reads.
+    #[must_use]
+    pub fn new(cli_auth: &[String]) -> Self {
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .unwrap_or_else(|_| Client::new());
+        Self {
+            client,
+            auth: RegistryAuth::from_sources(cli_auth),
+        }
+    }
+}
+
+impl crate::package::DigestResolver for RegistryDigests {
+    fn digest(&self, image: &ImageRef) -> Result<String> {
+        let resolved = match resolve_digest(&self.client, image, &self.auth, "https") {
+            Err(FetchError::Unreachable(_)) => {
+                resolve_digest(&self.client, image, &self.auth, "http")
+            }
+            other => other,
+        };
+        resolved.map_err(|err| anyhow::anyhow!("{}: {err}", image.original))
+    }
 }
