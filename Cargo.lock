@@ -995,7 +995,7 @@ dependencies = [
 
 [[package]]
 name = "conveyor-pipeline"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "serde",
  "shlex",
@@ -4898,7 +4898,7 @@ dependencies = [
 
 [[package]]
 name = "riveter"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
