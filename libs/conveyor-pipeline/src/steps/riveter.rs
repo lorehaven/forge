@@ -8,9 +8,10 @@ use crate::steps::StepError;
 
 /// Riveter's commands and their aliases, as `cli/riveter/src/cli.rs` declares
 /// them.
-pub const COMMANDS: [&str; 22] = [
+pub const COMMANDS: [&str; 24] = [
     "a", "apply", "d", "del", "delete", "df", "diff", "env", "h", "help", "i", "images", "install",
-    "list", "ls", "pack", "prune", "publish", "pull", "r", "remote", "render",
+    "list", "ls", "pack", "prune", "publish", "pull", "r", "remote", "render", "schemas",
+    "validate",
 ];
 
 /// `repl` is deliberately absent. It waits for input conveyor will never send,

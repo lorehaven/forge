@@ -112,6 +112,8 @@ pub fn handle_repl_command(input: &str) -> anyhow::Result<bool> {
             }
         }
 
+        "validate" => repl_validate(&args)?,
+
         "prune" => {
             let env = current_env()?;
             let dry = args.contains(&"--dry-run");
@@ -164,6 +166,12 @@ pub fn handle_repl_command(input: &str) -> anyhow::Result<bool> {
     }
 
     Ok(false)
+}
+
+fn repl_validate(args: &[&str]) -> anyhow::Result<()> {
+    let env = current_env()?;
+    let parsed = parse_args(args, ResourceScope::All, false)?;
+    crate::schema_cmd::validate_env(&env, parsed.scope, &parsed.selector)
 }
 
 fn repl_images(args: &[&str]) -> anyhow::Result<()> {

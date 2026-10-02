@@ -29,6 +29,7 @@ base64 = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 dotenvy = { workspace = true }
+jsonschema = { workspace = true }
 minijinja = { workspace = true }
 quench-cli = { workspace = true }
 rivet-package = { workspace = true }

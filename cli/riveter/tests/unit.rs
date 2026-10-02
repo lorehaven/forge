@@ -30,3 +30,7 @@ mod render_tests;
 mod repl_dispatch_tests;
 #[path = "unit/repl_tests.rs"]
 mod repl_tests;
+#[path = "unit/schema_cmd_tests.rs"]
+mod schema_cmd_tests;
+#[path = "unit/schema_tests.rs"]
+mod schema_tests;

@@ -194,6 +194,26 @@ pub enum Cmd {
         #[arg(value_name = "TARGET", help = TARGET_HELP)]
         targets: Vec<String>,
     },
+    /// Check the environment's custom resources against their CRD schemas, offline
+    ///
+    /// Renders the environment in memory and checks each resource whose `apiVersion`/`kind` has a schema
+    /// held - cert-manager, Traefik and Gateway API ship in the binary, and `schemas fetch` adds more from
+    /// a cluster - the way the API server will: a typo in a field name is an error, with a suggestion.
+    /// Kinds with no schema are counted, not failed. Nothing is sent to a cluster.
+    Validate {
+        #[arg(long, value_enum, default_value_t = ApplyScope::All, help = SCOPE_HELP)]
+        scope: ApplyScope,
+        /// Check the documents in these files instead of the environment (`-` is standard input)
+        #[arg(long = "file", short = 'f', value_name = "FILE")]
+        files: Vec<std::path::PathBuf>,
+        #[arg(value_name = "TARGET", help = TARGET_HELP)]
+        targets: Vec<String>,
+    },
+    /// Manage the CRD schemas `validate` checks against
+    Schemas {
+        #[command(subcommand)]
+        cmd: SchemasCmd,
+    },
     /// Browse the packages in Warehouse
     Remote {
         #[command(subcommand)]
@@ -217,6 +237,31 @@ pub enum ApplyScope {
     Immutable,
     /// Every resource
     All,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SchemasCmd {
+    /// List the schemas held, and where each came from
+    #[command(visible_alias = "ls")]
+    List,
+    /// Read CRD schemas from a cluster into the cache, where they take precedence over the bundled ones
+    ///
+    /// By default the CRDs riveter has templates for. `--crd` names others; `--all` takes every CRD in
+    /// the cluster, so `raw` resources of any kind can be checked.
+    Fetch {
+        /// A CRD by name (`certificates.cert-manager.io`); repeatable
+        #[arg(long, value_name = "NAME")]
+        crd: Vec<String>,
+        /// Every CRD in the cluster
+        #[arg(long)]
+        all: bool,
+        /// kubectl context to read from, instead of the current one
+        #[arg(long, value_name = "CONTEXT")]
+        context: Option<String>,
+        /// Write here instead of the cache directory
+        #[arg(long, value_name = "DIR")]
+        output: Option<std::path::PathBuf>,
+    },
 }
 
 #[derive(Subcommand, Debug)]

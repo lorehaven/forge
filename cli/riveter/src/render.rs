@@ -192,6 +192,23 @@ pub fn list_resources(env_name: &str) -> anyhow::Result<Vec<ResourceRef>> {
     resource_refs(&data)
 }
 
+/// Renders an environment's resources in memory - one `(resource, YAML)` per selected resource - without
+/// writing `manifests/` or touching a cluster. What `validate` checks.
+pub fn render_in_memory(
+    env_name: &str,
+    scope: ResourceScope,
+    selector: &Selector,
+) -> anyhow::Result<Vec<(ResourceRef, String)>> {
+    let data = render_overlay(env_name)?;
+
+    if !selector.is_empty() {
+        let all = resource_refs(&data)?;
+        ensure_targets_match(selector, &all, scope)?;
+    }
+
+    render_resources(env_name, &data, scope, selector)
+}
+
 pub fn generate_manifests_selected(
     env_name: &str,
     scope: ResourceScope,

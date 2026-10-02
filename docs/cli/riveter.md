@@ -10,6 +10,7 @@ Riveter is a Kubernetes manifest tool, powered by Rust and `minijinja` templates
 - Targeting: any command can act on a `kind[/name]` subset, with `*`/`?` wildcards and kind aliases (`sts`, `ds`, `hpa`, `pdb`, `crd`, `netpol`, `sa`, ...).
 - `kubectl` integration for `apply`, `diff`, and `delete`, including per-rollout readiness waiting on `apply`.
 - `prune`, which finds cluster resources labelled `app.kubernetes.io/managed-by: riveter` for the environment that the overlay no longer declares, and removes them.
+- `validate`, which checks an environment's custom resources (cert-manager, Traefik, Gateway API, and any CRD fetched from a cluster) against their CRD schemas offline, catching a misspelt field or a wrong type before anything is applied - see [Validating custom resources](#validating-custom-resources).
 - `images`, which scans overlay templates for `image:` tags and checks the registry for newer compatible tags, optionally rewriting the templates in place.
 - Variable substitution from an environment's own `.env` file (`${NAME}`, with `$${NAME}` as an escape).
 - Packages: `pack` turns an overlay into a versioned, checksummed `.rivet` archive with every image pinned to a digest, `publish`/`pull`/`remote` move it through Warehouse's rivet registry, and `install` fetches one and applies it - see [Packages](#packages).
@@ -43,6 +44,8 @@ riveter images
 | `diff [--scope ...] [target...]` | `df` | Show what `apply` would change via `kubectl diff` |
 | `delete [--scope ...] [target...]` | `d`, `del` | Render and delete via `kubectl` |
 | `prune [--dry-run]` | | Delete cluster resources the overlay no longer declares |
+| `validate [--scope ...] [--file <f>] [target...]` | | Check custom resources against their CRD schemas, offline |
+| `schemas <list\|fetch>` | | List the CRD schemas held, or read more from a cluster (CLI-only) |
 | `images [--update] [--overlays-dir <dir>] [--registry-auth ...]` | | Check/update deployment image tags |
 | `pack [--version-suffix <s>] [--no-pin] [--out <dir>] [--registry-auth ...]` | | Build the environment into a `.rivet` package (CLI-only) |
 | `publish [file] [--version-suffix <s>] [--no-pin] [--out <dir>]` | | Upload a package to Warehouse, packing the environment first if no file is given (CLI-only) |
@@ -135,6 +138,43 @@ Overlay values may reference variables from the environment's own `.env` (`overl
 ### Secrets on disk
 
 Rendering writes plaintext: a `secret`'s `string_data` lands in `manifests/<env>-manifests.yaml` as typed. A manifest that carries a Secret — including one emitted through `raw` — is therefore written `0600`, readable only by the user who rendered it; manifests without Secrets keep the usual mode. File permissions protect against other users on the machine and do nothing against `git add -A`, so riveter also writes `manifests/.gitignore` ignoring everything in the directory (an existing `.gitignore` there is left alone). Prefer `env_refs` pointing at a Secret managed outside riveter over putting live credentials in an overlay.
+
+### Validating custom resources
+
+`kubectl apply` checks a custom resource against its CRD's schema only when it arrives, so a typo in a `Certificate` or an `IngressRoute` surfaces after the rest of an overlay has already been applied. `riveter validate` finds it first:
+
+```
+$ riveter validate
+error certificate/api-tls: spec: unknown field `dnsNmaes` (did you mean `dnsNames`?)
+error ingressroute/web: spec.routes[0]: "match" is a required property
+ok    4 resource(s) satisfy their schema
+info  built-in kinds are not checked: deployment x3, service x2
+Error: 2 resource(s) failed validation
+```
+
+It renders the environment in memory (nothing is written to `manifests/`, nothing reaches a cluster) and checks each resource whose `apiVersion`/`kind` has a schema held. `raw` resources are checked the same way, by what they render to. It exits non-zero if anything failed. Targets and `--scope` work as they do for `render` (scope defaults to `all`), and `--file <path>` (`-` for standard input) checks the documents in files instead, which is how to check a live cluster:
+
+```bash
+kubectl get certificates -A -o yaml | riveter validate --file -
+```
+
+**What counts as an error**, following what the API server does with a structural schema: a wrong type, a missing `required` field, a value outside an `enum` or a `minimum`, an `apiVersion` the CRD does not serve (the error lists the ones it does) - and **an unknown field**, as `kubectl`'s strict field validation reports it. A single unknown field gets a "did you mean" when another field of the same object is close in spelling (a swap of two letters counts as one edit, so `mathc` finds `match`).
+
+**What is checked against.** cert-manager (`Certificate`, `Issuer`, `ClusterIssuer`), Traefik (`IngressRoute`, `Middleware`) and Gateway API (`Gateway`, `HTTPRoute`) - the CRDs riveter has templates for - are compiled into the binary. `riveter schemas fetch` reads schemas from a cluster's CRDs into a cache directory (`$RIVETER_SCHEMA_DIR`, else `$XDG_CACHE_HOME/riveter/schemas`, else `~/.cache/riveter/schemas`), and a cached schema takes precedence over a bundled one, so after upgrading a CRD, fetch again:
+
+```bash
+riveter schemas list                          # what is held, and from where
+riveter schemas fetch                         # refresh the kinds riveter templates
+riveter schemas fetch --crd widgets.example.io
+riveter schemas fetch --all                   # every CRD in the cluster, for raw resources
+riveter schemas fetch --context staging       # a kubectl context other than the current one
+```
+
+The bundle is produced by that same command, so there is one code path: after a cert-manager, Traefik or Gateway API upgrade, `riveter schemas fetch --output cli/riveter/src/schemas` regenerates it. Descriptions and examples are stripped on the way in, which is most of a CRD's size (the whole bundle is about 130 KB).
+
+**Kinds with no schema are counted, not failed.** Built-in kinds (`Deployment`, `Service`, `Ingress`, ...) get a quiet note; a kind from some other group gets a warning naming it and how to fetch its schema. Built-in kinds are out of scope here: this checks custom resources.
+
+**Limits.** CEL rules a CRD carries (`x-kubernetes-validations`, 176 of them in the bundled Gateway API schemas) cannot be evaluated; `schemas list` shows how many each schema holds. `format` is not checked. An unknown field is an error even inside a schema that would merely prune it, as the strict validation `kubectl` applies by default would. And `validate` renders with the overlay's own `.env`, as `render` does, so it needs those variables: it cannot run in a CI job that has no `.env`, which is why `pack`, which does not render, is what a pipeline's check stage runs.
 
 ### Checking for image updates
 
@@ -315,5 +355,9 @@ kubeconform -strict -ignore-missing-schemas cli/riveter/tests/golden/*.expected.
 None of that proves the real stack agrees, so the package commands were also run by hand against a real Warehouse on real Postgres (migration applied through Foundry): pack, publish, a `409` on republish, `remote`, a byte-identical pull, and an install whose `kubectl` was a stub that recorded the manifest it was given. That is where the foreign key on `uploaded_by` showed up - an auth-less test publisher is `admin`, but a CI client's subject is not a user at all - and where the incomplete stamping did. Neither could have been found with the in-memory database and a mocked server.
 
 `tests/unit/prune_tests.rs` pins what prune calls an orphan, against the exact listing the cluster printed when the bug showed: owned objects and a selecting Service's `Endpoints` are never orphans, a selectorless Service's `Endpoints` and a hand-made `Certificate` still are, and a forge-shaped namespace of certificates, slices and endpoints around two stale Jobs yields only the Jobs. `repl_tests.rs` runs the same through `find_orphans` with a fake `kubectl`.
+
+`tests/unit/schema_tests.rs` checks the validator against a small CRD of its own (every kind of error, each served version against its own schema, the suggestion rules, a field called `default` or `title` surviving the stripping, `nullable`/int-or-string/closed-object normalisation, combinator branches left open, the cache beating the bundle) and against the **real** bundled schemas. `schema_cmd_tests.rs` covers documents and lists, `fetch` against a stand-in `kubectl` (what it asks for, what it writes, what it does when kubectl fails or returns nothing), validating an environment end to end - including that it writes nothing - and one test that renders every golden fixture and validates what riveter's own templates emit against the real CRD schemas, which is what would notice a template drifting from a CRD.
+
+None of that proves the schemas agree with a real cluster, so the validator was also run over every custom resource in it - 11 Certificates, 2 ClusterIssuers, 11 IngressRoutes and 6 Middlewares, `status` blocks included - and accepted all 30, then given deliberately broken ones (a typo, a wrong type, a missing required field, a bad enum, an unserved version, a nested typo) and caught each. The first check is the one that matters: a validator that rejects valid objects would be worse than none.
 
 [Home](../README.md)

@@ -11,6 +11,7 @@ use riveter::repl::{
     WaitPolicy, describe, kubectl_apply, kubectl_delete, kubectl_diff, note_skipped, ok,
     print_resource_list, prune, repl, report_prune, warn,
 };
+use riveter::schema_cmd::{schemas_command, validate_env, validate_files};
 
 // One match arm per subcommand, each a couple of lines that delegate straight
 // into `riveter::{render,repl,env}` - splitting it up would just add
@@ -179,6 +180,23 @@ fn main() -> Result<()> {
             scope,
             targets: &targets,
         }),
+        Some(Cmd::Validate {
+            scope,
+            files,
+            targets,
+        }) => {
+            if files.is_empty() {
+                let env = resolve_env(cli.env.as_deref())?;
+                validate_env(&env, map_apply_scope(scope), &Selector::parse(&targets)?)
+            } else {
+                anyhow::ensure!(
+                    targets.is_empty(),
+                    "targets select resources of an environment; with --file there is none"
+                );
+                validate_files(&files)
+            }
+        }
+        Some(Cmd::Schemas { cmd }) => schemas_command(&cmd),
         Some(Cmd::Remote { cmd }) => remote_command(&cmd),
         Some(Cmd::Help { command }) => print_help(command.as_deref()),
         Some(Cmd::Repl) | None => repl(),

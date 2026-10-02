@@ -238,6 +238,61 @@ pub const COMMANDS: &[CommandHelp] = &[
         targets: false,
     },
     CommandHelp {
+        name: "validate",
+        surface: Surface::Both,
+        aliases: &[],
+        usage: "[options] [target...]",
+        summary: "Check custom resources against their CRD schemas",
+        detail: "Renders the environment in memory and checks every resource whose kind has\n\
+                 a schema held, the way the API server will: an unknown or misspelt field is\n\
+                 an error (with a suggestion), as are wrong types, missing required fields\n\
+                 and values outside an enum. cert-manager, Traefik and Gateway API schemas\n\
+                 ship in the binary; `schemas fetch` adds more. Kinds with no schema are\n\
+                 counted, not failed. Nothing is sent to a cluster, and CEL rules a CRD carries\n\
+                 are not evaluated. Exits non-zero if anything failed.",
+        subcommands: &[],
+        options: &[
+            ("--scope <scope>", SCOPE_ALL),
+            (
+                "--file <file>",
+                "CLI only: check files instead (`-` is stdin)",
+            ),
+        ],
+        examples: &[
+            ("validate", "every resource of the environment"),
+            ("validate certificate", "just the certificates"),
+        ],
+        targets: true,
+    },
+    CommandHelp {
+        name: "schemas",
+        surface: Surface::Cli,
+        aliases: &[],
+        usage: "<list|fetch>",
+        summary: "Manage the CRD schemas validate uses",
+        detail: "Schemas are read from a cluster's CRDs once and kept in a cache directory\n\
+                 ($RIVETER_SCHEMA_DIR, else ~/.cache/riveter/schemas), where they take\n\
+                 precedence over the ones in the binary. After upgrading a CRD, fetch again.",
+        subcommands: &[
+            ("list", "What is held, and from where"),
+            ("fetch", "Read schemas from a cluster"),
+        ],
+        options: &[
+            ("--crd <name>", "fetch: one CRD; repeatable"),
+            ("--all", "fetch: every CRD in the cluster"),
+            (
+                "--context <ctx>",
+                "fetch: a kubectl context other than the current",
+            ),
+            ("--output <dir>", "fetch: write here instead of the cache"),
+        ],
+        examples: &[
+            ("schemas fetch", "refresh the kinds riveter templates"),
+            ("schemas fetch --all", "every CRD, for raw resources"),
+        ],
+        targets: false,
+    },
+    CommandHelp {
         name: "pack",
         surface: Surface::Cli,
         aliases: &[],
