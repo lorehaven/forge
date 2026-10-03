@@ -1,4 +1,4 @@
-use riveter::render::strip_empty_lines;
+use riveter::render::{emit_manifest, strip_empty_lines};
 
 #[test]
 fn test_strip_empty_lines() {
@@ -470,4 +470,47 @@ fn resource_ref_in_scope_mutable_excludes_immutable_resources() {
 fn resource_ref_in_scope_immutable_excludes_mutable_resources() {
     assert!(!resource_ref("Deployment", "web", false).in_scope(ResourceScope::Immutable));
     assert!(resource_ref("Secret", "creds", true).in_scope(ResourceScope::Immutable));
+}
+
+fn emitted(yaml: &str) -> serde_json::Value {
+    let doc: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+    let text = emit_manifest(&doc).unwrap();
+    // The way kubectl reads it is what matters, and any YAML reader accepts the JSON the helper falls back to.
+    serde_yaml::from_str(&text).unwrap()
+}
+
+#[test]
+fn an_edited_manifest_keeps_yaml11_booleans_as_strings() {
+    let doc: serde_yaml::Value =
+        serde_yaml::from_str("args: [\"--appendonly\", \"yes\", \"off\", \"N\"]\n").unwrap();
+    let text = emit_manifest(&doc).unwrap();
+    // JSON, so a YAML 1.1 reader (kubectl) cannot read the bare word as a boolean.
+    assert!(
+        text.contains("\"yes\"") && text.contains("\"off\""),
+        "{text}"
+    );
+    assert_eq!(emitted("args: [\"yes\"]\n")["args"][0], "yes");
+}
+
+#[test]
+fn an_edited_manifest_keeps_digit_strings_that_yaml11_reads_as_numbers() {
+    for text in ["0755", "1:30", "1_000"] {
+        let value = emitted(&format!("mode: \"{text}\"\n"));
+        assert_eq!(value["mode"], text);
+    }
+}
+
+#[test]
+fn an_unambiguous_manifest_stays_yaml() {
+    let doc: serde_yaml::Value = serde_yaml::from_str("a: b\nlist: [one, two]\n").unwrap();
+    let text = emit_manifest(&doc).unwrap();
+    assert!(text.starts_with("a: b"), "{text}");
+}
+
+#[test]
+fn versions_and_addresses_do_not_force_json() {
+    for text in ["0.1.0+20261003074807.c81ff65", "10.0.0.1", "1.2.3", "v1"] {
+        let doc: serde_yaml::Value = serde_yaml::from_str(&format!("v: \"{text}\"\n")).unwrap();
+        assert!(emit_manifest(&doc).unwrap().starts_with("v:"), "{text}");
+    }
 }

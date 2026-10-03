@@ -802,7 +802,52 @@ fn with_config_hash(
         YamlValue::String(CONFIG_HASH_ANNOTATION.to_string()),
         YamlValue::String(rivet_package::sha256_hex(combined.as_bytes())[..16].to_string()),
     );
-    Ok(serde_yaml::to_string(&doc)?.trim().to_string())
+    emit_manifest(&doc)
+}
+
+/// Writes a manifest back out after riveter edited it.
+///
+/// `serde_yaml` writes YAML 1.2, where only `true`/`false` are booleans, so it leaves the string `"yes"` bare.
+/// kubectl reads YAML 1.1, where a bare `yes`, `on`, `off`, `n` ... is a boolean: a container argument
+/// `"yes"` reached the API as `true`. A document holding any such string (or a digit string 1.1 reads as an
+/// octal or sexagesimal number, such as `0755` or `1:30`) is written as JSON instead, which is YAML to every
+/// reader and keeps each string a string.
+pub fn emit_manifest(doc: &YamlValue) -> anyhow::Result<String> {
+    if holds_yaml11_ambiguity(doc) {
+        return Ok(serde_json::to_string_pretty(doc)?);
+    }
+    Ok(serde_yaml::to_string(doc)?.trim().to_string())
+}
+
+fn holds_yaml11_ambiguity(value: &YamlValue) -> bool {
+    match value {
+        YamlValue::String(text) => is_yaml11_ambiguous(text),
+        YamlValue::Sequence(items) => items.iter().any(holds_yaml11_ambiguity),
+        YamlValue::Mapping(map) => map
+            .iter()
+            .any(|(k, v)| holds_yaml11_ambiguity(k) || holds_yaml11_ambiguity(v)),
+        YamlValue::Tagged(tagged) => holds_yaml11_ambiguity(&tagged.value),
+        _ => false,
+    }
+}
+
+fn is_yaml11_ambiguous(text: &str) -> bool {
+    const WORDS: [&str; 6] = ["y", "n", "yes", "no", "on", "off"];
+    if WORDS.iter().any(|word| text.eq_ignore_ascii_case(word)) {
+        return true;
+    }
+    let unsigned = text.strip_prefix(['+', '-']).unwrap_or(text);
+    let digits_only = |t: &str| t.chars().all(|c| c.is_ascii_digit() || c == '_');
+    // 0755 (octal), 1_000 (underscored), 1:30 or 190:20:30.5 (sexagesimal)
+    (!unsigned.is_empty()
+        && digits_only(unsigned)
+        && unsigned.chars().any(|c| c.is_ascii_digit())
+        && (unsigned.contains('_') || (unsigned.len() > 1 && unsigned.starts_with('0'))))
+        || (unsigned.contains(':')
+            && unsigned
+                .chars()
+                .all(|c| c.is_ascii_digit() || c == ':' || c == '.')
+            && unsigned.chars().any(|c| c.is_ascii_digit()))
 }
 
 /// Sets `spec.replicas` on a rendered `Deployment` or `StatefulSet`.
@@ -824,7 +869,7 @@ fn with_replicas(kind: &str, name: &str, yaml: &str, count: u32) -> anyhow::Resu
         YamlValue::String("replicas".to_string()),
         YamlValue::Number(count.into()),
     );
-    Ok(serde_yaml::to_string(&doc)?.trim().to_string())
+    emit_manifest(&doc)
 }
 
 /// Adds `labels` and `annotations` to a rendered resource's `metadata`, theirs
@@ -873,7 +918,7 @@ fn stamp_rendered(
         );
     }
 
-    Ok(serde_yaml::to_string(&doc)?.trim().to_string())
+    emit_manifest(&doc)
 }
 
 /// What an overlay pulls in when rendered: the text it renders to (before
