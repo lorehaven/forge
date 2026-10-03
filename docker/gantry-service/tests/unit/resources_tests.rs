@@ -40,6 +40,7 @@ fn live(kind: &str, name: &str, namespace: Option<&str>, edited: bool) -> LiveRe
         version: Some("1.0.0".to_string()),
         ready: None,
         edited,
+        owned: false,
     }
 }
 
@@ -178,6 +179,28 @@ async fn resources_are_grouped_by_package_with_what_is_missing_and_what_is_hidde
             .find(|r| r.name == "sage-secret")
             .is_some_and(|r| !r.editable)
     );
+}
+
+#[tokio::test]
+async fn something_owned_by_another_object_is_not_listed_as_the_packages() {
+    let rig = rig().await;
+    // cert-manager makes a Certificate from an Ingress and copies the Ingress's labels onto it.
+    let mut derived = live("Certificate", "sage-tls", Some("ml"), false);
+    derived.owned = true;
+    rig.cluster.upsert_extra(Extra {
+        live: derived,
+        yaml: "kind: Certificate\nmetadata:\n  name: sage-tls\n".into(),
+    });
+    // A stray that nothing owns is still shown.
+    rig.cluster.upsert_extra(Extra {
+        live: live("ConfigMap", "stray", Some("ml"), false),
+        yaml: "kind: ConfigMap\nmetadata:\n  name: stray\n".into(),
+    });
+
+    let groups = actions::groups(&rig.gantry).await.unwrap();
+    let ml = groups.iter().find(|g| g.package == "ml").unwrap();
+    assert!(ml.rows.iter().all(|r| r.name != "sage-tls"));
+    assert!(ml.rows.iter().any(|r| r.name == "stray"));
 }
 
 #[tokio::test]
@@ -947,7 +970,7 @@ mod summary {
     }
 
     #[test]
-    fn an_edit_or_an_extra_or_a_newer_version_is_out_of_sync() {
+    fn an_edit_or_a_newer_version_is_out_of_sync_but_an_extra_is_not() {
         let edited = group(
             Status::Current,
             Some("2.0.0"),
@@ -959,7 +982,9 @@ mod summary {
             Some("2.0.0"),
             vec![row("ConfigMap", "c", State::Extra, None)],
         );
-        assert_eq!(extra.summary().sync, SyncState::OutOfSync);
+        // Listed (and counted), not held against the package.
+        assert_eq!(extra.summary().sync, SyncState::Synced);
+        assert_eq!(extra.summary().extra, 1);
         let behind = group(
             Status::UpdateAvailable,
             Some("1.0.0"),

@@ -51,6 +51,11 @@ pub struct LiveResource {
     /// Changed through Gantry since the package was installed (the `gantry.forge/edited` annotation).
     #[serde(default)]
     pub edited: bool,
+    /// Another object owns it (an `ownerReference`): something Kubernetes or a controller made from what
+    /// the package installed - cert-manager's Certificate for an Ingress, which copies the Ingress's labels
+    /// onto it. Not the package's own, so not listed unless the package declares it.
+    #[serde(default)]
+    pub owned: bool,
 }
 
 /// A workload (Deployment, StatefulSet or DaemonSet) a package put in the cluster, as Gantry sees it.
@@ -589,6 +594,10 @@ fn live_resource(
         version: annotations.and_then(|a| a.get(VERSION_ANNOTATION)).cloned(),
         ready,
         edited: annotations.is_some_and(|a| a.contains_key(EDITED_ANNOTATION)),
+        owned: meta
+            .owner_references
+            .as_ref()
+            .is_some_and(|owners| !owners.is_empty()),
     })
 }
 
@@ -685,6 +694,7 @@ fn workload_live(workload: &Workload, edited: bool) -> LiveResource {
         version: workload.version.clone(),
         ready: Some(format!("{}/{}", workload.ready, workload.desired)),
         edited,
+        owned: false,
     }
 }
 

@@ -227,6 +227,7 @@ impl SimulatedExecutor {
                                 version: Some(version.clone()),
                                 ready: None,
                                 edited: false,
+                                owned: false,
                             },
                             yaml,
                         });

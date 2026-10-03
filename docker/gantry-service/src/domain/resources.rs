@@ -97,7 +97,8 @@ pub enum SyncState {
     NotInstalled,
     /// Something the package declares is not in the cluster (deleted, or stopped).
     Missing,
-    /// Everything is there, but something was edited or added by hand, or the package has a newer version.
+    /// Everything is there, but something was edited, or the package has a newer version. Resources the
+    /// package does not declare do not count: they are listed, not held against it.
     OutOfSync,
     /// What the package declares is what is running.
     Synced,
@@ -151,10 +152,7 @@ impl Group {
             SyncState::Missing
         } else if self.status == Status::Unlisted {
             SyncState::Unlisted
-        } else if edited > 0
-            || extra > 0
-            || matches!(self.status, Status::UpdateAvailable | Status::Mixed)
-        {
+        } else if edited > 0 || matches!(self.status, Status::UpdateAvailable | Status::Mixed) {
             SyncState::OutOfSync
         } else {
             SyncState::Synced
@@ -287,7 +285,9 @@ pub fn group(
                     &resource.name,
                     resource.namespace.as_deref(),
                 );
-                if seen.contains(&k) {
+                // Declared ones were listed above; a derived one (a Certificate cert-manager made from an
+                // Ingress, which copied its labels) is not something the package put there.
+                if seen.contains(&k) || resource.owned {
                     continue;
                 }
                 rows.push(Row {

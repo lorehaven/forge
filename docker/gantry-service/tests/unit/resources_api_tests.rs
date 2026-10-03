@@ -38,6 +38,7 @@ async fn rig(auth: bool) -> support::Rig {
             version: Some("1.0.0".into()),
             ready: None,
             edited: false,
+            owned: false,
         },
         yaml: "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: sage-config\n  namespace: ml\ndata:\n  LEVEL: info\n".into(),
     });
