@@ -402,11 +402,19 @@ pub const COMMANDS: &[CommandHelp] = &[
                 "--version-suffix <suffix>",
                 "When packing: append +<suffix>",
             ),
+            (
+                "--skip-unchanged",
+                "Publish nothing if the newest version has the same content",
+            ),
             ("--no-pin", "When packing: leave image tags as written"),
             ("--out <dir>", "When packing: where to write the package"),
         ],
         examples: &[
             ("publish", "pack the environment and upload it"),
+            (
+                "publish --skip-unchanged --version-suffix {timestamp}.{sha}",
+                "a pipeline step: a new version only when something changed",
+            ),
             (
                 "publish packages/forge-0.4.0.rivet",
                 "upload an existing file",
@@ -435,8 +443,9 @@ pub const COMMANDS: &[CommandHelp] = &[
         summary: "Fetch a package, render it and apply it",
         detail: "The package is name, name@version, or the path of a .rivet file. It is\n\
                  unpacked to a scratch directory and rendered and applied exactly as `apply`\n\
-                 would, with each resource labelled riveter.forge/package and annotated with\n\
-                 its version. Variables come from the package's values.toml, then --env-file,\n\
+                 would, but over every resource - ServiceAccounts, Ingresses and the namespace\n\
+                 included, since a package is installed whole - with each one labelled\n\
+                 riveter.forge/package and annotated with its version. Variables come from the package's values.toml, then --env-file,\n\
                  then --set; the working directory's .env is not read.",
         subcommands: &[],
         options: &[
@@ -448,7 +457,7 @@ pub const COMMANDS: &[CommandHelp] = &[
             ("--dry-run", "Pass --dry-run=client to kubectl"),
             ("--no-wait", "Return once kubectl accepts the manifests"),
             ("--timeout <seconds>", "Per-rollout wait, default 300"),
-            ("--scope <scope>", SCOPE_MUTABLE),
+            ("--scope <scope>", SCOPE_ALL),
         ],
         examples: &[
             (

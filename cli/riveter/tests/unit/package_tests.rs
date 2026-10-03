@@ -4,8 +4,8 @@ use riveter::env::{self, Workspace, overlay_dir, with_workspace};
 use riveter::image_updates::ImageRef;
 use riveter::package::{
     DigestResolver, InstallValues, PACKAGE_LABEL, PackOptions, VERSION_ANNOTATION,
-    check_requirements, expand_suffix, literal_secret_values, merge_values, pack, parse_values,
-    prepare_install, read_file, with_build_suffix,
+    check_requirements, expand_suffix, fingerprint, literal_secret_values, merge_values, pack,
+    parse_values, prepare_install, read_file, with_build_suffix,
 };
 use riveter::package_cmd::{PackageRef, parse_package_ref};
 use riveter::render::{ResourceScope, Selector, generate_manifests_selected};
@@ -156,6 +156,53 @@ fn packing_is_reproducible() {
     assert_eq!(
         fs::read(first.path).unwrap(),
         fs::read(second.path).unwrap()
+    );
+}
+
+#[test]
+fn a_fingerprint_ignores_the_build_metadata_and_nothing_else() {
+    let dir = overlay();
+    let root = dir.path().join("overlays");
+    let packed = |suffix: Option<&'static str>, out: &str| {
+        let packed = pack(
+            &PackOptions {
+                version_suffix: suffix,
+                ..opts(&root, &dir.path().join(out))
+            },
+            None,
+        )
+        .unwrap();
+        read_back(&packed.path)
+    };
+
+    // Two builds of the same content, at different times, are one package.
+    let first = fingerprint(&packed(Some("20260101.aaa"), "a")).unwrap();
+    let later = fingerprint(&packed(Some("20260202.bbb"), "b")).unwrap();
+    let bare = fingerprint(&packed(None, "c")).unwrap();
+    assert_eq!(first, later);
+    assert_eq!(first, bare);
+
+    // A changed file is another.
+    let overlay_file = root.join("demo").join("overlay.yaml");
+    let text = fs::read_to_string(&overlay_file).unwrap();
+    fs::write(&overlay_file, format!("{text}\n# a change\n")).unwrap();
+    assert_ne!(
+        first,
+        fingerprint(&packed(Some("20260303.ccc"), "d")).unwrap()
+    );
+    fs::write(&overlay_file, text).unwrap();
+    assert_eq!(
+        first,
+        fingerprint(&packed(Some("20260404.ddd"), "e")).unwrap()
+    );
+
+    // So is a new base version: the author asked for a release.
+    let manifest = root.join("demo").join("rivet.toml");
+    let toml = fs::read_to_string(&manifest).unwrap();
+    fs::write(&manifest, toml.replace("0.4.0", "0.5.0")).unwrap();
+    assert_ne!(
+        first,
+        fingerprint(&packed(Some("20260505.eee"), "f")).unwrap()
     );
 }
 

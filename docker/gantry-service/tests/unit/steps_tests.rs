@@ -63,6 +63,9 @@ fn an_install_is_a_riveter_command_on_the_downloaded_file_with_its_values_mounte
         [
             "install",
             "/work/packages/forge-1.2.3+b1.rivet",
+            // Whole: a package's ServiceAccounts and Ingresses are part of an install.
+            "--scope",
+            "all",
             "--env-file",
             "/values/gantry-values-forge/env",
             "--inventory",

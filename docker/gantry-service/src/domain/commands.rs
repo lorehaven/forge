@@ -275,6 +275,12 @@ fn install_args(ctx: &Context, package: &str, version: &str, secret: Option<&str
         package_file(&ctx.packages_dir, package, version)
             .display()
             .to_string(),
+        // A package is installed whole: ServiceAccounts, Ingresses and the namespace are marked immutable
+        // for a routine `apply`, and an install that skipped them would leave them unlabelled (so shown
+        // missing here) and never roll out a change to them. Explicit, so a riveter that defaults
+        // otherwise cannot change what an operation does.
+        "--scope".to_string(),
+        "all".to_string(),
     ];
     if let Some(secret) = secret {
         args.push("--env-file".into());

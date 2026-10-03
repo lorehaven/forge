@@ -142,6 +142,7 @@ fn main() -> Result<()> {
         Some(Cmd::Publish {
             file,
             version_suffix,
+            skip_unchanged,
             no_pin,
             out,
             registry_auth,
@@ -154,6 +155,7 @@ fn main() -> Result<()> {
                 env.as_deref(),
                 file.as_deref(),
                 version_suffix.as_deref(),
+                skip_unchanged,
                 no_pin,
                 &out,
                 &registry_auth,

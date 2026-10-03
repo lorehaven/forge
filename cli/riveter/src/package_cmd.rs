@@ -137,6 +137,7 @@ pub fn publish_command(
     env: Option<&str>,
     file: Option<&Path>,
     version_suffix: Option<&str>,
+    skip_unchanged: bool,
     no_pin: bool,
     out: &Path,
     registry_auth: &[String],
@@ -151,6 +152,17 @@ pub fn publish_command(
     };
 
     let package = read_file(&path)?;
+    if skip_unchanged && let Some(latest) = registry.latest(&package.manifest.package.name)? {
+        let published = Package::read(std::io::Cursor::new(&latest.bytes), &Limits::default())
+            .with_context(|| format!("{} is not a valid package", latest.version))?;
+        if crate::package::fingerprint(&published)? == crate::package::fingerprint(&package)? {
+            ok(&format!(
+                "{} is unchanged since {}; nothing published",
+                package.manifest.package.name, latest.version
+            ));
+            return Ok(());
+        }
+    }
     let bytes =
         std::fs::read(&path).with_context(|| format!("failed to read {}", path.display()))?;
     let record = registry.publish(

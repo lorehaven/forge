@@ -145,6 +145,9 @@ pub enum Cmd {
         /// Build metadata appended to the version when packing; takes `{timestamp}` and `{sha}`
         #[arg(long, value_name = "SUFFIX")]
         version_suffix: Option<String>,
+        /// Publish nothing when the newest published version has the same content (ignoring its build metadata)
+        #[arg(long)]
+        skip_unchanged: bool,
         /// Do not pin image tags to digests when packing
         #[arg(long)]
         no_pin: bool,
@@ -198,7 +201,7 @@ pub enum Cmd {
         /// Seconds to wait for each rollout before giving up
         #[arg(long, value_name = "SECONDS", default_value_t = 300)]
         timeout: u64,
-        #[arg(long, value_enum, default_value_t = ApplyScope::Mutable, help = SCOPE_HELP)]
+        #[arg(long, value_enum, default_value_t = ApplyScope::All, help = SCOPE_HELP)]
         scope: ApplyScope,
         #[arg(value_name = "TARGET", help = TARGET_HELP)]
         targets: Vec<String>,

@@ -185,6 +185,33 @@ pub fn pack(opts: &PackOptions<'_>, resolver: Option<&dyn DigestResolver>) -> Re
     })
 }
 
+/// What a package says, apart from when it was built.
+///
+/// The same overlay packed twice, or after a commit that touched nothing in it, has the same fingerprint,
+/// while a changed file, pinned digest, value or base version has another. The build metadata (`+<timestamp>.<sha>`), `SHA256SUMS` and the order or
+/// timestamps inside the archive are left out - none of them is content.
+///
+/// What `publish --skip-unchanged` compares, so a pipeline run on every push does not publish a new
+/// version of every package each time.
+pub fn fingerprint(package: &Package) -> Result<String> {
+    let mut manifest = package.manifest.clone();
+    if let Ok(mut version) = semver::Version::parse(&manifest.package.version) {
+        version.build = semver::BuildMetadata::EMPTY;
+        manifest.package.version = version.to_string();
+    }
+    let mut text = serde_json::to_string(&manifest).context("could not read the manifest")?;
+    for (path, bytes) in &package.files {
+        if path == "SHA256SUMS" || path == rivet_package::MANIFEST_FILE {
+            continue;
+        }
+        text.push('\n');
+        text.push_str(path);
+        text.push(' ');
+        text.push_str(&rivet_package::sha256_hex(bytes));
+    }
+    Ok(rivet_package::sha256_hex(text.as_bytes()))
+}
+
 /// A package error with the likely fix attached where there is one.
 fn explain(err: PackageError) -> anyhow::Error {
     match err {

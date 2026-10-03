@@ -188,6 +188,15 @@ impl Registry {
         })
     }
 
+    /// The newest published version of `name`, or `None` if Warehouse has never heard of it.
+    pub fn latest(&self, name: &str) -> Result<Option<Fetched>> {
+        match self.fetch(name, "latest") {
+            Ok(fetched) => Ok(Some(fetched)),
+            Err(error) if error.to_string().starts_with("not found") => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
     /// Every version of one package, newest first.
     pub fn versions(&self, name: &str) -> Result<Vec<RemotePackage>> {
         self.send(self.client.get(self.url(&format!("/{name}"))))?
