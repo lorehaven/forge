@@ -145,11 +145,11 @@ async fn a_bad_action_or_an_already_stopped_deployment_is_refused() {
 }
 
 #[tokio::test]
-async fn the_home_page_offers_start_on_a_stopped_deployment_and_stop_on_a_running_one() {
+async fn the_application_page_offers_start_on_a_stopped_deployment_and_stop_on_a_running_one() {
     let rig = ml(false).await;
     let html = support::body_text(
         rig.app
-            .call(support::req(Method::GET, "/ui/home", &rig.container))
+            .call(support::req(Method::GET, "/ui/apps/ml", &rig.container))
             .await,
     )
     .await;

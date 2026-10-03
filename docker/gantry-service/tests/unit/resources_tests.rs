@@ -895,3 +895,169 @@ fn edit_and_delete_steps_are_validated_like_every_other() {
         .contains("allow-list")
     );
 }
+
+mod summary {
+    use gantry_service::domain::resources::{Group, Row, State, SyncState};
+    use gantry_service::domain::targets::Status;
+
+    fn row(kind: &str, name: &str, state: State, ready: Option<&str>) -> Row {
+        Row {
+            api_version: None,
+            kind: kind.to_string(),
+            name: name.to_string(),
+            namespace: None,
+            state,
+            ready: ready.map(str::to_string),
+            workload: kind == "Deployment",
+            editable: true,
+        }
+    }
+
+    fn group(status: Status, installed: Option<&str>, rows: Vec<Row>) -> Group {
+        Group {
+            package: "demo".to_string(),
+            description: None,
+            installed: installed.map(str::to_string),
+            offered: Some("2.0.0".to_string()),
+            status,
+            inventoried: true,
+            rows,
+        }
+    }
+
+    #[test]
+    fn nothing_in_the_cluster_is_not_installed() {
+        let g = group(Status::NotInstalled, None, vec![]);
+        assert_eq!(g.summary().sync, SyncState::NotInstalled);
+    }
+
+    #[test]
+    fn a_missing_resource_makes_the_application_missing_before_anything_else() {
+        let g = group(
+            Status::UpdateAvailable,
+            Some("1.0.0"),
+            vec![
+                row("Deployment", "api", State::Edited, Some("1/1")),
+                row("Service", "api", State::Missing, None),
+            ],
+        );
+        let summary = g.summary();
+        assert_eq!(summary.sync, SyncState::Missing);
+        assert_eq!((summary.missing, summary.edited, summary.total), (1, 1, 2));
+    }
+
+    #[test]
+    fn an_edit_or_an_extra_or_a_newer_version_is_out_of_sync() {
+        let edited = group(
+            Status::Current,
+            Some("2.0.0"),
+            vec![row("ConfigMap", "c", State::Edited, None)],
+        );
+        assert_eq!(edited.summary().sync, SyncState::OutOfSync);
+        let extra = group(
+            Status::Current,
+            Some("2.0.0"),
+            vec![row("ConfigMap", "c", State::Extra, None)],
+        );
+        assert_eq!(extra.summary().sync, SyncState::OutOfSync);
+        let behind = group(
+            Status::UpdateAvailable,
+            Some("1.0.0"),
+            vec![row("ConfigMap", "c", State::Synced, None)],
+        );
+        let summary = behind.summary();
+        assert_eq!(summary.sync, SyncState::OutOfSync);
+        assert_eq!(summary.update_to.as_deref(), Some("2.0.0"));
+    }
+
+    #[test]
+    fn a_secret_that_is_not_looked_at_does_not_spoil_synced() {
+        let g = group(
+            Status::Current,
+            Some("2.0.0"),
+            vec![
+                row("Deployment", "api", State::Synced, Some("1/1")),
+                row("Secret", "s", State::Hidden, None),
+            ],
+        );
+        let summary = g.summary();
+        assert_eq!(summary.sync, SyncState::Synced);
+        assert_eq!(
+            (summary.synced, summary.workloads, summary.not_ready),
+            (2, 1, 0)
+        );
+    }
+
+    #[test]
+    fn a_workload_with_fewer_ready_than_desired_is_counted_not_ready() {
+        let g = group(
+            Status::Current,
+            Some("2.0.0"),
+            vec![
+                row("Deployment", "a", State::Synced, Some("0/1")),
+                row("Deployment", "b", State::Synced, Some("2/2")),
+                row("Deployment", "c", State::Missing, None),
+            ],
+        );
+        assert_eq!(g.summary().not_ready, 1);
+    }
+
+    #[test]
+    fn running_but_unpublished_is_unlisted() {
+        let g = group(
+            Status::Unlisted,
+            Some("1.0.0"),
+            vec![row("Deployment", "a", State::Synced, Some("1/1"))],
+        );
+        assert_eq!(g.summary().sync, SyncState::Unlisted);
+    }
+
+    #[test]
+    fn the_kinds_are_listed_once_each() {
+        let g = group(
+            Status::Current,
+            Some("2.0.0"),
+            vec![
+                row("Service", "a", State::Synced, None),
+                row("Deployment", "a", State::Synced, None),
+                row("Service", "b", State::Synced, None),
+            ],
+        );
+        assert_eq!(g.kinds(), vec!["Deployment", "Service"]);
+    }
+}
+
+#[test]
+fn rows_filter_by_kind_state_and_a_piece_of_the_name() {
+    use gantry_service::domain::resources::{Group, Row};
+    use gantry_service::domain::targets::Status;
+    let row = |kind: &str, name: &str, state| Row {
+        api_version: None,
+        kind: kind.to_string(),
+        name: name.to_string(),
+        namespace: None,
+        state,
+        ready: None,
+        workload: false,
+        editable: true,
+    };
+    let group = Group {
+        package: "demo".to_string(),
+        description: None,
+        installed: None,
+        offered: None,
+        status: Status::Current,
+        inventoried: true,
+        rows: vec![
+            row("Service", "Api", State::Synced),
+            row("Deployment", "api", State::Edited),
+            row("Deployment", "worker", State::Missing),
+        ],
+    };
+    assert_eq!(group.filtered("", "", "").len(), 3);
+    assert_eq!(group.filtered("deployment", "", "").len(), 2);
+    assert_eq!(group.filtered("", "missing", "").len(), 1);
+    assert_eq!(group.filtered("", "", " API ").len(), 2);
+    assert_eq!(group.filtered("Deployment", "edited", "api").len(), 1);
+    assert!(group.filtered("Secret", "", "").is_empty());
+}

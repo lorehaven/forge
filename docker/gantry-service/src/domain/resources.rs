@@ -7,7 +7,7 @@
 
 use crate::domain::cluster::LiveResource;
 use crate::domain::operation::Inventory;
-use crate::domain::targets::Target;
+use crate::domain::targets::{Status, Target};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -37,6 +37,30 @@ pub enum State {
     Hidden,
 }
 
+impl State {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Synced => "synced",
+            Self::Edited => "edited",
+            Self::Missing => "missing",
+            Self::Extra => "extra",
+            Self::Hidden => "hidden",
+        }
+    }
+}
+
+impl SyncState {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::NotInstalled => "not_installed",
+            Self::Missing => "missing",
+            Self::OutOfSync => "out_of_sync",
+            Self::Synced => "synced",
+            Self::Unlisted => "unlisted",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct Row {
     #[serde(rename = "apiVersion")]
@@ -54,6 +78,7 @@ pub struct Row {
 #[derive(Clone, Debug, Serialize)]
 pub struct Group {
     pub package: String,
+    pub description: Option<String>,
     /// What the package's own record of itself says is installed.
     pub installed: Option<String>,
     pub offered: Option<String>,
@@ -61,6 +86,112 @@ pub struct Group {
     /// Whether an inventory exists, i.e. whether missing resources can be known about at all.
     pub inventoried: bool,
     pub rows: Vec<Row>,
+}
+
+/// An application's place against what its package says, as Argo CD puts it: is the cluster what the
+/// package declares?
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SyncState {
+    /// Published, nothing of it in the cluster.
+    NotInstalled,
+    /// Something the package declares is not in the cluster (deleted, or stopped).
+    Missing,
+    /// Everything is there, but something was edited or added by hand, or the package has a newer version.
+    OutOfSync,
+    /// What the package declares is what is running.
+    Synced,
+    /// Running, but no longer published.
+    Unlisted,
+}
+
+/// What a card or a header says about one application, counted from its rows.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Summary {
+    pub sync: SyncState,
+    pub total: usize,
+    pub synced: usize,
+    pub edited: usize,
+    pub missing: usize,
+    pub extra: usize,
+    pub workloads: usize,
+    /// Workloads that are present and report fewer ready replicas than desired.
+    pub not_ready: usize,
+    /// The newer version the package offers, when the running one is behind.
+    pub update_to: Option<String>,
+}
+
+impl Group {
+    pub fn summary(&self) -> Summary {
+        let count = |state: State| self.rows.iter().filter(|r| r.state == state).count();
+        let missing = count(State::Missing);
+        let edited = count(State::Edited);
+        let extra = count(State::Extra);
+        let present = self.rows.iter().filter(|r| r.state != State::Missing);
+        let not_ready = present
+            .clone()
+            .filter(|r| r.workload)
+            .filter(|r| {
+                r.ready
+                    .as_deref()
+                    .and_then(|ready| ready.split_once('/'))
+                    .and_then(|(have, want)| {
+                        Some((have.parse::<i32>().ok()?, want.parse::<i32>().ok()?))
+                    })
+                    .is_some_and(|(have, want)| have < want)
+            })
+            .count();
+        let update_to = (self.status == Status::UpdateAvailable)
+            .then(|| self.offered.clone())
+            .flatten();
+
+        let sync = if present.count() == 0 && self.installed.is_none() {
+            SyncState::NotInstalled
+        } else if missing > 0 {
+            SyncState::Missing
+        } else if self.status == Status::Unlisted {
+            SyncState::Unlisted
+        } else if edited > 0
+            || extra > 0
+            || matches!(self.status, Status::UpdateAvailable | Status::Mixed)
+        {
+            SyncState::OutOfSync
+        } else {
+            SyncState::Synced
+        };
+
+        Summary {
+            sync,
+            total: self.rows.len(),
+            synced: count(State::Synced) + count(State::Hidden),
+            edited,
+            missing,
+            extra,
+            workloads: self.rows.iter().filter(|r| r.workload).count(),
+            not_ready,
+            update_to,
+        }
+    }
+
+    /// The rows that pass a filter: an empty `kind` or `state` matches everything, and `query` is a
+    /// case-insensitive piece of the name.
+    pub fn filtered(&self, kind: &str, state: &str, query: &str) -> Vec<&Row> {
+        let query = query.trim().to_ascii_lowercase();
+        self.rows
+            .iter()
+            .filter(|r| kind.is_empty() || r.kind.eq_ignore_ascii_case(kind))
+            .filter(|r| state.is_empty() || r.state.as_str() == state)
+            .filter(|r| query.is_empty() || r.name.to_ascii_lowercase().contains(&query))
+            .collect()
+    }
+
+    /// The kinds present, for a filter.
+    pub fn kinds(&self) -> Vec<String> {
+        let mut kinds: Vec<String> = self.rows.iter().map(|r| r.kind.clone()).collect();
+        kinds.sort_unstable();
+        kinds.dedup();
+        kinds
+    }
 }
 
 pub fn is_workload(kind: &str) -> bool {
@@ -184,6 +315,7 @@ pub fn group(
 
             Group {
                 package: package.to_string(),
+                description: target.and_then(|t| t.description.clone()),
                 installed: target
                     .and_then(|t| t.installed.clone())
                     .or_else(|| inventory.map(|i| i.version.clone())),

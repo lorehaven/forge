@@ -1,3 +1,4 @@
+pub mod apps;
 pub mod auth;
 pub mod deployments;
 pub mod home;
@@ -7,6 +8,7 @@ pub mod resources;
 pub mod targets;
 
 pub(super) fn register_routes() {
+    apps::register_routes();
     auth::register_routes();
     deployments::register_routes();
     home::register_routes();

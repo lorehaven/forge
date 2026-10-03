@@ -268,10 +268,91 @@ fn gantry_rules() -> Vec<CssRule> {
             .property("line-height", "1.5")
             .property("tab-size", "2"),
         dot("synced", "#3fb950"),
+        dot("out_of_sync", "#d29922"),
         dot("edited", "#d29922"),
         dot("missing", "#f85149"),
         dot("extra", "#a371f7"),
         dot("hidden", "#8b949e"),
+        // The home page: a card per application.
+        CssRule::new(".gt-grid")
+            .property("display", "grid")
+            .property("grid-template-columns", "repeat(auto-fill, minmax(17rem, 1fr))")
+            .property("gap", "1rem"),
+        CssRule::new(".gt-app")
+            .property("display", "flex")
+            .property("flex-direction", "column")
+            .property("gap", "0.4rem")
+            .property("padding", "0.9rem 1.1rem")
+            .property("border", "1px solid var(--bs-gray-800, #333)")
+            .property("border-radius", "8px")
+            .property("color", "inherit")
+            .property("text-decoration", "none")
+            .property("min-height", "7.5rem")
+            .property("background", "rgba(255, 255, 255, 0.02)"),
+        CssRule::new(".gt-app:hover")
+            .property("border-color", "var(--bs-gray-600, #555)")
+            .property("background", "rgba(255, 255, 255, 0.03)"),
+        CssRule::new(".gt-app-head")
+            .property("display", "flex")
+            .property("align-items", "center")
+            .property("justify-content", "space-between")
+            .property("gap", "0.75rem"),
+        CssRule::new(".gt-app-name")
+            .property("font-size", "1.05rem")
+            .property("overflow", "hidden")
+            .property("text-overflow", "ellipsis"),
+        CssRule::new(".gt-app-version")
+            .property("margin", "0")
+            .property("font-size", "0.82rem")
+            .property("color", "var(--bs-gray-500, #888)")
+            .property("overflow", "hidden")
+            .property("text-overflow", "ellipsis")
+            .property("white-space", "nowrap"),
+        CssRule::new(".gt-update").property("color", "#d29922"),
+        CssRule::new(".gt-app-desc")
+            .property("display", "-webkit-box")
+            .property("-webkit-line-clamp", "2")
+            .property("-webkit-box-orient", "vertical")
+            .property("overflow", "hidden"),
+        CssRule::new(".gt-app-foot")
+            .property("margin-top", "auto")
+            .property("display", "flex")
+            .property("justify-content", "space-between")
+            .property("align-items", "center")
+            .property("gap", "0.5rem")
+            .property("font-size", "0.8rem"),
+        CssRule::new(".gt-app-notes")
+            .property("display", "flex")
+            .property("gap", "0.6rem")
+            .property("color", "#d29922"),
+        CssRule::new(".gt-chips")
+            .property("display", "flex")
+            .property("flex-wrap", "wrap")
+            .property("gap", "0.4rem")
+            .property("margin-right", "auto"),
+        CssRule::new(".gt-chip")
+            .property("padding", "0.2rem 0.75rem")
+            .property("border", "1px solid var(--bs-gray-700, #444)")
+            .property("border-radius", "999px")
+            .property("font-size", "0.82rem")
+            .property("color", "inherit")
+            .property("text-decoration", "none"),
+        CssRule::new(".gt-chip-active")
+            .property("background", "rgba(255, 255, 255, 0.1)")
+            .property("border-color", "var(--bs-gray-500, #888)"),
+        CssRule::new(".gt-filter")
+            .property("flex-wrap", "wrap")
+            .property("align-items", "center")
+            .property("justify-content", "flex-start")
+            .property("gap", "0.6rem"),
+        CssRule::new(".gt-filter input[type=text]").property("width", "14rem"),
+        CssRule::new(".gt-counts")
+            .property("display", "flex")
+            .property("gap", "1.1rem")
+            .property("margin", "0.4rem 0 0.9rem")
+            .property("font-size", "0.88rem"),
+        CssRule::new(".gt-count").property("color", "inherit").property("text-decoration", "none"),
+        CssRule::new(".gt-app-name").property("font-weight", "600"),
         CssRule::new(".gt-section")
             .property("margin", "1.75rem 0 0.5rem")
             .property("font-size", "0.8rem")

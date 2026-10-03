@@ -4,7 +4,8 @@ Gantry installs, upgrades, stops, starts and swaps what runs in the cluster, fro
 
 ## What it does
 
-- **Resources, grouped by package.** The home page lists every resource of every kind each package put in the cluster (Deployments, Services, Ingresses, ConfigMaps, RBAC, CRDs ...), found by the `riveter.forge/package` label, beside what the package *declares* - so a resource that was deleted still shows, as `missing`, and can be applied again. States: `synced`, `edited` (changed from here since the install), `missing`, `not in package`, and `secret` (never looked at).
+- **Applications.** The home page is one card per package, Argo CD style: its sync state (`in sync`, `out of sync`, `missing`, `not installed`, `unpublished`), the running version and the newer one on offer, and counts of what is missing, edited or not ready. Filter by sync state or name; applications needing attention come first. A card opens the application's own page.
+- **Resources, grouped by package.** An application's page (`/ui/apps/<package>`) lists every resource of every kind each package put in the cluster (Deployments, Services, Ingresses, ConfigMaps, RBAC, CRDs ...), found by the `riveter.forge/package` label, beside what the package *declares* - so a resource that was deleted still shows, as `missing`, and can be applied again. States: `synced`, `edited` (changed from here since the install), `missing`, `not in package`, and `secret` (never looked at).
 - **Direct actions, no plan step.** *Edit* (live YAML), *Delete*, *Apply* (from the package), *Upgrade* and a deployment's *Start*/*Stop* run when clicked. Destructive ones ask first, naming the thing. The operation they create, with its log, is the record. (The API still has plan → confirm for anything that wants to look before running.)
 - **Stop is delete, start is apply - the Argo way.** Nothing is scaled to zero and left half alive. A stopped deployment's workloads are gone from the cluster, and Gantry can bring them back because it remembers what the package declares.
 - **Targets** - every package Warehouse publishes, beside the version the cluster runs: installed, newest published, and a status - `not_installed`, `current`, `update_available`, `ahead`, `mixed` (an install that did not finish) or `unlisted`.
@@ -27,7 +28,7 @@ The list merges the inventory with the cluster. The cluster side is **discovered
 
 ## Deployments
 
-Shown on the home page, as a labelled strip above the resources of the package that declares them: a dot, the name, what it conflicts with, and one *Start* or *Stop* button. *History* (header) lists every operation with its log; a banner on the home page links to whatever is running.
+Shown on the application's page, as a labelled strip above the resources of the package that declares them: a dot, the name, what it conflicts with, and one *Start* or *Stop* button. *History* (header) lists every operation with its log; a banner on the home page links to whatever is running. The resource list filters by kind, state and a piece of the name.
 
 Declared in the package's `rivet.toml` (`[[deployment]]`, see [rivet-package](../libs/rivet-package.md)), so the declaration travels with, and is versioned with, what it describes. A package that declares none is one deployment named after it.
 

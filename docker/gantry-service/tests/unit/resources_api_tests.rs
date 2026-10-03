@@ -221,11 +221,11 @@ async fn delete_and_apply_need_scale_and_edit_needs_deploy_each_on_that_package(
 }
 
 #[tokio::test]
-async fn the_home_page_lists_resources_with_the_button_each_one_needs() {
+async fn the_application_page_lists_resources_with_the_button_each_one_needs() {
     let rig = rig(false).await;
     let html = support::body_text(
         rig.app
-            .call(support::req(Method::GET, "/ui/home", &rig.container))
+            .call(support::req(Method::GET, "/ui/apps/ml", &rig.container))
             .await,
     )
     .await;

@@ -1,18 +1,27 @@
-//! The entry point: every package, and every resource of every kind it put in the cluster.
+//! The entry point: one card per package (an application), each with whether the cluster is what the
+//! package says it should be. The resources are one click in, on the application's own page.
 
 use crate::domain::actions;
-use crate::domain::deployments::{self, DeploymentView, Observed};
-use crate::domain::resources::{Group, Row, State};
+use crate::domain::resources::{Group, Summary, SyncState};
 use crate::domain::service::Gantry;
 use crate::routers::api::authz;
 use crate::routers::ui::common::{
-    ActorOrRedirect, Notice, action, action_with, badge, notice_banner, render_page, row, table,
-    tabs, ui_path,
+    ActorOrRedirect, Notice, badge, notice_banner, percent_encode, render_page, tabs, ui_path,
 };
 use quench_auth::domain::jwt::JwtConfig;
 use quench_http::prelude::{Inject, Query, Response, get, http::StatusCode};
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
+use serde::Deserialize;
+
+#[derive(Deserialize, Default)]
+pub(super) struct Filter {
+    /// A sync state (`out_of_sync`, `missing`, ...), or empty for every application.
+    #[serde(default)]
+    pub sync: String,
+    #[serde(default)]
+    pub q: String,
+}
 
 #[get("/ui/home")]
 pub(super) async fn home(
@@ -20,8 +29,9 @@ pub(super) async fn home(
     Inject(gantry): Inject<Gantry>,
     Inject(config): Inject<JwtConfig>,
     Query(notice): Query<Notice>,
+    Query(filter): Query<Filter>,
 ) -> Response {
-    render_home(actor, &gantry, &config, &notice).await
+    render_home(actor, &gantry, &config, &notice, &filter).await
 }
 
 #[get("/ui/home/")]
@@ -30,40 +40,106 @@ pub(super) async fn home_slash(
     Inject(gantry): Inject<Gantry>,
     Inject(config): Inject<JwtConfig>,
     Query(notice): Query<Notice>,
+    Query(filter): Query<Filter>,
 ) -> Response {
-    render_home(actor, &gantry, &config, &notice).await
+    render_home(actor, &gantry, &config, &notice, &filter).await
 }
 
-fn status_name(group: &Group) -> String {
-    serde_json::to_value(group.status)
-        .ok()
-        .and_then(|v| v.as_str().map(str::to_string))
-        .unwrap_or_default()
+/// The applications to show: the ones that pass the filter, those needing attention first.
+fn matching<'a>(
+    apps: &'a [(&'a Group, Summary)],
+    filter: &Filter,
+) -> Vec<&'a (&'a Group, Summary)> {
+    let query = filter.q.trim().to_ascii_lowercase();
+    let mut found: Vec<_> = apps
+        .iter()
+        .filter(|(_, s)| filter.sync.is_empty() || s.sync.as_str() == filter.sync)
+        .filter(|(g, _)| query.is_empty() || g.package.to_ascii_lowercase().contains(&query))
+        .collect();
+    found.sort_by_key(|(g, s)| (s.sync == SyncState::Synced, g.package.clone()));
+    found
 }
 
-fn observed_name(observed: Observed) -> String {
-    serde_json::to_value(observed)
-        .ok()
-        .and_then(|v| v.as_str().map(str::to_string))
-        .unwrap_or_default()
+fn card(group: &Group, summary: &Summary) -> Element {
+    let package = group.package.as_str();
+    let version = group.installed.clone().unwrap_or_else(|| "—".to_string());
+
+    let mut notes = div().class("gt-app-notes");
+    for (n, key) in [
+        (summary.missing, "ui_rstate_missing"),
+        (summary.edited, "ui_rstate_edited"),
+        (summary.extra, "ui_rstate_extra"),
+    ] {
+        if n > 0 {
+            notes = notes.child(
+                span()
+                    .class("gt-note")
+                    .child(span().text(format!("{n} ")))
+                    .child(span().attr("data-i18n", key)),
+            );
+        }
+    }
+    if summary.not_ready > 0 {
+        notes = notes.child(
+            span()
+                .class("gt-note")
+                .child(span().text(format!("{} ", summary.not_ready)))
+                .child(span().attr("data-i18n", "ui_app_not_ready")),
+        );
+    }
+
+    a().attr("href", ui_path(&format!("/apps/{package}")))
+        .class("gt-app")
+        .child(
+            div()
+                .class("gt-app-head")
+                .child(strong().class("gt-app-name").text(package.to_string()))
+                .child(badge("sync", summary.sync.as_str())),
+        )
+        .child(
+            p().class("gt-app-version")
+                .child(span().text(version))
+                .child_opt(
+                    summary
+                        .update_to
+                        .as_ref()
+                        .map(|latest| span().class("gt-update").text(format!(" → {latest}"))),
+                ),
+        )
+        .child_opt(
+            group
+                .description
+                .clone()
+                .map(|text| p().class("gt-desc gt-app-desc").text(text)),
+        )
+        .child(
+            div()
+                .class("gt-app-foot")
+                .child(
+                    span()
+                        .class("gt-muted")
+                        .child(span().text(format!("{} ", summary.total)))
+                        .child(span().attr("data-i18n", "ui_app_resources")),
+                )
+                .child(notes),
+        )
 }
 
-fn state_name(state: State) -> String {
-    serde_json::to_value(state)
-        .ok()
-        .and_then(|v| v.as_str().map(str::to_string))
-        .unwrap_or_default()
-}
-
-/// The fields that name one resource in a form.
-fn fields<'a>(package: &'a str, row: &'a Row) -> Vec<(&'a str, &'a str)> {
-    vec![
-        ("package", package),
-        ("kind", row.kind.as_str()),
-        ("name", row.name.as_str()),
-        ("namespace", row.namespace.as_deref().unwrap_or("")),
-        ("api_version", row.api_version.as_deref().unwrap_or("")),
-    ]
+/// A link that narrows the list to one sync state.
+fn chip(state: &str, label_key: &str, count: usize, active: bool) -> Element {
+    let href = if state.is_empty() {
+        ui_path("/home")
+    } else {
+        ui_path(&format!("/home?sync={}", percent_encode(state)))
+    };
+    a().attr("href", href)
+        .class(if active {
+            "gt-chip gt-chip-active"
+        } else {
+            "gt-chip"
+        })
+        .child(span().attr("data-i18n", label_key.to_string()))
+        .child(span().class("gt-muted").text(format!(" {count}")))
 }
 
 async fn render_home(
@@ -71,6 +147,7 @@ async fn render_home(
     gantry: &Gantry,
     config: &JwtConfig,
     notice: &Notice,
+    filter: &Filter,
 ) -> Response {
     let claims = match actor.or_redirect() {
         Ok(claims) => claims,
@@ -82,9 +159,6 @@ async fn render_home(
         Ok(groups) => (groups, None),
         Err(error) => (Vec::new(), Some(error.to_string())),
     };
-    // Declared deployments, shown under the package that declares them; a failure here is not worth hiding
-    // the resources for.
-    let deployment_views: Vec<DeploymentView> = deployments::all(gantry).await.unwrap_or_default();
     let busy: Vec<_> = gantry
         .store
         .list(10)
@@ -94,12 +168,39 @@ async fn render_home(
         .filter(|op| !op.state.is_terminal())
         .collect();
 
-    let visible: Vec<&Group> = groups
+    let apps: Vec<(&Group, Summary)> = groups
         .iter()
         .filter(|g| authz::can_on_target(Some(&claims), config, &g.package, "read"))
+        .map(|g| (g, g.summary()))
         .collect();
+    let count = |state: SyncState| apps.iter().filter(|(_, s)| s.sync == state).count();
+    let shown = matching(&apps, filter);
 
-    let mut page = div()
+    let mut chips = div().class("gt-chips").child(chip(
+        "",
+        "ui_filter_all",
+        apps.len(),
+        filter.sync.is_empty(),
+    ));
+    for (state, key) in [
+        (SyncState::Synced, "ui_sync_synced"),
+        (SyncState::OutOfSync, "ui_sync_out_of_sync"),
+        (SyncState::Missing, "ui_sync_missing"),
+        (SyncState::NotInstalled, "ui_sync_not_installed"),
+        (SyncState::Unlisted, "ui_sync_unlisted"),
+    ] {
+        let n = count(state);
+        if n > 0 || filter.sync == state.as_str() {
+            chips = chips.child(chip(state.as_str(), key, n, filter.sync == state.as_str()));
+        }
+    }
+
+    let mut grid = div().class("gt-grid");
+    for (group, summary) in &shown {
+        grid = grid.child(card(group, summary));
+    }
+
+    let page = div()
         .class("home-container")
         .child(tabs("targets"))
         .child_opt(notice_banner(notice))
@@ -109,213 +210,40 @@ async fn render_home(
                 a().attr("href", ui_path(&format!("/operations/{}", op.id)))
                     .text(format!("{} …", op.title)),
             )
-        }));
-
-    if visible.is_empty() {
-        page = page.child(empty_state("ui_home_no_targets"));
-    }
-
-    for group in visible {
-        let package = group.package.as_str();
-        let may_scale = authz::can_on_target(Some(&claims), config, package, "scale");
-        let may_deploy = authz::can_on_target(Some(&claims), config, package, "deploy");
-        let missing = group
-            .rows
-            .iter()
-            .filter(|r| r.state == State::Missing)
-            .count();
-
-        let mut bar = div().class("gt-group-actions");
-        if let (true, Some(latest)) = (
-            may_deploy && group.status == crate::domain::targets::Status::UpdateAvailable,
-            &group.offered,
-        ) {
-            bar = bar.child(action_with(
-                &format!("/targets/{package}/sync"),
-                "ui_action_upgrade",
-                "primary",
-                &[("version", latest.as_str())],
-                Some(&format!("Upgrade {package} to {latest}?")),
-            ));
-        }
-        if may_scale && missing > 0 {
-            bar = bar.child(action_with(
-                &format!("/packages/{package}/apply"),
-                "ui_action_apply_missing",
-                "",
-                &[],
-                None,
-            ));
-        }
-        if !group.inventoried && group.installed.is_some() {
-            bar = bar.child(action_with(
-                &format!("/packages/{package}/refresh"),
-                "ui_action_refresh",
-                "",
-                &[],
-                None,
-            ));
-        }
-
-        let mine: Vec<&DeploymentView> = deployment_views
-            .iter()
-            .filter(|d| d.declared && d.target == package)
-            .collect();
-        let mut deps = div().class("gt-deps");
-        for view in &mine {
-            let up = view.observed == Observed::Running;
-            let installed = view.observed != Observed::Absent;
-            let mut buttons = div().class("gt-right");
-            if may_scale && installed {
-                if up || view.observed == Observed::Partial {
-                    buttons = buttons.child(action_with(
-                        &format!("/deployments/{}/stop", view.name),
-                        "ui_action_stop",
-                        "",
-                        &[],
-                        Some(&format!("Stop {}? Its workloads are deleted.", view.name)),
-                    ));
-                }
-                if !up {
-                    buttons = buttons.child(action(
-                        &format!("/deployments/{}/start", view.name),
-                        "ui_action_start",
-                        "",
-                    ));
-                }
-            }
-            deps = deps.child(
-                div()
-                    .class("gt-dep")
-                    .child(badge("observed", observed_name(view.observed).as_str()))
-                    .child(strong().text(view.name.clone()))
-                    .child_opt(view.drift.then(|| {
-                        span()
-                            .class("gt-desc")
-                            .child(span().attr("data-i18n", "ui_expected"))
-                            .child(span().text(format!(" {}", view.desired)))
-                    }))
-                    .child_opt((!view.conflicts_with.is_empty()).then(|| {
-                        span()
-                            .class("gt-desc")
-                            .text(format!("⇄ {}", view.conflicts_with.join(", ")))
-                    }))
-                    .child(buttons),
-            );
-        }
-
-        let mut list = table(&[
-            "ui_col_kind",
-            "ui_col_name",
-            "ui_col_namespace",
-            "ui_col_status",
-            "",
-        ]);
-        for resource in &group.rows {
-            let mut buttons = div().class("gt-right");
-            let state = resource.state;
-            if may_scale && state == State::Missing {
-                buttons = buttons.child(action_with(
-                    "/resources/apply",
-                    "ui_action_apply",
-                    "",
-                    &fields(package, resource),
-                    None,
-                ));
-            }
-            if may_deploy && resource.editable {
-                buttons = buttons.child(
-                    a().attr(
-                        "href",
-                        ui_path(&format!("/resource?{}", query(&fields(package, resource)))),
-                    )
-                    .class("gt-btn")
-                    .attr("data-i18n", "ui_action_edit"),
-                );
-            }
-            if may_scale && !matches!(state, State::Missing | State::Hidden) {
-                buttons = buttons.child(action_with(
-                    "/resources/delete",
-                    "ui_action_delete",
-                    "danger",
-                    &fields(package, resource),
-                    Some(&format!("Delete {}/{}?", resource.kind, resource.name)),
-                ));
-            }
-
-            let ready = resource
-                .ready
-                .clone()
-                .map(|r| span().class("gt-desc gt-gap").text(r));
-            list = list.child(row(vec![
-                span().class("gt-muted").text(resource.kind.clone()),
-                span().text(resource.name.clone()),
-                span()
-                    .class("gt-muted")
-                    .text(resource.namespace.clone().unwrap_or_default()),
-                div()
-                    .child(badge("rstate", &state_name(state)))
-                    .child_opt(ready),
-                buttons,
-            ]));
-        }
-
-        page = page.child(
-            div()
-                .class("gt-group")
+        }))
+        .child(
+            form()
+                .attr("method", "get")
+                .attr("action", ui_path("/home"))
+                .class("gt-form gt-inline-form gt-filter")
+                .child(chips)
                 .child(
-                    div()
-                        .class("gt-group-head")
-                        .child(
-                            div()
-                                .class("gt-group-title")
-                                .child(
-                                    a().attr("href", ui_path(&format!("/targets/{package}")))
-                                        .child(strong().text(package.to_string())),
-                                )
-                                .child(span().class("gt-muted").text(format!(
-                                    "{}{}",
-                                    group.installed.clone().unwrap_or_else(|| "—".to_string()),
-                                    group
-                                        .offered
-                                        .as_ref()
-                                        .filter(|o| Some(*o) != group.installed.as_ref())
-                                        .map(|o| format!(" → {o}"))
-                                        .unwrap_or_default()
-                                )))
-                                .child(badge("status", &status_name(group))),
-                        )
-                        .child(bar),
+                    input()
+                        .attr("type", "text")
+                        .attr("name", "q")
+                        .attr("placeholder", "name")
+                        .attr("value", filter.q.clone()),
                 )
-                .child_opt((!mine.is_empty()).then_some(deps))
-                .child(if group.rows.is_empty() {
-                    p().class("gt-muted")
-                        .attr("data-i18n", "ui_target_no_units")
-                } else {
-                    list
-                }),
-        );
-    }
+                .child_opt((!filter.sync.is_empty()).then(|| {
+                    input()
+                        .attr("type", "hidden")
+                        .attr("name", "sync")
+                        .attr("value", filter.sync.clone())
+                })),
+        )
+        .child(if apps.is_empty() {
+            empty_state("ui_home_no_targets")
+        } else if shown.is_empty() {
+            p().class("gt-muted")
+                .attr("data-i18n", "ui_filter_no_match")
+        } else {
+            grid
+        });
 
     render_page(StatusCode::OK, content().class("home-content").child(page))
 }
 
-/// `a=b&c=d`, percent-encoded, for a link that carries a resource.
-fn query(fields: &[(&str, &str)]) -> String {
-    fields
-        .iter()
-        .filter(|(_, value)| !value.is_empty())
-        .map(|(key, value)| {
-            format!(
-                "{key}={}",
-                crate::routers::ui::common::percent_encode(value)
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("&")
-}
-
 pub(super) fn register_routes() {
-    let _ = home as fn(_, _, _, _) -> _;
-    let _ = home_slash as fn(_, _, _, _) -> _;
+    let _ = home as fn(_, _, _, _, _) -> _;
+    let _ = home_slash as fn(_, _, _, _, _) -> _;
 }

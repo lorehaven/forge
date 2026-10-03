@@ -67,7 +67,7 @@ async fn the_root_redirects_a_signed_in_visitor_to_the_home_page() {
 }
 
 #[tokio::test]
-async fn the_home_page_lists_targets_with_what_runs_beside_what_is_published() {
+async fn the_home_page_shows_a_card_per_package_with_its_sync_state_and_the_newer_version() {
     let rig = support::rig(false).await;
     rig.registry.publish("media", "1.0.0", Some("media"));
     rig.registry.publish("media", "1.1.0", Some("media"));
@@ -79,9 +79,9 @@ async fn the_home_page_lists_targets_with_what_runs_beside_what_is_published() {
             .await,
     )
     .await;
-    assert!(html.contains("/ui/targets/media"), "{html}");
+    assert!(html.contains("/ui/apps/media"), "{html}");
     assert!(html.contains("1.0.0") && html.contains("1.1.0"));
-    assert!(html.contains("ui_status_update_available"));
+    assert!(html.contains("ui_sync_out_of_sync"), "{html}");
     assert!(html.contains("ui_nav_operations"));
 }
 
@@ -96,7 +96,7 @@ async fn a_package_that_cannot_be_read_is_shown_not_hidden() {
             .await,
     )
     .await;
-    assert!(html.contains("ui_status_unlisted"), "{html}");
+    assert!(html.contains("ui_sync_unlisted"), "{html}");
 }
 
 #[tokio::test]
@@ -117,8 +117,8 @@ async fn a_scoped_grant_hides_the_other_packages_from_the_page() {
     // package must not be on the page.
     if response.status() == StatusCode::OK {
         let html = support::body_text(response).await;
-        assert!(html.contains("/ui/targets/media"), "{html}");
-        assert!(!html.contains("/ui/targets/forge"), "{html}");
+        assert!(html.contains("/ui/apps/media"), "{html}");
+        assert!(!html.contains("/ui/apps/forge"), "{html}");
     } else {
         assert!(response.status().is_redirection());
     }
@@ -233,4 +233,77 @@ async fn a_running_operation_can_be_cancelled_and_stops_refreshing() {
         !page.contains("window.location.reload"),
         "a finished operation stops refreshing"
     );
+}
+
+#[tokio::test]
+async fn the_home_page_filters_applications_by_sync_state_and_name() {
+    let rig = support::rig(false).await;
+    rig.registry.publish("media", "1.0.0", Some("media"));
+    rig.registry.publish("forge", "1.0.0", Some("forge"));
+    rig.cluster.set_workloads(running("1.0.0"));
+
+    let page = |uri: &'static str| {
+        let rig = &rig;
+        async move {
+            support::body_text(
+                rig.app
+                    .call(support::req(Method::GET, uri, &rig.container))
+                    .await,
+            )
+            .await
+        }
+    };
+    // `forge` is published and not running; `media` is running.
+    let all = page("/ui/home").await;
+    assert!(
+        all.contains("/ui/apps/media") && all.contains("/ui/apps/forge"),
+        "{all}"
+    );
+    let missing = page("/ui/home?sync=not_installed").await;
+    assert!(
+        missing.contains("/ui/apps/forge") && !missing.contains("/ui/apps/media"),
+        "{missing}"
+    );
+    let named = page("/ui/home?q=MED").await;
+    assert!(
+        named.contains("/ui/apps/media") && !named.contains("/ui/apps/forge"),
+        "{named}"
+    );
+    let none = page("/ui/home?q=nothing").await;
+    assert!(none.contains("ui_filter_no_match"), "{none}");
+}
+
+#[tokio::test]
+async fn an_application_page_filters_its_resources_and_an_unknown_one_goes_home() {
+    let rig = support::rig(false).await;
+    rig.registry.publish("media", "1.0.0", Some("media"));
+    rig.cluster.set_workloads(running("1.0.0"));
+
+    let html = support::body_text(
+        rig.app
+            .call(support::req(Method::GET, "/ui/apps/media", &rig.container))
+            .await,
+    )
+    .await;
+    assert!(html.contains("ui_sync_"), "{html}");
+    assert!(html.contains("ui_action_versions"), "{html}");
+
+    let none = support::body_text(
+        rig.app
+            .call(support::req(
+                Method::GET,
+                "/ui/apps/media?q=zzz-no-such-resource",
+                &rig.container,
+            ))
+            .await,
+    )
+    .await;
+    assert!(none.contains("ui_filter_no_match"), "{none}");
+    assert!(none.contains("ui_action_clear"), "{none}");
+
+    let unknown = rig
+        .app
+        .call(support::req(Method::GET, "/ui/apps/nope", &rig.container))
+        .await;
+    assert!(unknown.status().is_redirection());
 }

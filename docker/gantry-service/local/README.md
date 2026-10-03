@@ -11,7 +11,7 @@ docker/gantry-service/local/pack.sh                   # needs riveter on PATH (o
 cd docker/gantry-service/local && docker compose up
 ```
 
-Open <http://localhost:11443/gantry/ui/home>. One page: every resource of every kind, grouped by package. Things to try:
+Open <http://localhost:11443/gantry/ui/home>. One card per package; click one for its resources, filterable by kind, state and name. Things to try:
 
 - **Start training.** Under `ml`, the *training* deployment is stopped; click *Start*. Inference (Sage and
   Switchboard) is stopped first and its vLLM pods deleted, then training is applied from the package - one
