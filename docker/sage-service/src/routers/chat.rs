@@ -58,7 +58,7 @@ pub async fn chat(
     let messages = vec![
         ChatMessage {
             role: "system".to_string(),
-            content: config.system_prompt.clone(),
+            content: config.system_prompt_with_date(),
             tool_calls: None,
             images: None,
         },

@@ -180,6 +180,16 @@ impl SageConfig {
         }
     }
 
+    /// System prompt with today's date appended, so models don't assume their training year
+    /// when judging what is recent or building search queries.
+    pub fn system_prompt_with_date(&self) -> String {
+        format!(
+            "{}\n\nCurrent date: {} (UTC).",
+            self.system_prompt,
+            chrono::Utc::now().format("%Y-%m-%d")
+        )
+    }
+
     pub fn is_model_supported(&self, model: &str) -> bool {
         self.supported_models.iter().any(|pattern| {
             let regex_pattern = format!("(?i)^{}$", pattern.replace("*", ".*").replace("?", "."));

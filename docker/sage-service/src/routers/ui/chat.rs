@@ -401,7 +401,7 @@ pub async fn stream_message(
 
     let mut system_message = ChatMessage {
         role: "system".to_string(),
-        content: config.system_prompt.clone(),
+        content: config.system_prompt_with_date(),
         tool_calls: None,
         images: None,
     };

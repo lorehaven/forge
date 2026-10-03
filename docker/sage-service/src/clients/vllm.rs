@@ -74,6 +74,10 @@ pub struct ChatCompletionRequest {
     pub tools: Option<Vec<serde_json::Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_choice: Option<String>,
+    /// Forwarded to the model's chat template; used to switch off the thinking phase of
+    /// Qwen3.5/Gemma 4 (no reasoning parser is configured, so it would leak into replies).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chat_template_kwargs: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -218,6 +222,7 @@ impl VllmClient {
             max_tokens,
             tools,
             tool_choice: None,
+            chat_template_kwargs: Some(serde_json::json!({ "enable_thinking": false })),
         };
 
         tracing::info!(
