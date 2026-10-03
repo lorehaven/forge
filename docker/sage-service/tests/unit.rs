@@ -20,6 +20,8 @@ mod files_embedder_tests;
 mod files_extractor_tests;
 #[path = "unit/files_images_tests.rs"]
 mod files_images_tests;
+#[path = "unit/grounding_tests.rs"]
+mod grounding_tests;
 #[path = "unit/observability_audit_tests.rs"]
 mod observability_audit_tests;
 #[path = "unit/observability_cost_tracking_tests.rs"]

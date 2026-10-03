@@ -78,6 +78,9 @@ pub struct ChatCompletionRequest {
     /// Qwen3.5/Gemma 4 (no reasoning parser is configured, so it would leak into replies).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chat_template_kwargs: Option<serde_json::Value>,
+    /// OpenAI `response_format`; used with a JSON schema for constrained (guided) decoding.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_format: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -223,6 +226,7 @@ impl VllmClient {
             tools,
             tool_choice: None,
             chat_template_kwargs: Some(serde_json::json!({ "enable_thinking": false })),
+            response_format: None,
         };
 
         tracing::info!(
@@ -325,6 +329,77 @@ impl VllmClient {
         };
 
         Ok(Box::pin(output_stream))
+    }
+
+    /// One non-streaming completion whose output is constrained to `schema` via vLLM guided
+    /// decoding; returns the raw JSON text. Used for small structured steps (planning, grading).
+    #[allow(clippy::too_many_arguments)]
+    pub async fn chat_json(
+        &self,
+        host: &str,
+        port: u16,
+        model: &str,
+        messages: Vec<ChatMessage>,
+        schema_name: &str,
+        schema: serde_json::Value,
+        max_tokens: u32,
+    ) -> Result<String> {
+        if !self.circuit_breaker.is_available() {
+            return Err(anyhow::anyhow!(
+                "Circuit breaker open: vLLM temporarily unavailable"
+            ));
+        }
+
+        let host = host
+            .trim_start_matches("http://")
+            .trim_start_matches("https://");
+        let url = format!("http://{}:{}/v1/chat/completions", host, port);
+
+        let request = ChatCompletionRequest {
+            model: model.to_string(),
+            messages,
+            stream: false,
+            temperature: Some(0.0),
+            top_p: None,
+            presence_penalty: None,
+            frequency_penalty: None,
+            max_tokens: Some(max_tokens),
+            tools: None,
+            tool_choice: None,
+            chat_template_kwargs: Some(serde_json::json!({ "enable_thinking": false })),
+            response_format: Some(serde_json::json!({
+                "type": "json_schema",
+                "json_schema": { "name": schema_name, "schema": schema, "strict": true }
+            })),
+        };
+
+        let res = self
+            .http
+            .post(&url)
+            .json(&request)
+            .send()
+            .await
+            .with_context(|| format!("Failed to connect to vLLM instance at {}", url))?;
+
+        if !res.status().is_success() {
+            let status = res.status();
+            let err_text = res
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            self.circuit_breaker.call_failed();
+            anyhow::bail!("vLLM returned error {}: {}", status, err_text);
+        }
+
+        self.circuit_breaker.call_succeeded();
+        let body: serde_json::Value = res
+            .json()
+            .await
+            .context("Failed to parse vLLM completion response")?;
+        body["choices"][0]["message"]["content"]
+            .as_str()
+            .map(str::to_string)
+            .context("vLLM completion had no message content")
     }
 
     /// Generate embeddings for a batch of inputs; returns one vector per input, in input order.

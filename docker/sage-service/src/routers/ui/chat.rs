@@ -483,7 +483,6 @@ pub async fn stream_message(
 
     tracing::info!("User message: {}", current_user_message.content);
 
-    let system_tokens = estimate_tokens(&system_message);
     let current_user_tokens = estimate_tokens(&current_user_message);
 
     use quench_db::prelude::Crud;
@@ -510,6 +509,52 @@ pub async fn stream_message(
     {
         history_messages = msgs;
     }
+
+    // Small models can't be trusted to decide when to search, so in grounded mode the
+    // harness plans, searches and fetches up front and injects numbered sources.
+    let grounding_cfg = crate::grounding::GroundingConfig::from_env();
+    let grounded =
+        grounding_cfg.enabled && active_profile.is_enabled(crate::tools::Tool::WebSearch);
+    let mut web_sources: Vec<crate::grounding::WebSource> = Vec::new();
+    let mut grounding_injected = false;
+    if grounded {
+        let question = if req.skip_user_message {
+            history_messages
+                .iter()
+                .rev()
+                .find(|m| m.role == "user")
+                .map(|m| m.content.clone())
+                .unwrap_or_default()
+        } else {
+            req.message.clone()
+        };
+        if !question.trim().is_empty() {
+            let provider_name = req
+                .search_provider
+                .as_deref()
+                .unwrap_or(&config.default_search_provider);
+            let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+            if let Some(grounding) = crate::grounding::gather(
+                &grounding_cfg,
+                &switchboard,
+                &vllm,
+                &search_provider_registry,
+                provider_name,
+                &instance,
+                &history_messages,
+                &question,
+                &today,
+            )
+            .await
+            {
+                system_message.content.push_str(&grounding.block);
+                web_sources = grounding.sources;
+                grounding_injected = true;
+            }
+        }
+    }
+    // The grounding block counts against the prompt budget before history is selected.
+    let system_tokens = estimate_tokens(&system_message);
 
     let mut selected_history = std::collections::VecDeque::new();
     let mut current_budget_used = system_tokens
@@ -545,7 +590,11 @@ pub async fn stream_message(
 
     // OpenAI tool-call format: {"type": "function", "function": {name, description, parameters}}
     let tool_definitions = tool_registry.get_definitions();
-    let tools_json: Option<Vec<serde_json::Value>> = if !tool_definitions.is_empty() {
+    // Grounded mode skips native tool calls: the harness already retrieved, and the launch
+    // config may not enable auto tool choice (vLLM rejects `tools` then).
+    let tools_json: Option<Vec<serde_json::Value>> = if grounded {
+        None
+    } else if !tool_definitions.is_empty() {
         let mut openai_tools = Vec::new();
         for tool_def in tool_definitions {
             let openai_tool = serde_json::json!({
@@ -639,6 +688,12 @@ pub async fn stream_message(
             "[STREAM_REFACTOR] Phase 1 complete: {} chars collected",
             full_content.len()
         );
+
+        // The model may cite source numbers that don't exist; drop those markers.
+        if grounding_injected {
+            full_content =
+                crate::grounding::strip_invalid_citations(&full_content, web_sources.len());
+        }
 
         // PHASE 2: parse tool calls and check for meta-questions.
         tracing::info!(
@@ -1042,6 +1097,12 @@ pub async fn stream_message(
                     detail: h.detail.clone(),
                     similarity: Some(h.similarity),
                 })
+                .chain(web_sources.iter().map(|w| crate::files::rag::RagSource {
+                    file_name: format!("[{}] {}", w.index, w.domain),
+                    chunk_index: None,
+                    detail: Some(w.url.clone()),
+                    similarity: None,
+                }))
                 .collect();
             crate::routers::ui::common::format::render_sources(&sources)
         };

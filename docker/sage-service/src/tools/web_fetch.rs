@@ -111,7 +111,23 @@ impl ToolExecutor for WebFetchExecutor {
     }
 }
 
+/// Fetch a page and return its extracted text (title, headings, paragraphs) capped at
+/// `max_chars`; for the grounding pipeline, which wants far more than the tool's 2000 chars.
+pub async fn fetch_page_text(
+    client: &reqwest::Client,
+    url: &str,
+    max_chars: usize,
+) -> Result<String, String> {
+    let html = fetch_html(client, url).await?;
+    extract_text_limited(&html, usize::MAX, max_chars)
+}
+
 async fn fetch_and_extract(client: &reqwest::Client, url: &str) -> Result<String, String> {
+    let html = fetch_html(client, url).await?;
+    extract_text(&html)
+}
+
+async fn fetch_html(client: &reqwest::Client, url: &str) -> Result<String, String> {
     let response = client
         .get(url)
         .header(
@@ -132,15 +148,21 @@ async fn fetch_and_extract(client: &reqwest::Client, url: &str) -> Result<String
         ));
     }
 
-    let html = response
+    response
         .text()
         .await
-        .map_err(|e| format!("Failed to read response: {}", e))?;
-
-    extract_text(&html)
+        .map_err(|e| format!("Failed to read response: {}", e))
 }
 
 fn extract_text(html: &str) -> Result<String, String> {
+    extract_text_limited(html, 10, 2000)
+}
+
+fn extract_text_limited(
+    html: &str,
+    max_paragraphs: usize,
+    max_chars: usize,
+) -> Result<String, String> {
     use scraper::{Html, Selector};
 
     // Remove script and style elements
@@ -174,7 +196,7 @@ fn extract_text(html: &str) -> Result<String, String> {
     }
 
     if let Ok(p_selector) = Selector::parse("p") {
-        for p in document.select(&p_selector).take(10) {
+        for p in document.select(&p_selector).take(max_paragraphs) {
             let p_text: String = p.text().collect::<Vec<_>>().join(" ");
             let cleaned = p_text.trim();
             if !cleaned.is_empty() && cleaned.len() > 20 {
@@ -187,9 +209,13 @@ fn extract_text(html: &str) -> Result<String, String> {
         return Err("No extractable text found on page".to_string());
     }
 
-    // Limit to 2000 characters to avoid huge responses
-    if text.len() > 2000 {
-        text.truncate(2000);
+    // Limit the size to avoid huge responses (cut on a char boundary).
+    if text.len() > max_chars {
+        let mut cut = max_chars;
+        while !text.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        text.truncate(cut);
         text.push_str("\n\n[Content truncated...]");
     }
 
