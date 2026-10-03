@@ -1,0 +1,18 @@
+[[migrations]]
+id = "0004-inventory"
+author = "gantry-service"
+since = "0.1.0"
+
+# What each package is: every resource it declares, as the last successful install rendered it. Kept so a
+# resource that was deleted - to stop it, the Argo way - can still be listed, and put back from the package
+# without anyone remembering what it was called. Names and kinds only, never a manifest: a Secret's value is
+# nowhere in here, and neither is anything a variable supplied.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.inventory (
+    package TEXT PRIMARY KEY,
+    version TEXT NOT NULL,
+    resources JSONB NOT NULL DEFAULT '[]'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+"""

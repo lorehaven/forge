@@ -1,0 +1,6 @@
+env: ml
+namespace_name: ml
+
+resources:
+{% include "ml/base.yaml.j2" %}
+{% include "ml/apps.yaml.j2" %}

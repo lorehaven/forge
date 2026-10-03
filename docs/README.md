@@ -20,6 +20,7 @@ docs/
 ├── docker/                 # docker/* services
 │   ├── conveyor-service.md
 │   ├── foundry-service.md
+│   ├── gantry-service.md
 │   ├── gatehouse-service.md
 │   ├── sage-service.md
 │   ├── switchboard-service.md
@@ -47,6 +48,7 @@ Long-running quench-http services, each with its own Postgres schema, started lo
 - [Switchboard Service](./docker/switchboard-service.md) — model-serving gateway; discovers models, estimates VRAM fit, manages vLLM processes
 - [Sage Service](./docker/sage-service.md) — AI chat/workspace app with RAG file upload, built on models Switchboard serves
 - [Workbench Service](./docker/workbench-service.md) — task management: projects, issues, comments and labels, behind the same realm auth
+- [Gantry Service](./docker/gantry-service.md) — installs, upgrades, stops, starts and swaps what runs in the cluster, as `.rivet` packages applied by runner Jobs
 
 ## CLI Tools (`cli/*`)
 
@@ -166,12 +168,12 @@ services.
 .
 ├── cli/           # binaries: anvil, conveyor-cli, foreman, pulley, riveter,
 │                  #           toolbox, warehouse-cli, welder
-├── docker/        # services: conveyor, foundry, gatehouse, sage,
-│                  #           switchboard, warehouse, workbench (each its own image)
+├── docker/        # services: conveyor, foundry, gantry, gatehouse,
+│                  #           sage, switchboard, warehouse, workbench (each its own image)
 ├── libs/          # shared crates: conveyor-pipeline, rivet-package
 ├── examples/      # runnable references: vllm_cluster_test
 ├── tests/         # forge-bdd, the cross-service Cucumber suite
-├── ci/            # CI-only images (e.g. rust-builder)
+├── ci/            # CI-only images: rust-builder, and gantry-runner (what Gantry's Jobs run)
 ├── docs/          # this documentation tree
 └── foreman.toml   # what foreman starts locally, on which ports
 ```

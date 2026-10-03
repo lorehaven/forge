@@ -17,7 +17,7 @@ pub mod path;
 
 pub use archive::{Limits, Package, PackageBuilder};
 pub use error::PackageError;
-pub use manifest::{Manifest, PackageMeta, Requires};
+pub use manifest::{AlsoStops, DefaultState, Deployment, Manifest, PackageMeta, Requires};
 
 /// Extension of a package file, without the dot.
 pub const EXTENSION: &str = "rivet";

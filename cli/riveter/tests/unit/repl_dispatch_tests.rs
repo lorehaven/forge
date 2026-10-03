@@ -23,6 +23,7 @@ fn empty_rendered(kube_context: Option<String>) -> RenderedManifest {
         skipped_out_of_scope: Vec::new(),
         namespace: None,
         creates_namespace: false,
+        phases: Vec::new(),
     }
 }
 

@@ -1,0 +1,4 @@
+[package]
+name = "media"
+version = "1.0.0"
+description = "A package that declares no deployments: to Gantry it is one, named after it"

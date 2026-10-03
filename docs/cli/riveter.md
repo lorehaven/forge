@@ -10,6 +10,8 @@ Riveter is a Kubernetes manifest tool, powered by Rust and `minijinja` templates
 - Targeting: any command can act on a `kind[/name]` subset, with `*`/`?` wildcards and kind aliases (`sts`, `ds`, `hpa`, `pdb`, `crd`, `netpol`, `sa`, ...).
 - `kubectl` integration for `apply`, `diff`, and `delete`, including per-rollout readiness waiting on `apply`.
 - `prune`, which finds cluster resources labelled `app.kubernetes.io/managed-by: riveter` for the environment that the overlay no longer declares, and removes them.
+- Dependency ordering and gates: `depends_on` orders an overlay's resources by what they need, and `wait` makes an apply stop until a Job has completed or a workload is ready before it goes on - see [Ordering and gates](#ordering-and-gates).
+- `secrets keygen|set|import|list|show|remove|rekey`, which keep an overlay's secrets in git, encrypted, and `secrets sync`, the older route that puts `.env` files in the cluster - see [Secrets](#secrets) and [Config and secrets in git](#config-and-secrets-in-git).
 - `validate`, which checks an environment's custom resources (cert-manager, Traefik, Gateway API, and any CRD fetched from a cluster) against their CRD schemas offline, catching a misspelt field or a wrong type before anything is applied - see [Validating custom resources](#validating-custom-resources).
 - `images`, which scans overlay templates for `image:` tags and checks the registry for newer compatible tags, optionally rewriting the templates in place.
 - Variable substitution from an environment's own `.env` file (`${NAME}`, with `$${NAME}` as an escape).
@@ -44,13 +46,18 @@ riveter images
 | `diff [--scope ...] [target...]` | `df` | Show what `apply` would change via `kubectl diff` |
 | `delete [--scope ...] [target...]` | `d`, `del` | Render and delete via `kubectl` |
 | `prune [--dry-run]` | | Delete cluster resources the overlay no longer declares |
+| `secrets keygen [--out FILE]` | | Make an age key pair; prints the public recipient (CLI-only) |
+| `secrets set FILE NAME [--value V] [-r age1...]` | | Encrypt one value (stdin if no `--value`) into a secrets file (CLI-only) |
+| `secrets import FILE --from DOTENV [NAME...] [-r age1...]` | | Move values from a dotenv file into a secrets file, encrypted (CLI-only) |
+| `secrets list|show|remove|rekey FILE ...` | | Names only / one value decrypted / drop a name / encrypt to other recipients (CLI-only) |
+| `secrets sync [overlay...] [--all] [-n <ns>] [--context <c>] [--dry-run]` | | The older route: write overlays' `.env` files to Secrets `gantry-values-<overlay>` (CLI-only) |
 | `validate [--scope ...] [--file <f>] [target...]` | | Check custom resources against their CRD schemas, offline |
 | `schemas <list\|fetch>` | | List the CRD schemas held, or read more from a cluster (CLI-only) |
 | `images [--update] [--overlays-dir <dir>] [--registry-auth ...]` | | Check/update deployment image tags |
 | `pack [--version-suffix <s>] [--no-pin] [--out <dir>] [--registry-auth ...]` | | Build the environment into a `.rivet` package (CLI-only) |
 | `publish [file] [--version-suffix <s>] [--no-pin] [--out <dir>]` | | Upload a package to Warehouse, packing the environment first if no file is given (CLI-only) |
 | `pull <package> [--out <dir>]` | | Download a package and verify it (CLI-only) |
-| `install <package> [--env-file <f>] [--set K=V] [--dry-run] [--no-wait] [--timeout <s>] [--scope ...] [target...]` | `i` | Fetch a package, render it and apply it (CLI-only) |
+| `install <package> [--env-file <f>] [--set K=V] [--replicas kind/name=N] [--except kind/name] [--inventory] [--dry-run] [--no-wait] [--timeout <s>] [--scope ...] [target...]` | `i` | Fetch a package, render it and apply it (CLI-only) |
 | `remote <list\|versions <name>>` | | Browse the packages in Warehouse (CLI-only) |
 | `repl` | | Enter the interactive shell (CLI-only; also the default with no arguments) |
 | `help [command]` | `h` | Show the command tree, or detail for one command |
@@ -139,6 +146,92 @@ Overlay values may reference variables from the environment's own `.env` (`overl
 
 Rendering writes plaintext: a `secret`'s `string_data` lands in `manifests/<env>-manifests.yaml` as typed. A manifest that carries a Secret — including one emitted through `raw` — is therefore written `0600`, readable only by the user who rendered it; manifests without Secrets keep the usual mode. File permissions protect against other users on the machine and do nothing against `git add -A`, so riveter also writes `manifests/.gitignore` ignoring everything in the directory (an existing `.gitignore` there is left alone). Prefer `env_refs` pointing at a Secret managed outside riveter over putting live credentials in an overlay.
 
+### Ordering and gates
+
+An overlay used to be applied in the order it was written, with "order matters" as a comment, and `kubectl` does not wait between the documents of one manifest - so a migration Job and the services that need its schema started together, and the services crash-looped until the schema existed. Two optional keys on a resource declare what actually matters:
+
+```yaml
+- kind: deployment
+  name: forge-db
+  wait: ready                      # stop here until it has rolled out
+
+- kind: job
+  name: ${FOUNDRY_JOB_NAME}
+  depends_on: [deployment/forge-db, service/forge-db]
+  wait: complete                   # stop here until the Job has completed
+  wait_timeout: 600                # seconds; the default is the apply's --timeout (300)
+
+- kind: deployment
+  name: api
+  depends_on: ["job/${FOUNDRY_JOB_NAME}", deployment/gatehouse]
+```
+
+- **`depends_on: [kind/name, ...]`** puts the resource after those. Riveter reorders the overlay once, right after rendering it, so `list`, `render`, `apply` and `diff` all see one order. The sort is stable - of the resources free to go next, the one written first goes first - so an overlay that declares nothing is not reordered at all, and one that declares a little moves only what it must. The kind may be spelled any way `kind/name` targets allow (`Job`, `jobs`). An unknown reference, a dependency on itself, or a cycle is an error at render time naming the resources involved. Quote an entry that contains a `${VAR}`: a brace is structural inside a YAML flow list.
+- **`wait: complete`** is for a `Job`: the apply stops after it until the Job has completed, and **fails at once if the Job fails** - it does not sit out the timeout on a Job that has already used its retries, which for a migration is the case worth being told about immediately. **`wait: ready`** is for a `Deployment`, `StatefulSet` or `DaemonSet`: the apply stops until it has rolled out. Either on the wrong kind is an error that suggests the right one, and so is `wait_timeout` without a `wait`.
+
+An apply with gates is split into **phases** at each gated resource - written as `manifests/<env>-manifests.phase-N.yaml` beside the whole manifest - and run one phase at a time: apply, wait, apply, wait. Nothing after a gate that fails or times out is applied, and the error says exactly where things stand:
+
+```
+Error: job/migrate failed: Job has reached the specified backoff limit
+
+inspect it with `kubectl logs job/migrate`
+
+applied: namespace/forge, deployment/forge-db, job/migrate
+not applied: deployment/api, service/api
+```
+
+If `kubectl apply` itself fails inside a phase the report adds the one fact it cannot know: that phase "failed, possibly partly applied". `--no-wait` and `--dry-run` skip the stops and apply the whole, dependency-ordered manifest in one go; targets apply only the gates of the resources they select.
+
+The overlay in `homecloud` uses this: Postgres is ready, then its Service, Redis and the foundry Job (complete), then Gatehouse (ready), then every service that relies on it. The same graph is what [Gantry](../../plans/GANTRY_SERVICE.md) plans an upgrade from, so it is declared once, here.
+
+
+### Config and secrets in git
+
+An overlay can carry everything it needs, so that a package is the whole of what it installs and a cluster can be rebuilt from a checkout and one key:
+
+- **`values.yaml`** (or `values.toml`; never both) - a flat `NAME: value` mapping of the overlay's `${VAR}`s, committed and packed. Nested values are an error: a variable is one value.
+- **`secrets.yaml`** - the same names for what must not be in the clear, each value **encrypted on its own with [age](https://age-encryption.org)** and committed:
+
+  ```yaml
+  riveter-secrets: 1
+  recipients:
+  - age1pvlvcsgmadd8lh369slu8cvfxqz4nmdd636md4zqm032xpx7janqpxzxzp
+  data:
+    CLIENT_SECRET_PALANTIR: ENC[age,YWdlLWVuY3J5cHRpb24ub3JnL3Yx...]
+  ```
+
+  Names are readable, so a diff says *which* secret changed without saying what it is, and changing one value rewrites one line (every other value is left byte for byte). It is riveter's own format, not SOPS - nothing else has to be installed, wherever riveter runs - but each value is plain age ciphertext inside `ENC[age,...]` (base64), so one can still be opened with the `age` tool if riveter is ever not to hand. `pack` refuses a file with any value that is not `ENC[age,...]`, so a plaintext value can never be shipped.
+
+The ConfigMap and Secret a service reads belong in the overlay as resources, consumed by reference (`env_from_config_maps` / `env_from_secrets`), not as a list of literals in the Deployment - the Deployment then never carries a secret value, and `kubectl diff` of it leaks nothing. A workload that reads a ConfigMap or Secret the overlay declares is stamped with `riveter.forge/config-hash` on its pod template - a hash of what they say - so changing a value changes the template and rolls the workload out, which Kubernetes does not otherwise do. (The hash is of the rendered text, taken whether or not those resources are among what is being applied.)
+
+**The key** is the one thing that is not in git: `RIVETER_AGE_KEY` (the key itself) or `RIVETER_AGE_KEY_FILE` (a file holding it, which can be mounted wherever riveter runs), failing those `~/.config/riveter/age.key`. For these two names, and only these, a `.env` in the working directory is also consulted - where an estate keeps it. A package without `secrets.yaml` never looks for a key; one with it and no key is told exactly which variable to set.
+
+Where a variable comes from, lowest first: `values.yaml`/`values.toml`, `secrets.yaml`, `--env-file`, `--set`. Rendering straight from an overlay directory reads the same, with `overlays/<env>/.env` last as a local override. Start with:
+
+```text
+riveter secrets keygen --out ~/.config/riveter/age.key      # once; keep it out of git, back it up
+riveter secrets import overlays/media/secrets.yaml --from overlays/media/.env DB_PASSWORD API_TOKEN
+riveter secrets set overlays/media/secrets.yaml DB_PASSWORD  # value from standard input
+riveter secrets rekey overlays/media/secrets.yaml -r age1...  # after a key is lost, or someone should lose access
+```
+
+A key is never overwritten by `keygen` (that would lose every secret encrypted to it) and is written `0600`. Rotating a secret is `set` and a new package version; rotating the key is `rekey`, then a new version. A package is readable by everyone who can read the registry, so the ciphertext is too: a leaked key opens every version that was encrypted to it.
+
+### Secrets
+
+The older route, kept for estates that have not moved their values into the overlay: a `.env` is gitignored and `pack` never includes it, so nothing that reads a package can see the values an install needs. `riveter secrets sync` puts them in the cluster:
+
+```bash
+riveter secrets sync media                  # one overlay
+riveter secrets sync --all                  # every overlay that has a .env
+riveter secrets sync media -n gantry --context staging
+riveter secrets sync --all --dry-run        # what would be synced, touching nothing
+```
+
+Each overlay's `.env` is written, as it is, to a Secret `gantry-values-<overlay>` under the key `env` (a `Secret` in the namespace given by `-n`, `forge` by default), using **your own** kubectl access - Riveter holds no credentials of its own for this. It is meant to be mounted and passed to `riveter install --env-file`.
+
+The values are handled as little as they can be: they reach `kubectl` over standard input, never in an argument; the type that reports what was done has no field for a value, so nothing can print one - only Secret and variable names appear in the output; and the Secret carries `riveter.forge/values-sha256`, the hash of what it holds, so a later install can tell the values changed without reading them. It deliberately has **no** `app.kubernetes.io/managed-by: riveter` label: `prune` selects on that, and a values Secret in some environment's namespace must never look like one of its resources. Syncing twice is the same `apply` twice. An overlay with no `.env`, or one that defines no variables, is refused.
+
 ### Validating custom resources
 
 `kubectl apply` checks a custom resource against its CRD's schema only when it arrives, so a typo in a `Certificate` or an `IngressRoute` surfaces after the rest of an overlay has already been applied. `riveter validate` finds it first:
@@ -223,7 +316,7 @@ What goes in, and what does not:
 
 `pack` ends by reading back what it wrote with the check Warehouse will apply, and prints which `${VAR}`s the overlay uses that the package does not default - what the installer must supply. That list is read from the overlay's parsed values, as expansion reads them, so a `${...}` in a YAML comment is not counted.
 
-An optional `values.toml` in the overlay directory (`NAME = "default"`, strings, numbers or booleans) supplies defaults for those variables and is packed as it is.
+An optional `values.yaml` (`NAME: value`) or `values.toml` (`NAME = "default"`) in the overlay directory supplies defaults for those variables and is packed as it is; a `secrets.yaml` supplies encrypted ones (see [Config and secrets in git](#config-and-secrets-in-git)).
 
 ### Publishing and fetching
 
@@ -240,9 +333,11 @@ Both are also read from a `.env` in the working directory. `publish` needs the `
 
 `riveter install forge` (the newest), `forge@0.4.0`, or `./forge-0.4.0.rivet` for a local file. The package is unpacked to a scratch directory and rendered and applied exactly as `apply` would - same `--scope`, targets, `--dry-run`, rollout waiting and `kube_context` handling - so nothing is written to the working directory, and the scratch tree is deleted afterwards.
 
-Variables for the overlay's `${NAME}`s come from, lowest first: the package's `values.toml`, `--env-file <dotenv file>` (typically the overlay's own `.env`), then `--set KEY=value`. **The working directory's `.env` is not read** - an install is a function of the package and what was passed. They are held in memory, never written to disk. A variable nobody supplies is an error that names it.
+Variables for the overlay's `${NAME}`s come from, lowest first: the package's `values.yaml` (or `values.toml`), its `secrets.yaml` opened with the key (see [Config and secrets in git](#config-and-secrets-in-git)), `--env-file <dotenv file>`, then `--set KEY=value`. **The working directory's `.env` is not read** - an install is a function of the package and what was passed. They are held in memory, never written to disk. A variable nobody supplies is an error that names it.
 
-Every installed resource is stamped, after rendering, with the label `riveter.forge/package: <name>` and the annotation `riveter.forge/package-version: <version>` (an annotation because `0.4.0+b123` is not a legal label value), so the cluster records what is live. This is done on the rendered document rather than the overlay data because the embedded templates build their metadata by hand and not all of them honour `labels`/`annotations`; the cost is that comments in the rendered YAML are dropped. `requires.riveter` is enforced; `requires.packages` is only noted, since Riveter does not yet know what else is installed. As with `apply`, the default scope skips immutable resources such as the namespace, so a first install into a fresh cluster needs `--scope all`.
+`--replicas deployment/sage=0` (repeatable) sets the replicas of a Deployment or StatefulSet whatever the overlay says - how a package is installed with something stopped, or updated without starting what is stopped. It must name a resource the overlay declares, and one that has replicas. `--except deployment/gantry` (repeatable) leaves resources out of the install; Gantry uses it to apply its own Deployment last and on its own. Both are checked before anything is sent. `--inventory` also prints everything the package declares, whatever part of it this install applies, as one `riveter-inventory: [{apiVersion, kind, name, namespace}, ...]` JSON line: it is how Gantry learns what a package consists of, so a resource that is later deleted can still be listed and applied again.
+
+Every installed resource is stamped, after rendering, with the label `riveter.forge/package: <name>` and the annotation `riveter.forge/package-version: <version>` (an annotation because `0.4.0+b123` is not a legal label value), so the cluster records what is live. This is done on the rendered document rather than the overlay data because the embedded templates build their metadata by hand and not all of them honour `labels`/`annotations`; the cost is that comments in the rendered YAML are dropped. `requires.riveter` is enforced; `requires.packages` is only noted, since Riveter does not yet know what else is installed. `install` creates the package's namespace itself if the cluster lacks it - the default scope skips the immutable `namespace` resource, which used to make a first install stop at "re-run with `--scope all`" - and says so (`creating <ns>`). A cluster that cannot be reached is not mistaken for a missing namespace, and a `--dry-run` reaches no cluster at all.
 
 ## Templates
 
@@ -359,5 +454,9 @@ None of that proves the real stack agrees, so the package commands were also run
 `tests/unit/schema_tests.rs` checks the validator against a small CRD of its own (every kind of error, each served version against its own schema, the suggestion rules, a field called `default` or `title` surviving the stripping, `nullable`/int-or-string/closed-object normalisation, combinator branches left open, the cache beating the bundle) and against the **real** bundled schemas. `schema_cmd_tests.rs` covers documents and lists, `fetch` against a stand-in `kubectl` (what it asks for, what it writes, what it does when kubectl fails or returns nothing), validating an environment end to end - including that it writes nothing - and one test that renders every golden fixture and validates what riveter's own templates emit against the real CRD schemas, which is what would notice a template drifting from a CRD.
 
 None of that proves the schemas agree with a real cluster, so the validator was also run over every custom resource in it - 11 Certificates, 2 ClusterIssuers, 11 IngressRoutes and 6 Middlewares, `status` blocks included - and accepted all 30, then given deliberately broken ones (a typo, a wrong type, a missing required field, a bad enum, an unserved version, a nested typo) and caught each. The first check is the one that matters: a validator that rejects valid objects would be worse than none.
+
+`tests/unit/gate_tests.rs` covers the overlay language (no `depends_on` leaves the order alone byte for byte, minimal stable moves, ties, chains and diamonds, kind spellings, unknown references, self-dependency, cycles naming every member, malformed shapes, ordering after `${VAR}` expansion; every `wait`/`wait_timeout` rule) and the apply, through a stand-in `kubectl` that records every call so the *sequence* is asserted: apply, wait, apply, wait, apply, and never two phases without the wait between; a failing Job stopping the run with the applied/not-applied lists; a timeout naming `wait_timeout`; `--timeout` as the default for a gate with none; a failed phase reported as possibly partial; `--no-wait` and `--dry-run` applying the whole manifest in one call; an overlay with no gates applied in one call exactly as before. It also covers creating a missing namespace, leaving an existing one alone, and not mistaking an unreachable cluster for a missing one. `secrets_tests.rs` checks the Secret (verbatim bytes, the hash, no label `prune` could select by), that a value never appears in an argument or in the report, `--all`, `--context`, dry runs, and every refusal.
+
+Against a real cluster, in a throwaway namespace: an overlay written with the Deployment *before* the Job it depends on was reordered, and the Deployment's creation timestamp came after the Job's completion time; a failing Job stopped the apply in 4 seconds rather than at its 90-second timeout and the Deployment was never created; `secrets sync` stored bytes identical to the file with a matching hash annotation and prune left it alone; and `install` into a namespace that did not exist created it and applied with the default scope. Against the live forge overlay with the new declarations, `diff` reports no drift - the keys add nothing to what is applied.
 
 [Home](../README.md)

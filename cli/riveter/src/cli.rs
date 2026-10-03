@@ -180,6 +180,15 @@ pub enum Cmd {
         /// One variable as KEY=value, repeatable; wins over everything else
         #[arg(long = "set", value_name = "KEY=VALUE")]
         sets: Vec<String>,
+        /// Set a deployment's or statefulset's replicas whatever the package says, as kind/name=N, repeatable; `deployment/sage=0` installs it stopped
+        #[arg(long = "replicas", value_name = "KIND/NAME=N")]
+        replicas: Vec<String>,
+        /// Leave these resources out (kind/name, repeatable): how a service is upgraded last, on its own, with a way back
+        #[arg(long = "except", value_name = "KIND/NAME")]
+        except: Vec<String>,
+        /// Also print everything the package declares as one JSON line (`riveter-inventory: [...]`), whatever was selected
+        #[arg(long)]
+        inventory: bool,
         /// Pass --dry-run=client to kubectl; nothing reaches the cluster
         #[arg(long)]
         dry_run: bool,
@@ -209,6 +218,11 @@ pub enum Cmd {
         #[arg(value_name = "TARGET", help = TARGET_HELP)]
         targets: Vec<String>,
     },
+    /// Put overlays' `.env` files in the cluster as Secrets, for installs to read
+    Secrets {
+        #[command(subcommand)]
+        cmd: SecretsCmd,
+    },
     /// Manage the CRD schemas `validate` checks against
     Schemas {
         #[command(subcommand)]
@@ -237,6 +251,108 @@ pub enum ApplyScope {
     Immutable,
     /// Every resource
     All,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SecretsCmd {
+    /// Make an age key pair; the private key is what opens every encrypted file
+    ///
+    /// Writes the private key to `--out` (mode 0600, refusing to overwrite) or prints it, and prints the
+    /// public recipient to give to `set` and `import`. Keep the private key out of git: it is the one thing
+    /// to back up, and the one thing a rebuilt machine needs.
+    Keygen {
+        /// File to write the private key to
+        #[arg(long, value_name = "FILE")]
+        out: Option<std::path::PathBuf>,
+    },
+    /// Encrypt one value into a secrets file
+    ///
+    /// The value comes from `--value`, or from standard input (so it stays out of shell history). Every other
+    /// value in the file is left exactly as it was.
+    Set {
+        /// The secrets file (`secrets.yaml` in the overlay)
+        #[arg(value_name = "FILE")]
+        file: std::path::PathBuf,
+        /// Variable name
+        #[arg(value_name = "NAME")]
+        name: String,
+        /// The value; omit to read it from standard input
+        #[arg(long, value_name = "VALUE")]
+        value: Option<String>,
+        /// Public key(s) to encrypt to, for a new file; an existing file keeps its own
+        #[arg(long = "recipient", short = 'r', value_name = "AGE1...")]
+        recipients: Vec<String>,
+    },
+    /// Move values from a dotenv file into a secrets file, encrypted
+    Import {
+        /// The secrets file
+        #[arg(value_name = "FILE")]
+        file: std::path::PathBuf,
+        /// The dotenv file to read
+        #[arg(long = "from", value_name = "DOTENV")]
+        from: std::path::PathBuf,
+        /// Only these names (default: all of them)
+        #[arg(value_name = "NAME")]
+        names: Vec<String>,
+        /// Public key(s) to encrypt to, for a new file
+        #[arg(long = "recipient", short = 'r', value_name = "AGE1...")]
+        recipients: Vec<String>,
+    },
+    /// List the names in a secrets file (never the values)
+    #[command(visible_alias = "ls")]
+    List {
+        #[arg(value_name = "FILE")]
+        file: std::path::PathBuf,
+    },
+    /// Print one value, decrypted, to standard output
+    Show {
+        #[arg(value_name = "FILE")]
+        file: std::path::PathBuf,
+        #[arg(value_name = "NAME")]
+        name: String,
+    },
+    /// Remove a name from a secrets file
+    Remove {
+        #[arg(value_name = "FILE")]
+        file: std::path::PathBuf,
+        #[arg(value_name = "NAME")]
+        name: String,
+    },
+    /// Encrypt a file to different recipients, after a key is lost or someone should lose access
+    Rekey {
+        #[arg(value_name = "FILE")]
+        file: std::path::PathBuf,
+        /// The new recipients (replaces the old ones)
+        #[arg(
+            long = "recipient",
+            short = 'r',
+            value_name = "AGE1...",
+            required = true
+        )]
+        recipients: Vec<String>,
+    },
+    /// Write each named overlay's `.env` to a Secret `gantry-values-<overlay>`
+    ///
+    /// One Secret per overlay, holding the file as it is under the key `env`, written with your own kubectl
+    /// access. Values go to kubectl over standard input and are never printed: only Secret and variable
+    /// names are. `--all` takes every overlay that has a `.env`.
+    Sync {
+        /// Overlays to sync, by name
+        #[arg(value_name = "OVERLAY")]
+        overlays: Vec<String>,
+        /// Every overlay that has a `.env`
+        #[arg(long)]
+        all: bool,
+        /// Namespace the Secrets go in
+        #[arg(long, short = 'n', value_name = "NAMESPACE", default_value = "forge")]
+        namespace: String,
+        /// kubectl context to write to, instead of the current one
+        #[arg(long, value_name = "CONTEXT")]
+        context: Option<String>,
+        /// Report what would be synced without touching the cluster
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]

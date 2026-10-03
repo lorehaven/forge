@@ -1,0 +1,19 @@
+[[migrations]]
+id = "0003-deployment-states"
+author = "gantry-service"
+since = "0.1.0"
+
+# What each deployment is meant to be doing: `running` or `stopped`. A row exists only once someone has
+# started or stopped it; with no row the package's own default applies (A up, B down). It is written when
+# the operation that changes it SUCCEEDS, never when it is asked for, so this always describes what was
+# last actually done - and a later install or upgrade of the package keeps a stopped deployment stopped
+# instead of quietly starting it again.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.deployment_states (
+    deployment TEXT PRIMARY KEY,
+    desired TEXT NOT NULL CHECK (desired IN ('running', 'stopped')),
+    updated_by TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+"""

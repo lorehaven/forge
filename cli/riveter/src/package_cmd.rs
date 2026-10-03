@@ -10,7 +10,7 @@ use crate::package::{
 };
 use crate::registry::{Registry, RemotePackage};
 use crate::render::{ResourceScope, Selector};
-use crate::repl::{WaitPolicy, describe, kubectl_apply, ok, warn};
+use crate::repl::{WaitPolicy, create_namespace_if_missing, describe, kubectl_apply, ok, warn};
 use anyhow::{Context as _, Result, bail, ensure};
 use rivet_package::{Limits, Package};
 use std::path::{Path, PathBuf};
@@ -215,6 +215,12 @@ pub struct InstallArgs<'a> {
     pub env_file: Option<&'a Path>,
     /// `--set`.
     pub sets: &'a [String],
+    /// `--replicas`, as `kind/name=N`.
+    pub replicas: &'a [String],
+    /// `--except`: resources to leave out.
+    pub except: &'a [String],
+    /// `--inventory`: also print everything the package declares.
+    pub inventory: bool,
     /// `--dry-run`.
     pub dry_run: bool,
     /// Rollout waiting.
@@ -225,9 +231,53 @@ pub struct InstallArgs<'a> {
     pub targets: &'a [String],
 }
 
+/// Everything the package declares, as JSON.
+///
+/// Rendered with the variables given: `[{apiVersion, kind, name, namespace}]`. It is what the package is,
+/// whatever part of it an install was asked to apply - so a resource deleted afterwards can still be
+/// known about, and put back.
+pub fn inventory_line(env: &str) -> Result<String> {
+    let rendered = crate::render::render_in_memory(env, ResourceScope::All, &Selector::default())?;
+    let mut items = Vec::new();
+    for (_, yaml) in rendered {
+        let doc: serde_yaml::Value = serde_yaml::from_str(&yaml)?;
+        let text = |value: Option<&serde_yaml::Value>| {
+            value
+                .and_then(serde_yaml::Value::as_str)
+                .map(str::to_string)
+        };
+        items.push(serde_json::json!({
+            "apiVersion": text(doc.get("apiVersion")),
+            "kind": text(doc.get("kind")),
+            "name": text(doc.get("metadata").and_then(|m| m.get("name"))),
+            "namespace": text(doc.get("metadata").and_then(|m| m.get("namespace"))),
+        }));
+    }
+    Ok(serde_json::to_string(&items)?)
+}
+
+/// `kind/name=N` entries to a map; the kind is lower-cased so `Deployment/sage=0` works.
+pub fn parse_replicas(entries: &[String]) -> Result<std::collections::BTreeMap<String, u32>> {
+    let mut parsed = std::collections::BTreeMap::new();
+    for entry in entries {
+        let (resource, count) = entry
+            .split_once('=')
+            .with_context(|| format!("--replicas expects kind/name=N, got `{entry}`"))?;
+        let (kind, name) = resource
+            .split_once('/')
+            .filter(|(kind, name)| !kind.is_empty() && !name.is_empty())
+            .with_context(|| format!("--replicas expects kind/name=N, got `{entry}`"))?;
+        let count: u32 = count
+            .parse()
+            .with_context(|| format!("--replicas count `{count}` is not a whole number"))?;
+        parsed.insert(format!("{}/{name}", kind.to_ascii_lowercase()), count);
+    }
+    Ok(parsed)
+}
+
 /// `riveter install`.
 pub fn install_command(args: &InstallArgs<'_>) -> Result<()> {
-    let selector = Selector::parse(args.targets)?;
+    let selector = Selector::parse(args.targets)?.except(args.except)?;
     let reference = parse_package_ref(args.package)?;
     let (package, source) = load_package(&reference)?;
 
@@ -235,19 +285,34 @@ pub fn install_command(args: &InstallArgs<'_>) -> Result<()> {
         warn(&note);
     }
 
+    // The key is only looked for if the package has encrypted values: one without needs none, and a key file
+    // that is named but not there must not stop it installing.
+    let identities = if package.files.contains_key(crate::vault::FILE) {
+        crate::vault::identities_from_env()?
+    } else {
+        None
+    };
     let vars = merge_values(
         &package,
         &InstallValues {
             env_file: args.env_file,
             sets: args.sets,
+            identities: identities.as_deref(),
         },
     )?;
-    let installation = prepare_install(&package, vars)?;
+    let installation = prepare_install(&package, vars, parse_replicas(args.replicas)?)?;
 
     ok(&format!(
         "installing {} {} from {source}",
         package.manifest.package.name, package.manifest.package.version
     ));
+
+    if args.inventory {
+        let listing = with_workspace(installation.workspace.clone(), || {
+            inventory_line(&installation.env)
+        })?;
+        println!("riveter-inventory: {listing}");
+    }
 
     let scope = match args.scope {
         ApplyScope::Mutable => ResourceScope::Mutable,
@@ -255,6 +320,10 @@ pub fn install_command(args: &InstallArgs<'_>) -> Result<()> {
         ApplyScope::All => ResourceScope::All,
     };
     let rendered = with_workspace(installation.workspace.clone(), || {
+        // A client-side dry run reaches no cluster, so there is nothing to create a namespace in.
+        if !args.dry_run {
+            create_namespace_if_missing(&installation.env)?;
+        }
         kubectl_apply(&installation.env, args.dry_run, scope, &selector, args.wait)
     })?;
 

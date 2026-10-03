@@ -1,0 +1,6 @@
+env: media
+namespace_name: media
+
+resources:
+{% include "media/base.yaml.j2" %}
+{% include "media/apps.yaml.j2" %}

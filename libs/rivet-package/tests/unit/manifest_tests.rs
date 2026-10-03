@@ -83,3 +83,75 @@ fn name_rule_matches_dns_1123_labels() {
     assert!(!is_valid_name("a_b"));
     assert!(!is_valid_name("a-"));
 }
+
+const HEADER: &str = "[package]\nname = \"ml\"\nversion = \"1.0.0\"\n";
+
+#[test]
+fn deployments_are_declared_and_survive_a_round_trip() {
+    let source = format!(
+        "{HEADER}\n\
+         [[deployment]]\nname = \"inference\"\nresources = [\"deployment/sage\", \"deployment/switchboard\"]\n\
+         conflicts_with = [\"training\"]\n\
+         [[deployment.also_stops]]\nselector = \"app=vllm\"\n\n\
+         [[deployment]]\nname = \"training\"\ndefault = \"stopped\"\nresources = [\"statefulset/trainer\"]\n"
+    );
+    let manifest = Manifest::parse(&source).unwrap();
+    assert_eq!(manifest.deployments.len(), 2);
+    assert_eq!(
+        manifest.deployments[0].resources,
+        ["deployment/sage", "deployment/switchboard"]
+    );
+    assert_eq!(
+        manifest.deployments[0].default,
+        rivet_package::DefaultState::Running
+    );
+    assert_eq!(manifest.deployments[0].also_stops[0].selector, "app=vllm");
+    assert_eq!(
+        manifest.deployments[1].default,
+        rivet_package::DefaultState::Stopped
+    );
+
+    let again = Manifest::parse(&manifest.to_toml().unwrap()).unwrap();
+    assert_eq!(again, manifest);
+}
+
+#[test]
+fn a_manifest_without_deployments_is_unchanged() {
+    let manifest = Manifest::parse(HEADER).unwrap();
+    assert!(manifest.deployments.is_empty());
+    assert!(!manifest.to_toml().unwrap().contains("deployment"));
+}
+
+#[test]
+fn bad_deployments_are_refused_with_the_reason() {
+    let bad = |body: &str| {
+        Manifest::parse(&format!("{HEADER}\n[[deployment]]\n{body}"))
+            .unwrap_err()
+            .to_string()
+    };
+
+    assert!(bad("name = \"Bad\"\nresources = [\"deployment/a\"]").contains("DNS-1123"));
+    assert!(bad("name = \"a\"\nresources = []").contains("no resources"));
+    assert!(bad("name = \"a\"\nresources = [\"secret/a\"]").contains("deployment/<name>"));
+    assert!(
+        bad("name = \"a\"\nresources = [\"daemonset/a\"]").contains("only those can be scaled")
+    );
+    assert!(
+        bad("name = \"a\"\nresources = [\"deployment/a\"]\nconflicts_with = [\"a\"]")
+            .contains("itself")
+    );
+    assert!(bad("name = \"a\"\nresources = [\"deployment/a\"]\n[[deployment.also_stops]]\nselector = \"-A\"").contains("selector"));
+    assert!(
+        bad("name = \"a\"\nresources = [\"deployment/a\"]\nsurprise = 1").contains("unknown field")
+    );
+
+    let twice = format!(
+        "{HEADER}\n[[deployment]]\nname = \"a\"\nresources = [\"deployment/a\"]\n[[deployment]]\nname = \"a\"\nresources = [\"deployment/b\"]\n"
+    );
+    assert!(
+        Manifest::parse(&twice)
+            .unwrap_err()
+            .to_string()
+            .contains("twice")
+    );
+}

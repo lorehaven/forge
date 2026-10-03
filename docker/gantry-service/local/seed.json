@@ -1,0 +1,90 @@
+{
+ "workloads": [
+  {
+   "kind": "deployment",
+   "name": "sage",
+   "namespace": "ml",
+   "package": "ml",
+   "version": "1.0.0",
+   "desired": 1,
+   "ready": 1
+  },
+  {
+   "kind": "deployment",
+   "name": "switchboard",
+   "namespace": "ml",
+   "package": "ml",
+   "version": "1.0.0",
+   "desired": 1,
+   "ready": 1
+  },
+  {
+   "kind": "deployment",
+   "name": "jellyfin",
+   "namespace": "media",
+   "package": "media",
+   "version": "1.0.0",
+   "desired": 1,
+   "ready": 1
+  }
+ ],
+ "resources": [
+  {
+   "apiVersion": "v1",
+   "kind": "Service",
+   "name": "sage",
+   "namespace": "ml",
+   "package": "ml",
+   "version": "1.0.0"
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "ConfigMap",
+   "name": "sage-config",
+   "namespace": "ml",
+   "package": "ml",
+   "version": "1.0.0"
+  },
+  {
+   "apiVersion": "networking.k8s.io/v1",
+   "kind": "Ingress",
+   "name": "sage",
+   "namespace": "ml",
+   "package": "ml",
+   "version": "1.0.0"
+  },
+  {
+   "apiVersion": "rbac.authorization.k8s.io/v1",
+   "kind": "ClusterRole",
+   "name": "ml-reader",
+   "package": "ml",
+   "version": "1.0.0"
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "Service",
+   "name": "jellyfin",
+   "namespace": "media",
+   "package": "media",
+   "version": "1.0.0"
+  },
+  {
+   "apiVersion": "v1",
+   "kind": "ConfigMap",
+   "name": "jellyfin-config",
+   "namespace": "media",
+   "package": "media",
+   "version": "1.0.0"
+  }
+ ],
+ "declared": [
+  {
+   "apiVersion": "apps/v1",
+   "kind": "Deployment",
+   "name": "trainer",
+   "namespace": "ml",
+   "package": "ml",
+   "version": "1.0.0"
+  }
+ ]
+}

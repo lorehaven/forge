@@ -1,0 +1,19 @@
+[package]
+name = "ml"
+version = "1.0.0"
+description = "Inference (Sage and Switchboard) and training, which must not run together"
+
+[[deployment]]
+name = "inference"
+description = "A: Sage and Switchboard, with the model servers Switchboard launches"
+resources = ["deployment/sage", "deployment/switchboard"]
+conflicts_with = ["training"]
+
+[[deployment.also_stops]]
+selector = "app=vllm,app.kubernetes.io/managed-by=switchboard"
+
+[[deployment]]
+name = "training"
+description = "B: a training run"
+default = "stopped"
+resources = ["deployment/trainer"]

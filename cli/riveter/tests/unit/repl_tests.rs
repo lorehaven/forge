@@ -128,6 +128,7 @@ fn manifest(selected: Vec<ResourceRef>, skipped: Vec<ResourceRef>) -> RenderedMa
         skipped_out_of_scope: skipped,
         namespace: Some("default".to_string()),
         creates_namespace: false,
+        phases: Vec::new(),
     }
 }
 
@@ -283,6 +284,7 @@ fn manifest_with_context(kube_context: Option<&str>) -> RenderedManifest {
         skipped_out_of_scope: Vec::new(),
         namespace: None,
         creates_namespace: false,
+        phases: Vec::new(),
     }
 }
 

@@ -10,7 +10,8 @@
 rivet.toml          # the manifest (generated from the overlay's own on pack)
 overlay.yaml        # the overlay, unrendered - required
 base.yaml.j2 ...    # whatever the overlay includes, at its original relative path
-values.toml         # optional defaults for the overlay's ${VARS}
+values.yaml         # optional defaults for the overlay's ${VARS} (or values.toml)
+secrets.yaml        # optional encrypted values, safe to ship: NAME: ENC[age,...]
 .env.example        # optional documentation of what to supply
 SHA256SUMS          # `<hex>  <path>` per file, covering everything except itself
 ```
@@ -31,13 +32,23 @@ riveter = ">=0.3"         # a semver requirement on the installing riveter
 packages = ["postgres >=1", "redis"]
 
 [meta]                    # free-form; carried and shown, never interpreted
+
+[[deployment]]            # optional: things Gantry can stop and start on their own
+name = "inference"        # DNS-1123, unique across every package Gantry manages
+description = "one line"
+resources = ["deployment/sage", "deployment/switchboard"]   # stop order; start goes back up it
+default = "running"       # or "stopped"; what it is until someone says otherwise
+conflicts_with = ["training"]   # must not run alongside; starting this plans their stop first
+[[deployment.also_stops]]       # pods nothing owns that hold what it holds
+selector = "app=vllm"           # as `kubectl -l`; deleted after the scale-down and waited on
+namespaces = ["ml"]             # empty: wherever Gantry may act
 ```
 
-Unknown keys under `[package]` and `[requires]` are errors, so a typo (`namspace`) surfaces instead of being ignored.
+Unknown keys under `[package]`, `[requires]` and `[[deployment]]` are errors, so a typo (`namspace`) surfaces instead of being ignored. A deployment's resources must be `deployment/<name>` or `statefulset/<name>` (the only kinds that scale), names are unique within a manifest, and one cannot conflict with itself; `riveter pack` additionally checks that every named workload is in the overlay. A package that declares no `[[deployment]]` is, to Gantry, one deployment named after the package.
 
 ## Public API
 
-- `Manifest` / `PackageMeta` / `Requires` — `Manifest::parse` and `to_toml` validate (name rule, semver version, requirement syntax, one-line description); `Manifest::version()` gives the parsed `semver::Version`. `manifest::is_valid_name` and `parse_package_requirement` are the building blocks.
+- `Manifest` / `PackageMeta` / `Requires` / `Deployment` / `AlsoStops` / `DefaultState` — `Manifest::parse` and `to_toml` validate (name rule, semver version, requirement syntax, one-line description); `Manifest::version()` gives the parsed `semver::Version`. `manifest::is_valid_name` and `parse_package_requirement` are the building blocks.
 - `PackageBuilder` — `add_file(path, bytes)` for the overlay's own files (`rivet.toml` and `SHA256SUMS` are reserved and generated; `overlay.yaml` is required), then `finish()` for an in-memory `Package` or `build()` for the bytes.
 - `Package::read(reader, &Limits)` — decode and fully validate, or fail with a `PackageError`. `Package::to_bytes()` serialises; `Package::write_to(dir)` materialises files with `create_new`, so nothing existing is overwritten or followed.
 - `Limits` — `max_entries` (2000), `max_file_bytes` (16MiB), `max_total_bytes` (128MiB), all decompressed sizes.

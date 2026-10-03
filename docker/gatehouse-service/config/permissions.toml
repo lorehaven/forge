@@ -63,6 +63,18 @@ actions = ["read", "write"]
 # named project, no ancestor walk.
 resource_types = ["project"]
 
+[services.gantry]
+label = "Gantry"
+home = true
+description = "Install, upgrade, scale and swap what runs in the cluster."
+# `deploy` installs, upgrades or edits a resource's YAML, `scale` stops and starts (deletes and applies
+# again) a deployment or one resource, `activate` is a swap (a start that stops something else), `rollback`
+# goes to an older version.
+actions = ["read", "deploy", "scale", "activate", "rollback"]
+# Lets a grant name one package - see `gantry:target:<package>:<action>` in quench-auth - so someone can
+# be allowed to upgrade `media` and nothing else.
+resource_types = ["target"]
+
 # Gatehouse administers itself through the same catalog it hands to every
 # other service, which is what lets user administration be delegated below
 # full admin. Assigning the `admin` or `service` role is deliberately NOT one
@@ -86,6 +98,7 @@ warehouse = ["read"]
 switchboard = ["read"]
 conveyor = ["read"]
 workbench = ["read"]
+gantry = ["read"]
 
 [templates.editor]
 sage = ["read", "write"]
@@ -93,6 +106,8 @@ warehouse = ["read", "write"]
 switchboard = ["read", "launch", "stop"]
 conveyor = ["read", "write"]
 workbench = ["read", "write"]
+# Reading only: what Gantry can do to the cluster is granted deliberately, never by a template.
+gantry = ["read"]
 
 # Everything short of assigning roles: create, edit, delete a user, and grant
 # them catalog permissions. What "avoid using admin day to day" runs on.

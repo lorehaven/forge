@@ -1,0 +1,13 @@
+[[migrations]]
+id = "0005-drop-overrides"
+author = "gantry-service"
+since = "0.1.0"
+
+# Variables are no longer set by hand in Gantry. A package carries its own (values.yaml) and its secrets,
+# encrypted (secrets.yaml), both committed with the overlay and baked into the package, so a version of a
+# package is the whole of what it installs. The table is empty on any estate that never used the box; on one
+# that did, those values belong in the overlay's values.yaml now.
+[[migrations.changes]]
+sql = """
+DROP TABLE IF EXISTS ${schema}.overrides;
+"""

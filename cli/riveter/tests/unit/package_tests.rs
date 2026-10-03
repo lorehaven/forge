@@ -507,6 +507,7 @@ fn values_layer_defaults_then_env_file_then_set() {
         &InstallValues {
             env_file: Some(&env_file),
             sets: &["C=from-set".to_string(), "E=a=b".to_string()],
+            ..Default::default()
         },
     )
     .unwrap();
@@ -527,7 +528,8 @@ fn a_malformed_set_or_missing_env_file_is_an_error() {
             &package,
             &InstallValues {
                 env_file: None,
-                sets: &sets
+                sets: &sets,
+                ..Default::default()
             }
         )
         .is_err()
@@ -538,7 +540,8 @@ fn a_malformed_set_or_missing_env_file_is_an_error() {
             &package,
             &InstallValues {
                 env_file: None,
-                sets: &sets
+                sets: &sets,
+                ..Default::default()
             }
         )
         .is_err()
@@ -548,7 +551,8 @@ fn a_malformed_set_or_missing_env_file_is_an_error() {
             &package,
             &InstallValues {
                 env_file: Some(Path::new("/nonexistent/env")),
-                sets: &[]
+                sets: &[],
+                ..Default::default()
             }
         )
         .is_err()
@@ -631,7 +635,10 @@ fn installed(vars: &[(&str, &str)]) -> (riveter::package::Installation, tempfile
         .iter()
         .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
         .collect::<std::collections::HashMap<_, _>>();
-    (prepare_install(&package, vars).unwrap(), dir)
+    (
+        prepare_install(&package, vars, std::collections::BTreeMap::new()).unwrap(),
+        dir,
+    )
 }
 
 #[test]
@@ -970,4 +977,154 @@ resources:
 #[test]
 fn unparseable_overlays_fall_back_to_scanning_the_text() {
     assert_eq!(riveter::render::overlay_vars("a: [unclosed ${X}"), ["X"]);
+}
+
+fn render_with_replicas(replicas: &[(&str, u32)]) -> anyhow::Result<String> {
+    let (mut installation, _keep) = installed(&[("API_TOKEN", "x"), ("REGION", "eu")]);
+    installation.workspace.replicas = replicas
+        .iter()
+        .map(|(key, count)| ((*key).to_string(), *count))
+        .collect();
+    let rendered = with_workspace(installation.workspace.clone(), || {
+        generate_manifests_selected(&installation.env, ResourceScope::All, &Selector::default())
+    })?;
+    Ok(fs::read_to_string(&rendered.path)?)
+}
+
+#[test]
+fn replicas_given_at_install_win_over_the_package() {
+    let stopped = render_with_replicas(&[("deployment/api", 0)]).unwrap();
+    let docs: Vec<serde_yaml::Value> = serde_yaml::Deserializer::from_str(&stopped)
+        .map(|doc| serde::Deserialize::deserialize(doc).unwrap())
+        .collect();
+    let deployment = docs
+        .iter()
+        .find(|d| d["kind"] == "Deployment")
+        .expect("a deployment");
+    assert_eq!(
+        deployment["spec"]["replicas"].as_u64(),
+        Some(0),
+        "{stopped}"
+    );
+
+    let scaled = render_with_replicas(&[("Deployment/api", 4)]).unwrap();
+    assert!(scaled.contains("replicas: 4"), "{scaled}");
+}
+
+#[test]
+fn replicas_naming_something_the_package_does_not_declare_is_an_error() {
+    let error = render_with_replicas(&[("deployment/nope", 0)])
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("deployment/nope"), "{error}");
+    assert!(error.contains("does not declare"), "{error}");
+}
+
+#[test]
+fn replicas_only_apply_to_things_that_have_replicas() {
+    let error = render_with_replicas(&[("namespace/demo-ns", 0)])
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("deployment or statefulset"), "{error}");
+}
+
+#[test]
+fn replicas_flags_are_parsed_strictly() {
+    use riveter::package_cmd::parse_replicas;
+    let parsed = parse_replicas(&[
+        "Deployment/sage=0".to_string(),
+        "statefulset/db=2".to_string(),
+    ])
+    .unwrap();
+    assert_eq!(parsed["deployment/sage"], 0);
+    assert_eq!(parsed["statefulset/db"], 2);
+    for bad in [
+        "sage=0",
+        "deployment/sage",
+        "deployment/sage=many",
+        "/x=1",
+        "deployment/=1",
+    ] {
+        assert!(parse_replicas(&[bad.to_string()]).is_err(), "{bad}");
+    }
+}
+
+#[test]
+fn a_deployment_naming_a_workload_the_overlay_lacks_is_refused_at_pack_time() {
+    let dir = overlay();
+    let root = dir.path().join("overlays");
+    let manifest_path = root.join("demo/rivet.toml");
+    let original = fs::read_to_string(&manifest_path).unwrap();
+
+    fs::write(
+        &manifest_path,
+        format!("{original}\n[[deployment]]\nname = \"api\"\nresources = [\"deployment/api\"]\n"),
+    )
+    .unwrap();
+    let packed = pack(&opts(&root, &dir.path().join("out")), None).unwrap();
+    assert_eq!(read_back(&packed.path).manifest.deployments.len(), 1);
+
+    fs::write(
+        &manifest_path,
+        format!("{original}\n[[deployment]]\nname = \"api\"\nresources = [\"deployment/nope\"]\n"),
+    )
+    .unwrap();
+    let error = pack(&opts(&root, &dir.path().join("out2")), None)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("deployment/nope"), "{error}");
+    assert!(error.contains("does not declare"), "{error}");
+}
+
+#[test]
+fn except_leaves_a_resource_out_of_an_install_and_everything_else_in() {
+    let (installation, _keep) = installed(&[("API_TOKEN", "x"), ("REGION", "eu")]);
+    let selector = Selector::default().except(&["deployment/api"]).unwrap();
+
+    let rendered = with_workspace(installation.workspace.clone(), || {
+        generate_manifests_selected(&installation.env, ResourceScope::All, &selector)
+    })
+    .unwrap();
+    let manifest = fs::read_to_string(&rendered.path).unwrap();
+    assert!(!manifest.contains("kind: Deployment"), "{manifest}");
+    assert!(manifest.contains("kind: Namespace"), "{manifest}");
+
+    // Combined with targets, an exclusion still wins.
+    let selector = Selector::parse(&["deployment"])
+        .unwrap()
+        .except(&["deployment/api"])
+        .unwrap();
+    assert!(!selector.matches("deployment", "api"));
+    assert!(
+        Selector::default()
+            .except(&["secret/x"])
+            .unwrap()
+            .matches("deployment", "api")
+    );
+    assert!(Selector::default().except(&["a/b/c"]).is_err());
+}
+
+#[test]
+fn the_inventory_lists_everything_the_package_declares_with_its_real_kinds_and_namespaces() {
+    let (installation, _keep) = installed(&[("API_TOKEN", "x"), ("REGION", "eu")]);
+    let line = with_workspace(installation.workspace.clone(), || {
+        riveter::package_cmd::inventory_line(&installation.env)
+    })
+    .unwrap();
+
+    let items: Vec<serde_json::Value> = serde_json::from_str(&line).unwrap();
+    let find = |kind: &str| {
+        items
+            .iter()
+            .find(|i| i["kind"] == kind)
+            .unwrap_or_else(|| panic!("{kind} in {line}"))
+    };
+    assert_eq!(find("Deployment")["name"], "api");
+    assert_eq!(find("Deployment")["apiVersion"], "apps/v1");
+    assert_eq!(find("Deployment")["namespace"], "demo-ns");
+    assert_eq!(find("Namespace")["name"], "demo-ns");
+    assert!(
+        find("Namespace")["namespace"].is_null(),
+        "cluster-scoped kinds carry none"
+    );
 }

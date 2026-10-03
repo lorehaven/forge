@@ -1,4 +1,8 @@
-use crate::env::{env_override, manifest_path, output_dir, overlay_dir, resource_metadata};
+use crate::env::{
+    env_override, manifest_path, output_dir, overlay_dir, replica_overrides, resource_metadata,
+};
+pub use crate::order::{Gate, Phase, WaitFor};
+use crate::order::{gates_of, order_by_dependencies};
 use anyhow::Context;
 use minijinja::value::ValueKind;
 use minijinja::{Environment, Output, State, Value, context, escape_formatter};
@@ -69,6 +73,8 @@ impl fmt::Display for Target {
 #[derive(Debug, Clone, Default)]
 pub struct Selector {
     targets: Vec<Target>,
+    /// Resources left out even if they match `targets` (or if there are none).
+    excluded: Vec<Target>,
 }
 
 impl Selector {
@@ -95,7 +101,16 @@ impl Selector {
             });
         }
 
-        Ok(Self { targets: parsed })
+        Ok(Self {
+            targets: parsed,
+            excluded: Vec::new(),
+        })
+    }
+
+    /// The same selection, without the resources `except` names (`kind/name` patterns, as for targets).
+    pub fn except<S: AsRef<str>>(mut self, except: &[S]) -> anyhow::Result<Self> {
+        self.excluded = Self::parse(except)?.targets;
+        Ok(self)
     }
 
     #[must_use]
@@ -105,6 +120,9 @@ impl Selector {
 
     #[must_use]
     pub fn matches(&self, kind: &str, name: &str) -> bool {
+        if self.excluded.iter().any(|t| t.matches(kind, name)) {
+            return false;
+        }
         self.targets.is_empty() || self.targets.iter().any(|t| t.matches(kind, name))
     }
 }
@@ -172,6 +190,9 @@ pub struct RenderedManifest {
     /// Whether this render includes the overlay's own `namespace` resource —
     /// i.e. whether applying it would create the namespace.
     pub creates_namespace: bool,
+    /// The manifest split at each `wait:` gate, so an apply can stop at each. Empty when the selection
+    /// has no gate, in which case `path` holds everything and is applied in one go.
+    pub phases: Vec<Phase>,
 }
 
 pub fn generate_manifests(env_name: &str) -> anyhow::Result<String> {
@@ -240,6 +261,8 @@ pub fn generate_manifests_selected(
         .any(|(r, yaml)| is_secret_resource(&r.kind, yaml));
     write_manifest(&path, &contents, sensitive)?;
 
+    let phases = write_phases(&path, &rendered, &gates_of(&data)?)?;
+
     let selected: Vec<ResourceRef> = rendered.into_iter().map(|(r, _)| r).collect();
     let skipped_out_of_scope = resource_refs(&data)?
         .into_iter()
@@ -261,7 +284,62 @@ pub fn generate_manifests_selected(
             .filter(|n| !n.is_empty())
             .map(ToString::to_string),
         creates_namespace,
+        phases,
     })
+}
+
+/// Splits a render at its gates into one manifest per phase - `<manifest>.phase-1.yaml`, ... - or returns
+/// nothing if no selected resource has a gate, which is every overlay that predates them.
+fn write_phases(
+    path: &str,
+    rendered: &[(ResourceRef, String)],
+    gates: &[(ResourceRef, WaitFor, Option<u64>)],
+) -> anyhow::Result<Vec<Phase>> {
+    let gate_for = |resource: &ResourceRef| {
+        gates.iter().find(|(r, _, _)| {
+            kinds_match(&r.kind, &resource.kind) && r.name.eq_ignore_ascii_case(&resource.name)
+        })
+    };
+    if !rendered.iter().any(|(r, _)| gate_for(r).is_some()) {
+        return Ok(Vec::new());
+    }
+
+    let stem = path.strip_suffix(".yaml").unwrap_or(path);
+    let mut phases = Vec::new();
+    let mut current: Vec<&(ResourceRef, String)> = Vec::new();
+
+    let mut close =
+        |current: &mut Vec<&(ResourceRef, String)>, gate: Option<Gate>| -> anyhow::Result<()> {
+            let path = format!("{stem}.phase-{}.yaml", phases.len() + 1);
+            let owned: Vec<(ResourceRef, String)> = current.iter().map(|e| (*e).clone()).collect();
+            let sensitive = owned
+                .iter()
+                .any(|(r, yaml)| is_secret_resource(&r.kind, yaml));
+            write_manifest(&path, &join_manifests(&owned), sensitive)?;
+            phases.push(Phase {
+                path,
+                resources: owned.into_iter().map(|(r, _)| r).collect(),
+                gate,
+            });
+            current.clear();
+            Ok(())
+        };
+
+    for entry in rendered {
+        current.push(entry);
+        if let Some((_, wait, timeout)) = gate_for(&entry.0) {
+            let gate = Gate {
+                resource: entry.0.clone(),
+                wait: *wait,
+                timeout: *timeout,
+            };
+            close(&mut current, Some(gate))?;
+        }
+    }
+    if !current.is_empty() {
+        close(&mut current, None)?;
+    }
+    Ok(phases)
 }
 
 /// Keeps rendered manifests out of version control.
@@ -354,7 +432,7 @@ pub fn kube_context(data: &YamlValue) -> anyhow::Result<Option<String>> {
     }
 }
 
-fn resource_refs(data: &YamlValue) -> anyhow::Result<Vec<ResourceRef>> {
+pub(crate) fn resource_refs(data: &YamlValue) -> anyhow::Result<Vec<ResourceRef>> {
     let resources = data["resources"]
         .as_sequence()
         .context("resources must be a list")?;
@@ -470,6 +548,7 @@ fn overlay_data<S: std::hash::BuildHasher>(
     substitute_vars(&mut data, env_vars, env_source)?;
     ensure_defaults_is_a_mapping(&data)?;
     ensure_resources_are_addressable(&data)?;
+    order_by_dependencies(&mut data)?;
 
     Ok(data)
 }
@@ -580,6 +659,34 @@ fn render_resources(
     tpl_env.set_formatter(yaml_bool_formatter);
 
     let (labels, annotations) = resource_metadata();
+    let replicas: BTreeMap<String, u32> = replica_overrides()
+        .into_iter()
+        .map(|(key, count)| (key.to_ascii_lowercase(), count))
+        .collect();
+    for key in replicas.keys() {
+        let declared = refs.iter().any(|r| {
+            format!("{}/{}", r.kind.to_ascii_lowercase(), r.name).eq_ignore_ascii_case(key)
+        });
+        anyhow::ensure!(
+            declared,
+            "--replicas names `{key}`, which this overlay does not declare"
+        );
+    }
+
+    // What a ConfigMap or Secret says, whether or not it is among what is being rendered: a workload that
+    // reads one carries a hash of it, so changing the value rolls the workload out.
+    let mut config_docs: BTreeMap<(String, String), String> = BTreeMap::new();
+    for (res, res_ref) in resources.iter().zip(&refs) {
+        let kind = res["kind"]
+            .as_str()
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        if matches!(kind.as_str(), "configmap" | "secret") {
+            let tpl = tpl_env.get_template(&template_name_for_kind(&kind))?;
+            let y = tpl.render(context! { data => data, res => res, env => env_name })?;
+            config_docs.insert((kind, res_ref.name.clone()), y);
+        }
+    }
 
     let mut out = Vec::new();
     for (res, res_ref) in resources.iter().zip(refs) {
@@ -604,9 +711,120 @@ fn render_resources(
         } else {
             stamp_rendered(&res_ref.kind, &res_ref.name, &y, &labels, &annotations)?
         };
+        let y = with_config_hash(&res_ref.kind, &res_ref.name, &y, &config_docs)?;
+        let key = format!("{}/{}", res_ref.kind.to_ascii_lowercase(), res_ref.name);
+        let y = match replicas.get(&key) {
+            Some(count) => with_replicas(&res_ref.kind, &res_ref.name, &y, *count)?,
+            None => y,
+        };
         out.push((res_ref, y));
     }
     Ok(out)
+}
+
+/// The annotation carrying what the `ConfigMap`s and Secrets a workload reads said when it was rendered.
+pub const CONFIG_HASH_ANNOTATION: &str = "riveter.forge/config-hash";
+
+/// Makes a workload roll out when a `ConfigMap` or `Secret` it reads changes.
+///
+/// Kubernetes does not restart a pod when a `ConfigMap` it takes its environment from changes, so an install
+/// that only changed a value would leave the old value running. A hash of every `ConfigMap` and `Secret` the
+/// workload names - through `envFrom`, an env var's `valueFrom` or a volume - that this overlay also
+/// declares goes on its pod template; a change to any of them changes the template, which is what rolls it.
+/// A workload that reads none of the overlay's own is left byte for byte as rendered.
+fn with_config_hash(
+    kind: &str,
+    name: &str,
+    yaml: &str,
+    config_docs: &BTreeMap<(String, String), String>,
+) -> anyhow::Result<String> {
+    if !matches!(
+        kind.to_ascii_lowercase().as_str(),
+        "deployment" | "statefulset" | "daemonset"
+    ) || config_docs.is_empty()
+    {
+        return Ok(yaml.to_string());
+    }
+    let mut doc: YamlValue = serde_yaml::from_str(yaml)
+        .with_context(|| format!("could not read the rendered {kind}/{name}"))?;
+
+    let mut read: std::collections::BTreeSet<(&str, String)> = std::collections::BTreeSet::new();
+    let pod = &doc["spec"]["template"]["spec"];
+    let mut note = |config: &'static str, value: &YamlValue| {
+        if let Some(n) = value.as_str() {
+            read.insert((config, n.to_string()));
+        }
+    };
+    for field in ["containers", "initContainers"] {
+        for container in pod[field].as_sequence().into_iter().flatten() {
+            for from in container["envFrom"].as_sequence().into_iter().flatten() {
+                note("configmap", &from["configMapRef"]["name"]);
+                note("secret", &from["secretRef"]["name"]);
+            }
+            for var in container["env"].as_sequence().into_iter().flatten() {
+                note("configmap", &var["valueFrom"]["configMapKeyRef"]["name"]);
+                note("secret", &var["valueFrom"]["secretKeyRef"]["name"]);
+            }
+        }
+    }
+    for volume in pod["volumes"].as_sequence().into_iter().flatten() {
+        note("configmap", &volume["configMap"]["name"]);
+        note("secret", &volume["secret"]["secretName"]);
+    }
+
+    let mut combined = String::new();
+    for (config, config_name) in &read {
+        if let Some(text) = config_docs.get(&((*config).to_string(), config_name.clone())) {
+            combined.push_str(text);
+            combined.push('\u{0}');
+        }
+    }
+    if combined.is_empty() {
+        return Ok(yaml.to_string());
+    }
+
+    let template = doc
+        .get_mut("spec")
+        .and_then(|s| s.get_mut("template"))
+        .and_then(YamlValue::as_mapping_mut)
+        .with_context(|| format!("{kind}/{name} has no pod template"))?;
+    let metadata = template
+        .entry(YamlValue::String("metadata".to_string()))
+        .or_insert_with(|| YamlValue::Mapping(serde_yaml::Mapping::new()))
+        .as_mapping_mut()
+        .context("the pod template's metadata is not a mapping")?;
+    let annotations = metadata
+        .entry(YamlValue::String("annotations".to_string()))
+        .or_insert_with(|| YamlValue::Mapping(serde_yaml::Mapping::new()))
+        .as_mapping_mut()
+        .context("the pod template's annotations are not a mapping")?;
+    annotations.insert(
+        YamlValue::String(CONFIG_HASH_ANNOTATION.to_string()),
+        YamlValue::String(rivet_package::sha256_hex(combined.as_bytes())[..16].to_string()),
+    );
+    Ok(serde_yaml::to_string(&doc)?.trim().to_string())
+}
+
+/// Sets `spec.replicas` on a rendered `Deployment` or `StatefulSet`.
+fn with_replicas(kind: &str, name: &str, yaml: &str, count: u32) -> anyhow::Result<String> {
+    anyhow::ensure!(
+        matches!(
+            kind.to_ascii_lowercase().as_str(),
+            "deployment" | "statefulset"
+        ),
+        "--replicas applies to a deployment or statefulset, not {kind}/{name}"
+    );
+    let mut doc: YamlValue = serde_yaml::from_str(yaml)
+        .with_context(|| format!("could not read the rendered {kind}/{name} to scale it"))?;
+    let spec = doc
+        .get_mut("spec")
+        .and_then(YamlValue::as_mapping_mut)
+        .with_context(|| format!("{kind}/{name} renders without a spec"))?;
+    spec.insert(
+        YamlValue::String("replicas".to_string()),
+        YamlValue::Number(count.into()),
+    );
+    Ok(serde_yaml::to_string(&doc)?.trim().to_string())
 }
 
 /// Adds `labels` and `annotations` to a rendered resource's `metadata`, theirs
@@ -847,12 +1065,55 @@ fn load_env(env: &str) -> anyhow::Result<(HashMap<String, String>, Option<String
         return Ok((vars, Some("the values given at install".to_string())));
     }
 
-    let path = format!("{}/{env}/.env", overlay_dir().display());
-    if !Path::new(&path).exists() {
-        return Ok((HashMap::new(), Some(path)));
+    let dir = overlay_dir().join(env);
+    let path = format!("{}/.env", dir.display());
+
+    // Lowest first: the overlay's own values file, its encrypted values (if a key is configured), then
+    // `.env` - which, being not committed, is where a local override belongs.
+    let read = |name: &str| -> anyhow::Result<Option<Vec<u8>>> {
+        let file = dir.join(name);
+        file.is_file()
+            .then(|| fs::read(&file).with_context(|| format!("failed to read {}", file.display())))
+            .transpose()
+    };
+    let values = read("values.yaml")?;
+    let toml = read("values.toml")?;
+    let mut env_vars: HashMap<String, String> = crate::package::defaults_from(|name| match name {
+        "values.yaml" => values.as_deref(),
+        "values.toml" => toml.as_deref(),
+        _ => None,
+    })
+    .with_context(|| format!("the values in {}", dir.display()))?
+    .into_iter()
+    .collect();
+
+    if let Some(secrets) = read(crate::vault::FILE)? {
+        let text = String::from_utf8(secrets).context("secrets.yaml is not UTF-8")?;
+        let lookup = |name: &str| {
+            if name == crate::vault::KEY_VAR {
+                crate::env::age_key_override().or_else(|| std::env::var(name).ok())
+            } else {
+                std::env::var(name).ok()
+            }
+            .filter(|v| !v.trim().is_empty())
+        };
+        match crate::vault::identities_from(lookup)? {
+            Some(identities) => {
+                env_vars.extend(crate::vault::variables(&text, Some(&identities))?);
+            }
+            // Not an error yet: a command that needs none of these values should not demand the key. A
+            // variable that turns out to be one of them is reported by name, and this is why.
+            None => crate::repl::warn(&format!(
+                "{env} has encrypted values (secrets.yaml) but no key to open them - set {} or {}",
+                crate::vault::KEY_VAR,
+                crate::vault::KEY_FILE_VAR
+            )),
+        }
     }
 
-    let env_vars = parse_dotenv(&fs::read_to_string(&path)?);
+    if Path::new(&path).exists() {
+        env_vars.extend(parse_dotenv(&fs::read_to_string(&path)?));
+    }
 
     Ok((env_vars, Some(path)))
 }

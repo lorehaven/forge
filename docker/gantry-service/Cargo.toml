@@ -1,0 +1,60 @@
+[package]
+name = "gantry-service"
+version = "0.1.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "Gantry - installs, upgrades, scales and swaps what runs in the cluster"
+keywords = ["kubernetes", "deployment", "tools"]
+categories = ["development-tools"]
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+readme = { workspace = true }
+
+[lib]
+name = "gantry_service"
+path = "src/lib.rs"
+
+[[bin]]
+name = "gantry-service"
+path = "src/main.rs"
+
+# What a runner Job executes; ships in the runner image next to riveter and kubectl.
+[[bin]]
+name = "gantry-runner"
+path = "src/bin/gantry_runner.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+chrono = { workspace = true }
+envmnt = { workspace = true }
+forge-ui = { workspace = true }
+futures-util = { workspace = true }
+http = { workspace = true }
+k8s-openapi = { workspace = true }
+kube = { workspace = true }
+quench-auth = { workspace = true }
+quench-client = { workspace = true }
+quench-db = { workspace = true }
+quench-http = { workspace = true }
+quench-starter = { workspace = true }
+quench-web = { workspace = true }
+quench-web-components = { workspace = true }
+rivet-package = { workspace = true }
+rustls = { workspace = true }
+semver = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+sqlx = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+bytes = { workspace = true }
+http-body-util = { workspace = true }
+serde_urlencoded = { workspace = true }
+tempfile = { workspace = true }

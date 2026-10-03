@@ -120,6 +120,8 @@ pub fn pack(opts: &PackOptions<'_>, resolver: Option<&dyn DigestResolver>) -> Re
         manifest.package.namespace = declared_namespace(&scan.rendered);
     }
 
+    check_deployments(&manifest, &scan.rendered)?;
+
     let literal_secrets = literal_secret_values(&scan.rendered);
     ensure!(
         literal_secrets.is_empty(),
@@ -129,13 +131,18 @@ pub fn pack(opts: &PackOptions<'_>, resolver: Option<&dyn DigestResolver>) -> Re
         literal_secrets.join("\n  ")
     );
 
-    let defaults = match files.get("values.toml") {
-        Some(bytes) => {
-            parse_values(std::str::from_utf8(bytes).context("values.toml is not UTF-8")?)
-                .context("invalid values.toml")?
+    let mut defaults = defaults_from(|name| files.get(name).map(Vec::as_slice))?;
+    // Encrypted values count as supplied: their names are in the clear, their values are only needed to
+    // install. The file must be a real one - a plaintext value in it would be shipped to everyone who can
+    // read the registry.
+    if let Some(bytes) = files.get(crate::vault::FILE) {
+        let vault = crate::vault::Vault::parse(
+            std::str::from_utf8(bytes).context("secrets.yaml is not UTF-8")?,
+        )?;
+        for name in vault.names() {
+            defaults.entry(name.to_string()).or_default();
         }
-        None => BTreeMap::new(),
-    };
+    }
     let required_vars = overlay_vars(&scan.rendered)
         .into_iter()
         .filter(|name| !defaults.contains_key(name))
@@ -428,11 +435,109 @@ pub fn literal_secret_values(rendered: &str) -> Vec<String> {
     found
 }
 
+/// Every workload a `[[deployment]]` names must be in the overlay: a typo here would otherwise only show
+/// up when someone tried to stop it.
+fn check_deployments(manifest: &Manifest, rendered: &str) -> Result<()> {
+    if manifest.deployments.is_empty() {
+        return Ok(());
+    }
+    let value: serde_yaml::Value =
+        serde_yaml::from_str(rendered).context("could not read the rendered overlay")?;
+    let declared: Vec<String> = value
+        .get("resources")
+        .and_then(serde_yaml::Value::as_sequence)
+        .into_iter()
+        .flatten()
+        .filter_map(|res| {
+            let kind = res.get("kind")?.as_str()?.to_ascii_lowercase();
+            let name = res.get("name")?.as_str()?;
+            Some(format!("{kind}/{name}"))
+        })
+        .collect();
+
+    for deployment in &manifest.deployments {
+        for resource in &deployment.resources {
+            ensure!(
+                declared.contains(resource),
+                "deployment `{}` names `{resource}`, which the overlay does not declare",
+                deployment.name
+            );
+        }
+    }
+    Ok(())
+}
+
 /// The overlay's `namespace_name`, unless it is itself a `${VAR}` that only an install can resolve.
 fn declared_namespace(rendered: &str) -> Option<String> {
     let value: serde_yaml::Value = serde_yaml::from_str(rendered).ok()?;
     let namespace = value.get("namespace_name")?.as_str()?.trim();
     (rivet_package::manifest::is_valid_name(namespace)).then(|| namespace.to_string())
+}
+
+/// `values.yaml`: a flat mapping of defaults for the overlay's `${VAR}`s.
+///
+/// The same as `values.toml`, in the shape the rest of an estate's config is written in. Nested values are
+/// an error: a variable is one value.
+pub fn parse_values_yaml(text: &str) -> Result<BTreeMap<String, String>> {
+    let value: serde_yaml::Value = serde_yaml::from_str(text).context("not valid YAML")?;
+    let mapping = match value {
+        serde_yaml::Value::Null => return Ok(BTreeMap::new()),
+        serde_yaml::Value::Mapping(mapping) => mapping,
+        _ => bail!("must be a mapping of NAME: value"),
+    };
+
+    let mut values = BTreeMap::new();
+    for (key, value) in mapping {
+        let key = key
+            .as_str()
+            .with_context(|| "a variable name must be a string".to_string())?
+            .to_string();
+        ensure!(
+            !key.is_empty()
+                && key
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-'),
+            "`{key}` is not a usable variable name"
+        );
+        let text = match value {
+            serde_yaml::Value::String(s) => s,
+            serde_yaml::Value::Number(n) => n.to_string(),
+            serde_yaml::Value::Bool(b) => b.to_string(),
+            serde_yaml::Value::Null => String::new(),
+            _ => bail!("`{key}` must be a string, number or boolean, not a list or a mapping"),
+        };
+        values.insert(key, text);
+    }
+    Ok(values)
+}
+
+/// The defaults an overlay or package carries: `values.yaml` or `values.toml` (not both - which one wins
+/// would be anyone's guess), looked up by file name in `get`.
+pub fn defaults_from<'a>(
+    get: impl Fn(&str) -> Option<&'a [u8]>,
+) -> Result<BTreeMap<String, String>> {
+    let text = |name: &str| -> Result<Option<&'a str>> {
+        get(name)
+            .map(|bytes| std::str::from_utf8(bytes).with_context(|| format!("{name} is not UTF-8")))
+            .transpose()
+    };
+    match (text("values.yaml")?, text("values.toml")?) {
+        (Some(_), Some(_)) => bail!("both values.yaml and values.toml exist; keep one"),
+        (Some(yaml), None) => parse_values_yaml(yaml).context("invalid values.yaml"),
+        (None, Some(toml)) => parse_values(toml).context("invalid values.toml"),
+        (None, None) => Ok(BTreeMap::new()),
+    }
+}
+
+/// The variables `secrets.yaml` provides, opened with the configured key (none if there is no such file).
+pub fn secret_variables(
+    secrets: Option<&str>,
+    identities: Option<&[age::x25519::Identity]>,
+) -> Result<HashMap<String, String>> {
+    secrets.map_or_else(
+        || Ok(HashMap::new()),
+        |text| crate::vault::variables(text, identities).context("secrets.yaml"),
+    )
 }
 
 /// `values.toml`: a flat table of defaults for the overlay's `${VAR}`s.
@@ -580,32 +685,50 @@ pub struct Installation {
 }
 
 /// Where an install's variables come from, lowest precedence first.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct InstallValues<'a> {
     /// A dotenv-format file, typically the overlay's own `.env`.
     pub env_file: Option<&'a Path>,
     /// `KEY=value` overrides.
     pub sets: &'a [String],
+    /// The key that opens the package's `secrets.yaml`, if one is configured.
+    pub identities: Option<&'a [age::x25519::Identity]>,
+}
+
+// A key is not printed, not even by accident in a debug dump: only how many there are.
+impl std::fmt::Debug for InstallValues<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InstallValues")
+            .field("env_file", &self.env_file)
+            .field("sets", &self.sets)
+            .field("keys", &self.identities.map_or(0, <[_]>::len))
+            .finish()
+    }
 }
 
 /// The variables an install renders with.
 ///
-/// The package's `values.toml` defaults, then `env_file`, then `sets`. The
+/// The package's `values.yaml` (or `values.toml`) defaults, then its `secrets.yaml` opened with the
+/// configured key, then `env_file`, then `sets`. The
 /// cwd's `.env` is deliberately not consulted - an install should be a function
 /// of the package and what was passed, not of whichever directory it ran from.
 pub fn merge_values(
     package: &Package,
     values: &InstallValues<'_>,
 ) -> Result<HashMap<String, String>> {
-    let mut merged: HashMap<String, String> = match package.files.get("values.toml") {
-        Some(bytes) => {
-            parse_values(std::str::from_utf8(bytes).context("values.toml is not UTF-8")?)
-                .context("invalid values.toml in the package")?
-                .into_iter()
-                .collect()
-        }
-        None => HashMap::new(),
-    };
+    let mut merged: HashMap<String, String> =
+        defaults_from(|name| package.files.get(name).map(Vec::as_slice))
+            .context("the package's values")?
+            .into_iter()
+            .collect();
+
+    // The package's encrypted values, opened with the key this run was given.
+    let secrets = package
+        .files
+        .get(crate::vault::FILE)
+        .map(|bytes| std::str::from_utf8(bytes).context("secrets.yaml is not UTF-8"))
+        .transpose()?;
+    merged.extend(secret_variables(secrets, values.identities)?);
 
     if let Some(path) = values.env_file {
         let text = std::fs::read_to_string(path)
@@ -654,6 +777,7 @@ pub fn check_requirements(manifest: &Manifest, riveter_version: &str) -> Result<
 pub fn prepare_install<S: std::hash::BuildHasher>(
     package: &Package,
     vars: HashMap<String, String, S>,
+    replicas: BTreeMap<String, u32>,
 ) -> Result<Installation> {
     let scratch = tempfile::tempdir().context("failed to create a scratch directory")?;
     let env = package.manifest.package.name.clone();
@@ -672,6 +796,8 @@ pub fn prepare_install<S: std::hash::BuildHasher>(
             VERSION_ANNOTATION.to_string(),
             package.manifest.package.version.clone(),
         )]),
+        replicas,
+        age_key: None,
     };
 
     Ok(Installation {

@@ -27,6 +27,11 @@ pub struct Workspace {
     pub resource_labels: BTreeMap<String, String>,
     /// Added to every rendered resource's `annotations`, overriding the overlay's.
     pub resource_annotations: BTreeMap<String, String>,
+    /// `kind/name` -> replicas, set on the rendered `Deployment` or `StatefulSet` whatever the overlay says:
+    /// how an installed package is kept stopped (or scaled) through an update.
+    pub replicas: BTreeMap<String, u32>,
+    /// The age key to open `secrets.yaml` with, in place of `RIVETER_AGE_KEY[_FILE]`.
+    pub age_key: Option<String>,
 }
 
 thread_local! {
@@ -78,6 +83,23 @@ pub fn resource_metadata() -> (BTreeMap<String, String>, BTreeMap<String, String
         w.borrow().as_ref().map_or_else(Default::default, |w| {
             (w.resource_labels.clone(), w.resource_annotations.clone())
         })
+    })
+}
+
+/// The age key the workspace carries, if it does.
+#[must_use]
+pub fn age_key_override() -> Option<String> {
+    from_workspace(|w| w.age_key.clone())
+}
+
+/// Replica overrides in effect, as `kind/name` -> count.
+#[must_use]
+pub fn replica_overrides() -> BTreeMap<String, u32> {
+    WORKSPACE.with(|w| {
+        w.borrow()
+            .as_ref()
+            .map(|w| w.replicas.clone())
+            .unwrap_or_default()
     })
 }
 

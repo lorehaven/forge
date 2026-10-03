@@ -62,6 +62,8 @@ client_secret_sage = { env_file = "docker/sage-service/.env", key = "GATEHOUSE_C
 client_secret_switchboard = { env_file = "docker/switchboard-service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-switchboard" }
 client_secret_warehouse = { env_file = "docker/warehouse-service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-warehouse" }
 client_secret_conveyor = { env_file = "docker/conveyor-service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-conveyor" }
+client_secret_gantry = { env_file = "docker/gantry-service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-gantry" }
+client_secret_gantry_warehouse = { env_file = "docker/gantry-service/.env", key = "CLIENT_SECRET_GANTRY_WAREHOUSE", default = "forge-local-dev-secret-gantry-warehouse" }
 client_secret_workbench = { env_file = "docker/workbench-service/.env", key = "GATEHOUSE_CLIENT_SECRET", default = "forge-local-dev-secret-workbench" }
 client_secret_sage_switchboard = { env_file = "docker/sage-service/.env", key = "CLIENT_SECRET_SAGE_SWITCHBOARD", default = "forge-local-dev-secret-sage-switchboard" }
 
@@ -238,19 +240,22 @@ CLIENT_SECRET_SWITCHBOARD = "${client_secret_switchboard}"
 CLIENT_SECRET_WAREHOUSE = "${client_secret_warehouse}"
 CLIENT_SECRET_CONVEYOR = "${client_secret_conveyor}"
 CLIENT_SECRET_WORKBENCH = "${client_secret_workbench}"
+CLIENT_SECRET_GANTRY = "${client_secret_gantry}"
+CLIENT_SECRET_GANTRY_WAREHOUSE = "${client_secret_gantry_warehouse}"
 CLIENT_SECRET_SAGE_SWITCHBOARD = "${client_secret_sage_switchboard}"
 # Not SERVICE_AUDIENCES: gatehouse derives the realm's audience list from its
 # permission catalog now (docker/gatehouse-service/config/permissions.toml),
 # so that one file is what adding a service means editing - see the catalog's
 # own comments. Every other service still reads SERVICE_AUDIENCES normally for
 # its own, single-service default.
-AUTH_REDIRECT_HOSTS = "https://localhost:6443,https://localhost:7443,https://localhost:8443,https://localhost:9443,https://localhost:10443"
+AUTH_REDIRECT_HOSTS = "https://localhost:6443,https://localhost:7443,https://localhost:8443,https://localhost:9443,https://localhost:10443,https://localhost:11443"
 SERVER_HTTP_REDIRECT_ADDR = "0.0.0.0:5080"
 CONVEYOR_UI_URL = "https://localhost:9443/conveyor/ui/home"
 SAGE_UI_URL = "https://localhost:8443/sage/ui/home"
 SWITCHBOARD_UI_URL = "https://localhost:7443/switchboard/ui/home"
 WAREHOUSE_UI_URL = "https://localhost:6443/warehouse/ui/home"
 WORKBENCH_UI_URL = "https://localhost:10443/workbench/ui/home"
+GANTRY_UI_URL = "https://localhost:11443/gantry/ui/home"
 
 [[services]]
 name = "warehouse"
@@ -343,6 +348,19 @@ cert_from = "docker/warehouse-service"
 
 [services.env]
 GATEHOUSE_CLIENT_SECRET = "${client_secret_workbench}"
+
+# Gantry reads Warehouse and the cluster rather than depending on the services it manages, so the realm
+# is all it waits for.
+[[services]]
+name = "gantry"
+package = "gantry-service"
+port = 11443
+base_path = "/gantry"
+needs = ["gatehouse"]
+cert_from = "docker/warehouse-service"
+
+[services.env]
+GATEHOUSE_CLIENT_SECRET = "${client_secret_gantry}"
 
 # ---------------------------------------------------------------------------
 # After a start

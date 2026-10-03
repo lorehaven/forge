@@ -6,6 +6,8 @@ mod config_tests;
 mod env_support;
 #[path = "unit/env_tests.rs"]
 mod env_tests;
+#[path = "unit/gate_tests.rs"]
+mod gate_tests;
 #[path = "unit/golden_tests.rs"]
 mod golden_tests;
 #[path = "unit/help_tests.rs"]
@@ -34,3 +36,7 @@ mod repl_tests;
 mod schema_cmd_tests;
 #[path = "unit/schema_tests.rs"]
 mod schema_tests;
+#[path = "unit/secrets_tests.rs"]
+mod secrets_tests;
+#[path = "unit/vault_tests.rs"]
+mod vault_tests;

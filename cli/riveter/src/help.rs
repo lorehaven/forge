@@ -133,6 +133,11 @@ pub const COMMANDS: &[CommandHelp] = &[
                  reported as a failure rather than a success.",
         subcommands: &[],
         options: &[
+            (
+                "--replicas <KIND/NAME=N>",
+                "Set replicas on a deployment or statefulset; repeatable",
+            ),
+            ("--except <KIND/NAME>", "Leave a resource out; repeatable"),
             ("--dry-run", "Pass --dry-run=client to kubectl"),
             ("--no-wait", "Return once kubectl accepts the manifests"),
             ("--timeout <seconds>", "Per-rollout wait, default 300"),
@@ -263,6 +268,58 @@ pub const COMMANDS: &[CommandHelp] = &[
             ("validate certificate", "just the certificates"),
         ],
         targets: true,
+    },
+    CommandHelp {
+        name: "secrets",
+        surface: Surface::Cli,
+        aliases: &[],
+        usage: "<keygen|set|import|list|show|remove|rekey|sync> ...",
+        summary: "Keep secrets in git, encrypted (age), and open them at install",
+        detail: "An overlay's secrets.yaml holds NAME: ENC[age,...] - names readable, each value\n\
+                 encrypted on its own - and is committed and packed like any other file. The\n\
+                 key that opens it is not: RIVETER_AGE_KEY, or RIVETER_AGE_KEY_FILE (a file,\n\
+                 which can be mounted wherever riveter runs), else ~/.config/riveter/age.key.\n\
+                 At install the values join the others, below --env-file and --set. `sync` is the\n\
+                 older route: it writes a .env to a Secret for an install to mount.",
+        subcommands: &[
+            ("keygen", "Make a key pair; prints the public recipient"),
+            (
+                "set",
+                "Encrypt one value (from --value or stdin) into a file",
+            ),
+            (
+                "import",
+                "Move values from a dotenv file into a file, encrypted",
+            ),
+            ("list", "The names in a file, never the values"),
+            ("show", "Print one value decrypted"),
+            ("remove", "Drop a name from a file"),
+            ("rekey", "Encrypt to different recipients"),
+            ("sync", "Write .env files to Secrets in the cluster (older)"),
+        ],
+        options: &[
+            ("--recipient <age1...>", "Who a new file encrypts to"),
+            ("--out <file>", "keygen: where the private key goes"),
+            ("--from <dotenv>", "import: the file to read"),
+            ("--all", "sync: every overlay that has a .env"),
+            (
+                "--namespace <ns>",
+                "sync: where the Secrets go (default forge)",
+            ),
+            ("--dry-run", "sync: report what would be synced"),
+        ],
+        examples: &[
+            ("secrets keygen --out ~/.config/riveter/age.key", "once"),
+            (
+                "secrets import overlays/media/secrets.yaml --from overlays/media/.env",
+                "move a .env in",
+            ),
+            (
+                "secrets set overlays/media/secrets.yaml DB_PASSWORD",
+                "value from stdin",
+            ),
+        ],
+        targets: false,
     },
     CommandHelp {
         name: "schemas",

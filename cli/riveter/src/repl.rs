@@ -1,8 +1,8 @@
 use crate::env::{current_env, env_list, env_set, env_show};
 use crate::help;
 use crate::render::{
-    RenderedManifest, ResourceRef, ResourceScope, Selector, generate_manifests_selected,
-    list_resources,
+    Gate, RenderedManifest, ResourceRef, ResourceScope, Selector, WaitFor,
+    generate_manifests_selected, list_resources,
 };
 use quench_cli::prelude::{
     ReplControl, Tone, print_box_banner, print_status, repl_prompt, repl_run, require_binary,
@@ -316,6 +316,40 @@ fn ensure_namespace_exists(env: &str, rendered: &RenderedManifest) -> anyhow::Re
     );
 }
 
+/// Creates the environment's namespace if the cluster does not have it, and says whether it did.
+///
+/// For `install`, which puts a package into a cluster that may never have seen it: the namespace is an
+/// immutable resource, so the default scope leaves it out, and the first install would otherwise stop at
+/// "re-run with `--scope all`". A cluster that cannot be reached is not mistaken for a missing namespace
+/// (see [`namespace_is_absent`]), and an overlay that declares no namespace is left to the apply to
+/// report on.
+pub fn create_namespace_if_missing(env: &str) -> anyhow::Result<bool> {
+    require_binary("kubectl", "riveter shells out to it to touch the cluster")?;
+
+    let declares = crate::render::list_resources(env)?
+        .iter()
+        .any(|r| r.kind.eq_ignore_ascii_case("namespace"));
+    if !declares {
+        return Ok(false);
+    }
+
+    let rendered =
+        generate_manifests_selected(env, ResourceScope::All, &Selector::parse(&["namespace"])?)?;
+    let Some(namespace) = rendered.namespace.clone() else {
+        return Ok(false);
+    };
+    if namespace_is_absent(&rendered, &namespace) != Some(true) {
+        return Ok(false);
+    }
+
+    print_status(Tone::Info, "namespace", &format!("creating {namespace}"));
+    let status = kubectl(&rendered)
+        .args(["apply", "-f", &rendered.path])
+        .status()?;
+    anyhow::ensure!(status.success(), "could not create namespace {namespace}");
+    Ok(true)
+}
+
 /// How long an apply waits for each rollout, and whether it waits at all.
 #[derive(Debug, Clone, Copy)]
 pub struct WaitPolicy {
@@ -356,32 +390,203 @@ fn await_rollouts(rendered: &RenderedManifest, wait: WaitPolicy) -> anyhow::Resu
     }
 
     for res in rollouts {
-        print_status(
-            Tone::Info,
-            "wait",
-            &format!("{res} (up to {}s)", wait.timeout_seconds),
-        );
+        await_rollout(rendered, res, wait.timeout_seconds)?;
+    }
 
+    Ok(())
+}
+
+/// Waits for one `Deployment`, `StatefulSet` or `DaemonSet` to finish rolling out.
+fn await_rollout(
+    rendered: &RenderedManifest,
+    res: &ResourceRef,
+    timeout_seconds: u64,
+) -> anyhow::Result<()> {
+    print_status(
+        Tone::Info,
+        "wait",
+        &format!("{res} (up to {timeout_seconds}s)"),
+    );
+
+    let mut cmd = kubectl(rendered);
+    cmd.args(["rollout", "status"]);
+    if let Some(namespace) = &rendered.namespace {
+        cmd.args(["-n", namespace]);
+    }
+    let status = cmd
+        .arg(format!("{}/{}", res.kind.to_lowercase(), res.name))
+        .arg(format!("--timeout={timeout_seconds}s"))
+        .status()?;
+
+    anyhow::ensure!(
+        status.success(),
+        "{res} did not become ready within {timeout_seconds}s — the manifests were applied, \
+         but the rollout has not completed\n\n\
+         inspect it with `kubectl rollout status {}/{}`, or pass `--no-wait` \
+         to skip this check",
+        res.kind.to_lowercase(),
+        res.name
+    );
+
+    Ok(())
+}
+
+/// What `kubectl get job` is asked to print: whether it has completed, whether it has failed, and why.
+const JOB_STATE: &str = r#"jsonpath={.status.conditions[?(@.type=="Complete")].status}|{.status.conditions[?(@.type=="Failed")].status}|{.status.conditions[?(@.type=="Failed")].message}"#;
+
+/// Where a Job is, as far as its conditions say.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum JobState {
+    /// Neither completed nor failed yet.
+    Running,
+    /// Finished successfully.
+    Complete,
+    /// Gave up, with the reason Kubernetes recorded.
+    Failed(String),
+}
+
+/// Reads [`JOB_STATE`] output: `<Complete>|<Failed>|<message>`.
+#[must_use]
+pub fn parse_job_state(output: &str) -> JobState {
+    let mut fields = output.trim_end().splitn(3, '|');
+    let complete = fields.next().unwrap_or_default().trim();
+    let failed = fields.next().unwrap_or_default().trim();
+    let message = fields.next().unwrap_or_default().trim();
+
+    if complete.eq_ignore_ascii_case("true") {
+        JobState::Complete
+    } else if failed.eq_ignore_ascii_case("true") {
+        JobState::Failed(message.to_string())
+    } else {
+        JobState::Running
+    }
+}
+
+/// Waits for a Job to complete, and stops the moment it has failed rather than at the timeout.
+///
+/// `kubectl wait --for=condition=complete` would sit out the whole timeout on a Job that has already
+/// exhausted its retries, which for a migration is exactly the case worth being told about at once.
+fn await_job(
+    rendered: &RenderedManifest,
+    res: &ResourceRef,
+    timeout_seconds: u64,
+) -> anyhow::Result<()> {
+    print_status(
+        Tone::Info,
+        "wait",
+        &format!("{res} to complete (up to {timeout_seconds}s)"),
+    );
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_seconds);
+    let interval = std::time::Duration::from_millis((timeout_seconds * 250).clamp(100, 2000));
+
+    loop {
         let mut cmd = kubectl(rendered);
-        cmd.args(["rollout", "status"]);
+        cmd.args(["get", "job", &res.name]);
         if let Some(namespace) = &rendered.namespace {
             cmd.args(["-n", namespace]);
         }
-        let status = cmd
-            .arg(format!("{}/{}", res.kind.to_lowercase(), res.name))
-            .arg(format!("--timeout={}s", wait.timeout_seconds))
-            .status()?;
+        let out = cmd.args(["-o", JOB_STATE]).output()?;
+        anyhow::ensure!(
+            out.status.success(),
+            "could not read {res}: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+
+        match parse_job_state(&String::from_utf8_lossy(&out.stdout)) {
+            JobState::Complete => return Ok(()),
+            JobState::Failed(reason) => anyhow::bail!(
+                "{res} failed{}\n\ninspect it with `kubectl logs job/{}`",
+                if reason.is_empty() {
+                    String::new()
+                } else {
+                    format!(": {reason}")
+                },
+                res.name
+            ),
+            JobState::Running => {}
+        }
 
         anyhow::ensure!(
-            status.success(),
-            "{res} did not become ready within {}s — the manifests were applied, \
-             but the rollout has not completed\n\n\
-             inspect it with `kubectl rollout status {}/{}`, or pass `--no-wait` \
-             to skip this check",
-            wait.timeout_seconds,
-            res.kind.to_lowercase(),
+            std::time::Instant::now() < deadline,
+            "{res} did not complete within {timeout_seconds}s\n\n\
+             inspect it with `kubectl describe job/{}`, or raise `wait_timeout` on it",
             res.name
         );
+        std::thread::sleep(interval);
+    }
+}
+
+/// Waits at one gate.
+fn wait_at_gate(
+    rendered: &RenderedManifest,
+    gate: &Gate,
+    default_timeout: u64,
+) -> anyhow::Result<()> {
+    let timeout = gate.timeout.unwrap_or(default_timeout);
+    match gate.wait {
+        WaitFor::Complete => await_job(rendered, &gate.resource, timeout),
+        WaitFor::Ready => await_rollout(rendered, &gate.resource, timeout),
+    }
+}
+
+/// `a, b, c` for the resources of some phases.
+fn names_in(phases: &[crate::render::Phase]) -> String {
+    let all: Vec<String> = phases
+        .iter()
+        .flat_map(|p| p.resources.iter().map(ToString::to_string))
+        .collect();
+    if all.is_empty() {
+        "nothing".to_string()
+    } else {
+        all.join(", ")
+    }
+}
+
+/// Applies a render phase by phase, waiting at each gate before the next phase goes out.
+///
+/// If anything fails, says what had been applied and what had not, because with several phases "the
+/// apply failed" leaves a cluster in a state the reader has to reconstruct.
+fn apply_in_phases(rendered: &RenderedManifest, wait: WaitPolicy) -> anyhow::Result<()> {
+    let total = rendered.phases.len();
+
+    for (index, phase) in rendered.phases.iter().enumerate() {
+        print_status(
+            Tone::Info,
+            "phase",
+            &format!(
+                "{}/{total}: {}",
+                index + 1,
+                names_in(std::slice::from_ref(phase))
+            ),
+        );
+
+        let status = kubectl(rendered)
+            .args(["apply", "-f", &phase.path])
+            .status()?;
+        if !status.success() {
+            // kubectl applies a manifest resource by resource, so this phase may be partly applied:
+            // say which phases are known to be complete, which one broke, and which never started.
+            anyhow::bail!(
+                "kubectl apply failed in phase {}/{total}\n\n\
+                 applied: {}\nfailed, possibly partly applied: {}\nnot applied: {}",
+                index + 1,
+                names_in(&rendered.phases[..index]),
+                names_in(std::slice::from_ref(phase)),
+                names_in(&rendered.phases[index + 1..])
+            );
+        }
+
+        if let Some(gate) = &phase.gate
+            && let Err(err) = wait_at_gate(rendered, gate, wait.timeout_seconds)
+        {
+            // What this phase applied *was* applied; only what follows is held back.
+            return Err(anyhow::anyhow!(
+                "{err}\n\napplied: {}\nnot applied: {}",
+                names_in(&rendered.phases[..=index]),
+                names_in(&rendered.phases[index + 1..])
+            ));
+        }
     }
 
     Ok(())
@@ -408,13 +613,19 @@ pub fn kubectl_apply(
         ensure_namespace_exists(env, &rendered)?;
     }
 
-    let mut cmd = kubectl(&rendered);
-    cmd.arg("apply");
-    if dry {
-        cmd.arg("--dry-run=client");
+    // Stopping at gates only makes sense when something is really applied and waiting is wanted; a dry
+    // run or `--no-wait` applies the whole, dependency-ordered manifest in one go.
+    if !dry && wait.enabled && !rendered.phases.is_empty() {
+        apply_in_phases(&rendered, wait)?;
+    } else {
+        let mut cmd = kubectl(&rendered);
+        cmd.arg("apply");
+        if dry {
+            cmd.arg("--dry-run=client");
+        }
+        let status = cmd.arg("-f").arg(&rendered.path).status()?;
+        anyhow::ensure!(status.success(), "kubectl apply failed");
     }
-    let status = cmd.arg("-f").arg(&rendered.path).status()?;
-    anyhow::ensure!(status.success(), "kubectl apply failed");
 
     if !dry && wait.enabled {
         await_rollouts(&rendered, wait)?;

@@ -1,0 +1,63 @@
+[[migrations]]
+id = "0001-operations"
+author = "gantry-service"
+since = "0.1.0"
+
+# One row per requested change to the cluster: planning one, installing or upgrading, scaling, swapping a
+# profile. The row is written BEFORE anything is done (and the runner Job's name is derived from its id), so
+# a service that restarts mid-operation finds exactly where things stood and carries on from there rather
+# than guessing.
+#
+# `state` is queued -> running -> succeeded | failed | rolled_back | cancelled. Queued operations wait their
+# turn; only one runs at a time per `scope` (see the unique index), which is what stops two upgrades racing
+# over the same cluster. `scope` is `cluster` for every operation today and is a column so a finer
+# division is a data change, not a migration.
+#
+# `requested_by` is the token's subject and deliberately has no foreign key to the realm's users: a person
+# is one, but a pipeline's subject is an OAuth client id, and a key would reject it.
+#
+# `plan` is the ordered steps the runner will perform; `result` is what the run produced (for a planning
+# run, the plan itself); `log` is the tail of the runner's output, kept because the runner's pod is cleaned
+# up after a while and the history should outlive it.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.operations (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    scope TEXT NOT NULL DEFAULT 'cluster',
+    state TEXT NOT NULL DEFAULT 'queued'
+        CHECK (state IN ('queued', 'running', 'succeeded', 'failed', 'rolled_back', 'cancelled')),
+    plan JSONB NOT NULL DEFAULT '{}'::jsonb,
+    result JSONB,
+    runner_job TEXT,
+    requested_by TEXT NOT NULL,
+    cancel_requested BOOLEAN NOT NULL DEFAULT FALSE,
+    error TEXT,
+    log TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    started_at TIMESTAMPTZ,
+    finished_at TIMESTAMPTZ
+);
+"""
+
+# At most one running operation per scope: the database, not the service, is what refuses a second.
+[[migrations.changes]]
+sql = """
+CREATE UNIQUE INDEX IF NOT EXISTS operations_one_running_per_scope_idx
+    ON ${schema}.operations (scope) WHERE state = 'running';
+"""
+
+# What the reconciler asks every tick: the oldest queued operation, and every one still running.
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS operations_state_created_idx
+    ON ${schema}.operations (state, created_at);
+"""
+
+# The history page, newest first.
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS operations_recent_idx
+    ON ${schema}.operations (created_at DESC);
+"""

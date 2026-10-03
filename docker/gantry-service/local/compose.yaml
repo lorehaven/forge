@@ -1,0 +1,81 @@
+# Gantry on your machine, with no cluster behind it: Postgres and Redis for real, the cluster and the
+# runner simulated in memory. Click through targets, deployments (stop A, start B, swap), plans and
+# operations; nothing here can touch a Kubernetes cluster.
+#
+#   cargo build -p gantry-service -p foundry-service     # from the workspace root, once
+#   ./pack.sh                                            # demo packages (needs riveter on PATH or RIVETER=)
+#   docker compose up
+#   open http://localhost:11443/gantry/ui/home
+#
+# The services are the binaries you just built, run in a current Arch image (the same glibc as the machine
+# that built them) - no registry credentials, no image build.
+
+name: gantry-local
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg18
+    environment:
+      POSTGRES_PASSWORD: pw
+      POSTGRES_DB: forge
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d forge"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+
+  # Creates the `gantry` schema (and the realm's `auth` one it depends on). Runs once and exits.
+  migrate:
+    image: archlinux:base
+    depends_on:
+      postgres:
+        condition: service_healthy
+    working_dir: /foundry
+    volumes:
+      - ../../../target/debug/foundry-service:/usr/local/bin/foundry-service:ro
+      - ../../foundry-service:/foundry:ro
+    environment:
+      DATABASE_URL: postgres://postgres:pw@postgres:5432/forge
+      LOG_DIR: /tmp/foundry-logs
+    command: ["foundry-service", "--install", "gantry", "apply"]
+
+  gantry:
+    image: archlinux:base
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+    # The crate directory is the working directory: the service reads `i18n/` and writes `dist/assets/`.
+    working_dir: /app
+    user: "${UID:-1000}:${GID:-1000}"
+    volumes:
+      - ../../../target/debug/gantry-service:/usr/local/bin/gantry-service:ro
+      - ..:/app
+    ports:
+      - "127.0.0.1:11443:8080"
+    environment:
+      SERVICE_AUTH_ENABLED: "false"        # no Gatehouse: you are `dev`, allowed to do everything
+      BASE_PATH: /gantry
+      SERVER_ADDR: 0.0.0.0:8080
+      SERVER_HTTP_REDIRECT_ADDR: 0.0.0.0:8081
+      SERVER_CERT_PATH: /nonexistent       # plain HTTP
+      DATABASE_URL: postgres://postgres:pw@postgres:5432/forge
+      DB_SCHEMA: gantry
+      AUTH_DB_SCHEMA: auth
+      REDIS_URL: redis://redis:6379
+      GATEHOUSE_URL: http://127.0.0.1:1    # never contacted with auth off, but required to boot
+      GATEHOUSE_CLIENT_ID: gantry
+      GATEHOUSE_CLIENT_SECRET: local
+      SERVICE_REALM: forge
+      SERVICE_NAME: gantry
+      LOG_DIR: /tmp/gantry-logs
+      # The simulated world:
+      GANTRY_CLUSTER: none
+      GANTRY_RUNNER: simulate
+      GANTRY_FAKE_CLUSTER: /app/local/seed.json
+      GANTRY_PACKAGES_DIR: /app/local/packages
+    command: ["gantry-service"]

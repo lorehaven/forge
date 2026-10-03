@@ -1,0 +1,9 @@
+name = "gantry"
+version = "0.1.0"
+description = "Gantry - installs, upgrades, scales and swaps what runs in the cluster"
+default_schema = "gantry"
+requires = ["auth@^0.2", "quench-core@^0.1"]
+
+[variables]
+# Realm schema that owns users; keep in sync with the auth module.
+auth_schema = "auth"

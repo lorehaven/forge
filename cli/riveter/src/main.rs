@@ -12,6 +12,7 @@ use riveter::repl::{
     print_resource_list, prune, repl, report_prune, warn,
 };
 use riveter::schema_cmd::{schemas_command, validate_env, validate_files};
+use riveter::secrets_cmd::secrets_command;
 
 // One match arm per subcommand, each a couple of lines that delegate straight
 // into `riveter::{render,repl,env}` - splitting it up would just add
@@ -163,6 +164,9 @@ fn main() -> Result<()> {
             package,
             env_file,
             sets,
+            replicas,
+            except,
+            inventory,
             dry_run,
             no_wait,
             timeout,
@@ -172,6 +176,9 @@ fn main() -> Result<()> {
             package: &package,
             env_file: env_file.as_deref(),
             sets: &sets,
+            replicas: &replicas,
+            except: &except,
+            inventory,
             dry_run,
             wait: WaitPolicy {
                 enabled: !no_wait,
@@ -197,6 +204,7 @@ fn main() -> Result<()> {
             }
         }
         Some(Cmd::Schemas { cmd }) => schemas_command(&cmd),
+        Some(Cmd::Secrets { cmd }) => secrets_command(&cmd),
         Some(Cmd::Remote { cmd }) => remote_command(&cmd),
         Some(Cmd::Help { command }) => print_help(command.as_deref()),
         Some(Cmd::Repl) | None => repl(),

@@ -11,6 +11,9 @@
 module = "conveyor"
 
 [[install]]
+module = "gantry"
+
+[[install]]
 module = "gatehouse"
 
 [[install]]

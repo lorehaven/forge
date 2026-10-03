@@ -12,6 +12,7 @@ packages = [
     "gatehouse-service",
     "conveyor-service",
     "workbench-service",
+    "gantry-service",
 ]
 
 [docker.modules.docker.conveyor-service]
@@ -45,6 +46,11 @@ registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
 [docker.modules.docker.warehouse-service]
 module_name = "warehouse"
 image_name = "warehouse"
+registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
+
+[docker.modules.docker.gantry-service]
+module_name = "gantry"
+image_name = "gantry"
 registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
 
 [docker.modules.docker.workbench-service]

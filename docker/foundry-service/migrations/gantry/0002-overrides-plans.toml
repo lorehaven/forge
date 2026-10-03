@@ -1,0 +1,46 @@
+[[migrations]]
+id = "0002-overrides-plans"
+author = "gantry-service"
+since = "0.1.0"
+
+# What was changed by hand, on top of a package. A package is never edited: its published version is what
+# Warehouse says it is, and anything set from the UI lives here, per package, and is applied by the runner
+# on top of every install. `sets` are `--set`-style variables (plain text: they are visible in the UI and
+# the API, so a secret does not belong here - that is what `gantry-values-<package>` Secrets are for) and
+# `replicas` are `kind/name` -> count (how a stopped deployment is kept stopped through an update).
+# A new default version never silently discards them: the target shows both.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.overrides (
+    target TEXT PRIMARY KEY,
+    sets JSONB NOT NULL DEFAULT '{}'::jsonb,
+    replicas JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated_by TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+"""
+
+# A plan is what the planner worked out, kept so that what is confirmed is exactly what was shown: the
+# steps, the summary, and `basis` - the version that was running when it was made. Confirming a plan whose
+# basis no longer matches the cluster is refused, because the plan no longer describes the change that would
+# happen. `operation_id` is set once it is confirmed, so a plan runs at most once.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.plans (
+    id TEXT PRIMARY KEY,
+    target TEXT NOT NULL,
+    action TEXT NOT NULL,
+    version TEXT,
+    basis TEXT,
+    plan JSONB NOT NULL,
+    created_by TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    operation_id TEXT
+);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS plans_target_created_idx
+    ON ${schema}.plans (target, created_at DESC);
+"""
