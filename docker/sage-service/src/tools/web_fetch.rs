@@ -119,7 +119,152 @@ pub async fn fetch_page_text(
     max_chars: usize,
 ) -> Result<String, String> {
     let html = fetch_html(client, url).await?;
-    extract_text_limited(&html, usize::MAX, max_chars)
+    extract_rich_text(&html, max_chars)
+}
+
+/// Elements whose subtree is page chrome or non-content, never worth quoting.
+const SKIPPED_ANCESTORS: &[&str] = &[
+    "nav", "footer", "aside", "form", "noscript", "script", "style", "template", "svg",
+];
+
+/// JSON-LD keys worth surfacing: they carry the facts of pages that render client-side.
+const JSON_LD_KEYS: &[&str] = &[
+    "headline",
+    "name",
+    "description",
+    "articleBody",
+    "datePublished",
+    "dateModified",
+    "startDate",
+    "endDate",
+];
+
+fn collapse_ws(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn collect_json_ld(value: &serde_json::Value, out: &mut Vec<String>) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, val) in map {
+                match val {
+                    serde_json::Value::String(text) if JSON_LD_KEYS.contains(&key.as_str()) => {
+                        let text = collapse_ws(text);
+                        if !text.is_empty() && out.len() < 12 {
+                            out.push(format!(
+                                "{key}: {}",
+                                text.chars().take(600).collect::<String>()
+                            ));
+                        }
+                    }
+                    _ => collect_json_ld(val, out),
+                }
+            }
+        }
+        serde_json::Value::Array(items) => items.iter().for_each(|v| collect_json_ld(v, out)),
+        _ => {}
+    }
+}
+
+/// Extracts a page's readable content as paragraphs separated by blank lines: title, meta
+/// description, JSON-LD facts, then headings, paragraphs, list items, quotes and table rows
+/// (cells joined with ` | `) in document order, preferring `<main>`/`<article>` and skipping
+/// navigation, footers and forms. Capped at `max_chars`.
+pub fn extract_rich_text(html: &str, max_chars: usize) -> Result<String, String> {
+    use scraper::{ElementRef, Html, Selector};
+    use std::collections::HashSet;
+
+    let document = Html::parse_document(html);
+    let sel = |css: &str| Selector::parse(css).map_err(|e| format!("bad selector {css}: {e:?}"));
+    let mut blocks: Vec<String> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    let mut push = |text: String, blocks: &mut Vec<String>| {
+        if !text.is_empty() && seen.insert(text.clone()) {
+            blocks.push(text);
+        }
+    };
+
+    if let Some(title) = document.select(&sel("title")?).next() {
+        let text = collapse_ws(&title.text().collect::<String>());
+        push(format!("# {text}"), &mut blocks);
+    }
+    for meta in document.select(&sel(
+        r#"meta[name="description"], meta[property="og:description"]"#,
+    )?) {
+        if let Some(content) = meta.value().attr("content") {
+            push(collapse_ws(content), &mut blocks);
+        }
+    }
+
+    let mut ld = Vec::new();
+    for script in document.select(&sel(r#"script[type="application/ld+json"]"#)?) {
+        if let Ok(value) =
+            serde_json::from_str::<serde_json::Value>(&script.text().collect::<String>())
+        {
+            collect_json_ld(&value, &mut ld);
+        }
+    }
+    for entry in ld {
+        push(entry, &mut blocks);
+    }
+
+    let root = ["main", "article", "[role=main]", "body"]
+        .iter()
+        .find_map(|css| sel(css).ok().and_then(|s| document.select(&s).next()))
+        .unwrap_or_else(|| document.root_element());
+
+    let block_sel = sel("h1, h2, h3, h4, p, li, tr, blockquote, pre, figcaption, dt, dd")?;
+    let cell_sel = sel("td, th")?;
+    for el in root.select(&block_sel) {
+        let skipped = el
+            .ancestors()
+            .filter_map(ElementRef::wrap)
+            .any(|a| SKIPPED_ANCESTORS.contains(&a.value().name()));
+        if skipped {
+            continue;
+        }
+        let name = el.value().name();
+        let text = if name == "tr" {
+            let cells: Vec<String> = el
+                .select(&cell_sel)
+                .map(|c| collapse_ws(&c.text().collect::<String>()))
+                .filter(|c| !c.is_empty())
+                .collect();
+            cells.join(" | ")
+        } else {
+            collapse_ws(&el.text().collect::<String>())
+        };
+        let min = match name {
+            "p" => 25,
+            "li" | "dd" | "dt" | "blockquote" | "figcaption" => 15,
+            "tr" => 6,
+            _ => 3,
+        };
+        if text.chars().count() < min {
+            continue;
+        }
+        let text = match name {
+            "h1" => format!("## {text}"),
+            "h2" | "h3" | "h4" => format!("### {text}"),
+            "li" => format!("- {text}"),
+            _ => text,
+        };
+        push(text, &mut blocks);
+    }
+
+    let mut text = blocks.join("\n\n");
+    if text.chars().count() < 100 {
+        return Err("No extractable text found on page".to_string());
+    }
+    if text.len() > max_chars {
+        let mut cut = max_chars;
+        while !text.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        text.truncate(cut);
+        text.push_str("\n\n[Content truncated...]");
+    }
+    Ok(text)
 }
 
 async fn fetch_and_extract(client: &reqwest::Client, url: &str) -> Result<String, String> {

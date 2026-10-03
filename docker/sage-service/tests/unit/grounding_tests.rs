@@ -125,3 +125,30 @@ fn strip_invalid_citations_ignores_indexing_and_code_fences() {
         "Use items[1] here.\n```\nlet x = [3];\n```\nDone."
     );
 }
+
+#[test]
+fn format_verdict_lists_unsupported_claims_under_the_models_notice() {
+    let json = r#"{"notice":"Some parts could not be verified.","unsupported":[
+        {"claim":"The race was on October 4, 2026","reason":"that date is in the future"},
+        {"claim":"It was held at Sepang","reason":""}]}"#;
+    assert_eq!(
+        format_verdict(json).unwrap(),
+        "\n\n⚠ Some parts could not be verified.\n- The race was on October 4, 2026 — that date is in the future\n- It was held at Sepang"
+    );
+}
+
+#[test]
+fn format_verdict_is_none_when_nothing_is_flagged_or_json_is_unusable() {
+    assert!(format_verdict(r#"{"notice":"x","unsupported":[]}"#).is_none());
+    assert!(
+        format_verdict(r#"{"notice":"x","unsupported":[{"claim":"  ","reason":"r"}]}"#).is_none()
+    );
+    assert!(format_verdict("not json").is_none());
+}
+
+#[test]
+fn format_verdict_falls_back_to_a_default_notice() {
+    let out =
+        format_verdict(r#"{"notice":"","unsupported":[{"claim":"c","reason":"r"}]}"#).unwrap();
+    assert!(out.starts_with("\n\n⚠ Parts of this answer could not be verified"));
+}

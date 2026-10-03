@@ -9,9 +9,18 @@ use quench_http::prelude::{HttpError, Inject, Json, Path, Response, get, http::S
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
+pub struct HistoryMessage {
+    pub role: String,
+    pub content: String,
+}
+
+#[derive(Deserialize)]
 pub struct ChatRequest {
     pub instance_id: String,
     pub message: String,
+    /// Earlier turns, oldest first (`user`/`assistant` only), for multi-turn use.
+    #[serde(default)]
+    pub history: Vec<HistoryMessage>,
 }
 
 #[derive(Serialize)]
@@ -39,6 +48,7 @@ pub async fn chat(
     Inject(switchboard): Inject<SwitchboardClient>,
     Inject(vllm): Inject<VllmClient>,
     Inject(config): Inject<SageConfig>,
+    Inject(search_provider_registry): Inject<crate::tools::SearchProviderRegistry>,
 ) -> Response {
     let instances = match switchboard.get_vllm_instances().await {
         Ok(i) => i,
@@ -55,28 +65,68 @@ pub async fn chat(
         return Response::text(StatusCode::NOT_FOUND, "api_error_instance_not_found");
     };
 
-    let messages = vec![
-        ChatMessage {
-            role: "system".to_string(),
-            content: config.system_prompt_with_date(),
+    // Grounded mode retrieves in code (see `grounding`), same as the web UI.
+    let grounding_cfg = crate::grounding::GroundingConfig::from_env();
+    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let mut system_prompt = config.system_prompt_with_date();
+    let history: Vec<ChatMessage> = req
+        .history
+        .iter()
+        .filter(|m| m.role == "user" || m.role == "assistant")
+        .map(|m| ChatMessage {
+            role: m.role.clone(),
+            content: m.content.clone(),
             tool_calls: None,
             images: None,
-        },
-        ChatMessage {
-            role: "user".to_string(),
-            content: req.message.clone(),
-            tool_calls: None,
-            images: None,
-        },
-    ];
+        })
+        .collect();
+    let mut grounding = None;
+    if grounding_cfg.enabled
+        && config
+            .capability_profile
+            .is_enabled(crate::tools::Tool::WebSearch)
+    {
+        grounding = crate::grounding::gather(
+            &grounding_cfg,
+            &switchboard,
+            &vllm,
+            &search_provider_registry,
+            &config.default_search_provider,
+            &instance,
+            &history,
+            &req.message,
+            &today,
+            None,
+        )
+        .await;
+        if let Some(g) = &grounding {
+            system_prompt.push_str(&g.block);
+        }
+    }
 
+    let mut messages = vec![ChatMessage {
+        role: "system".to_string(),
+        content: system_prompt,
+        tool_calls: None,
+        images: None,
+    }];
+    messages.extend(history);
+    messages.push(ChatMessage {
+        role: "user".to_string(),
+        content: req.message.clone(),
+        tool_calls: None,
+        images: None,
+    });
+
+    // Leave room for the prompt: a max_tokens equal to the whole context is rejected.
+    let max_tokens = instance.max_model_len.map(|m| m.min(2048));
     let stream = match vllm
         .chat_stream(
             &instance.host,
             instance.port,
             &instance.model,
             messages,
-            instance.max_model_len,
+            max_tokens,
         )
         .await
     {
@@ -86,6 +136,52 @@ pub async fn chat(
             return Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_stream_failed");
         }
     };
+
+    // A grounded answer is checked as a whole, so it is returned in one piece: the answer,
+    // then the sources it was built from.
+    if let Some(g) = grounding {
+        let mut stream = stream;
+        let mut answer = String::new();
+        while let Some(res) = stream.next().await {
+            match res {
+                Ok(chunk) => answer.push_str(&chunk),
+                Err(err) => {
+                    tracing::error!("Grounded chat stream failed: {}", err);
+                    return Response::text(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "api_error_stream_failed",
+                    );
+                }
+            }
+        }
+        let answer = crate::grounding::finalize_answer(
+            &grounding_cfg,
+            &switchboard,
+            &vllm,
+            &instance,
+            &answer,
+            g.sources.len(),
+            &g.evidence,
+            &today,
+        )
+        .await;
+        let sources: Vec<_> = g
+            .sources
+            .iter()
+            .map(|s| serde_json::json!({ "index": s.index, "url": s.url, "domain": s.domain }))
+            .collect();
+        let events = vec![
+            serde_json::json!({ "content": answer }),
+            serde_json::json!({ "grounded": true, "sources": sources }),
+        ];
+        let body = futures_util::stream::iter(
+            events
+                .into_iter()
+                .map(|data| Ok::<_, std::io::Error>(Bytes::from(format!("data: {}\n\n", data)))),
+        );
+        return Response::streaming(StatusCode::OK, body)
+            .header("content-type", "text/event-stream");
+    }
 
     let sse_stream = stream.map(|res| match res {
         Ok(content) => {
@@ -165,7 +261,7 @@ pub async fn get_context_status(
 }
 
 pub fn register_routes() {
-    let _ = chat as fn(_, _, _, _) -> _;
+    let _ = chat as fn(_, _, _, _, _) -> _;
     let _ = capabilities as fn(_) -> _;
     let _ = get_metrics as fn(_) -> _;
     let _ = get_metrics_by_profile as fn(_, _) -> _;

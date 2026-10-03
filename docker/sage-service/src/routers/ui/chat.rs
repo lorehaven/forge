@@ -179,6 +179,45 @@ pub async fn send_message(
     )
 }
 
+/// A spinner line shown in place of the answer while the pipeline works; `detail` is plain
+/// text (escaped here), e.g. the search queries.
+pub fn status_html(key: &str, default: &str, detail: Option<&str>) -> String {
+    let detail = detail
+        .map(|d| {
+            format!(
+                "<span class=\"chat-status-detail\">{}</span>",
+                html_escape(d)
+            )
+        })
+        .unwrap_or_default();
+    format!(
+        "<div class=\"message-content chat-status\"><i class=\"fas fa-circle-notch fa-spin\"></i><span data-i18n=\"{}\">{}</span>{}</div>",
+        key,
+        html_escape(default),
+        detail
+    )
+}
+
+/// The SSE `message` event for a grounding stage.
+pub fn stage_event(stage: &crate::grounding::Stage) -> Bytes {
+    use crate::grounding::Stage;
+    let body = match stage {
+        Stage::Planning => {
+            status_html("ui_chat_status_planning", "Deciding what to look up…", None)
+        }
+        Stage::Searching(queries) => status_html(
+            "ui_chat_status_searching",
+            "Searching the web…",
+            Some(&queries.join(" · ")),
+        ),
+        Stage::Reading(_) => status_html("ui_chat_status_reading", "Reading sources…", None),
+    };
+    encode_sse(
+        "message",
+        &format!("<div class=\"message-inner\">{}</div>", body),
+    )
+}
+
 pub fn encode_sse(event: &str, data: &str) -> Bytes {
     let mut sse = format!("event: {}\n", event);
     for line in data.split('\n') {
@@ -510,130 +549,6 @@ pub async fn stream_message(
         history_messages = msgs;
     }
 
-    // Small models can't be trusted to decide when to search, so in grounded mode the
-    // harness plans, searches and fetches up front and injects numbered sources.
-    let grounding_cfg = crate::grounding::GroundingConfig::from_env();
-    let grounded =
-        grounding_cfg.enabled && active_profile.is_enabled(crate::tools::Tool::WebSearch);
-    let mut web_sources: Vec<crate::grounding::WebSource> = Vec::new();
-    let mut grounding_injected = false;
-    if grounded {
-        let question = if req.skip_user_message {
-            history_messages
-                .iter()
-                .rev()
-                .find(|m| m.role == "user")
-                .map(|m| m.content.clone())
-                .unwrap_or_default()
-        } else {
-            req.message.clone()
-        };
-        if !question.trim().is_empty() {
-            let provider_name = req
-                .search_provider
-                .as_deref()
-                .unwrap_or(&config.default_search_provider);
-            let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-            if let Some(grounding) = crate::grounding::gather(
-                &grounding_cfg,
-                &switchboard,
-                &vllm,
-                &search_provider_registry,
-                provider_name,
-                &instance,
-                &history_messages,
-                &question,
-                &today,
-            )
-            .await
-            {
-                system_message.content.push_str(&grounding.block);
-                web_sources = grounding.sources;
-                grounding_injected = true;
-            }
-        }
-    }
-    // The grounding block counts against the prompt budget before history is selected.
-    let system_tokens = estimate_tokens(&system_message);
-
-    let mut selected_history = std::collections::VecDeque::new();
-    let mut current_budget_used = system_tokens
-        + if req.skip_user_message {
-            0
-        } else {
-            current_user_tokens
-        };
-
-    for msg in history_messages.into_iter().rev() {
-        let msg_tokens = estimate_tokens(&msg);
-        if current_budget_used + msg_tokens <= prompt_budget {
-            current_budget_used += msg_tokens;
-            selected_history.push_front(msg);
-        } else {
-            break;
-        }
-    }
-
-    let mut messages = vec![system_message];
-    messages.extend(selected_history);
-    if !req.skip_user_message {
-        messages.push(current_user_message);
-    }
-
-    // Stay within the vLLM instance's per-prompt image limit, preferring the newest images.
-    crate::files::images::cap_images(
-        &mut messages,
-        crate::files::images::max_images_per_request(),
-    );
-
-    let max_tokens = reserved_for_generation as u32;
-
-    // OpenAI tool-call format: {"type": "function", "function": {name, description, parameters}}
-    let tool_definitions = tool_registry.get_definitions();
-    // Grounded mode skips native tool calls: the harness already retrieved, and the launch
-    // config may not enable auto tool choice (vLLM rejects `tools` then).
-    let tools_json: Option<Vec<serde_json::Value>> = if grounded {
-        None
-    } else if !tool_definitions.is_empty() {
-        let mut openai_tools = Vec::new();
-        for tool_def in tool_definitions {
-            let openai_tool = serde_json::json!({
-                "type": "function",
-                "function": {
-                    "name": tool_def.name,
-                    "description": tool_def.description,
-                    "parameters": tool_def.parameters
-                }
-            });
-            openai_tools.push(openai_tool);
-        }
-        tracing::info!(
-            "[VLLM_REQUEST] Sending {} tools to vLLM in OpenAI format",
-            openai_tools.len()
-        );
-        Some(openai_tools)
-    } else {
-        None
-    };
-
-    let stream = match vllm
-        .chat_stream_with_tools(
-            &instance.host,
-            instance.port,
-            &instance.model,
-            messages,
-            Some(max_tokens),
-            tools_json,
-        )
-        .await
-    {
-        Ok(s) => s,
-        Err(err) => {
-            tracing::error!("Failed to start chat stream: {}", err);
-            return Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_stream_failed");
-        }
-    };
-
     let mut full_content = String::new();
     let message_id_clone = message_id.clone();
     let db_clone = db.clone();
@@ -642,6 +557,9 @@ pub async fn stream_message(
     let tool_registry_clone = tool_registry.clone();
     let search_provider_registry_clone = search_provider_registry.clone();
     let config_clone = config.clone();
+    let switchboard_task = switchboard.clone();
+    let instance_task = instance.clone();
+    let today_task = chrono::Utc::now().format("%Y-%m-%d").to_string();
 
     // Channel-backed, not `async_stream::stream!`: DB work inside makes an
     // inline generator `!Sync`, but `ReceiverStream` is `Sync` regardless.
@@ -654,7 +572,157 @@ pub async fn stream_message(
         let config = config_clone;
         let db_clone = db_clone;
         let vllm = vllm_clone;
-        let mut stream = stream;
+        let switchboard = switchboard_task;
+        let instance = instance_task;
+
+        // Small models can't be trusted to decide when to search, so in grounded mode the
+        // harness plans, searches and fetches up front and injects numbered sources.
+        let grounding_cfg = crate::grounding::GroundingConfig::from_env();
+        let grounded =
+            grounding_cfg.enabled && active_profile.is_enabled(crate::tools::Tool::WebSearch);
+        let mut web_sources: Vec<crate::grounding::WebSource> = Vec::new();
+        let mut grounding_injected = false;
+        let mut grounding_evidence = String::new();
+        if grounded {
+            let question = if req.skip_user_message {
+                history_messages
+                    .iter()
+                    .rev()
+                    .find(|m| m.role == "user")
+                    .map(|m| m.content.clone())
+                    .unwrap_or_default()
+            } else {
+                req.message.clone()
+            };
+            if !question.trim().is_empty() {
+                let provider_name = req
+                    .search_provider
+                    .as_deref()
+                    .unwrap_or(&config.default_search_provider);
+                let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+                let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel();
+                let gathering = crate::grounding::gather(
+                    &grounding_cfg,
+                    &switchboard,
+                    &vllm,
+                    &search_provider_registry,
+                    provider_name,
+                    &instance,
+                    &history_messages,
+                    &question,
+                    &today,
+                    Some(&progress_tx),
+                );
+                tokio::pin!(gathering);
+                // Forward pipeline progress to the browser while the search runs.
+                let gathered = loop {
+                    tokio::select! {
+                        result = &mut gathering => break result,
+                        Some(stage) = progress_rx.recv() => {
+                            if tx.send(stage_event(&stage)).await.is_err() {
+                                return;
+                            }
+                        }
+                    }
+                };
+                if let Some(grounding) = gathered {
+                    system_message.content.push_str(&grounding.block);
+                    web_sources = grounding.sources;
+                    grounding_evidence = grounding.evidence;
+                    grounding_injected = true;
+                }
+            }
+        }
+        // The grounding block counts against the prompt budget before history is selected.
+        let system_tokens = estimate_tokens(&system_message);
+
+        let mut selected_history = std::collections::VecDeque::new();
+        let mut current_budget_used = system_tokens
+            + if req.skip_user_message {
+                0
+            } else {
+                current_user_tokens
+            };
+
+        for msg in history_messages.into_iter().rev() {
+            let msg_tokens = estimate_tokens(&msg);
+            if current_budget_used + msg_tokens <= prompt_budget {
+                current_budget_used += msg_tokens;
+                selected_history.push_front(msg);
+            } else {
+                break;
+            }
+        }
+
+        let mut messages = vec![system_message];
+        messages.extend(selected_history);
+        if !req.skip_user_message {
+            messages.push(current_user_message);
+        }
+
+        // Stay within the vLLM instance's per-prompt image limit, preferring the newest images.
+        crate::files::images::cap_images(
+            &mut messages,
+            crate::files::images::max_images_per_request(),
+        );
+
+        let max_tokens = reserved_for_generation as u32;
+
+        // OpenAI tool-call format: {"type": "function", "function": {name, description, parameters}}
+        let tool_definitions = tool_registry.get_definitions();
+        // Grounded mode skips native tool calls: the harness already retrieved, and the launch
+        // config may not enable auto tool choice (vLLM rejects `tools` then).
+        let tools_json: Option<Vec<serde_json::Value>> = if grounded {
+            None
+        } else if !tool_definitions.is_empty() {
+            let mut openai_tools = Vec::new();
+            for tool_def in tool_definitions {
+                let openai_tool = serde_json::json!({
+                    "type": "function",
+                    "function": {
+                        "name": tool_def.name,
+                        "description": tool_def.description,
+                        "parameters": tool_def.parameters
+                    }
+                });
+                openai_tools.push(openai_tool);
+            }
+            tracing::info!(
+                "[VLLM_REQUEST] Sending {} tools to vLLM in OpenAI format",
+                openai_tools.len()
+            );
+            Some(openai_tools)
+        } else {
+            None
+        };
+
+        let mut stream = match vllm
+            .chat_stream_with_tools(
+                &instance.host,
+                instance.port,
+                &instance.model,
+                messages,
+                Some(max_tokens),
+                tools_json,
+            )
+            .await
+        {
+            Ok(s) => s,
+            Err(err) => {
+                tracing::error!("Failed to start chat stream: {}", err);
+                let html = div()
+                    .class("message-inner")
+                    .child(
+                        div()
+                            .class("message-content")
+                            .child(span().attr("data-i18n", "ui_chat_error").text("Error"))
+                            .child(span().text(format!(": {}", err))),
+                    )
+                    .render();
+                let _ = tx.send(encode_sse("message", &html)).await;
+                return;
+            }
+        };
 
         // PHASE 1: stream response chunks in real time.
         tracing::info!("[STREAM_REFACTOR] Phase 1: Streaming response");
@@ -689,10 +757,33 @@ pub async fn stream_message(
             full_content.len()
         );
 
-        // The model may cite source numbers that don't exist; drop those markers.
+        // Drop invented citation numbers, then fact-check the answer against the sources.
         if grounding_injected {
-            full_content =
-                crate::grounding::strip_invalid_citations(&full_content, web_sources.len());
+            if grounding_cfg.verify && !grounding_evidence.is_empty() {
+                let shown = format!(
+                    "<div class=\"message-inner\">{}{}</div>",
+                    format_message(&full_content),
+                    status_html(
+                        "ui_chat_status_checking",
+                        "Checking the answer against the sources…",
+                        None
+                    )
+                );
+                if tx.send(encode_sse("message", &shown)).await.is_err() {
+                    return;
+                }
+            }
+            full_content = crate::grounding::finalize_answer(
+                &grounding_cfg,
+                &switchboard,
+                &vllm,
+                &instance,
+                &full_content,
+                web_sources.len(),
+                &grounding_evidence,
+                &today_task,
+            )
+            .await;
         }
 
         // PHASE 2: parse tool calls and check for meta-questions.

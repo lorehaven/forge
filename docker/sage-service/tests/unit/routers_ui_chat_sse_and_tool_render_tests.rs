@@ -93,3 +93,38 @@ fn render_tool_result_converts_h1_headings_to_h3_in_markdown_output() {
     assert!(html.contains("<h3>"));
     assert!(!html.contains("<h1>"));
 }
+
+#[test]
+fn status_html_escapes_the_detail_and_carries_the_i18n_key() {
+    let html = sage_service::routers::ui::chat::status_html(
+        "ui_chat_status_searching",
+        "Searching the web…",
+        Some("<script>alert(1)</script> & more"),
+    );
+    assert!(html.contains("data-i18n=\"ui_chat_status_searching\""));
+    assert!(html.contains("Searching the web…"));
+    assert!(html.contains("&lt;script&gt;"));
+    assert!(!html.contains("<script>"));
+    assert!(html.contains("chat-status"));
+}
+
+#[test]
+fn stage_event_is_an_sse_message_per_stage() {
+    use sage_service::grounding::Stage;
+    use sage_service::routers::ui::chat::stage_event;
+    let planning = String::from_utf8(stage_event(&Stage::Planning).to_vec()).unwrap();
+    assert!(planning.starts_with("event: message"));
+    assert!(planning.contains("ui_chat_status_planning"));
+    let searching = String::from_utf8(
+        stage_event(&Stage::Searching(vec![
+            "rust release".into(),
+            "rust 1.99".into(),
+        ]))
+        .to_vec(),
+    )
+    .unwrap();
+    assert!(searching.contains("ui_chat_status_searching"));
+    assert!(searching.contains("rust release · rust 1.99"));
+    let reading = String::from_utf8(stage_event(&Stage::Reading(3)).to_vec()).unwrap();
+    assert!(reading.contains("ui_chat_status_reading"));
+}

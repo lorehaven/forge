@@ -64,6 +64,17 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("max-width", "100%")
             .property("width", "100%")
             .property("user-select", "text"),
+        // Progress line shown while Sage searches, reads sources or checks an answer.
+        CssRule::new(".chat-status")
+            .property("display", "flex")
+            .property("align-items", "center")
+            .property("gap", "0.5rem")
+            .property("margin-top", "0.5rem")
+            .property("font-size", "0.85rem")
+            .property("color", "var(--bs-gray-500)"),
+        CssRule::new(".chat-status-detail")
+            .property("font-style", "italic")
+            .property("opacity", "0.8"),
         CssRule::new(".message-content p").property("margin", "0 0 1rem 0"),
         CssRule::new(".message-content p:last-child").property("margin-bottom", "0"),
         CssRule::new(".message-content pre")
