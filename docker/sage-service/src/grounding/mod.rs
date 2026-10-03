@@ -62,6 +62,43 @@ impl GroundingConfig {
     }
 }
 
+/// Providers tried, in this order, when the preferred one fails or finds nothing.
+const FALLBACK_ORDER: &[&str] = &["searxng", "brave", "serpapi", "duckduckgo"];
+
+/// Searches with `primary`; if it errors or yields no usable results, tries the other
+/// registered providers in `FALLBACK_ORDER`. A scraped backend being throttled for a minute
+/// then costs a log line instead of the whole answer. Empty when every provider came up dry.
+pub async fn search_with_fallback(
+    registry: &SearchProviderRegistry,
+    primary: &str,
+    query: &str,
+) -> Vec<Hit> {
+    let mut order: Vec<&str> = vec![primary];
+    order.extend(FALLBACK_ORDER.iter().copied().filter(|n| *n != primary));
+
+    for name in order {
+        let Some(provider) = registry.get(Some(name)) else {
+            continue;
+        };
+        match provider.search(query).await {
+            Ok(text) => {
+                let hits = parse_search_output(&text);
+                if !hits.is_empty() {
+                    if name != primary {
+                        tracing::info!(
+                            "[GROUNDING] '{query}': {name} answered after {primary} did not"
+                        );
+                    }
+                    return hits;
+                }
+                tracing::warn!("[GROUNDING] {name} returned no usable results for '{query}'");
+            }
+            Err(err) => tracing::warn!("[GROUNDING] {name} failed for '{query}': {err}"),
+        }
+    }
+    Vec::new()
+}
+
 /// Where the pipeline is, reported to callers that want to show progress.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stage {
@@ -96,6 +133,8 @@ pub struct Grounding {
     pub sources: Vec<WebSource>,
     /// Just the numbered source passages, for fact-checking the answer afterwards.
     pub evidence: String,
+    /// The search was attempted but produced nothing usable (no sources, notice injected).
+    pub unavailable: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -106,7 +145,12 @@ pub struct Plan {
 
 #[derive(Deserialize)]
 struct RawPlan {
-    needs_search: bool,
+    /// Current planner output: one of the kinds in the planner prompt.
+    #[serde(default)]
+    kind: Option<String>,
+    /// Older planner output, still accepted.
+    #[serde(default)]
+    needs_search: Option<bool>,
     #[serde(default)]
     queries: Vec<String>,
 }
@@ -174,28 +218,40 @@ pub async fn gather(
 }
 
 const PLANNER_PROMPT: &str = "You are the retrieval planner of a web-grounded assistant. \
-Decide whether the user's latest message needs web search, and if so write the search queries.\n\n\
-Set needs_search to false ONLY for: greetings, thanks and small talk; rewriting, translating or \
-summarizing text the user already provided; writing code that needs no outside facts; questions \
-about the conversation itself; pure arithmetic. Set it to true for everything else, including \
-anything about the real world that you merely think you know.\n\n\
+Classify the user's latest message and, if it needs outside facts, write search queries.\n\n\
+kind is one of:\n\
+- factual: anything about the real world: people, places, organizations, products, events, \
+dates, numbers, definitions, even if you think you know the answer\n\
+- current: latest, newest, recent, today, now, prices, rates, news, versions\n\
+- technical: programming, tools, commands, how things work\n\
+- chitchat: greetings, thanks and small talk\n\
+- transform: rewriting, translating or summarizing text the user already provided\n\
+- code: writing code that needs no outside facts\n\
+- math: pure arithmetic\n\
+When unsure, choose factual.\n\n\
 Queries: 1-3 short, self-contained keyword queries that resolve pronouns and references using \
 the conversation. Include names, versions and the year when recency matters. Use the language \
 most likely to have good sources for the topic. Different queries should cover different \
-angles, not repeat each other. When needs_search is false, return an empty list.";
+angles, not repeat each other. For chitchat, transform, code and math return an empty list.";
+
+/// Message kinds that never need a web search.
+const NO_SEARCH_KINDS: &[&str] = &["chitchat", "transform", "code", "math"];
 
 fn plan_schema(max_queries: usize) -> serde_json::Value {
     serde_json::json!({
         "type": "object",
         "properties": {
-            "needs_search": { "type": "boolean" },
+            "kind": {
+                "type": "string",
+                "enum": ["factual", "current", "technical", "chitchat", "transform", "code", "math"]
+            },
             "queries": {
                 "type": "array",
                 "items": { "type": "string" },
                 "maxItems": max_queries
             }
         },
-        "required": ["needs_search", "queries"],
+        "required": ["kind", "queries"],
         "additionalProperties": false
     })
 }
@@ -289,7 +345,12 @@ pub fn parse_plan(text: &str, question: &str, max_queries: usize) -> Plan {
         tracing::warn!("[GROUNDING] unparseable plan: {text}");
         return fallback_plan(question);
     };
-    if !raw.needs_search {
+    let needs_search = match (&raw.kind, raw.needs_search) {
+        (Some(kind), _) => !NO_SEARCH_KINDS.contains(&kind.trim().to_lowercase().as_str()),
+        (None, Some(flag)) => flag,
+        (None, None) => true,
+    };
+    if !needs_search {
         return Plan {
             needs_search: false,
             queries: Vec::new(),
@@ -324,23 +385,12 @@ async fn retrieve(
     today: &str,
     progress: Option<&Progress>,
 ) -> Grounding {
-    let provider = registry
-        .get(Some(provider_name))
-        .or_else(|| registry.get(None))
-        .unwrap_or_else(|| registry.get_default());
-
-    let results = join_all(plan.queries.iter().map(|q| provider.search(q))).await;
-    let per_query: Vec<Vec<Hit>> = results
-        .into_iter()
-        .zip(&plan.queries)
-        .map(|(res, query)| match res {
-            Ok(text) => parse_search_output(&text),
-            Err(err) => {
-                tracing::warn!("[GROUNDING] search '{query}' failed: {err}");
-                Vec::new()
-            }
-        })
-        .collect();
+    let per_query: Vec<Vec<Hit>> = join_all(
+        plan.queries
+            .iter()
+            .map(|q| search_with_fallback(registry, provider_name, q)),
+    )
+    .await;
 
     let hits = merge_hits(per_query, MAX_CANDIDATES);
     if hits.is_empty() {
@@ -527,6 +577,7 @@ fn build_block(hits: &[Hit], passages: &[Passage], selected: &[usize], today: &s
         block,
         sources,
         evidence,
+        unavailable: false,
     }
 }
 
@@ -535,11 +586,12 @@ fn unavailable(today: &str, why: &str) -> Grounding {
         block: format!(
             "\n\n### WEB SOURCES\n\
              A web search was attempted on {today} for the user's latest message, but {why}. \
-             Tell the user you could not find sources. Do not answer factual questions from memory; \
-             you may still help with anything that needs no outside facts.\n"
+             Tell the user you could not find sources. Do not answer factual questions from memory and do \
+             not call any tools; you may still help with anything that needs no outside facts.\n"
         ),
         sources: Vec::new(),
         evidence: String::new(),
+        unavailable: true,
     }
 }
 
@@ -651,15 +703,18 @@ pub fn strip_invalid_citations(text: &str, source_count: usize) -> String {
         .join("```")
 }
 
-const VERIFIER_PROMPT: &str = "You are a strict fact-checker. You receive SOURCES, today's date \
-and an ANSWER that was written from those sources. List every claim in the ANSWER that the \
+const VERIFIER_PROMPT: &str = "You are a careful fact-checker. You receive SOURCES, today's date \
+and an ANSWER that was written from those sources. List only the claims in the ANSWER that the \
 SOURCES do not support or that they contradict.\n\n\
-Rules: a claim is supported only if a source states it or it follows directly from what a source \
-states. A citation like [2] must point to the source that actually says it. A claim that \
-something already happened or was won on a date after today's date is contradicted. Two claims \
-that contradict each other are both unsupported. An answer that says it could not find \
-something is supported. Ignore style, opinions, greetings and offers of help. If every claim \
-is supported, return an empty list.\n\n\
+Be conservative. A claim that restates what a source says is supported, even when it is worded \
+differently, reordered or combines two sources; dates, names and numbers that appear in a source \
+are supported. Do not flag a claim just because it is incomplete. Flag a claim only if it is \
+absent from the sources, contradicts them, cites the wrong source number, or attributes a fact \
+to the wrong entity (for example giving another business's phone number or another place's \
+population as if it answered the question). A claim that something already happened or was won \
+on a date after today's date is contradicted. An answer that says it could not find something \
+is supported. Ignore style, opinions, greetings and offers of help. If every claim is \
+supported, return an empty list.\n\n\
 Write `claim` (quote or closely paraphrase the answer), `reason` and `notice` in the same \
 language as the ANSWER. `notice` is one short sentence warning that the listed parts could not \
 be verified against the sources.";
@@ -835,4 +890,46 @@ pub async fn finalize_answer(
         text.push_str(&note);
     }
     text
+}
+
+/// A source passage supplied by the caller instead of being searched for.
+#[derive(Debug, Clone, Deserialize)]
+pub struct EvidenceItem {
+    pub url: String,
+    pub text: String,
+}
+
+/// Builds the grounding block from fixed passages, skipping the planner, search and fetch.
+/// Lets two models (or two pipeline settings) be compared on identical evidence, independent
+/// of how well the web search happens to work.
+pub fn from_evidence(items: &[EvidenceItem], today: &str) -> Grounding {
+    let items: Vec<&EvidenceItem> = items.iter().filter(|i| !i.text.trim().is_empty()).collect();
+    if items.is_empty() {
+        return unavailable(today, "no sources were provided");
+    }
+    let hits: Vec<Hit> = items
+        .iter()
+        .map(|i| Hit {
+            snippet: String::new(),
+            url: i.url.clone(),
+        })
+        .collect();
+    let passages: Vec<Passage> = items
+        .iter()
+        .enumerate()
+        .map(|(n, i)| Passage {
+            hit: n,
+            order: 0,
+            text: i.text.clone(),
+        })
+        .collect();
+    let selected: Vec<usize> = (0..passages.len()).collect();
+    build_block(&hits, &passages, &selected, today)
+}
+
+/// Removes `<toolcall>`/`<tool_call>` blocks a model emitted although tools cannot run.
+pub fn strip_tool_calls(text: &str) -> String {
+    let re = regex::Regex::new(r"(?s)<(?:tool_call|toolcall)>.*?</(?:tool_call|toolcall)>")
+        .expect("valid regex");
+    re.replace_all(text, "").trim().to_string()
 }

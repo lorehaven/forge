@@ -21,6 +21,14 @@ pub struct ChatRequest {
     /// Earlier turns, oldest first (`user`/`assistant` only), for multi-turn use.
     #[serde(default)]
     pub history: Vec<HistoryMessage>,
+    /// Search backend for this request (`duckduckgo`, `searxng`, `brave`, `serpapi`);
+    /// the configured default when absent.
+    #[serde(default)]
+    pub search_provider: Option<String>,
+    /// Fixed source passages. When present, planning, search and fetching are skipped and
+    /// the answer is grounded on these, so models can be compared on identical evidence.
+    #[serde(default)]
+    pub evidence: Vec<crate::grounding::EvidenceItem>,
 }
 
 #[derive(Serialize)]
@@ -81,24 +89,31 @@ pub async fn chat(
         })
         .collect();
     let mut grounding = None;
+    let retrieve_started = std::time::Instant::now();
     if grounding_cfg.enabled
         && config
             .capability_profile
             .is_enabled(crate::tools::Tool::WebSearch)
     {
-        grounding = crate::grounding::gather(
-            &grounding_cfg,
-            &switchboard,
-            &vllm,
-            &search_provider_registry,
-            &config.default_search_provider,
-            &instance,
-            &history,
-            &req.message,
-            &today,
-            None,
-        )
-        .await;
+        grounding = if req.evidence.is_empty() {
+            crate::grounding::gather(
+                &grounding_cfg,
+                &switchboard,
+                &vllm,
+                &search_provider_registry,
+                req.search_provider
+                    .as_deref()
+                    .unwrap_or(&config.default_search_provider),
+                &instance,
+                &history,
+                &req.message,
+                &today,
+                None,
+            )
+            .await
+        } else {
+            Some(crate::grounding::from_evidence(&req.evidence, &today))
+        };
         if let Some(g) = &grounding {
             system_prompt.push_str(&g.block);
         }
@@ -137,11 +152,14 @@ pub async fn chat(
         }
     };
 
+    let retrieve_s = retrieve_started.elapsed().as_secs_f64();
+
     // A grounded answer is checked as a whole, so it is returned in one piece: the answer,
     // then the sources it was built from.
     if let Some(g) = grounding {
         let mut stream = stream;
         let mut answer = String::new();
+        let generate_started = std::time::Instant::now();
         while let Some(res) = stream.next().await {
             match res {
                 Ok(chunk) => answer.push_str(&chunk),
@@ -154,6 +172,9 @@ pub async fn chat(
                 }
             }
         }
+        let generate_s = generate_started.elapsed().as_secs_f64();
+        let answer = crate::grounding::strip_tool_calls(&answer);
+        let verify_started = std::time::Instant::now();
         let answer = crate::grounding::finalize_answer(
             &grounding_cfg,
             &switchboard,
@@ -165,6 +186,7 @@ pub async fn chat(
             &today,
         )
         .await;
+        let verify_s = verify_started.elapsed().as_secs_f64();
         let sources: Vec<_> = g
             .sources
             .iter()
@@ -172,7 +194,16 @@ pub async fn chat(
             .collect();
         let events = vec![
             serde_json::json!({ "content": answer }),
-            serde_json::json!({ "grounded": true, "sources": sources }),
+            serde_json::json!({
+                "grounded": true,
+                "sources": sources,
+                "search_failed": g.unavailable,
+                "timings": {
+                    "retrieve_s": (retrieve_s * 10.0).round() / 10.0,
+                    "generate_s": (generate_s * 10.0).round() / 10.0,
+                    "verify_s": (verify_s * 10.0).round() / 10.0,
+                },
+            }),
         ];
         let body = futures_util::stream::iter(
             events

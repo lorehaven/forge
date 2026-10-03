@@ -152,3 +152,125 @@ fn format_verdict_falls_back_to_a_default_notice() {
         format_verdict(r#"{"notice":"","unsupported":[{"claim":"c","reason":"r"}]}"#).unwrap();
     assert!(out.starts_with("\n\n⚠ Parts of this answer could not be verified"));
 }
+
+#[test]
+fn parse_plan_uses_the_kind_to_decide_whether_to_search() {
+    for kind in ["factual", "current", "technical"] {
+        let plan = parse_plan(&format!(r#"{{"kind":"{kind}","queries":["q"]}}"#), "q", 3);
+        assert!(plan.needs_search, "{kind} should search");
+        assert_eq!(plan.queries, ["q"]);
+    }
+    for kind in ["chitchat", "transform", "code", "math"] {
+        let plan = parse_plan(
+            &format!(r#"{{"kind":"{kind}","queries":["ignored"]}}"#),
+            "q",
+            3,
+        );
+        assert!(!plan.needs_search, "{kind} should not search");
+        assert!(plan.queries.is_empty());
+    }
+}
+
+#[test]
+fn from_evidence_numbers_the_sources_and_flags_empty_input() {
+    let items = vec![
+        EvidenceItem {
+            url: "https://a.example/x".into(),
+            text: "Canberra is the capital.".into(),
+        },
+        EvidenceItem {
+            url: "https://b.example/y".into(),
+            text: "  ".into(),
+        },
+        EvidenceItem {
+            url: "https://c.example/z".into(),
+            text: "It was founded in 1913.".into(),
+        },
+    ];
+    let g = from_evidence(&items, "2026-10-03");
+    assert!(!g.unavailable);
+    assert_eq!(g.sources.len(), 2);
+    assert_eq!(g.sources[1].url, "https://c.example/z");
+    assert!(g.evidence.contains("[1] a.example"));
+    assert!(g.evidence.contains("[2] c.example"));
+    assert!(g.block.contains("### WEB SOURCES"));
+
+    let none = from_evidence(&[], "2026-10-03");
+    assert!(none.unavailable);
+    assert!(none.sources.is_empty());
+}
+
+#[test]
+fn strip_tool_calls_removes_both_tag_spellings() {
+    let text = "I need to search.\n<toolcall>{\"a\":1}</toolcall>\nDone <tool_call>{}</tool_call>";
+    assert_eq!(strip_tool_calls(text), "I need to search.\n\nDone");
+}
+
+struct FakeProvider {
+    reply: Result<String, String>,
+}
+
+#[async_trait::async_trait]
+impl sage_service::tools::SearchProvider for FakeProvider {
+    fn name(&self) -> &str {
+        "fake"
+    }
+    fn requires_api_key(&self) -> bool {
+        false
+    }
+    async fn search(&self, _query: &str) -> Result<String, String> {
+        self.reply.clone()
+    }
+}
+
+fn registry(
+    entries: Vec<(&str, Result<String, String>)>,
+) -> sage_service::tools::SearchProviderRegistry {
+    let mut reg = sage_service::tools::SearchProviderRegistry::new();
+    for (name, reply) in entries {
+        reg.register(name.to_string(), Box::new(FakeProvider { reply }));
+    }
+    reg
+}
+
+const GOOD: &str = "Search results for 'q'\n\nA snippet.\nSource: https://example.com/a";
+
+#[tokio::test]
+async fn search_with_fallback_uses_the_primary_when_it_works() {
+    let reg = registry(vec![
+        ("searxng", Ok(GOOD.into())),
+        ("duckduckgo", Err("boom".into())),
+    ]);
+    let hits = search_with_fallback(&reg, "searxng", "q").await;
+    assert_eq!(hits, vec![hit("A snippet.", "https://example.com/a")]);
+}
+
+#[tokio::test]
+async fn search_with_fallback_moves_on_after_an_error_or_an_empty_result() {
+    let reg = registry(vec![
+        ("searxng", Err("down".into())),
+        (
+            "brave",
+            Ok("Search results for 'q'\n\nnothing usable here".into()),
+        ),
+        ("duckduckgo", Ok(GOOD.into())),
+    ]);
+    let hits = search_with_fallback(&reg, "searxng", "q").await;
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].url, "https://example.com/a");
+}
+
+#[tokio::test]
+async fn search_with_fallback_is_empty_when_every_provider_fails_or_none_is_registered() {
+    let reg = registry(vec![
+        ("searxng", Err("down".into())),
+        ("duckduckgo", Err("blocked".into())),
+    ]);
+    assert!(search_with_fallback(&reg, "searxng", "q").await.is_empty());
+    let empty = registry(vec![]);
+    assert!(
+        search_with_fallback(&empty, "searxng", "q")
+            .await
+            .is_empty()
+    );
+}
