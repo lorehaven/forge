@@ -17,7 +17,7 @@ FROM rust:1.98-alpine3.22 AS builder
 RUN apk add --no-cache musl-dev pkgconfig build-base ca-certificates git curl openssl
 RUN rustup target add x86_64-unknown-linux-musl
 
-ARG CARGO_REGISTRIES_ENNOR_INDEX=sparse+https://ennor.ddns.net/index/
+ARG CARGO_REGISTRIES_ENNOR_INDEX=sparse+https://ennor.ddns.net/warehouse/index/
 ARG CARGO_REGISTRIES_ENNOR_TOKEN=
 RUN mkdir -p /usr/local/cargo && \
     printf "[registries.ennor]\nindex = \"%s\"\n" "${CARGO_REGISTRIES_ENNOR_INDEX}" > /usr/local/cargo/config.toml && \
