@@ -225,7 +225,8 @@ dates, numbers, definitions, even if you think you know the answer\n\
 - current: latest, newest, recent, today, now, prices, rates, news, versions\n\
 - technical: programming, tools, commands, how things work\n\
 - chitchat: greetings, thanks and small talk\n\
-- transform: rewriting, translating or summarizing text the user already provided\n\
+- transform: rewriting, translating or summarizing text that is pasted into the message itself. \
+Asking to summarize or explain a named paper, book, article or product that is not pasted is factual\n\
 - code: writing code that needs no outside facts\n\
 - math: pure arithmetic\n\
 When unsure, choose factual.\n\n\
@@ -539,7 +540,8 @@ fn build_block(hits: &[Hit], passages: &[Passage], selected: &[usize], today: &s
          Retrieved on {today} for the user's latest message. This is your only source of facts for this answer.\n\
          - Answer using ONLY these sources and the conversation itself. Do not add facts from memory.\n\
          - Put the source number in brackets, like [1], after each claim it supports. Cite only numbers listed below.\n\
-         - If the sources do not contain the answer, say so plainly and mention what you did find. Never guess.\n\
+         - Answer only what was asked, concisely. Do not add background, history or related facts the question did not ask for.\n\
+         - If the sources do not contain the answer, say so plainly in a sentence or two. Do not offer facts about a different person, place, business or product as a substitute. Never guess.\n\
          - Every sentence that states a fact must end with a citation like [1]. If you cannot cite it, leave it out. Do not mention people, places, organizations or numbers that are not in the sources, and do not offer details about a different entity as a substitute for the one asked about.\n\
          - For questions about the latest or most recent thing, compare the dates in the sources with today's date. If the newest source you have is old, say the information may be out of date.\n\
          - If sources disagree, say so and attribute each claim.\n\
@@ -677,8 +679,11 @@ pub fn decode_redirect(href: &str) -> String {
 /// counts when it follows whitespace, an opening bracket or the start of the text, so
 /// indexing like `items[1]` is never touched.
 pub fn strip_invalid_citations(text: &str, source_count: usize) -> String {
-    let marker = regex::Regex::new(r"(?P<pre>^|[\s(])\[(?P<n>\d{1,3})\](?P<post>[.,;:!?)]?)")
-        .expect("valid regex");
+    // `[3]` or a grouped `[1, 2, 3]`, standing alone (after whitespace, `(` or the start).
+    let marker = regex::Regex::new(
+        r"(?P<pre>^|[\s(])\[(?P<list>\d{1,3}(?:\s*,\s*\d{1,3})*)\](?P<post>[.,;:!?)]?)",
+    )
+    .expect("valid regex");
     text.split("```")
         .enumerate()
         .map(|(i, part)| {
@@ -687,9 +692,20 @@ pub fn strip_invalid_citations(text: &str, source_count: usize) -> String {
             }
             marker
                 .replace_all(part, |caps: &regex::Captures| {
-                    let n: usize = caps["n"].parse().unwrap_or(0);
-                    if (1..=source_count).contains(&n) {
+                    let numbers: Vec<usize> = caps["list"]
+                        .split(',')
+                        .filter_map(|n| n.trim().parse().ok())
+                        .collect();
+                    let valid: Vec<usize> = numbers
+                        .iter()
+                        .copied()
+                        .filter(|n| (1..=source_count).contains(n))
+                        .collect();
+                    if valid.len() == numbers.len() {
                         caps[0].to_string()
+                    } else if !valid.is_empty() {
+                        let list: Vec<String> = valid.iter().map(|n| n.to_string()).collect();
+                        format!("{}[{}]{}", &caps["pre"], list.join(", "), &caps["post"])
                     } else if caps["pre"].trim().is_empty() && !caps["pre"].is_empty() {
                         // Also swallow the space before the marker.
                         caps["post"].to_string()

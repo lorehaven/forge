@@ -274,3 +274,14 @@ async fn search_with_fallback_is_empty_when_every_provider_fails_or_none_is_regi
             .is_empty()
     );
 }
+
+#[test]
+fn strip_invalid_citations_handles_grouped_citations() {
+    assert_eq!(strip_invalid_citations("Fact [1, 2].", 2), "Fact [1, 2].");
+    assert_eq!(strip_invalid_citations("Fact [1, 7].", 2), "Fact [1].");
+    assert_eq!(strip_invalid_citations("Fact [7, 9].", 2), "Fact.");
+    assert_eq!(
+        strip_invalid_citations("Fact [0, 3] and more", 2),
+        "Fact and more"
+    );
+}
