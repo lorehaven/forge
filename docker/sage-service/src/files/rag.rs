@@ -204,6 +204,49 @@ pub async fn record_rag_contexts(
     Ok(())
 }
 
+/// The label and link a web source is stored and shown with: `[1] example.com` and its URL.
+pub fn web_source_label(source: &crate::grounding::WebSource) -> (String, String) {
+    (
+        format!("[{}] {}", source.index, source.domain),
+        source.url.clone(),
+    )
+}
+
+/// Persist the web pages an answer was grounded on, so the Sources block survives a page
+/// reload. Stored in `rag_contexts` as `source = "web"`: no file, the URL in `detail`.
+pub async fn record_web_sources(
+    db: &Db,
+    message_id: &str,
+    sources: &[crate::grounding::WebSource],
+) -> Result<(), String> {
+    if sources.is_empty() {
+        return Ok(());
+    }
+    let Db::Postgres(pg_db) = db else {
+        return Ok(());
+    };
+    let schema = db_schema();
+    let sql = format!(
+        "INSERT INTO {schema}.rag_contexts \
+         (id, message_id, file_id, file_name, chunk_index, detail, similarity, source, created_at) \
+         VALUES ($1, $2, NULL, $3, NULL, $4, NULL, 'web', $5)"
+    );
+    let now = chrono::Utc::now().to_rfc3339();
+    for source in sources {
+        let (label, url) = web_source_label(source);
+        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+            .bind(Uuid::new_v4().to_string())
+            .bind(message_id)
+            .bind(label)
+            .bind(url)
+            .bind(&now)
+            .execute(pg_db.pool())
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// Load the source references for a set of messages, keyed by message id.
 pub async fn load_sources_for_messages(
     db: &Db,
@@ -222,7 +265,7 @@ pub async fn load_sources_for_messages(
         "SELECT message_id, file_name, chunk_index, detail, similarity \
          FROM {schema}.rag_contexts \
          WHERE message_id = ANY($1) \
-         ORDER BY similarity DESC NULLS LAST"
+         ORDER BY similarity DESC NULLS LAST, file_name ASC"
     );
     let rows: Vec<RagContextRow> = match sqlx::query_as(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(message_ids)

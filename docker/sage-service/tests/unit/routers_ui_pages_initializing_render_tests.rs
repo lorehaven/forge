@@ -12,6 +12,7 @@ fn default_model(name: &str, task: Option<&str>) -> DefaultModel {
         quantization: None,
         dtype: None,
         limit_mm_per_prompt: None,
+        max_num_seqs: None,
         enable_tool_calling: false,
         task: task.map(str::to_string),
         device: None,

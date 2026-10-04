@@ -22,6 +22,7 @@ fn model(name: &str) -> DefaultModel {
         quantization: None,
         dtype: None,
         limit_mm_per_prompt: None,
+        max_num_seqs: None,
         enable_tool_calling: false,
         task: None,
         device: None,
@@ -369,4 +370,14 @@ async fn shutdown_does_not_stop_an_instance_it_never_launched() {
     let mut cfg = test_config(&["chat"]);
     cfg.stop_models_on_shutdown = true;
     shutdown(&sb, &cfg, &launched).await;
+}
+
+#[test]
+fn default_models_json_accepts_max_num_seqs() {
+    let models = sage_service::config::DefaultModel::parse_list(
+        r#"[{"name":"m","gpu_utilization":0.7,"max_num_seqs":64}]"#,
+    );
+    assert_eq!(models[0].max_num_seqs, Some(64));
+    let plain = sage_service::config::DefaultModel::parse_list(r#"[{"name":"m"}]"#);
+    assert_eq!(plain[0].max_num_seqs, None);
 }

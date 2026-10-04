@@ -94,6 +94,7 @@ pub async fn launch_instance_form(
             let trimmed = value.trim();
             (!trimmed.is_empty()).then(|| trimmed.to_string())
         }),
+        max_num_seqs: None,
         max_model_len: parse_optional_u32(form.max_model_len.as_deref()),
         gpu_memory_utilization,
         enable_prefix_caching: form

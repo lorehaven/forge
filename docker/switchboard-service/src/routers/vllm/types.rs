@@ -49,6 +49,11 @@ pub struct LaunchRequest {
     /// None = vLLM default (1/modality).
     #[serde(default)]
     pub limit_mm_per_prompt: Option<String>,
+    /// Cap on concurrent sequences (`--max-num-seqs`). Hybrid/Mamba models (Qwen3.5) reserve a
+    /// state block per sequence, so the default of 256 can exceed what a small GPU share holds;
+    /// None = vLLM default.
+    #[serde(default)]
+    pub max_num_seqs: Option<u32>,
     pub max_model_len: Option<u32>,
     pub gpu_memory_utilization: Option<f32>,
     pub enable_prefix_caching: bool,

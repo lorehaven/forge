@@ -251,6 +251,11 @@ impl VllmEngine for KubernetesVllmEngine {
             args.push(limit.clone());
         }
 
+        if let Some(seqs) = req.max_num_seqs {
+            args.push("--max-num-seqs".to_string());
+            args.push(seqs.to_string());
+        }
+
         if let Some(len) = req.max_model_len {
             args.push("--max-model-len".to_string());
             args.push(len.to_string());

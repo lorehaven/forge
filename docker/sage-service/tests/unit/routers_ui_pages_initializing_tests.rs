@@ -13,6 +13,7 @@ fn model(name: &str) -> DefaultModel {
         quantization: None,
         dtype: None,
         limit_mm_per_prompt: None,
+        max_num_seqs: None,
         enable_tool_calling: false,
         task: None,
         device: None,

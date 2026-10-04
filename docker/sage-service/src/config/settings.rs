@@ -19,6 +19,10 @@ pub struct DefaultModel {
     /// (e.g. `{"image": 4}`); should cover SAGE_MAX_IMAGES_PER_REQUEST. None = vLLM default (1 per modality).
     #[serde(rename = "limit_mm", default)]
     pub limit_mm_per_prompt: Option<String>,
+    /// Cap on concurrent sequences (`--max-num-seqs`). Needed to fit hybrid models such as
+    /// Qwen3.5 in a small GPU share (their per-sequence state blocks scale with it); None = vLLM default.
+    #[serde(default)]
+    pub max_num_seqs: Option<u32>,
     #[serde(default)]
     pub enable_tool_calling: bool,
     /// vLLM task, e.g. "embed", so switchboard serves /v1/embeddings instead of chat completions.
@@ -56,6 +60,7 @@ impl DefaultModel {
                 quantization: None,
                 dtype: None,
                 limit_mm_per_prompt: None,
+                max_num_seqs: None,
                 enable_tool_calling: false,
                 task: None,
                 device: None,

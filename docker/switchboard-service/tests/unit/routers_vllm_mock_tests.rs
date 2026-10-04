@@ -20,6 +20,7 @@ fn request(model: &str) -> LaunchRequest {
         quantization: None,
         dtype: None,
         limit_mm_per_prompt: None,
+        max_num_seqs: None,
         max_model_len: None,
         gpu_memory_utilization: None,
         enable_prefix_caching: false,
@@ -88,4 +89,22 @@ async fn launch_honors_an_explicit_namespace() {
         .stop_instance(launched.id)
         .await
         .expect("cleanup: the instance we just launched is there to stop");
+}
+
+#[test]
+fn launch_request_reads_max_num_seqs_and_defaults_to_none() {
+    let with: LaunchRequest = serde_json::from_str(
+        r#"{"model":"m","host":"0.0.0.0","port":8000,"quantization":null,
+            "max_model_len":null,"gpu_memory_utilization":0.7,
+            "enable_prefix_caching":false,"max_num_seqs":64}"#,
+    )
+    .unwrap();
+    assert_eq!(with.max_num_seqs, Some(64));
+    let without: LaunchRequest = serde_json::from_str(
+        r#"{"model":"m","host":"0.0.0.0","port":8000,"quantization":null,
+            "max_model_len":null,"gpu_memory_utilization":null,
+            "enable_prefix_caching":false}"#,
+    )
+    .unwrap();
+    assert_eq!(without.max_num_seqs, None);
 }

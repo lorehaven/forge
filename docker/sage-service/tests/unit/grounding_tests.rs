@@ -285,3 +285,47 @@ fn strip_invalid_citations_handles_grouped_citations() {
         "Fact and more"
     );
 }
+
+#[test]
+fn web_source_label_pairs_the_numbered_domain_with_the_url() {
+    let src = WebSource {
+        index: 2,
+        url: "https://en.wikipedia.org/wiki/Canberra".into(),
+        domain: "en.wikipedia.org".into(),
+    };
+    assert_eq!(
+        sage_service::files::rag::web_source_label(&src),
+        (
+            "[2] en.wikipedia.org".to_string(),
+            "https://en.wikipedia.org/wiki/Canberra".to_string()
+        )
+    );
+}
+
+#[tokio::test]
+async fn metered_providers_are_not_fallbacks_unless_listed() {
+    let reg = registry(vec![
+        ("searxng", Err("down".into())),
+        ("duckduckgo", Err("blocked".into())),
+        ("serpapi", Ok(GOOD.into())),
+    ]);
+    let default = fallback_names("searxng,duckduckgo");
+    assert!(
+        search_with_fallback_in(&reg, "searxng", "q", &default)
+            .await
+            .is_empty()
+    );
+
+    let opted_in = fallback_names(" SearXNG , serpapi ,, ");
+    assert_eq!(opted_in, ["searxng", "serpapi"]);
+    let hits = search_with_fallback_in(&reg, "searxng", "q", &opted_in).await;
+    assert_eq!(hits.len(), 1);
+}
+
+#[tokio::test]
+async fn a_metered_primary_is_still_used_when_chosen_explicitly() {
+    let reg = registry(vec![("serpapi", Ok(GOOD.into()))]);
+    let hits =
+        search_with_fallback_in(&reg, "serpapi", "q", &fallback_names("searxng,duckduckgo")).await;
+    assert_eq!(hits.len(), 1);
+}

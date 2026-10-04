@@ -141,6 +141,7 @@ async fn launch_instance_parses_the_created_instance() {
             None,
             None,
             None,
+            None,
             false,
             None,
             None,

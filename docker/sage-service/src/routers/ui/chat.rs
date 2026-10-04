@@ -1073,6 +1073,13 @@ pub async fn stream_message(
             tracing::error!("Failed to record RAG sources: {}", err);
         }
 
+        // Record the web pages the answer was grounded on, so they still show after a reload.
+        if let Err(err) =
+            crate::files::rag::record_web_sources(&db_clone, &ai_msg_id, &web_sources).await
+        {
+            tracing::error!("Failed to record web sources: {}", err);
+        }
+
         conv.active_message_id = Some(ai_msg_id.clone());
         conv.updated_at = chrono::Utc::now().to_rfc3339();
         if let Err(err) = conv_repo.update(&conv).await {

@@ -62,19 +62,45 @@ impl GroundingConfig {
     }
 }
 
-/// Providers tried, in this order, when the preferred one fails or finds nothing.
-const FALLBACK_ORDER: &[&str] = &["searxng", "brave", "serpapi", "duckduckgo"];
+/// Providers tried after the preferred one by default. Only free backends: Brave and SerpAPI are
+/// metered, so they are used only when chosen as the provider, or listed in `SAGE_SEARCH_FALLBACK`.
+const DEFAULT_FALLBACKS: &str = "searxng,duckduckgo";
 
-/// Searches with `primary`; if it errors or yields no usable results, tries the other
-/// registered providers in `FALLBACK_ORDER`. A scraped backend being throttled for a minute
-/// then costs a log line instead of the whole answer. Empty when every provider came up dry.
+/// Parses a comma-separated provider list (`SAGE_SEARCH_FALLBACK`), lowercased, in order.
+pub fn fallback_names(spec: &str) -> Vec<String> {
+    spec.split(',')
+        .map(|n| n.trim().to_lowercase())
+        .filter(|n| !n.is_empty())
+        .collect()
+}
+
+/// Searches with `primary`; if it errors or yields no usable results, tries the allowed
+/// fallback providers (`SAGE_SEARCH_FALLBACK`, default `searxng,duckduckgo`) in order. A scraped
+/// backend being throttled for a minute then costs a log line instead of the whole answer.
+/// Empty when every provider came up dry.
 pub async fn search_with_fallback(
     registry: &SearchProviderRegistry,
     primary: &str,
     query: &str,
 ) -> Vec<Hit> {
+    let spec = envmnt::get_or("SAGE_SEARCH_FALLBACK", DEFAULT_FALLBACKS);
+    search_with_fallback_in(registry, primary, query, &fallback_names(&spec)).await
+}
+
+/// [`search_with_fallback`] with the fallback list given explicitly.
+pub async fn search_with_fallback_in(
+    registry: &SearchProviderRegistry,
+    primary: &str,
+    query: &str,
+    fallbacks: &[String],
+) -> Vec<Hit> {
     let mut order: Vec<&str> = vec![primary];
-    order.extend(FALLBACK_ORDER.iter().copied().filter(|n| *n != primary));
+    order.extend(
+        fallbacks
+            .iter()
+            .map(String::as_str)
+            .filter(|n| *n != primary),
+    );
 
     for name in order {
         let Some(provider) = registry.get(Some(name)) else {
@@ -225,11 +251,19 @@ dates, numbers, definitions, even if you think you know the answer\n\
 - current: latest, newest, recent, today, now, prices, rates, news, versions\n\
 - technical: programming, tools, commands, how things work\n\
 - chitchat: greetings, thanks and small talk\n\
-- transform: rewriting, translating or summarizing text that is pasted into the message itself. \
-Asking to summarize or explain a named paper, book, article or product that is not pasted is factual\n\
+- transform: rewriting, translating, summarizing or explaining a document, paper, article, book \
+or file, whether its text is pasted, attached, or only named. Such requests never need a web \
+search\n\
 - code: writing code that needs no outside facts\n\
 - math: pure arithmetic\n\
 When unsure, choose factual.\n\n\
+Examples:\n\
+- \"Summarize the 2019 paper 'Deep Foo' by Dr Smith\" -> transform (summarizing a document)\n\
+- \"Streść powieść 'Zielone Wzgórza' Anny Nowak\" -> transform\n\
+- \"Who won the last World Cup?\" -> current\n\
+- \"Summarize in one sentence: 'The council voted on Tuesday to extend the bike lanes.'\" -> transform (the text is pasted)\n\
+- \"Translate to German: 'See you tomorrow.'\" -> transform\n\
+- \"Thanks!\" -> chitchat\n\n\
 Queries: 1-3 short, self-contained keyword queries that resolve pronouns and references using \
 the conversation. Include names, versions and the year when recency matters. Use the language \
 most likely to have good sources for the topic. Different queries should cover different \
