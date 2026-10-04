@@ -583,6 +583,7 @@ pub async fn stream_message(
         let mut web_sources: Vec<crate::grounding::WebSource> = Vec::new();
         let mut grounding_injected = false;
         let mut grounding_evidence = String::new();
+        let mut grounding_question = String::new();
         if grounded {
             let question = if req.skip_user_message {
                 history_messages
@@ -594,6 +595,7 @@ pub async fn stream_message(
             } else {
                 req.message.clone()
             };
+            grounding_question = question.clone();
             if !question.trim().is_empty() {
                 let provider_name = req
                     .search_provider
@@ -782,6 +784,7 @@ pub async fn stream_message(
                 web_sources.len(),
                 &grounding_evidence,
                 &today_task,
+                &grounding_question,
             )
             .await;
         }

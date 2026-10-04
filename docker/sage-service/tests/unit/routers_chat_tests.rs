@@ -207,3 +207,20 @@ async fn get_context_status_reports_zero_usage_for_a_fresh_profile() {
         .await;
     assert_eq!(resp.status(), StatusCode::OK);
 }
+
+#[test]
+fn chat_request_distinguishes_no_evidence_field_from_an_empty_evidence_list() {
+    use sage_service::routers::chat::ChatRequest;
+    let absent: ChatRequest = serde_json::from_str(r#"{"instance_id":"i","message":"q"}"#).unwrap();
+    assert!(absent.evidence.is_none());
+
+    let empty: ChatRequest =
+        serde_json::from_str(r#"{"instance_id":"i","message":"q","evidence":[]}"#).unwrap();
+    assert_eq!(empty.evidence.as_deref().map(<[_]>::len), Some(0));
+
+    let two: ChatRequest = serde_json::from_str(
+        r#"{"instance_id":"i","message":"q","evidence":[{"url":"https://a","text":"x"},{"url":"https://b","text":"y"}]}"#,
+    )
+    .unwrap();
+    assert_eq!(two.evidence.unwrap().len(), 2);
+}

@@ -25,10 +25,11 @@ pub struct ChatRequest {
     /// the configured default when absent.
     #[serde(default)]
     pub search_provider: Option<String>,
-    /// Fixed source passages. When present, planning, search and fetching are skipped and
-    /// the answer is grounded on these, so models can be compared on identical evidence.
+    /// Fixed source passages. When present (even as an empty list, meaning "there are no
+    /// sources"), planning, search and fetching are skipped and the answer is grounded on these,
+    /// so models can be compared on identical evidence.
     #[serde(default)]
-    pub evidence: Vec<crate::grounding::EvidenceItem>,
+    pub evidence: Option<Vec<crate::grounding::EvidenceItem>>,
 }
 
 #[derive(Serialize)]
@@ -95,7 +96,7 @@ pub async fn chat(
             .capability_profile
             .is_enabled(crate::tools::Tool::WebSearch)
     {
-        grounding = if req.evidence.is_empty() {
+        grounding = if req.evidence.is_none() {
             crate::grounding::gather(
                 &grounding_cfg,
                 &switchboard,
@@ -112,7 +113,10 @@ pub async fn chat(
             )
             .await
         } else {
-            Some(crate::grounding::from_evidence(&req.evidence, &today))
+            Some(crate::grounding::from_evidence(
+                req.evidence.as_deref().unwrap_or_default(),
+                &today,
+            ))
         };
         if let Some(g) = &grounding {
             system_prompt.push_str(&g.block);
@@ -184,6 +188,7 @@ pub async fn chat(
             g.sources.len(),
             &g.evidence,
             &today,
+            &req.message,
         )
         .await;
         let verify_s = verify_started.elapsed().as_secs_f64();
@@ -198,6 +203,7 @@ pub async fn chat(
                 "grounded": true,
                 "sources": sources,
                 "search_failed": g.unavailable,
+                "unsourced": g.unavailable,
                 "timings": {
                     "retrieve_s": (retrieve_s * 10.0).round() / 10.0,
                     "generate_s": (generate_s * 10.0).round() / 10.0,
