@@ -267,7 +267,9 @@ Examples:\n\
 - \"Who won the last World Cup?\" -> current\n\
 - \"Summarize in one sentence: 'The council voted on Tuesday to extend the bike lanes.'\" -> transform (the text is pasted)\n\
 - \"Translate to German: 'See you tomorrow.'\" -> transform\n\
-- \"Thanks!\" -> chitchat\n\n\
+- \"Thanks!\" -> chitchat\n\
+- (after a question about a mountain) \"How high is it in metres?\" -> factual (a follow-up asking for a fact)\n\
+- \"What is 15% of 240?\" -> math\n\n\
 Queries: 1-3 short, self-contained keyword queries that resolve pronouns and references using \
 the conversation. Include names, versions and the year when recency matters. Use the language \
 most likely to have good sources for the topic. Different queries should cover different \
@@ -1127,7 +1129,13 @@ async fn repair_citations(
         .as_str()?
         .trim()
         .to_string();
-    has_valid_citation(&fixed, source_count).then_some(fixed)
+    let usable = has_valid_citation(&fixed, source_count);
+    if !usable {
+        tracing::info!(
+            "[GROUNDING] citation repair produced no usable citation; keeping the original"
+        );
+    }
+    usable.then_some(fixed)
 }
 
 /// Best-effort language of `text` among pl/de/es/fr/en (English when nothing stands out).
