@@ -17,6 +17,20 @@ pub fn manage_rules() -> Vec<CssRule> {
             // squeezes the metadata panel to nothing.
             .property("min-height", "16rem")
             .property("overflow", "auto"),
+        CssRule::new(".manage-scroll > *").property("flex-shrink", "0"),
+        // quench's `.meta-list` is itself a scrolling flex item; inside the
+        // detail panel that squeezes the rows, and doubles the padding.
+        CssRule::new(".manage-scroll .meta-list")
+            .property("flex", "0 0 auto")
+            .property("overflow", "visible")
+            .property("padding", "0"),
+        CssRule::new(".manage-scroll .meta-row")
+            .property("width", "auto")
+            .property("min-width", "0")
+            .property("align-items", "baseline"),
+        CssRule::new(".manage-scroll .meta-value")
+            .property("min-width", "0")
+            .property("overflow-wrap", "anywhere"),
         CssRule::new(".panel-subtitle")
             .property("font-weight", "600")
             .property("font-size", "0.9rem")
@@ -170,12 +184,26 @@ pub fn manage_rules() -> Vec<CssRule> {
             .property("gap", "0.75rem")
             .property("margin-top", "1rem")
             .child(
+                CssRule::new("form")
+                    .property("display", "flex")
+                    .property("margin", "0"),
+            )
+            .child(
                 CssRule::new(".button-neutral-sm,\n.button-danger-sm")
+                    .property("display", "inline-flex")
+                    .property("align-items", "center")
+                    .property("justify-content", "center")
+                    .property("gap", "0")
                     .property("box-sizing", "border-box")
                     .property("height", "2.25rem")
+                    .property("min-width", "7.5rem")
                     .property("margin", "0")
+                    .property("padding", "0 0.9rem")
                     .property("line-height", "1")
                     .property("font-family", "inherit")
+                    .property("font-size", "0.85rem")
+                    .property("font-weight", "500")
+                    .property("border-radius", "0.3rem")
                     .property("white-space", "nowrap"),
             ),
         // A neutral sibling of `.button-danger-sm` (utility.rs): same shape,

@@ -712,8 +712,8 @@ fn render_file_detail(view: &BrowseView, path: &str, size: Option<i64>) -> Eleme
                     button()
                         .class("button-danger-sm")
                         .attr("type", "submit")
-                        .attr("data-i18n", "ui_file_delete")
-                        .text("Delete"),
+                        .child(i().class("fas fa-trash mr-2"))
+                        .child(span().attr("data-i18n", "ui_file_delete").text("Delete")),
                 ),
         );
     }
