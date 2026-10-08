@@ -13,7 +13,9 @@ pub fn manage_rules() -> Vec<CssRule> {
             .property("flex-direction", "column")
             .property("gap", "1rem")
             .property("flex", "1 1 auto")
-            .property("min-height", "0")
+            // Fixed floor: on short viewports the flex layout otherwise
+            // squeezes the metadata panel to nothing.
+            .property("min-height", "16rem")
             .property("overflow", "auto"),
         CssRule::new(".panel-subtitle")
             .property("font-weight", "600")
@@ -159,13 +161,23 @@ pub fn manage_rules() -> Vec<CssRule> {
             .property("border", "0.1rem solid var(--bs-gray-700)")
             .property("border-radius", "0.25rem")
             .property("background-color", "white"),
-        // Download / delete row on a file's detail.
-        CssRule::new(".file-actions-row")
+        // One aligned row of peer buttons (download / delete on a file,
+        // browse / delete on a storage).
+        CssRule::new(".file-actions-row,\n.detail-actions")
             .property("display", "flex")
             .property("flex-wrap", "wrap")
             .property("align-items", "center")
             .property("gap", "0.75rem")
-            .property("margin-top", "1rem"),
+            .property("margin-top", "1rem")
+            .child(
+                CssRule::new(".button-neutral-sm,\n.button-danger-sm")
+                    .property("box-sizing", "border-box")
+                    .property("height", "2.25rem")
+                    .property("margin", "0")
+                    .property("line-height", "1")
+                    .property("font-family", "inherit")
+                    .property("white-space", "nowrap"),
+            ),
         // A neutral sibling of `.button-danger-sm` (utility.rs): same shape,
         // used for the file download link so it reads as a peer of Delete.
         CssRule::new(".button-neutral-sm")

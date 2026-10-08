@@ -395,7 +395,10 @@ fn render_tree(view: &BrowseView) -> Element {
         wrapper = wrapper.child(empty_state("ui_files_empty_dir"));
     } else {
         let mut list = ul().class("repo-tree");
-        for (name, node) in sorted_children(&view.tree) {
+        for (name, node) in sorted_children(&view.tree)
+            .into_iter()
+            .filter(|(_, n)| !is_leaf_file(n))
+        {
             list = list.child(render_tree_node(&view.storage, name, node, "", selected));
         }
         wrapper = wrapper.child(list);
@@ -425,6 +428,10 @@ fn sorted_children(node: &TreeNode) -> Vec<(&String, &TreeNode)> {
     children
 }
 
+fn is_leaf_file(node: &TreeNode) -> bool {
+    node.is_file && node.children.is_empty()
+}
+
 fn render_tree_node(
     storage: &str,
     name: &str,
@@ -445,24 +452,7 @@ fn render_tree_node(
         encode_query_component(&full_path)
     );
 
-    if node.is_file && node.children.is_empty() {
-        return li().child(
-            div()
-                .class("tree-folder")
-                .child(i().class(file_icon(name)))
-                .child(
-                    a().attr("href", href)
-                        .class(if is_selected {
-                            "repo-link active"
-                        } else {
-                            "repo-link"
-                        })
-                        .text(name),
-                ),
-        );
-    }
-
-    if node.children.is_empty() {
+    if !node.children.values().any(|c| !is_leaf_file(c)) {
         return li().child(
             div()
                 .class("tree-folder")
@@ -500,7 +490,10 @@ fn render_tree_node(
     details = details.child(summary);
 
     let mut list = ul().class("repo-tree");
-    for (child_name, child_node) in sorted_children(node) {
+    for (child_name, child_node) in sorted_children(node)
+        .into_iter()
+        .filter(|(_, n)| !is_leaf_file(n))
+    {
         list = list.child(render_tree_node(
             storage, child_name, child_node, &full_path, selected,
         ));

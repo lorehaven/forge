@@ -604,13 +604,16 @@ fn render_detail_panel(view: &StoragesView, can_manage: bool) -> Element {
     }
 
     let mut body = div().class("manage-scroll");
+    let mut actions = div()
+        .class("detail-actions")
+        .child(render_browse_link(&selected.name));
 
     match &selected.dynamic {
         Some(storage) => {
             body = body.child(render_dynamic_meta(storage));
             if can_manage {
                 body = body.child(render_edit_form(storage));
-                body = body.child(render_delete_button(&storage.name));
+                actions = actions.child(render_delete_button(&storage.name));
             }
         }
         None => {
@@ -618,7 +621,7 @@ fn render_detail_panel(view: &StoragesView, can_manage: bool) -> Element {
         }
     }
 
-    body = body.child(render_browse_link(&selected.name));
+    body = body.child(actions);
 
     if can_manage {
         body = body.child(render_create_form());
@@ -692,23 +695,21 @@ fn render_static_meta(selected: &SelectedView) -> Element {
 /// The file list this panel used to carry now lives on its own page, with a
 /// real tree and a preview pane - this is the way in.
 fn render_browse_link(name: &str) -> Element {
-    div().class("mt-4").child(
-        a().class("button-neutral-sm")
-            .attr(
-                "href",
-                format!(
-                    "{}?storage={}",
-                    ui_path("/files/browse"),
-                    encode_query_component(name)
-                ),
-            )
-            .child(i().class("fas fa-folder-tree mr-2"))
-            .child(
-                span()
-                    .attr("data-i18n", "ui_browse_open")
-                    .text("Browse files"),
+    a().class("button-neutral-sm")
+        .attr(
+            "href",
+            format!(
+                "{}?storage={}",
+                ui_path("/files/browse"),
+                encode_query_component(name)
             ),
-    )
+        )
+        .child(i().class("fas fa-folder-tree mr-2"))
+        .child(
+            span()
+                .attr("data-i18n", "ui_browse_open")
+                .text("Browse files"),
+        )
 }
 
 fn render_edit_form(storage: &DynamicStorage) -> Element {
@@ -791,27 +792,25 @@ fn render_create_form() -> Element {
 }
 
 fn render_delete_button(name: &str) -> Element {
-    div().class("mt-4").child(
-        button()
-            .class("button-danger-sm")
-            .attr("type", "button")
-            .attr(
-                "hx-get",
-                format!(
-                    "{}?storage={}",
-                    ui_path("/files/delete-storage-modal"),
-                    encode_query_component(name)
-                ),
-            )
-            .attr("hx-target", "#confirm-delete-storage-modal")
-            .attr("hx-swap", "outerHTML")
-            .child(i().class("fas fa-trash mr-2"))
-            .child(
-                span()
-                    .attr("data-i18n", "ui_storage_delete")
-                    .text("Delete storage"),
+    button()
+        .class("button-danger-sm")
+        .attr("type", "button")
+        .attr(
+            "hx-get",
+            format!(
+                "{}?storage={}",
+                ui_path("/files/delete-storage-modal"),
+                encode_query_component(name)
             ),
-    )
+        )
+        .attr("hx-target", "#confirm-delete-storage-modal")
+        .attr("hx-swap", "outerHTML")
+        .child(i().class("fas fa-trash mr-2"))
+        .child(
+            span()
+                .attr("data-i18n", "ui_storage_delete")
+                .text("Delete storage"),
+        )
 }
 
 pub fn render_delete_storage_modal(name: &str) -> String {
