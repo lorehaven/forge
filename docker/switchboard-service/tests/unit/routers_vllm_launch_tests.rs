@@ -122,7 +122,7 @@ async fn launch_request_form(
     let container = Arc::new(ContainerBuilder::new().build().await.unwrap());
     let mut req = Request::new(
         Method::POST,
-        "/api/v1/vllm/instances/form".parse::<Uri>().unwrap(),
+        "/api/v1/vllm/launch".parse::<Uri>().unwrap(),
         HeaderMap::new(),
         InboundBody::from_bytes(Bytes::from(encoded)),
         container,

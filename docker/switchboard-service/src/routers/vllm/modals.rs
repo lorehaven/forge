@@ -183,7 +183,7 @@ pub fn render_launch_modal(
                                 .attr("id", "confirm-launch-btn")
                                 .attr("type", "button")
                                 .attr("data-i18n", "ui_vllm_launch_confirm")
-                                .attr("hx-post", with_base_path("/api/v1/vllm/instances/form"))
+                                .attr("hx-post", with_base_path("/api/v1/vllm/launch"))
                                 .attr("hx-include", "#launch-form")
                                 .attr("hx-target", "#launch-modal")
                                 .attr("hx-swap", "outerHTML")

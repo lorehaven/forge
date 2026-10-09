@@ -51,7 +51,9 @@ pub struct LaunchRequestForm {
     device: Option<String>,
 }
 
-#[post("/api/v1/vllm/instances/form")]
+// Not under `/instances/`: `DELETE /instances/{id}` also matches `/instances/form`, and
+// which of the two the router tries first depends on link order, so a POST there can 405.
+#[post("/api/v1/vllm/launch")]
 pub async fn launch_instance_form(
     OptionalClaims(claims): OptionalClaims,
     Inject(config): Inject<JwtConfig>,
