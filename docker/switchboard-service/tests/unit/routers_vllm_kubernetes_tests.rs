@@ -3,7 +3,7 @@
 //! so a long model name (especially with an org/repo prefix) needs to be shortened rather
 //! than sent to the API and rejected.
 
-use switchboard_service::routers::vllm::kubernetes::vllm_pod_name;
+use switchboard_service::routers::vllm::kubernetes::{hf_offline_env, vllm_pod_name};
 
 #[test]
 fn short_model_name_is_used_as_is() {
@@ -68,4 +68,11 @@ fn different_ports_on_a_long_name_still_fit_and_differ() {
     assert_ne!(a, b);
     assert!(a.len() <= 63 && b.len() <= 63);
     assert!(a.ends_with("-8000") && b.ends_with("-8001"));
+}
+
+#[test]
+fn pods_run_hugging_face_offline_so_gated_local_models_do_not_hit_the_hub() {
+    let env = hf_offline_env();
+    assert_eq!(env["name"], "HF_HUB_OFFLINE");
+    assert_eq!(env["value"], "1");
 }

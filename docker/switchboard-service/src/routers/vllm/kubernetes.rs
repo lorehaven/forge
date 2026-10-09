@@ -42,6 +42,16 @@ pub fn vllm_pod_name(model: &str, port: u16) -> String {
     format!("{PREFIX}{truncated}-{hash}{suffix}")
 }
 
+/// Env var that keeps huggingface_hub/transformers/vLLM on the mounted cache.
+///
+/// Switchboard only launches models already on disk, but vLLM still asks the Hub whether
+/// optional files the snapshot lacks (tokenizer.model, added_tokens.json,
+/// model.safetensors.index.json, ...) exist. For a gated repo that unauthenticated request
+/// is a 401 rather than a 404, which aborts the launch. Offline mode skips those lookups.
+pub fn hf_offline_env() -> serde_json::Value {
+    json!({ "name": "HF_HUB_OFFLINE", "value": "1" })
+}
+
 pub struct KubernetesVllmEngine {
     client: Client,
     namespace: String,
@@ -391,7 +401,7 @@ impl VllmEngine for KubernetesVllmEngine {
             }));
         }
 
-        let mut env_vars = Vec::new();
+        let mut env_vars = vec![hf_offline_env()];
 
         let mut resources = json!({});
         let key = gpu_resource_key.trim();
