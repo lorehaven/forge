@@ -69,8 +69,6 @@ pub async fn fetch_hf_models() -> Vec<Model> {
         }
     }
 
-    let seen: HashSet<String> = models.iter().map(|m| m.path.clone()).collect();
-
     let mut discovered_models = Vec::new();
 
     for root in HF_ROOTS.iter() {
@@ -79,7 +77,6 @@ pub async fn fetch_hf_models() -> Vec<Model> {
             continue;
         }
 
-        let seen_clone = seen.clone();
         let models_batch = tokio::task::spawn_blocking(move || {
             let mut batch = Vec::new();
             for entry in WalkDir::new(&root).into_iter().filter_map(Result::ok) {
@@ -94,9 +91,6 @@ pub async fn fetch_hf_models() -> Vec<Model> {
                 };
 
                 let path_str = model_dir.to_string_lossy().to_string();
-                if seen_clone.contains(&path_str) {
-                    continue;
-                }
 
                 let name = normalize_hf_name(model_dir);
 
@@ -158,6 +152,19 @@ pub async fn fetch_hf_models() -> Vec<Model> {
                 .map(|arch| store.is_vllm_supported(arch))
                 .unwrap_or(false);
 
+            // Known models are re-read too, so improvements to inference (e.g. picking up
+            // `quantization_config`) reach entries cached by an older build. Unchanged
+            // ones are left alone to avoid a DB write per model every sync.
+            if let Some(existing) = models.iter().find(|m| m.path == path)
+                && existing.quant == quant
+                && existing.context == context
+                && existing.layers == layers
+                && existing.hidden_size == hidden_size
+                && existing.params_billion == round2(params)
+            {
+                continue;
+            }
+
             let mut model = Model {
                 source: format!("{:?}", ModelType::HF),
                 name,
@@ -179,7 +186,11 @@ pub async fn fetch_hf_models() -> Vec<Model> {
     }
 
     if !discovered_models.is_empty() {
-        tracing::info!("Discovered {} new HF models.", discovered_models.len());
+        tracing::info!(
+            "Discovered or refreshed {} HF models.",
+            discovered_models.len()
+        );
+        models.retain(|m| !discovered_models.iter().any(|d| d.path == m.path));
     }
 
     models.extend(discovered_models);
