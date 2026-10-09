@@ -128,7 +128,8 @@ pub async fn fetch_hf_models() -> Vec<Model> {
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
 
-                let quant = infer_hf_quant(torch_dtype);
+                let quant = infer_hf_quant_config(&json)
+                    .unwrap_or_else(|| infer_hf_quant(torch_dtype));
                 let context = infer_context(max_position_embeddings);
                 let params = infer_params_from_name(&name).unwrap_or_else(|| {
                     estimate_dense_transformer_params(hidden_size, layers, vocab_size)
@@ -325,6 +326,33 @@ pub fn infer_hf_quant(dtype: &str) -> Quant {
         "float8" => Quant::FP8,
         "int8" => Quant::INT8,
         _ => Quant::ALL,
+    }
+}
+
+/// Quant declared by a pre-quantized checkpoint's `quantization_config`, which takes
+/// precedence over `torch_dtype` (that only describes the activation dtype, so a 4-bit
+/// build would otherwise be sized as a 2-byte-per-weight model).
+pub fn infer_hf_quant_config(config: &serde_json::Value) -> Option<Quant> {
+    let qc = config.get("quantization_config")?;
+    match qc["quant_method"].as_str()? {
+        "awq" => Some(Quant::AWQ),
+        "gptq" => Some(Quant::GPTQ),
+        "fp8" => Some(Quant::FP8),
+        "bitsandbytes" => Some(Quant::INT8),
+        "compressed-tensors" => {
+            // llm-compressor output: weight precision lives in the first config group.
+            let weights = qc["config_groups"]
+                .as_object()?
+                .values()
+                .find_map(|group| group.get("weights"))?;
+            match (weights["num_bits"].as_u64()?, weights["type"].as_str()) {
+                (4, _) => Some(Quant::AWQ),
+                (8, Some("float")) => Some(Quant::FP8),
+                (8, _) => Some(Quant::INT8),
+                _ => None,
+            }
+        }
+        _ => None,
     }
 }
 

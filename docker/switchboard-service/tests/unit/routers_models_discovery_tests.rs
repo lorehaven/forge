@@ -56,6 +56,39 @@ fn infer_hf_quant_maps_known_torch_dtypes() {
 }
 
 #[test]
+fn infer_hf_quant_config_reads_quantization_config_over_torch_dtype() {
+    let cfg = |v: serde_json::Value| infer_hf_quant_config(&v);
+
+    assert_eq!(cfg(serde_json::json!({})), None);
+    assert_eq!(
+        cfg(serde_json::json!({"quantization_config": {"quant_method": "awq"}})),
+        Some(Quant::AWQ)
+    );
+    assert_eq!(
+        cfg(serde_json::json!({"quantization_config": {"quant_method": "gptq"}})),
+        Some(Quant::GPTQ)
+    );
+    assert_eq!(
+        cfg(serde_json::json!({"quantization_config": {"quant_method": "something-new"}})),
+        None
+    );
+}
+
+#[test]
+fn infer_hf_quant_config_sizes_compressed_tensors_by_weight_bits() {
+    let ct = |bits: u64, ty: &str| {
+        infer_hf_quant_config(&serde_json::json!({"quantization_config": {
+            "quant_method": "compressed-tensors",
+            "config_groups": {"group_0": {"weights": {"num_bits": bits, "type": ty}}}
+        }}))
+    };
+    assert_eq!(ct(4, "int"), Some(Quant::AWQ));
+    assert_eq!(ct(8, "int"), Some(Quant::INT8));
+    assert_eq!(ct(8, "float"), Some(Quant::FP8));
+    assert_eq!(ct(3, "int"), None);
+}
+
+#[test]
 fn infer_context_maps_known_sizes_and_falls_back_to_all() {
     assert_eq!(infer_context(4096), Context::Size4096);
     assert_eq!(infer_context(131072), Context::Size131072);

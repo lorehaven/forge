@@ -177,6 +177,19 @@ fn find_launch_estimate_without_a_context_takes_the_first_matching_candidate() {
 }
 
 #[test]
+fn find_launch_estimate_without_a_quantization_uses_the_models_own_quant() {
+    // A pre-quantized 4-bit checkpoint launched with no --quantization override must be
+    // sized by its own AWQ row, not the larger FP16 what-if row that sorts first.
+    let mut model = model_with_estimates(vec![
+        estimate(Quant::FP16, Context::Size4096, 21.0, 2.0),
+        estimate(Quant::AWQ, Context::Size4096, 5.5, 2.0),
+    ]);
+    model.quant = Quant::AWQ;
+    let found = find_launch_estimate(&model, "", None).unwrap();
+    assert_eq!(found.quant, Quant::AWQ);
+}
+
+#[test]
 fn find_launch_estimate_is_none_for_a_model_with_no_estimates() {
     let model = model_with_estimates(vec![]);
     assert!(find_launch_estimate(&model, "", None).is_none());

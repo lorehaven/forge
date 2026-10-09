@@ -792,7 +792,18 @@ pub fn find_launch_estimate<'a>(
 ) -> Option<&'a crate::routers::models::ModelEstimate> {
     let mut candidates: Vec<_> = model.estimates.iter().collect();
 
-    if !quantization.is_empty() {
+    if quantization.is_empty() {
+        // No override: vLLM loads the checkpoint as-is, so size it by the model's own quant
+        // (e.g. a pre-quantized 4-bit build), not by whichever what-if row sorts first.
+        let own: Vec<_> = candidates
+            .iter()
+            .copied()
+            .filter(|estimate| estimate.quant == model.quant)
+            .collect();
+        if !own.is_empty() {
+            candidates = own;
+        }
+    } else {
         let q_mapped = match quantization {
             "awq" | "awq_marlin" => "AWQ",
             "gptq" | "gptq_marlin" => "GPTQ",
