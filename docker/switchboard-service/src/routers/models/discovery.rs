@@ -122,8 +122,8 @@ pub async fn fetch_hf_models() -> Vec<Model> {
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
 
-                let quant = infer_hf_quant_config(&json)
-                    .unwrap_or_else(|| infer_hf_quant(torch_dtype));
+                let quant =
+                    infer_hf_quant_config(&json).unwrap_or_else(|| infer_hf_quant(torch_dtype));
                 let context = infer_context(max_position_embeddings);
                 let params = infer_params_from_name(&name).unwrap_or_else(|| {
                     estimate_dense_transformer_params(hidden_size, layers, vocab_size)
