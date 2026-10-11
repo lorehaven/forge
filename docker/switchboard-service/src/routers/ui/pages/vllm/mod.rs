@@ -1,6 +1,6 @@
 use crate::routers::models::mod_impl::{OptionalClaims, can};
 use crate::routers::ui::UiAuthenticated;
-use crate::routers::ui::common::{UiPageKind, render_page};
+use crate::routers::ui::common::render_page;
 use quench_auth::domain::jwt::JwtConfig;
 use quench_http::prelude::{Inject, Response, get};
 use quench_starter::common::routes::with_base_path;
@@ -33,11 +33,11 @@ pub(super) async fn vllm_manage_slash(
 fn render_vllm_manage_page(can_launch: bool) -> Response {
     render_page(
         http::StatusCode::OK,
-        content()
-            .class("vllm-manage-content")
+        div()
+            .class("fui-stack fui-stack-lg vllm-manage-content")
             .child(
                 div()
-                    .class("top-bar")
+                    .class("sb-toolbar")
                     .child(
                         div()
                             .attr("hx-ext", "sse")
@@ -97,7 +97,6 @@ fn render_vllm_manage_page(can_launch: bool) -> Response {
             )
             .child(div().attr("id", "launch-modal").class("modal launch-modal"))
             .child(confirm_stop_instance_modal()),
-        UiPageKind::VllmManagement,
     )
 }
 

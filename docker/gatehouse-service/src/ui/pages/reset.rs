@@ -6,7 +6,7 @@ use crate::notices;
 use crate::ratelimit::{ClientIp, RateLimiter, policy};
 use crate::realm;
 use crate::tokens::{PURPOSE_RESET_PASSWORD, VerificationTokens};
-use crate::ui::common::{UiPageKind, render_page, supported_locales, ui_path};
+use crate::ui::common::{UiPageKind, render_page, ui_path};
 use crate::ui::locale::BrowserLocale;
 use http::StatusCode;
 use quench_auth::domain::session::SessionDb;
@@ -257,15 +257,6 @@ pub(super) fn render_auth_page_with(
     title_key: &'static str,
     inner_form: Element,
 ) -> Response {
-    let bar = div()
-        .class("login-bar")
-        .child(
-            span()
-                .class("login-brand")
-                .attr("data-i18n", "header_label"),
-        )
-        .child(locale_switch(Some(supported_locales()), None));
-
     let credentials = div()
         .class("login-credentials")
         .child(div().class("panel-title").attr("data-i18n", title_key))
@@ -273,12 +264,9 @@ pub(super) fn render_auth_page_with(
 
     render_page(
         status,
-        content().class("container-fluid login-layout").child(
-            div()
-                .class("panel login-panel")
-                .child(bar)
-                .child(credentials),
-        ),
+        content()
+            .class("container-fluid login-layout")
+            .child(div().class("panel login-panel").child(credentials)),
         UiPageKind::Auth,
     )
 }

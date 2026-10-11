@@ -1,9 +1,9 @@
 use crate::routers::ui::UiAuthenticated;
-use crate::routers::ui::common::{UiPageKind, render_page, ui_path};
+use crate::routers::ui::common::{render_page, ui_path};
 use crate::routers::{models_dashboard_enabled, vllm_management_enabled};
+use forge_ui::{PageHeader, empty_state, link_card, t};
 use quench_http::prelude::{Response, get};
 use quench_web::prelude::*;
-use quench_web_components::containers::empty_state;
 
 #[get("/ui/home")]
 pub(super) async fn home(UiAuthenticated(authenticated): UiAuthenticated) -> Response {
@@ -22,73 +22,44 @@ pub(super) async fn home_slash(UiAuthenticated(authenticated): UiAuthenticated) 
 }
 
 fn render_home_page() -> Response {
-    let mut service_cards = div().class("home-grid");
-    let mut has_service_cards = false;
+    let mut cards = div().class("fui-grid");
+    let mut any = false;
 
     if models_dashboard_enabled() {
-        has_service_cards = true;
-        service_cards = service_cards.child(service_card(
+        any = true;
+        cards = cards.child(link_card(
+            "cubes",
             &ui_path("/models/dashboard"),
-            "ui_service_models_dashboard_title",
-            "ui_service_models_dashboard_desc",
-            "home-card-models-dashboard",
+            t("ui_service_models_dashboard_title"),
+            Some(t("ui_service_models_dashboard_desc")),
         ));
     }
 
     if vllm_management_enabled() {
-        has_service_cards = true;
-        service_cards = service_cards.child(service_card(
+        any = true;
+        cards = cards.child(link_card(
+            "microchip",
             &ui_path("/vllm/manage"),
-            "ui_service_vllm_management_title",
-            "ui_service_vllm_management_desc",
-            "home-card-vllm-management",
+            t("ui_service_vllm_management_title"),
+            Some(t("ui_service_vllm_management_desc")),
         ));
-    }
-
-    let mut sections = div().class("home-sections");
-
-    if has_service_cards {
-        sections = sections.child(
-            div()
-                .class("home-section")
-                .child(
-                    h3().class("home-section-title")
-                        .attr("data-i18n", "ui_home_group_services"),
-                )
-                .child(service_cards),
-        );
-    }
-
-    if !has_service_cards {
-        sections = sections.child(empty_state("ui_home_no_services"));
     }
 
     render_page(
         http::StatusCode::OK,
-        content().class("home-content").child(
-            div()
-                .class("home-container")
-                .child(
-                    div()
-                        .class("home-header")
-                        .child(h3().attr("data-i18n", "ui_home_title")),
-                )
-                .child(sections),
-        ),
-        UiPageKind::Home,
+        div()
+            .class("fui-stack fui-stack-lg")
+            .child(
+                PageHeader::new("ui_home_title")
+                    .subtitle_key("ui_home_group_services")
+                    .build(),
+            )
+            .child(if any {
+                cards
+            } else {
+                empty_state("circle-info", "ui_home_no_services", None)
+            }),
     )
-}
-
-fn service_card(href: &str, title_key: &str, desc_key: &str, extra_class: &str) -> Element {
-    a().attr("href", href)
-        .class(format!("home-card {extra_class}"))
-        .child(
-            div()
-                .class("home-card-body")
-                .child(div().class("home-card-title").attr("data-i18n", title_key))
-                .child(div().class("home-card-desc").attr("data-i18n", desc_key)),
-        )
-        .child(div().class("home-card-arrow").text("→"))
 }
 
 pub(super) fn register_routes() {

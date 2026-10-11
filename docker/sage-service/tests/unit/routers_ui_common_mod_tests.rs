@@ -4,7 +4,7 @@ use quench_http::di::ContainerBuilder;
 use quench_http::request::Request;
 use quench_web::prelude::*;
 use sage_service::routers::ui::common::supported_locales;
-use sage_service::routers::ui::common::{SUPPORTED_LOCALES, render_page, ui_header};
+use sage_service::routers::ui::common::{SUPPORTED_LOCALES, render_page};
 use std::sync::Arc;
 
 #[test]
@@ -12,21 +12,6 @@ fn supported_locales_matches_the_fixed_list() {
     let locales = supported_locales();
     assert_eq!(locales.len(), SUPPORTED_LOCALES.len());
     assert!(locales.contains(&"en-US".to_string()));
-}
-
-#[test]
-fn ui_header_renders_every_combination_of_optional_controls() {
-    for title_key in [None, Some("ui_header_home")] {
-        for show_locale_switch in [false, true] {
-            for show_home in [false, true] {
-                for show_logout in [false, true] {
-                    let header = ui_header(title_key, show_locale_switch, show_home, show_logout);
-                    let rendered = header.render();
-                    assert!(!rendered.is_empty());
-                }
-            }
-        }
-    }
 }
 
 #[test]

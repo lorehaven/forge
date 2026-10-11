@@ -2,26 +2,6 @@ use quench_web::prelude::CssRule;
 
 pub fn chat_rules() -> Vec<CssRule> {
     vec![
-        CssRule::new(".content")
-            .property("height", "calc(100vh - 4.5rem) !important")
-            .property("padding", "0 !important")
-            .property("max-width", "none !important"),
-        CssRule::new(".content-inner")
-            .property("height", "100% !important")
-            .property("width", "100% !important")
-            .property("max-width", "none !important")
-            .property("align-items", "stretch !important")
-            .property("padding", "0 !important"),
-        CssRule::new(".page")
-            .property("height", "100% !important")
-            .property("width", "100% !important")
-            .property("display", "flex !important")
-            .property("flex-direction", "column !important"),
-        CssRule::new(".home-content")
-            .property("height", "100% !important")
-            .property("width", "100% !important")
-            .property("display", "flex !important")
-            .property("flex-direction", "column !important"),
         CssRule::new(".chat-container")
             .property("display", "flex")
             .property("flex-direction", "column")
@@ -87,7 +67,7 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("color", "inherit")
             .property("max-width", "100%"),
         CssRule::new(".code-block")
-            .property("background", "rgba(0, 0, 0, 0.3)")
+            .property("background", "var(--fui-bg-sunken)")
             .property("border", "1px solid var(--bs-gray-700)")
             .property("border-radius", "0.75rem")
             .property("margin", "1rem 0")
@@ -100,7 +80,7 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("justify-content", "space-between")
             .property("align-items", "center")
             .property("padding", "0.4rem 1rem")
-            .property("background", "rgba(0, 0, 0, 0.2)")
+            .property("background", "var(--fui-bg-sunken)")
             .property("border-bottom", "1px solid var(--bs-gray-700)"),
         CssRule::new(".code-lang")
             .property("font-family", "monospace")
@@ -126,7 +106,7 @@ pub fn chat_rules() -> Vec<CssRule> {
             .child(
                 CssRule::new(":hover")
                     .property("background", "var(--bs-gray-700)")
-                    .property("color", "white")
+                    .property("color", "var(--fui-text)")
                     .property("border-color", "var(--bs-gray-400)"),
             )
             .child(
@@ -156,12 +136,12 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("margin", "1rem 0")
             .property("font-size", "0.95rem")
             .property("line-height", "1.4")
-            .property("background", "rgba(255, 255, 255, 0.02)")
+            .property("background", "var(--fui-gray-soft-bg)")
             .property("border-radius", "0.5rem")
             .property("overflow", "hidden"),
         CssRule::new(".message-content th")
-            .property("background", "rgba(255, 255, 255, 0.05)")
-            .property("color", "white")
+            .property("background", "var(--fui-gray-soft-bg)")
+            .property("color", "var(--fui-text)")
             .property("text-align", "left")
             .property("padding", "0.75rem")
             .property("border-bottom", "2px solid var(--bs-gray-700)"),
@@ -171,16 +151,16 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("color", "var(--bs-gray-300)"),
         CssRule::new(".message-content tr:last-child td").property("border-bottom", "none"),
         CssRule::new(".message-content tr:nth-child(even)")
-            .property("background", "rgba(255, 255, 255, 0.01)"),
+            .property("background", "var(--fui-gray-soft-bg)"),
         CssRule::new(".inline-code")
-            .property("background", "rgba(255, 255, 255, 0.1)")
-            .property("color", "var(--bs-primary)")
+            .property("background", "var(--fui-gray-soft-bg)")
+            .property("color", "var(--fui-brand-500)")
             .property("padding", "0.1rem 0.3rem")
             .property("border-radius", "0.3rem")
             .property("font-family", "'Fira Code', monospace")
             .property("font-size", "0.9em"),
         CssRule::new(".message-content a")
-            .property("color", "var(--bs-primary)")
+            .property("color", "var(--fui-brand-500)")
             .property("text-decoration", "none"),
         CssRule::new(".message-content a:hover").property("text-decoration", "underline"),
         CssRule::new(".message-ai .message-content")
@@ -188,8 +168,8 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("color", "var(--bs-gray-200)")
             .property("max-width", "100%"),
         CssRule::new(".message-user .message-content")
-            .property("background", "rgba(255, 255, 255, 0.05)")
-            .property("color", "white")
+            .property("background", "var(--fui-gray-soft-bg)")
+            .property("color", "var(--fui-text)")
             .property("max-width", "85%"),
         CssRule::new(".message-content h1")
             .property("font-size", "1.8rem")
@@ -226,7 +206,7 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("gap", "0.25rem") // Tighter gap for more dots
             .property("z-index", "100")
             .property("padding", "1rem 0.5rem")
-            .property("background", "rgba(0,0,0,0.2)")
+            .property("background", "var(--fui-bg-sunken)")
             .property("border-radius", "1rem")
             .property("backdrop-filter", "blur(8px)")
             .property("overflow", "visible"), // CRITICAL: Allow tooltips to pop out
@@ -261,7 +241,7 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("top", "50%")
             .property("transform", "translateY(-50%) translateX(0)")
             .property("background", "var(--bs-gray-800)")
-            .property("color", "white")
+            .property("color", "var(--fui-text)")
             .property("padding", "0.4rem 0.8rem")
             .property("border-radius", "0.5rem")
             .property("font-size", "0.75rem")
@@ -307,7 +287,7 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("flex", "1")
             .property("background", "transparent")
             .property("border", "none")
-            .property("color", "white")
+            .property("color", "var(--fui-text)")
             .property("padding", "0.75rem 0")
             .property("font-size", "1.1rem")
             .property("line-height", "1.5rem")
@@ -318,7 +298,7 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("overflow-y", "auto"),
         CssRule::new(".chat-send-btn")
             .property("background", "transparent")
-            .property("color", "white")
+            .property("color", "var(--fui-text)")
             .property("border", "none")
             .property("width", "2.25rem")
             .property("height", "2.25rem")
@@ -383,7 +363,7 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("align-items", "center"),
         CssRule::new(".new-chat-btn")
             .property("background", "var(--bs-gray-800)")
-            .property("color", "white")
+            .property("color", "var(--fui-text)")
             .property("border", "1px solid var(--bs-gray-700)")
             .property("border-radius", "0.5rem")
             .property("padding", "0.5rem 1rem")
@@ -416,12 +396,12 @@ pub fn chat_rules() -> Vec<CssRule> {
             .child(
                 CssRule::new(":hover")
                     .property("background", "var(--bs-gray-800)")
-                    .property("color", "white"),
+                    .property("color", "var(--fui-text)"),
             )
             .child(
                 CssRule::new(".active")
                     .property("background", "var(--bs-gray-800)")
-                    .property("color", "white")
+                    .property("color", "var(--fui-text)")
                     .property("font-weight", "bold"),
             ),
         CssRule::new(".history-item-link")
@@ -446,7 +426,7 @@ pub fn chat_rules() -> Vec<CssRule> {
         CssRule::new(".history-item:hover .menu-trigger-btn").property("opacity", "1"),
         CssRule::new(".menu-container:focus-within .menu-trigger-btn")
             .property("opacity", "1")
-            .property("color", "white"),
+            .property("color", "var(--fui-text)"),
         CssRule::new(".dropdown-menu")
             .property("display", "none")
             .property("position", "absolute")
@@ -475,7 +455,7 @@ pub fn chat_rules() -> Vec<CssRule> {
             .child(
                 CssRule::new(":hover")
                     .property("background", "var(--bs-gray-700)")
-                    .property("color", "white"),
+                    .property("color", "var(--fui-text)"),
             ),
         CssRule::new(".dropdown-item.delete-item")
             .child(CssRule::new(":hover").property("color", "#ea868f")),
@@ -572,7 +552,7 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("flex-direction", "row")
             .property("align-items", "center")
             .property("gap", "0.4rem")
-            .property("background", "rgba(0, 0, 0, 0.2)")
+            .property("background", "var(--fui-bg-sunken)")
             .property("padding", "0.15rem 0.25rem")
             .property("border-radius", "0.5rem")
             .property("border", "1px solid var(--bs-gray-800)"),
@@ -590,7 +570,7 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("gap", "0.3rem")
             .property("transition", "all 0.15s ease"),
         CssRule::new(".branch-btn:hover")
-            .property("background-color", "rgba(255, 255, 255, 0.05)")
+            .property("background-color", "var(--fui-gray-soft-bg)")
             .property("color", "var(--bs-gray-200)")
             .property("border-color", "var(--bs-gray-700)"),
         CssRule::new(".branch-info")
@@ -603,7 +583,7 @@ pub fn chat_rules() -> Vec<CssRule> {
         CssRule::new(".regenerate-btn")
             .property("display", "none !important") // Hidden by default
             .property("border", "1px solid var(--bs-gray-700)")
-            .property("background-color", "rgba(255, 255, 255, 0.03)")
+            .property("background-color", "var(--fui-gray-soft-bg)")
             .property("padding", "0.2rem 0.6rem"),
         CssRule::new(".chat-message:last-of-type .regenerate-btn")
             .property("display", "inline-flex !important"),
@@ -614,7 +594,7 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("width", "100%")
             .property("background", "transparent")
             .property("border", "none")
-            .property("color", "white")
+            .property("color", "var(--fui-text)")
             .property("padding", "0")
             .property("font-family", "inherit")
             .property("font-size", "1.1rem")
@@ -627,10 +607,10 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("justify-content", "flex-end")
             .property("gap", "0.5rem")
             .property("margin-top", "0.5rem")
-            .property("border-top", "1px solid rgba(255, 255, 255, 0.1)")
+            .property("border-top", "1px solid var(--fui-border)")
             .property("padding-top", "0.5rem"),
         CssRule::new(".save-btn")
-            .property("background-color", "var(--bs-primary) !important")
+            .property("background-color", "var(--fui-brand-500) !important")
             .property("color", "white !important")
             .property("border", "none !important")
             .property("padding", "0.25rem 0.75rem !important")

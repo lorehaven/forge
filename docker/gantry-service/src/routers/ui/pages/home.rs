@@ -6,12 +6,12 @@ use crate::domain::resources::{Group, Summary, SyncState};
 use crate::domain::service::Gantry;
 use crate::routers::api::authz;
 use crate::routers::ui::common::{
-    ActorOrRedirect, Notice, badge, notice_banner, percent_encode, render_page, tabs, ui_path,
+    ActorOrRedirect, Notice, badge, notice_banner, percent_encode, render_page, ui_path,
 };
+use forge_ui::empty_state;
 use quench_auth::domain::jwt::JwtConfig;
 use quench_http::prelude::{Inject, Query, Response, get, http::StatusCode};
 use quench_web::prelude::*;
-use quench_web_components::containers::empty_state;
 use serde::Deserialize;
 
 #[derive(Deserialize, Default)]
@@ -202,7 +202,6 @@ async fn render_home(
 
     let page = div()
         .class("home-container")
-        .child(tabs("targets"))
         .child_opt(notice_banner(notice))
         .child_opt(problem.map(|m| p().class("gt-notice gt-notice-error").text(m)))
         .child_opt(busy.first().map(|op| {
@@ -232,7 +231,7 @@ async fn render_home(
                 })),
         )
         .child(if apps.is_empty() {
-            empty_state("ui_home_no_targets")
+            empty_state("cubes", "ui_home_no_targets", None)
         } else if shown.is_empty() {
             p().class("gt-muted")
                 .attr("data-i18n", "ui_filter_no_match")

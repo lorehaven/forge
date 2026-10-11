@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use forge_ui::{NavItem, NavSection, ShellConfig, UiShell};
 pub use quench_auth::domain::jwt::Claims;
 use quench_auth::domain::jwt::JwtConfig;
 use quench_auth::http::routers::ui::get_user_from_req;
@@ -16,35 +17,20 @@ pub mod format;
 
 pub use forge_ui::{SUPPORTED_LOCALES, supported_locales};
 
-static UI_SHELL_HOME: LazyLock<AppShell> = LazyLock::new(|| {
+static UI_SHELL: LazyLock<UiShell> = LazyLock::new(|| {
     css::ensure_sage_css();
 
-    forge_ui::app_shell(
-        "Sage",
-        "sage.css",
-        Some(ui_header(Some("ui_header_home"), true, false, true)),
+    UiShell::new(
+        ShellConfig::new("Sage", "sage.css", "wand-magic-sparkles")
+            .nav(vec![NavSection::new(vec![NavItem::new(
+                "comments",
+                "ui_nav_chat",
+                ui_path("/home"),
+            )])])
+            .dashboard(forge_ui::gatehouse_dashboard_url())
+            .profile(forge_ui::gatehouse_profile_url()),
     )
 });
-
-pub fn ui_header(
-    title_key: Option<&str>,
-    show_locale_switch: bool,
-    show_home: bool,
-    show_logout: bool,
-) -> Element {
-    let title = match title_key {
-        Some(key) => h2().attr("data-i18n", key),
-        None => h2().attr("data-i18n", "header_label"),
-    };
-
-    forge_ui::TopBar {
-        show_home,
-        show_locale_switch,
-        user_menu_profile: show_logout.then(forge_ui::gatehouse_profile_url),
-        ..Default::default()
-    }
-    .build(title)
-}
 
 #[get("/ui/assets/{path:.*}")]
 pub async fn assets(Path(path): Path<String>) -> Response {
@@ -52,10 +38,12 @@ pub async fn assets(Path(path): Path<String>) -> Response {
 }
 
 pub fn render_page(status: http::StatusCode, content: Element) -> Response {
-    Response::html(
-        status,
-        UI_SHELL_HOME.page(div().class("page").child(content)),
-    )
+    Response::html(status, UI_SHELL.page(content))
+}
+
+/// Edge to edge, scrolling its own panes: the chat screen.
+pub fn render_page_fill(status: http::StatusCode, content: Element) -> Response {
+    Response::html(status, UI_SHELL.page_fill(content))
 }
 
 /// The signed-in identity from the realm session cookie. `None` means "not

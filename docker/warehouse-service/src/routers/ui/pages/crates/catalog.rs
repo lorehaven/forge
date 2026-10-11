@@ -1,7 +1,7 @@
 use super::storage::{IndexDep, IndexRecord, list_crates, list_versions};
 use crate::routers::crates::ops::yank::set_yanked;
 use crate::routers::ui::PageQuery;
-use crate::routers::ui::common::{PageAuth, UiPageKind, render_page, ui_login_redirect, ui_path};
+use crate::routers::ui::common::{PageAuth, render_page, ui_login_redirect, ui_path};
 use quench_http::prelude::{Form, Query, Response, get, http::StatusCode, post};
 use quench_starter::common::routes::with_base_path;
 use quench_web::prelude::*;
@@ -124,7 +124,6 @@ pub fn render_crates_page(
         content()
             .class("container-fluid py-4")
             .child(div().class("split-view").child(left).child(right)),
-        UiPageKind::Crates,
     )
 }
 

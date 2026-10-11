@@ -107,8 +107,6 @@ mod routers_rivets_tests;
 mod routers_ui_authz_tests;
 #[path = "unit/routers_ui_common_css_mod_tests.rs"]
 mod routers_ui_common_css_mod_tests;
-#[path = "unit/routers_ui_common_css_rules_tests.rs"]
-mod routers_ui_common_css_rules_tests;
 #[path = "unit/routers_ui_common_mod_tests.rs"]
 mod routers_ui_common_mod_tests;
 #[path = "unit/routers_ui_mod_tests.rs"]

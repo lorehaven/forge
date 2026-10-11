@@ -1,0 +1,40 @@
+/* Bridge for page markup written against quench-starter's shared classes (.panel, .page-header,
+   .home-*, .login-*, .split-view ...). Same names, forge-ui look - so a page can adopt the new
+   shell first and move to the real components later. New code should use components.rs instead. */
+
+.panel { display: flex; flex-direction: column; min-width: 0; background: var(--fui-surface); border: 1px solid var(--fui-border); border-radius: var(--fui-radius-xl); box-shadow: var(--fui-shadow-xs); overflow: hidden; }
+.panel-title { padding: 1rem 1.5rem; font-size: 1rem; font-weight: 600; color: var(--fui-text); border-bottom: 1px solid var(--fui-border); background: transparent; }
+.page-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; min-height: 3rem; }
+.split-view { display: grid; grid-template-columns: minmax(18rem, 26rem) minmax(0, 1fr); gap: 1.5rem; min-height: 0; }
+.split-right { display: flex; flex-direction: column; gap: 1rem; min-height: 0; }
+.meta-list { padding: 1rem 1.5rem; display: flex; flex-direction: column; gap: .5rem; min-height: 0; overflow: auto; }
+.empty { padding: 1rem 1.5rem; color: var(--fui-text-tertiary); }
+
+.page { width: 100%; display: flex; flex-direction: column; gap: 1.5rem; }
+.home-content { width: 100%; display: block; }
+.home-container { display: flex; flex-direction: column; gap: 1.25rem; width: 100%; }
+.home-header { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
+.home-header h3 { margin: 0; font-size: 1.125rem; font-weight: 600; }
+.home-sections { display: flex; flex-direction: column; gap: 2rem; }
+.home-section { display: flex; flex-direction: column; gap: .75rem; }
+.home-section-title { margin: 0; font-size: .8125rem; font-weight: 600; color: var(--fui-text-tertiary); }
+.home-subtitle { margin: 0; color: var(--fui-text-tertiary); }
+.home-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr)); gap: 1.25rem; }
+.home-card { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1.25rem 1.5rem; background: var(--fui-surface); border: 1px solid var(--fui-border); border-radius: var(--fui-radius-xl); box-shadow: var(--fui-shadow-xs); color: inherit !important; text-decoration: none !important; transition: border-color .15s, box-shadow .15s; min-width: 0; }
+.home-card:hover { border-color: var(--fui-brand-400); box-shadow: var(--fui-shadow-md); }
+.home-card-body { display: flex; flex-direction: column; gap: .25rem; min-width: 0; }
+.home-card-title { font-size: 1rem; font-weight: 600; color: var(--fui-text); overflow-wrap: anywhere; }
+.home-card-desc { font-size: .875rem; color: var(--fui-text-tertiary); }
+.home-card-arrow { color: var(--fui-text-tertiary); flex-shrink: 0; }
+
+/* login-style cards (gatehouse) */
+.login-layout { width: 100%; min-height: 100%; display: flex; align-items: center; justify-content: center; }
+.login-panel { width: 100%; max-width: 28rem; }
+.login-bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .75rem 1.25rem; border-bottom: 1px solid var(--fui-border); }
+.login-brand { font-size: 1.0625rem; font-weight: 600; color: var(--fui-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.login-credentials { display: flex; flex-direction: column; min-height: 0; }
+.login-credentials .panel-title { background: transparent; }
+
+
+@media (max-width: 1023.98px) { .split-view { grid-template-columns: 1fr; } }
+@media (max-width: 639.98px) { .panel-title, .meta-list, .empty { padding-left: 1rem; padding-right: 1rem; } }

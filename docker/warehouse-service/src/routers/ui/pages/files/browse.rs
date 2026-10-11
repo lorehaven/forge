@@ -6,7 +6,7 @@ use crate::domain::storage_file;
 use crate::routers::files::authz::can_on_storage_claims;
 use crate::routers::files::ops::download::content_type_for;
 use crate::routers::ui::authz::{OptionalUiClaims, can_manage};
-use crate::routers::ui::common::{PageAuth, UiPageKind, render_page, ui_login_redirect, ui_path};
+use crate::routers::ui::common::{PageAuth, render_page, ui_login_redirect, ui_path};
 use quench_db::prelude::Db;
 use quench_http::prelude::{Inject, Query, Response, get, http::StatusCode};
 use quench_starter::common::routes::with_base_path;
@@ -344,7 +344,6 @@ pub fn render_browse_page(view: &BrowseView) -> Response {
         content()
             .class("container-fluid py-4")
             .child(div().class("split-view").child(left).child(right)),
-        UiPageKind::Files,
     )
 }
 

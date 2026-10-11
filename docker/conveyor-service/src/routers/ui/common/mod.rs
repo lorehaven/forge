@@ -1,6 +1,7 @@
 //! Page shell shared with the rest of the estate - same builder, theme, header, stylesheet layout.
 
 use async_trait::async_trait;
+use forge_ui::{NavItem, NavSection, ShellConfig, UiShell};
 pub use quench_auth::domain::jwt::Claims;
 use quench_auth::domain::jwt::JwtConfig;
 use quench_auth::http::routers::ui::get_user_from_req;
@@ -8,42 +9,35 @@ use quench_http::prelude::{FromRequest, HttpError, Path, Request, Response, get}
 pub use quench_starter::http::routers::ui::{
     is_ui_authenticated, ui_asset_path, ui_login_redirect, ui_login_redirect_for, ui_path,
 };
-use quench_web::nav_button;
 use quench_web::prelude::*;
 use std::sync::LazyLock;
 
-pub mod css;
 pub mod format;
-pub mod nav;
 
 pub use forge_ui::{SUPPORTED_LOCALES, supported_locales};
 
-fn shell(title_key: &str, show_home: bool) -> AppShell {
-    css::ensure_conveyor_css();
+/// Writes the service stylesheet (forge-ui's plus `conveyor.css`) to `dist/assets/css`.
+pub fn ensure_conveyor_css() {
+    forge_ui::write_css_with("conveyor.css", include_str!("conveyor.css"));
+}
 
-    forge_ui::app_shell(
-        "Conveyor",
-        "conveyor.css",
-        Some(ui_header(title_key, show_home)),
+static UI_SHELL: LazyLock<UiShell> = LazyLock::new(|| {
+    ensure_conveyor_css();
+
+    UiShell::new(
+        ShellConfig::new("Conveyor", "conveyor.css", "diagram-project")
+            .nav(vec![NavSection::new(vec![
+                NavItem::new("diagram-project", "ui_nav_pipelines", ui_path("/home")),
+                NavItem::new("key", "ui_nav_credentials", ui_path("/credentials")),
+            ])])
+            .dashboard(forge_ui::gatehouse_dashboard_url())
+            .profile(forge_ui::gatehouse_profile_url()),
     )
-}
-
-static UI_SHELL_HOME: LazyLock<AppShell> = LazyLock::new(|| shell("ui_header_home", false));
-
-fn ui_header(title_key: &str, show_home: bool) -> Element {
-    forge_ui::TopBar {
-        leading: Some(nav_button()),
-        show_home,
-        user_menu_profile: Some(forge_ui::gatehouse_profile_url()),
-        ..Default::default()
-    }
-    .build(h2().attr("data-i18n", title_key))
-    .child(nav::panel())
-}
+});
 
 /// Writes `dist/assets` before the first request, or an early stylesheet request answers stale.
 pub fn ensure_assets() {
-    LazyLock::force(&UI_SHELL_HOME);
+    LazyLock::force(&UI_SHELL);
 }
 
 #[get("/ui/assets/{path:.*}")]
@@ -59,10 +53,7 @@ pub fn status_pill(status: crate::domain::Status) -> Element {
 }
 
 pub fn render_page(status: http::StatusCode, content: Element) -> Response {
-    Response::html(
-        status,
-        UI_SHELL_HOME.page(div().class("page").child(content)),
-    )
+    Response::html(status, UI_SHELL.page(content))
 }
 
 /// Bearer token or realm cookie. `None` means "not signed in", not "auth

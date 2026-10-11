@@ -12,7 +12,7 @@ pub fn initializing_rules() -> Vec<CssRule> {
             .property("padding", "2rem"),
         CssRule::new(".init-card")
             .property("background-color", "#1e1e1e")
-            .property("border", "1px solid rgba(255, 255, 255, 0.1)")
+            .property("border", "1px solid var(--fui-border)")
             .property("border-radius", "12px")
             .property("box-shadow", "0 10px 30px rgba(0, 0, 0, 0.5)")
             .property("padding", "2.5rem")
@@ -21,16 +21,16 @@ pub fn initializing_rules() -> Vec<CssRule> {
             .property("text-align", "center"),
         CssRule::new(".init-spinner")
             .property("font-size", "2rem")
-            .property("color", "var(--bs-primary)")
+            .property("color", "var(--fui-brand-500)")
             .property("margin-bottom", "1rem"),
         CssRule::new(".init-title")
             .property("margin", "0 0 0.5rem")
             .property("font-size", "1.35rem")
-            .property("color", "white"),
+            .property("color", "var(--fui-text)"),
         CssRule::new(".init-subtitle")
             .property("margin", "0 0 1.75rem")
             .property("font-size", "0.9rem")
-            .property("color", "rgba(255, 255, 255, 0.55)")
+            .property("color", "var(--fui-text-tertiary)")
             .property("line-height", "1.4"),
         // Model rows
         CssRule::new(".model-rows")
@@ -45,7 +45,7 @@ pub fn initializing_rules() -> Vec<CssRule> {
             .property("gap", "1rem")
             .property("padding", "0.75rem 1rem")
             .property("background-color", "#252525")
-            .property("border", "1px solid rgba(255, 255, 255, 0.06)")
+            .property("border", "1px solid var(--fui-border)")
             .property("border-radius", "8px"),
         CssRule::new(".model-row--running").property("border-color", "rgba(34, 197, 94, 0.35)"),
         CssRule::new(".model-row--failed").property("border-color", "rgba(239, 68, 68, 0.35)"),
@@ -54,7 +54,7 @@ pub fn initializing_rules() -> Vec<CssRule> {
             .property("align-items", "center")
             .property("gap", "0.6rem")
             .property("font-size", "0.9rem")
-            .property("color", "rgba(255, 255, 255, 0.9)")
+            .property("color", "var(--fui-text-secondary)")
             .property("overflow", "hidden")
             .property("text-overflow", "ellipsis")
             .property("white-space", "nowrap"),

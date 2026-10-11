@@ -3,7 +3,7 @@ use crate::routers::docker::registry::storage::{
 };
 use crate::routers::docker::{manifest_path, repository_path, validate_digest};
 use crate::routers::ui::PageQuery;
-use crate::routers::ui::common::{PageAuth, UiPageKind, render_page, ui_login_redirect, ui_path};
+use crate::routers::ui::common::{PageAuth, render_page, ui_login_redirect, ui_path};
 use quench_http::prelude::{Form, Query, Response, get, http::StatusCode, post};
 use quench_starter::common::routes::with_base_path;
 use quench_web::prelude::*;
@@ -268,7 +268,6 @@ pub fn render_catalog_page(
             .class("container-fluid py-4")
             .child(div().class("split-view").child(left).child(right))
             .child(empty_delete_image_modal_element()),
-        UiPageKind::Docker,
     )
 }
 

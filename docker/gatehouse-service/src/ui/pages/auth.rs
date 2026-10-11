@@ -3,7 +3,7 @@
 
 use crate::api::auth::{issue_token_pair, refresh_session};
 use crate::realm::{self as gh_realm, AuthOutcome};
-use crate::ui::common::{UiPageKind, render_page, supported_locales, ui_path};
+use crate::ui::common::{UiPageKind, render_page, ui_path};
 use crate::ui::locale::{LocaleCookie, default_locale_cookie};
 use async_trait::async_trait;
 use http::StatusCode;
@@ -477,16 +477,6 @@ pub fn render_login_page(
                 .attr("data-i18n", "ui_login_register"),
         );
 
-    // No page shell top panel here, so the card carries brand + language switch.
-    let login_bar = div()
-        .class("login-bar")
-        .child(
-            span()
-                .class("login-brand")
-                .attr("data-i18n", "header_label"),
-        )
-        .child(locale_switch(Some(supported_locales()), None));
-
     let credentials = div()
         .class("login-credentials")
         .child(
@@ -498,12 +488,9 @@ pub fn render_login_page(
 
     render_page(
         StatusCode::OK,
-        content().class("container-fluid login-layout").child(
-            div()
-                .class("panel login-panel")
-                .child(login_bar)
-                .child(credentials),
-        ),
+        content()
+            .class("container-fluid login-layout")
+            .child(div().class("panel login-panel").child(credentials)),
         UiPageKind::Auth,
     )
 }
@@ -596,15 +583,6 @@ pub fn render_mfa_page(pending: &str, redirect: Option<&str>, error: bool) -> Re
 }
 
 fn render_auth_page(title_key: &'static str, inner_form: Element) -> Response {
-    let bar = div()
-        .class("login-bar")
-        .child(
-            span()
-                .class("login-brand")
-                .attr("data-i18n", "header_label"),
-        )
-        .child(locale_switch(Some(supported_locales()), None));
-
     let credentials = div()
         .class("login-credentials")
         .child(div().class("panel-title").attr("data-i18n", title_key))
@@ -612,12 +590,9 @@ fn render_auth_page(title_key: &'static str, inner_form: Element) -> Response {
 
     render_page(
         StatusCode::OK,
-        content().class("container-fluid login-layout").child(
-            div()
-                .class("panel login-panel")
-                .child(bar)
-                .child(credentials),
-        ),
+        content()
+            .class("container-fluid login-layout")
+            .child(div().class("panel login-panel").child(credentials)),
         UiPageKind::Auth,
     )
 }

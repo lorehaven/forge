@@ -3,7 +3,7 @@ use crate::domain::models::Conversation;
 use crate::routers::ui::chat::{
     ChatRequest, ChatState, get_conversation_message_nodes, get_siblings,
 };
-use crate::routers::ui::common::{ActorOrRedirect, render_page};
+use crate::routers::ui::common::{ActorOrRedirect, render_page_fill};
 use quench_db::prelude::{Crud, Db};
 use quench_http::prelude::{Inject, Query, Response, get, http::StatusCode};
 use quench_starter::common::routes::with_base_path;
@@ -813,15 +813,16 @@ pub fn render_home_page(
         }
     }
 
-    render_page(
+    render_page_fill(
         StatusCode::OK,
         content()
             .class("home-content")
             .child(
                 div()
-                    .attr("style", "display: flex; flex-direction: row; flex: 1; height: 100%; width: 100%; overflow: hidden;")
+                    .class("sage-layout")
+                    .child(div().class("sage-history-scrim").attr("onclick", "document.documentElement.classList.remove('sage-history-open')"))
                     .child(sidebar)
-                    .child(div().class("chat-container").child(history_div).child(nav_div).child({
+                    .child(div().class("chat-container").child(history_toggle()).child(history_div).child(nav_div).child({
                         let mut f = form()
                             .attr("hx-post", with_base_path("/ui/chat/send"))
                             .attr("hx-target", ".chat-history")
@@ -944,6 +945,17 @@ pub fn render_home_page(
                 .raw(),
             ),
     )
+}
+
+/// Phones show the conversation list as a drawer; this is the button that opens it.
+fn history_toggle() -> Element {
+    button()
+        .attr("type", "button")
+        .class("history-toggle")
+        .attr("data-i18n-title", "ui_chat_history")
+        .on_click("document.documentElement.classList.toggle('sage-history-open')")
+        .child(i().class("fa-solid fa-clock-rotate-left"))
+        .child(span().attr("data-i18n", "ui_chat_history"))
 }
 
 pub fn register_routes() {

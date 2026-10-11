@@ -4,11 +4,13 @@ use crate::domain::project::{self, NewProject};
 use crate::routers::ui::common::{
     ActorOrRedirect, Notice, PageAuth, notice_banner, render_page, ui_login_redirect, ui_path,
 };
+use forge_ui::{
+    PageHeader, Variant, button_el, close_modal, empty_state, field_for, form_el, icon, link_card,
+    modal, open_modal, submit_button, text_input, textarea_el, txt,
+};
 use quench_db::prelude::Db;
 use quench_http::prelude::{Form, Inject, Query, Response, get, http::StatusCode, post};
-use quench_web::framework::dom::toggle_modal;
 use quench_web::prelude::*;
-use quench_web_components::containers::empty_state;
 use serde::Deserialize;
 
 #[get("/ui/home")]
@@ -38,142 +40,82 @@ pub(super) async fn home_slash(
 async fn render_home(db: &Db, notice: &Notice) -> Response {
     let projects = project::list(db).await.unwrap_or_default();
 
-    let mut grid = div().class("home-grid");
-    if projects.is_empty() {
-        grid = grid.child(empty_state("ui_home_no_projects"));
-    }
+    let mut grid = div().class("fui-grid");
     for p in &projects {
-        grid = grid.child(
-            a().attr("href", ui_path(&format!("/projects/{}/board", p.id)))
-                .class("home-card")
-                .child(
-                    div()
-                        .class("home-card-body")
-                        .child(
-                            div()
-                                .class("home-card-title")
-                                .text(format!("{} — {}", p.key, p.name)),
-                        )
-                        .child_opt(
-                            p.description
-                                .as_ref()
-                                .map(|d| div().class("home-card-desc").text(d.clone())),
-                        ),
-                )
-                .child(div().class("home-card-arrow").text("→")),
-        );
+        grid = grid.child(link_card(
+            "table-columns",
+            &ui_path(&format!("/projects/{}/board", p.id)),
+            txt(format!("{} — {}", p.key, p.name)),
+            p.description.as_ref().map(|d| txt(d.clone())),
+        ));
     }
-
-    let toggle = toggle_modal("modal-overlay", "modal-center", "show");
 
     render_page(
         StatusCode::OK,
-        content().class("home-content").child(
-            div()
-                .class("home-container")
-                .child_opt(notice_banner(notice))
-                .child(
-                    div()
-                        .class("home-header")
-                        .child(h3().attr("data-i18n", "ui_home_title"))
-                        .child(
-                            button()
-                                .attr("type", "button")
-                                .attr("onclick", &toggle)
-                                .attr("title", "New project")
-                                .class("wb-add-button")
-                                .text("+"),
-                        ),
-                )
-                .child(grid)
-                .child(div().class("modal-overlay").on_click(&toggle))
-                .child(
-                    div()
-                        .class("modal-center")
-                        .child(new_project_modal_content(&toggle)),
-                ),
-        ),
+        div()
+            .class("fui-stack fui-stack-lg")
+            .child_opt(notice_banner(notice))
+            .child(
+                PageHeader::new("ui_home_title")
+                    .action(
+                        button_el(Variant::Primary, "ui_home_new_project")
+                            .child(icon("plus"))
+                            .on_click(open_modal("new-project")),
+                    )
+                    .build(),
+            )
+            .child(if projects.is_empty() {
+                empty_state("table-columns", "ui_home_no_projects", None)
+            } else {
+                grid
+            })
+            .child(new_project_modal()),
     )
 }
 
-fn new_project_modal_content(toggle: &str) -> Element {
-    div()
-        .class("modal-content")
-        .child(
+fn new_project_modal() -> Element {
+    let body = form_el("post", &ui_path("/projects"))
+        .attr("id", "new-project-form")
+        .child(field_for(
+            "wb-key",
+            "ui_field_key",
+            text_input("key", "text")
+                .attr("id", "wb-key")
+                .attr("required", "true")
+                .attr("maxlength", "10"),
+            None,
+        ))
+        .child(field_for(
+            "wb-name",
+            "ui_field_name",
+            text_input("name", "text")
+                .attr("id", "wb-name")
+                .attr("required", "true"),
+            None,
+        ))
+        .child(field_for(
+            "wb-description",
+            "ui_field_description",
+            textarea_el("description").attr("id", "wb-description"),
+            None,
+        ));
+
+    modal(
+        "new-project",
+        "ui_home_new_project",
+        body,
+        Some(
             div()
-                .class("wb-modal-header")
+                .class("fui-row")
                 .child(
-                    div()
-                        .class("panel-title")
-                        .attr("data-i18n", "ui_home_new_project"),
+                    button_el(Variant::Secondary, "ui_cancel").on_click(close_modal("new-project")),
                 )
                 .child(
-                    button()
-                        .attr("type", "button")
-                        .attr("onclick", toggle)
-                        .class("wb-modal-close")
-                        .text("×"),
+                    submit_button(Variant::Primary, "ui_home_create_button")
+                        .attr("form", "new-project-form"),
                 ),
-        )
-        .child(
-            form()
-                .attr("method", "post")
-                .attr("action", ui_path("/projects"))
-                .class("wb-form")
-                .child(
-                    div()
-                        .class("wb-field-row")
-                        .child(
-                            label()
-                                .attr("for", "wb-key")
-                                .attr("data-i18n", "ui_field_key"),
-                        )
-                        .child(
-                            input()
-                                .attr("type", "text")
-                                .attr("id", "wb-key")
-                                .attr("name", "key")
-                                .attr("required", "true")
-                                .attr("maxlength", "10"),
-                        ),
-                )
-                .child(
-                    div()
-                        .class("wb-field-row")
-                        .child(
-                            label()
-                                .attr("for", "wb-name")
-                                .attr("data-i18n", "ui_field_name"),
-                        )
-                        .child(
-                            input()
-                                .attr("type", "text")
-                                .attr("id", "wb-name")
-                                .attr("name", "name")
-                                .attr("required", "true"),
-                        ),
-                )
-                .child(
-                    div()
-                        .class("wb-field-row")
-                        .child(
-                            label()
-                                .attr("for", "wb-description")
-                                .attr("data-i18n", "ui_field_description"),
-                        )
-                        .child(
-                            textarea()
-                                .attr("id", "wb-description")
-                                .attr("name", "description"),
-                        ),
-                )
-                .child(
-                    button()
-                        .attr("type", "submit")
-                        .class("wb-submit")
-                        .attr("data-i18n", "ui_home_create_button"),
-                ),
-        )
+        ),
+    )
 }
 
 #[derive(Deserialize)]

@@ -12,23 +12,23 @@ use std::sync::LazyLock;
 
 mod css;
 
+use forge_ui::{NavItem, NavSection, ShellConfig, Tone, UiShell, alert, txt};
 pub use forge_ui::{SUPPORTED_LOCALES, supported_locales};
 
-static UI_SHELL: LazyLock<AppShell> = LazyLock::new(|| {
+static UI_SHELL: LazyLock<UiShell> = LazyLock::new(|| {
     css::ensure_workbench_css();
 
-    forge_ui::app_shell("Workbench", "workbench.css", Some(ui_header()))
+    UiShell::new(
+        ShellConfig::new("Workbench", "workbench.css", "list-check")
+            .nav(vec![NavSection::new(vec![NavItem::new(
+                "table-columns",
+                "ui_nav_projects",
+                ui_path("/home"),
+            )])])
+            .dashboard(forge_ui::gatehouse_dashboard_url())
+            .profile(forge_ui::gatehouse_profile_url()),
+    )
 });
-
-fn ui_header() -> Element {
-    forge_ui::TopBar {
-        show_home: true,
-        show_locale_switch: true,
-        user_menu_profile: Some(forge_ui::gatehouse_profile_url()),
-        ..Default::default()
-    }
-    .build(h2().attr("data-i18n", "header_label"))
-}
 
 #[get("/ui/assets/{path:.*}")]
 pub async fn assets(Path(path): Path<String>) -> Response {
@@ -36,7 +36,12 @@ pub async fn assets(Path(path): Path<String>) -> Response {
 }
 
 pub fn render_page(status: http::StatusCode, content: Element) -> Response {
-    Response::html(status, UI_SHELL.page(div().class("page").child(content)))
+    Response::html(status, UI_SHELL.page(content))
+}
+
+/// Full-width variant for pages that scroll their own panes (the board).
+pub fn render_page_wide(status: http::StatusCode, content: Element) -> Response {
+    Response::html(status, UI_SHELL.page_wide(content))
 }
 
 pub fn ui_login_redirect() -> Response {
@@ -104,15 +109,12 @@ pub struct Notice {
 
 pub fn notice_banner(notice: &Notice) -> Option<Element> {
     if let Some(code) = &notice.error {
-        return Some(
-            p().class("wb-notice wb-notice-error")
-                .text(format!("error: {code}")),
-        );
+        return Some(alert(Tone::Error, txt(format!("error: {code}"))));
     }
-    if let Some(code) = &notice.ok {
-        return Some(p().class("wb-notice wb-notice-ok").text(code.clone()));
-    }
-    None
+    notice
+        .ok
+        .as_ref()
+        .map(|code| alert(Tone::Success, txt(code.clone())))
 }
 
 /// Assignee `<select>` + "assign to me" shortcut. "Unassigned"/"Me" come
@@ -122,7 +124,10 @@ pub fn assignee_field(
     users: &[crate::domain::realm_users::RealmUser],
     selected: Option<&str>,
 ) -> Element {
-    let mut field = select().attr("id", "wb-assignee").attr("name", "assignee");
+    let mut field = select()
+        .attr("id", "wb-assignee")
+        .attr("name", "assignee")
+        .class("fui-select");
 
     field = field.child({
         let mut opt = option()
@@ -165,7 +170,7 @@ pub fn assignee_field(
                     current_user.replace('\'', "\\'")
                 ),
             )
-            .class("wb-assign-me")
+            .class("fui-btn fui-btn-secondary wb-assign-me")
             .attr("data-i18n", "ui_assign_to_me"),
     )
 }

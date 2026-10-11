@@ -1,56 +1,10 @@
-//! Light snapshot tests for conveyor's CSS rule builders. These are pure
-//! presentation glue - the value here is proving each rule set renders to
-//! non-empty, well-formed CSS containing the selectors it's documented to
-//! carry, not exhaustively asserting every property.
-
-use conveyor_service::routers::ui::common::css::{nav, projects, repos, runs, status};
-
-fn rendered(rules: Vec<quench_web::prelude::CssRule>) -> String {
-    rules
-        .iter()
-        .map(quench_web::prelude::CssRule::render)
-        .collect::<Vec<_>>()
-        .join("\n")
-}
+//! The stylesheet is forge-ui's plus `conveyor.css`; check the combination is written and carries both.
 
 #[test]
-fn nav_rules_render_and_are_not_empty() {
-    let css = rendered(nav::nav_rules());
-    assert!(!css.is_empty());
-}
-
-#[test]
-fn projects_rules_render_and_are_not_empty() {
-    let css = rendered(projects::projects_rules());
-    assert!(!css.is_empty());
-}
-
-#[test]
-fn repos_rules_render_and_are_not_empty() {
-    let css = rendered(repos::repos_rules());
-    assert!(!css.is_empty());
-}
-
-#[test]
-fn runs_rules_render_and_are_not_empty() {
-    let css = rendered(runs::runs_rules());
-    assert!(!css.is_empty());
-}
-
-#[test]
-fn status_rules_carry_every_documented_status_class() {
-    let css = rendered(status::status_rules());
-    for class in [
-        ".status",
-        ".status-queued",
-        ".status-running",
-        ".status-success",
-        ".status-failed",
-        ".status-cancelled",
-        ".status-skipped",
-    ] {
-        assert!(css.contains(class), "missing {class}");
-    }
-    assert!(css.contains("@keyframes conveyor-pulse"));
-    assert!(css.contains("prefers-reduced-motion"));
+fn ensure_conveyor_css_writes_library_and_service_rules() {
+    conveyor_service::routers::ui::common::ensure_conveyor_css();
+    let css = std::fs::read_to_string("dist/assets/css/conveyor.css").unwrap();
+    assert!(css.contains("--fui-brand-600"));
+    assert!(css.contains(".project-node"));
+    assert!(css.contains(".status-running"));
 }

@@ -30,3 +30,12 @@ fn files_rules_render_without_panicking() {
 fn chat_rules_render_without_panicking() {
     assert_rules_render(&chat::chat_rules());
 }
+
+#[test]
+fn ensure_sage_css_writes_library_and_service_rules() {
+    sage_service::routers::ui::common::css::ensure_sage_css();
+    let css = std::fs::read_to_string("dist/assets/css/sage.css").unwrap();
+    assert!(css.contains("--fui-brand-600"));
+    assert!(css.contains(".sage-layout"));
+    assert!(css.contains(".chat-container"));
+}

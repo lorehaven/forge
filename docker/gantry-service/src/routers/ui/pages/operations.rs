@@ -4,13 +4,13 @@ use crate::domain::operation::Operation;
 use crate::domain::service::Gantry;
 use crate::routers::api::authz;
 use crate::routers::ui::common::{
-    ActorOrRedirect, Notice, action, badge, notice_banner, redirect, render_page, row, table, tabs,
+    ActorOrRedirect, Notice, action, badge, notice_banner, redirect, render_page, row, table,
     ui_path,
 };
+use forge_ui::empty_state;
 use quench_auth::domain::jwt::JwtConfig;
 use quench_http::prelude::{Inject, Path, Query, Response, get, http::StatusCode, post};
 use quench_web::prelude::*;
-use quench_web_components::containers::empty_state;
 
 fn when(time: Option<chrono::DateTime<chrono::Utc>>) -> String {
     time.map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string())
@@ -58,10 +58,9 @@ pub(super) async fn list(
         content().class("home-content").child(
             div()
                 .class("home-container")
-                .child(tabs("operations"))
                 .child_opt(notice_banner(&notice))
                 .child(if operations.is_empty() {
-                    empty_state("ui_ops_none")
+                    empty_state("list-check", "ui_ops_none", None)
                 } else {
                     history
                 }),
@@ -113,7 +112,6 @@ fn operation_page(operation: &Operation, log: &str, may_cancel: bool, notice: &N
 
     let mut page = div()
         .class("home-container")
-        .child(tabs("operations"))
         .child_opt(notice_banner(notice))
         .child(
             div()

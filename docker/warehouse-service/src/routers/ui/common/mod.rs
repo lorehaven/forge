@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use forge_ui::{NavItem, NavSection, ShellConfig, UiShell};
 use quench_auth::domain::jwt::JwtConfig;
 use quench_http::prelude::{
     FromRequest, HttpError, Path, Request, Response, get, http::StatusCode,
@@ -7,114 +8,72 @@ pub use quench_starter::http::routers::ui::{is_ui_authenticated, ui_asset_path, 
 use quench_web::prelude::*;
 use std::sync::LazyLock;
 
-pub mod css;
-
 pub use forge_ui::{SUPPORTED_LOCALES, supported_locales};
 
-static UI_SHELL_DOCKER: LazyLock<AppShell> = LazyLock::new(|| {
-    css::ensure_warehouse_css();
-
-    forge_ui::app_shell(
-        "Warehouse",
-        "warehouse.css",
-        Some(ui_header(Some("ui_header_docker"), true, true, true)),
-    )
-});
-
-static UI_SHELL_CRATES: LazyLock<AppShell> = LazyLock::new(|| {
-    css::ensure_warehouse_css();
-
-    forge_ui::app_shell(
-        "Warehouse — Crates",
-        "warehouse.css",
-        Some(ui_header(Some("ui_header_crates"), true, true, true)),
-    )
-});
-
-static UI_SHELL_HOME: LazyLock<AppShell> = LazyLock::new(|| {
-    css::ensure_warehouse_css();
-
-    forge_ui::app_shell(
-        "Warehouse",
-        "warehouse.css",
-        Some(ui_header(Some("ui_header_home"), true, true, true)),
-    )
-});
-
-static UI_SHELL_FILES: LazyLock<AppShell> = LazyLock::new(|| {
-    css::ensure_warehouse_css();
-
-    forge_ui::app_shell(
-        "Warehouse — Files",
-        "warehouse.css",
-        Some(ui_header(Some("ui_header_files"), true, true, true)),
-    )
-});
-
-static UI_SHELL_ARTIFACTS: LazyLock<AppShell> = LazyLock::new(|| {
-    css::ensure_warehouse_css();
-
-    forge_ui::app_shell(
-        "Warehouse — Artifacts",
-        "warehouse.css",
-        Some(ui_header(Some("ui_header_artifacts"), true, true, true)),
-    )
-});
-
-static UI_SHELL_RIVETS: LazyLock<AppShell> = LazyLock::new(|| {
-    css::ensure_warehouse_css();
-
-    forge_ui::app_shell(
-        "Warehouse — Rivets",
-        "warehouse.css",
-        Some(ui_header(Some("ui_header_rivets"), true, true, true)),
-    )
-});
-
-pub fn ui_header(
-    title_key: Option<&str>,
-    show_locale_switch: bool,
-    show_home: bool,
-    show_logout: bool,
-) -> Element {
-    let title = match title_key {
-        Some(key) => h2().attr("data-i18n", key),
-        None => h2().attr("data-i18n", "header_label"),
-    };
-
-    forge_ui::TopBar {
-        show_home,
-        show_locale_switch,
-        user_menu_profile: show_logout.then(forge_ui::gatehouse_profile_url),
-        ..Default::default()
-    }
-    .build(title)
+/// Guarded by `Once` so concurrent callers can't interleave writes to the same file.
+pub fn ensure_warehouse_css() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        forge_ui::write_css_with("warehouse.css", include_str!("warehouse.css"));
+    });
 }
+
+static UI_SHELL: LazyLock<UiShell> = LazyLock::new(|| {
+    ensure_warehouse_css();
+
+    let mut items = Vec::new();
+    for (enabled, icon, key, path) in [
+        (
+            crate::routers::docker_enabled(),
+            "docker",
+            "ui_header_docker",
+            "/docker/catalog",
+        ),
+        (
+            crate::routers::crates_enabled(),
+            "box-open",
+            "ui_header_crates",
+            "/crates/catalog",
+        ),
+        (
+            crate::routers::files_enabled(),
+            "folder-open",
+            "ui_header_files",
+            "/files/storages",
+        ),
+        (
+            crate::routers::artifacts_enabled(),
+            "cube",
+            "ui_header_artifacts",
+            "/artifacts/catalog",
+        ),
+        (
+            crate::routers::rivets_enabled(),
+            "screwdriver-wrench",
+            "ui_header_rivets",
+            "/rivets/catalog",
+        ),
+    ] {
+        if enabled {
+            items.push(NavItem::new(icon, key, ui_path(path)));
+        }
+    }
+
+    UiShell::new(
+        ShellConfig::new("Warehouse", "warehouse.css", "warehouse")
+            .nav(vec![NavSection::new(items)])
+            .dashboard(forge_ui::gatehouse_dashboard_url())
+            .profile(forge_ui::gatehouse_profile_url()),
+    )
+});
 
 #[get("/ui/assets/{path:.*}")]
 pub async fn assets(Path(path): Path<String>) -> Response {
     quench_starter::http::routers::ui::serve_assets(&path, "dist/assets").await
 }
 
-pub fn render_page(status: StatusCode, content: Element, page_kind: UiPageKind) -> Response {
-    let shell = match page_kind {
-        UiPageKind::Home => &*UI_SHELL_HOME,
-        UiPageKind::Docker => &*UI_SHELL_DOCKER,
-        UiPageKind::Crates => &*UI_SHELL_CRATES,
-        UiPageKind::Files => &*UI_SHELL_FILES,
-        UiPageKind::Artifacts => &*UI_SHELL_ARTIFACTS,
-        UiPageKind::Rivets => &*UI_SHELL_RIVETS,
-    };
-    Response::html(status, shell.page(div().class("page").child(content)))
-}
-
-pub enum UiPageKind {
-    Home,
-    Docker,
-    Crates,
-    Files,
-    Artifacts,
-    Rivets,
+pub fn render_page(status: StatusCode, content: Element) -> Response {
+    Response::html(status, UI_SHELL.page_wide(content))
 }
 
 pub fn ui_login_redirect() -> Response {

@@ -2,7 +2,7 @@ use crate::domain::artifact::ArtifactVersion;
 use crate::routers::artifacts::ops::yank::set_yanked;
 use crate::routers::ui::PageQuery;
 use crate::routers::ui::authz::{ManageGate, OptionalUiClaims, can_manage};
-use crate::routers::ui::common::{PageAuth, UiPageKind, render_page, ui_login_redirect, ui_path};
+use crate::routers::ui::common::{PageAuth, render_page, ui_login_redirect, ui_path};
 use quench_db::prelude::{Crud, Db};
 use quench_http::prelude::{Form, Inject, Query, Response, get, http::StatusCode, post};
 use quench_starter::common::routes::with_base_path;
@@ -186,7 +186,6 @@ pub fn render_artifacts_page(
         content()
             .class("container-fluid py-4")
             .child(div().class("split-view").child(left).child(right)),
-        UiPageKind::Artifacts,
     )
 }
 

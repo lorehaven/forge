@@ -1,5 +1,5 @@
 use crate::routers::ui::UiAuthenticated;
-use crate::routers::ui::common::{UiPageKind, render_page};
+use crate::routers::ui::common::render_page;
 use quench_http::prelude::{Response, get};
 use quench_starter::common::routes::with_base_path;
 use quench_web::prelude::*;
@@ -25,11 +25,11 @@ pub(super) async fn models_dashboard_slash(
 fn render_models_dashboard_page() -> Response {
     render_page(
         http::StatusCode::OK,
-        content()
-            .class("models-dashboard-content")
+        div()
+            .class("fui-stack fui-stack-lg models-dashboard-content")
             .child(
                 div()
-                    .class("top-bar")
+                    .class("sb-toolbar")
                     .child(
                         div()
                             .attr("hx-ext", "sse")
@@ -123,7 +123,6 @@ fn render_models_dashboard_page() -> Response {
             .child(div().class("grid").attr("id", "models-grid").attr("name", "models-grid").attr("hx-get", with_base_path("/api/v1/models/grid")).attr("hx-trigger", "load").attr("hx-swap", "outerHTML").attr("hx-include", "#model-filters"))
             .child(estimates_modal())
             .child(confirm_delete_modal()),
-        UiPageKind::ModelsDashboard,
     )
 }
 

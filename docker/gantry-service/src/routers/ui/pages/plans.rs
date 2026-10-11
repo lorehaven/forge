@@ -4,7 +4,7 @@ use crate::domain::planner;
 use crate::domain::service::Gantry;
 use crate::routers::api::authz;
 use crate::routers::ui::common::{
-    ActorOrRedirect, Notice, notice_banner, redirect, render_page, tabs, ui_path,
+    ActorOrRedirect, Notice, notice_banner, redirect, render_page, ui_path,
 };
 use quench_auth::domain::jwt::JwtConfig;
 use quench_http::prelude::{Inject, Path, Query, Response, get, http::StatusCode, post};
@@ -31,10 +31,10 @@ pub(super) async fn show(
     let may_confirm = authz::can_confirm(Some(&claims), &config, &stored).is_ok();
 
     // A start, stop or swap belongs under Deployments; everything else is a change to a package.
-    let (tab, back) = if stored.plan.deployments.is_empty() {
-        ("targets", format!("/targets/{}", stored.target))
+    let back = if stored.plan.deployments.is_empty() {
+        format!("/targets/{}", stored.target)
     } else {
-        ("targets", "/home".to_string())
+        "/home".to_string()
     };
 
     let mut summary = ul();
@@ -86,7 +86,6 @@ pub(super) async fn show(
         content().class("home-content").child(
             div()
                 .class("home-container")
-                .child(tabs(tab))
                 .child_opt(notice_banner(&notice))
                 .child(
                     p().class("gt-crumb")

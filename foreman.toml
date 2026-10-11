@@ -361,6 +361,7 @@ cert_from = "docker/warehouse-service"
 
 [services.env]
 GATEHOUSE_CLIENT_SECRET = "${client_secret_gantry}"
+SERVER_HTTP_REDIRECT_ADDR = "0.0.0.0:11080"
 
 # ---------------------------------------------------------------------------
 # After a start

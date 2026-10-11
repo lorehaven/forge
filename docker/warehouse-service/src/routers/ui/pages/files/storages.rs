@@ -2,7 +2,7 @@ use crate::domain::storage::{self, DynamicStorage, NewStorage, StorageUpdate};
 use crate::domain::storage_file;
 use crate::routers::files::dynamic;
 use crate::routers::ui::authz::{ManageGate, OptionalUiClaims, can_manage};
-use crate::routers::ui::common::{PageAuth, UiPageKind, render_page, ui_login_redirect, ui_path};
+use crate::routers::ui::common::{PageAuth, render_page, ui_login_redirect, ui_path};
 use quench_db::prelude::Db;
 use quench_http::prelude::{Form, Inject, Path, Query, Response, get, http::StatusCode, post};
 use quench_starter::common::routes::with_base_path;
@@ -502,7 +502,6 @@ pub fn render_storages_page(view: &StoragesView, can_manage: bool) -> Response {
             .class("container-fluid py-4")
             .child(div().class("split-view").child(left).child(right))
             .child(empty_delete_storage_modal_element()),
-        UiPageKind::Files,
     )
 }
 

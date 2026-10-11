@@ -18,7 +18,7 @@ pub fn files_rules() -> Vec<CssRule> {
             .property("transition", "color 0.15s, background-color 0.15s"),
         CssRule::new(".chat-attach-btn:hover")
             .property("color", "var(--bs-gray-200)")
-            .property("background-color", "rgba(255, 255, 255, 0.07)"),
+            .property("background-color", "var(--fui-gray-soft-bg)"),
         CssRule::new(".chat-attach-area.disabled")
             .property("opacity", "0.4")
             .property("pointer-events", "none"),
@@ -44,8 +44,8 @@ pub fn files_rules() -> Vec<CssRule> {
             .property("padding", "0.3rem 0.5rem")
             .property("font-size", "0.75rem")
             .property("color", "var(--bs-gray-200)")
-            .property("background-color", "rgba(255, 255, 255, 0.06)")
-            .property("border", "1px solid rgba(255, 255, 255, 0.1)")
+            .property("background-color", "var(--fui-gray-soft-bg)")
+            .property("border", "1px solid var(--fui-border)")
             .property("border-radius", "0.5rem"),
         CssRule::new(".attachment-icon")
             .property("color", "var(--bs-gray-400)")
@@ -107,7 +107,7 @@ pub fn files_rules() -> Vec<CssRule> {
         CssRule::new(".message-sources")
             .property("margin-top", "0.5rem")
             .property("padding-top", "0.5rem")
-            .property("border-top", "1px solid rgba(255, 255, 255, 0.08)")
+            .property("border-top", "1px solid var(--fui-border)")
             .property("font-size", "0.72rem")
             .property("color", "var(--bs-gray-500)"),
         CssRule::new(".message-sources-label")
@@ -131,7 +131,7 @@ pub fn files_rules() -> Vec<CssRule> {
             .property("padding-bottom", "0.35rem"),
         CssRule::new(".files-section-icon")
             .property("font-size", "0.7rem")
-            .property("color", "rgba(255, 255, 255, 0.4)"),
+            .property("color", "var(--fui-text-tertiary)"),
         CssRule::new(".files-section-count")
             .property("font-size", "0.65rem")
             .property("color", "var(--bs-gray-600)"),

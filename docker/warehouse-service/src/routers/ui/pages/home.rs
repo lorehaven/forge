@@ -1,4 +1,4 @@
-use crate::routers::ui::common::{PageAuth, UiPageKind, render_page, ui_login_redirect, ui_path};
+use crate::routers::ui::common::{PageAuth, render_page, ui_login_redirect, ui_path};
 use crate::routers::{
     artifacts_enabled, crates_enabled, docker_enabled, files_enabled, rivets_enabled,
 };
@@ -119,7 +119,6 @@ pub fn render_home_page() -> Response {
                 )
                 .child(sections),
         ),
-        UiPageKind::Home,
     )
 }
 

@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use forge_ui::{NavItem, NavSection, ShellConfig, UiShell};
 pub use quench_auth::domain::jwt::Claims;
 use quench_auth::domain::jwt::JwtConfig;
 use quench_auth::http::routers::ui::get_user_from_req;
@@ -11,25 +12,26 @@ pub use quench_starter::http::routers::ui::{
 use quench_web::prelude::*;
 use std::sync::LazyLock;
 
-mod css;
-
 pub use forge_ui::{SUPPORTED_LOCALES, supported_locales};
 
-static UI_SHELL: LazyLock<AppShell> = LazyLock::new(|| {
-    css::ensure_gantry_css();
-
-    forge_ui::app_shell("Gantry", "gantry.css", Some(ui_header()))
-});
-
-fn ui_header() -> Element {
-    forge_ui::TopBar {
-        show_home: true,
-        show_locale_switch: true,
-        user_menu_profile: Some(forge_ui::gatehouse_profile_url()),
-        ..Default::default()
-    }
-    .build(h2().attr("data-i18n", "header_label"))
+/// Writes the service stylesheet (forge-ui's plus `gantry.css`) to `dist/assets/css`.
+pub fn ensure_gantry_css() {
+    forge_ui::write_css_with("gantry.css", include_str!("gantry.css"));
 }
+
+static UI_SHELL: LazyLock<UiShell> = LazyLock::new(|| {
+    ensure_gantry_css();
+
+    UiShell::new(
+        ShellConfig::new("Gantry", "gantry.css", "anchor")
+            .nav(vec![NavSection::new(vec![
+                NavItem::new("cubes", "ui_nav_targets", ui_path("/home")),
+                NavItem::new("list-check", "ui_nav_operations", ui_path("/operations")),
+            ])])
+            .dashboard(forge_ui::gatehouse_dashboard_url())
+            .profile(forge_ui::gatehouse_profile_url()),
+    )
+});
 
 #[get("/ui/assets/{path:.*}")]
 pub async fn assets(Path(path): Path<String>) -> Response {
@@ -37,7 +39,7 @@ pub async fn assets(Path(path): Path<String>) -> Response {
 }
 
 pub fn render_page(status: http::StatusCode, content: Element) -> Response {
-    Response::html(status, UI_SHELL.page(div().class("page").child(content)))
+    Response::html(status, UI_SHELL.page(content))
 }
 
 pub fn ui_login_redirect() -> Response {
@@ -130,24 +132,6 @@ pub fn percent_encode(text: &str) -> String {
             _ => format!("%{byte:02X}"),
         })
         .collect()
-}
-
-/// The two places a person can go, above every page.
-pub fn tabs(active: &str) -> Element {
-    let tab = |key: &str, path: &str, name: &str| {
-        let class = if key == active {
-            "gt-tab gt-tab-active"
-        } else {
-            "gt-tab"
-        };
-        a().attr("href", ui_path(path))
-            .class(class)
-            .attr("data-i18n", name)
-    };
-    div()
-        .class("gt-tabs")
-        .child(tab("targets", "/home", "ui_nav_targets"))
-        .child(tab("operations", "/operations", "ui_nav_operations"))
 }
 
 /// A state is a coloured dot and a translated word.

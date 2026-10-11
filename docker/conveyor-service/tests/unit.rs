@@ -38,8 +38,6 @@ mod routers_ui_credentials_tests;
 mod routers_ui_format_tests;
 #[path = "unit/routers_ui_home_tests.rs"]
 mod routers_ui_home_tests;
-#[path = "unit/routers_ui_nav_tests.rs"]
-mod routers_ui_nav_tests;
 #[path = "unit/routers_ui_pages_auth_jobs_tests.rs"]
 mod routers_ui_pages_auth_jobs_tests;
 #[path = "unit/routers_ui_pages_pipelines_tests.rs"]

@@ -5,7 +5,7 @@ use crate::domain::actions::{self, ActionError, Target};
 use crate::domain::service::Gantry;
 use crate::routers::api::authz;
 use crate::routers::ui::common::{
-    ActorOrRedirect, Notice, notice_banner, redirect, render_page, tabs, ui_path,
+    ActorOrRedirect, Notice, notice_banner, redirect, render_page, ui_path,
 };
 use quench_auth::domain::jwt::JwtConfig;
 use quench_http::prelude::{Form, Inject, Path, Query, Response, get, http::StatusCode, post};
@@ -114,7 +114,6 @@ pub(super) async fn edit_page(
         content().class("home-content").child(
             div()
                 .class("home-container")
-                .child(tabs("targets"))
                 .child_opt(notice_banner(&notice))
                 .child(
                     p().class("gt-crumb").child(

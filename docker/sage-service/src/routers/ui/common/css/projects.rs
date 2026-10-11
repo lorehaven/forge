@@ -28,7 +28,7 @@ pub fn projects_rules() -> Vec<CssRule> {
             .property("gap", "0.3rem")
             .property("transition", "all 0.15s ease"),
         CssRule::new(".add-project-btn:hover")
-            .property("background-color", "rgba(255, 255, 255, 0.05)")
+            .property("background-color", "var(--fui-gray-soft-bg)")
             .property("color", "var(--bs-gray-200)")
             .property("border-color", "var(--bs-gray-700)"),
         CssRule::new(".project-item").property("margin-bottom", "2px"),
@@ -39,7 +39,7 @@ pub fn projects_rules() -> Vec<CssRule> {
         CssRule::new(".collapsible .chevron")
             .property("transition", "transform 0.2s ease")
             .property("font-size", "0.6rem")
-            .property("color", "rgba(255, 255, 255, 0.4)"),
+            .property("color", "var(--fui-text-tertiary)"),
         CssRule::new(".collapsible.open .chevron").property("transform", "rotate(90deg)"),
         CssRule::new(".history-section-content").property("display", "block"),
         CssRule::new(".history-section-content.hidden").property("display", "none"),
@@ -53,8 +53,8 @@ pub fn projects_rules() -> Vec<CssRule> {
             .property("top", "-1rem")
             .property("bottom", "50%")
             .property("width", "0.5rem")
-            .property("border-left", "1px solid rgba(255, 255, 255, 0.1)")
-            .property("border-bottom", "1px solid rgba(255, 255, 255, 0.1)")
+            .property("border-left", "1px solid var(--fui-border)")
+            .property("border-bottom", "1px solid var(--fui-border)")
             .property("border-bottom-left-radius", "4px"),
         // Modals
         CssRule::new(".modal-backdrop")
@@ -63,7 +63,7 @@ pub fn projects_rules() -> Vec<CssRule> {
             .property("left", "0")
             .property("width", "100%")
             .property("height", "100%")
-            .property("background-color", "rgba(0, 0, 0, 0.7)")
+            .property("background-color", "var(--fui-scrim)")
             .property("display", "flex")
             .property("justify-content", "center")
             .property("align-items", "center")
@@ -74,7 +74,7 @@ pub fn projects_rules() -> Vec<CssRule> {
             .property("border-radius", "8px")
             .property("width", "400px")
             .property("max-width", "90%")
-            .property("border", "1px solid rgba(255, 255, 255, 0.1)")
+            .property("border", "1px solid var(--fui-border)")
             .property("box-shadow", "0 10px 25px rgba(0, 0, 0, 0.5)"),
         CssRule::new(".modal-content h2")
             .property("margin-top", "0")
@@ -85,12 +85,12 @@ pub fn projects_rules() -> Vec<CssRule> {
             .property("display", "block")
             .property("margin-bottom", "0.5rem")
             .property("font-size", "0.9rem")
-            .property("color", "rgba(255, 255, 255, 0.7)"),
+            .property("color", "var(--fui-text-secondary)"),
         CssRule::new(".form-group input")
             .property("width", "100%")
             .property("background-color", "#2d2d2d")
-            .property("border", "1px solid rgba(255, 255, 255, 0.1)")
-            .property("color", "white")
+            .property("border", "1px solid var(--fui-border)")
+            .property("color", "var(--fui-text)")
             .property("padding", "0.75rem")
             .property("border-radius", "4px")
             .property("outline", "none"),
@@ -100,8 +100,8 @@ pub fn projects_rules() -> Vec<CssRule> {
             .property("justify-content", "flex-end")
             .property("gap", "1rem"),
         CssRule::new(".btn-primary")
-            .property("background-color", "var(--bs-primary)")
-            .property("color", "white")
+            .property("background-color", "var(--fui-brand-500)")
+            .property("color", "var(--fui-text)")
             .property("border", "none")
             .property("padding", "0.5rem 1.5rem")
             .property("border-radius", "4px")
@@ -109,12 +109,12 @@ pub fn projects_rules() -> Vec<CssRule> {
             .property("font-weight", "500"),
         CssRule::new(".btn-secondary")
             .property("background-color", "transparent")
-            .property("color", "white")
-            .property("border", "1px solid rgba(255, 255, 255, 0.2)")
+            .property("color", "var(--fui-text)")
+            .property("border", "1px solid var(--fui-border)")
             .property("padding", "0.5rem 1.5rem")
             .property("border-radius", "4px")
             .property("cursor", "pointer"),
         CssRule::new(".btn-secondary:hover")
-            .property("background-color", "rgba(255, 255, 255, 0.05)"),
+            .property("background-color", "var(--fui-gray-soft-bg)"),
     ]
 }

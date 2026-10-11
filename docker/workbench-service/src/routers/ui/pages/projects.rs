@@ -4,11 +4,14 @@ use crate::domain::issue::{self, NewIssue, STATUSES};
 use crate::domain::{project, realm_users};
 use crate::routers::api::authz::can_on_project_claims;
 use crate::routers::ui::common::{
-    ActorOrRedirect, Notice, assignee_field, notice_banner, render_page, ui_path,
+    ActorOrRedirect, Notice, assignee_field, notice_banner, render_page_wide, ui_path,
+};
+use forge_ui::{
+    PageHeader, Tone, Variant, badge, button_el, close_modal, field_for, form_el, icon, modal,
+    open_modal, select_el, submit_button, text_input,
 };
 use quench_db::prelude::Db;
 use quench_http::prelude::{Form, Inject, Path, Query, Response, get, http::StatusCode, post};
-use quench_web::framework::dom::toggle_modal;
 use quench_web::prelude::*;
 use serde::Deserialize;
 
@@ -30,37 +33,24 @@ pub(super) async fn board(
 
     let board_el = render_board(&db, &project.id).await;
     let users = realm_users::list_users(&db).await.unwrap_or_default();
-    let toggle = toggle_modal("modal-overlay", "modal-center", "show");
 
-    render_page(
+    render_page_wide(
         StatusCode::OK,
-        content().class("home-content").child(
-            div()
-                .class("home-container")
-                .child_opt(notice_banner(&notice))
-                .child(
-                    div()
-                        .class("home-header")
-                        .child(h3().text(format!("{} — {}", project.key, project.name)))
-                        .child(
-                            button()
-                                .attr("type", "button")
-                                .attr("onclick", &toggle)
-                                .attr("title", "New issue")
-                                .class("wb-add-button")
-                                .text("+"),
-                        ),
-                )
-                .child(board_el)
-                .child(div().class("modal-overlay").on_click(&toggle))
-                .child(div().class("modal-center").child(new_issue_modal_content(
-                    &project.id,
-                    &toggle,
-                    &claims.sub,
-                    &users,
-                )))
-                .child(board_script()),
-        ),
+        div()
+            .class("fui-stack fui-stack-lg wb-board-page")
+            .child_opt(notice_banner(&notice))
+            .child(
+                PageHeader::titled(format!("{} — {}", project.key, project.name))
+                    .action(
+                        button_el(Variant::Primary, "ui_board_new_issue")
+                            .child(icon("plus"))
+                            .on_click(open_modal("new-issue")),
+                    )
+                    .build(),
+            )
+            .child(board_el)
+            .child(new_issue_modal(&project.id, &claims.sub, &users))
+            .child(board_script()),
     )
 }
 
@@ -98,8 +88,9 @@ async fn render_board(db: &Db, project_id: &str) -> Element {
 }
 
 fn issue_card(project_id: &str, i: &issue::Issue) -> Element {
-    let mut status_select = select()
-        .attr("name", "status")
+    let mut status_select = select_el("status")
+        .class("fui-select-sm")
+        .attr("id", format!("wb-status-{}", i.id))
         .attr(
             "hx-post",
             ui_path(&format!(
@@ -135,8 +126,8 @@ fn issue_card(project_id: &str, i: &issue::Issue) -> Element {
         .child(
             div()
                 .class("wb-card-meta")
-                .child(span().text(i.kind.clone()))
-                .child(span().text(i.priority.clone()))
+                .child(badge(Tone::Gray, i.kind.clone()))
+                .child(badge(priority_tone(&i.priority), i.priority.clone()))
                 .child_opt(
                     i.estimate
                         .map(|estimate| span().text(format!("{estimate} pt"))),
@@ -207,6 +198,14 @@ fn board_script() -> Element {
     .raw()
 }
 
+fn priority_tone(priority: &str) -> Tone {
+    match priority {
+        "high" => Tone::Error,
+        "medium" => Tone::Warning,
+        _ => Tone::Gray,
+    }
+}
+
 fn status_i18n_key(status: &str) -> &'static str {
     match status {
         "blocked" => "ui_status_blocked",
@@ -218,107 +217,69 @@ fn status_i18n_key(status: &str) -> &'static str {
     }
 }
 
-fn new_issue_modal_content(
+fn new_issue_modal(
     project_id: &str,
-    toggle: &str,
     current_user: &str,
     users: &[realm_users::RealmUser],
 ) -> Element {
-    div()
-        .class("modal-content")
-        .child(
+    let body = form_el("post", &ui_path(&format!("/projects/{project_id}/issues")))
+        .attr("id", "new-issue-form")
+        .child(field_for(
+            "wb-title",
+            "ui_field_title",
+            text_input("title", "text")
+                .attr("id", "wb-title")
+                .attr("required", "true"),
+            None,
+        ))
+        .child(field_for(
+            "wb-kind",
+            "ui_field_kind",
+            select_el("kind")
+                .attr("id", "wb-kind")
+                .child(option().attr("value", "task").text("task"))
+                .child(option().attr("value", "bug").text("bug"))
+                .child(option().attr("value", "story").text("story")),
+            None,
+        ))
+        .child(field_for(
+            "wb-priority",
+            "ui_field_priority",
+            select_el("priority")
+                .attr("id", "wb-priority")
+                .child(option().attr("value", "low").text("low"))
+                .child(
+                    option()
+                        .attr("value", "medium")
+                        .attr("selected", "true")
+                        .text("medium"),
+                )
+                .child(option().attr("value", "high").text("high")),
+            None,
+        ))
+        .child(field_for(
+            "wb-assignee",
+            "ui_field_assignee",
+            assignee_field(current_user, users, None),
+            None,
+        ));
+
+    modal(
+        "new-issue",
+        "ui_board_new_issue",
+        body,
+        Some(
             div()
-                .class("wb-modal-header")
+                .class("fui-row")
                 .child(
-                    div()
-                        .class("panel-title")
-                        .attr("data-i18n", "ui_board_new_issue"),
+                    button_el(Variant::Secondary, "ui_cancel").on_click(close_modal("new-issue")),
                 )
                 .child(
-                    button()
-                        .attr("type", "button")
-                        .attr("onclick", toggle)
-                        .class("wb-modal-close")
-                        .text("×"),
+                    submit_button(Variant::Primary, "ui_board_create_button")
+                        .attr("form", "new-issue-form"),
                 ),
-        )
-        .child(
-            form()
-                .attr("method", "post")
-                .attr("action", ui_path(&format!("/projects/{project_id}/issues")))
-                .class("wb-form")
-                .child(
-                    div()
-                        .class("wb-field-row")
-                        .child(
-                            label()
-                                .attr("for", "wb-title")
-                                .attr("data-i18n", "ui_field_title"),
-                        )
-                        .child(
-                            input()
-                                .attr("type", "text")
-                                .attr("id", "wb-title")
-                                .attr("name", "title")
-                                .attr("required", "true"),
-                        ),
-                )
-                .child(
-                    div()
-                        .class("wb-field-row")
-                        .child(
-                            label()
-                                .attr("for", "wb-kind")
-                                .attr("data-i18n", "ui_field_kind"),
-                        )
-                        .child(
-                            select()
-                                .attr("id", "wb-kind")
-                                .attr("name", "kind")
-                                .child(option().attr("value", "task").text("task"))
-                                .child(option().attr("value", "bug").text("bug"))
-                                .child(option().attr("value", "story").text("story")),
-                        ),
-                )
-                .child(
-                    div()
-                        .class("wb-field-row")
-                        .child(
-                            label()
-                                .attr("for", "wb-priority")
-                                .attr("data-i18n", "ui_field_priority"),
-                        )
-                        .child(
-                            select()
-                                .attr("id", "wb-priority")
-                                .attr("name", "priority")
-                                .child(option().attr("value", "low").text("low"))
-                                .child(
-                                    option()
-                                        .attr("value", "medium")
-                                        .attr("selected", "true")
-                                        .text("medium"),
-                                )
-                                .child(option().attr("value", "high").text("high")),
-                        ),
-                )
-                .child(
-                    div()
-                        .class("wb-field-row")
-                        .child(
-                            label()
-                                .attr("for", "wb-assignee")
-                                .attr("data-i18n", "ui_field_assignee"),
-                        )
-                        .child(assignee_field(current_user, users, None)),
-                )
-                .child(
-                    button()
-                        .attr("type", "submit")
-                        .class("wb-submit")
-                        .attr("data-i18n", "ui_board_create_button"),
-                ),
-        )
+        ),
+    )
 }
 
 #[derive(Deserialize)]

@@ -5,7 +5,7 @@ use crate::domain::service::Gantry;
 use crate::routers::api::authz;
 use crate::routers::ui::common::{
     ActorOrRedirect, Notice, badge, cell_text, notice_banner, redirect, render_page, row, table,
-    tabs, ui_path,
+    ui_path,
 };
 use quench_auth::domain::jwt::JwtConfig;
 use quench_http::prelude::{Form, Inject, Path, Query, Response, get, http::StatusCode, post};
@@ -98,7 +98,6 @@ pub(super) async fn show(
         content().class("home-content").child(
             div()
                 .class("home-container")
-                .child(tabs("targets"))
                 .child_opt(notice_banner(&notice))
                 .child(
                     div()

@@ -1,21 +1,4 @@
-use quench_web::prelude::CssRule;
-use warehouse_service::routers::ui::common::css::{ensure_warehouse_css, warehouse_css_rules};
-
-// Light snapshot-style tests for pure presentation glue: these builders are
-// all "assemble a `Vec<CssRule>`" with no branching worth exercising
-// individually, so the bar here is "renders to non-empty CSS", not asserting
-// on the exact rules.
-#[test]
-fn warehouse_css_rules_is_non_empty_and_renders_without_panicking() {
-    let rules = warehouse_css_rules();
-    assert!(!rules.is_empty());
-    let rendered: String = rules
-        .iter()
-        .map(CssRule::render)
-        .collect::<Vec<_>>()
-        .join("\n");
-    assert!(!rendered.trim().is_empty());
-}
+use warehouse_service::routers::ui::common::ensure_warehouse_css;
 
 #[test]
 fn ensure_warehouse_css_writes_the_stylesheet_without_panicking() {
