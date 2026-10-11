@@ -17,8 +17,12 @@ pub mod format;
 pub use forge_ui::{SUPPORTED_LOCALES, supported_locales};
 
 /// Writes the service stylesheet (forge-ui's plus `conveyor.css`) to `dist/assets/css`.
+pub fn conveyor_stylesheet() -> String {
+    forge_ui::stylesheet_with(include_str!("conveyor.css"), &[])
+}
+
 pub fn ensure_conveyor_css() {
-    forge_ui::write_css_with("conveyor.css", include_str!("conveyor.css"));
+    forge_ui::write_stylesheet("conveyor.css", &conveyor_stylesheet());
 }
 
 static UI_SHELL: LazyLock<UiShell> = LazyLock::new(|| {

@@ -7,8 +7,12 @@ use std::sync::LazyLock;
 pub use forge_ui::{SUPPORTED_LOCALES, supported_locales};
 
 /// Writes the service stylesheet (forge-ui's plus `switchboard.css`) to `dist/assets/css`.
+pub fn switchboard_stylesheet() -> String {
+    forge_ui::stylesheet_with(include_str!("switchboard.css"), &[])
+}
+
 pub fn ensure_switchboard_css() {
-    forge_ui::write_css_with("switchboard.css", include_str!("switchboard.css"));
+    forge_ui::write_stylesheet("switchboard.css", &switchboard_stylesheet());
 }
 
 static UI_SHELL: LazyLock<UiShell> = LazyLock::new(|| {

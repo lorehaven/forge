@@ -5,9 +5,13 @@ pub mod files;
 pub mod initializing;
 pub mod projects;
 
+/// forge-ui's stylesheet plus sage's own rules.
+pub fn sage_stylesheet() -> String {
+    forge_ui::stylesheet_with(include_str!("sage.css"), &sage_css_rules())
+}
+
 pub fn ensure_sage_css() {
-    let css = forge_ui::stylesheet_with(include_str!("sage.css"), &sage_css_rules());
-    forge_ui::write_stylesheet("sage.css", &css);
+    forge_ui::write_stylesheet("sage.css", &sage_stylesheet());
 }
 
 fn sage_css_rules() -> Vec<CssRule> {

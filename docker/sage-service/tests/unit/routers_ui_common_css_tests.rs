@@ -32,10 +32,16 @@ fn chat_rules_render_without_panicking() {
 }
 
 #[test]
-fn ensure_sage_css_writes_library_and_service_rules() {
-    sage_service::routers::ui::common::css::ensure_sage_css();
-    let css = std::fs::read_to_string("dist/assets/css/sage.css").unwrap();
+fn sage_stylesheet_carries_library_and_service_rules() {
+    let css = sage_service::routers::ui::common::css::sage_stylesheet();
     assert!(css.contains("--fui-brand-600"));
     assert!(css.contains(".sage-layout"));
     assert!(css.contains(".chat-container"));
+}
+
+#[test]
+fn ensure_sage_css_does_not_panic() {
+    // Several tests (each its own process under nextest) write the same `dist/assets/css/sage.css`
+    // with no locking, so reading it back here would race them; the content is checked in memory above.
+    sage_service::routers::ui::common::css::ensure_sage_css();
 }

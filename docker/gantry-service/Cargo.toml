@@ -40,7 +40,6 @@ quench-db = { workspace = true }
 quench-http = { workspace = true }
 quench-starter = { workspace = true }
 quench-web = { workspace = true }
-quench-web-components = { workspace = true }
 rivet-package = { workspace = true }
 rustls = { workspace = true }
 semver = { workspace = true }
