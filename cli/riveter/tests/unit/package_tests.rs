@@ -712,7 +712,7 @@ fn an_installed_package_renders_from_its_scratch_tree() {
     assert!(manifest.contains("eu"));
     // Provenance on every resource, whatever its template does with `labels`: the namespace
     // template, for one, writes its own metadata and ignores both.
-    let docs: Vec<serde_yaml::Value> = serde_yaml::Deserializer::from_str(&manifest)
+    let docs: Vec<serde_norway::Value> = serde_norway::Deserializer::from_str(&manifest)
         .map(|doc| serde::Deserialize::deserialize(doc).unwrap())
         .collect();
     assert_eq!(docs.len(), 2, "{manifest}");
@@ -1041,7 +1041,7 @@ fn render_with_replicas(replicas: &[(&str, u32)]) -> anyhow::Result<String> {
 #[test]
 fn replicas_given_at_install_win_over_the_package() {
     let stopped = render_with_replicas(&[("deployment/api", 0)]).unwrap();
-    let docs: Vec<serde_yaml::Value> = serde_yaml::Deserializer::from_str(&stopped)
+    let docs: Vec<serde_norway::Value> = serde_norway::Deserializer::from_str(&stopped)
         .map(|doc| serde::Deserialize::deserialize(doc).unwrap())
         .collect();
     let deployment = docs

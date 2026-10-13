@@ -8,14 +8,14 @@ use riveter::render::{
     ResourceRef, ResourceScope, Selector, generate_manifests_selected, render_to_string,
 };
 use riveter::repl::{JobState, WaitPolicy, kubectl_apply, parse_job_state};
-use serde_yaml::Value as YamlValue;
+use serde_norway::Value as YamlValue;
 use std::collections::HashMap;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 fn yaml(text: &str) -> YamlValue {
-    serde_yaml::from_str(text).unwrap()
+    serde_norway::from_str(text).unwrap()
 }
 
 /// `kind/name` of each resource, in order.

@@ -7,7 +7,7 @@ use anyhow::Context;
 use minijinja::value::ValueKind;
 use minijinja::{Environment, Output, State, Value, context, escape_formatter};
 use regex::Regex;
-use serde_yaml::Value as YamlValue;
+use serde_norway::Value as YamlValue;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::fs;
@@ -532,7 +532,7 @@ fn overlay_data<S: std::hash::BuildHasher>(
     overlay_jinja.set_formatter(yaml_bool_formatter);
 
     let rendered_overlay = overlay_jinja.render_str(overlay_src, Value::UNDEFINED)?;
-    let mut data: YamlValue = serde_yaml::from_str(&rendered_overlay).map_err(|e| {
+    let mut data: YamlValue = serde_norway::from_str(&rendered_overlay).map_err(|e| {
         let msg = format!("Failed to parse overlay.yaml after rendering: {e}");
         // Print with line numbers for easier debugging
         let with_lines = rendered_overlay
@@ -683,7 +683,7 @@ fn render_resources(
             .to_ascii_lowercase();
         if matches!(kind.as_str(), "configmap" | "secret") {
             let tpl = tpl_env.get_template(&template_name_for_kind(&kind))?;
-            let y = tpl.render(context! { data => data, res => res, env => env_name })?;
+            let y = tpl.render(context! { data => minijinja::value::Serde(data), res => minijinja::value::Serde(res), env => env_name })?;
             config_docs.insert((kind, res_ref.name.clone()), y);
         }
     }
@@ -702,8 +702,8 @@ fn render_resources(
             .with_context(|| format!("template for kind `{kind}` not found or invalid. ensure `{tpl_name}` exists in embedded templates."))?;
 
         let y = tpl.render(context! {
-            data => data,
-            res => res,
+            data => minijinja::value::Serde(data),
+            res => minijinja::value::Serde(res),
             env => env_name,
         })?;
         let y = if labels.is_empty() && annotations.is_empty() {
@@ -745,7 +745,7 @@ fn with_config_hash(
     {
         return Ok(yaml.to_string());
     }
-    let mut doc: YamlValue = serde_yaml::from_str(yaml)
+    let mut doc: YamlValue = serde_norway::from_str(yaml)
         .with_context(|| format!("could not read the rendered {kind}/{name}"))?;
 
     let mut read: std::collections::BTreeSet<(&str, String)> = std::collections::BTreeSet::new();
@@ -790,12 +790,12 @@ fn with_config_hash(
         .with_context(|| format!("{kind}/{name} has no pod template"))?;
     let metadata = template
         .entry(YamlValue::String("metadata".to_string()))
-        .or_insert_with(|| YamlValue::Mapping(serde_yaml::Mapping::new()))
+        .or_insert_with(|| YamlValue::Mapping(serde_norway::Mapping::new()))
         .as_mapping_mut()
         .context("the pod template's metadata is not a mapping")?;
     let annotations = metadata
         .entry(YamlValue::String("annotations".to_string()))
-        .or_insert_with(|| YamlValue::Mapping(serde_yaml::Mapping::new()))
+        .or_insert_with(|| YamlValue::Mapping(serde_norway::Mapping::new()))
         .as_mapping_mut()
         .context("the pod template's annotations are not a mapping")?;
     annotations.insert(
@@ -807,7 +807,7 @@ fn with_config_hash(
 
 /// Writes a manifest back out after riveter edited it.
 ///
-/// `serde_yaml` writes YAML 1.2, where only `true`/`false` are booleans, so it leaves the string `"yes"` bare.
+/// `serde_norway` writes YAML 1.2, where only `true`/`false` are booleans, so it leaves the string `"yes"` bare.
 /// kubectl reads YAML 1.1, where a bare `yes`, `on`, `off`, `n` ... is a boolean: a container argument
 /// `"yes"` reached the API as `true`. A document holding any such string (or a digit string 1.1 reads as an
 /// octal or sexagesimal number, such as `0755` or `1:30`) is written as JSON instead, which is YAML to every
@@ -816,7 +816,7 @@ pub fn emit_manifest(doc: &YamlValue) -> anyhow::Result<String> {
     if holds_yaml11_ambiguity(doc) {
         return Ok(serde_json::to_string_pretty(doc)?);
     }
-    Ok(serde_yaml::to_string(doc)?.trim().to_string())
+    Ok(serde_norway::to_string(doc)?.trim().to_string())
 }
 
 fn holds_yaml11_ambiguity(value: &YamlValue) -> bool {
@@ -859,7 +859,7 @@ fn with_replicas(kind: &str, name: &str, yaml: &str, count: u32) -> anyhow::Resu
         ),
         "--replicas applies to a deployment or statefulset, not {kind}/{name}"
     );
-    let mut doc: YamlValue = serde_yaml::from_str(yaml)
+    let mut doc: YamlValue = serde_norway::from_str(yaml)
         .with_context(|| format!("could not read the rendered {kind}/{name} to scale it"))?;
     let spec = doc
         .get_mut("spec")
@@ -889,7 +889,7 @@ fn stamp_rendered(
     labels: &BTreeMap<String, String>,
     annotations: &BTreeMap<String, String>,
 ) -> anyhow::Result<String> {
-    let mut doc: YamlValue = serde_yaml::from_str(yaml)
+    let mut doc: YamlValue = serde_norway::from_str(yaml)
         .with_context(|| format!("could not read the rendered {kind}/{name} to mark it"))?;
     let metadata = doc
         .get_mut("metadata")
@@ -904,7 +904,7 @@ fn stamp_rendered(
         }
         let mut merged = match metadata.get(key) {
             Some(YamlValue::Mapping(existing)) => existing.clone(),
-            _ => serde_yaml::Mapping::new(),
+            _ => serde_norway::Mapping::new(),
         };
         for (name, value) in additions {
             merged.insert(
@@ -1020,7 +1020,7 @@ pub fn overlay_vars(rendered: &str) -> Vec<String> {
         }
     }
 
-    let Ok(parsed) = serde_yaml::from_str::<YamlValue>(rendered) else {
+    let Ok(parsed) = serde_norway::from_str::<YamlValue>(rendered) else {
         return referenced_vars(rendered);
     };
     let mut names = Vec::new();
@@ -1323,7 +1323,7 @@ pub fn check_embedded_templates() -> anyhow::Result<Vec<&'static str>> {
 /// formatting.
 fn yaml_bool_formatter(
     out: &mut Output<'_>,
-    state: &State<'_, '_>,
+    state: &mut State<'_, '_>,
     value: &Value,
 ) -> Result<(), minijinja::Error> {
     if value.kind() == ValueKind::Bool {
@@ -1338,7 +1338,7 @@ fn yaml_bool_formatter(
 /// straight through to Kubernetes (tolerations, affinity, webhooks, ...).
 /// Nest the result with minijinja's `indent` filter.
 fn to_yaml(value: &Value) -> Result<String, minijinja::Error> {
-    serde_yaml::to_string(value)
+    serde_norway::to_string(value)
         .map(|s| s.trim_end().to_string())
         .map_err(|e| {
             minijinja::Error::new(

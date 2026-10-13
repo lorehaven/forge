@@ -92,7 +92,7 @@ pub fn check_documents(set: &SchemaSet, documents: &[Value]) -> Report {
 /// `kubectl get -o yaml` prints for several objects) flattened into its items.
 pub fn parse_documents(text: &str) -> Result<Vec<Value>> {
     let mut documents = Vec::new();
-    for (index, doc) in serde_yaml::Deserializer::from_str(text).enumerate() {
+    for (index, doc) in serde_norway::Deserializer::from_str(text).enumerate() {
         let value: Value = serde::Deserialize::deserialize(doc)
             .with_context(|| format!("document {} is not valid YAML", index + 1))?;
         match value {

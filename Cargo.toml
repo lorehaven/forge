@@ -20,12 +20,10 @@ readme = "README.md"
 [workspace.dependencies]
 age = { version = "0.12", default-features = false }
 anyhow = { version = "1.0" }
-argon2 = { version = "0.6" }
 async-stream = { version = "0.3" }
 assert_cmd = { version = "2.2" }
 async-trait = { version = "0.1" }
 axmldecoder = { version = "0.5" }
-axum = { version = "0.8", features = ["json"] }
 base64 = { version = "0.23" }
 bytes = { version = "1.12" }
 chacha20poly1305 = { version = "0.11" }
@@ -40,13 +38,11 @@ forge-ui = { path = "libs/forge-ui", version = "0.1.0" }
 dashmap = { version = "6.2" }
 dotenvy = { version = "0.15" }
 envmnt = { version = "0.10" }
-fluent-syntax = { version = "0.12" }
 futures-util = { version = "0.3" }
 gguf = { version = "0.1" }
 grep = { version = "0.4" }
 hex = { version = "0.4" }
 hmac = { version = "0.13" }
-html5ever = { version = "0.40" }
 http = { version = "1.5" }
 http-body-util = { version = "0.1" }
 ignore = { version = "0.4" }
@@ -55,48 +51,42 @@ kube = { version = "4.2", features = ["runtime", "derive"] }
 libc = { version = "0.2" }
 jsonschema = { version = "0.58", default-features = false }
 k8s-openapi = { version = "0.28", features = ["latest"] }
-markup5ever_rcdom = { version = "0.39" }
-minijinja = { version = "2.24", features = ["loader", "serde"] }
+minijinja = { version = "3.0", features = ["serde"] }
 pdf-extract = { version = "0.12" }
 predicates = { version = "3.1" }
 pulldown-cmark = { version = "0.13" }
 qrcode = { version = "0.14", default-features = false, features = ["svg"] }
-quench-auth = { registry = "ennor", version = "0.4.2" }
-quench-cache = { registry = "ennor", version = "0.1.9" }
-quench-cli = { registry = "ennor", version = "0.1.4" }
-quench-client = { registry = "ennor", version = "0.2.3" }
-quench-config = { registry = "ennor", version = "0.1.3" }
-quench-db = { registry = "ennor", version = "0.2.2" }
-quench-http = { registry = "ennor", version = "0.1.1" }
+quench-auth = { registry = "ennor", version = "0.4.4" }
+quench-cache = { registry = "ennor", version = "0.1.10" }
+quench-cli = { registry = "ennor", version = "0.1.5" }
+quench-client = { registry = "ennor", version = "0.2.5" }
+quench-config = { registry = "ennor", version = "0.1.4" }
+quench-db = { registry = "ennor", version = "0.2.3" }
+quench-http = { registry = "ennor", version = "0.1.3" }
 quench-log = { registry = "ennor", version = "0.1.0" }
-quench-mail = { registry = "ennor", version = "0.1.0" }
-quench-starter = { registry = "ennor", version = "0.4.3" }
-quench-web = { registry = "ennor", version = "0.1.13" }
-quench-web-components = { registry = "ennor", version = "0.1.8" }
-redis = { version = "1.7", features = ["tokio-comp", "cluster-async", "connection-manager"] }
+quench-mail = { registry = "ennor", version = "0.1.1" }
+quench-starter = { registry = "ennor", version = "0.4.5" }
+quench-web = { registry = "ennor", version = "0.1.14" }
+quench-web-components = { registry = "ennor", version = "0.1.9" }
 regex = { version = "1.13" }
 reqwest = { version = "0.13", default-features = false, features = [
   "json",
   "stream",
   "rustls",
-  "cookies",
   "multipart",
   "form",
 ] }
 rivet-package = { path = "libs/rivet-package", registry = "ennor", version = "0.1.0" }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
-rustyline = { version = "18.0" }
 scraper = { version = "0.27" }
 semver = { version = "1.0" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0" }
 serde_urlencoded = { version = "0.7" }
-serde_yaml = { version = "0.9" }
+serde_norway = { version = "0.9" }
 shlex = { version = "2.0" }
 sha2 = { version = "0.11" }
 sqlx = { version = "0.9", features = ["runtime-tokio", "tls-rustls-ring", "postgres", "macros", "json", "chrono", "uuid"] }
-strum = { version = "0.28" }
-strum_macros = { version = "0.28" }
 tar = { version = "0.4", default-features = false }
 tempfile = { version = "3.27" }
 thiserror = { version = "2.0" }
@@ -106,14 +96,12 @@ tokio-util = { version = "0.7", features = ["io"] }
 toml = { version = "1.1" }
 toml_edit = { version = "0.25" }
 totp-rs = { version = "6.0", default-features = false, features = ["otpauth", "gen_secret", "std"] }
-tower-http = { version = "0.7", features = ["fs"] }
 tracing = { version = "0.1" }
-tracing-subscriber = { version = "0.3" }
-uuid = { version = "1.26", features = ["v4"] }
+uuid = { version = "1.28", features = ["v4"] }
 urlencoding = { version = "2.1" }
 walkdir = { version = "2.5" }
 zstd = { version = "0.14" }
-zip = { version = "8", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 which = { version = "8.0" }
 wiremock = { version = "0.6" }
 

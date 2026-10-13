@@ -279,11 +279,11 @@ pub async fn edit(
         ));
     }
 
-    let mut doc: serde_yaml::Value = serde_yaml::from_str(yaml)
+    let mut doc: serde_norway::Value = serde_norway::from_str(yaml)
         .map_err(|e| ActionError::Refused(format!("the YAML does not parse: {e}")))?;
-    let text = |value: Option<&serde_yaml::Value>| {
+    let text = |value: Option<&serde_norway::Value>| {
         value
-            .and_then(serde_yaml::Value::as_str)
+            .and_then(serde_norway::Value::as_str)
             .map(str::to_string)
     };
     let kind = text(doc.get("kind")).unwrap_or_default();
@@ -303,18 +303,18 @@ pub async fn edit(
     );
     let metadata = doc
         .get_mut("metadata")
-        .and_then(serde_yaml::Value::as_mapping_mut)
+        .and_then(serde_norway::Value::as_mapping_mut)
         .ok_or_else(|| ActionError::Refused("the YAML has no metadata".to_string()))?;
     let annotations = metadata
-        .entry(serde_yaml::Value::String("annotations".to_string()))
-        .or_insert_with(|| serde_yaml::Value::Mapping(serde_yaml::Mapping::new()));
+        .entry(serde_norway::Value::String("annotations".to_string()))
+        .or_insert_with(|| serde_norway::Value::Mapping(serde_norway::Mapping::new()));
     if let Some(annotations) = annotations.as_mapping_mut() {
         annotations.insert(
-            serde_yaml::Value::String(EDITED_ANNOTATION.to_string()),
-            serde_yaml::Value::String(marker),
+            serde_norway::Value::String(EDITED_ANNOTATION.to_string()),
+            serde_norway::Value::String(marker),
         );
     }
-    let yaml = serde_yaml::to_string(&doc).map_err(|e| ActionError::Refused(e.to_string()))?;
+    let yaml = serde_norway::to_string(&doc).map_err(|e| ActionError::Refused(e.to_string()))?;
 
     let title = format!("Edit {}", label(&row));
     let mut steps = vec![Step::ApplyYaml {

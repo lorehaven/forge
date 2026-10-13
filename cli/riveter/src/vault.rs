@@ -201,7 +201,7 @@ impl Vault {
     /// Reads and checks a file: right marker, every value of the form `ENC[age,...]` - so a plaintext value
     /// can never be mistaken for a secret that was encrypted.
     pub fn parse(text: &str) -> Result<Self> {
-        let vault: Self = serde_yaml::from_str(text).context("secrets.yaml is not valid YAML")?;
+        let vault: Self = serde_norway::from_str(text).context("secrets.yaml is not valid YAML")?;
         ensure!(
             text.contains(MARKER),
             "this is not a riveter secrets file (no `{MARKER}` marker)"
@@ -235,7 +235,7 @@ impl Vault {
         Ok(format!(
             "# Encrypted with age: committed, and opened only with the key named by {KEY_VAR} or {KEY_FILE_VAR}.\n\
              # Change it with `riveter secrets set|import|rekey`, not by hand.\n{}",
-            serde_yaml::to_string(self)?
+            serde_norway::to_string(self)?
         ))
     }
 

@@ -56,6 +56,8 @@ fn validate_tag_reference_accepts_exactly_one_normal_component() {
 
 #[test]
 fn repository_path_rejects_invalid_names_and_nests_valid_ones_under_the_root() {
+    // The storage root is process-global env; hold the lock the other tests take.
+    let _storage = support::WithDockerStorageRoot::new();
     assert!(repository_path("../etc").is_none());
     let path = repository_path("my/repo").expect("valid name");
     assert_eq!(
@@ -66,6 +68,8 @@ fn repository_path_rejects_invalid_names_and_nests_valid_ones_under_the_root() {
 
 #[test]
 fn blob_path_and_manifest_path_use_separate_sha256_subtrees() {
+    // The storage root is process-global env; hold the lock the other tests take.
+    let _storage = support::WithDockerStorageRoot::new();
     let blob = blob_path(VALID_DIGEST).expect("valid digest");
     let manifest = manifest_path(VALID_DIGEST).expect("valid digest");
 
@@ -90,6 +94,8 @@ fn blob_path_rejects_an_invalid_digest() {
 
 #[test]
 fn upload_path_nests_under_the_repository_s_uploads_directory() {
+    // The storage root is process-global env; hold the lock the other tests take.
+    let _storage = support::WithDockerStorageRoot::new();
     let path = upload_path("my/repo", "upload-uuid").expect("valid repo");
     assert_eq!(
         path.strip_prefix(docker_storage_root()).unwrap(),

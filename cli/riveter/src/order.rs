@@ -13,7 +13,7 @@
 
 use crate::render::{ResourceRef, kinds_match, resource_refs};
 use anyhow::{Context as _, Result, bail, ensure};
-use serde_yaml::Value as YamlValue;
+use serde_norway::Value as YamlValue;
 
 /// What an apply waits for after applying a resource.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

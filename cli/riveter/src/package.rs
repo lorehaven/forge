@@ -407,12 +407,12 @@ fn check_includes(env: &str, includes: &[String], files: &BTreeMap<String, Vec<u
 /// a placeholder would be indistinguishable from a literal.
 #[must_use]
 pub fn literal_secret_values(rendered: &str) -> Vec<String> {
-    let Ok(overlay) = serde_yaml::from_str::<serde_yaml::Value>(rendered) else {
+    let Ok(overlay) = serde_norway::from_str::<serde_norway::Value>(rendered) else {
         return Vec::new();
     };
     let Some(resources) = overlay
         .get("resources")
-        .and_then(serde_yaml::Value::as_sequence)
+        .and_then(serde_norway::Value::as_sequence)
     else {
         return Vec::new();
     };
@@ -421,15 +421,15 @@ pub fn literal_secret_values(rendered: &str) -> Vec<String> {
     for resource in resources {
         let kind = resource
             .get("kind")
-            .and_then(serde_yaml::Value::as_str)
+            .and_then(serde_norway::Value::as_str)
             .unwrap_or_default();
         let name = resource
             .get("name")
-            .and_then(serde_yaml::Value::as_str)
+            .and_then(serde_norway::Value::as_str)
             .unwrap_or("?");
 
         if kind.eq_ignore_ascii_case("raw") {
-            let text = serde_yaml::to_string(resource).unwrap_or_default();
+            let text = serde_norway::to_string(resource).unwrap_or_default();
             if text
                 .lines()
                 .any(|line| line.trim().trim_start_matches("- ") == "kind: Secret")
@@ -445,7 +445,10 @@ pub fn literal_secret_values(rendered: &str) -> Vec<String> {
         }
 
         for field in ["data", "string_data", "stringData"] {
-            let Some(values) = resource.get(field).and_then(serde_yaml::Value::as_mapping) else {
+            let Some(values) = resource
+                .get(field)
+                .and_then(serde_norway::Value::as_mapping)
+            else {
                 continue;
             };
             for (key, value) in values {
@@ -468,11 +471,11 @@ fn check_deployments(manifest: &Manifest, rendered: &str) -> Result<()> {
     if manifest.deployments.is_empty() {
         return Ok(());
     }
-    let value: serde_yaml::Value =
-        serde_yaml::from_str(rendered).context("could not read the rendered overlay")?;
+    let value: serde_norway::Value =
+        serde_norway::from_str(rendered).context("could not read the rendered overlay")?;
     let declared: Vec<String> = value
         .get("resources")
-        .and_then(serde_yaml::Value::as_sequence)
+        .and_then(serde_norway::Value::as_sequence)
         .into_iter()
         .flatten()
         .filter_map(|res| {
@@ -496,7 +499,7 @@ fn check_deployments(manifest: &Manifest, rendered: &str) -> Result<()> {
 
 /// The overlay's `namespace_name`, unless it is itself a `${VAR}` that only an install can resolve.
 fn declared_namespace(rendered: &str) -> Option<String> {
-    let value: serde_yaml::Value = serde_yaml::from_str(rendered).ok()?;
+    let value: serde_norway::Value = serde_norway::from_str(rendered).ok()?;
     let namespace = value.get("namespace_name")?.as_str()?.trim();
     (rivet_package::manifest::is_valid_name(namespace)).then(|| namespace.to_string())
 }
@@ -506,10 +509,10 @@ fn declared_namespace(rendered: &str) -> Option<String> {
 /// The same as `values.toml`, in the shape the rest of an estate's config is written in. Nested values are
 /// an error: a variable is one value.
 pub fn parse_values_yaml(text: &str) -> Result<BTreeMap<String, String>> {
-    let value: serde_yaml::Value = serde_yaml::from_str(text).context("not valid YAML")?;
+    let value: serde_norway::Value = serde_norway::from_str(text).context("not valid YAML")?;
     let mapping = match value {
-        serde_yaml::Value::Null => return Ok(BTreeMap::new()),
-        serde_yaml::Value::Mapping(mapping) => mapping,
+        serde_norway::Value::Null => return Ok(BTreeMap::new()),
+        serde_norway::Value::Mapping(mapping) => mapping,
         _ => bail!("must be a mapping of NAME: value"),
     };
 
@@ -527,10 +530,10 @@ pub fn parse_values_yaml(text: &str) -> Result<BTreeMap<String, String>> {
             "`{key}` is not a usable variable name"
         );
         let text = match value {
-            serde_yaml::Value::String(s) => s,
-            serde_yaml::Value::Number(n) => n.to_string(),
-            serde_yaml::Value::Bool(b) => b.to_string(),
-            serde_yaml::Value::Null => String::new(),
+            serde_norway::Value::String(s) => s,
+            serde_norway::Value::Number(n) => n.to_string(),
+            serde_norway::Value::Bool(b) => b.to_string(),
+            serde_norway::Value::Null => String::new(),
             _ => bail!("`{key}` must be a string, number or boolean, not a list or a mapping"),
         };
         values.insert(key, text);

@@ -28,7 +28,7 @@ thiserror = { workspace = true }
 toml = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = [
+windows-sys = { version = "0.61", features = [
   "Win32_System_Console",
   "Win32_UI_WindowsAndMessaging",
 ] }

@@ -252,10 +252,10 @@ pub fn inventory_line(env: &str) -> Result<String> {
     let rendered = crate::render::render_in_memory(env, ResourceScope::All, &Selector::default())?;
     let mut items = Vec::new();
     for (_, yaml) in rendered {
-        let doc: serde_yaml::Value = serde_yaml::from_str(&yaml)?;
-        let text = |value: Option<&serde_yaml::Value>| {
+        let doc: serde_norway::Value = serde_norway::from_str(&yaml)?;
+        let text = |value: Option<&serde_norway::Value>| {
             value
-                .and_then(serde_yaml::Value::as_str)
+                .and_then(serde_norway::Value::as_str)
                 .map(str::to_string)
         };
         items.push(serde_json::json!({

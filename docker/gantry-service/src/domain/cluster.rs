@@ -511,7 +511,7 @@ impl Cluster for KubeCluster {
         let mut value =
             serde_json::to_value(&object).map_err(|e| ClusterError::Kube(e.to_string()))?;
         clean_for_editing(&mut value);
-        serde_yaml::to_string(&value).map_err(|e| ClusterError::Kube(e.to_string()))
+        serde_norway::to_string(&value).map_err(|e| ClusterError::Kube(e.to_string()))
     }
 }
 
@@ -887,9 +887,9 @@ impl FakeCluster {
 
     /// Applies edited YAML: a workload's replicas follow it, anything else just keeps the text.
     pub fn apply_yaml(&self, yaml: &str) -> Result<(), String> {
-        let doc: serde_yaml::Value = serde_yaml::from_str(yaml).map_err(|e| e.to_string())?;
-        let text = |v: Option<&serde_yaml::Value>| {
-            v.and_then(serde_yaml::Value::as_str).map(str::to_string)
+        let doc: serde_norway::Value = serde_norway::from_str(yaml).map_err(|e| e.to_string())?;
+        let text = |v: Option<&serde_norway::Value>| {
+            v.and_then(serde_norway::Value::as_str).map(str::to_string)
         };
         let kind = text(doc.get("kind")).ok_or("no kind")?;
         let name =
@@ -910,7 +910,7 @@ impl FakeCluster {
             if let Some(replicas) = doc
                 .get("spec")
                 .and_then(|s| s.get("replicas"))
-                .and_then(serde_yaml::Value::as_i64)
+                .and_then(serde_norway::Value::as_i64)
             {
                 w.desired = i32::try_from(replicas).unwrap_or(i32::MAX);
                 w.ready = w.desired;

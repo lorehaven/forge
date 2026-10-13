@@ -16,7 +16,6 @@ use quench_auth::domain::realm;
 use quench_auth::domain::session::SessionDb;
 use quench_db::prelude::{Crud, Db};
 use quench_http::prelude::{FromRequest, HttpError, Inject, Query, Request, Response, get, post};
-use rand::RngCore;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
@@ -300,7 +299,7 @@ pub async fn subject_from_cookie(
 
 pub fn random_code() -> String {
     let mut buf = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut buf);
+    getrandom::fill(&mut buf).expect("the OS random source is available");
     URL_SAFE_NO_PAD.encode(buf)
 }
 

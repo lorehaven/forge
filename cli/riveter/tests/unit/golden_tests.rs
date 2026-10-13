@@ -113,7 +113,7 @@ fn every_rendered_document_is_valid_yaml() {
         let rendered = render_fixture(&path);
 
         for (i, doc) in rendered.split("\n---\n").enumerate() {
-            let parsed: serde_yaml::Value = serde_yaml::from_str(doc)
+            let parsed: serde_norway::Value = serde_norway::from_str(doc)
                 .unwrap_or_else(|e| panic!("{name} document {i} is not valid YAML: {e}\n\n{doc}"));
 
             // Anything Kubernetes will accept has at least these two.

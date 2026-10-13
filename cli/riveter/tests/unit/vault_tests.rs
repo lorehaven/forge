@@ -607,7 +607,7 @@ fn config_overlay(level: &str, secret: &str) -> tempfile::TempDir {
     dir
 }
 
-fn render_cfg(dir: &tempfile::TempDir) -> Vec<serde_yaml::Value> {
+fn render_cfg(dir: &tempfile::TempDir) -> Vec<serde_norway::Value> {
     let workspace = riveter::env::Workspace {
         overlays_dir: Some(dir.path().join("overlays")),
         output_dir: Some(dir.path().join("manifests")),
@@ -622,12 +622,12 @@ fn render_cfg(dir: &tempfile::TempDir) -> Vec<serde_yaml::Value> {
         )
     })
     .unwrap();
-    serde_yaml::Deserializer::from_str(&std::fs::read_to_string(&rendered.path).unwrap())
+    serde_norway::Deserializer::from_str(&std::fs::read_to_string(&rendered.path).unwrap())
         .map(|doc| serde::Deserialize::deserialize(doc).unwrap())
         .collect()
 }
 
-fn hash_of(docs: &[serde_yaml::Value], name: &str) -> Option<String> {
+fn hash_of(docs: &[serde_norway::Value], name: &str) -> Option<String> {
     docs.iter()
         .find(|d| d["kind"] == "Deployment" && d["metadata"]["name"] == name)
         .and_then(|d| {
