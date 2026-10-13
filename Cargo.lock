@@ -220,7 +220,7 @@ dependencies = [
 
 [[package]]
 name = "anvil"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -849,7 +849,7 @@ dependencies = [
 
 [[package]]
 name = "conveyor-cli"
-version = "0.3.15"
+version = "0.3.16"
 dependencies = [
  "anyhow",
  "clap",
@@ -879,7 +879,7 @@ dependencies = [
 
 [[package]]
 name = "conveyor-service"
-version = "0.6.8"
+version = "0.6.9"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -1986,7 +1986,7 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "foreman"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "anyhow",
  "clap",
@@ -2026,7 +2026,7 @@ dependencies = [
 
 [[package]]
 name = "forge-toolbox"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "anyhow",
  "clap",
@@ -2055,7 +2055,7 @@ dependencies = [
 
 [[package]]
 name = "foundry-service"
-version = "0.2.17"
+version = "0.2.18"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -2203,7 +2203,7 @@ dependencies = [
 
 [[package]]
 name = "gantry-service"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2239,7 +2239,7 @@ dependencies = [
 
 [[package]]
 name = "gatehouse-service"
-version = "0.3.7"
+version = "0.3.8"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4497,7 +4497,7 @@ checksum = "007d8adb5ddab6f8e3f491ac63566a7d5002cc7ed73901f72057943fa71ae1ae"
 
 [[package]]
 name = "pulley"
-version = "0.1.17"
+version = "0.1.18"
 dependencies = [
  "assert_cmd",
  "chrono",
@@ -5069,7 +5069,7 @@ dependencies = [
 
 [[package]]
 name = "riveter"
-version = "0.3.5"
+version = "0.3.6"
 dependencies = [
  "age",
  "anyhow",
@@ -5274,7 +5274,7 @@ checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
 name = "sage-service"
-version = "0.5.16"
+version = "0.5.17"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -6125,7 +6125,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "switchboard-service"
-version = "0.5.11"
+version = "0.5.12"
 dependencies = [
  "async-trait",
  "bytes",
@@ -7004,7 +7004,7 @@ dependencies = [
 
 [[package]]
 name = "warehouse-cli"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -7023,7 +7023,7 @@ dependencies = [
 
 [[package]]
 name = "warehouse-service"
-version = "0.5.8"
+version = "0.5.9"
 dependencies = [
  "async-trait",
  "axmldecoder",
@@ -7204,7 +7204,7 @@ checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
 
 [[package]]
 name = "welder"
-version = "0.2.8"
+version = "0.2.9"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7460,7 +7460,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "workbench-service"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "async-trait",
  "bytes",
