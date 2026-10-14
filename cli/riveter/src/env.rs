@@ -160,11 +160,43 @@ pub fn resolve_env(explicit: Option<&str>) -> anyhow::Result<String> {
         return current_env();
     };
 
+    anyhow::ensure!(
+        !explicit.is_some_and(|e| e.contains(',')),
+        "this command takes one environment; only `apply` and `diff` accept a list (`--env a,b`)"
+    );
+
     let env = env.trim();
     anyhow::ensure!(!env.is_empty(), "--env needs an environment name");
     ensure_overlay_exists(env)?;
 
     Ok(env.to_string())
+}
+
+/// Resolves the environments for a command that can span clusters: `--env a,b,c`, in the order
+/// given. Without `--env` this is the single current environment.
+///
+/// Every name is checked before anything runs, and a name given twice is an error rather than a
+/// second apply to the same place.
+pub fn resolve_envs(explicit: Option<&str>) -> anyhow::Result<Vec<String>> {
+    let Some(list) = explicit else {
+        return Ok(vec![current_env()?]);
+    };
+
+    let mut envs: Vec<String> = Vec::new();
+    for name in list.split(',').map(str::trim) {
+        anyhow::ensure!(
+            !name.is_empty(),
+            "--env has an empty entry in `{list}`; name each environment, e.g. `--env a,b`"
+        );
+        anyhow::ensure!(
+            !envs.iter().any(|e| e == name),
+            "environment `{name}` is listed twice in --env"
+        );
+        ensure_overlay_exists(name)?;
+        envs.push(name.to_string());
+    }
+
+    Ok(envs)
 }
 
 pub fn current_env() -> anyhow::Result<String> {

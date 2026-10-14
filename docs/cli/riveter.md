@@ -126,6 +126,24 @@ Both halves accept `*` and `?` wildcards, matching is case-insensitive, and kind
 
 An overlay can name the kubectl context it deploys to (`kube_context` in the example above), so which cluster gets hit is a property of the environment rather than of whatever `kubectl config use-context` was run last. `apply` and `delete` pass `--context <name>` to kubectl and report the target before acting (`context  prod -> prod-cluster`). An overlay that pins nothing still works, but warns and names the cluster it is about to use instead. `kube_context` accepts `${VAR}` like any other value, and is consumed by riveter rather than rendered into the manifests.
 
+### Several environments in one command
+
+`apply` and `diff` take a comma-separated list, `riveter --env canary,prod apply`, for a rollout that spans clusters. The environments run one at a time in the order given, so the first is the canary.
+
+- **Checked before anything is applied.** Every listed environment is rendered first, and the run is refused if any of them fails to render or **pins no `kube_context`**. With one environment a missing `kube_context` is a warning; across several it would send them all to whichever cluster kubectl has selected, so it is an error that names the offender.
+- **Stops at the first failure.** The environments after it are not started. The one that failed may be partly applied, exactly as for a single `apply`.
+- **One report.** The run ends with a line per environment - its context and what happened (`applied 12 resource(s)`, `FAILED: ...`, `not attempted`) - and exits non-zero if any failed or were skipped. For `diff`, "differs" is a result, not a failure.
+- A name listed twice, an empty entry (`a,,b`) or a name with no overlay is refused up front. Every other command takes a single environment and says so when given a list.
+
+### What changed since a commit
+
+`riveter diff --against <git-ref>` answers "what changed in this overlay since the last release" without a cluster. It reads the overlay as it was at the ref (a commit, branch or tag) out of git, renders it, renders the overlay as it is now, and prints a unified diff of the two manifests - `a/<ref>/<env>.yaml` against `b/working-tree/<env>.yaml`.
+
+- It compares what riveter would *send*, not the overlay's source, so reordering keys or editing a comment is correctly "no change", and a template edit that changes the output shows up.
+- `.env` is not committed, so the current one is used for both sides: any difference is the overlay's, never a change of values between the two renders.
+- Nothing is written to the working directory, and it works from a subdirectory of the repository. `--scope` and targets apply as for any other command.
+- One environment at a time, and it needs `git` on `PATH`. A ref that does not exist, or an environment that had no overlay at the ref, is refused by name.
+
 ### Seeing and finishing a change
 
 `render` shows what would be *sent*; `diff` shows what would *change*, by handing the rendered file to `kubectl diff`. `apply` then waits for every Deployment, StatefulSet and DaemonSet it touched to become ready before reporting success — kubectl accepting a manifest only means the API server stored it, so without this a rollout that never starts a healthy pod still looks like a successful deploy. Use `--no-wait` to return as soon as kubectl accepts the manifests, and `--timeout <seconds>` to change the per-rollout budget (default 300s).

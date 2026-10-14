@@ -1,7 +1,9 @@
 use anyhow::Result;
 use clap::{CommandFactory, Parser};
+use riveter::against::diff_against;
 use riveter::cli::{ApplyScope, Cli, Cmd, EnvCmd};
-use riveter::env::{env_list, env_set, env_show, resolve_env};
+use riveter::env::{env_list, env_set, env_show, resolve_env, resolve_envs};
+use riveter::multi::{apply_many, diff_many};
 use riveter::package_cmd::{
     InstallArgs, install_command, pack_command, publish_command, pull_command, remote_command,
 };
@@ -60,13 +62,17 @@ fn main() -> Result<()> {
             scope,
             targets,
         }) => {
-            let env = resolve_env(cli.env.as_deref())?;
+            let envs = resolve_envs(cli.env.as_deref())?;
             let selector = Selector::parse(&targets)?;
             let wait = WaitPolicy {
                 enabled: !no_wait,
                 timeout_seconds: timeout,
             };
-            let rendered = kubectl_apply(&env, dry_run, map_apply_scope(scope), &selector, wait)?;
+            if envs.len() > 1 {
+                return apply_many(&envs, dry_run, map_apply_scope(scope), &selector, wait);
+            }
+            let env = &envs[0];
+            let rendered = kubectl_apply(env, dry_run, map_apply_scope(scope), &selector, wait)?;
 
             if rendered.resource_count == 0 {
                 ok("no resources matched selected scope");
@@ -80,10 +86,34 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
-        Some(Cmd::Diff { scope, targets }) => {
-            let env = resolve_env(cli.env.as_deref())?;
+        Some(Cmd::Diff {
+            against,
+            scope,
+            targets,
+        }) => {
             let selector = Selector::parse(&targets)?;
-            let (rendered, differs) = kubectl_diff(&env, map_apply_scope(scope), &selector)?;
+            if let Some(git_ref) = against {
+                // No cluster is involved, so there is no list of clusters to walk: one overlay, two
+                // revisions of it.
+                anyhow::ensure!(
+                    !cli.env.as_deref().is_some_and(|e| e.contains(',')),
+                    "--against compares one environment with its own history; name one `--env`"
+                );
+                let env = resolve_env(cli.env.as_deref())?;
+                let found = diff_against(&env, &git_ref, map_apply_scope(scope), &selector)?;
+                if found.differs {
+                    warn(&format!("{env} renders differently from {}", found.git_ref));
+                } else {
+                    ok(&format!("{env} renders the same as {}", found.git_ref));
+                }
+                return Ok(());
+            }
+            let envs = resolve_envs(cli.env.as_deref())?;
+            if envs.len() > 1 {
+                return diff_many(&envs, map_apply_scope(scope), &selector);
+            }
+            let env = &envs[0];
+            let (rendered, differs) = kubectl_diff(env, map_apply_scope(scope), &selector)?;
 
             if rendered.resource_count == 0 {
                 ok("no resources matched selected scope");

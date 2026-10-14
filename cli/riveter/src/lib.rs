@@ -1,10 +1,12 @@
 #![cfg_attr(test, deny(rust_2018_idioms))]
 
+pub mod against;
 pub mod cli;
 pub mod config;
 pub mod env;
 pub mod help;
 pub mod image_updates;
+pub mod multi;
 pub mod order;
 pub mod package;
 pub mod package_cmd;

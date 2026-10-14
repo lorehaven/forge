@@ -27,6 +27,10 @@ pub struct Cli {
     ///
     /// The environment recorded by `env set` is shared state in the working
     /// directory; naming it here pins one invocation to one environment.
+    ///
+    /// `apply` and `diff` also take a comma-separated list (`--env a,b,c`): the
+    /// environments run in that order, each bound to its own `kube_context`, and the
+    /// run stops at the first failure with one report for all of them.
     #[arg(long, short = 'e', global = true, value_name = "ENV")]
     pub env: Option<String>,
 
@@ -85,8 +89,15 @@ pub enum Cmd {
         targets: Vec<String>,
     },
     /// Show what applying would change, via `kubectl diff`
+    ///
+    /// With `--against <git-ref>`, instead shows what the overlay's rendered
+    /// manifests changed since that commit, branch or tag. No cluster is
+    /// contacted.
     #[command(visible_alias = "df")]
     Diff {
+        /// Compare against the overlay as of this git ref, not a cluster
+        #[arg(long, value_name = "GIT_REF")]
+        against: Option<String>,
         #[arg(long, value_enum, default_value_t = ApplyScope::Mutable, help = SCOPE_HELP)]
         scope: ApplyScope,
         #[arg(value_name = "TARGET", help = TARGET_HELP)]

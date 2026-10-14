@@ -1,3 +1,5 @@
+#[path = "unit/against_tests.rs"]
+mod against_tests;
 #[path = "unit/cli_tests.rs"]
 mod cli_tests;
 #[path = "unit/config_tests.rs"]
@@ -18,6 +20,8 @@ mod image_digest_tests;
 mod image_updates_pure_tests;
 #[path = "unit/image_updates_tests.rs"]
 mod image_updates_tests;
+#[path = "unit/multi_tests.rs"]
+mod multi_tests;
 #[path = "unit/package_tests.rs"]
 mod package_tests;
 #[path = "unit/prune_tests.rs"]

@@ -150,6 +150,10 @@ pub const COMMANDS: &[CommandHelp] = &[
             ("apply --dry-run '*/api'", "preview everything named api"),
             ("apply --no-wait", "do not block on readiness"),
             ("apply --scope all namespace", "include immutable resources"),
+            (
+                "--env canary,prod apply",
+                "each environment's own cluster, in order; stops at the first failure",
+            ),
         ],
         targets: true,
     },
@@ -163,10 +167,24 @@ pub const COMMANDS: &[CommandHelp] = &[
                  rendered file. Shows the change against live cluster state, which a\n\
                  render on its own cannot.",
         subcommands: &[],
-        options: &[("--scope <scope>", SCOPE_MUTABLE)],
+        options: &[
+            (
+                "--against <git-ref>",
+                "Compare with the overlay at a commit, branch or tag instead of a cluster",
+            ),
+            ("--scope <scope>", SCOPE_MUTABLE),
+        ],
         examples: &[
             ("diff", "what a default apply would change"),
+            (
+                "diff --against v1.4",
+                "what the overlay changed since v1.4; no cluster",
+            ),
             ("diff deployment/api", "one deployment"),
+            (
+                "--env canary,prod diff",
+                "every listed environment, one report",
+            ),
         ],
         targets: true,
     },
