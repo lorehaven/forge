@@ -14,7 +14,7 @@ Feature: Sparse Index Protocol
     And response should contain "api"
 
   Scenario: Fetch crate index entry
-    Given valid token is obtained
+    Given I hold a token scoped "user warehouse:write"
     When a crate "test-crate-index-123" version "0.1.0" is published
     Then response status should be 200
     When GET request is sent to "/index/te/st/test-crate-index-123"

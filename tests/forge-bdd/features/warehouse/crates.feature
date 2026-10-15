@@ -21,7 +21,7 @@ Feature: Crates Registry API
 
   Scenario: Create and delete a crate (Publish and Yank)
     Given warehouse API is available
-    Given valid token is obtained
+    Given I hold a token scoped "user warehouse:write"
     When a crate "test-crate-random-unique-xyz-789" version "1.0.0" is published
     Then response status should be 200
     When GET request is sent to "/api/v1/crates?q=test-crate-random-unique-xyz-789"
@@ -32,7 +32,7 @@ Feature: Crates Registry API
     Then response status should be 200
 
   Scenario: Manage crate owners
-    Given valid token is obtained
+    Given I hold a token scoped "user warehouse:write"
     And a crate "test-owners-crate" version "1.0.0" is published
     When GET request is sent to "/api/v1/crates/test-owners-crate/owners"
     Then response status should be 200
@@ -58,12 +58,17 @@ Feature: Crates Registry API
     Then response status should be 200
     And response should not contain "new-owner"
 
+  Scenario: A read grant cannot publish a crate
+    Given I hold a token scoped "user warehouse:read"
+    When a crate "test-read-only" version "1.0.0" is published
+    Then response status should be 403
+
   Scenario: Publish crate without token
     When a crate "test-no-token" version "1.0.0" is published without token
     Then response status should be 401
 
   Scenario: Publish crate with invalid metadata
-    Given valid token is obtained
+    Given I hold a token scoped "user warehouse:write"
     When a crate is published with invalid metadata:
       """
       {"invalid": "metadata"}
@@ -71,7 +76,7 @@ Feature: Crates Registry API
     Then response status should be 400
 
   Scenario: Yank non-existent crate version
-    Given valid token is obtained
+    Given I hold a token scoped "user warehouse:write"
     When DELETE request is sent to "/api/v1/crates/non-existent-crate/1.0.0/yank" with token for crates
     Then response status should be 404
 
@@ -82,7 +87,7 @@ Feature: Crates Registry API
     And response should contain "dl"
 
   Scenario: Get crate index
-    Given valid token is obtained
+    Given I hold a token scoped "user warehouse:write"
     And a crate "test-index-crate" version "1.1.0" is published
     When GET request is sent to "/index/te/st/test-index-crate"
     Then response status should be 200

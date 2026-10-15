@@ -1,14 +1,6 @@
 use crate::world::ForgeWorld;
-use base64::Engine;
 use chrono::Utc;
 use cucumber::{given, when};
-
-#[given("valid token is obtained")]
-async fn obtain_token(world: &mut ForgeWorld) {
-    let auth = base64::engine::general_purpose::STANDARD
-        .encode(format!("{}:{}", world.username, world.password));
-    world.token = Some(auth);
-}
 
 #[given(expr = "a crate {string} version {string} is published")]
 #[when(expr = "a crate {string} version {string} is published")]
@@ -35,7 +27,7 @@ async fn publish_crate(world: &mut ForgeWorld, name: String, version: String) {
     let url = format!("{}/api/v1/crates/new", world.warehouse_url);
     let mut rb = world.client.put(&url);
     if let Some(token) = &world.token {
-        rb = rb.header("Authorization", token);
+        rb = rb.bearer_auth(token);
     }
 
     let metadata = serde_json::json!({
@@ -90,7 +82,7 @@ async fn send_delete_request_with_token(world: &mut ForgeWorld, path: String) {
 
     let mut rb = world.client.delete(&url);
     if let Some(token) = &world.token {
-        rb = rb.header("Authorization", token);
+        rb = rb.bearer_auth(token);
     }
     let res = rb.send().await.expect("Failed to send DELETE request");
     world.last_response_headers = res.headers().clone();
@@ -103,7 +95,7 @@ async fn send_put_request_with_token(world: &mut ForgeWorld, path: String) {
 
     let mut rb = world.client.put(&url);
     if let Some(token) = &world.token {
-        rb = rb.header("Authorization", token);
+        rb = rb.bearer_auth(token);
     }
     let res = rb.send().await.expect("Failed to send PUT request");
     world.last_response_headers = res.headers().clone();
@@ -121,7 +113,7 @@ async fn send_put_request_with_token_and_body(
 
     let mut rb = world.client.put(&url);
     if let Some(token) = &world.token {
-        rb = rb.header("Authorization", token);
+        rb = rb.bearer_auth(token);
     }
     let res = rb
         .header("Content-Type", "application/json")
@@ -144,7 +136,7 @@ async fn send_delete_request_with_token_and_body(
 
     let mut rb = world.client.delete(&url);
     if let Some(token) = &world.token {
-        rb = rb.header("Authorization", token);
+        rb = rb.bearer_auth(token);
     }
     let res = rb
         .header("Content-Type", "application/json")
@@ -197,7 +189,7 @@ async fn publish_crate_invalid_metadata(world: &mut ForgeWorld, step: &cucumber:
     let url = format!("{}/api/v1/crates/new", world.warehouse_url);
     let mut rb = world.client.put(&url);
     if let Some(token) = &world.token {
-        rb = rb.header("Authorization", token);
+        rb = rb.bearer_auth(token);
     }
 
     let metadata_len = metadata_str.len() as u32;

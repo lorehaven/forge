@@ -31,7 +31,7 @@ fn index_config_response() -> Response {
     let config = IndexConfig {
         dl: format!("{base}/api/v1/crates/{{crate}}/{{version}}/download"),
         api: base.to_string(),
-        auth_required: false,
+        auth_required: crate::routers::crates::reads_require_auth(),
     };
     Response::json(StatusCode::OK, &config)
         .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))

@@ -1,3 +1,4 @@
+pub mod admin;
 pub mod artifacts;
 pub mod crates;
 pub mod docker;

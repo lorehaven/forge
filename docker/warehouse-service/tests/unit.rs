@@ -43,6 +43,8 @@ mod routers_artifacts_publish_tests;
 mod routers_artifacts_unyank_tests;
 #[path = "unit/routers_artifacts_yank_tests.rs"]
 mod routers_artifacts_yank_tests;
+#[path = "unit/routers_crates_admin_auth_tests.rs"]
+mod routers_crates_admin_auth_tests;
 #[path = "unit/routers_crates_mod_tests.rs"]
 mod routers_crates_mod_tests;
 #[path = "unit/routers_crates_owners_tests.rs"]

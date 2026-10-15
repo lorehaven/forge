@@ -6,10 +6,10 @@ Warehouse is the Forge estate's storage service: one address for a Cargo registr
 
 - **Files API** — plain named-storage file upload/download/list/delete, streamed to disk rather than buffered, behind the realm's normal bearer/cookie auth.
 - **Docker Registry HTTP API v2** — the standard blob/manifest/catalog routes, with its own Basic-then-Bearer token exchange independent of the realm's JWKS-based tokens.
-- **Crates registry** (`/api/v1/crates`) — publish, download, yank/unyank, owners and search, plus a sparse index. Has no real authentication yet.
+- **Crates registry** (`/api/v1/crates`, sparse index at `/index`) — publish, download, yank/unyank, owners and search. Every write needs the blanket `warehouse:write` grant; reads are open unless `CRATES_REQUIRE_AUTH_FOR_READS` is on.
 - **Artifact registry** (`/api/v1/artifacts`) — publish, download, per-program / per-platform version listing, latest-version resolution and yank/unyank for Android, Linux and Windows builds, behind the realm's normal bearer/cookie auth. Android identity comes from decoding the APK's own `AndroidManifest.xml` server-side; desktop identity is taken from the publish URL. `/api/v1/apk` remains as an `android`-only alias.
 - **Rivet registry** (`/api/v1/rivets`) — publish, download, per-package version listing, `latest` resolution by semver and yank/unyank for `.rivet` packages (a whole Riveter overlay, versioned), behind the realm's normal bearer/cookie auth. The archive is fully validated server-side, and its own `rivet.toml` must agree with the publish URL.
-- **Admin endpoints** (`/admin`) — garbage collection for both the crates and Docker storages.
+- **Admin endpoints** (`/admin`) — garbage collection for both the crates and Docker storages, behind the realm's auth and the blanket `warehouse:write` grant.
 - **A small server-rendered UI** (`{BASE_PATH}/ui`) for browsing the Docker and crates catalogs, managing dynamic file storages, and yanking/unyanking artifact versions.
 
 ## Architecture
@@ -33,7 +33,7 @@ Endpoints common to both kinds: `GET /api/v1/files` (storage list — static ent
 
 The `path` parameter is lexically validated the same way for both kinds — `..`, absolute paths, empty paths and control bytes are refused (never normalised away). For a static storage the resolved path is separately checked to stay inside the storage root once every symlink is followed (both checks answer `403`); a dynamic storage has no filesystem path to confine in the first place, since `path` is only ever a database key resolved to a blob by digest.
 
-The crates registry and `/admin` are **not** behind any of this — they have no real authentication yet, so there is no identity to build a permission on top of. That is separate, unstarted work.
+The crates registry and `/admin` use the same `Auth` + `RequireWrite` pair as the artifact registry — see [Crates registry and admin](#crates-registry-and-admin).
 
 ### Docker Registry API v2
 
@@ -63,7 +63,14 @@ Blob transfer is streamed end to end: `PATCH`/`PUT` append the request body to t
 
 ### Crates registry and admin
 
-`/api/v1/crates` implements the Cargo registry protocol (publish, download, yank/unyank, owners, search) plus a sparse index under `/api/v1/crates/index`. `/admin` exposes garbage collection for both the crates and Docker blob storages. Neither surface authenticates callers today.
+`/api/v1/crates` implements the Cargo registry protocol (publish, download, yank/unyank, owners, search); the sparse index lives at `{BASE_PATH}/index/` (what a client's `sparse+https://…/index/` URL points at). `/admin` exposes garbage collection for both the crates and Docker blob storages.
+
+Both sit behind `Auth` (bearer token or realm cookie, verified against gatehouse's JWKS) and `RequireWrite`:
+
+- **Writes** — publish, yank/unyank, owner changes, the owners `PUT`/`DELETE`, and every `/admin` call — need the blanket `warehouse:write` grant (or a wildcard role). A missing or invalid token is `401`, a read-only one is `403`. There is no unauthenticated write surface.
+- **Reads** — index, download, search and the owner listing — need no identity by default, so existing Cargo clients keep resolving dependencies. Set `CRATES_REQUIRE_AUTH_FOR_READS=true` to require any valid realm identity for them too; the index `config.json` then advertises `auth-required`, and Cargo sends its token on every request.
+- **Cargo clients** send the configured token verbatim, so store it with its scheme: `cargo login --registry <name>` with `Bearer <jwt>` (the realm token from a gatehouse `client_credentials` grant; `warehouse crates login --token <jwt>` adds the `Bearer ` itself).
+- With `SERVICE_AUTH_ENABLED=false` the whole thing is bypassed, like every other realm-protected surface.
 
 ### Artifact registry
 
@@ -145,7 +152,8 @@ Selected environment variables:
 | `DYNAMIC_STORAGE_ROOT` | root of the shared, content-addressed blob store for dynamic storages |
 | `WAREHOUSE_DEFAULT_STORAGE_QUOTA_BYTES` | quota a new dynamic storage gets when its admin doesn't name one (default 10GiB) |
 | `DOCKER_TOKEN_SECRET` | signs Docker Registry bearer tokens (required, no default) |
-| `SERVICE_AUTH_ENABLED` | Docker Registry auth on/off (default `false`) |
+| `SERVICE_AUTH_ENABLED` | realm auth (Docker Registry, files, artifacts, rivets, crates writes, `/admin`) on/off (default `false`) |
+| `CRATES_REQUIRE_AUTH_FOR_READS` | also require a realm identity for crates index/download/search (default `false`) |
 | `SERVICE_NAME` / `SERVICE_REALM` | Docker token `service`/`realm` claim (defaults `service` / `https://localhost:8698/token`) |
 | `STORAGE_PATH` / `CRATES_STORAGE_PATH` / `ARTIFACT_STORAGE_PATH` | Docker / crates / artifact blob roots (`APK_STORAGE_PATH` honoured as a fallback for the last; its old `<program>/<version_code>/` APK tree is relocated to `<program>/android/<version_code>/` once on boot) |
 | `MAX_AUTH_FAILURES_PER_MINUTE` / `AUTH_FAILURE_WINDOW_SECONDS` | Docker Registry auth rate limit (defaults 30 / 60) |
