@@ -50,3 +50,26 @@ Feature: Artifacts API permission enforcement
     Given I hold no token
     When I request the apk catalog
     Then response status should be 401
+
+  # macOS has no identity check of its own - like Linux and Windows it trusts the publish URL
+  # and needs `?format=`. Re-runs hit 409 on the publish, so only "not refused" is asserted there.
+  Scenario: A macOS build needs a format to be published
+    Given I hold a token scoped "user warehouse:write"
+    When I publish artifact "com.example.bdd.mac/macos/1"
+    Then response status should be 422
+
+  Scenario: A published macOS build is addressable by its platform
+    Given I hold a token scoped "user warehouse:write"
+    When I publish artifact "com.example.bdd.mac/macos/1?format=dmg&arch=aarch64"
+    Then the response status should not be 403
+    When I request artifact metadata for "com.example.bdd.mac/macos/1"
+    Then response status should be 200
+    And response should contain "macos"
+
+  # `/api/v1/apk` still works, but every call says it is going away.
+  Scenario: The apk alias announces its deprecation
+    Given I hold a token scoped "user warehouse:read"
+    When I request the apk catalog
+    Then response status should be 200
+    And response header "deprecation" should contain "true"
+    And response header "link" should contain "successor-version"

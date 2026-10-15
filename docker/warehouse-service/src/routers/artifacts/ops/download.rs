@@ -62,11 +62,7 @@ pub async fn serve(version: &ArtifactVersion) -> Response {
         Err(_) => return not_found("program or version not found"),
     };
 
-    let content_type = if version.format == "apk" {
-        "application/vnd.android.package-archive"
-    } else {
-        "application/octet-stream"
-    };
+    let content_type = content_type_for(&version.format);
 
     // `from_bytes` sets content-length itself.
     Response::from_bytes(StatusCode::OK, data.into())
@@ -75,6 +71,15 @@ pub async fn serve(version: &ArtifactVersion) -> Response {
             "content-disposition",
             format!("attachment; filename=\"{}\"", version.filename),
         )
+}
+
+/// The `Content-Type` a build of `format` is served with; anything unlisted is opaque bytes.
+pub fn content_type_for(format: &str) -> &'static str {
+    match format {
+        "apk" => "application/vnd.android.package-archive",
+        "dmg" => "application/x-apple-diskimage",
+        _ => "application/octet-stream",
+    }
 }
 
 pub fn register_routes() {

@@ -1,5 +1,9 @@
 //! `/api/v1/apk/*` - the pre-multi-platform routes, kept working while Pedlar moves to
 //! `/api/v1/artifacts`. Thin `platform=android` wrappers over [`super::ops`]; remove once unused.
+//!
+//! Deprecated: [`Deprecation`] logs every call (who, what, which client) and marks the response
+//! with `Deprecation`/`Sunset`/`Link` headers; `FEATURE_APK_ALIAS_ENABLED=false` turns the whole
+//! prefix into `410 Gone`, so the removal is a config change once the log goes quiet.
 
 use crate::domain::artifact::{ArtifactVersion, Platform};
 use crate::routers::artifacts::ops::publish::{PublishParams, publish as publish_inner};
@@ -9,10 +13,88 @@ use crate::routers::artifacts::ops::{
 };
 use crate::routers::artifacts::validate_program;
 use crate::routers::docker::RawBody;
+use async_trait::async_trait;
+use quench_auth::domain::jwt::Claims;
 use quench_db::prelude::{Crud, Db};
-use quench_http::prelude::{Inject, Path, Query, Response, delete, get, http::StatusCode, put};
+use quench_http::prelude::{
+    Endpoint, Inject, Middleware, Path, Query, Request, Response, delete, get, http::StatusCode,
+    put,
+};
 
 const ANDROID: &str = "android";
+
+/// Whether the deprecated `/api/v1/apk` routes still answer. Read fresh every call so a test can
+/// flip it; defaults to on.
+pub fn alias_enabled() -> bool {
+    crate::routers::feature_enabled("FEATURE_APK_ALIAS_ENABLED", true)
+}
+
+/// The `Sunset` header value, from `APK_ALIAS_SUNSET` (an HTTP-date, e.g.
+/// `Wed, 31 Dec 2026 00:00:00 GMT`); `None` while no removal date is scheduled.
+pub fn alias_sunset() -> Option<String> {
+    let value = envmnt::get_or("APK_ALIAS_SUNSET", "");
+    let value = value.trim();
+    (!value.is_empty()).then(|| value.to_string())
+}
+
+/// Usage logging and deprecation signalling for `/api/v1/apk`. Mounted inside `Auth` so the log
+/// can name the caller; an unauthenticated probe never reaches it.
+pub struct Deprecation {
+    successor: String,
+}
+
+impl Deprecation {
+    /// `successor` is the path prefix callers should move to, e.g. `/warehouse/api/v1/artifacts`.
+    pub fn new(successor: impl Into<String>) -> Self {
+        Self {
+            successor: successor.into(),
+        }
+    }
+}
+
+#[async_trait]
+impl Middleware for Deprecation {
+    async fn handle(&self, req: Request, next: &dyn Endpoint) -> Response {
+        let subject = req
+            .extensions()
+            .get::<Claims>()
+            .map(|claims| claims.sub.clone())
+            .unwrap_or_else(|| "anonymous".to_string());
+        let user_agent = req.header("user-agent").unwrap_or("-").to_string();
+        let method = req.method().clone();
+        let path = req.uri().path().to_string();
+
+        if !alias_enabled() {
+            tracing::warn!(
+                %method, %path, %subject, %user_agent,
+                "deprecated /api/v1/apk call refused: alias is switched off"
+            );
+            return Response::json(
+                StatusCode::GONE,
+                &serde_json::json!({
+                    "errors": [{
+                        "detail": format!("/api/v1/apk has been removed; use {}", self.successor)
+                    }]
+                }),
+            )
+            .unwrap_or_else(|_| Response::new(StatusCode::GONE));
+        }
+
+        tracing::warn!(
+            %method, %path, %subject, %user_agent,
+            "deprecated /api/v1/apk call - migrate to {}", self.successor
+        );
+
+        let mut response = next.call(req).await.header("deprecation", "true").header(
+            "link",
+            format!("<{}>; rel=\"successor-version\"", self.successor),
+        );
+        if let Some(sunset) = alias_sunset() {
+            response = response.header("sunset", sunset);
+        }
+        response
+    }
+}
 
 #[put("/api/v1/apk/{package}/{version_code}")]
 #[tracing::instrument(skip(body))]

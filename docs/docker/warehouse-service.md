@@ -7,7 +7,7 @@ Warehouse is the Forge estate's storage service: one address for a Cargo registr
 - **Files API** — plain named-storage file upload/download/list/delete, streamed to disk rather than buffered, behind the realm's normal bearer/cookie auth.
 - **Docker Registry HTTP API v2** — the standard blob/manifest/catalog routes, with its own Basic-then-Bearer token exchange independent of the realm's JWKS-based tokens.
 - **Crates registry** (`/api/v1/crates`, sparse index at `/index`) — publish, download, yank/unyank, owners and search. Every write needs the blanket `warehouse:write` grant; reads are open unless `CRATES_REQUIRE_AUTH_FOR_READS` is on.
-- **Artifact registry** (`/api/v1/artifacts`) — publish, download, per-program / per-platform version listing, latest-version resolution and yank/unyank for Android, Linux and Windows builds, behind the realm's normal bearer/cookie auth. Android identity comes from decoding the APK's own `AndroidManifest.xml` server-side; desktop identity is taken from the publish URL. `/api/v1/apk` remains as an `android`-only alias.
+- **Artifact registry** (`/api/v1/artifacts`) — publish, download, per-program / per-platform version listing, latest-version resolution and yank/unyank for Android, Linux, Windows and macOS builds, behind the realm's normal bearer/cookie auth. Android identity comes from decoding the APK's own `AndroidManifest.xml` server-side; desktop identity is taken from the publish URL. `/api/v1/apk` remains as a deprecated `android`-only alias.
 - **Rivet registry** (`/api/v1/rivets`) — publish, download, per-package version listing, `latest` resolution by semver and yank/unyank for `.rivet` packages (a whole Riveter overlay, versioned), behind the realm's normal bearer/cookie auth. The archive is fully validated server-side, and its own `rivet.toml` must agree with the publish URL.
 - **Admin endpoints** (`/admin`) — garbage collection for both the crates and Docker storages, behind the realm's auth and the blanket `warehouse:write` grant.
 - **A small server-rendered UI** (`{BASE_PATH}/ui`) for browsing the Docker and crates catalogs, managing dynamic file storages, and yanking/unyanking artifact versions.
@@ -76,7 +76,7 @@ Both sit behind `Auth` (bearer token or realm cookie, verified against gatehouse
 
 Everything is under `{BASE_PATH}/api/v1/artifacts` and behind the realm's auth, the same `Auth` + `RequireWrite` pair the files API uses — a valid realm identity to read, the blanket `warehouse:write` grant (or a wildcard role) to publish or yank. Turned on with `FEATURE_ARTIFACTS_ENABLED` (the older `FEATURE_APK_ENABLED` is still honoured).
 
-An artifact is addressed by `{program}/{platform}/{version_code}` — never a caller-chosen name. `program` is a reverse-DNS application id shared across platforms (`dev.lorehaven.pedlar` for the Android APK, the Linux build and the Windows build alike); `platform` is one of `android` / `linux` / `windows` / `macos`.
+An artifact is addressed by `{program}/{platform}/{version_code}` — never a caller-chosen name. `program` is a reverse-DNS application id shared across platforms (`dev.lorehaven.pedlar` for the Android APK, the Linux build and the Windows build alike); `platform` is one of `android` / `linux` / `windows` / `macos`. macOS is a first-class desktop platform: like Linux and Windows its identity comes from the publish URL and `?format=` is required (`dmg`, `pkg`, `zip`, `tar.gz`, …; `arch` is `x86_64` / `aarch64` / `universal`). A `dmg` is downloaded as `application/x-apple-diskimage`, every other non-APK format as `application/octet-stream`.
 
 Identity is checked one of two ways:
 
@@ -97,7 +97,7 @@ Either way `size_bytes` and `sha256` are computed from the stream, and a `(progr
 | `DELETE` | `/api/v1/artifacts/{program}/{platform}/{version_code}/yank` | hide from `latest`/the catalog, keep the file |
 | `PUT` | `/api/v1/artifacts/{program}/{platform}/{version_code}/unyank` | undo a yank |
 
-`/api/v1/apk/*` is kept as a thin back-compat alias for the pre-multi-platform shape (`{package}/{version_code}`, `platform` forced to `android`); it will be removed once no shipped client depends on it.
+`/api/v1/apk/*` is kept as a thin back-compat alias for the pre-multi-platform shape (`{package}/{version_code}`, `platform` forced to `android`); it is **deprecated**. Every call is logged at `warn` (method, path, caller subject, `User-Agent`) and answered with `Deprecation: true` and a `Link: <…/api/v1/artifacts>; rel="successor-version"` header, plus `Sunset` once `APK_ALIAS_SUNSET` (an HTTP-date) is set. Watch that log go quiet, then set `FEATURE_APK_ALIAS_ENABLED=false` to answer the whole prefix with `410 Gone`, and finally delete `routers/artifacts/alias.rs`.
 
 ### Rivet registry
 
@@ -153,6 +153,8 @@ Selected environment variables:
 | `WAREHOUSE_DEFAULT_STORAGE_QUOTA_BYTES` | quota a new dynamic storage gets when its admin doesn't name one (default 10GiB) |
 | `DOCKER_TOKEN_SECRET` | signs Docker Registry bearer tokens (required, no default) |
 | `SERVICE_AUTH_ENABLED` | realm auth (Docker Registry, files, artifacts, rivets, crates writes, `/admin`) on/off (default `false`) |
+| `FEATURE_APK_ALIAS_ENABLED` | the deprecated `/api/v1/apk` routes (default `true`; `false` answers `410 Gone`) |
+| `APK_ALIAS_SUNSET` | HTTP-date advertised in the alias's `Sunset` header (default unset) |
 | `CRATES_REQUIRE_AUTH_FOR_READS` | also require a realm identity for crates index/download/search (default `false`) |
 | `SERVICE_NAME` / `SERVICE_REALM` | Docker token `service`/`realm` claim (defaults `service` / `https://localhost:8698/token`) |
 | `STORAGE_PATH` / `CRATES_STORAGE_PATH` / `ARTIFACT_STORAGE_PATH` | Docker / crates / artifact blob roots (`APK_STORAGE_PATH` honoured as a fallback for the last; its old `<program>/<version_code>/` APK tree is relocated to `<program>/android/<version_code>/` once on boot) |

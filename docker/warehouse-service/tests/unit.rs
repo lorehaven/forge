@@ -25,6 +25,8 @@ mod middleware_limits_tests;
 mod routers_admin_crates_gc_tests;
 #[path = "unit/routers_admin_docker_gc_tests.rs"]
 mod routers_admin_docker_gc_tests;
+#[path = "unit/routers_artifacts_alias_tests.rs"]
+mod routers_artifacts_alias_tests;
 #[path = "unit/routers_artifacts_download_tests.rs"]
 mod routers_artifacts_download_tests;
 #[path = "unit/routers_artifacts_latest_tests.rs"]

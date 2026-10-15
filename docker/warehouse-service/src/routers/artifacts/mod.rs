@@ -172,8 +172,19 @@ pub fn wrap_auth(
         Box::leak(format!("{base_path}/api/v1/apk").into_boxed_str()),
     ];
 
+    let apk_prefix = prefixes[1];
     let mut app = app;
     for prefix in prefixes {
+        // Innermost, so `Auth` has already put the caller's claims where the log can read them.
+        if prefix == apk_prefix {
+            app = wrap(
+                app,
+                OnPathPrefix::new(
+                    prefix,
+                    alias::Deprecation::new(format!("{base_path}/api/v1/artifacts")),
+                ),
+            );
+        }
         app = wrap(
             app,
             OnPathPrefix::new(prefix, RequireWrite::new(jwt_config.clone())),

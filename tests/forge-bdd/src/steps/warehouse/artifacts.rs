@@ -24,6 +24,7 @@ async fn send(
         builder = builder.body(body);
     }
     let res = builder.send().await.expect("artifacts request failed");
+    world.last_response_headers = res.headers().clone();
     world.record_response(res).await;
 }
 

@@ -112,3 +112,29 @@ fn staging_path_calls_never_collide_even_for_the_same_target() {
     assert_ne!(a, b);
     assert!(a.to_string_lossy().contains(".part."));
 }
+
+#[test]
+fn macos_artifacts_are_laid_out_like_every_other_desktop_platform() {
+    let root = WithArtifactStorageRoot::new();
+    let path = artifact_file_path(
+        "com.example.app",
+        Platform::Macos,
+        3,
+        "com.example.app-3.dmg",
+    )
+    .expect("valid name");
+
+    assert_eq!(
+        path,
+        root.dir
+            .path()
+            .join("com.example.app")
+            .join("macos")
+            .join("3")
+            .join("com.example.app-3.dmg")
+    );
+    assert_eq!(
+        default_filename("com.example.app", 3, "dmg"),
+        "com.example.app-3.dmg"
+    );
+}
