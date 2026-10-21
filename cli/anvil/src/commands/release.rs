@@ -860,11 +860,19 @@ pub fn ensure_release_tags_absent(plan: &[ReleasePlanItem]) -> Result<()> {
     Ok(())
 }
 
-/// Tags one package, immediately after it has been released.
+/// Tags one package, immediately after it has been released, and pushes the tag.
+///
+/// The push matters beyond bookkeeping: `anvil semver-check` diffs against the
+/// newest release tag, and CI only sees the tags that reached the remote. A tag
+/// that stays local leaves CI comparing against whatever old tag did get pushed.
 fn create_release_tag(item: &ReleasePlanItem) -> Result<()> {
-    let mut cmd = Command::new("git");
-    cmd.arg("tag").arg(&item.tag_to_create);
-    run_command(cmd, &format!("git tag {}", item.tag_to_create))
+    let mut tag_cmd = Command::new("git");
+    tag_cmd.arg("tag").arg(&item.tag_to_create);
+    run_command(tag_cmd, &format!("git tag {}", item.tag_to_create))?;
+
+    let mut push_cmd = Command::new("git");
+    push_cmd.arg("push").arg("origin").arg(&item.tag_to_create);
+    run_command(push_cmd, &format!("git push {}", item.tag_to_create))
 }
 
 #[must_use]
