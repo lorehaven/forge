@@ -220,6 +220,47 @@ pub fn deny(json: bool) -> Result<()> {
     run_command(cmd, "deny")
 }
 
+/// Picks the newest release tag `{package}-v<version>` at or below
+/// `current_version` out of `tags`.
+///
+/// "At or below" is what makes this the shipped code rather than a guess: on a
+/// commit before a bump has been tagged, that is the previous release; on a
+/// commit after the bump has been tagged, it is the tag for the version now in
+/// the manifest, so a break introduced after the release is still caught.
+/// Tags that are not `{package}-v<semver>` are ignored.
+#[must_use]
+pub fn pick_baseline_tag(tags: &[String], package: &str, current_version: &str) -> Option<String> {
+    let current = semver::Version::parse(current_version).ok()?;
+    let prefix = format!("{package}-v");
+    tags.iter()
+        .filter_map(|tag| {
+            let version = semver::Version::parse(tag.trim().strip_prefix(&prefix)?).ok()?;
+            (version <= current).then(|| (version, tag.trim().to_string()))
+        })
+        .max_by(|a, b| a.0.cmp(&b.0))
+        .map(|(_, tag)| tag)
+}
+
+/// The release tag [`pick_baseline_tag`] chooses from this repo's tags.
+///
+/// `Ok(None)` when the package has no usable release tag, e.g. a package on its
+/// first release or a checkout that did not fetch tags.
+pub fn released_baseline_tag(package: &str, current_version: &str) -> Result<Option<String>> {
+    let pattern = format!("{package}-v*");
+    let output = Command::new("git")
+        .args(["tag", "--list", &pattern])
+        .output()
+        .context("Failed to run git tag --list")?;
+    if !output.status.success() {
+        anyhow::bail!("git tag --list {pattern} failed");
+    }
+    let tags: Vec<String> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(ToOwned::to_owned)
+        .collect();
+    Ok(pick_baseline_tag(&tags, package, current_version))
+}
+
 /// Finds the commit before the one that last touched a package's `Cargo.toml`.
 ///
 /// That's the state just before its most recent version bump, used as a
@@ -283,7 +324,14 @@ pub fn semver_check(package: &str, baseline_rev: Option<String>) -> Result<()> {
         None
     } else {
         let pkg = resolve_package(package)?;
-        if let Some(rev) = previous_version_rev(&pkg.manifest)? {
+        // The release tag is the code that actually shipped. The manifest's git
+        // history is only a stand-in for it: any commit that edits `Cargo.toml`
+        // without releasing (a lint table, a dependency tweak) moves that
+        // stand-in onto a state nobody ever published.
+        if let Some(tag) = released_baseline_tag(package, &pkg.version)? {
+            cmd.arg("--baseline-rev").arg(tag);
+            None
+        } else if let Some(rev) = previous_version_rev(&pkg.manifest)? {
             cmd.arg("--baseline-rev").arg(rev);
             None
         } else {

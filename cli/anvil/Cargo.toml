@@ -28,6 +28,7 @@ clap = { workspace = true }
 crossterm = { workspace = true }
 gatehouse-auth = { workspace = true }
 quench-cli = { workspace = true }
+semver = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }

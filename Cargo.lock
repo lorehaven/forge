@@ -230,6 +230,7 @@ dependencies = [
  "gatehouse-auth",
  "predicates",
  "quench-cli",
+ "semver",
  "serde",
  "serde_json",
  "tempfile",

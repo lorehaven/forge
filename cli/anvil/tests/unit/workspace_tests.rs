@@ -1,6 +1,6 @@
 use anvil::commands::workspace::{
     MacheteFinding, deny, empty_api_baseline, ensure_tool_installed, format_metadata, list,
-    machete, parse_machete_output, previous_version_rev,
+    machete, parse_machete_output, pick_baseline_tag, previous_version_rev,
 };
 use serde_json::json;
 
@@ -266,5 +266,59 @@ fn parse_machete_output_reads_one_finding_per_crate_block() {
 fn parse_machete_output_ignores_unrecognised_text() {
     assert!(
         parse_machete_output("Analyzing dependencies of crates in this directory...\n").is_empty()
+    );
+}
+
+fn tags(names: &[&str]) -> Vec<String> {
+    names.iter().map(ToString::to_string).collect()
+}
+
+#[test]
+fn pick_baseline_tag_uses_the_previous_release_before_the_bump_is_tagged() {
+    let tags = tags(&["pkg-v0.1.4", "pkg-v0.1.5"]);
+    assert_eq!(
+        pick_baseline_tag(&tags, "pkg", "0.1.6").as_deref(),
+        Some("pkg-v0.1.5")
+    );
+}
+
+#[test]
+fn pick_baseline_tag_uses_the_current_versions_own_tag_once_it_exists() {
+    let tags = tags(&["pkg-v0.1.5", "pkg-v0.1.6"]);
+    assert_eq!(
+        pick_baseline_tag(&tags, "pkg", "0.1.6").as_deref(),
+        Some("pkg-v0.1.6")
+    );
+}
+
+#[test]
+fn pick_baseline_tag_orders_by_semver_not_text() {
+    let tags = tags(&["pkg-v0.1.9", "pkg-v0.1.10"]);
+    assert_eq!(
+        pick_baseline_tag(&tags, "pkg", "0.1.11").as_deref(),
+        Some("pkg-v0.1.10")
+    );
+}
+
+#[test]
+fn pick_baseline_tag_ignores_other_packages_and_malformed_tags() {
+    let tags = tags(&[
+        "pkg-extra-v0.9.0",
+        "pkg-vnext",
+        "other-v0.1.0",
+        "pkg-v0.1.0",
+    ]);
+    assert_eq!(
+        pick_baseline_tag(&tags, "pkg", "0.2.0").as_deref(),
+        Some("pkg-v0.1.0")
+    );
+}
+
+#[test]
+fn pick_baseline_tag_is_none_without_a_release_at_or_below_the_current_version() {
+    assert_eq!(pick_baseline_tag(&[], "pkg", "0.1.0"), None);
+    assert_eq!(
+        pick_baseline_tag(&tags(&["pkg-v0.2.0"]), "pkg", "0.1.0"),
+        None
     );
 }
