@@ -220,7 +220,7 @@ dependencies = [
 
 [[package]]
 name = "anvil"
-version = "0.4.6"
+version = "0.4.7"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -5106,7 +5106,7 @@ dependencies = [
 
 [[package]]
 name = "riveter"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "age",
  "anyhow",
