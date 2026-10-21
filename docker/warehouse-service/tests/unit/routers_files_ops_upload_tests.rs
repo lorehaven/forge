@@ -13,7 +13,12 @@ fn staging_path_sits_beside_the_target_with_a_dotted_part_suffix() {
     assert_eq!(staging.parent(), Some(Path::new("/storage/artifacts")));
     let name = staging.file_name().unwrap().to_str().unwrap();
     assert!(name.starts_with(".report.pdf."), "{name}");
-    assert!(name.ends_with(".part"), "{name}");
+    assert!(
+        Path::new(name)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("part")),
+        "{name}"
+    );
 }
 
 #[test]
@@ -33,7 +38,7 @@ async fn handle_reports_not_found_when_file_storage_is_disabled() {
         .build()
         .await
         .unwrap();
-    let (app, container) = support::app(container).await;
+    let (app, container) = support::app(container);
 
     let resp = app
         .call(support::raw_req(

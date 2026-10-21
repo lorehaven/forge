@@ -1,6 +1,25 @@
 use quench_web::prelude::CssRule;
 
+#[must_use]
 pub fn chat_rules() -> Vec<CssRule> {
+    [
+        chat_rules_1(),
+        chat_rules_2(),
+        chat_rules_3(),
+        chat_rules_4(),
+        chat_rules_5(),
+        chat_rules_6(),
+        chat_rules_7(),
+        chat_rules_8(),
+        chat_rules_9(),
+        chat_rules_10(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
+fn chat_rules_1() -> Vec<CssRule> {
     vec![
         CssRule::new(".chat-container")
             .property("display", "flex")
@@ -75,6 +94,11 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("display", "flex")
             .property("flex-direction", "column")
             .property("width", "100%"),
+    ]
+}
+
+fn chat_rules_2() -> Vec<CssRule> {
+    vec![
         CssRule::new(".code-header")
             .property("display", "flex")
             .property("justify-content", "space-between")
@@ -150,6 +174,11 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("border-bottom", "1px solid var(--bs-gray-800)")
             .property("color", "var(--bs-gray-300)"),
         CssRule::new(".message-content tr:last-child td").property("border-bottom", "none"),
+    ]
+}
+
+fn chat_rules_3() -> Vec<CssRule> {
+    vec![
         CssRule::new(".message-content tr:nth-child(even)")
             .property("background", "var(--fui-gray-soft-bg)"),
         CssRule::new(".inline-code")
@@ -219,6 +248,11 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("cursor", "pointer")
             .property("position", "relative")
             .property("transition", "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)"),
+    ]
+}
+
+fn chat_rules_4() -> Vec<CssRule> {
+    vec![
         CssRule::new(".nav-dot::before")
             .property("content", "''")
             .property("width", "0.4rem")
@@ -283,6 +317,11 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("align-items", "flex-end")
             .property("gap", "0.75rem")
             .property("box-shadow", "0 0.5rem 2rem rgba(0,0,0,0.5)"),
+    ]
+}
+
+fn chat_rules_5() -> Vec<CssRule> {
+    vec![
         CssRule::new(".chat-input")
             .property("flex", "1")
             .property("background", "transparent")
@@ -355,6 +394,11 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("display", "flex")
             .property("flex-direction", "column")
             .property("height", "100%"),
+    ]
+}
+
+fn chat_rules_6() -> Vec<CssRule> {
+    vec![
         CssRule::new(".sidebar-header")
             .property("padding", "1rem")
             .property("border-bottom", "1px solid var(--bs-gray-800)")
@@ -427,6 +471,11 @@ pub fn chat_rules() -> Vec<CssRule> {
         CssRule::new(".menu-container:focus-within .menu-trigger-btn")
             .property("opacity", "1")
             .property("color", "var(--fui-text)"),
+    ]
+}
+
+fn chat_rules_7() -> Vec<CssRule> {
+    vec![
         CssRule::new(".dropdown-menu")
             .property("display", "none")
             .property("position", "absolute")
@@ -496,6 +545,11 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("font-size", "1.4rem")
             .property("font-weight", "bold")
             .property("font-family", "monospace"),
+    ]
+}
+
+fn chat_rules_8() -> Vec<CssRule> {
+    vec![
         CssRule::new(".estimates-modal-close")
             .property("border", "none")
             .property("background-color", "transparent !important")
@@ -569,6 +623,11 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("justify-content", "center")
             .property("gap", "0.3rem")
             .property("transition", "all 0.15s ease"),
+    ]
+}
+
+fn chat_rules_9() -> Vec<CssRule> {
+    vec![
         CssRule::new(".branch-btn:hover")
             .property("background-color", "var(--fui-gray-soft-bg)")
             .property("color", "var(--bs-gray-200)")
@@ -641,6 +700,11 @@ pub fn chat_rules() -> Vec<CssRule> {
             .property("color", "var(--bs-success)"),
         CssRule::new(".tool-result.tool-error .tool-header").property("color", "var(--bs-danger)"),
         CssRule::new(".tool-icon").property("font-size", "1.1rem"),
+    ]
+}
+
+fn chat_rules_10() -> Vec<CssRule> {
+    vec![
         CssRule::new(".tool-content")
             .property("color", "var(--bs-gray-300)")
             .property("word-break", "rbreak-word")

@@ -18,11 +18,13 @@ pub enum WorkbenchError {
 
 impl WorkbenchError {
     /// Postgres's foreign-key violation, e.g. an `assignee` not in the realm.
+    #[must_use]
     pub fn is_foreign_key_violation(&self) -> bool {
         matches!(self, Self::Sql(sqlx::Error::Database(database)) if database.code().as_deref() == Some("23503"))
     }
 
     /// Postgres's unique-constraint violation, e.g. a `key` already taken.
+    #[must_use]
     pub fn is_unique_violation(&self) -> bool {
         matches!(self, Self::Sql(sqlx::Error::Database(database)) if database.code().as_deref() == Some("23505"))
     }
@@ -36,6 +38,7 @@ pub fn pool(db: &Db) -> Result<&Pool<Postgres>, WorkbenchError> {
     }
 }
 
+#[must_use]
 pub fn schema() -> String {
     envmnt::get_or("DB_SCHEMA", "workbench")
 }

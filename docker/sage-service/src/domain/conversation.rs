@@ -1,6 +1,7 @@
 use crate::clients::vllm::ChatMessage;
 
 /// Manages conversation context with token budgeting
+#[derive(Debug)]
 pub struct ConversationContext {
     /// Maximum tokens for context window
     pub max_context_tokens: u32,
@@ -21,7 +22,8 @@ pub struct ConversationMessage {
 
 impl ConversationContext {
     /// Create new conversation context
-    pub fn new(max_context_tokens: u32) -> Self {
+    #[must_use]
+    pub const fn new(max_context_tokens: u32) -> Self {
         Self {
             max_context_tokens,
             tokens_per_char: 0.25, // Rough estimate: 1 token ≈ 4 characters
@@ -35,11 +37,13 @@ impl ConversationContext {
     }
 
     /// Estimate tokens in text
+    #[must_use]
     pub fn estimate_tokens(text: &str) -> u32 {
-        (text.len() as f32 * 0.25).ceil() as u32
+        u32::try_from(text.len().div_ceil(4)).unwrap_or(u32::MAX)
     }
 
     /// Get messages for context with token budget consideration
+    #[must_use]
     pub fn get_context_messages(&self, system_prompt: &str) -> (Vec<ChatMessage>, u32) {
         let mut total_tokens = Self::estimate_tokens(system_prompt);
         let mut context_messages = Vec::new();
@@ -81,29 +85,30 @@ impl ConversationContext {
     }
 
     /// Get conversation summary (for display)
+    #[must_use]
     pub fn get_messages_by_id(&self, message_id: Option<&str>) -> Vec<&ConversationMessage> {
-        if let Some(id) = message_id {
-            // Collect the message and its ancestors, root-first: a "branch" is the path
-            // from the root down to the selected message, mirroring thread-switch semantics.
-            let mut result = Vec::new();
-            let mut visited = std::collections::HashSet::new();
-            let mut current = Some(id);
-            while let Some(cid) = current {
-                if !visited.insert(cid) {
-                    break; // guard against cycles
+        message_id.map_or_else(
+            || self.get_main_branch(),
+            |id| {
+                // Collect the message and its ancestors, root-first: a "branch" is the path
+                // from the root down to the selected message, mirroring thread-switch semantics.
+                let mut result = Vec::new();
+                let mut visited = std::collections::HashSet::new();
+                let mut current = Some(id);
+                while let Some(cid) = current {
+                    if !visited.insert(cid) {
+                        break; // guard against cycles
+                    }
+                    let Some(msg) = self.messages.iter().find(|m| m.id == cid) else {
+                        break;
+                    };
+                    result.push(msg);
+                    current = msg.parent_id.as_deref();
                 }
-                let Some(msg) = self.messages.iter().find(|m| m.id == cid) else {
-                    break;
-                };
-                result.push(msg);
-                current = msg.parent_id.as_deref();
-            }
-            result.reverse();
-            result
-        } else {
-            // Return all messages in a linear path (following parent relationships)
-            self.get_main_branch()
-        }
+                result.reverse();
+                result
+            },
+        )
     }
 
     fn get_main_branch(&self) -> Vec<&ConversationMessage> {
@@ -135,6 +140,7 @@ impl ConversationContext {
     }
 
     /// Get token usage stats
+    #[must_use]
     pub fn get_token_stats(&self) -> TokenStats {
         let total_tokens = Self::estimate_tokens(
             &self
@@ -150,7 +156,9 @@ impl ConversationContext {
             total_tokens,
             max_tokens: self.max_context_tokens,
             token_utilization: if self.max_context_tokens > 0 {
-                (total_tokens as f32 / self.max_context_tokens as f32) * 100.0
+                crate::numeric::f64_to_f32(
+                    f64::from(total_tokens) / f64::from(self.max_context_tokens) * 100.0,
+                )
             } else {
                 0.0
             },
@@ -167,10 +175,12 @@ pub struct TokenStats {
 }
 
 impl TokenStats {
+    #[must_use]
     pub fn is_near_limit(&self) -> bool {
         self.token_utilization > 80.0
     }
 
+    #[must_use]
     pub fn is_at_limit(&self) -> bool {
         self.token_utilization > 95.0
     }

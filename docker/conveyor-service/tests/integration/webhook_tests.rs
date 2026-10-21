@@ -24,10 +24,10 @@ const SECRET: &str = "conveyor-webhook-tests";
 /// Sets the environment the endpoint reads. Called under the database guard,
 /// so the tests do not race over it.
 fn configure(secret: Option<&str>) {
-    unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", "false") };
+    envmnt::set("SERVICE_AUTH_ENABLED", "false");
     match secret {
-        Some(secret) => unsafe { std::env::set_var("CONVEYOR_WEBHOOK_SECRET", secret) },
-        None => unsafe { std::env::remove_var("CONVEYOR_WEBHOOK_SECRET") },
+        Some(secret) => envmnt::set("CONVEYOR_WEBHOOK_SECRET", secret),
+        None => envmnt::remove("CONVEYOR_WEBHOOK_SECRET"),
     }
 }
 

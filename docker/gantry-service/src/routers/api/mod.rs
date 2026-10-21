@@ -17,21 +17,21 @@ pub mod resources;
 pub mod targets;
 
 /// The verified identity, if any - `Auth` puts it in the request extensions.
+#[derive(Debug)]
 pub struct OptionalClaims(pub Option<Claims>);
 
 #[async_trait]
 impl FromRequest for OptionalClaims {
     async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
-        Ok(OptionalClaims(req.extensions().get::<Claims>().cloned()))
+        Ok(Self(req.extensions().get::<Claims>().cloned()))
     }
 }
 
 /// Who is making this request, for the `requested_by` column: the token's subject (a person, or an OAuth
 /// client id for a machine), or `dev` when auth is switched off.
+#[must_use]
 pub fn actor(claims: Option<&Claims>) -> String {
-    claims
-        .map(|claims| claims.sub.clone())
-        .unwrap_or_else(|| "dev".to_string())
+    claims.map_or_else(|| "dev".to_string(), |claims| claims.sub.clone())
 }
 
 /// `Auth` over all of `/api/v1` (incl. its 404 fallback, so unmapped paths 401 not 404); what a caller may
@@ -56,7 +56,7 @@ pub fn register_routes() {
 impl From<GantryError> for ApiError {
     fn from(error: GantryError) -> Self {
         if error.is_unique_violation() {
-            return ApiError::new(
+            return Self::new(
                 StatusCode::CONFLICT,
                 "a record with that identity already exists",
             );
@@ -68,6 +68,6 @@ impl From<GantryError> for ApiError {
             GantryError::Sql(_) | GantryError::Plan(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
 
-        ApiError::new(status, error.to_string())
+        Self::new(status, error.to_string())
     }
 }

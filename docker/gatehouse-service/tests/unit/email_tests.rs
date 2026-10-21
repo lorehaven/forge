@@ -13,7 +13,7 @@ use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 
-fn alice() -> Recipient<'static> {
+const fn alice() -> Recipient<'static> {
     Recipient {
         address: "alice@example.test",
         username: "alice",
@@ -435,6 +435,7 @@ async fn smtp_sender_delivers_a_verification_email() {
     assert!(mail.contains("multipart/alternative"));
     assert!(mail.contains(link));
     assert!(mail.contains("<a href=\"https://ennor.ddns.net/gatehouse/ui/verify?token=abc\">"));
+    drop(mails);
 }
 
 #[tokio::test]
@@ -452,6 +453,7 @@ async fn smtp_sender_writes_the_email_in_the_recipients_language() {
     // Non-ASCII subject travels as an encoded word, and the body is decodable.
     assert!(mails[0].contains("Subject: =?UTF-8?B?"), "{}", mails[0]);
     assert!(mails[0].contains("quoted-printable"));
+    drop(mails);
 }
 
 #[tokio::test]
@@ -579,7 +581,7 @@ const ALL_KINDS: [Kind; 8] = [
     Kind::MfaDisabled,
 ];
 
-fn has_link(kind: Kind) -> bool {
+const fn has_link(kind: Kind) -> bool {
     matches!(
         kind,
         Kind::Verification | Kind::PasswordReset | Kind::Invite | Kind::EmailChange
@@ -737,7 +739,7 @@ fn mail_variants_map_to_kinds_links_and_addresses() {
     }
     let labels: Vec<&str> = ALL_KINDS.iter().map(|k| k.label()).collect();
     let mut unique = labels.clone();
-    unique.sort();
+    unique.sort_unstable();
     unique.dedup();
     assert_eq!(
         unique.len(),
@@ -780,6 +782,7 @@ async fn smtp_sender_delivers_a_notice_that_carries_no_link() {
     assert!(mail.contains("To: alice@example.test\r\n"));
     assert!(mail.contains("Auto-Submitted: auto-generated"));
     assert!(!mail.contains("http"), "no link in a notice: {mail}");
+    drop(mails);
 }
 
 #[tokio::test]

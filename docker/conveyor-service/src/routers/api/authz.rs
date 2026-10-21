@@ -44,6 +44,7 @@ pub async fn can_on_project_claims(
 }
 
 /// The blanket `conveyor:<action>` grant - for a write with no project to scope to yet.
+#[must_use]
 pub fn can_unscoped(claims: Option<&Claims>, config: &JwtConfig, action: &str) -> bool {
     if !config.auth_enabled {
         return true;
@@ -53,6 +54,7 @@ pub fn can_unscoped(claims: Option<&Claims>, config: &JwtConfig, action: &str) -
 }
 
 /// Project ids `claims` is directly (not by inheritance) granted `action` on.
+#[must_use]
 pub fn granted_project_ids(claims: &Claims, action: &str) -> Vec<String> {
     claims
         .permissions()

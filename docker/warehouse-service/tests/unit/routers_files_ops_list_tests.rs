@@ -17,7 +17,7 @@ async fn storages_reports_not_found_when_file_storage_is_disabled() {
         .build()
         .await
         .unwrap();
-    let (app, container) = support::app(container).await;
+    let (app, container) = support::app(container);
 
     let resp = app
         .call(support::req(Method::GET, "/api/v1/files", &container))
@@ -34,7 +34,7 @@ async fn entries_reports_not_found_when_file_storage_is_disabled() {
         .build()
         .await
         .unwrap();
-    let (app, container) = support::app(container).await;
+    let (app, container) = support::app(container);
 
     let resp = app
         .call(support::req(

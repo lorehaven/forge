@@ -29,7 +29,7 @@ struct FlakyExecutor {
 }
 
 impl FlakyExecutor {
-    fn new(fail_times: u32) -> Self {
+    const fn new(fail_times: u32) -> Self {
         Self {
             fail_times,
             calls: AtomicU32::new(0),

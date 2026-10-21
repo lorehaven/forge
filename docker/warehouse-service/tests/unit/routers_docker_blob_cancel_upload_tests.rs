@@ -8,7 +8,7 @@ async fn app() -> (
 ) {
     warehouse_service::routers::docker::blob::cancel_upload::register_routes();
     let container = support::container_builder().build().await.unwrap();
-    support::app(container).await
+    support::app(container)
 }
 
 #[tokio::test]
@@ -57,4 +57,5 @@ async fn handle_deletes_an_existing_upload() {
         .await;
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
     assert!(!upload_file.exists());
+    drop(storage);
 }

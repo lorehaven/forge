@@ -44,6 +44,94 @@ pub async fn handle(
     publish(actor, &db, program, platform, version_code, params, body.0).await
 }
 
+/// `apk` for android; otherwise the `?format=` token, which is required.
+fn resolve_format(platform: Platform, params: &PublishParams) -> Result<String, Response> {
+    if platform == Platform::Android {
+        return Ok("apk".to_string());
+    }
+    match params.format.as_deref().map(str::trim) {
+        Some(raw) if is_format_token(raw) => Ok(raw.to_ascii_lowercase()),
+        Some(_) => Err(error(StatusCode::UNPROCESSABLE_ENTITY, "invalid format")),
+        None => Err(error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "format is required for non-android artifacts",
+        )),
+    }
+}
+
+/// The `?filename=` when given (and valid), else the default for the program and version.
+fn resolve_filename(
+    program: &str,
+    version_code: i64,
+    format: &str,
+    params: &PublishParams,
+) -> Result<String, Response> {
+    match params.filename.as_deref().map(str::trim) {
+        Some(name) if !name.is_empty() => {
+            if validate_filename(name) {
+                Ok(name.to_string())
+            } else {
+                Err(error(StatusCode::UNPROCESSABLE_ENTITY, "invalid filename"))
+            }
+        }
+        _ => Ok(default_filename(program, version_code, format)),
+    }
+}
+
+/// `Some(trimmed)` unless it is absent or blank.
+fn trimmed(value: Option<&String>) -> Option<String> {
+    value
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+/// Version name, label, metadata and arch: read from the manifest for android (whose identity must
+/// match the path), taken from the query for everything else. The staged file is removed on failure.
+async fn describe_version(
+    platform: Platform,
+    program: &str,
+    version_code: i64,
+    params: &PublishParams,
+    staging_path: &std::path::Path,
+) -> Result<(String, Option<String>, ArtifactMetadata, Option<String>), Response> {
+    if platform != Platform::Android {
+        return Ok((
+            trimmed(params.version_name.as_ref()).unwrap_or_else(|| version_code.to_string()),
+            trimmed(params.label.as_ref()),
+            ArtifactMetadata::default(),
+            trimmed(params.arch.as_ref()),
+        ));
+    }
+
+    let meta = match parse_manifest(staging_path.to_path_buf()).await {
+        Ok(meta) => meta,
+        Err(response) => {
+            let _ = tokio::fs::remove_file(staging_path).await;
+            return Err(response);
+        }
+    };
+    if meta.package_name != program || meta.version_code != version_code {
+        let _ = tokio::fs::remove_file(staging_path).await;
+        return Err(error(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            &format!(
+                "manifest declares `{}` version {}, which does not match the published path `{program}/android/{version_code}`",
+                meta.package_name, meta.version_code
+            ),
+        ));
+    }
+    Ok((
+        meta.version_name,
+        meta.label,
+        ArtifactMetadata {
+            min_sdk_version: meta.min_sdk_version,
+            target_sdk_version: meta.target_sdk_version,
+            permissions: meta.permissions,
+        },
+        None,
+    ))
+}
+
 /// The publish itself, once platform is resolved. Shared with the `/api/v1/apk` alias.
 pub async fn publish(
     actor: String,
@@ -68,31 +156,14 @@ pub async fn publish(
         );
     }
 
-    let format = if platform == Platform::Android {
-        "apk".to_string()
-    } else {
-        match params.format.as_deref().map(str::trim) {
-            Some(raw) if is_format_token(raw) => raw.to_ascii_lowercase(),
-            Some(_) => {
-                return error(StatusCode::UNPROCESSABLE_ENTITY, "invalid format");
-            }
-            None => {
-                return error(
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    "format is required for non-android artifacts",
-                );
-            }
-        }
+    let format = match resolve_format(platform, &params) {
+        Ok(format) => format,
+        Err(response) => return response,
     };
 
-    let filename = match params.filename.as_deref().map(str::trim) {
-        Some(name) if !name.is_empty() => {
-            if !validate_filename(name) {
-                return error(StatusCode::UNPROCESSABLE_ENTITY, "invalid filename");
-            }
-            name.to_string()
-        }
-        _ => default_filename(&program, version_code, &format),
+    let filename = match resolve_filename(&program, version_code, &format, &params) {
+        Ok(filename) => filename,
+        Err(response) => return response,
     };
 
     let id = ArtifactVersion::id_for(&program, platform, version_code);
@@ -136,69 +207,14 @@ pub async fn publish(
             }
         };
 
-    let (version_name, label, metadata, arch) = if platform == Platform::Android {
-        let meta = match parse_manifest(staging_path.clone()).await {
-            Ok(meta) => meta,
-            Err(response) => {
-                let _ = tokio::fs::remove_file(&staging_path).await;
-                return response;
-            }
+    let (version_name, label, metadata, arch) =
+        match describe_version(platform, &program, version_code, &params, &staging_path).await {
+            Ok(described) => described,
+            Err(response) => return response,
         };
-        if meta.package_name != program || meta.version_code != version_code {
-            let _ = tokio::fs::remove_file(&staging_path).await;
-            return error(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                &format!(
-                    "manifest declares `{}` version {}, which does not match the published path `{program}/android/{version_code}`",
-                    meta.package_name, meta.version_code
-                ),
-            );
-        }
-        (
-            meta.version_name,
-            meta.label,
-            ArtifactMetadata {
-                min_sdk_version: meta.min_sdk_version,
-                target_sdk_version: meta.target_sdk_version,
-                permissions: meta.permissions,
-            },
-            None,
-        )
-    } else {
-        (
-            params
-                .version_name
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .unwrap_or_else(|| version_code.to_string()),
-            params
-                .label
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty()),
-            ArtifactMetadata::default(),
-            params
-                .arch
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty()),
-        )
-    };
 
-    if let Some(parent) = final_path.parent()
-        && tokio::fs::create_dir_all(parent).await.is_err()
-    {
-        let _ = tokio::fs::remove_file(&staging_path).await;
-        return error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "could not create the storage directory",
-        );
-    }
-
-    if tokio::fs::rename(&staging_path, &final_path).await.is_err() {
-        let _ = tokio::fs::remove_file(&staging_path).await;
-        return error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "could not store the artifact",
-        );
+    if let Err(response) = move_into_place(&staging_path, &final_path).await {
+        return response;
     }
 
     let version = ArtifactVersion {
@@ -210,7 +226,7 @@ pub async fn publish(
         version_code,
         version_name,
         filename,
-        size_bytes: size as i64,
+        size_bytes: size.cast_signed(),
         sha256,
         label,
         metadata: Json(metadata),
@@ -226,6 +242,31 @@ pub async fn publish(
 
     Response::json(StatusCode::CREATED, &ArtifactView::from(&version))
         .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
+}
+
+/// Moves the staged upload to its final path; the staged file is removed when that fails.
+async fn move_into_place(
+    staging_path: &std::path::Path,
+    final_path: &std::path::Path,
+) -> Result<(), Response> {
+    if let Some(parent) = final_path.parent()
+        && tokio::fs::create_dir_all(parent).await.is_err()
+    {
+        let _ = tokio::fs::remove_file(staging_path).await;
+        return Err(error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "could not create the storage directory",
+        ));
+    }
+
+    if tokio::fs::rename(staging_path, final_path).await.is_err() {
+        let _ = tokio::fs::remove_file(staging_path).await;
+        return Err(error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "could not store the artifact",
+        ));
+    }
+    Ok(())
 }
 
 /// Conservative charset - `format` becomes part of a derived filename.

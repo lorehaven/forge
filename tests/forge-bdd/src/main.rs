@@ -92,6 +92,7 @@ async fn main() {
                 Target::Gatehouse => format!("{}/ui/login", probe.gatehouse_url),
                 Target::Conveyor => format!("{}/health", probe.conveyor_url),
                 Target::Workbench => format!("{}/health", probe.workbench_url),
+                Target::Daybook => format!("{}/health", probe.daybook_url),
             };
             (*target, url)
         })

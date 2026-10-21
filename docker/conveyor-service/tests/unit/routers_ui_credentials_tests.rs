@@ -65,7 +65,7 @@ fn a_project_scoped_credential_resolves_its_own_project_id() {
 fn a_repo_scoped_credential_resolves_via_its_repository() {
     let repo = repo("repo-1", "proj-1");
     let cred = credential(None, Some("repo-1"));
-    let repos_by_id: HashMap<&str, &Repo> = [("repo-1", &repo)].into_iter().collect();
+    let repos_by_id: HashMap<&str, &Repo> = std::iter::once(("repo-1", &repo)).collect();
 
     let scope = credential_scope(&cred, &repos_by_id).expect("resolvable");
     assert_eq!(scope.project_id, "proj-1");
@@ -111,7 +111,7 @@ fn a_project_scoped_row_renders_its_breadcrumb_path() {
 fn a_repo_scoped_row_renders_owner_slash_name_instead_of_a_project_path() {
     let repo = repo("repo-1", "proj-1");
     let cred = credential(None, Some("repo-1"));
-    let repos_by_id: HashMap<&str, &Repo> = [("repo-1", &repo)].into_iter().collect();
+    let repos_by_id: HashMap<&str, &Repo> = std::iter::once(("repo-1", &repo)).collect();
     let scope = credential_scope(&cred, &repos_by_id).expect("resolvable");
 
     let html = credential_row(&cred, &scope, &[]).render();

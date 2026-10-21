@@ -1,4 +1,6 @@
-//! How an operation's runner is started and watched. Two implementations behind one trait: a Kubernetes Job
+//! How an operation's runner is started and watched.
+//!
+//! Two implementations behind one trait: a Kubernetes Job
 //! (the real thing, and the only kind that survives Gantry restarting itself) and a local child process
 //! (so the whole service can be tried on a laptop before it goes near a cluster).
 
@@ -109,16 +111,20 @@ impl Executor for ClusterExecutor {
 
 // ---------------------------------------------------------------- local
 
-/// A runner as a child process. Files in the state directory are its whole state, so the service can
+/// A runner as a child process.
+///
+/// Files in the state directory are its whole state, so the service can
 /// restart and find a runner it started, the same way it finds a Job:
 /// `<name>.pid`, `<name>.log` and `<name>.exit` (written last, by the runner's own shell).
+#[derive(Debug)]
 pub struct LocalExecutor {
     settings: Settings,
     dry_run: bool,
 }
 
 impl LocalExecutor {
-    pub fn new(settings: Settings, dry_run: bool) -> Self {
+    #[must_use]
+    pub const fn new(settings: Settings, dry_run: bool) -> Self {
         Self { settings, dry_run }
     }
 
@@ -238,5 +244,11 @@ impl Executor for LocalExecutor {
     async fn cleanup(&self, _name: &str) -> Result<(), ClusterError> {
         // The files are the history of a local run; leave them for the developer to read.
         Ok(())
+    }
+}
+
+impl std::fmt::Debug for ClusterExecutor {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("ClusterExecutor { .. }")
     }
 }

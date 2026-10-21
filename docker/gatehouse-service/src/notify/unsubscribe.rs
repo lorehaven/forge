@@ -20,10 +20,12 @@ pub struct Unsubscribe {
 }
 
 impl Unsubscribe {
+    #[must_use]
     pub fn encode(&self) -> String {
         serde_json::to_string(self).expect("serialises")
     }
 
+    #[must_use]
     pub fn decode(raw: &str) -> Option<Self> {
         serde_json::from_str(raw).ok()
     }

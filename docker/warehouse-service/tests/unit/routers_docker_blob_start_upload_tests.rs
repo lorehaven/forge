@@ -10,7 +10,7 @@ async fn app() -> (
 ) {
     warehouse_service::routers::docker::blob::start_upload::register_routes();
     let container = support::container_builder().build().await.unwrap();
-    support::app(container).await
+    support::app(container)
 }
 
 #[tokio::test]
@@ -46,6 +46,7 @@ async fn handle_starts_a_regular_upload_and_creates_the_staging_file() {
     let uploads_dir = storage.dir.path().join("my-repo").join("_uploads");
     assert!(uploads_dir.exists());
     assert_eq!(std::fs::read_dir(&uploads_dir).unwrap().count(), 1);
+    drop(storage);
 }
 
 #[tokio::test]
@@ -81,6 +82,7 @@ async fn handle_mounts_an_existing_blob_from_another_repository() {
     assert_eq!(resp.status(), StatusCode::CREATED);
     let (headers, _) = support::parts(resp).await;
     assert_eq!(headers.get("docker-content-digest").unwrap(), DIGEST);
+    drop(storage);
 }
 
 #[tokio::test]

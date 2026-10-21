@@ -1,3 +1,5 @@
+//! Deployments are independently managed inference and training workloads.
+//!
 //! Deployments: the things that can be stopped and started on their own - inference as one, training as
 //! another. Which exist comes from the packages (`[[deployment]]` in `rivet.toml`); whether each is up comes
 //! from the cluster; what each is *meant* to be comes from what was last done to it (or its default).
@@ -66,7 +68,7 @@ pub struct DeploymentView {
     pub version: Option<String>,
 }
 
-fn state_name(state: DefaultState) -> &'static str {
+const fn state_name(state: DefaultState) -> &'static str {
     match state {
         DefaultState::Running => "running",
         DefaultState::Stopped => "stopped",
@@ -81,18 +83,7 @@ pub fn assemble(
     inventories: &BTreeMap<String, Inventory>,
 ) -> Vec<DeploymentView> {
     let mut views: Vec<DeploymentView> = Vec::new();
-    let mut packages: Vec<&str> = catalog.iter().map(|p| p.name.as_str()).collect();
-    for package in inventories.keys() {
-        if !packages.contains(&package.as_str()) {
-            packages.push(package.as_str());
-        }
-    }
-    for workload in workloads {
-        if !packages.contains(&workload.package.as_str()) {
-            packages.push(workload.package.as_str());
-        }
-    }
-    packages.sort_unstable();
+    let packages = package_names(catalog, workloads, inventories);
 
     for package in packages {
         let published = catalog.iter().find(|p| p.name == package);
@@ -108,32 +99,11 @@ pub fn assemble(
             .unwrap_or_default();
         let explicit = !declared.is_empty();
         if declared.is_empty() {
-            // No declaration: the whole package is one deployment, named after it - its workloads, as the
-            // inventory knows them (so stopping all of them does not make the deployment vanish).
-            let mut names: Vec<String> = inventory
-                .into_iter()
-                .flat_map(|i| i.resources.iter())
-                .filter(|item| crate::domain::resources::is_workload(&item.kind))
-                .map(|item| format!("{}/{}", item.kind.to_ascii_lowercase(), item.name))
-                .collect();
-            for w in &theirs {
-                let key = format!("{}/{}", w.kind, w.name);
-                if !names.contains(&key) {
-                    names.push(key);
-                }
-            }
-            names.retain(|r| r.starts_with("deployment/") || r.starts_with("statefulset/"));
-            if names.is_empty() {
+            let Some(whole) = whole_package_deployment(package, published, inventory, &theirs)
+            else {
                 continue;
-            }
-            declared.push(rivet_package::Deployment {
-                name: package.to_string(),
-                description: published.and_then(|p| p.description.clone()),
-                resources: names,
-                default: DefaultState::Running,
-                conflicts_with: Vec::new(),
-                also_stops: Vec::new(),
-            });
+            };
+            declared.push(whole);
         }
 
         for deployment in declared {
@@ -144,31 +114,8 @@ pub fn assemble(
                 );
                 continue;
             }
-            let resources: Vec<ResourceView> = deployment
-                .resources
-                .iter()
-                .map(|resource| {
-                    let (kind, name) = resource.split_once('/').unwrap_or(("", resource));
-                    let found = theirs.iter().find(|w| w.kind == kind && w.name == name);
-                    let from_inventory = inventory.and_then(|i| {
-                        i.resources
-                            .iter()
-                            .find(|item| item.kind.eq_ignore_ascii_case(kind) && item.name == name)
-                    });
-                    ResourceView {
-                        kind: kind.to_string(),
-                        name: name.to_string(),
-                        // Where it is, or where it would be put back.
-                        namespace: found
-                            .map(|w| w.namespace.clone())
-                            .or_else(|| from_inventory.and_then(|i| i.namespace.clone()))
-                            .or_else(|| default_namespace.clone()),
-                        desired: found.map(|w| w.desired),
-                        ready: found.map(|w| w.ready),
-                        present: found.is_some(),
-                    }
-                })
-                .collect();
+            let resources =
+                resource_views(&deployment, &theirs, inventory, default_namespace.as_ref());
 
             let default = state_name(deployment.default).to_string();
             let desired = states
@@ -221,6 +168,96 @@ pub fn assemble(
     views
 }
 
+/// Every package anything is known of: published, inventoried, or running.
+fn package_names<'a>(
+    catalog: &'a [PackageVersion],
+    workloads: &'a [Workload],
+    inventories: &'a BTreeMap<String, Inventory>,
+) -> Vec<&'a str> {
+    let mut packages: Vec<&str> = catalog.iter().map(|p| p.name.as_str()).collect();
+    for package in inventories.keys() {
+        if !packages.contains(&package.as_str()) {
+            packages.push(package.as_str());
+        }
+    }
+    for workload in workloads {
+        if !packages.contains(&workload.package.as_str()) {
+            packages.push(workload.package.as_str());
+        }
+    }
+    packages.sort_unstable();
+    packages
+}
+
+/// No declaration: the whole package is one deployment, named after it - its workloads, as the
+/// inventory knows them (so stopping all of them does not make the deployment vanish). `None` when it
+/// has none to speak of.
+fn whole_package_deployment(
+    package: &str,
+    published: Option<&PackageVersion>,
+    inventory: Option<&Inventory>,
+    theirs: &[&Workload],
+) -> Option<rivet_package::Deployment> {
+    let mut names: Vec<String> = inventory
+        .into_iter()
+        .flat_map(|i| i.resources.iter())
+        .filter(|item| crate::domain::resources::is_workload(&item.kind))
+        .map(|item| format!("{}/{}", item.kind.to_ascii_lowercase(), item.name))
+        .collect();
+    for w in theirs {
+        let key = format!("{}/{}", w.kind, w.name);
+        if !names.contains(&key) {
+            names.push(key);
+        }
+    }
+    names.retain(|r| r.starts_with("deployment/") || r.starts_with("statefulset/"));
+    if names.is_empty() {
+        return None;
+    }
+    Some(rivet_package::Deployment {
+        name: package.to_string(),
+        description: published.and_then(|p| p.description.clone()),
+        resources: names,
+        default: DefaultState::Running,
+        conflicts_with: Vec::new(),
+        also_stops: Vec::new(),
+    })
+}
+
+/// What a deployment's resources are in the cluster right now.
+fn resource_views(
+    deployment: &rivet_package::Deployment,
+    theirs: &[&Workload],
+    inventory: Option<&Inventory>,
+    default_namespace: Option<&String>,
+) -> Vec<ResourceView> {
+    deployment
+        .resources
+        .iter()
+        .map(|resource| {
+            let (kind, name) = resource.split_once('/').unwrap_or(("", resource));
+            let found = theirs.iter().find(|w| w.kind == kind && w.name == name);
+            let from_inventory = inventory.and_then(|i| {
+                i.resources
+                    .iter()
+                    .find(|item| item.kind.eq_ignore_ascii_case(kind) && item.name == name)
+            });
+            ResourceView {
+                kind: kind.to_string(),
+                name: name.to_string(),
+                // Where it is, or where it would be put back.
+                namespace: found
+                    .map(|w| w.namespace.clone())
+                    .or_else(|| from_inventory.and_then(|i| i.namespace.clone()))
+                    .or_else(|| default_namespace.cloned()),
+                desired: found.map(|w| w.desired),
+                ready: found.map(|w| w.ready),
+                present: found.is_some(),
+            }
+        })
+        .collect()
+}
+
 fn installed_version(workloads: &[&Workload]) -> Option<String> {
     let mut versions: Vec<&str> = workloads
         .iter()
@@ -270,8 +307,11 @@ pub async fn all(gantry: &Gantry) -> Result<Vec<DeploymentView>, PlanError> {
     Ok(assemble(&catalog, &workloads, &states, &inventories))
 }
 
-/// The resources (`kind/name`) of `package`'s deployments that are meant to be stopped. An install or an
+/// The resources (`kind/name`) of `package`'s deployments that are meant to be stopped.
+///
+/// An install or an
 /// upgrade applies these at zero, which is how a stopped deployment survives its package being updated.
+#[must_use]
 pub fn held_stopped(
     package: &PackageVersion,
     states: &BTreeMap<String, String>,
@@ -290,20 +330,20 @@ pub fn held_stopped(
 
 /// What a plan for these deployments is made against: each one's observed state, so a confirm can tell
 /// the cluster has moved.
+#[must_use]
 pub fn signature(views: &[DeploymentView], names: &[String]) -> String {
     let mut parts: Vec<String> = names
         .iter()
         .map(|name| {
-            let observed =
-                views
-                    .iter()
-                    .find(|v| &v.name == name)
-                    .map_or("unknown".to_string(), |v| {
-                        serde_json::to_value(v.observed)
-                            .ok()
-                            .and_then(|o| o.as_str().map(str::to_string))
-                            .unwrap_or_default()
-                    });
+            let observed = views.iter().find(|v| &v.name == name).map_or_else(
+                || "unknown".to_string(),
+                |v| {
+                    serde_json::to_value(v.observed)
+                        .ok()
+                        .and_then(|o| o.as_str().map(str::to_string))
+                        .unwrap_or_default()
+                },
+            );
             format!("{name}={observed}")
         })
         .collect();
@@ -550,7 +590,7 @@ fn start(
         replicas: std::collections::BTreeMap::new(),
         values_secret: None,
         timeout_secs: Some(INSTALL_TIMEOUT_SECS),
-        targets: targets.clone(),
+        targets,
         except: Vec::new(),
         no_wait: false,
     });
@@ -579,7 +619,7 @@ pub async fn apply_effects(gantry: &Gantry, plan: &Plan, by: &str) -> Result<(),
                 gantry
                     .store
                     .set_deployment_state(deployment, desired, by)
-                    .await?
+                    .await?;
             }
         }
     }

@@ -12,15 +12,12 @@ pub async fn handle(Path((name, uuid)): Path<(String, String)>) -> Response {
             "invalid repository name",
         );
     };
-    let metadata = match tokio::fs::metadata(&upload_path).await {
-        Ok(m) => m,
-        Err(_) => {
-            return error::response(
-                StatusCode::NOT_FOUND,
-                docker_error::BLOB_UNKNOWN,
-                "blob upload unknown to registry",
-            );
-        }
+    let Ok(metadata) = tokio::fs::metadata(&upload_path).await else {
+        return error::response(
+            StatusCode::NOT_FOUND,
+            docker_error::BLOB_UNKNOWN,
+            "blob upload unknown to registry",
+        );
     };
 
     let size = metadata.len();

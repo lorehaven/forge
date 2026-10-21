@@ -49,6 +49,7 @@ pub struct Target {
     pub units: Vec<Unit>,
 }
 
+#[must_use]
 pub fn assemble(catalog: &[PackageVersion], workloads: &[Workload]) -> Vec<Target> {
     let mut names: BTreeSet<&str> = catalog.iter().map(|p| p.name.as_str()).collect();
     names.extend(workloads.iter().map(|w| w.package.as_str()));

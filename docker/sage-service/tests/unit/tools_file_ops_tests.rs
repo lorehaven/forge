@@ -294,8 +294,10 @@ async fn a_new_files_nonexistent_path_is_still_confined_via_its_parent() {
 
 #[test]
 fn from_env_defaults_to_current_directory() {
-    let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
-    unsafe { std::env::remove_var("FILE_OPS_BASE_PATH") };
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    envmnt::remove("FILE_OPS_BASE_PATH");
     // Just confirms construction doesn't panic with no env var set; the
     // resulting base path isn't otherwise observable from outside the crate.
     let _executor = FileOpsExecutor::from_env();
@@ -305,13 +307,13 @@ fn from_env_defaults_to_current_directory() {
 #[test]
 fn from_env_honors_file_ops_base_path() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
-    unsafe {
-        std::env::set_var(
-            "FILE_OPS_BASE_PATH",
-            dir.path().to_string_lossy().to_string(),
-        )
-    };
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    envmnt::set(
+        "FILE_OPS_BASE_PATH",
+        dir.path().to_string_lossy().to_string(),
+    );
     let _executor = FileOpsExecutor::from_env();
-    unsafe { std::env::remove_var("FILE_OPS_BASE_PATH") };
+    envmnt::remove("FILE_OPS_BASE_PATH");
 }

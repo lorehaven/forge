@@ -1,5 +1,5 @@
 use crate::routers::docker::registry::storage::{
-    TagListError, TagMetadata, list_repositories, list_tag_metadata_for_repository,
+    TagMetadata, list_repositories, list_tag_metadata_for_repository,
 };
 use crate::routers::docker::{manifest_path, repository_path, validate_digest};
 use crate::routers::ui::PageQuery;
@@ -9,14 +9,15 @@ use quench_starter::common::routes::with_base_path;
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct DeleteImageForm {
     pub repository: String,
     pub digest: String,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct DeleteImageModalQuery {
     pub repository: String,
     pub tag: Option<String>,
@@ -25,7 +26,7 @@ pub struct DeleteImageModalQuery {
 
 #[derive(Default)]
 struct RepoTreeNode {
-    children: BTreeMap<String, RepoTreeNode>,
+    children: BTreeMap<String, Self>,
     full_repo: Option<String>,
 }
 
@@ -37,7 +38,7 @@ pub async fn docker_catalog(
     if !authenticated {
         return ui_login_redirect();
     }
-    render_catalog_page(query.repo.clone(), query.tag.clone())
+    render_catalog_page(query.repo.as_deref(), query.tag.as_deref())
 }
 
 #[get("/ui/docker/catalog/")]
@@ -48,7 +49,7 @@ pub async fn docker_catalog_slash(
     if !authenticated {
         return ui_login_redirect();
     }
-    render_catalog_page(query.repo.clone(), query.tag.clone())
+    render_catalog_page(query.repo.as_deref(), query.tag.as_deref())
 }
 
 #[get("/ui/docker/delete-image-modal")]
@@ -117,13 +118,16 @@ pub async fn delete_image(
     )
 }
 
+#[must_use]
 pub fn render_delete_image_modal(query: &DeleteImageModalQuery) -> String {
     let target = query
         .tag
         .as_deref()
         .filter(|tag| !tag.is_empty())
-        .map(|tag| format!("{}:{tag}", query.repository))
-        .unwrap_or_else(|| query.repository.clone());
+        .map_or_else(
+            || query.repository.clone(),
+            |tag| format!("{}:{tag}", query.repository),
+        );
 
     div()
         .attr("id", "confirm-delete-image-modal")
@@ -207,6 +211,7 @@ pub fn render_delete_image_modal(query: &DeleteImageModalQuery) -> String {
         .render()
 }
 
+#[must_use]
 pub fn empty_delete_image_modal_html() -> String {
     empty_delete_image_modal_element().render()
 }
@@ -215,30 +220,22 @@ fn empty_delete_image_modal_element() -> Element {
     div().attr("id", "confirm-delete-image-modal")
 }
 
-pub fn render_catalog_page(
-    selected_repo: Option<String>,
-    selected_tag: Option<String>,
-) -> Response {
+#[must_use]
+pub fn render_catalog_page(selected_repo: Option<&str>, selected_tag: Option<&str>) -> Response {
     let repositories = list_repositories();
     let tree = build_repo_tree(&repositories);
 
     let repo = selected_repo
-        .as_ref()
-        .filter(|r| repositories.iter().any(|x| x == *r))
-        .cloned();
+        .filter(|r| repositories.iter().any(|x| x == r))
+        .map(str::to_string);
 
-    let tags_meta = match repo.as_deref() {
-        Some(repo) => match list_tag_metadata_for_repository(repo) {
-            Ok(v) => v,
-            Err(TagListError::InvalidName) | Err(TagListError::NotFound) => Vec::new(),
-        },
-        None => Vec::new(),
-    };
+    let tags_meta = repo.as_deref().map_or_else(Vec::new, |repo| {
+        list_tag_metadata_for_repository(repo).unwrap_or_default()
+    });
 
     let active_tag = selected_tag
-        .as_ref()
-        .filter(|tag| tags_meta.iter().any(|meta| &meta.tag == *tag))
-        .cloned();
+        .filter(|tag| tags_meta.iter().any(|meta| meta.tag == *tag))
+        .map(str::to_string);
 
     let selected_meta = active_tag
         .as_ref()
@@ -271,6 +268,55 @@ pub fn render_catalog_page(
     )
 }
 
+/// One tag's metadata and the way to delete the image.
+fn tag_details(meta: &TagMetadata, repo: Option<&str>) -> Element {
+    div()
+        .class("meta-list")
+        .child(meta_row("ui_meta_tag", &meta.tag))
+        .child(meta_row("ui_meta_digest", &meta.digest))
+        .child(meta.media_type.as_deref().map_or_else(
+            || meta_row_unknown("ui_meta_media_type"),
+            |media_type| meta_row("ui_meta_media_type", media_type),
+        ))
+        .child(meta.size_bytes.map_or_else(
+            || meta_row_unknown("ui_meta_manifest_size"),
+            |size| {
+                meta_row_value(
+                    "ui_meta_manifest_size",
+                    span()
+                        .attr("data-i18n", "ui_meta_bytes")
+                        .attr("data-i18n-args", format!("{{\"size\":\"{size}\"}}"))
+                        .text(format!("{size} bytes")),
+                )
+            },
+        ))
+        .child(
+            div().class("mt-4").child(
+                button()
+                    .class("button-danger-sm")
+                    .attr("type", "button")
+                    .attr(
+                        "hx-get",
+                        format!(
+                            "{}?repository={}&tag={}&digest={}",
+                            ui_path("/docker/delete-image-modal"),
+                            encode_query_component(repo.unwrap_or("")),
+                            encode_query_component(&meta.tag),
+                            encode_query_component(&meta.digest)
+                        ),
+                    )
+                    .attr("hx-target", "#confirm-delete-image-modal")
+                    .attr("hx-swap", "outerHTML")
+                    .child(i().class("fas fa-trash mr-2"))
+                    .child(
+                        span()
+                            .attr("data-i18n", "ui_delete_image")
+                            .text("Delete Image"),
+                    ),
+            ),
+        )
+}
+
 fn render_metadata_panel(repo: Option<&str>, selected_meta: Option<&TagMetadata>) -> Element {
     let title = match (repo, selected_meta) {
         (Some(_), Some(meta)) => div()
@@ -280,52 +326,10 @@ fn render_metadata_panel(repo: Option<&str>, selected_meta: Option<&TagMetadata>
         _ => div().class("panel-title").attr("data-i18n", "ui_metadata"),
     };
 
-    let body = match selected_meta {
-        Some(meta) => div()
-            .class("meta-list")
-            .child(meta_row("ui_meta_tag", &meta.tag))
-            .child(meta_row("ui_meta_digest", &meta.digest))
-            .child(match meta.media_type.as_deref() {
-                Some(media_type) => meta_row("ui_meta_media_type", media_type),
-                None => meta_row_unknown("ui_meta_media_type"),
-            })
-            .child(match meta.size_bytes {
-                Some(size) => meta_row_value(
-                    "ui_meta_manifest_size",
-                    span()
-                        .attr("data-i18n", "ui_meta_bytes")
-                        .attr("data-i18n-args", format!("{{\"size\":\"{size}\"}}"))
-                        .text(format!("{size} bytes")),
-                ),
-                None => meta_row_unknown("ui_meta_manifest_size"),
-            })
-            .child(
-                div().class("mt-4").child(
-                    button()
-                        .class("button-danger-sm")
-                        .attr("type", "button")
-                        .attr(
-                            "hx-get",
-                            format!(
-                                "{}?repository={}&tag={}&digest={}",
-                                ui_path("/docker/delete-image-modal"),
-                                encode_query_component(repo.unwrap_or("")),
-                                encode_query_component(&meta.tag),
-                                encode_query_component(&meta.digest)
-                            ),
-                        )
-                        .attr("hx-target", "#confirm-delete-image-modal")
-                        .attr("hx-swap", "outerHTML")
-                        .child(i().class("fas fa-trash mr-2"))
-                        .child(
-                            span()
-                                .attr("data-i18n", "ui_delete_image")
-                                .text("Delete Image"),
-                        ),
-                ),
-            ),
-        None => empty_state("ui_empty_select_tag"),
-    };
+    let body = selected_meta.map_or_else(
+        || empty_state("ui_empty_select_tag"),
+        |meta| tag_details(meta, repo),
+    );
 
     div()
         .class("h-100 d-flex flex-column")
@@ -401,7 +405,7 @@ fn render_repo_node(
     let full_path = if parent_path.is_empty() {
         name.to_string()
     } else {
-        format!("{}/{}", parent_path, name)
+        format!("{parent_path}/{name}")
     };
 
     // We only need details if there's something to expand (children or tags)
@@ -423,9 +427,8 @@ fn render_repo_node(
                         .text(name),
                     ),
             );
-        } else {
-            return item.child(span().class("tree-folder").text(name));
         }
+        return item.child(span().class("tree-folder").text(name));
     }
 
     let mut details = element("details").attr("data-path", &full_path);
@@ -519,7 +522,9 @@ fn encode_query_component(value: &str) -> String {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
                 encoded.push(byte as char);
             }
-            _ => encoded.push_str(&format!("%{byte:02X}")),
+            _ => {
+                let _ = write!(encoded, "%{byte:02X}");
+            }
         }
     }
     encoded

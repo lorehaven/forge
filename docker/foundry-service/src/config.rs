@@ -66,6 +66,7 @@ pub struct RunConfig {
     pub installs: Vec<InstallRequest>,
 }
 
+#[derive(Clone, Copy, Debug)]
 pub struct ConfigInputs<'a> {
     pub config_path: Option<&'a Path>,
     pub catalog: Option<&'a Path>,
@@ -181,6 +182,7 @@ pub fn pick(flag: Option<&str>, env: &str, file: Option<String>, default: &str) 
         .unwrap_or_else(|| default.to_string())
 }
 
+#[must_use]
 pub fn env_value(key: &str) -> Option<String> {
     std::env::var(key).ok().filter(|value| !value.is_empty())
 }

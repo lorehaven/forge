@@ -1,3 +1,5 @@
+//! The simulated executor exercises operations against an in-memory cluster.
+//!
 //! A runner that changes the in-memory fake cluster instead of a real one, for trying Gantry with nothing
 //! behind it: start, stop, swap and upgrade, and watch the state move. It does what the steps *mean* -
 //! scale sets a count, an install puts a package's workloads at a version - and writes a log in the
@@ -12,7 +14,19 @@ use crate::domain::runner::RESULT_MARKER;
 use crate::domain::steps::Step;
 use async_trait::async_trait;
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::sync::{Arc, Mutex};
+
+fn add_item(items: &mut Vec<InventoryItem>, item: InventoryItem) {
+    let same = |other: &InventoryItem| {
+        other.kind.eq_ignore_ascii_case(&item.kind)
+            && other.name == item.name
+            && other.namespace == item.namespace
+    };
+    if !items.iter().any(same) {
+        items.push(item);
+    }
+}
 
 pub struct SimulatedExecutor {
     cluster: Arc<FakeCluster>,
@@ -53,16 +67,6 @@ impl SimulatedExecutor {
             .ok_or_else(|| format!("{package} {version} is not published"))?;
 
         let mut items = self.cluster.catalog(package);
-        fn add_item(items: &mut Vec<InventoryItem>, item: InventoryItem) {
-            let same = |other: &InventoryItem| {
-                other.kind.eq_ignore_ascii_case(&item.kind)
-                    && other.name == item.name
-                    && other.namespace == item.namespace
-            };
-            if !items.iter().any(same) {
-                items.push(item);
-            }
-        }
         let namespace = record.namespace.clone();
         for resource in record.deployments().into_iter().flat_map(|d| d.resources) {
             let (kind, name) = resource
@@ -108,6 +112,83 @@ impl SimulatedExecutor {
         Ok(items)
     }
 
+    /// Sets a workload's replica count, as `kubectl scale` would.
+    fn scale(&self, namespace: &str, kind: &str, name: &str, replicas: u32) -> Result<(), String> {
+        let mut workloads = self.cluster.workloads();
+        let found = workloads
+            .iter_mut()
+            .find(|w| w.namespace == namespace && w.kind == kind && w.name == name)
+            .ok_or_else(|| format!("{kind}/{name} not found in {namespace}"))?;
+        found.desired = i32::try_from(replicas).unwrap_or(i32::MAX);
+        found.ready = found.desired;
+        self.cluster.upsert_workload(found.clone());
+        Ok(())
+    }
+
+    /// Deletes a resource, and says what `kubectl delete` would have.
+    fn delete(&self, resource: &str, namespace: Option<&str>) -> String {
+        let (kind, name) = resource.split_once('/').unwrap_or(("", resource));
+        let short = kind.split('.').next().unwrap_or(kind);
+        if self.cluster.delete_resource(short, name, namespace) {
+            format!("{kind} \"{name}\" deleted")
+        } else {
+            format!("{resource} was not found (nothing to delete)")
+        }
+    }
+
+    /// Puts one resource of an installed package into the fake cluster; returns its `kind/name`.
+    fn put_item(
+        &self,
+        item: &InventoryItem,
+        namespace: &str,
+        replicas: &std::collections::BTreeMap<String, u32>,
+        package: &str,
+        version: &str,
+    ) -> String {
+        let ns = item
+            .namespace
+            .clone()
+            .or_else(|| Some(namespace.to_string()));
+        let key = format!("{}/{}", item.kind.to_ascii_lowercase(), item.name);
+        if crate::domain::resources::is_workload(&item.kind) {
+            let desired =
+                i32::try_from(replicas.get(&key).copied().unwrap_or(1)).unwrap_or(i32::MAX);
+            self.cluster.upsert_workload(Workload {
+                kind: item.kind.to_ascii_lowercase(),
+                name: item.name.clone(),
+                namespace: ns.unwrap_or_default(),
+                package: package.to_string(),
+                version: Some(version.to_string()),
+                desired,
+                ready: desired,
+            });
+        } else if !crate::domain::resources::is_secret(&item.kind) {
+            let yaml = format!(
+                "apiVersion: {}\nkind: {}\nmetadata:\n  name: {}\n{}",
+                item.api_version.clone().unwrap_or_else(|| "v1".to_string()),
+                item.kind,
+                item.name,
+                ns.as_ref()
+                    .map_or(String::new(), |n| format!("  namespace: {n}\n"))
+            );
+            self.cluster.upsert_extra(crate::domain::cluster::Extra {
+                live: LiveResource {
+                    api_version: item.api_version.clone(),
+                    kind: item.kind.clone(),
+                    name: item.name.clone(),
+                    namespace: ns,
+                    package: package.to_string(),
+                    version: Some(version.to_string()),
+                    ready: None,
+                    edited: false,
+                    owned: false,
+                },
+                yaml,
+            });
+        }
+        key
+    }
+
     async fn apply(&self, step: &Step, log: &mut String) -> Result<(), String> {
         use std::fmt::Write;
         match step {
@@ -131,30 +212,14 @@ impl SimulatedExecutor {
                 name,
                 replicas,
             } => {
-                let mut workloads = self.cluster.workloads();
-                let found = workloads
-                    .iter_mut()
-                    .find(|w| &w.namespace == namespace && &w.kind == kind && &w.name == name)
-                    .ok_or_else(|| format!("{kind}/{name} not found in {namespace}"))?;
-                found.desired = i32::try_from(*replicas).unwrap_or(i32::MAX);
-                found.ready = found.desired;
-                self.cluster.upsert_workload(found.clone());
+                self.scale(namespace, kind, name, *replicas)?;
                 let _ = writeln!(log, "{kind}.apps/{name} scaled to {replicas}");
             }
             Step::Delete {
                 resource,
                 namespace,
             } => {
-                let (kind, name) = resource.split_once('/').unwrap_or(("", resource));
-                let short = kind.split('.').next().unwrap_or(kind);
-                if self
-                    .cluster
-                    .delete_resource(short, name, namespace.as_deref())
-                {
-                    let _ = writeln!(log, "{kind} \"{name}\" deleted");
-                } else {
-                    let _ = writeln!(log, "{resource} was not found (nothing to delete)");
-                }
+                let _ = writeln!(log, "{}", self.delete(resource, namespace.as_deref()));
             }
             Step::ApplyYaml { yaml, .. } => {
                 self.cluster.apply_yaml(yaml)?;
@@ -194,44 +259,7 @@ impl SimulatedExecutor {
 
                 let mut applied = Vec::new();
                 for item in items.iter().filter(|i| selected(i)) {
-                    let ns = item.namespace.clone().or_else(|| Some(namespace.clone()));
-                    let key = format!("{}/{}", item.kind.to_ascii_lowercase(), item.name);
-                    if crate::domain::resources::is_workload(&item.kind) {
-                        let desired = i32::try_from(replicas.get(&key).copied().unwrap_or(1))
-                            .unwrap_or(i32::MAX);
-                        self.cluster.upsert_workload(Workload {
-                            kind: item.kind.to_ascii_lowercase(),
-                            name: item.name.clone(),
-                            namespace: ns.clone().unwrap_or_default(),
-                            package: package.clone(),
-                            version: Some(version.clone()),
-                            desired,
-                            ready: desired,
-                        });
-                    } else if !crate::domain::resources::is_secret(&item.kind) {
-                        let yaml = format!(
-                            "apiVersion: {}\nkind: {}\nmetadata:\n  name: {}\n{}",
-                            item.api_version.clone().unwrap_or_else(|| "v1".to_string()),
-                            item.kind,
-                            item.name,
-                            ns.as_ref()
-                                .map_or(String::new(), |n| format!("  namespace: {n}\n"))
-                        );
-                        self.cluster.upsert_extra(crate::domain::cluster::Extra {
-                            live: LiveResource {
-                                api_version: item.api_version.clone(),
-                                kind: item.kind.clone(),
-                                name: item.name.clone(),
-                                namespace: ns,
-                                package: package.clone(),
-                                version: Some(version.clone()),
-                                ready: None,
-                                edited: false,
-                                owned: false,
-                            },
-                            yaml,
-                        });
-                    }
+                    let key = self.put_item(item, namespace, replicas, package, version);
                     applied.push(key);
                 }
                 let _ = writeln!(
@@ -275,13 +303,9 @@ impl Executor for SimulatedExecutor {
         let mut log = String::new();
         let mut failure = None;
         for (index, step) in launch.plan.steps.iter().enumerate() {
-            log.push_str(&format!(
-                "== step {}/{total}: {}\n",
-                index + 1,
-                step.describe()
-            ));
+            let _ = writeln!(log, "== step {}/{total}: {}", index + 1, step.describe());
             if let Err(reason) = self.apply(step, &mut log).await {
-                log.push_str(&format!("!! {reason}\n"));
+                let _ = writeln!(log, "!! {reason}");
                 failure = Some(format!(
                     "step {} ({}): {reason}",
                     index + 1,
@@ -290,13 +314,15 @@ impl Executor for SimulatedExecutor {
                 break;
             }
         }
-        let (status, marker) = match failure {
-            None => (JobStatus::Succeeded, format!("{RESULT_MARKER} ok")),
-            Some(reason) => (
-                JobStatus::Failed(reason.clone()),
-                format!("{RESULT_MARKER} failed {reason}"),
-            ),
-        };
+        let (status, marker) = failure.map_or_else(
+            || (JobStatus::Succeeded, format!("{RESULT_MARKER} ok")),
+            |reason| {
+                (
+                    JobStatus::Failed(reason.clone()),
+                    format!("{RESULT_MARKER} failed {reason}"),
+                )
+            },
+        );
         log.push_str(&marker);
         log.push('\n');
         self.finished().insert(launch.name.clone(), (status, log));
@@ -324,5 +350,11 @@ impl Executor for SimulatedExecutor {
 
     async fn cleanup(&self, _name: &str) -> Result<(), ClusterError> {
         Ok(())
+    }
+}
+
+impl std::fmt::Debug for SimulatedExecutor {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("SimulatedExecutor { .. }")
     }
 }

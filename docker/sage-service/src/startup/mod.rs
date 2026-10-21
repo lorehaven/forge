@@ -11,6 +11,7 @@ pub fn init_tracing() {
 }
 
 /// Readiness endpoint sage waits on before serving traffic.
+#[must_use]
 pub fn health_check_url() -> String {
     let switchboard_url = envmnt::get_or("SWITCHBOARD_URL", "http://switchboard-service:8080");
     format!("{}/health/ready", switchboard_url.trim_end_matches('/'))

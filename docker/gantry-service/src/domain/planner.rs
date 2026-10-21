@@ -48,7 +48,8 @@ pub enum Action {
 }
 
 impl Action {
-    pub fn as_str(self) -> &'static str {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::Install => "install",
             Self::Upgrade => "upgrade",
@@ -60,7 +61,8 @@ impl Action {
         }
     }
 
-    pub fn permission(self) -> &'static str {
+    #[must_use]
+    pub const fn permission(self) -> &'static str {
         match self {
             Self::Downgrade => "rollback",
             Self::Stop | Self::Start => "scale",
@@ -69,6 +71,7 @@ impl Action {
         }
     }
 
+    #[must_use]
     pub fn parse(value: &str) -> Option<Self> {
         Some(match value {
             "install" => Self::Install,
@@ -98,6 +101,7 @@ pub async fn all(gantry: &Gantry) -> Result<Vec<Target>, PlanError> {
 }
 
 /// Works out the change that puts `name` at `version` (the newest non-yanked if `None`) and stores it.
+///
 /// A change worked out but not yet recorded or run: the steps, what they are, and what they were
 /// worked out against.
 #[derive(Clone, Debug)]
@@ -180,14 +184,13 @@ pub async fn prepare(
     let units = target.as_ref().map(|t| t.units.clone()).unwrap_or_default();
 
     let chosen = choose(&versions, version, installed.as_deref())?;
-    let action = match installed.as_deref() {
-        None => Action::Install,
-        Some(have) => match compare(&chosen.version, have) {
+    let action = installed.as_deref().map_or(Action::Install, |have| {
+        match compare(&chosen.version, have) {
             Ordering::Greater => Action::Upgrade,
             Ordering::Equal => Action::Reinstall,
             Ordering::Less => Action::Downgrade,
-        },
-    };
+        }
+    });
 
     let namespace = chosen
         .namespace

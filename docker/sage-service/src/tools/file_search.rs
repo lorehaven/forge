@@ -3,7 +3,9 @@ use crate::clients::vllm::VllmClient;
 use crate::files::rag;
 use crate::tools::{ToolCall, ToolDefinition, ToolExecutor, ToolParameters, ToolResult};
 use quench_db::prelude::Db;
+use std::fmt::Write as _;
 
+#[must_use]
 pub fn get_definition() -> ToolDefinition {
     ToolDefinition {
         name: "file_search".to_string(),
@@ -30,6 +32,7 @@ pub fn get_definition() -> ToolDefinition {
     }
 }
 
+#[derive(Debug)]
 pub struct FileSearchExecutor {
     db: Db,
     switchboard: SwitchboardClient,
@@ -40,7 +43,8 @@ pub struct FileSearchExecutor {
 }
 
 impl FileSearchExecutor {
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         db: Db,
         switchboard: SwitchboardClient,
         vllm: VllmClient,
@@ -84,7 +88,7 @@ impl ToolExecutor for FileSearchExecutor {
         let top_k = tool_call
             .arguments
             .get("top_k")
-            .and_then(|k| k.as_i64())
+            .and_then(serde_json::Value::as_i64)
             .unwrap_or_else(|| rag::RagConfig::from_env().top_k)
             .clamp(1, 20);
 
@@ -107,15 +111,15 @@ impl ToolExecutor for FileSearchExecutor {
             Ok(hits) => {
                 let mut content = format!("Found {} relevant excerpt(s):\n\n", hits.len());
                 for hit in hits {
-                    let location = hit
-                        .detail
-                        .as_ref()
-                        .map(|d| format!(" · {}", d))
-                        .unwrap_or_else(|| format!(" · chunk {}", hit.chunk_index));
-                    content.push_str(&format!(
-                        "[{}{} · similarity {:.2}]\n{}\n\n",
+                    let location = hit.detail.as_ref().map_or_else(
+                        || format!(" · chunk {}", hit.chunk_index),
+                        |d| format!(" · {d}"),
+                    );
+                    let _ = writeln!(
+                        content,
+                        "[{}{} · similarity {:.2}]\n{}\n",
                         hit.file_name, location, hit.similarity, hit.content
-                    ));
+                    );
                 }
                 ToolResult {
                     tool_use_id: tool_call.id.clone(),
@@ -125,7 +129,7 @@ impl ToolExecutor for FileSearchExecutor {
             }
             Err(e) => ToolResult {
                 tool_use_id: tool_call.id.clone(),
-                content: format!("File search failed: {}", e),
+                content: format!("File search failed: {e}"),
                 is_error: true,
             },
         }

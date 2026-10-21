@@ -7,20 +7,19 @@ pub async fn validate_startup(switchboard: &SwitchboardClient, config: &SageConf
     tracing::info!("Validating startup configuration...");
 
     // Check if validation is disabled (for testing)
-    let skip_switchboard_check = std::env::var("SKIP_SWITCHBOARD_CHECK")
-        .map(|v| v.to_lowercase() == "true")
-        .unwrap_or(false);
+    let skip_switchboard_check =
+        std::env::var("SKIP_SWITCHBOARD_CHECK").is_ok_and(|v| v.to_lowercase() == "true");
 
     // Validate Switchboard connectivity (unless disabled)
-    if !skip_switchboard_check {
-        validate_switchboard(switchboard).await?;
-    } else {
+    if skip_switchboard_check {
         tracing::warn!("Switchboard connectivity validation skipped (SKIP_SWITCHBOARD_CHECK=true)");
+    } else {
+        validate_switchboard(switchboard).await?;
     }
 
     // Validate search providers (if configured)
     if !config.available_search_providers.is_empty() {
-        validate_search_providers(config).await?;
+        validate_search_providers(config);
     }
 
     tracing::info!("All startup validations passed");
@@ -41,9 +40,8 @@ async fn validate_switchboard(switchboard: &SwitchboardClient) -> Result<()> {
         }
         Err(e) => {
             let error_msg = format!(
-                "Failed to connect to Switchboard service: {}. \
-                 Make sure SWITCHBOARD_URL is correct and the service is running.",
-                e
+                "Failed to connect to Switchboard service: {e}. \
+                 Make sure SWITCHBOARD_URL is correct and the service is running."
             );
             tracing::error!("{}", error_msg);
             Err(anyhow::anyhow!(error_msg))
@@ -52,7 +50,7 @@ async fn validate_switchboard(switchboard: &SwitchboardClient) -> Result<()> {
 }
 
 /// Validate configured search providers are accessible
-async fn validate_search_providers(config: &SageConfig) -> Result<()> {
+fn validate_search_providers(config: &SageConfig) {
     tracing::info!(
         "Validating search providers: {}",
         config.available_search_providers.join(", ")
@@ -87,6 +85,4 @@ async fn validate_search_providers(config: &SageConfig) -> Result<()> {
             }
         }
     }
-
-    Ok(())
 }

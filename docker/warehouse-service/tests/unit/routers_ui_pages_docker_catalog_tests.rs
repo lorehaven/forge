@@ -64,7 +64,7 @@ async fn render_catalog_page_with_an_unknown_selected_repo_ignores_the_selection
     let storage = WithStorageRoot::new();
     write_tag(&storage, "my-repo", "latest", DIGEST, None);
 
-    let resp = render_catalog_page(Some("no-such-repo".to_string()), None);
+    let resp = render_catalog_page(Some("no-such-repo"), None);
     let html = body_html(resp).await;
     assert!(html.contains("ui_empty_select_tag"));
 }
@@ -75,7 +75,7 @@ async fn render_catalog_page_with_a_selected_repo_and_tag_shows_metadata() {
     let manifest = r#"{"mediaType": "application/vnd.oci.image.manifest.v1+json"}"#;
     write_tag(&storage, "my-repo", "latest", DIGEST, Some(manifest));
 
-    let resp = render_catalog_page(Some("my-repo".to_string()), Some("latest".to_string()));
+    let resp = render_catalog_page(Some("my-repo"), Some("latest"));
     let html = body_html(resp).await;
     assert!(html.contains("ui_meta_for") || html.contains("latest"));
     assert!(html.contains(DIGEST));
@@ -88,7 +88,7 @@ async fn render_catalog_page_with_a_selected_repo_but_unknown_tag_shows_the_tag_
     let storage = WithStorageRoot::new();
     write_tag(&storage, "my-repo", "latest", DIGEST, None);
 
-    let resp = render_catalog_page(Some("my-repo".to_string()), Some("no-such-tag".to_string()));
+    let resp = render_catalog_page(Some("my-repo"), Some("no-such-tag"));
     let html = body_html(resp).await;
     assert!(html.contains("ui_empty_select_tag"));
 }
@@ -162,7 +162,7 @@ async fn app(
         .build()
         .await
         .unwrap();
-    support::app(container).await
+    support::app(container)
 }
 
 #[tokio::test]

@@ -2,6 +2,7 @@ use super::{ToolCall, ToolDefinition, ToolExecutor, ToolParameters, ToolResult};
 use async_trait::async_trait;
 use serde_json::json;
 
+#[must_use]
 pub fn get_definition() -> ToolDefinition {
     ToolDefinition {
         name: "command".to_string(),
@@ -20,12 +21,14 @@ pub fn get_definition() -> ToolDefinition {
     }
 }
 
+#[derive(Debug)]
 pub struct CommandExecutor {
     last_execution: std::sync::Mutex<std::time::SystemTime>,
     execution_count: std::sync::atomic::AtomicU32,
 }
 
 impl CommandExecutor {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             last_execution: std::sync::Mutex::new(std::time::SystemTime::now()),
@@ -115,13 +118,14 @@ impl ToolExecutor for CommandExecutor {
             },
             Err(err) => ToolResult {
                 tool_use_id: tool_call.id.clone(),
-                content: format!("Command failed: {}", err),
+                content: format!("Command failed: {err}"),
                 is_error: true,
             },
         }
     }
 }
 
+#[must_use]
 pub fn is_safe_command(cmd: &str) -> bool {
     let cmd_lower = cmd.trim().to_lowercase();
 
@@ -191,6 +195,6 @@ async fn execute_command(cmd: &str) -> Result<String, String> {
                 Err(error_msg)
             }
         }
-        Err(e) => Err(format!("Failed to execute command: {}", e)),
+        Err(e) => Err(format!("Failed to execute command: {e}")),
     }
 }

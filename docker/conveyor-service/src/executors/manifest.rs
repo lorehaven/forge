@@ -10,6 +10,7 @@ use k8s_openapi::api::core::v1::{
 };
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::ObjectMeta;
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 
 /// Where the checkout lands inside both containers.
 pub const WORKSPACE_PATH: &str = "/workspace";
@@ -27,6 +28,7 @@ const DEFAULT_IMAGE: &str = "alpine:3.22";
 pub const STEP_MARKER: &str = "##conveyor-step:";
 
 /// Everything a job needs in the cluster.
+#[derive(Debug)]
 pub struct Manifest {
     pub name: String,
     pub job: Job,
@@ -35,6 +37,7 @@ pub struct Manifest {
 }
 
 /// DNS-1123: lowercase alphanumerics/dashes, ≤63 chars - doesn't assume job ids are uuids.
+#[must_use]
 pub fn object_name(job_id: &str) -> String {
     let cleaned: String = job_id
         .chars()
@@ -58,6 +61,7 @@ pub fn object_name(job_id: &str) -> String {
 }
 
 /// `managed-by` is what a cleanup selects a stray job on.
+#[must_use]
 pub fn labels(spec: &JobSpec, name: &str) -> BTreeMap<String, String> {
     BTreeMap::from([
         (
@@ -70,6 +74,7 @@ pub fn labels(spec: &JobSpec, name: &str) -> BTreeMap<String, String> {
 }
 
 /// `set -e` is deliberately absent - each step's failure is handled explicitly so its own exit code comes back.
+#[must_use]
 pub fn script(commands: &[Vec<String>]) -> String {
     let mut script = String::new();
 
@@ -80,8 +85,8 @@ pub fn script(commands: &[Vec<String>]) -> String {
             .collect::<Vec<_>>()
             .join(" ");
 
-        script.push_str(&format!("printf '%s%d\\n' '{STEP_MARKER}' {ordinal} >&2\n"));
-        script.push_str(&format!("{rendered}\n"));
+        let _ = writeln!(script, "printf '%s%d\\n' '{STEP_MARKER}' {ordinal} >&2");
+        let _ = writeln!(script, "{rendered}");
         script.push_str("__status=$?\n");
         script.push_str("if [ $__status -ne 0 ]; then exit $__status; fi\n");
     }
@@ -95,6 +100,7 @@ fn shell_quote(value: &str) -> String {
 }
 
 /// Builds the objects for one job.
+#[must_use]
 pub fn build(
     spec: &JobSpec,
     commands: &[Vec<String>],
@@ -175,7 +181,7 @@ pub fn build(
         spec: Some(K8sJobSpec {
             // Conveyor owns retries via the queue; a silent second attempt would double-count as one run.
             backoff_limit: Some(0),
-            active_deadline_seconds: Some(spec.timeout.as_secs().max(1) as i64),
+            active_deadline_seconds: Some(spec.timeout.as_secs().max(1).cast_signed()),
             // Backstop for a conveyor that died before `forget` could delete this.
             ttl_seconds_after_finished: Some(settings.ttl_seconds),
             template: PodTemplateSpec {
@@ -263,6 +269,7 @@ pub struct Settings {
 }
 
 impl Settings {
+    #[must_use]
     pub fn from_env() -> Self {
         Self {
             git_image: envmnt::get_or("CONVEYOR_K8S_GIT_IMAGE", DEFAULT_GIT_IMAGE),

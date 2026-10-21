@@ -5,6 +5,7 @@ use crate::domain::storage::DynamicStorage;
 use quench_auth::domain::jwt::{Claims, JwtConfig};
 
 /// Owner, wildcard role, or an explicit `warehouse:storage:<name>:<action>` grant.
+#[must_use]
 pub fn can_on_storage(
     claims: Option<&Claims>,
     config: &JwtConfig,
@@ -22,6 +23,7 @@ pub fn can_on_storage(
     can_on_storage_claims(claims, storage, action)
 }
 
+#[must_use]
 pub fn can_on_storage_claims(claims: &Claims, storage: &DynamicStorage, action: &str) -> bool {
     claims.has_wildcard()
         || storage.owner == claims.sub
@@ -29,6 +31,7 @@ pub fn can_on_storage_claims(claims: &Claims, storage: &DynamicStorage, action: 
 }
 
 /// Blanket `warehouse:<action>` grant - storage *administration* and static-storage writes.
+#[must_use]
 pub fn has_blanket(claims: Option<&Claims>, config: &JwtConfig, action: &str) -> bool {
     if !config.auth_enabled {
         return true;

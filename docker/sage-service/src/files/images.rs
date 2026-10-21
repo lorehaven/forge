@@ -10,27 +10,33 @@ fn db_schema() -> String {
 
 /// Master switch for image handling (`SAGE_IMAGES_ENABLED`, default true). When false, no
 /// image uploads are accepted and none are ever sent to a model, regardless of history.
+#[must_use]
 pub fn images_enabled() -> bool {
     envmnt::get_or("SAGE_IMAGES_ENABLED", "true")
         .parse::<bool>()
         .unwrap_or(true)
 }
 
-/// Upper bound on images sent per request, across the current message and history. Must not
+/// Upper bound on images sent per request, across the current message and history.
+///
+/// Must not
 /// exceed the vLLM instance's `--limit-mm-per-prompt`, or requests with images will fail.
 /// Zero when [`images_enabled`] is false, which makes `cap_images` strip every image.
+#[must_use]
 pub fn max_images_per_request() -> usize {
     if !images_enabled() {
         return 0;
     }
-    envmnt::get_u64("SAGE_MAX_IMAGES_PER_REQUEST", 2) as usize
+    usize::try_from(envmnt::get_u64("SAGE_MAX_IMAGES_PER_REQUEST", 2)).unwrap_or(2)
 }
 
 /// Rough prompt-budget cost of one image; deliberately conservative since actual vision token counts depend on model and resolution.
+#[must_use]
 pub fn image_token_estimate() -> usize {
-    envmnt::get_u64("SAGE_IMAGE_TOKEN_ESTIMATE", 1024) as usize
+    usize::try_from(envmnt::get_u64("SAGE_IMAGE_TOKEN_ESTIMATE", 1024)).unwrap_or(1024)
 }
 
+#[must_use]
 pub fn to_data_uri(mime: &str, data: &[u8]) -> String {
     use base64::Engine;
     format!(

@@ -7,6 +7,7 @@ use quench_auth::domain::jwt::JwtConfig;
 use quench_http::prelude::{Inject, Json, Query, Response, get, post};
 use quench_starter::common::routes::with_base_path;
 use quench_web::prelude::*;
+use std::fmt::Write as _;
 
 #[post("/api/v1/models/list")]
 pub async fn handle_list(Json(body): Json<ModelFilters>) -> Json<Vec<Model>> {
@@ -30,7 +31,7 @@ pub async fn handle_grid(
 
     apply_filters(&mut models, &filters, &gpu);
 
-    let html = render_model_grid(models, &gpu, can_delete);
+    let html = render_model_grid(&models, &gpu, can_delete);
 
     Response::html(http::StatusCode::OK, html)
 }
@@ -52,10 +53,9 @@ pub async fn estimates_modal(Query(query): Query<EstimatesModalQuery>) -> Respon
         .as_deref()
         .and_then(|path| models.into_iter().find(|model| model.path == path));
 
-    let html = match model {
-        Some(model) => render_estimates_modal(&model, &gpu, &query),
-        None => empty_estimates_modal(),
-    };
+    let html = model.map_or_else(empty_estimates_modal, |model| {
+        render_estimates_modal(&model, &gpu, &query)
+    });
 
     Response::html(http::StatusCode::OK, html)
 }
@@ -106,7 +106,9 @@ pub fn apply_filters(models: &mut Vec<Model>, filters: &ModelFilters, gpu: &GpuI
 
     if let Some(context_val) = &filters.context {
         let context_num = match context_val {
-            serde_json::Value::Number(n) => n.as_u64().unwrap_or(0) as usize,
+            serde_json::Value::Number(n) => {
+                usize::try_from(n.as_u64().unwrap_or(0)).unwrap_or_default()
+            }
             serde_json::Value::String(s) => s.parse::<usize>().unwrap_or(0),
             _ => 0,
         };
@@ -139,8 +141,8 @@ pub fn apply_filters(models: &mut Vec<Model>, filters: &ModelFilters, gpu: &GpuI
             "vram_asc" => models.sort_by(|a, b| {
                 let best_a = find_best_estimate(&a.estimates, gpu.free_gb);
                 let best_b = find_best_estimate(&b.estimates, gpu.free_gb);
-                let vram_a = best_a.map(|e| e.total_gb).unwrap_or(1000.0);
-                let vram_b = best_b.map(|e| e.total_gb).unwrap_or(1000.0);
+                let vram_a = best_a.map_or(1000.0, |e| e.total_gb);
+                let vram_b = best_b.map_or(1000.0, |e| e.total_gb);
                 vram_a
                     .partial_cmp(&vram_b)
                     .unwrap_or(std::cmp::Ordering::Equal)
@@ -148,8 +150,8 @@ pub fn apply_filters(models: &mut Vec<Model>, filters: &ModelFilters, gpu: &GpuI
             "vram_desc" => models.sort_by(|a, b| {
                 let best_a = find_best_estimate(&a.estimates, gpu.free_gb);
                 let best_b = find_best_estimate(&b.estimates, gpu.free_gb);
-                let vram_a = best_a.map(|e| e.total_gb).unwrap_or(1000.0);
-                let vram_b = best_b.map(|e| e.total_gb).unwrap_or(1000.0);
+                let vram_a = best_a.map_or(1000.0, |e| e.total_gb);
+                let vram_b = best_b.map_or(1000.0, |e| e.total_gb);
                 vram_b
                     .partial_cmp(&vram_a)
                     .unwrap_or(std::cmp::Ordering::Equal)
@@ -166,10 +168,10 @@ fn find_best_estimate(estimates: &[ModelEstimate], available_vram: f64) -> Optio
         .max_by(|a, b| {
             let a_ctx = a.context.as_usize();
             let b_ctx = b.context.as_usize();
-            if a_ctx != b_ctx {
-                a_ctx.cmp(&b_ctx)
-            } else {
+            if a_ctx == b_ctx {
                 a.quant.rank().cmp(&b.quant.rank())
+            } else {
+                a_ctx.cmp(&b_ctx)
             }
         })
 }
@@ -183,207 +185,217 @@ fn find_minimum_estimate(estimates: &[ModelEstimate]) -> Option<&ModelEstimate> 
 }
 
 fn render_fit_item(key: &str, label: &str, value: Option<String>) -> Element {
-    if let Some(val) = value {
-        span()
-            .child(element("strong").attr("data-i18n", key).text(label))
-            .child(span().text(format!(": {}", val)))
-    } else {
-        span().attr("data-i18n", key).text(label)
-    }
+    value.map_or_else(
+        || span().attr("data-i18n", key).text(label),
+        |val| {
+            span()
+                .child(element("strong").attr("data-i18n", key).text(label))
+                .child(span().text(format!(": {val}")))
+        },
+    )
 }
 
 fn render_separator() -> Element {
     span().class("fit-separator").text(" | ")
 }
 
-fn render_model_grid(models: Vec<Model>, gpu: &GpuInfo, can_delete: bool) -> String {
+/// The model has an estimate that fits: how well.
+fn fits_summary(best: &ModelEstimate, gpu: &GpuInfo) -> (String, Element) {
+    let margin = gpu.free_gb - best.total_gb;
+    let cls = if margin <= 2.0 { "fit-warn" } else { "fit-ok" };
+    (
+        format!("fit-line {cls}"),
+        div()
+            .child(render_fit_item("ui_models_card_fits_yes", "Fits", None))
+            .child(render_separator())
+            .child(render_fit_item(
+                "ui_models_card_best",
+                "Best",
+                Some(format!("{} / {}", best.context, best.quant)),
+            ))
+            .child(render_separator())
+            .child(render_fit_item(
+                "ui_models_card_vram",
+                "VRAM",
+                Some(format!("{:.1} GB", best.total_gb)),
+            ))
+            .child(render_separator())
+            .child(render_fit_item(
+                "ui_models_card_margin",
+                "Margin",
+                Some(format!("{margin:.2} GB")),
+            )),
+    )
+}
+
+/// Nothing fits: the least it would take.
+fn too_big_summary(min: &ModelEstimate) -> (String, Element) {
+    (
+        "fit-line fit-no".to_string(),
+        div()
+            .child(render_fit_item("ui_models_card_fits_no", "Fits", None))
+            .child(render_separator())
+            .child(render_fit_item(
+                "ui_models_card_minimum",
+                "Min",
+                Some(format!("{:.1} GB", min.total_gb)),
+            ))
+            .child(render_separator()),
+    )
+}
+
+fn no_estimates_summary() -> (String, Element) {
+    (
+        "fit-line fit-no".to_string(),
+        div()
+            .attr("data-i18n", "ui_models_card_no_estimates")
+            .text("No estimates"),
+    )
+}
+
+/// How the model sits on the GPU: the style of the line, and what it says.
+fn fit_summary(model: &Model, gpu: &GpuInfo) -> (String, Element) {
+    find_best_estimate(&model.estimates, gpu.free_gb).map_or_else(
+        || {
+            find_minimum_estimate(&model.estimates)
+                .map_or_else(no_estimates_summary, too_big_summary)
+        },
+        |best| fits_summary(best, gpu),
+    )
+}
+
+/// The card's title (with the vLLM badge) and, when allowed, its delete button.
+fn card_header(model: &Model, can_delete: bool) -> Element {
+    let mut header = div().class("card-header").child(
+        div()
+            .class("card-title")
+            .child(if model.vllm_supported {
+                span().class("vllm-badge").text("vLLM")
+            } else {
+                span().class("vllm-badge").attr("style", "display:none")
+            })
+            .child(span().class("card-title-text").text(&model.name)),
+    );
+
+    if can_delete {
+        header = header.child(
+            button()
+                .class("card-delete")
+                .attr("type", "button")
+                .attr("title", "Delete model")
+                .attr("data-i18n-title", "ui_models_card_delete_tooltip")
+                .attr(
+                    "hx-get",
+                    format!(
+                        "{}?path={}&name={}",
+                        with_base_path("/api/v1/models/delete-modal"),
+                        encode_query_component(&model.path),
+                        encode_query_component(&model.name)
+                    ),
+                )
+                .attr("hx-target", "#confirm-delete-modal")
+                .attr("hx-swap", "outerHTML")
+                .child(i().class("fa-solid fa-trash")),
+        );
+    }
+    header
+}
+
+/// One `Label: value` line of a card's metadata.
+fn meta_item(class: &str, label_key: &str, label: &str, value: String) -> Element {
+    div()
+        .class(class)
+        .child(span().attr("data-i18n", label_key).text(label))
+        .child(span().text(": "))
+        .child(span().text(value))
+}
+
+/// Params, quantisation, context, layers and hidden size.
+fn card_meta(model: &Model) -> Element {
+    div()
+        .class("card-meta")
+        .child(
+            div()
+                .child(meta_item(
+                    "card-meta-params",
+                    "ui_models_card_params",
+                    "Params",
+                    format!("{:.1}B", model.params_billion),
+                ))
+                .child(meta_item(
+                    "card-meta-quant",
+                    "ui_models_card_quant",
+                    "Quant",
+                    model.quant.to_string(),
+                ))
+                .child(meta_item(
+                    "card-meta-context",
+                    "ui_models_card_context",
+                    "Context",
+                    model.context.to_string(),
+                )),
+        )
+        .child(
+            div()
+                .child(meta_item(
+                    "card-meta-layers",
+                    "ui_models_card_layers",
+                    "Layers",
+                    model.layers.to_string(),
+                ))
+                .child(meta_item(
+                    "card-meta-hidden",
+                    "ui_models_card_hidden",
+                    "Hidden",
+                    model.hidden_size.to_string(),
+                )),
+        )
+}
+
+fn render_model_card(model: &Model, gpu: &GpuInfo, can_delete: bool) -> Element {
+    let (fit_class, fit_content) = fit_summary(model, gpu);
+
+    div()
+        .class("card")
+        .child(card_header(model, can_delete))
+        .child(card_meta(model))
+        .child(
+            div()
+                .class("card-fit")
+                .attr(
+                    "hx-get",
+                    format!(
+                        "{}?path={}",
+                        with_base_path("/api/v1/models/estimates-modal"),
+                        encode_query_component(&model.path)
+                    ),
+                )
+                .attr("hx-target", "#estimates-modal")
+                .attr("hx-swap", "outerHTML")
+                .child(
+                    div().class(fit_class).child(fit_content).child(
+                        span()
+                            .class("fit-details-icon")
+                            .child(i().class("fa-solid fa-chart-simple")),
+                    ),
+                ),
+        )
+        .child(
+            div()
+                .class("card-path")
+                .attr("title", &model.path)
+                .text(&model.path),
+        )
+}
+
+fn render_model_grid(models: &[Model], gpu: &GpuInfo, can_delete: bool) -> String {
     let mut grid = div()
         .attr("id", "models-grid")
         .attr("name", "models-grid")
         .class("models-grid grid");
 
     for model in models {
-        let best = find_best_estimate(&model.estimates, gpu.free_gb);
-        let minimum = find_minimum_estimate(&model.estimates);
-
-        let (fit_class, fit_content) = if let Some(best) = best {
-            let margin = gpu.free_gb - best.total_gb;
-            let cls = if margin <= 2.0 { "fit-warn" } else { "fit-ok" };
-            (
-                format!("fit-line {}", cls),
-                div()
-                    .child(render_fit_item("ui_models_card_fits_yes", "Fits", None))
-                    .child(render_separator())
-                    .child(render_fit_item(
-                        "ui_models_card_best",
-                        "Best",
-                        Some(format!("{} / {}", best.context, best.quant)),
-                    ))
-                    .child(render_separator())
-                    .child(render_fit_item(
-                        "ui_models_card_vram",
-                        "VRAM",
-                        Some(format!("{:.1} GB", best.total_gb)),
-                    ))
-                    .child(render_separator())
-                    .child(render_fit_item(
-                        "ui_models_card_margin",
-                        "Margin",
-                        Some(format!("{:.2} GB", margin)),
-                    )),
-            )
-        } else if let Some(min) = minimum {
-            (
-                "fit-line fit-no".to_string(),
-                div()
-                    .child(render_fit_item("ui_models_card_fits_no", "Fits", None))
-                    .child(render_separator())
-                    .child(render_fit_item(
-                        "ui_models_card_minimum",
-                        "Min",
-                        Some(format!("{:.1} GB", min.total_gb)),
-                    ))
-                    .child(render_separator()),
-            )
-        } else {
-            (
-                "fit-line fit-no".to_string(),
-                div()
-                    .attr("data-i18n", "ui_models_card_no_estimates")
-                    .text("No estimates"),
-            )
-        };
-
-        let mut header = div().class("card-header").child(
-            div()
-                .class("card-title")
-                .child(if model.vllm_supported {
-                    span().class("vllm-badge").text("vLLM")
-                } else {
-                    span().class("vllm-badge").attr("style", "display:none")
-                })
-                .child(span().class("card-title-text").text(&model.name)),
-        );
-
-        if can_delete {
-            header = header.child(
-                button()
-                    .class("card-delete")
-                    .attr("type", "button")
-                    .attr("title", "Delete model")
-                    .attr("data-i18n-title", "ui_models_card_delete_tooltip")
-                    .attr(
-                        "hx-get",
-                        format!(
-                            "{}?path={}&name={}",
-                            with_base_path("/api/v1/models/delete-modal"),
-                            encode_query_component(&model.path),
-                            encode_query_component(&model.name)
-                        ),
-                    )
-                    .attr("hx-target", "#confirm-delete-modal")
-                    .attr("hx-swap", "outerHTML")
-                    .child(i().class("fa-solid fa-trash")),
-            );
-        }
-
-        let card = div()
-            .class("card")
-            .child(header)
-            .child(
-                div()
-                    .class("card-meta")
-                    .child(
-                        div()
-                            .child(
-                                div()
-                                    .class("card-meta-params")
-                                    .child(
-                                        span()
-                                            .attr("data-i18n", "ui_models_card_params")
-                                            .text("Params"),
-                                    )
-                                    .child(span().text(": "))
-                                    .child(span().text(format!("{:.1}B", model.params_billion))),
-                            )
-                            .child(
-                                div()
-                                    .class("card-meta-quant")
-                                    .child(
-                                        span()
-                                            .attr("data-i18n", "ui_models_card_quant")
-                                            .text("Quant"),
-                                    )
-                                    .child(span().text(": "))
-                                    .child(span().text(model.quant.to_string())),
-                            )
-                            .child(
-                                div()
-                                    .class("card-meta-context")
-                                    .child(
-                                        span()
-                                            .attr("data-i18n", "ui_models_card_context")
-                                            .text("Context"),
-                                    )
-                                    .child(span().text(": "))
-                                    .child(span().text(model.context.to_string())),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .child(
-                                div()
-                                    .class("card-meta-layers")
-                                    .child(
-                                        span()
-                                            .attr("data-i18n", "ui_models_card_layers")
-                                            .text("Layers"),
-                                    )
-                                    .child(span().text(": "))
-                                    .child(span().text(model.layers.to_string())),
-                            )
-                            .child(
-                                div()
-                                    .class("card-meta-hidden")
-                                    .child(
-                                        span()
-                                            .attr("data-i18n", "ui_models_card_hidden")
-                                            .text("Hidden"),
-                                    )
-                                    .child(span().text(": "))
-                                    .child(span().text(model.hidden_size.to_string())),
-                            ),
-                    ),
-            )
-            .child(
-                div()
-                    .class("card-fit")
-                    .attr(
-                        "hx-get",
-                        format!(
-                            "{}?path={}",
-                            with_base_path("/api/v1/models/estimates-modal"),
-                            encode_query_component(&model.path)
-                        ),
-                    )
-                    .attr("hx-target", "#estimates-modal")
-                    .attr("hx-swap", "outerHTML")
-                    .child(
-                        div().class(fit_class).child(fit_content).child(
-                            span()
-                                .class("fit-details-icon")
-                                .child(i().class("fa-solid fa-chart-simple")),
-                        ),
-                    ),
-            )
-            .child(
-                div()
-                    .class("card-path")
-                    .attr("title", &model.path)
-                    .text(&model.path),
-            );
-
-        grid = grid.child(card);
+        grid = grid.child(render_model_card(model, gpu, can_delete));
     }
 
     grid.render()
@@ -408,27 +420,14 @@ pub async fn empty_delete_modal_endpoint() -> Response {
     Response::html(http::StatusCode::OK, empty_delete_modal())
 }
 
-fn render_estimates_modal(model: &Model, gpu: &GpuInfo, query: &EstimatesModalQuery) -> String {
-    let fit_filter = query.fit.as_deref().unwrap_or("all");
-    let context_filter = query.context.as_deref().unwrap_or("all");
-    let quant_filter = query.quant.as_deref().unwrap_or("all");
-
-    let mut contexts = model
-        .estimates
-        .iter()
-        .map(|estimate| estimate.context.to_string())
-        .collect::<Vec<_>>();
-    contexts.sort_by_key(|value| value.parse::<usize>().unwrap_or_default());
-    contexts.dedup();
-
-    let mut quants = model
-        .estimates
-        .iter()
-        .map(|estimate| estimate.quant.to_string())
-        .collect::<Vec<_>>();
-    quants.sort();
-    quants.dedup();
-
+/// The estimates the filters leave, each as a line showing whether (and by how much) it fits.
+fn estimate_grid(
+    model: &Model,
+    gpu: &GpuInfo,
+    fit_filter: &str,
+    context_filter: &str,
+    quant_filter: &str,
+) -> Element {
     let mut grid = div().class("estimate-grid").attr("id", "estimate-grid");
     for estimate in model.estimates.iter().filter(|estimate| {
         let fits = estimate.total_gb <= gpu.free_gb;
@@ -466,10 +465,40 @@ fn render_estimates_modal(model: &Model, gpu: &GpuInfo, query: &EstimatesModalQu
                 .child(div().child(render_fit_item(
                     "ui_models_card_margin",
                     "Margin",
-                    Some(format!("{:.2} GB", margin)),
+                    Some(format!("{margin:.2} GB")),
                 ))),
         );
     }
+    grid
+}
+
+/// The distinct contexts (ascending) and quantisations the model has estimates for.
+fn filter_options(model: &Model) -> (Vec<String>, Vec<String>) {
+    let mut contexts = model
+        .estimates
+        .iter()
+        .map(|estimate| estimate.context.to_string())
+        .collect::<Vec<_>>();
+    contexts.sort_by_key(|value| value.parse::<usize>().unwrap_or_default());
+    contexts.dedup();
+
+    let mut quants = model
+        .estimates
+        .iter()
+        .map(|estimate| estimate.quant.to_string())
+        .collect::<Vec<_>>();
+    quants.sort();
+    quants.dedup();
+    (contexts, quants)
+}
+
+fn render_estimates_modal(model: &Model, gpu: &GpuInfo, query: &EstimatesModalQuery) -> String {
+    let fit_filter = query.fit.as_deref().unwrap_or("all");
+    let context_filter = query.context.as_deref().unwrap_or("all");
+    let quant_filter = query.quant.as_deref().unwrap_or("all");
+
+    let (contexts, quants) = filter_options(model);
+    let grid = estimate_grid(model, gpu, fit_filter, context_filter, quant_filter);
 
     div()
         .attr("id", "estimates-modal")
@@ -720,7 +749,9 @@ fn encode_query_component(value: &str) -> String {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
                 encoded.push(byte as char);
             }
-            _ => encoded.push_str(&format!("%{byte:02X}")),
+            _ => {
+                let _ = write!(encoded, "%{byte:02X}");
+            }
         }
     }
     encoded

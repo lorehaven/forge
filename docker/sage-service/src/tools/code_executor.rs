@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use serde_json::json;
 use std::time::Duration;
 
+#[must_use]
 pub fn get_definition() -> ToolDefinition {
     ToolDefinition {
         name: "code_executor".to_string(),
@@ -27,6 +28,7 @@ pub fn get_definition() -> ToolDefinition {
     }
 }
 
+#[derive(Debug)]
 pub struct CodeExecutor;
 
 #[async_trait]
@@ -76,7 +78,7 @@ impl ToolExecutor for CodeExecutor {
         if let Err(err) = validate_code_safety(&code, &language) {
             return ToolResult {
                 tool_use_id: tool_call.id.clone(),
-                content: format!("Code rejected for safety: {}", err),
+                content: format!("Code rejected for safety: {err}"),
                 is_error: true,
             };
         }
@@ -86,10 +88,7 @@ impl ToolExecutor for CodeExecutor {
             "javascript" => execute_javascript(&code, &tool_call.id).await,
             _ => ToolResult {
                 tool_use_id: tool_call.id.clone(),
-                content: format!(
-                    "Unsupported language: {}. Supported: python, javascript",
-                    language
-                ),
+                content: format!("Unsupported language: {language}. Supported: python, javascript"),
                 is_error: true,
             },
         }
@@ -124,7 +123,7 @@ pub fn validate_code_safety(code: &str, language: &str) -> Result<(), String> {
 
     for pattern in dangerous_patterns {
         if code.contains(pattern) {
-            return Err(format!("'{}' is not allowed for security reasons", pattern));
+            return Err(format!("'{pattern}' is not allowed for security reasons"));
         }
     }
 
@@ -141,15 +140,12 @@ async fn execute_python(code: &str, tool_id: &str) -> ToolResult {
     match execute_with_timeout("python3", code, Duration::from_secs(10)).await {
         Ok(output) => ToolResult {
             tool_use_id: tool_id.to_string(),
-            content: format!(
-                "```python\n{}\n```\n\n**Output:**\n```\n{}\n```",
-                code, output
-            ),
+            content: format!("```python\n{code}\n```\n\n**Output:**\n```\n{output}\n```"),
             is_error: false,
         },
         Err(err) => ToolResult {
             tool_use_id: tool_id.to_string(),
-            content: format!("Python execution failed: {}", err),
+            content: format!("Python execution failed: {err}"),
             is_error: true,
         },
     }
@@ -160,15 +156,12 @@ async fn execute_javascript(code: &str, tool_id: &str) -> ToolResult {
     match execute_with_timeout("node", code, Duration::from_secs(10)).await {
         Ok(output) => ToolResult {
             tool_use_id: tool_id.to_string(),
-            content: format!(
-                "```javascript\n{}\n```\n\n**Output:**\n```\n{}\n```",
-                code, output
-            ),
+            content: format!("```javascript\n{code}\n```\n\n**Output:**\n```\n{output}\n```"),
             is_error: false,
         },
         Err(err) => ToolResult {
             tool_use_id: tool_id.to_string(),
-            content: format!("JavaScript execution failed: {}", err),
+            content: format!("JavaScript execution failed: {err}"),
             is_error: true,
         },
     }
@@ -209,7 +202,7 @@ async fn execute_with_timeout(
                 Err(error_msg)
             }
         }
-        Ok(Err(e)) => Err(format!("Failed to execute: {}", e)),
+        Ok(Err(e)) => Err(format!("Failed to execute: {e}")),
         Err(_) => Err(format!(
             "Code execution timed out after {:.1}s",
             timeout.as_secs_f64()

@@ -47,13 +47,14 @@ pub enum Skip {
 }
 
 impl Skip {
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
-            Skip::NoSuchUser => "no_such_user",
-            Skip::NoVerifiedEmail => "no_verified_email",
-            Skip::NotSubscribed => "not_subscribed",
-            Skip::Duplicate => "duplicate",
-            Skip::RateLimited => "rate_limited",
+            Self::NoSuchUser => "no_such_user",
+            Self::NoVerifiedEmail => "no_verified_email",
+            Self::NotSubscribed => "not_subscribed",
+            Self::Duplicate => "duplicate",
+            Self::RateLimited => "rate_limited",
         }
     }
 }
@@ -168,4 +169,10 @@ pub async fn dispatch(ctx: &Context<'_>, request: &Request) -> Result<Outcome, I
 fn failed(message: String, transient: bool) -> Outcome {
     tracing::error!("notification not sent: {message}");
     Outcome::Failed { message, transient }
+}
+
+impl std::fmt::Debug for Context<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("Context { .. }")
+    }
 }

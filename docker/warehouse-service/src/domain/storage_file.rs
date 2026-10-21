@@ -8,6 +8,7 @@ use sqlx::Row;
 use std::path::Path;
 
 /// What [`put_file`] did, for the handler to turn into a 200 vs. 201.
+#[derive(Debug)]
 pub struct PutOutcome {
     pub existed: bool,
 }
@@ -27,16 +28,7 @@ pub async fn put_file(
     let schema = schema();
     let mut tx = pool.begin().await?;
 
-    // Serializes writers to this storage so the quota check sees a consistent `used_bytes`.
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
-        .bind(storage_name)
-        .execute(&mut *tx)
-        .await?;
-    // Serializes concurrent uploads of the same content across storages.
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 1))")
-        .bind(sha256)
-        .execute(&mut *tx)
-        .await?;
+    lock_for_put(&mut tx, storage_name, sha256).await?;
 
     let storage_sql = format!(
         "SELECT quota_bytes, used_bytes, sync_enabled FROM {schema}.storages WHERE name = $1"
@@ -58,12 +50,11 @@ pub async fn put_file(
         .fetch_optional(&mut *tx)
         .await?;
 
-    let mut old_sha256: Option<String> = None;
-    let mut old_size: i64 = 0;
-    if let Some(row) = &existing {
-        old_sha256 = Some(row.try_get("sha256")?);
-        old_size = row.try_get("size")?;
-    }
+    let (old_sha256, old_size): (Option<String>, i64) = if let Some(row) = &existing {
+        (Some(row.try_get("sha256")?), row.try_get("size")?)
+    } else {
+        (None, 0)
+    };
 
     let delta = size - old_size;
     if used_bytes + delta > quota_bytes {
@@ -75,31 +66,7 @@ pub async fn put_file(
     let adding_reference = old_sha256.as_deref() != Some(sha256);
 
     if adding_reference {
-        let blob_sql = format!(
-            "INSERT INTO {schema}.blobs (sha256, size, ref_count) VALUES ($1, $2, 1) \
-             ON CONFLICT (sha256) DO UPDATE SET ref_count = {schema}.blobs.ref_count + 1 \
-             RETURNING ref_count"
-        );
-        let ref_count: i64 = sqlx::query(sqlx::AssertSqlSafe(blob_sql.as_str()))
-            .bind(sha256)
-            .bind(size)
-            .fetch_one(&mut *tx)
-            .await?
-            .try_get("ref_count")?;
-
-        // ref_count == 1 means this row was just inserted; otherwise it's a dedup hit, discard staging.
-        if ref_count == 1 {
-            if let Some(parent) = blob_path.parent() {
-                tokio::fs::create_dir_all(parent)
-                    .await
-                    .map_err(sqlx_io_error)?;
-            }
-            tokio::fs::rename(staging, blob_path)
-                .await
-                .map_err(sqlx_io_error)?;
-        } else {
-            let _ = tokio::fs::remove_file(staging).await;
-        }
+        add_blob_reference(&mut tx, &schema, sha256, size, staging, blob_path).await?;
 
         if let Some(old_sha256) = &old_sha256 {
             release_blob(&mut tx, &schema, old_sha256, None).await?;
@@ -149,7 +116,63 @@ pub async fn put_file(
     })
 }
 
-/// Removes `path`, releasing its blob reference and refunding quota. Deletes the file only at ref_count 0.
+/// Serializes writers to this storage, and uploads of the same content across storages.
+async fn lock_for_put(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    storage_name: &str,
+    sha256: &str,
+) -> Result<(), StorageError> {
+    // Serializes writers to this storage so the quota check sees a consistent `used_bytes`.
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+        .bind(storage_name)
+        .execute(&mut **tx)
+        .await?;
+    // Serializes concurrent uploads of the same content across storages.
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 1))")
+        .bind(sha256)
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
+/// Counts one more reference to the blob, moving `staging` into the store when the blob is new.
+async fn add_blob_reference(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    schema: &str,
+    sha256: &str,
+    size: i64,
+    staging: &Path,
+    blob_path: &Path,
+) -> Result<(), StorageError> {
+    let blob_sql = format!(
+        "INSERT INTO {schema}.blobs (sha256, size, ref_count) VALUES ($1, $2, 1) \
+         ON CONFLICT (sha256) DO UPDATE SET ref_count = {schema}.blobs.ref_count + 1 \
+         RETURNING ref_count"
+    );
+    let ref_count: i64 = sqlx::query(sqlx::AssertSqlSafe(blob_sql.as_str()))
+        .bind(sha256)
+        .bind(size)
+        .fetch_one(&mut **tx)
+        .await?
+        .try_get("ref_count")?;
+
+    // ref_count == 1 means this row was just inserted; otherwise it's a dedup hit, discard staging.
+    if ref_count == 1 {
+        if let Some(parent) = blob_path.parent() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .map_err(sqlx_io_error)?;
+        }
+        tokio::fs::rename(staging, blob_path)
+            .await
+            .map_err(sqlx_io_error)?;
+    } else {
+        let _ = tokio::fs::remove_file(staging).await;
+    }
+    Ok(())
+}
+
+/// Removes `path`, releasing its blob reference and refunding quota. Deletes the file only at `ref_count` 0.
 pub async fn delete_file(
     db: &Db,
     storage_name: &str,
@@ -338,6 +361,7 @@ pub async fn list_files_page(
 
 /// Exclusive upper bound of `[prefix, _)` under `C` collation: last byte incremented.
 /// `None` when no successor exists or bumping would break UTF-8; the query then omits the upper bound.
+#[must_use]
 pub fn prefix_upper_bound(prefix: &str) -> Option<String> {
     let mut bytes = prefix.as_bytes().to_vec();
     while let Some(last) = bytes.last_mut() {
@@ -438,6 +462,6 @@ async fn append_sync_log(
 }
 
 /// Wraps a filesystem error as the SQL variant for one `?`-friendly error type.
-fn sqlx_io_error(error: std::io::Error) -> StorageError {
+const fn sqlx_io_error(error: std::io::Error) -> StorageError {
     StorageError::Sql(sqlx::Error::Io(error))
 }

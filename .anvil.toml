@@ -13,6 +13,7 @@ packages = [
     "conveyor-service",
     "workbench-service",
     "gantry-service",
+    "daybook-service",
 ]
 
 [docker.modules.docker.conveyor-service]
@@ -51,6 +52,11 @@ registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
 [docker.modules.docker.gantry-service]
 module_name = "gantry"
 image_name = "gantry"
+registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
+
+[docker.modules.docker.daybook-service]
+module_name = "daybook"
+image_name = "daybook"
 registries = ["ossiriand.arda:8080/forge", "ennor.ddns.net/forge"]
 
 [docker.modules.docker.workbench-service]

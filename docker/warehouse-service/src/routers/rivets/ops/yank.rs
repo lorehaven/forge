@@ -8,7 +8,7 @@ use quench_db::prelude::{Crud, Db};
 use quench_http::prelude::{Inject, Path, Response, delete, http::StatusCode};
 use serde::Serialize;
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct OkResponse {
     ok: bool,
 }

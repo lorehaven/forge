@@ -24,11 +24,13 @@ pub enum StorageError {
 
 impl StorageError {
     /// True for Postgres's unique-constraint violation (duplicate storage name).
+    #[must_use]
     pub fn is_unique_violation(&self) -> bool {
         matches!(self, Self::Sql(sqlx::Error::Database(database)) if database.code().as_deref() == Some("23505"))
     }
 
     /// True for Postgres's foreign-key violation (`owner` not a real username).
+    #[must_use]
     pub fn is_foreign_key_violation(&self) -> bool {
         matches!(self, Self::Sql(sqlx::Error::Database(database)) if database.code().as_deref() == Some("23503"))
     }
@@ -42,6 +44,7 @@ pub fn pool(db: &Db) -> Result<&Pool<Postgres>, StorageError> {
     }
 }
 
+#[must_use]
 pub fn schema() -> String {
     envmnt::get_or("DB_SCHEMA", "warehouse")
 }

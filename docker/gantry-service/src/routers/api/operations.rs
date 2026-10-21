@@ -8,7 +8,7 @@ use quench_auth::domain::jwt::JwtConfig;
 use quench_http::prelude::{Inject, Json, Path, Query, Response, get, http::StatusCode, post};
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct Submit {
     #[serde(default = "custom")]
     pub kind: String,
@@ -20,7 +20,7 @@ fn custom() -> String {
     "custom".to_string()
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ListQuery {
     #[serde(default)]
     pub limit: Option<i64>,
@@ -121,10 +121,10 @@ pub async fn cancel(
     if !authz::can(claims.as_ref(), &config, "deploy") {
         return Ok(json_error(StatusCode::FORBIDDEN, "no deploy access here"));
     }
-    match gantry.cancel(&id).await? {
-        Some(operation) => Ok(json_ok(&operation)),
-        None => Ok(json_error(StatusCode::NOT_FOUND, "no such operation")),
-    }
+    gantry.cancel(&id).await?.map_or_else(
+        || Ok(json_error(StatusCode::NOT_FOUND, "no such operation")),
+        |operation| Ok(json_ok(&operation)),
+    )
 }
 
 pub fn register_routes() {

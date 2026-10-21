@@ -7,7 +7,7 @@ use crate::tools::ToolExecutor;
 use bytes::Bytes;
 use dashmap::DashMap;
 use futures_util::StreamExt;
-use quench_db::prelude::Db;
+use quench_db::prelude::{Crud, Db};
 use quench_http::prelude::{Form, Inject, Path, Query, Response, get, http::StatusCode, post};
 use quench_starter::common::routes::with_base_path;
 use quench_web::prelude::*;
@@ -16,11 +16,19 @@ use std::sync::Arc;
 use tokio_stream::wrappers::ReceiverStream;
 use uuid::Uuid;
 
+fn estimate_tokens(msg: &ChatMessage) -> usize {
+    let image_tokens = msg.images.as_ref().map_or(0, |imgs| {
+        imgs.len() * crate::files::images::image_token_estimate()
+    });
+    msg.content.chars().count().div_ceil(3) + 4 + image_tokens
+}
+
+#[derive(Debug)]
 pub struct ChatState {
     pub pending_messages: DashMap<String, ChatRequest>,
 }
 
-#[derive(Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct ChatRequest {
     pub instance_id: String,
     pub message: String,
@@ -41,14 +49,38 @@ pub struct ChatRequest {
 
 impl ChatRequest {
     /// The staged file ids as a list, empty entries removed.
+    #[must_use]
     pub fn file_id_list(&self) -> Vec<String> {
         self.file_ids
             .split(',')
-            .map(|s| s.trim())
+            .map(str::trim)
             .filter(|s| !s.is_empty())
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .collect()
     }
+}
+
+/// The assistant message that connects to the SSE stream and is swapped for the answer as it arrives.
+fn streaming_placeholder(
+    message_id: &str,
+    stream_url: &str,
+    i18n_key: &str,
+    text: &str,
+) -> Element {
+    div()
+        .class("chat-message message-ai")
+        .attr("id", format!("ai-{message_id}"))
+        .attr("hx-ext", "sse")
+        .attr("sse-connect", stream_url)
+        .attr("sse-swap", "message")
+        .child(
+            div().class("message-inner").child(
+                div()
+                    .class("message-content")
+                    .attr("data-i18n", i18n_key)
+                    .text(text),
+            ),
+        )
 }
 
 #[post("/ui/chat/send")]
@@ -71,34 +103,26 @@ pub async fn send_message(
         .pending_messages
         .insert(message_id.clone(), chat_req.clone());
 
-    let mut stream_url = with_base_path(&format!("/ui/chat/stream/{}", message_id));
+    let mut stream_url = with_base_path(&format!("/ui/chat/stream/{message_id}"));
     if let Some(ref pid) = chat_req.project_id {
-        stream_url = format!("{}?project_id={}", stream_url, pid);
+        stream_url = format!("{stream_url}?project_id={pid}");
     }
 
     let user_preview: String = chat_req.message.chars().take(30).collect();
     let user_preview = if chat_req.message.chars().count() > 30 {
-        format!("{}...", user_preview)
+        format!("{user_preview}...")
     } else {
         user_preview
     };
 
     if chat_req.skip_user_message {
         // Regeneration skips re-showing the user message.
-        let ai_msg = div()
-            .class("chat-message message-ai")
-            .attr("id", format!("ai-{}", message_id))
-            .attr("hx-ext", "sse")
-            .attr("sse-connect", stream_url)
-            .attr("sse-swap", "message")
-            .child(
-                div().class("message-inner").child(
-                    div()
-                        .class("message-content")
-                        .attr("data-i18n", "ui_chat_regenerating")
-                        .text("Sage is regenerating..."),
-                ),
-            );
+        let ai_msg = streaming_placeholder(
+            &message_id,
+            &stream_url,
+            "ui_chat_regenerating",
+            "Sage is regenerating...",
+        );
 
         return Response::html(StatusCode::OK, ai_msg.render());
     }
@@ -107,9 +131,9 @@ pub async fn send_message(
         .class("branch-btn edit-btn")
         .attr(
             "hx-get",
-            with_base_path(&format!("/ui/chat/edit-form/{}", message_id)),
+            with_base_path(&format!("/ui/chat/edit-form/{message_id}")),
         ) // Use pending ID, will be transitioned
-        .attr("hx-target", format!("#user-{}", message_id))
+        .attr("hx-target", format!("#user-{message_id}"))
         .attr("hx-swap", "innerHTML")
         .child(i().class("fas fa-edit"))
         .child(span().attr("data-i18n", "ui_chat_edit").text(" Edit"));
@@ -125,7 +149,7 @@ pub async fn send_message(
 
     let user_msg = div()
         .class("chat-message message-user")
-        .attr("id", format!("user-{}", message_id))
+        .attr("id", format!("user-{message_id}"))
         .child(
             div()
                 .class("message-inner")
@@ -135,25 +159,17 @@ pub async fn send_message(
                 .child(div().class("branch-controls").child(edit_btn)),
         );
 
-    let ai_msg = div()
-        .class("chat-message message-ai")
-        .attr("id", format!("ai-{}", message_id))
-        .attr("hx-ext", "sse")
-        .attr("sse-connect", stream_url)
-        .attr("sse-swap", "message")
-        .child(
-            div().class("message-inner").child(
-                div()
-                    .class("message-content")
-                    .attr("data-i18n", "ui_chat_thinking")
-                    .text("Sage is thinking..."),
-            ),
-        );
+    let ai_msg = streaming_placeholder(
+        &message_id,
+        &stream_url,
+        "ui_chat_thinking",
+        "Sage is thinking...",
+    );
 
     let user_dot = div().attr("hx-swap-oob", "beforeend:.chat-navigation").child(
         div()
             .class("nav-dot")
-            .attr("data-msg-id", format!("user-{}", message_id))
+            .attr("data-msg-id", format!("user-{message_id}"))
             .attr("onclick", "const target = document.getElementById(this.dataset.msgId); if (target) { target.scrollIntoView({behavior: 'smooth', block: 'start'}); }")
             .child(div().class("nav-tooltip").text(user_preview)),
     );
@@ -161,10 +177,10 @@ pub async fn send_message(
     let ai_dot = div().attr("hx-swap-oob", "beforeend:.chat-navigation").child(
         div()
             .class("nav-dot")
-            .attr("id", format!("dot-ai-{}", message_id))
-            .attr("data-msg-id", format!("ai-{}", message_id))
+            .attr("id", format!("dot-ai-{message_id}"))
+            .attr("data-msg-id", format!("ai-{message_id}"))
             .attr("onclick", "const target = document.getElementById(this.dataset.msgId); if (target) { target.scrollIntoView({behavior: 'smooth', block: 'start'}); }")
-            .child(div().class("nav-tooltip").attr("id", format!("tooltip-ai-{}", message_id)).attr("data-i18n", "ui_chat_thinking").text("Sage is thinking...")),
+            .child(div().class("nav-tooltip").attr("id", format!("tooltip-ai-{message_id}")).attr("data-i18n", "ui_chat_thinking").text("Sage is thinking...")),
     );
 
     Response::html(
@@ -181,6 +197,7 @@ pub async fn send_message(
 
 /// A spinner line shown in place of the answer while the pipeline works; `detail` is plain
 /// text (escaped here), e.g. the search queries.
+#[must_use]
 pub fn status_html(key: &str, default: &str, detail: Option<&str>) -> String {
     let detail = detail
         .map(|d| {
@@ -199,6 +216,7 @@ pub fn status_html(key: &str, default: &str, detail: Option<&str>) -> String {
 }
 
 /// The SSE `message` event for a grounding stage.
+#[must_use]
 pub fn stage_event(stage: &crate::grounding::Stage) -> Bytes {
     use crate::grounding::Stage;
     let body = match stage {
@@ -214,12 +232,13 @@ pub fn stage_event(stage: &crate::grounding::Stage) -> Bytes {
     };
     encode_sse(
         "message",
-        &format!("<div class=\"message-inner\">{}</div>", body),
+        &format!("<div class=\"message-inner\">{body}</div>"),
     )
 }
 
+#[must_use]
 pub fn encode_sse(event: &str, data: &str) -> Bytes {
-    let mut sse = format!("event: {}\n", event);
+    let mut sse = format!("event: {event}\n");
     for line in data.split('\n') {
         sse.push_str("data: ");
         sse.push_str(line);
@@ -257,12 +276,12 @@ pub fn embed_tool_results_into_response(
         );
 
         let before_len = result.len();
-        result = result.replace(&marker, &format!("\n\n{}\n\n", html));
+        result = result.replace(&marker, &format!("\n\n{html}\n\n"));
         let after_len = result.len();
 
         tracing::info!(
             "[EMBED] After replace: content_len_change={}",
-            after_len as i32 - before_len as i32
+            i64::try_from(after_len).unwrap_or(i64::MAX) - i64::try_from(before_len).unwrap_or(0)
         );
     }
 
@@ -273,142 +292,1217 @@ pub fn embed_tool_results_into_response(
     result
 }
 
-#[get("/ui/chat/stream/{id}")]
-#[allow(clippy::too_many_arguments)]
-pub async fn stream_message(
-    claims: RequiredClaims,
-    Path(id): Path<String>,
-    Inject(state): Inject<ChatState>,
-    Inject(switchboard): Inject<SwitchboardClient>,
-    Inject(vllm): Inject<VllmClient>,
-    Inject(config): Inject<SageConfig>,
-    Inject(db): Inject<Db>,
-    Inject(search_provider_registry): Inject<crate::tools::SearchProviderRegistry>,
-    Inject(metrics_collector): Inject<crate::observability::metrics::MetricsCollector>,
-    Inject(rate_limiter): Inject<tokio::sync::Mutex<crate::runtime::rate_limiter::RateLimiter>>,
-    Inject(cost_tracker): Inject<crate::observability::cost_tracking::CostTracker>,
-) -> Response {
-    let username = match claims.or_401() {
-        Ok(claims) => claims.sub,
-        Err(response) => return response,
-    };
+/// The capability profile the request asks for, else the configured one.
+fn resolve_profile(
+    req: &ChatRequest,
+    config: &SageConfig,
+) -> crate::tools::capabilities::CapabilityProfile {
+    req.capability_profile.as_ref().map_or_else(
+        || config.capability_profile.clone(),
+        |requested_profile| {
+            crate::tools::capabilities::get_profile(requested_profile).map_or_else(
+                || {
+                    tracing::warn!(
+                        "Requested profile '{}' not found, using default '{}'",
+                        requested_profile,
+                        config.capability_profile.name
+                    );
+                    config.capability_profile.clone()
+                },
+                |profile| {
+                    tracing::info!("Using requested capability profile: {}", requested_profile);
+                    profile
+                },
+            )
+        },
+    )
+}
 
-    let message_id = id;
+/// What the per-request tool registry shares with the rest of the service.
+struct RegistryDeps<'a> {
+    search_provider_registry: &'a Arc<crate::tools::SearchProviderRegistry>,
+    db: &'a Db,
+    switchboard: &'a SwitchboardClient,
+    vllm: &'a VllmClient,
+    metrics_collector: &'a Arc<crate::observability::metrics::MetricsCollector>,
+    rate_limiter: &'a Arc<tokio::sync::Mutex<crate::runtime::rate_limiter::RateLimiter>>,
+    cost_tracker: &'a Arc<crate::observability::cost_tracking::CostTracker>,
+}
 
-    let req = match state.pending_messages.get(&message_id) {
-        Some(r) => r.clone(),
-        None => return Response::new(StatusCode::NOT_FOUND),
-    };
-
-    tracing::info!(
-        "Chat request: search_provider={:?}, instance_id={}",
-        req.search_provider,
-        req.instance_id
-    );
-
-    let active_profile = if let Some(requested_profile) = &req.capability_profile {
-        match crate::tools::capabilities::get_profile(requested_profile) {
-            Some(profile) => {
-                tracing::info!("Using requested capability profile: {}", requested_profile);
-                profile
-            }
-            None => {
-                tracing::warn!(
-                    "Requested profile '{}' not found, using default '{}'",
-                    requested_profile,
-                    config.capability_profile.name
-                );
-                config.capability_profile.clone()
-            }
-        }
-    } else {
-        config.capability_profile.clone()
-    };
-
-    let mut request_tool_registry = crate::tools::ToolRegistry::with_context(
+/// The tools one request may call, scoped to its user and conversation.
+fn build_tool_registry(
+    active_profile: &crate::tools::capabilities::CapabilityProfile,
+    username: &str,
+    req: &ChatRequest,
+    deps: &RegistryDeps<'_>,
+) -> crate::tools::ToolRegistry {
+    let mut registry = crate::tools::ToolRegistry::with_context(
         active_profile.clone(),
-        Some(username.clone()),
+        Some(username.to_string()),
         Some(req.conversation_id.clone()),
     );
 
     // Mirrors the global registry's own initialization.
-    request_tool_registry.register(
+    registry.register(
         "web_search".to_string(),
         Box::new(crate::tools::web_search::WebSearchExecutor::new(
-            search_provider_registry.clone(),
+            deps.search_provider_registry.clone(),
         )),
     );
 
-    request_tool_registry.register(
+    registry.register(
         "calculator".to_string(),
         Box::new(crate::tools::calculator::CalculatorExecutor),
     );
 
-    request_tool_registry.register(
+    registry.register(
         "web_fetch".to_string(),
         Box::new(crate::tools::web_fetch::WebFetchExecutor::new()),
     );
 
-    request_tool_registry.register(
+    registry.register(
         "file_ops".to_string(),
         Box::new(crate::tools::file_ops::FileOpsExecutor::from_env()),
     );
 
-    request_tool_registry.register(
+    registry.register(
         "file_search".to_string(),
         Box::new(crate::tools::file_search::FileSearchExecutor::new(
-            (*db).clone(),
-            (*switchboard).clone(),
-            (*vllm).clone(),
+            (*deps.db).clone(),
+            (*deps.switchboard).clone(),
+            (*deps.vllm).clone(),
             Some(req.conversation_id.clone()),
             req.project_id.clone(),
         )),
     );
 
-    request_tool_registry.register(
+    registry.register(
         "file_list".to_string(),
         Box::new(crate::tools::file_list::FileListExecutor::new(
-            (*db).clone(),
+            (*deps.db).clone(),
             Some(req.conversation_id.clone()),
             req.project_id.clone(),
         )),
     );
 
-    request_tool_registry.register(
+    registry.register(
         "command".to_string(),
         Box::new(crate::tools::command::CommandExecutor::new()),
     );
 
-    request_tool_registry.register(
+    registry.register(
         "code_executor".to_string(),
         Box::new(crate::tools::code_executor::CodeExecutor),
     );
 
     if !req.tool_confirmations.is_empty() {
-        let confirmations: Vec<&str> = req.tool_confirmations.iter().map(|s| s.as_str()).collect();
-        request_tool_registry.add_confirmations(&confirmations);
+        let confirmations: Vec<&str> = req
+            .tool_confirmations
+            .iter()
+            .map(std::string::String::as_str)
+            .collect();
+        registry.add_confirmations(&confirmations);
     }
 
-    request_tool_registry.set_metrics_collector(metrics_collector.clone());
-    request_tool_registry.set_rate_limiter(rate_limiter.clone());
-    request_tool_registry.set_cost_tracker(cost_tracker.clone());
+    registry.set_metrics_collector(deps.metrics_collector.clone());
+    registry.set_rate_limiter(deps.rate_limiter.clone());
+    registry.set_cost_tracker(deps.cost_tracker.clone());
 
-    // Shadows the global tool_registry param with this request-specific one.
-    let tool_registry = Arc::new(request_tool_registry);
+    registry
+}
 
-    let instances = match switchboard.get_vllm_instances().await {
-        Ok(i) => i,
-        Err(err) => {
-            tracing::error!("Failed to get vLLM instances: {}", err);
-            return Response::text(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "api_error_switchboard_unavailable",
+/// The turn was abandoned: the client went away, or an error has already been sent to it.
+struct Aborted;
+
+type Tx = tokio::sync::mpsc::Sender<Bytes>;
+
+/// How the model's context splits between the prompt and the answer.
+struct PromptLimits {
+    prompt_budget: usize,
+    reserved_for_generation: usize,
+}
+
+impl PromptLimits {
+    const fn for_context(max_model_len: usize) -> Self {
+        let reserved_for_generation = if max_model_len > 4096 {
+            2048
+        } else if max_model_len > 2048 {
+            1024
+        } else {
+            512
+        };
+        Self {
+            prompt_budget: max_model_len.saturating_sub(reserved_for_generation),
+            reserved_for_generation,
+        }
+    }
+}
+
+/// What is already stored of the conversation a message is added to.
+struct StoredConversation {
+    active_message_id: Option<String>,
+    title: Option<String>,
+    project_id: Option<String>,
+}
+
+/// The web sources a grounded answer was built from.
+#[derive(Default)]
+struct GroundingState {
+    web_sources: Vec<crate::grounding::WebSource>,
+    injected: bool,
+    evidence: String,
+    question: String,
+}
+
+/// Where a turn's messages ended up in the database.
+struct Persisted {
+    ai_msg_id: String,
+    ai_parent_id: Option<String>,
+}
+
+/// Everything one streamed answer needs, moved into the task that produces it.
+struct Turn {
+    chat_state: Arc<ChatState>,
+    message_id: String,
+    req: ChatRequest,
+    username: String,
+    db: Arc<Db>,
+    vllm: Arc<VllmClient>,
+    switchboard: Arc<SwitchboardClient>,
+    config: Arc<SageConfig>,
+    search_provider_registry: Arc<crate::tools::SearchProviderRegistry>,
+    tool_registry: Arc<crate::tools::ToolRegistry>,
+    active_profile: crate::tools::capabilities::CapabilityProfile,
+    instance: crate::clients::switchboard::VllmInstance,
+    limits: PromptLimits,
+    system_message: ChatMessage,
+    user_message: ChatMessage,
+    user_tokens: usize,
+    history: Vec<ChatMessage>,
+    injected_rag_hits: Vec<crate::files::rag::ChunkHit>,
+    stored: StoredConversation,
+    today: String,
+}
+
+/// The error bubble sent in place of the answer.
+fn error_event(err: &dyn std::fmt::Display) -> Bytes {
+    let html = div()
+        .class("message-inner")
+        .child(
+            div()
+                .class("message-content")
+                .child(span().attr("data-i18n", "ui_chat_error").text("Error"))
+                .child(span().text(format!(": {err}"))),
+        )
+        .render();
+    encode_sse("message", &html)
+}
+
+/// The `OpenAI` tool-call definitions of the tools the request may use.
+fn openai_tools(tool_registry: &crate::tools::ToolRegistry) -> Option<Vec<serde_json::Value>> {
+    let tool_definitions = tool_registry.get_definitions();
+    if tool_definitions.is_empty() {
+        return None;
+    }
+    // OpenAI tool-call format: {"type": "function", "function": {name, description, parameters}}
+    let openai_tools: Vec<serde_json::Value> = tool_definitions
+        .into_iter()
+        .map(|tool_def| {
+            serde_json::json!({
+                "type": "function",
+                "function": {
+                    "name": tool_def.name,
+                    "description": tool_def.description,
+                    "parameters": tool_def.parameters
+                }
+            })
+        })
+        .collect();
+    tracing::info!(
+        "[VLLM_REQUEST] Sending {} tools to vLLM in OpenAI format",
+        openai_tools.len()
+    );
+    Some(openai_tools)
+}
+
+/// Whether the user is asking about the tools rather than asking for one to be used.
+fn is_meta_question(message: &str) -> bool {
+    let lower = message.to_lowercase();
+    [
+        "what tools",
+        "what capabilities",
+        "how do i use",
+        "how do you use",
+        "available tools",
+        "can you do",
+    ]
+    .iter()
+    .any(|phrase| lower.contains(phrase))
+}
+
+/// The first `<tool_call>` block in the answer that the call refers to, by tool name or argument.
+fn marker_for_call(
+    tool_call: &crate::tools::ToolCall,
+    query: &str,
+    full_content: &str,
+    tool_result_re: &regex::Regex,
+) -> Option<String> {
+    tool_result_re
+        .find_iter(full_content)
+        .map(|marker_match| marker_match.as_str())
+        .find(|marker_text| {
+            // Match by tool name first, then by argument content.
+            marker_text.contains(&tool_call.name)
+                || (query != "unknown" && marker_text.contains(query))
+                // Fallback: any argument value appearing in the marker counts too.
+                || tool_call.arguments.as_object().is_some_and(|arguments| {
+                    arguments
+                        .values()
+                        .filter_map(serde_json::Value::as_str)
+                        .any(|s| marker_text.contains(s))
+                })
+        })
+        .map(str::to_string)
+}
+
+/// The sidebar-style status line for a conversation's first 30 characters, with an ellipsis.
+fn preview(text: &str) -> String {
+    let head: String = text.chars().take(30).collect();
+    if text.chars().count() > 30 {
+        format!("{head}...")
+    } else {
+        head
+    }
+}
+
+impl Turn {
+    /// Runs the turn, sending the answer to the browser as it is written; a turn that aborts has
+    /// already told the client what it can.
+    async fn run(mut self, tx: Tx) {
+        if self.run_inner(&tx).await.is_ok() {
+            self.chat_state.pending_messages.remove(&self.message_id);
+        }
+    }
+
+    async fn run_inner(&mut self, tx: &Tx) -> Result<(), Aborted> {
+        // Small models can't be trusted to decide when to search, so in grounded mode the
+        // harness plans, searches and fetches up front and injects numbered sources.
+        let grounding_cfg = crate::grounding::GroundingConfig::from_env();
+        let grounded = grounding_cfg.enabled
+            && self
+                .active_profile
+                .is_enabled(crate::tools::Tool::WebSearch);
+        let grounding = if grounded {
+            self.gather_grounding(&grounding_cfg, tx).await?
+        } else {
+            GroundingState::default()
+        };
+
+        let messages = self.assemble_messages();
+        // Grounded mode skips native tool calls: the harness already retrieved, and the launch
+        // config may not enable auto tool choice (vLLM rejects `tools` then).
+        let tools_json = if grounded {
+            None
+        } else {
+            openai_tools(&self.tool_registry)
+        };
+
+        let mut full_content = self.stream_answer(messages, tools_json, tx).await?;
+
+        // Drop invented citation numbers, then fact-check the answer against the sources.
+        if grounding.injected {
+            full_content = self
+                .verify_answer(&grounding_cfg, &grounding, full_content, tx)
+                .await?;
+        }
+
+        let tool_calls = self.parse_tool_calls(&full_content);
+        let tool_results_with_markers = self.execute_tools(&tool_calls, &full_content).await;
+
+        // PHASE 4: embed tool results into response.
+        tracing::info!("[STREAM_REFACTOR] Phase 4: Embedding results into response");
+        let has_tool_results = !tool_results_with_markers.is_empty();
+        let response_for_display = if has_tool_results {
+            embed_tool_results_into_response(&full_content, tool_results_with_markers)
+        } else {
+            full_content.clone()
+        };
+        tracing::info!("[STREAM_REFACTOR] Phase 4 complete: Response ready for database");
+
+        let persisted = self
+            .persist(&response_for_display, &grounding.web_sources)
+            .await;
+
+        // PHASE 6: prepare final response with tool results embedded.
+        tracing::info!("[STREAM_REFACTOR] Phase 6: Finalizing response with tools");
+        let final_payload = self
+            .final_payload(
+                &persisted,
+                &response_for_display,
+                &full_content,
+                &grounding.web_sources,
+            )
+            .await;
+        tracing::info!(
+            "[STREAM_REFACTOR] Phase 6 complete: Sending final response with {} tool results",
+            if has_tool_results { "some" } else { "no" }
+        );
+
+        if !final_payload.is_empty() {
+            let _ = tx.send(encode_sse("message", &final_payload)).await;
+        }
+        Ok(())
+    }
+
+    /// Plans, searches and reads the web for the question, forwarding progress to the browser, and
+    /// adds the numbered sources to the system prompt.
+    async fn gather_grounding(
+        &mut self,
+        grounding_cfg: &crate::grounding::GroundingConfig,
+        tx: &Tx,
+    ) -> Result<GroundingState, Aborted> {
+        let mut state = GroundingState::default();
+        let question = if self.req.skip_user_message {
+            self.history
+                .iter()
+                .rev()
+                .find(|m| m.role == "user")
+                .map(|m| m.content.clone())
+                .unwrap_or_default()
+        } else {
+            self.req.message.clone()
+        };
+        state.question.clone_from(&question);
+        if question.trim().is_empty() {
+            return Ok(state);
+        }
+
+        let provider_name = self
+            .req
+            .search_provider
+            .as_deref()
+            .unwrap_or(&self.config.default_search_provider);
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel();
+        let gathering = crate::grounding::gather(
+            grounding_cfg,
+            &self.switchboard,
+            &self.vllm,
+            &self.search_provider_registry,
+            provider_name,
+            &self.instance,
+            &self.history,
+            &question,
+            &today,
+            Some(&progress_tx),
+        );
+        tokio::pin!(gathering);
+        // Forward pipeline progress to the browser while the search runs.
+        let gathered = loop {
+            tokio::select! {
+                result = &mut gathering => break result,
+                Some(progress) = progress_rx.recv() => {
+                    if tx.send(stage_event(&progress)).await.is_err() {
+                        return Err(Aborted);
+                    }
+                }
+            }
+        };
+        if let Some(grounding) = gathered {
+            self.system_message.content.push_str(&grounding.block);
+            state.web_sources = grounding.sources;
+            state.evidence = grounding.evidence;
+            state.injected = true;
+        }
+        Ok(state)
+    }
+
+    /// The prompt: the system message, as much recent history as the budget allows, and the new
+    /// user message.
+    fn assemble_messages(&self) -> Vec<ChatMessage> {
+        let skip_user = self.req.skip_user_message;
+        // The grounding block counts against the prompt budget before history is selected.
+        let system_tokens = estimate_tokens(&self.system_message);
+
+        let mut selected_history = std::collections::VecDeque::new();
+        let mut current_budget_used = system_tokens + if skip_user { 0 } else { self.user_tokens };
+
+        for msg in self.history.iter().rev() {
+            let msg_tokens = estimate_tokens(msg);
+            if current_budget_used + msg_tokens <= self.limits.prompt_budget {
+                current_budget_used += msg_tokens;
+                selected_history.push_front(msg.clone());
+            } else {
+                break;
+            }
+        }
+
+        let mut messages = vec![self.system_message.clone()];
+        messages.extend(selected_history);
+        if !skip_user {
+            messages.push(self.user_message.clone());
+        }
+
+        // Stay within the vLLM instance's per-prompt image limit, preferring the newest images.
+        crate::files::images::cap_images(
+            &mut messages,
+            crate::files::images::max_images_per_request(),
+        );
+        messages
+    }
+
+    /// PHASE 1: streams the response to the browser chunk by chunk; returns the whole of it.
+    async fn stream_answer(
+        &self,
+        messages: Vec<ChatMessage>,
+        tools_json: Option<Vec<serde_json::Value>>,
+        tx: &Tx,
+    ) -> Result<String, Aborted> {
+        let max_tokens = u32::try_from(self.limits.reserved_for_generation).unwrap_or(u32::MAX);
+        let mut stream = match self
+            .vllm
+            .chat_stream_with_tools(
+                &self.instance.host,
+                self.instance.port,
+                &self.instance.model,
+                messages,
+                Some(max_tokens),
+                tools_json,
+            )
+            .await
+        {
+            Ok(s) => s,
+            Err(err) => {
+                tracing::error!("Failed to start chat stream: {}", err);
+                let _ = tx.send(error_event(&err)).await;
+                return Err(Aborted);
+            }
+        };
+
+        tracing::info!("[STREAM_REFACTOR] Phase 1: Streaming response");
+        let mut full_content = String::new();
+        while let Some(res) = stream.next().await {
+            match res {
+                Ok(content) => {
+                    full_content.push_str(&content);
+                    let formatted = format_message(&full_content);
+                    let wrapped = format!("<div class=\"message-inner\">{formatted}</div>");
+                    if tx.send(encode_sse("message", &wrapped)).await.is_err() {
+                        return Err(Aborted);
+                    }
+                }
+                Err(err) => {
+                    let _ = tx.send(error_event(&err)).await;
+                    return Err(Aborted);
+                }
+            }
+        }
+
+        tracing::info!(
+            "[STREAM_REFACTOR] Phase 1 complete: {} chars collected",
+            full_content.len()
+        );
+        Ok(full_content)
+    }
+
+    /// Fact-checks a grounded answer against its sources (showing a "checking" line meanwhile).
+    async fn verify_answer(
+        &self,
+        grounding_cfg: &crate::grounding::GroundingConfig,
+        grounding: &GroundingState,
+        full_content: String,
+        tx: &Tx,
+    ) -> Result<String, Aborted> {
+        if grounding_cfg.verify && !grounding.evidence.is_empty() {
+            let shown = format!(
+                "<div class=\"message-inner\">{}{}</div>",
+                format_message(&full_content),
+                status_html(
+                    "ui_chat_status_checking",
+                    "Checking the answer against the sources…",
+                    None
+                )
+            );
+            if tx.send(encode_sse("message", &shown)).await.is_err() {
+                return Err(Aborted);
+            }
+        }
+        Ok(crate::grounding::finalize_answer(
+            grounding_cfg,
+            &self.switchboard,
+            &self.vllm,
+            &self.instance,
+            &full_content,
+            grounding.web_sources.len(),
+            &grounding.evidence,
+            &self.today,
+            &grounding.question,
+        )
+        .await)
+    }
+
+    /// PHASE 2: the tool calls in the answer, none for a meta-question about the tools.
+    fn parse_tool_calls(&self, full_content: &str) -> Vec<crate::tools::ToolCall> {
+        tracing::info!(
+            "[STREAM_REFACTOR] Phase 2: Parsing tool calls from {} chars",
+            full_content.len()
+        );
+
+        let has_toolcall_tags =
+            full_content.contains("<toolcall>") || full_content.contains("<tool_call>");
+        tracing::debug!(
+            "[PARSER] Response contains tool call tags: {}",
+            has_toolcall_tags
+        );
+
+        let mut tool_calls = crate::tools::parser::parse_tool_calls(full_content);
+        tracing::info!("[STREAM_REFACTOR] Found {} tool calls", tool_calls.len());
+
+        if tool_calls.is_empty() && has_toolcall_tags {
+            tracing::warn!(
+                "[PARSER] Tool call tags found but failed to parse them. Response preview: {}",
+                &full_content[..full_content.len().min(500)]
             );
         }
-    };
+
+        // Meta-questions about tools shouldn't trigger the tools themselves.
+        if is_meta_question(&self.req.message) && !tool_calls.is_empty() {
+            tracing::warn!(
+                "[STREAM_REFACTOR] Suppressing {} tool calls for meta-question",
+                tool_calls.len()
+            );
+            tool_calls.clear();
+        }
+        tool_calls
+    }
+
+    /// Runs the raw tool output back through vLLM for a clean summary.
+    async fn summarize_tool_output(&self, query: &str, raw: &str) -> String {
+        let parse_prompt = format!(
+            "Results for: {query}\n\n{raw}\n\nProvide the information clearly and concisely. No headers or title needed—just the useful content."
+        );
+
+        let parse_messages = vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: "You are a helpful assistant. Present information clearly and concisely. Do not add titles, headers, or summaries—just the essential content.".to_string(),
+                tool_calls: None,
+                images: None,
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: parse_prompt,
+                tool_calls: None,
+                images: None,
+            },
+        ];
+
+        let mut parsed = String::new();
+        if let Ok(mut parse_stream) = self
+            .vllm
+            .chat_stream(
+                &self.instance.host,
+                self.instance.port,
+                &self.instance.model,
+                parse_messages,
+                Some(512),
+            )
+            .await
+        {
+            while let Some(res) = parse_stream.next().await {
+                if let Ok(content) = res {
+                    parsed.push_str(&content);
+                }
+            }
+        }
+        parsed
+    }
+
+    /// PHASE 3: executes every tool call; each result keyed by the `<tool_call>` block it answers.
+    async fn execute_tools(
+        &self,
+        tool_calls: &[crate::tools::ToolCall],
+        full_content: &str,
+    ) -> Vec<(String, String)> {
+        tracing::info!(
+            "[STREAM_REFACTOR] Phase 3: Executing {} tools",
+            tool_calls.len()
+        );
+        let search_provider = self
+            .req
+            .search_provider
+            .as_deref()
+            .unwrap_or(&self.config.default_search_provider);
+
+        // Map of marker string → formatted HTML result
+        let mut tool_results_with_markers: Vec<(String, String)> = Vec::new();
+
+        // Matches every tag variant the parser supports, mismatched/unclosed included.
+        let tool_result_re = regex::Regex::new(
+            r"(?s)<(?:tool_call|toolcall)>\s*(\{.*?\})\s*</(?:tool_call|toolcall)>",
+        )
+        .ok();
+
+        for tool_call in tool_calls {
+            let query = tool_call
+                .arguments
+                .get("query")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+
+            tracing::info!("[STREAM_REFACTOR] Executing tool: {}", tool_call.name);
+
+            let result = if tool_call.name == "web_search" {
+                let executor = crate::tools::web_search::WebSearchExecutor::new(
+                    self.search_provider_registry.clone(),
+                )
+                .with_default_provider(search_provider.to_string());
+                executor.execute(tool_call).await
+            } else {
+                self.tool_registry.execute(tool_call).await
+            };
+
+            let formatted_result = if result.is_error {
+                render_tool_result(tool_call, &result)
+            } else {
+                let mut summarized = result.clone();
+                summarized.content = self.summarize_tool_output(query, &result.content).await;
+                render_tool_result(tool_call, &summarized)
+            };
+
+            if let Some(re) = &tool_result_re
+                && let Some(marker_text) = marker_for_call(tool_call, query, full_content, re)
+            {
+                tracing::info!(
+                    "[STREAM_REFACTOR] Registered result for marker: {}",
+                    &marker_text[..marker_text.len().min(50)]
+                );
+                tool_results_with_markers.push((marker_text, formatted_result));
+            }
+        }
+
+        tracing::info!(
+            "[STREAM_REFACTOR] Phase 3 complete: {} tool results collected",
+            tool_results_with_markers.len()
+        );
+        tool_results_with_markers
+    }
+
+    /// Writes the conversation row (deriving a title for a new one), unless it already exists.
+    async fn upsert_conversation(&self) -> crate::domain::models::Conversation {
+        let conv_repo = self.db.repository::<crate::domain::models::Conversation>();
+        // A blank title means the conversation was created lazily; derive one from the message.
+        let title = match &self.stored.title {
+            Some(t) if !t.trim().is_empty() => t.clone(),
+            _ => preview(&self.req.message),
+        };
+
+        let conv = crate::domain::models::Conversation {
+            id: self.req.conversation_id.clone(),
+            title,
+            active_message_id: self.stored.active_message_id.clone(),
+            owner: self.username.clone(),
+            // Falls back to the stored link so a message without project_id can't detach it.
+            project_id: self
+                .req
+                .project_id
+                .clone()
+                .or_else(|| self.stored.project_id.clone()),
+            updated_at: chrono::Utc::now().to_rfc3339(),
+        };
+
+        let exists = conv_repo
+            .read(&self.req.conversation_id)
+            .await
+            .is_ok_and(|o| o.is_some());
+        if exists {
+            if let Err(err) = conv_repo.update(&conv).await {
+                tracing::error!("Failed to update conversation: {}", err);
+            }
+        } else if let Err(err) = conv_repo.create(&conv).await {
+            tracing::error!("Failed to create conversation: {}", err);
+        }
+        conv
+    }
+
+    /// Stores the user's message (unless this is a regeneration) and returns the id the answer
+    /// hangs from.
+    async fn store_user_message(&self) -> Option<String> {
+        let req = &self.req;
+        if req.skip_user_message {
+            return req.parent_id.clone();
+        }
+        let msg_repo = self.db.repository::<crate::domain::models::Message>();
+        let user_msg_id = uuid::Uuid::new_v4().to_string();
+        let user_msg = crate::domain::models::Message {
+            id: user_msg_id.clone(),
+            conversation_id: req.conversation_id.clone(),
+            parent_id: self.stored.active_message_id.clone(),
+            role: "user".to_string(),
+            content: req.message.trim().to_string(),
+            created_at: chrono::Utc::now().to_rfc3339(),
+        };
+        if let Err(err) = msg_repo.create(&user_msg).await {
+            tracing::error!("Failed to create user message: {}", err);
+        }
+        // Link any files staged in the composer to this user message.
+        let staged_ids = req.file_id_list();
+        if !staged_ids.is_empty()
+            && let Err(err) = crate::routers::files::link_files_to_message(
+                &self.db,
+                &staged_ids,
+                &user_msg_id,
+                &req.conversation_id,
+                &self.username,
+            )
+            .await
+        {
+            tracing::error!("Failed to link attachments to message: {}", err);
+        }
+        Some(user_msg_id)
+    }
+
+    /// PHASE 5: stores the conversation, the user's message and the answer, and the sources the
+    /// answer was built from.
+    async fn persist(
+        &self,
+        response_for_display: &str,
+        web_sources: &[crate::grounding::WebSource],
+    ) -> Persisted {
+        let mut conv = self.upsert_conversation().await;
+        let ai_parent_id = self.store_user_message().await;
+
+        // Stores the display copy, so embedded tool results persist too.
+        let msg_repo = self.db.repository::<crate::domain::models::Message>();
+        let ai_msg_id = uuid::Uuid::new_v4().to_string();
+        let ai_msg = crate::domain::models::Message {
+            id: ai_msg_id.clone(),
+            conversation_id: self.req.conversation_id.clone(),
+            parent_id: ai_parent_id.clone(),
+            role: "assistant".to_string(),
+            content: response_for_display.trim().to_string(),
+            created_at: chrono::Utc::now().to_rfc3339(),
+        };
+        if let Err(err) = msg_repo.create(&ai_msg).await {
+            tracing::error!("Failed to create AI message: {}", err);
+        }
+
+        // Record auto-injected RAG sources against this message for attribution.
+        if !self.injected_rag_hits.is_empty()
+            && let Err(err) = crate::files::rag::record_rag_contexts(
+                &self.db,
+                &ai_msg_id,
+                &self.injected_rag_hits,
+                "auto",
+            )
+            .await
+        {
+            tracing::error!("Failed to record RAG sources: {}", err);
+        }
+
+        // Record the web pages the answer was grounded on, so they still show after a reload.
+        if let Err(err) =
+            crate::files::rag::record_web_sources(&self.db, &ai_msg_id, web_sources).await
+        {
+            tracing::error!("Failed to record web sources: {}", err);
+        }
+
+        conv.active_message_id = Some(ai_msg_id.clone());
+        conv.updated_at = chrono::Utc::now().to_rfc3339();
+        let conv_repo = self.db.repository::<crate::domain::models::Conversation>();
+        if let Err(err) = conv_repo.update(&conv).await {
+            tracing::error!("Failed to update conversation tip: {}", err);
+        }
+
+        Persisted {
+            ai_msg_id,
+            ai_parent_id,
+        }
+    }
+
+    /// The answer's branch controls: previous/next between its alternatives, and regenerate.
+    async fn ai_controls(&self, persisted: &Persisted) -> Element {
+        use crate::routers::ui::pages::home::switch_form;
+
+        let mut controls = div().class("branch-controls");
+        if let Ok(siblings) = get_siblings(
+            &self.db,
+            &self.req.conversation_id,
+            persisted.ai_parent_id.as_deref(),
+        )
+        .await
+        {
+            let total_siblings = siblings.len();
+            let sibling_index = siblings
+                .iter()
+                .position(|s| s.id == persisted.ai_msg_id)
+                .unwrap_or(0);
+
+            if total_siblings > 1 {
+                let prev_index = if sibling_index == 0 {
+                    total_siblings - 1
+                } else {
+                    sibling_index - 1
+                };
+                let next_index = if sibling_index == total_siblings - 1 {
+                    0
+                } else {
+                    sibling_index + 1
+                };
+
+                controls = controls.child(
+                    div()
+                        .class("branch-nav")
+                        .child(switch_form(
+                            &self.req.conversation_id,
+                            &siblings[prev_index].id,
+                            "fas fa-chevron-left",
+                        ))
+                        .child(span().class("branch-info").text(format!(
+                            "{}/{}",
+                            sibling_index + 1,
+                            total_siblings
+                        )))
+                        .child(switch_form(
+                            &self.req.conversation_id,
+                            &siblings[next_index].id,
+                            "fas fa-chevron-right",
+                        )),
+                );
+            }
+        }
+
+        let regenerate_btn = button()
+            .class("branch-btn regenerate-btn")
+            .attr("hx-post", with_base_path("/ui/chat/regenerate"))
+            .attr(
+                "hx-vals",
+                format!(r#"{{"message_id": "{}"}}"#, persisted.ai_msg_id),
+            )
+            .attr("hx-target", ".chat-history")
+            .attr("hx-swap", "beforeend")
+            .child(i().class("fas fa-sync-alt"))
+            .child(
+                span()
+                    .attr("data-i18n", "ui_chat_regenerate")
+                    .text(" Regenerate"),
+            );
+
+        controls.child(regenerate_btn)
+    }
+
+    /// Sources block from the excerpts auto-injected into this answer, and the web pages it cites.
+    fn sources_block(&self, web_sources: &[crate::grounding::WebSource]) -> Option<Element> {
+        let sources: Vec<crate::files::rag::RagSource> = self
+            .injected_rag_hits
+            .iter()
+            .map(|h| crate::files::rag::RagSource {
+                file_name: h.file_name.clone(),
+                chunk_index: Some(h.chunk_index),
+                detail: h.detail.clone(),
+                similarity: Some(h.similarity),
+            })
+            .chain(web_sources.iter().map(|w| crate::files::rag::RagSource {
+                file_name: format!("[{}] {}", w.index, w.domain),
+                chunk_index: None,
+                detail: Some(w.url.clone()),
+                similarity: None,
+            }))
+            .collect();
+        crate::routers::ui::common::format::render_sources(&sources)
+    }
+
+    /// The out-of-band swaps that give the placeholder AI message and its nav dot their permanent ids.
+    async fn ai_transitions(
+        &self,
+        persisted: &Persisted,
+        response_for_display: &str,
+        full_content: &str,
+        web_sources: &[crate::grounding::WebSource],
+    ) -> String {
+        let message_id = &self.message_id;
+        let ai_msg_id = &persisted.ai_msg_id;
+
+        // format_message already handles tool-result blocks.
+        let final_content_html = format_message(response_for_display);
+        let controls = self.ai_controls(persisted).await;
+
+        let message_inner = div()
+            .class("message-inner")
+            .raw()
+            .text(&final_content_html)
+            .child_opt(self.sources_block(web_sources))
+            .child(div().class("branch-controls").raw().text(controls.render()));
+
+        let oob_transition = div()
+            .class("chat-message message-ai")
+            .attr("id", format!("ai-{ai_msg_id}"))
+            .attr("hx-swap-oob", format!("outerHTML:#ai-{message_id}"))
+            .child(message_inner);
+
+        // Transition the nav dot/tooltip IDs for the AI message.
+        let ai_nav_dot_transition = div()
+            .attr("hx-swap-oob", format!("outerHTML:#dot-ai-{message_id}"))
+            .child(
+                div()
+                    .class("nav-dot")
+                    .attr("id", format!("dot-ai-{ai_msg_id}"))
+                    .attr("data-msg-id", format!("ai-{ai_msg_id}"))
+                    .attr("onclick", "const target = document.getElementById(this.dataset.msgId); if (target) { target.scrollIntoView({behavior: 'smooth', block: 'start'}); }")
+                    .child(
+                        div()
+                            .class("nav-tooltip")
+                            .attr("id", format!("tooltip-ai-{ai_msg_id}"))
+                            .text(preview(full_content.trim())),
+                    ),
+            );
+
+        format!(
+            "{}{}",
+            oob_transition.render(),
+            ai_nav_dot_transition.render()
+        )
+    }
+
+    /// Transitions the user message block to its permanent id (adding Edit); empty for a regeneration.
+    async fn user_transitions(&self, persisted: &Persisted) -> String {
+        let message_id = &self.message_id;
+        let Some(uid) = &persisted.ai_parent_id else {
+            return String::new();
+        };
+        if self.req.skip_user_message {
+            return String::new();
+        }
+
+        let edit_btn = button()
+            .class("branch-btn edit-btn")
+            .attr(
+                "hx-get",
+                with_base_path(&format!("/ui/chat/edit-form/{uid}")),
+            )
+            .attr("hx-target", format!("#user-{uid}"))
+            .attr("hx-swap", "innerHTML")
+            .child(i().class("fas fa-edit"))
+            .child(span().attr("data-i18n", "ui_chat_edit").text(" Edit"));
+
+        let user_controls = div().class("branch-controls").child(edit_btn);
+
+        // Must keep the attachment chips, or this OOB swap wipes them mid-stream.
+        let staged_ids = self.req.file_id_list();
+        let user_attachments_opt = if staged_ids.is_empty() {
+            None
+        } else {
+            let files = crate::routers::ui::pages::files::load_owned_files(
+                &self.db,
+                &staged_ids,
+                &self.username,
+            )
+            .await;
+            crate::routers::ui::pages::files::render_attachments_row(&files)
+        };
+
+        let user_oob_transition = div()
+            .class("chat-message message-user")
+            .attr("id", format!("user-{uid}"))
+            .attr("hx-swap-oob", format!("outerHTML:#user-{message_id}"))
+            .child(
+                div()
+                    .class("message-inner")
+                    .raw()
+                    .text(format_message(&self.req.message))
+                    .child_opt(user_attachments_opt)
+                    .child(user_controls),
+            )
+            .render();
+
+        let user_nav_dot_transition = div()
+            .attr("hx-swap-oob", format!("outerHTML:[data-msg-id='user-{message_id}']"))
+            .child(
+                div()
+                    .class("nav-dot")
+                    .attr("data-msg-id", format!("user-{uid}"))
+                    .attr("onclick", "const target = document.getElementById(this.dataset.msgId); if (target) { target.scrollIntoView({behavior: 'smooth', block: 'start'}); }")
+                    .child(
+                        div()
+                            .class("nav-tooltip")
+                            .text(self.req.message.chars().take(30).collect::<String>()),
+                    ),
+            )
+            .render();
+
+        format!("{user_oob_transition}{user_nav_dot_transition}")
+    }
+
+    /// One conversation row of the refreshed sidebar.
+    fn history_item(
+        &self,
+        conv: &crate::domain::models::Conversation,
+        conv_url: &str,
+        suffix: &str,
+    ) -> Element {
+        let is_active = conv.id == self.req.conversation_id;
+        let item_class = format!(
+            "history-item{}{suffix}",
+            if is_active { " active" } else { "" }
+        );
+        let link_class = if is_active {
+            "history-item-link active"
+        } else {
+            "history-item-link"
+        };
+        div()
+            .class(item_class)
+            .attr("id", format!("history-item-{}", conv.id))
+            .child(
+                a().class(link_class)
+                    .attr("href", with_base_path(conv_url))
+                    .text(&conv.title),
+            )
+            .child(crate::routers::ui::pages::home::conversation_menu(
+                &conv.id,
+                &self.req.conversation_id,
+            ))
+    }
+
+    /// The Projects header and list for the refreshed sidebar; `None` when projects cannot be read.
+    async fn projects_oob(
+        &self,
+        conversations: &[crate::domain::models::Conversation],
+    ) -> Option<[Element; 2]> {
+        let project_repo = self.db.repository::<crate::domain::models::Project>();
+        let mut projects = project_repo.list().await.ok()?;
+        projects.retain(|p| p.owner == self.username);
+        projects.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+
+        let mut projects_content = div().class("history-section-content");
+        if projects.is_empty() {
+            projects_content = projects_content.class("hidden");
+        }
+
+        for project in &projects {
+            let is_active = Some(project.id.clone()) == self.req.project_id;
+            let item_class = if is_active {
+                "history-item active project-item"
+            } else {
+                "history-item project-item"
+            };
+            let link_class = if is_active {
+                "history-item-link active"
+            } else {
+                "history-item-link"
+            };
+            let icon_class = if is_active {
+                "fas fa-folder-open"
+            } else {
+                "fas fa-folder"
+            };
+
+            let item = div().class(item_class).child(
+                a().class(link_class)
+                    .attr(
+                        "href",
+                        with_base_path(&format!("/ui/home?project_id={}", project.id)),
+                    )
+                    .child(i().class(icon_class).attr("style", "margin-right: 8px;"))
+                    .child(span().text(&project.name)),
+            );
+            projects_content = projects_content.child(item);
+
+            // Or the OOB sidebar swap drops it until a full page reload.
+            if is_active {
+                let files = crate::routers::files::visible_files_for_project(&self.db, &project.id)
+                    .await
+                    .unwrap_or_default();
+                projects_content = projects_content
+                    .child(crate::routers::ui::pages::files::render_project_files_section(&files));
+            }
+
+            for conv in conversations
+                .iter()
+                .filter(|c| c.project_id.as_deref() == Some(&project.id))
+            {
+                let conv_url = format!(
+                    "/ui/home?conversation_id={}&project_id={}",
+                    conv.id, project.id
+                );
+                projects_content = projects_content.child(self.history_item(
+                    conv,
+                    &conv_url,
+                    " project-conv-item",
+                ));
+            }
+        }
+
+        Some([
+            crate::routers::ui::pages::home::projects_header(!projects.is_empty()),
+            projects_content,
+        ])
+    }
+
+    /// The refreshed sidebar, swapped in out of band so the new title shows without a reload.
+    async fn history_oob(&self) -> Option<String> {
+        let conv_repo = self.db.repository::<crate::domain::models::Conversation>();
+        let mut conversations = conv_repo.list().await.ok()?;
+        conversations.retain(|c| c.owner == self.username);
+        conversations.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+
+        let mut history_list = div()
+            .class("history-list")
+            .attr("id", "history-list")
+            .attr("hx-swap-oob", "true");
+
+        if let Some([header, content]) = self.projects_oob(&conversations).await {
+            history_list = history_list.child(header).child(content);
+        }
+
+        let mut global_content = div().class("history-section-content");
+        for conv in conversations.iter().filter(|c| c.project_id.is_none()) {
+            let conv_url = format!("/ui/home?conversation_id={}", conv.id);
+            global_content = global_content.child(self.history_item(conv, &conv_url, ""));
+        }
+        history_list = history_list
+            .child(crate::routers::ui::pages::home::history_header())
+            .child(global_content);
+        Some(history_list.render())
+    }
+
+    /// PHASE 6: everything the browser swaps in once the answer is done.
+    async fn final_payload(
+        &self,
+        persisted: &Persisted,
+        response_for_display: &str,
+        full_content: &str,
+        web_sources: &[crate::grounding::WebSource],
+    ) -> String {
+        let mut final_payload = self
+            .ai_transitions(persisted, response_for_display, full_content, web_sources)
+            .await;
+        final_payload.push_str(&self.user_transitions(persisted).await);
+        if let Some(history) = self.history_oob().await {
+            final_payload.push_str(&history);
+        }
+        final_payload
+    }
+}
+
+/// The chat-capable instance the request names.
+async fn find_chat_instance(
+    switchboard: &SwitchboardClient,
+    req: &ChatRequest,
+) -> Result<crate::clients::switchboard::VllmInstance, Response> {
+    let instances = switchboard.get_vllm_instances().await.map_err(|err| {
+        tracing::error!("Failed to get vLLM instances: {}", err);
+        Response::text(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "api_error_switchboard_unavailable",
+        )
+    })?;
 
     let Some(instance) = instances.into_iter().find(|i| i.id == req.instance_id) else {
-        return Response::text(StatusCode::NOT_FOUND, "api_error_instance_not_found");
+        return Err(Response::text(
+            StatusCode::NOT_FOUND,
+            "api_error_instance_not_found",
+        ));
     };
 
     if !instance.is_chat_capable() {
@@ -417,74 +1511,40 @@ pub async fn stream_message(
             instance.id,
             instance.task
         );
-        return Response::text(StatusCode::BAD_REQUEST, "api_error_embedding_model_chat");
+        return Err(Response::text(
+            StatusCode::BAD_REQUEST,
+            "api_error_embedding_model_chat",
+        ));
     }
+    Ok(instance)
+}
 
-    let max_model_len = instance.max_model_len.unwrap_or(2048) as usize;
-    let reserved_for_generation = if max_model_len > 4096 {
-        2048
-    } else if max_model_len > 2048 {
-        1024
-    } else {
-        512
-    };
-
-    let prompt_budget = max_model_len.saturating_sub(reserved_for_generation);
-
-    fn estimate_tokens(msg: &ChatMessage) -> usize {
-        let image_tokens = msg.images.as_ref().map_or(0, |imgs| {
-            imgs.len() * crate::files::images::image_token_estimate()
-        });
-        msg.content.chars().count().div_ceil(3) + 4 + image_tokens
-    }
-
-    let mut system_message = ChatMessage {
-        role: "system".to_string(),
-        content: config.system_prompt_with_date(),
-        tool_calls: None,
-        images: None,
-    };
-
-    // Pre-create so RAG/file_list/file_search can resolve the conversation on
-    // the first message, which Phase 5 would otherwise persist too late.
-    {
-        use quench_db::prelude::Crud;
-        let conv_repo = db.repository::<crate::domain::models::Conversation>();
-        if matches!(conv_repo.read(&req.conversation_id).await, Ok(None)) {
-            let conv = crate::domain::models::Conversation {
-                id: req.conversation_id.clone(),
-                // Blank until Phase 5 derives the title from the message.
-                title: String::new(),
-                active_message_id: None,
-                owner: username.clone(),
-                project_id: req.project_id.clone(),
-                updated_at: chrono::Utc::now().to_rfc3339(),
-            };
-            if let Err(e) = conv_repo.create(&conv).await {
-                tracing::error!(
-                    "Failed to pre-create conversation {}: {}",
-                    req.conversation_id,
-                    e
-                );
-            }
+/// Pre-create so `RAG`/`file_list`/`file_search` can resolve the conversation on the first message,
+/// which Phase 5 would otherwise persist too late.
+async fn precreate_conversation(db: &Db, req: &ChatRequest, username: &str) {
+    let conv_repo = db.repository::<crate::domain::models::Conversation>();
+    if matches!(conv_repo.read(&req.conversation_id).await, Ok(None)) {
+        let conv = crate::domain::models::Conversation {
+            id: req.conversation_id.clone(),
+            // Blank until Phase 5 derives the title from the message.
+            title: String::new(),
+            active_message_id: None,
+            owner: username.to_string(),
+            project_id: req.project_id.clone(),
+            updated_at: chrono::Utc::now().to_rfc3339(),
+        };
+        if let Err(e) = conv_repo.create(&conv).await {
+            tracing::error!(
+                "Failed to pre-create conversation {}: {}",
+                req.conversation_id,
+                e
+            );
         }
     }
+}
 
-    // Advertise uploaded files and inject relevant excerpts when available.
-    let mut injected_rag_hits: Vec<crate::files::rag::ChunkHit> = Vec::new();
-    if let Some((rag_augmentation, hits)) = crate::files::rag::augment_system_prompt(
-        &db,
-        &switchboard,
-        &vllm,
-        &req.conversation_id,
-        &req.message,
-    )
-    .await
-    {
-        system_message.content.push_str(&rag_augmentation);
-        injected_rag_hits = hits;
-    }
-
+/// Logs whether the system prompt advertises the tools.
+fn log_system_prompt(system_message: &ChatMessage) {
     tracing::info!(
         "System prompt length: {} chars, contains AVAILABLE TOOLS: {}",
         system_message.content.len(),
@@ -503,7 +1563,10 @@ pub async fn stream_message(
     } else {
         tracing::warn!("✗ System prompt does NOT include AVAILABLE TOOLS section");
     }
+}
 
+/// The user's message, with any staged image uploads attached for vision models.
+async fn build_user_message(db: &Db, req: &ChatRequest, username: &str) -> ChatMessage {
     let mut current_user_message = ChatMessage {
         role: "user".to_string(),
         content: req.message.clone(),
@@ -514,1051 +1577,175 @@ pub async fn stream_message(
     // Attach staged image uploads so vision models can see them; non-image attachments flow through RAG instead.
     if !req.skip_user_message {
         let staged_images =
-            crate::files::images::load_staged_images(&db, &req.file_id_list(), &username).await;
+            crate::files::images::load_staged_images(db, &req.file_id_list(), username).await;
         if !staged_images.is_empty() {
             current_user_message.images = Some(staged_images);
         }
     }
 
     tracing::info!("User message: {}", current_user_message.content);
+    current_user_message
+}
 
-    let current_user_tokens = estimate_tokens(&current_user_message);
-
-    use quench_db::prelude::Crud;
+/// What is already stored of the conversation.
+async fn load_stored(db: &Db, req: &ChatRequest) -> StoredConversation {
     let repo = db.repository::<crate::domain::models::Conversation>();
-    let mut active_message_id = None;
-    let mut existing_title = None;
-    let mut existing_project_id = None;
-    if let Ok(Some(conv)) = repo.read(&req.conversation_id).await {
-        active_message_id = conv.active_message_id;
-        existing_title = Some(conv.title);
-        existing_project_id = conv.project_id;
+    match repo.read(&req.conversation_id).await {
+        Ok(Some(conv)) => StoredConversation {
+            active_message_id: conv.active_message_id,
+            title: Some(conv.title),
+            project_id: conv.project_id,
+        },
+        _ => StoredConversation {
+            active_message_id: None,
+            title: None,
+            project_id: None,
+        },
     }
+}
 
-    // Regeneration bases history on parent_id instead of the active tip.
+/// The conversation so far; a regeneration bases it on the parent instead of the active tip.
+async fn load_history(db: &Db, req: &ChatRequest, stored: &StoredConversation) -> Vec<ChatMessage> {
     let history_base_id = if req.skip_user_message {
         req.parent_id.as_deref()
     } else {
-        active_message_id.as_deref()
+        stored.active_message_id.as_deref()
     };
 
-    let mut history_messages = Vec::new();
-    if let Some(amid) = history_base_id
-        && let Ok(msgs) = get_conversation_messages(&db, Some(amid)).await
-    {
-        history_messages = msgs;
+    match history_base_id {
+        Some(amid) => get_conversation_messages(db, Some(amid))
+            .await
+            .unwrap_or_default(),
+        None => Vec::new(),
     }
+}
 
-    let mut full_content = String::new();
-    let message_id_clone = message_id.clone();
-    let db_clone = db.clone();
-    let vllm_clone = vllm.clone();
-    let username_clone = username.clone();
-    let tool_registry_clone = tool_registry.clone();
-    let search_provider_registry_clone = search_provider_registry.clone();
-    let config_clone = config.clone();
-    let switchboard_task = switchboard.clone();
-    let instance_task = instance.clone();
-    let today_task = chrono::Utc::now().format("%Y-%m-%d").to_string();
+#[get("/ui/chat/stream/{id}")]
+#[allow(clippy::too_many_arguments)]
+pub async fn stream_message(
+    claims: RequiredClaims,
+    Path(id): Path<String>,
+    Inject(chat_state): Inject<ChatState>,
+    Inject(switchboard): Inject<SwitchboardClient>,
+    Inject(vllm): Inject<VllmClient>,
+    Inject(config): Inject<SageConfig>,
+    Inject(db): Inject<Db>,
+    Inject(search_provider_registry): Inject<crate::tools::SearchProviderRegistry>,
+    Inject(metrics_collector): Inject<crate::observability::metrics::MetricsCollector>,
+    Inject(rate_limiter): Inject<tokio::sync::Mutex<crate::runtime::rate_limiter::RateLimiter>>,
+    Inject(cost_tracker): Inject<crate::observability::cost_tracking::CostTracker>,
+) -> Response {
+    let username = match claims.or_401() {
+        Ok(claims) => claims.sub,
+        Err(response) => return response,
+    };
+
+    let message_id = id;
+
+    let req = match chat_state.pending_messages.get(&message_id) {
+        Some(r) => r.clone(),
+        None => return Response::new(StatusCode::NOT_FOUND),
+    };
+
+    tracing::info!(
+        "Chat request: search_provider={:?}, instance_id={}",
+        req.search_provider,
+        req.instance_id
+    );
+
+    let active_profile = resolve_profile(&req, &config);
+
+    // Shadows the global tool_registry param with this request-specific one.
+    let tool_registry = Arc::new(build_tool_registry(
+        &active_profile,
+        &username,
+        &req,
+        &RegistryDeps {
+            search_provider_registry: &search_provider_registry,
+            db: &db,
+            switchboard: &switchboard,
+            vllm: &vllm,
+            metrics_collector: &metrics_collector,
+            rate_limiter: &rate_limiter,
+            cost_tracker: &cost_tracker,
+        },
+    ));
+
+    let instance = match find_chat_instance(&switchboard, &req).await {
+        Ok(instance) => instance,
+        Err(response) => return response,
+    };
+
+    let limits = PromptLimits::for_context(instance.max_model_len.unwrap_or(2048) as usize);
+
+    let mut system_message = ChatMessage {
+        role: "system".to_string(),
+        content: config.system_prompt_with_date(),
+        tool_calls: None,
+        images: None,
+    };
+
+    precreate_conversation(&db, &req, &username).await;
+
+    // Advertise uploaded files and inject relevant excerpts when available.
+    let injected_rag_hits: Vec<crate::files::rag::ChunkHit> =
+        crate::files::rag::augment_system_prompt(
+            &db,
+            &switchboard,
+            &vllm,
+            &req.conversation_id,
+            &req.message,
+        )
+        .await
+        .map_or_else(Vec::new, |(rag_augmentation, hits)| {
+            system_message.content.push_str(&rag_augmentation);
+            hits
+        });
+    log_system_prompt(&system_message);
+
+    let user_message = build_user_message(&db, &req, &username).await;
+    let user_tokens = estimate_tokens(&user_message);
+    let stored = load_stored(&db, &req).await;
+    let history = load_history(&db, &req, &stored).await;
+
+    let turn = Turn {
+        chat_state,
+        message_id,
+        req,
+        username,
+        db,
+        vllm,
+        switchboard,
+        config,
+        search_provider_registry,
+        tool_registry,
+        active_profile,
+        instance,
+        limits,
+        system_message,
+        user_message,
+        user_tokens,
+        history,
+        injected_rag_hits,
+        stored,
+        today: chrono::Utc::now().format("%Y-%m-%d").to_string(),
+    };
 
     // Channel-backed, not `async_stream::stream!`: DB work inside makes an
     // inline generator `!Sync`, but `ReceiverStream` is `Sync` regardless.
     let (tx, rx) = tokio::sync::mpsc::channel::<Bytes>(16);
-
-    tokio::spawn(async move {
-        let username = username_clone;
-        let tool_registry = tool_registry_clone;
-        let search_provider_registry = search_provider_registry_clone;
-        let config = config_clone;
-        let db_clone = db_clone;
-        let vllm = vllm_clone;
-        let switchboard = switchboard_task;
-        let instance = instance_task;
-
-        // Small models can't be trusted to decide when to search, so in grounded mode the
-        // harness plans, searches and fetches up front and injects numbered sources.
-        let grounding_cfg = crate::grounding::GroundingConfig::from_env();
-        let grounded =
-            grounding_cfg.enabled && active_profile.is_enabled(crate::tools::Tool::WebSearch);
-        let mut web_sources: Vec<crate::grounding::WebSource> = Vec::new();
-        let mut grounding_injected = false;
-        let mut grounding_evidence = String::new();
-        let mut grounding_question = String::new();
-        if grounded {
-            let question = if req.skip_user_message {
-                history_messages
-                    .iter()
-                    .rev()
-                    .find(|m| m.role == "user")
-                    .map(|m| m.content.clone())
-                    .unwrap_or_default()
-            } else {
-                req.message.clone()
-            };
-            grounding_question = question.clone();
-            if !question.trim().is_empty() {
-                let provider_name = req
-                    .search_provider
-                    .as_deref()
-                    .unwrap_or(&config.default_search_provider);
-                let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-                let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel();
-                let gathering = crate::grounding::gather(
-                    &grounding_cfg,
-                    &switchboard,
-                    &vllm,
-                    &search_provider_registry,
-                    provider_name,
-                    &instance,
-                    &history_messages,
-                    &question,
-                    &today,
-                    Some(&progress_tx),
-                );
-                tokio::pin!(gathering);
-                // Forward pipeline progress to the browser while the search runs.
-                let gathered = loop {
-                    tokio::select! {
-                        result = &mut gathering => break result,
-                        Some(stage) = progress_rx.recv() => {
-                            if tx.send(stage_event(&stage)).await.is_err() {
-                                return;
-                            }
-                        }
-                    }
-                };
-                if let Some(grounding) = gathered {
-                    system_message.content.push_str(&grounding.block);
-                    web_sources = grounding.sources;
-                    grounding_evidence = grounding.evidence;
-                    grounding_injected = true;
-                }
-            }
-        }
-        // The grounding block counts against the prompt budget before history is selected.
-        let system_tokens = estimate_tokens(&system_message);
-
-        let mut selected_history = std::collections::VecDeque::new();
-        let mut current_budget_used = system_tokens
-            + if req.skip_user_message {
-                0
-            } else {
-                current_user_tokens
-            };
-
-        for msg in history_messages.into_iter().rev() {
-            let msg_tokens = estimate_tokens(&msg);
-            if current_budget_used + msg_tokens <= prompt_budget {
-                current_budget_used += msg_tokens;
-                selected_history.push_front(msg);
-            } else {
-                break;
-            }
-        }
-
-        let mut messages = vec![system_message];
-        messages.extend(selected_history);
-        if !req.skip_user_message {
-            messages.push(current_user_message);
-        }
-
-        // Stay within the vLLM instance's per-prompt image limit, preferring the newest images.
-        crate::files::images::cap_images(
-            &mut messages,
-            crate::files::images::max_images_per_request(),
-        );
-
-        let max_tokens = reserved_for_generation as u32;
-
-        // OpenAI tool-call format: {"type": "function", "function": {name, description, parameters}}
-        let tool_definitions = tool_registry.get_definitions();
-        // Grounded mode skips native tool calls: the harness already retrieved, and the launch
-        // config may not enable auto tool choice (vLLM rejects `tools` then).
-        let tools_json: Option<Vec<serde_json::Value>> = if grounded {
-            None
-        } else if !tool_definitions.is_empty() {
-            let mut openai_tools = Vec::new();
-            for tool_def in tool_definitions {
-                let openai_tool = serde_json::json!({
-                    "type": "function",
-                    "function": {
-                        "name": tool_def.name,
-                        "description": tool_def.description,
-                        "parameters": tool_def.parameters
-                    }
-                });
-                openai_tools.push(openai_tool);
-            }
-            tracing::info!(
-                "[VLLM_REQUEST] Sending {} tools to vLLM in OpenAI format",
-                openai_tools.len()
-            );
-            Some(openai_tools)
-        } else {
-            None
-        };
-
-        let mut stream = match vllm
-            .chat_stream_with_tools(
-                &instance.host,
-                instance.port,
-                &instance.model,
-                messages,
-                Some(max_tokens),
-                tools_json,
-            )
-            .await
-        {
-            Ok(s) => s,
-            Err(err) => {
-                tracing::error!("Failed to start chat stream: {}", err);
-                let html = div()
-                    .class("message-inner")
-                    .child(
-                        div()
-                            .class("message-content")
-                            .child(span().attr("data-i18n", "ui_chat_error").text("Error"))
-                            .child(span().text(format!(": {}", err))),
-                    )
-                    .render();
-                let _ = tx.send(encode_sse("message", &html)).await;
-                return;
-            }
-        };
-
-        // PHASE 1: stream response chunks in real time.
-        tracing::info!("[STREAM_REFACTOR] Phase 1: Streaming response");
-        while let Some(res) = stream.next().await {
-            match res {
-                Ok(content) => {
-                    full_content.push_str(&content);
-                    let formatted = format_message(&full_content);
-                    let wrapped = format!("<div class=\"message-inner\">{}</div>", formatted);
-                    if tx.send(encode_sse("message", &wrapped)).await.is_err() {
-                        return;
-                    }
-                }
-                Err(err) => {
-                    let html = div()
-                        .class("message-inner")
-                        .child(
-                            div()
-                                .class("message-content")
-                                .child(span().attr("data-i18n", "ui_chat_error").text("Error"))
-                                .child(span().text(format!(": {}", err))),
-                        )
-                        .render();
-                    let _ = tx.send(encode_sse("message", &html)).await;
-                    return;
-                }
-            }
-        }
-
-        tracing::info!(
-            "[STREAM_REFACTOR] Phase 1 complete: {} chars collected",
-            full_content.len()
-        );
-
-        // Drop invented citation numbers, then fact-check the answer against the sources.
-        if grounding_injected {
-            if grounding_cfg.verify && !grounding_evidence.is_empty() {
-                let shown = format!(
-                    "<div class=\"message-inner\">{}{}</div>",
-                    format_message(&full_content),
-                    status_html(
-                        "ui_chat_status_checking",
-                        "Checking the answer against the sources…",
-                        None
-                    )
-                );
-                if tx.send(encode_sse("message", &shown)).await.is_err() {
-                    return;
-                }
-            }
-            full_content = crate::grounding::finalize_answer(
-                &grounding_cfg,
-                &switchboard,
-                &vllm,
-                &instance,
-                &full_content,
-                web_sources.len(),
-                &grounding_evidence,
-                &today_task,
-                &grounding_question,
-            )
-            .await;
-        }
-
-        // PHASE 2: parse tool calls and check for meta-questions.
-        tracing::info!(
-            "[STREAM_REFACTOR] Phase 2: Parsing tool calls from {} chars",
-            full_content.len()
-        );
-
-        let has_toolcall_tags =
-            full_content.contains("<toolcall>") || full_content.contains("<tool_call>");
-        tracing::debug!(
-            "[PARSER] Response contains tool call tags: {}",
-            has_toolcall_tags
-        );
-
-        let mut tool_calls = crate::tools::parser::parse_tool_calls(&full_content);
-        tracing::info!("[STREAM_REFACTOR] Found {} tool calls", tool_calls.len());
-
-        if tool_calls.is_empty() && has_toolcall_tags {
-            tracing::warn!(
-                "[PARSER] Tool call tags found but failed to parse them. Response preview: {}",
-                &full_content[..full_content.len().min(500)]
-            );
-        }
-
-        // Meta-questions about tools shouldn't trigger the tools themselves.
-        let user_question_lower = req.message.to_lowercase();
-        let is_meta_question = user_question_lower.contains("what tools")
-            || user_question_lower.contains("what capabilities")
-            || user_question_lower.contains("how do i use")
-            || user_question_lower.contains("how do you use")
-            || user_question_lower.contains("available tools")
-            || user_question_lower.contains("can you do");
-
-        if is_meta_question && !tool_calls.is_empty() {
-            tracing::warn!(
-                "[STREAM_REFACTOR] Suppressing {} tool calls for meta-question",
-                tool_calls.len()
-            );
-            tool_calls.clear();
-        }
-
-        // PHASE 3: execute all tools and collect results with markers.
-        tracing::info!(
-            "[STREAM_REFACTOR] Phase 3: Executing {} tools",
-            tool_calls.len()
-        );
-        let search_provider = req
-            .search_provider
-            .as_deref()
-            .unwrap_or(&config.default_search_provider);
-
-        // Map of marker string → formatted HTML result
-        let mut tool_results_with_markers: Vec<(String, String)> = Vec::new();
-
-        // Matches every tag variant the parser supports, mismatched/unclosed included.
-        let tool_result_re = regex::Regex::new(
-            r"(?s)<(?:tool_call|toolcall)>\s*(\{.*?\})\s*</(?:tool_call|toolcall)>",
-        )
-        .ok();
-
-        for tool_call in &tool_calls {
-            let query = tool_call
-                .arguments
-                .get("query")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown");
-
-            tracing::info!("[STREAM_REFACTOR] Executing tool: {}", tool_call.name);
-
-            let result = if tool_call.name == "web_search" {
-                let executor = crate::tools::web_search::WebSearchExecutor::new(
-                    search_provider_registry.clone(),
-                )
-                .with_default_provider(search_provider.to_string());
-                executor.execute(tool_call).await
-            } else {
-                tool_registry.execute(tool_call).await
-            };
-
-            // Runs the raw tool output back through vLLM for a clean summary.
-            let formatted_result = if !result.is_error {
-                let parse_prompt = format!(
-                    "Results for: {}\n\n{}\n\nProvide the information clearly and concisely. No headers or title needed—just the useful content.",
-                    query, result.content
-                );
-
-                let parse_messages = vec![
-                    ChatMessage {
-                        role: "system".to_string(),
-                        content: "You are a helpful assistant. Present information clearly and concisely. Do not add titles, headers, or summaries—just the essential content.".to_string(),
-                        tool_calls: None,
-                        images: None,
-                    },
-                    ChatMessage {
-                        role: "user".to_string(),
-                        content: parse_prompt,
-                        tool_calls: None,
-                        images: None,
-                    },
-                ];
-
-                let mut parsed = String::new();
-                if let Ok(mut parse_stream) = vllm
-                    .chat_stream(
-                        &instance.host,
-                        instance.port,
-                        &instance.model,
-                        parse_messages,
-                        Some(512),
-                    )
-                    .await
-                {
-                    while let Some(res) = parse_stream.next().await {
-                        if let Ok(content) = res {
-                            parsed.push_str(&content);
-                        }
-                    }
-                }
-
-                let mut result_clone = result.clone();
-                result_clone.content = parsed;
-                render_tool_result(tool_call, &result_clone)
-            } else {
-                render_tool_result(tool_call, &result)
-            };
-
-            if let Some(re) = &tool_result_re {
-                for marker_match in re.find_iter(&full_content) {
-                    let marker_text = marker_match.as_str();
-                    // Match by tool name first, then by argument content.
-                    let mut matches = marker_text.contains(&tool_call.name);
-
-                    if !matches && query != "unknown" {
-                        matches = marker_text.contains(query);
-                    }
-
-                    // Fallback: any argument value appearing in the marker counts too.
-                    if !matches {
-                        for (_, val) in tool_call
-                            .arguments
-                            .as_object()
-                            .unwrap_or(&serde_json::Map::new())
-                        {
-                            if let Some(s) = val.as_str()
-                                && marker_text.contains(s)
-                            {
-                                matches = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    if matches {
-                        tool_results_with_markers
-                            .push((marker_text.to_string(), formatted_result.clone()));
-                        tracing::info!(
-                            "[STREAM_REFACTOR] Registered result for marker: {}",
-                            &marker_text[..marker_text.len().min(50)]
-                        );
-                        break;
-                    }
-                }
-            }
-        }
-
-        tracing::info!(
-            "[STREAM_REFACTOR] Phase 3 complete: {} tool results collected",
-            tool_results_with_markers.len()
-        );
-
-        // PHASE 4: embed tool results into response.
-        tracing::info!("[STREAM_REFACTOR] Phase 4: Embedding results into response");
-
-        // Stripped for storage; the display copy embeds tool results instead.
-        let _clean_content = crate::tools::parser::strip_tool_calls(&full_content);
-
-        let has_tool_results = !tool_results_with_markers.is_empty();
-
-        let response_for_display = if has_tool_results {
-            embed_tool_results_into_response(&full_content, tool_results_with_markers)
-        } else {
-            full_content.clone()
-        };
-
-        tracing::info!("[STREAM_REFACTOR] Phase 4 complete: Response ready for database");
-
-        // PHASE 5: Database operations
-        use quench_db::prelude::Crud;
-        let conv_repo = db_clone.repository::<crate::domain::models::Conversation>();
-        let updated_at = chrono::Utc::now().to_rfc3339();
-        // A blank title means the conversation was created lazily; derive one from the message.
-        let title = match existing_title {
-            Some(t) if !t.trim().is_empty() => t,
-            _ => {
-                if req.message.chars().count() > 30 {
-                    format!("{}...", req.message.chars().take(30).collect::<String>())
-                } else {
-                    req.message.clone()
-                }
-            }
-        };
-
-        let mut conv = crate::domain::models::Conversation {
-            id: req.conversation_id.clone(),
-            title,
-            active_message_id: active_message_id.clone(),
-            owner: username.clone(),
-            // Falls back to the stored link so a message without project_id can't detach it.
-            project_id: req.project_id.clone().or(existing_project_id),
-            updated_at,
-        };
-
-        let exists = conv_repo
-            .read(&req.conversation_id)
-            .await
-            .map(|o| o.is_some())
-            .unwrap_or(false);
-        if exists {
-            if let Err(err) = conv_repo.update(&conv).await {
-                tracing::error!("Failed to update conversation: {}", err);
-            }
-        } else {
-            if let Err(err) = conv_repo.create(&conv).await {
-                tracing::error!("Failed to create conversation: {}", err);
-            }
-        }
-
-        let ai_parent_id = if !req.skip_user_message {
-            let msg_repo = db_clone.repository::<crate::domain::models::Message>();
-            let user_msg_id = uuid::Uuid::new_v4().to_string();
-            let user_msg = crate::domain::models::Message {
-                id: user_msg_id.clone(),
-                conversation_id: req.conversation_id.clone(),
-                parent_id: active_message_id.clone(),
-                role: "user".to_string(),
-                content: req.message.trim().to_string(),
-                created_at: chrono::Utc::now().to_rfc3339(),
-            };
-            if let Err(err) = msg_repo.create(&user_msg).await {
-                tracing::error!("Failed to create user message: {}", err);
-            }
-            // Link any files staged in the composer to this user message.
-            let staged_ids = req.file_id_list();
-            if !staged_ids.is_empty()
-                && let Err(err) = crate::routers::files::link_files_to_message(
-                    &db_clone,
-                    &staged_ids,
-                    &user_msg_id,
-                    &req.conversation_id,
-                    &username,
-                )
-                .await
-            {
-                tracing::error!("Failed to link attachments to message: {}", err);
-            }
-            Some(user_msg_id)
-        } else {
-            req.parent_id.clone()
-        };
-
-        // Stores the display copy, so embedded tool results persist too.
-        let msg_repo = db_clone.repository::<crate::domain::models::Message>();
-        let ai_msg_id = uuid::Uuid::new_v4().to_string();
-        let ai_msg = crate::domain::models::Message {
-            id: ai_msg_id.clone(),
-            conversation_id: req.conversation_id.clone(),
-            parent_id: ai_parent_id.clone(),
-            role: "assistant".to_string(),
-            content: response_for_display.trim().to_string(),
-            created_at: chrono::Utc::now().to_rfc3339(),
-        };
-        if let Err(err) = msg_repo.create(&ai_msg).await {
-            tracing::error!("Failed to create AI message: {}", err);
-        }
-
-        // Record auto-injected RAG sources against this message for attribution.
-        if !injected_rag_hits.is_empty()
-            && let Err(err) = crate::files::rag::record_rag_contexts(
-                &db_clone,
-                &ai_msg_id,
-                &injected_rag_hits,
-                "auto",
-            )
-            .await
-        {
-            tracing::error!("Failed to record RAG sources: {}", err);
-        }
-
-        // Record the web pages the answer was grounded on, so they still show after a reload.
-        if let Err(err) =
-            crate::files::rag::record_web_sources(&db_clone, &ai_msg_id, &web_sources).await
-        {
-            tracing::error!("Failed to record web sources: {}", err);
-        }
-
-        conv.active_message_id = Some(ai_msg_id.clone());
-        conv.updated_at = chrono::Utc::now().to_rfc3339();
-        if let Err(err) = conv_repo.update(&conv).await {
-            tracing::error!("Failed to update conversation tip: {}", err);
-        }
-
-        // PHASE 6: prepare final response with tool results embedded.
-        tracing::info!("[STREAM_REFACTOR] Phase 6: Finalizing response with tools");
-
-        // format_message already handles tool-result blocks.
-        let final_content_html = format_message(&response_for_display);
-
-        let mut controls = div().class("branch-controls");
-        if let Ok(siblings) =
-            get_siblings(&db_clone, &req.conversation_id, ai_parent_id.as_deref()).await
-        {
-            let total_siblings = siblings.len();
-            let sibling_index = siblings.iter().position(|s| s.id == ai_msg_id).unwrap_or(0);
-
-            if total_siblings > 1 {
-                let prev_index = if sibling_index == 0 {
-                    total_siblings - 1
-                } else {
-                    sibling_index - 1
-                };
-                let next_index = if sibling_index == total_siblings - 1 {
-                    0
-                } else {
-                    sibling_index + 1
-                };
-                let prev_sibling = &siblings[prev_index];
-                let next_sibling = &siblings[next_index];
-
-                let nav = div()
-                    .class("branch-nav")
-                    .child(
-                        form()
-                            .attr("hx-post", with_base_path("/ui/chat/conversations/switch"))
-                            .attr("style", "display: inline;")
-                            .child(
-                                input()
-                                    .attr("type", "hidden")
-                                    .attr("name", "conversation_id")
-                                    .attr("value", &req.conversation_id),
-                            )
-                            .child(
-                                input()
-                                    .attr("type", "hidden")
-                                    .attr("name", "target_message_id")
-                                    .attr("value", &prev_sibling.id),
-                            )
-                            .child(
-                                button()
-                                    .class("branch-btn")
-                                    .attr("type", "submit")
-                                    .child(i().class("fas fa-chevron-left")),
-                            ),
-                    )
-                    .child(span().class("branch-info").text(format!(
-                        "{}/{}",
-                        sibling_index + 1,
-                        total_siblings
-                    )))
-                    .child(
-                        form()
-                            .attr("hx-post", with_base_path("/ui/chat/conversations/switch"))
-                            .attr("style", "display: inline;")
-                            .child(
-                                input()
-                                    .attr("type", "hidden")
-                                    .attr("name", "conversation_id")
-                                    .attr("value", &req.conversation_id),
-                            )
-                            .child(
-                                input()
-                                    .attr("type", "hidden")
-                                    .attr("name", "target_message_id")
-                                    .attr("value", &next_sibling.id),
-                            )
-                            .child(
-                                button()
-                                    .class("branch-btn")
-                                    .attr("type", "submit")
-                                    .child(i().class("fas fa-chevron-right")),
-                            ),
-                    );
-                controls = controls.child(nav);
-            }
-        }
-
-        let regenerate_btn = button()
-            .class("branch-btn regenerate-btn")
-            .attr("hx-post", with_base_path("/ui/chat/regenerate"))
-            .attr("hx-vals", format!(r#"{{"message_id": "{}"}}"#, ai_msg_id))
-            .attr("hx-target", ".chat-history")
-            .attr("hx-swap", "beforeend")
-            .child(i().class("fas fa-sync-alt"))
-            .child(
-                span()
-                    .attr("data-i18n", "ui_chat_regenerate")
-                    .text(" Regenerate"),
-            );
-
-        controls = controls.child(regenerate_btn);
-
-        // Sources block from the excerpts auto-injected into this answer.
-        let sources_opt = {
-            let sources: Vec<crate::files::rag::RagSource> = injected_rag_hits
-                .iter()
-                .map(|h| crate::files::rag::RagSource {
-                    file_name: h.file_name.clone(),
-                    chunk_index: Some(h.chunk_index),
-                    detail: h.detail.clone(),
-                    similarity: Some(h.similarity),
-                })
-                .chain(web_sources.iter().map(|w| crate::files::rag::RagSource {
-                    file_name: format!("[{}] {}", w.index, w.domain),
-                    chunk_index: None,
-                    detail: Some(w.url.clone()),
-                    similarity: None,
-                }))
-                .collect();
-            crate::routers::ui::common::format::render_sources(&sources)
-        };
-
-        let message_inner = div()
-            .class("message-inner")
-            .raw()
-            .text(&final_content_html)
-            .child_opt(sources_opt)
-            .child(div().class("branch-controls").raw().text(controls.render()));
-
-        let oob_transition = div()
-            .class("chat-message message-ai")
-            .attr("id", format!("ai-{}", ai_msg_id))
-            .attr("hx-swap-oob", format!("outerHTML:#ai-{}", message_id_clone))
-            .child(message_inner);
-
-        // 2. Transition the nav dot/tooltip IDs for the AI message.
-        let ai_preview_raw: String = full_content.trim().chars().take(30).collect();
-        let ai_preview = if full_content.trim().chars().count() > 30 {
-            format!("{}...", ai_preview_raw)
-        } else {
-            ai_preview_raw
-        };
-
-        let ai_nav_dot_transition = div()
-            .attr("hx-swap-oob", format!("outerHTML:#dot-ai-{}", message_id_clone))
-            .child(
-                div()
-                    .class("nav-dot")
-                    .attr("id", format!("dot-ai-{}", ai_msg_id))
-                    .attr("data-msg-id", format!("ai-{}", ai_msg_id))
-                    .attr("onclick", "const target = document.getElementById(this.dataset.msgId); if (target) { target.scrollIntoView({behavior: 'smooth', block: 'start'}); }")
-                    .child(
-                        div()
-                            .class("nav-tooltip")
-                            .attr("id", format!("tooltip-ai-{}", ai_msg_id))
-                            .text(ai_preview),
-                    ),
-            );
-
-        // 3. Transition the user message block to its permanent ID, add Edit.
-        let mut user_oob_transition = String::new();
-        let mut user_nav_dot_transition = String::new();
-
-        if let Some(ref uid) = ai_parent_id
-            && !req.skip_user_message
-        {
-            let edit_btn = button()
-                .class("branch-btn edit-btn")
-                .attr(
-                    "hx-get",
-                    with_base_path(&format!("/ui/chat/edit-form/{}", uid)),
-                )
-                .attr("hx-target", format!("#user-{}", uid))
-                .attr("hx-swap", "innerHTML")
-                .child(i().class("fas fa-edit"))
-                .child(span().attr("data-i18n", "ui_chat_edit").text(" Edit"));
-
-            let user_controls = div().class("branch-controls").child(edit_btn);
-
-            // Must keep the attachment chips, or this OOB swap wipes them mid-stream.
-            let staged_ids = req.file_id_list();
-            let user_attachments_opt = if staged_ids.is_empty() {
-                None
-            } else {
-                let files = crate::routers::ui::pages::files::load_owned_files(
-                    &db_clone,
-                    &staged_ids,
-                    &username,
-                )
-                .await;
-                crate::routers::ui::pages::files::render_attachments_row(&files)
-            };
-
-            user_oob_transition = div()
-                .class("chat-message message-user")
-                .attr("id", format!("user-{}", uid))
-                .attr(
-                    "hx-swap-oob",
-                    format!("outerHTML:#user-{}", message_id_clone),
-                )
-                .child(
-                    div()
-                        .class("message-inner")
-                        .raw()
-                        .text(format_message(&req.message))
-                        .child_opt(user_attachments_opt)
-                        .child(user_controls),
-                )
-                .render();
-
-            user_nav_dot_transition = div()
-                    .attr("hx-swap-oob", format!("outerHTML:[data-msg-id='user-{}']", message_id_clone))
-                    .child(
-                        div()
-                            .class("nav-dot")
-                            .attr("data-msg-id", format!("user-{}", uid))
-                            .attr("onclick", "const target = document.getElementById(this.dataset.msgId); if (target) { target.scrollIntoView({behavior: 'smooth', block: 'start'}); }")
-                            .child(
-                                div()
-                                    .class("nav-tooltip")
-                                    .text(req.message.chars().take(30).collect::<String>())
-                            ),
-                    )
-                    .render();
-        }
-
-        let mut final_payload = format!(
-            "{}{}{}{}",
-            oob_transition.render(),
-            ai_nav_dot_transition.render(),
-            user_oob_transition,
-            user_nav_dot_transition
-        );
-
-        // Generate updated history list for OOB swap
-        if let Ok(mut conversations) = conv_repo.list().await {
-            conversations.retain(|c| c.owner == username);
-            conversations.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
-
-            let mut history_list = div()
-                .class("history-list")
-                .attr("id", "history-list")
-                .attr("hx-swap-oob", "true");
-
-            // Projects Section
-            let project_repo = db_clone.repository::<crate::domain::models::Project>();
-            if let Ok(mut projects) = project_repo.list().await {
-                projects.retain(|p| p.owner == username);
-                projects.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
-
-                let has_projects = !projects.is_empty();
-                let projects_open_class = if has_projects { "open" } else { "" };
-
-                history_list = history_list.child(
-                    div()
-                        .class(format!("history-section-header collapsible {}", projects_open_class))
-                        .attr("onclick", "this.classList.toggle('open'); const content = this.nextElementSibling; if(content) { content.classList.toggle('hidden'); }")
-                        .child(
-                            div()
-                                .attr("style", "display: flex; align-items: center; gap: 0.5rem;")
-                                .child(i().class("fas fa-chevron-right chevron"))
-                                .child(
-                                    span()
-                                        .attr("data-i18n", "ui_sidebar_projects")
-                                        .text("Projects"),
-                                )
-                        )
-                        .child(
-                            button()
-                                .class("branch-btn")
-                                .attr("onclick", "event.stopPropagation();")
-                                .attr("hx-get", with_base_path("/ui/projects/new-modal"))
-                                .attr("hx-target", "body")
-                                .attr("hx-swap", "beforeend")
-                                .child(i().class("fas fa-plus"))
-                                .child(span().attr("data-i18n", "ui_sidebar_new").text("New")),
-                        ),
-                );
-
-                let mut projects_content = div().class("history-section-content");
-                if !has_projects {
-                    projects_content = projects_content.class("hidden");
-                }
-
-                for project in &projects {
-                    let is_active = Some(project.id.clone()) == req.project_id;
-                    let item_class = if is_active {
-                        "history-item active project-item"
-                    } else {
-                        "history-item project-item"
-                    };
-                    let link_class = if is_active {
-                        "history-item-link active"
-                    } else {
-                        "history-item-link"
-                    };
-                    let icon_class = if is_active {
-                        "fas fa-folder-open"
-                    } else {
-                        "fas fa-folder"
-                    };
-
-                    let item = div().class(item_class).child(
-                        a().class(link_class)
-                            .attr(
-                                "href",
-                                with_base_path(&format!("/ui/home?project_id={}", project.id)),
-                            )
-                            .child(i().class(icon_class).attr("style", "margin-right: 8px;"))
-                            .child(span().text(&project.name)),
-                    );
-                    projects_content = projects_content.child(item);
-
-                    // Or the OOB sidebar swap drops it until a full page reload.
-                    if is_active {
-                        let files = crate::routers::files::visible_files_for_project(
-                            &db_clone,
-                            &project.id,
-                        )
-                        .await
-                        .unwrap_or_default();
-                        projects_content = projects_content.child(
-                            crate::routers::ui::pages::files::render_project_files_section(&files),
-                        );
-                    }
-
-                    let project_convs: Vec<_> = conversations
-                        .iter()
-                        .filter(|c| c.project_id.as_deref() == Some(&project.id))
-                        .collect();
-                    for conv_item in project_convs {
-                        let is_conv_active = conv_item.id == req.conversation_id;
-                        let conv_item_class = if is_conv_active {
-                            "history-item active project-conv-item"
-                        } else {
-                            "history-item project-conv-item"
-                        };
-                        let conv_link_class = if is_conv_active {
-                            "history-item-link active"
-                        } else {
-                            "history-item-link"
-                        };
-                        let item_id = format!("history-item-{}", conv_item.id);
-                        let conv_url = format!(
-                            "/ui/home?conversation_id={}&project_id={}",
-                            conv_item.id, project.id
-                        );
-
-                        let item = div().class(conv_item_class).attr("id", &item_id).child(
-                            a().class(conv_link_class).attr("href", with_base_path(&conv_url)).text(&conv_item.title)
-                        ).child(
-                            div().class("menu-container").child(
-                                button().class("menu-trigger-btn").child(i().class("fas fa-ellipsis-v"))
-                            ).child(
-                                div().class("dropdown-menu").child(
-                                    button().class("dropdown-item delete-item")
-                                    .attr("hx-get", with_base_path(&format!("/ui/chat/conversations/delete-modal/{}?active_id={}", conv_item.id, req.conversation_id)))
-                                    .attr("hx-target", "#confirm-delete-modal")
-                                    .attr("hx-swap", "outerHTML")
-                                    .child(i().class("fas fa-trash"))
-                                    .child(span().attr("data-i18n", "ui_common_delete").text("Delete"))
-                                )
-                            )
-                        );
-                        projects_content = projects_content.child(item);
-                    }
-                }
-                history_list = history_list.child(projects_content);
-            }
-
-            // Conversations Section
-            let conv_header_text = "History";
-            history_list = history_list.child(
-                div()
-                    .class("history-section-header collapsible open")
-                    .attr("style", "margin-top: 0.75rem;")
-                    .attr("onclick", "this.classList.toggle('open'); const content = this.nextElementSibling; if(content) { content.classList.toggle('hidden'); }")
-                    .child(
-                        div()
-                            .attr("style", "display: flex; align-items: center; gap: 0.5rem;")
-                            .child(i().class("fas fa-chevron-right chevron"))
-                            .child(
-                                span()
-                                    .attr("data-i18n", "ui_sidebar_history")
-                                    .text(conv_header_text),
-                            )
-                    )
-            );
-
-            let mut global_content = div().class("history-section-content");
-
-            let global_convs: Vec<_> = conversations
-                .iter()
-                .filter(|c| c.project_id.is_none())
-                .collect();
-            for conv_item in global_convs {
-                let is_active = conv_item.id == req.conversation_id;
-                let item_class = if is_active {
-                    "history-item active"
-                } else {
-                    "history-item"
-                };
-                let link_class = if is_active {
-                    "history-item-link active"
-                } else {
-                    "history-item-link"
-                };
-                let item_id = format!("history-item-{}", conv_item.id);
-                let conv_url = format!("/ui/home?conversation_id={}", conv_item.id);
-
-                let item = div()
-                    .class(item_class)
-                    .attr("id", &item_id)
-                    .child(
-                        a()
-                            .class(link_class)
-                            .attr("href", with_base_path(&conv_url))
-                            .text(&conv_item.title)
-                    )
-                    .child(
-                        div()
-                            .class("menu-container")
-                            .child(
-                                button()
-                                    .class("menu-trigger-btn")
-                                    .child(i().class("fas fa-ellipsis-v"))
-                            )
-                            .child(
-                                div()
-                                    .class("dropdown-menu")
-                                    .child(
-                                        button()
-                                            .class("dropdown-item delete-item")
-                                            .attr("hx-get", with_base_path(&format!("/ui/chat/conversations/delete-modal/{}?active_id={}", conv_item.id, req.conversation_id)))
-                                            .attr("hx-target", "#confirm-delete-modal")
-                                            .attr("hx-swap", "outerHTML")
-                                            .child(i().class("fas fa-trash"))
-                                            .child(
-                                                span()
-                                                    .attr("data-i18n", "ui_common_delete")
-                                                    .text("Delete"),
-                                            )
-                                    )
-                            )
-                    );
-                global_content = global_content.child(item);
-            }
-            history_list = history_list.child(global_content);
-            final_payload.push_str(&history_list.render());
-        }
-
-        tracing::info!(
-            "[STREAM_REFACTOR] Phase 6 complete: Sending final response with {} tool results",
-            if has_tool_results { "some" } else { "no" }
-        );
-
-        if !final_payload.is_empty() {
-            let _ = tx.send(encode_sse("message", &final_payload)).await;
-        }
-
-        state.pending_messages.remove(&message_id_clone);
-    });
+    tokio::spawn(turn.run(tx));
 
     let sse_stream = ReceiverStream::new(rx).map(Ok::<_, std::io::Error>);
     Response::streaming(StatusCode::OK, sse_stream).header("content-type", "text/event-stream")
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct DeleteQuery {
     pub active_id: Option<String>,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct DeleteModalQuery {
     pub active_id: Option<String>,
 }
@@ -1572,26 +1759,9 @@ pub async fn delete_modal_empty() -> Response {
     Response::html(StatusCode::OK, empty.render())
 }
 
-#[get("/ui/chat/conversations/delete-modal/{id}")]
-pub async fn delete_modal(
-    Path(conv_id): Path<String>,
-    Query(query): Query<DeleteModalQuery>,
-    Inject(db): Inject<Db>,
-) -> Response {
-    if conv_id == "empty" {
-        return delete_modal_empty().await;
-    }
-    use quench_db::prelude::Crud;
-    let repo = db.repository::<crate::domain::models::Conversation>();
-
-    let title = match repo.read(&conv_id).await {
-        Ok(Some(conv)) => Some(format!("\"{}\"", conv.title)),
-        _ => None,
-    };
-
-    let active_id_val = query.active_id.clone().unwrap_or_default();
-
-    let modal = div()
+/// The confirmation dialog for deleting a conversation.
+fn delete_confirmation(title: Option<String>, conv_id: &str, active_id_val: &str) -> Element {
+    div()
         .attr("id", "confirm-delete-modal")
         .class("estimates-modal open")
         .child(
@@ -1637,21 +1807,22 @@ pub async fn delete_modal(
                             p().attr("data-i18n", "ui_chat_delete_confirm_text")
                                 .text("Are you sure you want to delete this conversation?"),
                         )
-                        .child(match title {
-                            Some(title) => div().class("model-to-delete-name").text(title),
-                            None => div()
-                                .class("model-to-delete-name")
-                                .attr("data-i18n", "ui_chat_this_conversation")
-                                .text("this conversation"),
-                        })
+                        .child(title.map_or_else(
+                            || {
+                                div()
+                                    .class("model-to-delete-name")
+                                    .attr("data-i18n", "ui_chat_this_conversation")
+                                    .text("this conversation")
+                            },
+                            |title| div().class("model-to-delete-name").text(title),
+                        ))
                         .child(
                             form()
                                 .class("confirm-actions")
                                 .attr(
                                     "hx-post",
                                     with_base_path(&format!(
-                                        "/ui/chat/conversations/delete/{}?active_id={}",
-                                        conv_id, active_id_val
+                                        "/ui/chat/conversations/delete/{conv_id}?active_id={active_id_val}"
                                     )),
                                 )
                                 .attr("hx-target", "#confirm-delete-modal")
@@ -1680,9 +1851,31 @@ pub async fn delete_modal(
                                 ),
                         ),
                 ),
-        );
+        )
+}
 
-    Response::html(StatusCode::OK, modal.render())
+#[get("/ui/chat/conversations/delete-modal/{id}")]
+pub async fn delete_modal(
+    Path(conv_id): Path<String>,
+    Query(query): Query<DeleteModalQuery>,
+    Inject(db): Inject<Db>,
+) -> Response {
+    if conv_id == "empty" {
+        return delete_modal_empty().await;
+    }
+    let repo = db.repository::<crate::domain::models::Conversation>();
+
+    let title = match repo.read(&conv_id).await {
+        Ok(Some(conv)) => Some(format!("\"{}\"", conv.title)),
+        _ => None,
+    };
+
+    let active_id_val = query.active_id.clone().unwrap_or_default();
+
+    Response::html(
+        StatusCode::OK,
+        delete_confirmation(title, &conv_id, &active_id_val).render(),
+    )
 }
 
 #[post("/ui/chat/conversations/delete/{id}")]
@@ -1704,14 +1897,14 @@ pub async fn delete_conversation(
         .class("estimates-modal")
         .render();
     let oob_delete = div()
-        .attr("id", format!("history-item-{}", id_str))
+        .attr("id", format!("history-item-{id_str}"))
         .attr("hx-swap-oob", "delete")
         .render();
 
-    Response::html(StatusCode::OK, format!("{}{}", close_modal, oob_delete))
+    Response::html(StatusCode::OK, format!("{close_modal}{oob_delete}"))
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct SwitchBranchRequest {
     pub conversation_id: String,
     pub target_message_id: String,
@@ -1743,26 +1936,25 @@ pub async fn get_conversation_messages(
     active_message_id: Option<&str>,
 ) -> Result<Vec<ChatMessage>, anyhow::Error> {
     let mut chat_messages = Vec::new();
-    let Some(mut current_id) = active_message_id.map(|s| s.to_string()) else {
+    let Some(mut current_id) = active_message_id.map(std::string::ToString::to_string) else {
         return Ok(chat_messages);
     };
 
     match db {
         quench_db::prelude::Db::Postgres(pg_db) => {
             let schema = envmnt::get_or("DB_SCHEMA", "sage");
-            let table = format!("{}.messages", schema);
+            let table = format!("{schema}.messages");
             let query = format!(
                 "WITH RECURSIVE thread AS (
                     SELECT id, parent_id, role, content, created_at, 0 as depth
-                    FROM {}
+                    FROM {table}
                     WHERE id = $1
                     UNION ALL
                     SELECT m.id, m.parent_id, m.role, m.content, m.created_at, t.depth + 1
-                    FROM {} m
+                    FROM {table} m
                     INNER JOIN thread t ON t.parent_id = m.id
                 )
-                SELECT id, role, content FROM thread ORDER BY depth DESC",
-                table, table
+                SELECT id, role, content FROM thread ORDER BY depth DESC"
             );
 
             let rows =
@@ -1822,26 +2014,25 @@ pub async fn get_conversation_message_nodes(
     active_message_id: Option<&str>,
 ) -> Result<Vec<crate::domain::models::Message>, anyhow::Error> {
     let mut message_nodes = Vec::new();
-    let Some(mut current_id) = active_message_id.map(|s| s.to_string()) else {
+    let Some(mut current_id) = active_message_id.map(std::string::ToString::to_string) else {
         return Ok(message_nodes);
     };
 
     match db {
         quench_db::prelude::Db::Postgres(pg_db) => {
             let schema = envmnt::get_or("DB_SCHEMA", "sage");
-            let table = format!("{}.messages", schema);
+            let table = format!("{schema}.messages");
             let query = format!(
                 "WITH RECURSIVE thread AS (
                     SELECT id, conversation_id, parent_id, role, content, created_at, 0 as depth
-                    FROM {}
+                    FROM {table}
                     WHERE id = $1
                     UNION ALL
                     SELECT m.id, m.conversation_id, m.parent_id, m.role, m.content, m.created_at, t.depth + 1
-                    FROM {} m
+                    FROM {table} m
                     INNER JOIN thread t ON t.parent_id = m.id
                 )
-                SELECT id, conversation_id, parent_id, role, content, created_at FROM thread ORDER BY depth DESC",
-                table, table
+                SELECT id, conversation_id, parent_id, role, content, created_at FROM thread ORDER BY depth DESC"
             );
 
             let rows =
@@ -1896,24 +2087,14 @@ pub async fn get_siblings(
     match db {
         quench_db::prelude::Db::Postgres(pg_db) => {
             let schema = envmnt::get_or("DB_SCHEMA", "sage");
-            let table = format!("{}.messages", schema);
-            let query = if let Some(_pid) = parent_id {
-                format!(
-                    "SELECT id, conversation_id, parent_id, role, content, created_at
-                     FROM {}
-                     WHERE conversation_id = $1 AND parent_id = $2
-                     ORDER BY created_at ASC",
-                    table
-                )
-            } else {
-                format!(
-                    "SELECT id, conversation_id, parent_id, role, content, created_at
-                     FROM {}
-                     WHERE conversation_id = $1 AND parent_id IS NULL
-                     ORDER BY created_at ASC",
-                    table
-                )
-            };
+            let table = format!("{schema}.messages");
+            let parent_filter = parent_id.map_or("parent_id IS NULL", |_| "parent_id = $2");
+            let query = format!(
+                "SELECT id, conversation_id, parent_id, role, content, created_at
+                     FROM {table}
+                     WHERE conversation_id = $1 AND {parent_filter}
+                     ORDER BY created_at ASC"
+            );
 
             let mut q =
                 sqlx::query_as::<_, (String, String, Option<String>, String, String, String)>(
@@ -1963,12 +2144,11 @@ pub async fn switch_active_message(
     match db {
         quench_db::prelude::Db::Postgres(pg_db) => {
             let schema = envmnt::get_or("DB_SCHEMA", "sage");
-            let table = format!("{}.messages", schema);
+            let table = format!("{schema}.messages");
 
             loop {
                 let query = format!(
-                    "SELECT id FROM {} WHERE conversation_id = $1 AND parent_id = $2 ORDER BY created_at DESC LIMIT 1",
-                    table
+                    "SELECT id FROM {table} WHERE conversation_id = $1 AND parent_id = $2 ORDER BY created_at DESC LIMIT 1"
                 );
                 let child_opt: Option<(String,)> =
                     sqlx::query_as(sqlx::AssertSqlSafe(query.as_str()))
@@ -1998,7 +2178,7 @@ pub async fn switch_active_message(
                     .collect();
                 children.sort_by(|a, b| b.created_at.cmp(&a.created_at));
                 if let Some(child) = children.first() {
-                    current_id = child.id.clone();
+                    current_id.clone_from(&child.id);
                 } else {
                     break;
                 }
@@ -2006,7 +2186,6 @@ pub async fn switch_active_message(
         }
     }
 
-    use quench_db::prelude::Crud;
     let conv_repo = db.repository::<crate::domain::models::Conversation>();
     if let Some(mut conv) = conv_repo.read(conversation_id).await? {
         conv.active_message_id = Some(current_id);
@@ -2017,7 +2196,7 @@ pub async fn switch_active_message(
     Ok(())
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct RegenerateRequest {
     pub message_id: String,
 }
@@ -2080,12 +2259,12 @@ pub async fn regenerate(
 
     state.pending_messages.insert(message_id.clone(), req);
 
-    let stream_url = with_base_path(&format!("/ui/chat/stream/{}", message_id));
+    let stream_url = with_base_path(&format!("/ui/chat/stream/{message_id}"));
 
     // 1. The thinking block for the message, under its new id.
     let ai_msg = div()
         .class("chat-message message-ai")
-        .attr("id", format!("ai-{}", message_id))
+        .attr("id", format!("ai-{message_id}"))
         .attr("hx-ext", "sse")
         .attr("sse-connect", stream_url)
         .attr("sse-swap", "message")
@@ -2101,10 +2280,10 @@ pub async fn regenerate(
     let nav_update_oob = div().attr("hx-swap-oob", format!("outerHTML:#dot-ai-{}", form.message_id)).child(
         div()
             .class("nav-dot")
-            .attr("id", format!("dot-ai-{}", message_id))
-            .attr("data-msg-id", format!("ai-{}", message_id))
+            .attr("id", format!("dot-ai-{message_id}"))
+            .attr("data-msg-id", format!("ai-{message_id}"))
             .attr("onclick", "const target = document.getElementById(this.dataset.msgId); if (target) { target.scrollIntoView({behavior: 'smooth', block: 'start'}); }")
-            .child(div().class("nav-tooltip").attr("id", format!("tooltip-ai-{}", message_id)).attr("data-i18n", "ui_chat_regenerating").text("Sage is regenerating...")),
+            .child(div().class("nav-tooltip").attr("id", format!("tooltip-ai-{message_id}")).attr("data-i18n", "ui_chat_regenerating").text("Sage is regenerating...")),
     );
 
     // HX-Retarget tells htmx which element this response actually replaces.
@@ -2148,7 +2327,7 @@ pub async fn edit_form(Path(id): Path<String>, Inject(db): Inject<Db>) -> Respon
     Response::html(StatusCode::OK, form.render())
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct HandleEditRequest {
     pub message_id: String,
     pub new_content: String,
@@ -2238,6 +2417,7 @@ pub async fn token_stats(
     }
 }
 
+#[must_use]
 pub fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -2246,6 +2426,7 @@ pub fn html_escape(s: &str) -> String {
         .replace('\'', "&#39;")
 }
 
+#[must_use]
 pub fn render_tool_result(
     tool_call: &crate::tools::ToolCall,
     result: &crate::tools::ToolResult,
@@ -2282,7 +2463,7 @@ pub fn render_tool_result(
     let header_text = if tool_name == "web_search" {
         format!("{} \"{}\"", tool_name, html_escape(query))
     } else {
-        tool_name.to_string()
+        tool_name.clone()
     };
 
     let content_html = content_html
@@ -2290,8 +2471,7 @@ pub fn render_tool_result(
         .replace("</h1>", "</h3>");
 
     format!(
-        r#"<div class="{}"><div class="tool-header"><span class="tool-icon">{}</span><span class="tool-name">{}</span></div><div class="tool-content">{}</div></div>"#,
-        css_class, icon, header_text, content_html
+        r#"<div class="{css_class}"><div class="tool-header"><span class="tool-icon">{icon}</span><span class="tool-name">{header_text}</span></div><div class="tool-content">{content_html}</div></div>"#
     )
 }
 

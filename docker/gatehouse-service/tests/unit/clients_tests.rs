@@ -51,43 +51,43 @@ fn redirect_uri_matches_only_a_registered_uri() {
 #[tokio::test]
 async fn redirect_base_url_reads_ui_url_and_trims_the_home_suffix() {
     let _guard = env_lock().lock().await;
-    unsafe { std::env::set_var("CONVEYOR_UI_URL", "https://conveyor.example.test/ui/home") };
+    envmnt::set("CONVEYOR_UI_URL", "https://conveyor.example.test/ui/home");
     assert_eq!(
         redirect_base_url("conveyor"),
         Some("https://conveyor.example.test".to_string())
     );
-    unsafe { std::env::remove_var("CONVEYOR_UI_URL") };
+    envmnt::remove("CONVEYOR_UI_URL");
 }
 
 #[tokio::test]
 async fn redirect_base_url_falls_back_to_the_plain_url_var() {
     let _guard = env_lock().lock().await;
-    unsafe { std::env::remove_var("WORKBENCH_UI_URL") };
-    unsafe { std::env::set_var("WORKBENCH_URL", "https://workbench.example.test/") };
+    envmnt::remove("WORKBENCH_UI_URL");
+    envmnt::set("WORKBENCH_URL", "https://workbench.example.test/");
     assert_eq!(
         redirect_base_url("workbench"),
         Some("https://workbench.example.test".to_string())
     );
-    unsafe { std::env::remove_var("WORKBENCH_URL") };
+    envmnt::remove("WORKBENCH_URL");
 }
 
 #[tokio::test]
 async fn redirect_base_url_is_none_when_neither_var_is_set() {
     let _guard = env_lock().lock().await;
-    unsafe { std::env::remove_var("NOTHING_HERE_UI_URL") };
-    unsafe { std::env::remove_var("NOTHING_HERE_URL") };
+    envmnt::remove("NOTHING_HERE_UI_URL");
+    envmnt::remove("NOTHING_HERE_URL");
     assert_eq!(redirect_base_url("nothing-here"), None);
 }
 
 #[tokio::test]
 async fn redirect_base_url_uppercases_and_converts_dashes_to_underscores() {
     let _guard = env_lock().lock().await;
-    unsafe { std::env::set_var("MY_SERVICE_NAME_UI_URL", "https://my-service.example.test") };
+    envmnt::set("MY_SERVICE_NAME_UI_URL", "https://my-service.example.test");
     assert_eq!(
         redirect_base_url("my-service-name"),
         Some("https://my-service.example.test".to_string())
     );
-    unsafe { std::env::remove_var("MY_SERVICE_NAME_UI_URL") };
+    envmnt::remove("MY_SERVICE_NAME_UI_URL");
 }
 
 #[tokio::test]
@@ -123,8 +123,8 @@ async fn seed_clients_skips_entries_whose_secret_env_is_unset() {
     )
     .expect("write config");
 
-    unsafe { std::env::set_var("CLIENTS_CONFIG", config_path.to_str().expect("utf8")) };
-    unsafe { std::env::remove_var("GATEHOUSE_TEST_UNSET_CLIENT_SECRET") };
+    envmnt::set("CLIENTS_CONFIG", config_path.to_str().expect("utf8"));
+    envmnt::remove("GATEHOUSE_TEST_UNSET_CLIENT_SECRET");
 
     let db = Db::connect("").await.expect("in-memory db");
     seed_clients(&db).await.expect("seed");
@@ -132,7 +132,7 @@ async fn seed_clients_skips_entries_whose_secret_env_is_unset() {
     let repo = db.repository::<ClientRow>();
     assert!(repo.read("no-secret-client").await.expect("read").is_none());
 
-    unsafe { std::env::remove_var("CLIENTS_CONFIG") };
+    envmnt::remove("CLIENTS_CONFIG");
 }
 
 #[tokio::test]
@@ -151,8 +151,8 @@ async fn seed_clients_seeds_an_entry_with_a_configured_secret() {
     )
     .expect("write config");
 
-    unsafe { std::env::set_var("CLIENTS_CONFIG", config_path.to_str().expect("utf8")) };
-    unsafe { std::env::set_var("GATEHOUSE_TEST_SEEDED_CLIENT_SECRET", "the-secret") };
+    envmnt::set("CLIENTS_CONFIG", config_path.to_str().expect("utf8"));
+    envmnt::set("GATEHOUSE_TEST_SEEDED_CLIENT_SECRET", "the-secret");
 
     let db = Db::connect("").await.expect("in-memory db");
     seed_clients(&db).await.expect("seed");
@@ -166,6 +166,6 @@ async fn seed_clients_seeds_an_entry_with_a_configured_secret() {
     assert!(seeded.secret_matches("the-secret"));
     assert_eq!(seeded.allowed_scopes, vec!["openid", "profile"]);
 
-    unsafe { std::env::remove_var("CLIENTS_CONFIG") };
-    unsafe { std::env::remove_var("GATEHOUSE_TEST_SEEDED_CLIENT_SECRET") };
+    envmnt::remove("CLIENTS_CONFIG");
+    envmnt::remove("GATEHOUSE_TEST_SEEDED_CLIENT_SECRET");
 }

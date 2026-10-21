@@ -11,6 +11,7 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_util::io::ReaderStream;
 
 /// The raw `Range` header, if any.
+#[derive(Debug)]
 pub struct RangeHeader(pub Option<String>);
 
 #[async_trait]
@@ -55,6 +56,7 @@ pub async fn handle(
     serve_with_range(range, blob_path, digest).await
 }
 
+#[must_use]
 pub fn maybe_redirect(digest: &str) -> Option<Response> {
     if !envmnt::get_or("ENABLE_REDIRECT", "false")
         .parse::<bool>()
@@ -66,32 +68,26 @@ pub fn maybe_redirect(digest: &str) -> Option<Response> {
     let hex = digest.strip_prefix("sha256:")?;
 
     let backend_base = envmnt::get_or("BLOB_REDIRECT_BASE", "https://storage.example.com");
-    let backend_url = format!("{}/blobs/sha256/{}", backend_base, hex);
+    let backend_url = format!("{backend_base}/blobs/sha256/{hex}");
 
     Some(Response::new(StatusCode::TEMPORARY_REDIRECT).header("location", backend_url))
 }
 
 async fn serve_with_range(range: Option<String>, blob_path: PathBuf, digest: String) -> Response {
-    let file = match File::open(&blob_path).await {
-        Ok(f) => f,
-        Err(_) => {
-            return error::response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                error::UNSUPPORTED,
-                "internal server error",
-            );
-        }
+    let Ok(file) = File::open(&blob_path).await else {
+        return error::response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            error::UNSUPPORTED,
+            "internal server error",
+        );
     };
 
-    let metadata = match file.metadata().await {
-        Ok(m) => m,
-        Err(_) => {
-            return error::response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                error::UNSUPPORTED,
-                "internal server error",
-            );
-        }
+    let Ok(metadata) = file.metadata().await else {
+        return error::response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            error::UNSUPPORTED,
+            "internal server error",
+        );
     };
 
     let total_size = metadata.len();
@@ -107,7 +103,7 @@ async fn serve_with_range(range: Option<String>, blob_path: PathBuf, digest: Str
         );
     }
 
-    serve_full(file, total_size, &digest).await
+    serve_full(file, total_size, &digest)
 }
 
 async fn serve_partial(
@@ -131,16 +127,13 @@ async fn serve_partial(
 
     Response::streaming(StatusCode::PARTIAL_CONTENT, stream)
         .header("content-type", "application/octet-stream")
-        .header(
-            "content-range",
-            format!("bytes {}-{}/{}", start, end, total_size),
-        )
+        .header("content-range", format!("bytes {start}-{end}/{total_size}"))
         .header("content-length", length.to_string())
         .header("accept-ranges", "bytes")
         .header("docker-content-digest", digest)
 }
 
-async fn serve_full(file: File, total_size: u64, digest: &str) -> Response {
+fn serve_full(file: File, total_size: u64, digest: &str) -> Response {
     let stream = ReaderStream::new(file);
 
     Response::streaming(StatusCode::OK, stream)
@@ -150,6 +143,7 @@ async fn serve_full(file: File, total_size: u64, digest: &str) -> Response {
         .header("docker-content-digest", digest)
 }
 
+#[must_use]
 pub fn parse_range(header: &str, total: u64) -> Option<(u64, u64)> {
     if !header.starts_with("bytes=") {
         return None;

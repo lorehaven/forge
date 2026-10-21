@@ -1,4 +1,5 @@
 use quench_web::prelude::*;
+use std::fmt::Write as _;
 enum BlockState {
     None,
     Paragraph(Vec<String>),
@@ -39,10 +40,9 @@ fn parse_unordered_list_item(line: &str) -> Option<String> {
 fn parse_ordered_list_item(line: &str) -> Option<String> {
     let trimmed = line.trim();
     let mut chars = trimmed.chars().peekable();
-    if chars.peek().is_some_and(|c| c.is_ascii_digit()) {
-        let mut num_str = String::new();
-        while chars.peek().is_some_and(|c| c.is_ascii_digit()) {
-            num_str.push(chars.next().unwrap());
+    if chars.peek().is_some_and(char::is_ascii_digit) {
+        while chars.peek().is_some_and(char::is_ascii_digit) {
+            let _ = chars.next();
         }
         if chars.peek() == Some(&'.') {
             chars.next(); // Consume '.'
@@ -69,6 +69,7 @@ fn is_horizontal_rule(line: &str) -> bool {
 }
 
 /// Render a "Sources" block listing the uploaded-file excerpts that fed an assistant answer; `None` if there are none.
+#[must_use]
 pub fn render_sources(sources: &[crate::files::rag::RagSource]) -> Option<Element> {
     if sources.is_empty() {
         return None;
@@ -83,7 +84,7 @@ pub fn render_sources(sources: &[crate::files::rag::RagSource]) -> Option<Elemen
     for source in sources {
         let mut item = div().class("message-source-item").text(&source.file_name);
         if let Some(detail) = &source.detail {
-            item = item.child(span().text(format!(" · {}", detail)));
+            item = item.child(span().text(format!(" · {detail}")));
         } else if let Some(idx) = source.chunk_index {
             item = item.child(span().text(" · ")).child(
                 span()
@@ -92,7 +93,7 @@ pub fn render_sources(sources: &[crate::files::rag::RagSource]) -> Option<Elemen
                         "data-i18n-args",
                         serde_json::json!({ "index": idx }).to_string(),
                     )
-                    .text(format!("chunk {}", idx)),
+                    .text(format!("chunk {idx}")),
             );
         }
         if let Some(sim) = source.similarity {
@@ -107,6 +108,7 @@ pub fn render_sources(sources: &[crate::files::rag::RagSource]) -> Option<Elemen
     Some(list)
 }
 
+#[must_use]
 pub fn format_message(text: &str) -> String {
     let parts: Vec<&str> = text.split("```").collect();
     let mut html = String::new();
@@ -116,10 +118,7 @@ pub fn format_message(text: &str) -> String {
             // Text part
             let formatted = format_text_part(part);
             if !formatted.trim().is_empty() {
-                html.push_str(&format!(
-                    "<div class=\"message-content\">{}</div>",
-                    formatted
-                ));
+                let _ = write!(html, "<div class=\"message-content\">{formatted}</div>");
             }
         } else {
             // Code part
@@ -215,46 +214,47 @@ fn format_text_part(text: &str) -> String {
     html
 }
 
+/// Writes out the open block (paragraph, table or list) and closes it.
+fn emit(state: &mut BlockState, html: &mut String) {
+    match state {
+        BlockState::None => {}
+        BlockState::Paragraph(lines) => {
+            if !lines.is_empty() {
+                let content = lines.join(" ");
+                let _ = write!(html, "<p>{}</p>", format_inline(&html_escape(&content)));
+            }
+        }
+        BlockState::Table(rows) => {
+            if !rows.is_empty() {
+                let row_strs: Vec<&str> = rows.iter().map(std::string::String::as_str).collect();
+                html.push_str(&render_table(&row_strs));
+            }
+        }
+        BlockState::UnorderedList(items) => {
+            if !items.is_empty() {
+                html.push_str("<ul>");
+                for item in items {
+                    let _ = write!(html, "<li>{}</li>", format_inline(&html_escape(item)));
+                }
+                html.push_str("</ul>");
+            }
+        }
+        BlockState::OrderedList(items) => {
+            if !items.is_empty() {
+                html.push_str("<ol>");
+                for item in items {
+                    let _ = write!(html, "<li>{}</li>", format_inline(&html_escape(item)));
+                }
+                html.push_str("</ol>");
+            }
+        }
+    }
+    *state = BlockState::None;
+}
+
 fn format_text_part_internal(text: &str) -> String {
     let mut html = String::new();
     let mut state = BlockState::None;
-
-    let emit = |state: &mut BlockState, html: &mut String| {
-        match state {
-            BlockState::None => {}
-            BlockState::Paragraph(lines) => {
-                if !lines.is_empty() {
-                    let content = lines.join(" ");
-                    html.push_str(&format!("<p>{}</p>", format_inline(&html_escape(&content))));
-                }
-            }
-            BlockState::Table(rows) => {
-                if !rows.is_empty() {
-                    let row_strs: Vec<&str> = rows.iter().map(|s| s.as_str()).collect();
-                    html.push_str(&render_table(row_strs));
-                }
-            }
-            BlockState::UnorderedList(items) => {
-                if !items.is_empty() {
-                    html.push_str("<ul>");
-                    for item in items {
-                        html.push_str(&format!("<li>{}</li>", format_inline(&html_escape(item))));
-                    }
-                    html.push_str("</ul>");
-                }
-            }
-            BlockState::OrderedList(items) => {
-                if !items.is_empty() {
-                    html.push_str("<ol>");
-                    for item in items {
-                        html.push_str(&format!("<li>{}</li>", format_inline(&html_escape(item))));
-                    }
-                    html.push_str("</ol>");
-                }
-            }
-        }
-        *state = BlockState::None;
-    };
 
     for line in text.lines() {
         let trimmed = line.trim();
@@ -279,14 +279,11 @@ fn format_text_part_internal(text: &str) -> String {
 
         // 2. Table check
         if trimmed.starts_with('|') && trimmed.ends_with('|') {
-            match state {
-                BlockState::Table(ref mut rows) => {
-                    rows.push(line.to_string());
-                }
-                _ => {
-                    emit(&mut state, &mut html);
-                    state = BlockState::Table(vec![line.to_string()]);
-                }
+            if let BlockState::Table(ref mut rows) = state {
+                rows.push(line.to_string());
+            } else {
+                emit(&mut state, &mut html);
+                state = BlockState::Table(vec![line.to_string()]);
             }
             continue;
         }
@@ -294,52 +291,44 @@ fn format_text_part_internal(text: &str) -> String {
         // 3. Header check
         if let Some((level, content)) = parse_header(line) {
             emit(&mut state, &mut html);
-            html.push_str(&format!(
+            let _ = write!(
+                html,
                 "<h{}>{}</h{}>",
                 level,
                 format_inline(&html_escape(&content)),
                 level
-            ));
+            );
             continue;
         }
 
         // 4. Unordered list item check
         if let Some(content) = parse_unordered_list_item(line) {
-            match state {
-                BlockState::UnorderedList(ref mut items) => {
-                    items.push(content);
-                }
-                _ => {
-                    emit(&mut state, &mut html);
-                    state = BlockState::UnorderedList(vec![content]);
-                }
+            if let BlockState::UnorderedList(ref mut items) = state {
+                items.push(content);
+            } else {
+                emit(&mut state, &mut html);
+                state = BlockState::UnorderedList(vec![content]);
             }
             continue;
         }
 
         // 5. Ordered list item check
         if let Some(content) = parse_ordered_list_item(line) {
-            match state {
-                BlockState::OrderedList(ref mut items) => {
-                    items.push(content);
-                }
-                _ => {
-                    emit(&mut state, &mut html);
-                    state = BlockState::OrderedList(vec![content]);
-                }
+            if let BlockState::OrderedList(ref mut items) = state {
+                items.push(content);
+            } else {
+                emit(&mut state, &mut html);
+                state = BlockState::OrderedList(vec![content]);
             }
             continue;
         }
 
         // 6. Otherwise, it is a paragraph line
-        match state {
-            BlockState::Paragraph(ref mut lines) => {
-                lines.push(line.to_string());
-            }
-            _ => {
-                emit(&mut state, &mut html);
-                state = BlockState::Paragraph(vec![line.to_string()]);
-            }
+        if let BlockState::Paragraph(ref mut lines) = state {
+            lines.push(line.to_string());
+        } else {
+            emit(&mut state, &mut html);
+            state = BlockState::Paragraph(vec![line.to_string()]);
         }
     }
 
@@ -361,10 +350,7 @@ fn format_inline(text: &str) -> String {
             }
             if j < chars.len() {
                 let code_content: String = chars[i + 1..j].iter().collect();
-                result.push_str(&format!(
-                    "<code class=\"inline-code\">{}</code>",
-                    code_content
-                ));
+                let _ = write!(result, "<code class=\"inline-code\">{code_content}</code>");
                 i = j + 1;
                 continue;
             }
@@ -378,10 +364,7 @@ fn format_inline(text: &str) -> String {
             }
             if j + 1 < chars.len() {
                 let bold_content: String = chars[i + 2..j].iter().collect();
-                result.push_str(&format!(
-                    "<strong>{}</strong>",
-                    format_inline(&bold_content)
-                ));
+                let _ = write!(result, "<strong>{}</strong>", format_inline(&bold_content));
                 i = j + 2;
                 continue;
             }
@@ -393,10 +376,7 @@ fn format_inline(text: &str) -> String {
             }
             if j + 1 < chars.len() {
                 let bold_content: String = chars[i + 2..j].iter().collect();
-                result.push_str(&format!(
-                    "<strong>{}</strong>",
-                    format_inline(&bold_content)
-                ));
+                let _ = write!(result, "<strong>{}</strong>", format_inline(&bold_content));
                 i = j + 2;
                 continue;
             }
@@ -416,11 +396,12 @@ fn format_inline(text: &str) -> String {
                 if k < chars.len() {
                     let text_content: String = chars[i + 1..j].iter().collect();
                     let url_content: String = chars[j + 2..k].iter().collect();
-                    result.push_str(&format!(
+                    let _ = write!(
+                        result,
                         "<a href=\"{}\" target=\"_blank\" rel=\"noopener noreferrer\">{}</a>",
                         url_content,
                         format_inline(&text_content)
-                    ));
+                    );
                     i = k + 1;
                     continue;
                 }
@@ -435,7 +416,7 @@ fn format_inline(text: &str) -> String {
             }
             if j < chars.len() {
                 let italic_content: String = chars[i + 1..j].iter().collect();
-                result.push_str(&format!("<em>{}</em>", format_inline(&italic_content)));
+                let _ = write!(result, "<em>{}</em>", format_inline(&italic_content));
                 i = j + 1;
                 continue;
             }
@@ -447,7 +428,7 @@ fn format_inline(text: &str) -> String {
             }
             if j < chars.len() {
                 let italic_content: String = chars[i + 1..j].iter().collect();
-                result.push_str(&format!("<em>{}</em>", format_inline(&italic_content)));
+                let _ = write!(result, "<em>{}</em>", format_inline(&italic_content));
                 i = j + 1;
                 continue;
             }
@@ -461,7 +442,7 @@ fn format_inline(text: &str) -> String {
     result
 }
 
-fn render_table(rows: Vec<&str>) -> String {
+fn render_table(rows: &[&str]) -> String {
     if rows.len() < 2 {
         return rows
             .iter()
@@ -474,11 +455,11 @@ fn render_table(rows: Vec<&str>) -> String {
     let headers: Vec<&str> = rows[0]
         .split('|')
         .filter(|s| !s.is_empty())
-        .map(|s| s.trim())
+        .map(str::trim)
         .collect();
 
     for h in headers {
-        html.push_str(&format!("<th>{}</th>", format_inline(&html_escape(h))));
+        let _ = write!(html, "<th>{}</th>", format_inline(&html_escape(h)));
     }
     html.push_str("</tr></thead><tbody>");
 
@@ -492,10 +473,10 @@ fn render_table(rows: Vec<&str>) -> String {
         let cols: Vec<&str> = row
             .split('|')
             .filter(|s| !s.is_empty())
-            .map(|s| s.trim())
+            .map(str::trim)
             .collect();
         for c in cols {
-            html.push_str(&format!("<td>{}</td>", format_inline(&html_escape(c))));
+            let _ = write!(html, "<td>{}</td>", format_inline(&html_escape(c)));
         }
         html.push_str("</tr>");
     }
@@ -505,13 +486,12 @@ fn render_table(rows: Vec<&str>) -> String {
 
 fn format_code_part(part: &str) -> String {
     let lines: Vec<&str> = part.split('\n').collect();
-    let mut lang = "code";
-    let mut code = part;
-
-    if !lines.is_empty() && !lines[0].trim().is_empty() && !lines[0].contains(' ') {
-        lang = lines[0].trim();
-        code = part[lines[0].len()..].trim_start();
-    }
+    let (lang, code) =
+        if !lines.is_empty() && !lines[0].trim().is_empty() && !lines[0].contains(' ') {
+            (lines[0].trim(), part[lines[0].len()..].trim_start())
+        } else {
+            ("code", part)
+        };
 
     div()
         .class("code-block")
@@ -537,9 +517,9 @@ fn format_code_part(part: &str) -> String {
 }
 
 fn html_escape(s: &str) -> String {
-    s.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace("\"", "&quot;")
-        .replace("'", "&#39;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
 }

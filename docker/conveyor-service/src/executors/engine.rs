@@ -57,6 +57,7 @@ impl Handle {
         Self(id.into())
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -83,7 +84,8 @@ pub struct JobState {
 }
 
 impl JobState {
-    pub fn is_finished(&self) -> bool {
+    #[must_use]
+    pub const fn is_finished(&self) -> bool {
         self.status.is_terminal()
     }
 }
@@ -108,6 +110,7 @@ pub enum Stream {
 }
 
 impl Stream {
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Stdout => "stdout",
@@ -115,6 +118,7 @@ impl Stream {
         }
     }
 
+    #[must_use]
     pub fn parse(raw: &str) -> Option<Self> {
         match raw.trim() {
             "stdout" => Some(Self::Stdout),

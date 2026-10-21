@@ -1,5 +1,6 @@
 use quench_web::prelude::CssRule;
 
+#[must_use]
 pub fn initializing_rules() -> Vec<CssRule> {
     vec![
         CssRule::new(".init-content")

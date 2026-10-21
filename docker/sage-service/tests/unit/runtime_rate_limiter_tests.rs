@@ -76,7 +76,9 @@ fn user_rate_limit_exceeded_after_the_configured_calls_per_minute() {
             assert_eq!(limit, 30);
             assert_eq!(user_id, "user-1");
         }
-        other => panic!("expected UserRateLimitExceeded, got {other:?}"),
+        other @ RateLimitError::BurstLimitExceeded { .. } => {
+            panic!("expected UserRateLimitExceeded, got {other:?}")
+        }
     }
 }
 
@@ -99,7 +101,9 @@ fn burst_limit_error_names_the_conversation_and_limit() {
             assert_eq!(limit, 5);
             assert_eq!(conversation_id, "conv-1");
         }
-        other => panic!("expected BurstLimitExceeded, got {other:?}"),
+        other @ RateLimitError::UserRateLimitExceeded { .. } => {
+            panic!("expected BurstLimitExceeded, got {other:?}")
+        }
     }
 }
 

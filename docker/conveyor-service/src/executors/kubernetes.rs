@@ -25,7 +25,7 @@ const LOG_CHANNEL_CAPACITY: usize = 1024;
 /// How long to wait for the pod to exist before giving up on following its log.
 const POD_WAIT_ATTEMPTS: u32 = 120;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct Running {
     state: Arc<Mutex<JobState>>,
     history: Arc<Mutex<Vec<LogChunk>>>,
@@ -55,8 +55,7 @@ impl KubernetesExecutor {
         let namespace = if namespace.is_empty() {
             // In-pod, this file names the namespace; outside one, `default` is the best guess.
             std::fs::read_to_string("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
-                .map(|value| value.trim().to_string())
-                .unwrap_or_else(|_| "default".to_string())
+                .map_or_else(|_| "default".to_string(), |value| value.trim().to_string())
         } else {
             namespace
         };
@@ -463,4 +462,10 @@ fn finish(running: &Running, status: Status, exit_code: Option<i32>, error: Opti
     state.exit_code = exit_code;
     state.error = error;
     state.finished_at = Some(Utc::now());
+}
+
+impl std::fmt::Debug for KubernetesExecutor {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("KubernetesExecutor { .. }")
+    }
 }

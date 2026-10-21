@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use quench_db::prelude::Model;
 use sqlx::types::Json;
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
 pub struct RivetPackage {
     pub id: String,
     pub name: String,
@@ -26,11 +26,13 @@ pub struct RivetPackage {
 
 impl RivetPackage {
     /// The catalog key a caller addresses a version by.
+    #[must_use]
     pub fn id_for(name: &str, version: &str) -> String {
         format!("{name}@{version}")
     }
 
     /// The version as semver, or `None` for a row whose version somehow is not.
+    #[must_use]
     pub fn semver(&self) -> Option<semver::Version> {
         semver::Version::parse(&self.version).ok()
     }
@@ -38,6 +40,7 @@ impl RivetPackage {
 
 /// The highest non-yanked version by semver precedence (build metadata breaks ties, as the
 /// `semver` crate orders it), or `None` if every version is yanked.
+#[must_use]
 pub fn latest_of(versions: &[RivetPackage]) -> Option<&RivetPackage> {
     versions
         .iter()

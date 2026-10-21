@@ -77,6 +77,7 @@ async fn previous_status(db: &Db, run: &Run) -> Result<Option<Status>, QueueErro
 }
 
 /// Whether `user` may read the project a repository sits in - directly or through a project above.
+#[must_use]
 pub fn may_read(user: &User, chain: &[String]) -> bool {
     !user.is_disabled()
         && (user.can("conveyor", "read")
@@ -221,4 +222,10 @@ pub fn spawn_delivery(db: Db, notifier: Arc<dyn Notifier>) {
             }
         }
     });
+}
+
+impl std::fmt::Debug for Notifications {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("Notifications { .. }")
+    }
 }

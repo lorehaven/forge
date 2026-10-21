@@ -13,9 +13,8 @@ pub async fn handle(Path((name, version)): Path<(String, String)>) -> Response {
         return not_found();
     };
 
-    let data = match tokio::fs::read(&crate_path).await {
-        Ok(d) => d,
-        Err(_) => return not_found(),
+    let Ok(data) = tokio::fs::read(&crate_path).await else {
+        return not_found();
     };
 
     Response::from_bytes(StatusCode::OK, Bytes::from(data))

@@ -12,13 +12,15 @@ use quench_http::endpoint::Endpoint;
 use quench_http::request::Request;
 use std::sync::Arc;
 
-pub async fn app(container: Container) -> (Arc<dyn Endpoint>, Arc<Container>) {
+#[must_use]
+pub fn app(container: Container) -> (Arc<dyn Endpoint>, Arc<Container>) {
     (
         quench_starter::http::discover_and_mount("/"),
         Arc::new(container),
     )
 }
 
+#[must_use]
 pub fn container_builder() -> ContainerBuilder {
     ContainerBuilder::new()
 }
@@ -33,12 +35,14 @@ pub async fn basic_container(jwt_config: JwtConfig, db: Db) -> Container {
         .unwrap()
 }
 
+#[must_use]
 pub fn jwt_config(auth_enabled: bool) -> JwtConfig {
     let mut config = JwtConfig::for_tests();
     config.auth_enabled = auth_enabled;
     config
 }
 
+#[must_use]
 pub fn req(method: Method, path: &str, container: &Arc<Container>) -> Request {
     Request::new(
         method,
@@ -59,6 +63,7 @@ pub async fn json_body(resp: quench_http::response::Response) -> serde_json::Val
     serde_json::from_slice(&collected.to_bytes()).expect("valid json body")
 }
 
+#[must_use]
 pub fn req_json(method: Method, path: &str, container: &Arc<Container>, json: &str) -> Request {
     let mut headers = HeaderMap::new();
     headers.insert("content-type", "application/json".parse().unwrap());
@@ -71,6 +76,7 @@ pub fn req_json(method: Method, path: &str, container: &Arc<Container>, json: &s
     )
 }
 
+#[must_use]
 pub fn req_form(
     method: Method,
     path: &str,
@@ -99,6 +105,12 @@ pub struct Rig {
     pub container: Arc<Container>,
     pub cluster: Arc<gantry_service::domain::cluster::FakeCluster>,
     pub registry: Arc<gantry_service::domain::registry::MemoryRegistry>,
+}
+
+impl std::fmt::Debug for Rig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Rig").finish_non_exhaustive()
+    }
 }
 
 pub async fn rig(auth_enabled: bool) -> Rig {
@@ -132,7 +144,7 @@ pub async fn rig(auth_enabled: bool) -> Rig {
         .build()
         .await
         .unwrap();
-    let (app, container) = app(container).await;
+    let (app, container) = app(container);
     Rig {
         app,
         container,

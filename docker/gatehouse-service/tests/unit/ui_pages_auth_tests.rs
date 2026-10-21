@@ -546,7 +546,7 @@ async fn concurrent_refreshes_with_one_token_all_succeed_for_two_tabs() {
                     .is_some()
             })
         });
-        for handle in attempts.collect::<Vec<_>>() {
+        for handle in attempts {
             if !handle.await.unwrap() {
                 failures += 1;
             }

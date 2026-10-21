@@ -131,9 +131,8 @@ async fn read_index_state(
         return (HashSet::new(), HashSet::new(), None, Vec::new());
     };
 
-    let content = match tokio::fs::read_to_string(&path).await {
-        Ok(s) => s,
-        Err(_) => return (HashSet::new(), HashSet::new(), None, Vec::new()),
+    let Ok(content) = tokio::fs::read_to_string(&path).await else {
+        return (HashSet::new(), HashSet::new(), None, Vec::new());
     };
 
     let mut indexed = HashSet::new();
@@ -151,7 +150,10 @@ async fn read_index_state(
             && let Some(vers) = v.get("vers").and_then(|x| x.as_str())
         {
             indexed.insert(vers.to_string());
-            if v.get("yanked").and_then(|y| y.as_bool()).unwrap_or(false) {
+            if v.get("yanked")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false)
+            {
                 yanked.insert(vers.to_string());
             }
         }
@@ -166,16 +168,11 @@ async fn repair_index(index_path: &Path, lines: &[String], crate_name: &str) -> 
     let mut kept_lines: Vec<&str> = Vec::new();
 
     for line in lines {
-        let keep = if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
-            match v.get("vers").and_then(|x| x.as_str()) {
-                Some(vers) => crate_file_path(crate_name, vers)
-                    .map(|p| std::path::Path::new(&p).exists())
-                    .unwrap_or(false),
-                None => true, // can't parse version, preserve to be safe
-            }
-        } else {
-            true // malformed line, preserve
-        };
+        let keep = serde_json::from_str::<serde_json::Value>(line).map_or(true, |v| {
+            v.get("vers").and_then(|x| x.as_str()).is_none_or(|vers| {
+                crate_file_path(crate_name, vers).is_some_and(|p| std::path::Path::new(&p).exists())
+            })
+        });
 
         if keep {
             kept_lines.push(line.as_str());

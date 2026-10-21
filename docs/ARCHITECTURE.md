@@ -4,7 +4,7 @@ How the pieces documented in the [Home](./README.md) page fit together.
 
 ## The estate
 
-Forge runs six long-running services (`docker/*`) built on [quench-http](https://github.com/lorehaven/quench/blob/master/docs/quench-http.md), each owning its own Postgres schema, plus a set of CLI tools that either drive those services or operate independently on the workspace/cluster. [Foreman](./cli/foreman.md) is what brings a chosen subset of the estate up locally, in dependency order, from one `foreman.toml`.
+Forge runs eight long-running services (`docker/*`) built on [quench-http](https://github.com/lorehaven/quench/blob/master/docs/quench-http.md), each owning its own Postgres schema, plus a set of CLI tools that either drive those services or operate independently on the workspace/cluster. [Foreman](./cli/foreman.md) is what brings a chosen subset of the estate up locally, in dependency order, from one `foreman.toml`.
 
 ```
                      ┌───────────────────┐
@@ -13,8 +13,8 @@ Forge runs six long-running services (`docker/*`) built on [quench-http](https:/
                                │ every service verifies tokens locally
         ┌──────────┬──────────┼──────────┬──────────┬──────────┐
         ▼          ▼          ▼          ▼          ▼          ▼
-   Conveyor    Warehouse   Switchboard  Sage     Workbench  (Foundry: not
-   (CI/CD)     (storage)   (vLLM mgmt) (chat/RAG)  (tasks)    a peer — runs
+   Conveyor    Warehouse   Switchboard  Sage     Workbench  Daybook   (Foundry: not
+   (CI/CD)     (storage)   (vLLM mgmt) (chat/RAG)  (issues)   a peer — runs
         │          ▲            ▲          │                  once ahead of
         │          │            └──────────┘                  the others,
         └──────────┘         Sage calls Switchboard            installs every
@@ -31,7 +31,7 @@ Two related points worth knowing if you're integrating a new service:
 
 ## Schema: Foundry runs once, ahead of everything
 
-[Foundry](./docker/foundry-service.md) is not a long-running peer of the other five services — it's a run-to-completion job that owns the migration files for **all** of them (`conveyor/`, `gatehouse/`, `warehouse/`, `sage/`, `switchboard/`, plus shared `pgvector/` and `quench-core/` modules), each versioned independently with its own dependency graph. It runs as a Kubernetes `Job` (or init container) ahead of a rollout, or as a `foreman` task ahead of starting services locally, and exits non-zero if the database doesn't match the declared plan. [Quench DB](https://github.com/lorehaven/quench/blob/master/docs/quench-db.md) is the library underneath both Foundry's migration runner and every service's own CRUD access.
+[Foundry](./docker/foundry-service.md) is not a long-running peer of the other services — it's a run-to-completion job that owns the migration files for **all** of them (`conveyor/`, `daybook/`, `gantry/`, `gatehouse/`, `warehouse/`, `sage/`, `switchboard/`, plus shared `pgvector/` and `quench-core/` modules), each versioned independently with its own dependency graph. It runs as a Kubernetes `Job` (or init container) ahead of a rollout, or as a `foreman` task ahead of starting services locally, and exits non-zero if the database doesn't match the declared plan. [Quench DB](https://github.com/lorehaven/quench/blob/master/docs/quench-db.md) is the library underneath both Foundry's migration runner and every service's own CRUD access.
 
 ## The AI stack: Switchboard serves, Sage talks to users
 

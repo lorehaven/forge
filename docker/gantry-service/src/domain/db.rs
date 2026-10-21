@@ -21,6 +21,7 @@ pub enum GantryError {
 
 impl GantryError {
     /// Postgres's unique-constraint violation, e.g. a second running operation in one scope.
+    #[must_use]
     pub fn is_unique_violation(&self) -> bool {
         matches!(self, Self::Sql(sqlx::Error::Database(database)) if database.code().as_deref() == Some("23505"))
     }
@@ -34,6 +35,7 @@ pub fn pool(db: &Db) -> Result<&Pool<Postgres>, GantryError> {
     }
 }
 
+#[must_use]
 pub fn schema() -> String {
     envmnt::get_or("DB_SCHEMA", "gantry")
 }

@@ -146,6 +146,7 @@ fn page(run: &Run, repo: Option<&Repo>, jobs: &[Job], artifacts: &[Artifact]) ->
 }
 
 /// A resting run carries no `hx-trigger` - the swap that reports it finished also stops the polling.
+#[must_use]
 pub fn state_block(run: &Run, repo: Option<&Repo>, job_count: usize) -> Element {
     let mut block = div()
         .attr("id", "run-state")
@@ -192,6 +193,7 @@ pub fn state_block(run: &Run, repo: Option<&Repo>, job_count: usize) -> Element 
 
 /// One row per dependency level, laid out the way `worker::execute_jobs` runs
 /// them; `job_block` keeps its id so `job-state-{id}` OOB swaps still find it.
+#[must_use]
 pub fn jobs_block(jobs: &[Job]) -> Element {
     let mut graph = div().attr("id", "run-jobs").class("job-graph");
 
@@ -282,6 +284,7 @@ fn stage_level<'a>(
 }
 
 /// Always rendered, even empty - an OOB swap needs something on the page to replace.
+#[must_use]
 pub fn artifacts_block(artifacts: &[Artifact]) -> Element {
     let mut block = div().attr("id", "run-artifacts");
     if !artifacts.is_empty() {
@@ -324,6 +327,7 @@ fn labelled(key: &str, value: &str) -> Element {
 
 /// One job as a native `<details>` disclosure - htmx loads the log body only
 /// when opened, so eight jobs open eight streams only if all eight are opened.
+#[must_use]
 pub fn job_block(job: &Job) -> Element {
     // Only a job that ran has output; a skipped one shows why instead.
     let ran = !matches!(job.status, Status::Skipped | Status::Queued);
@@ -356,6 +360,7 @@ pub fn job_block(job: &Job) -> Element {
 
 /// Own element so the poll can replace it without re-rendering the `<summary>`
 /// around it, which would re-arm its `click once` log-fetch trigger.
+#[must_use]
 pub fn job_state(job: &Job) -> Element {
     div()
         .attr("id", format!("job-state-{}", job.id))

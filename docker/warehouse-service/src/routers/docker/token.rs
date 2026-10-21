@@ -9,6 +9,7 @@ use quench_http::prelude::{
 use serde::{Deserialize, Serialize};
 
 /// The raw `Authorization` header, read via a local extractor (quench-http has none built in).
+#[derive(Debug)]
 pub struct AuthorizationHeader(pub Option<String>);
 
 #[async_trait]
@@ -18,7 +19,7 @@ impl FromRequest for AuthorizationHeader {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct TokenQuery {
     pub service: String,
     pub scope: Option<String>,
@@ -27,7 +28,7 @@ pub struct TokenQuery {
     pub offline_token: Option<bool>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct TokenResponse {
     pub token: String,
     pub expires_in: usize,
@@ -42,12 +43,9 @@ pub async fn handle(
     Query(query): Query<TokenQuery>,
 ) -> Response {
     // Validate Basic authentication (or allow anonymous if disabled)
-    let username = match validate_basic(authorization.as_deref(), &config, &user_db).await {
-        Some(u) => u,
-        None => {
-            return Response::new(StatusCode::UNAUTHORIZED)
-                .header("www-authenticate", "Basic realm=\"registry\"");
-        }
+    let Some(username) = validate_basic(authorization.as_deref(), &config, &user_db).await else {
+        return Response::new(StatusCode::UNAUTHORIZED)
+            .header("www-authenticate", "Basic realm=\"registry\"");
     };
 
     // Validate service
@@ -62,9 +60,9 @@ pub async fn handle(
     let claims = DockerClaims {
         sub: username,
         service: query.service.clone(),
-        scope: query.scope.clone().unwrap_or("docker".to_string()),
-        iat: now.timestamp() as usize,
-        exp: exp.timestamp() as usize,
+        scope: query.scope.clone().unwrap_or_else(|| "docker".to_string()),
+        iat: usize::try_from(now.timestamp()).unwrap_or_default(),
+        exp: usize::try_from(exp.timestamp()).unwrap_or_default(),
     };
 
     let token = config.encode(&claims).unwrap();

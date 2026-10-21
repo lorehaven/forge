@@ -28,7 +28,7 @@ async fn setup() -> (Arc<dyn Endpoint>, Arc<Container>) {
         .build()
         .await
         .unwrap();
-    support::app(container).await
+    support::app(container)
 }
 
 async fn publish(
@@ -126,6 +126,7 @@ async fn publish_then_read_back() {
         .unwrap()
         .to_bytes();
     assert_eq!(downloaded.as_ref(), bytes.as_slice());
+    drop(rivets);
 }
 
 #[tokio::test]
@@ -199,6 +200,7 @@ async fn rejects_an_archive_that_disagrees_with_the_url() {
 
     let resp = call(&app, &container, Method::GET, "/api/v1/rivets").await;
     assert_eq!(support::json_body(resp).await, serde_json::json!([]));
+    drop(rivets);
 }
 
 fn walk(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
@@ -238,6 +240,7 @@ async fn rejects_garbage_and_a_corrupted_archive() {
     assert!(support::body_text(resp).await.contains("checksum"));
 
     assert!(walk(rivets.dir.path()).is_empty());
+    drop(rivets);
 }
 
 #[tokio::test]
@@ -269,6 +272,7 @@ async fn rejects_an_upload_over_the_size_limit() {
     let resp = publish(&app, &container, "forge", "0.4.0", &rivet("forge", "0.4.0")).await;
     assert_eq!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
     assert!(walk(rivets.dir.path()).is_empty());
+    drop(rivets);
 }
 
 #[tokio::test]

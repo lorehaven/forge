@@ -51,3 +51,9 @@ impl Sender for BudgetedSender {
         self.inner.send(to, mail).await
     }
 }
+
+impl std::fmt::Debug for BudgetedSender {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("BudgetedSender { .. }")
+    }
+}

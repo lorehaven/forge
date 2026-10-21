@@ -26,10 +26,12 @@ fn feature_enabled(name: &str, default: bool) -> bool {
     }
 }
 
+#[must_use]
 pub fn models_dashboard_enabled() -> bool {
     FEATURE_FLAGS.models_dashboard
 }
 
+#[must_use]
 pub fn vllm_management_enabled() -> bool {
     FEATURE_FLAGS.vllm_management
 }

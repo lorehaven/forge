@@ -19,7 +19,7 @@ use std::sync::Arc;
 /// Shorter than a verification link - a reset link changes the password outright.
 pub const RESET_TTL_SECS: u64 = 60 * 60;
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ForgotPasswordForm {
     pub username: String,
 }
@@ -103,12 +103,12 @@ pub async fn forgot_password_submit(
     redirect(&ui_path("/login?reset_requested=1"))
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ResetPasswordQuery {
     pub token: String,
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Debug, Deserialize, Default)]
 pub struct ResetNotice {
     #[serde(default)]
     pub err: Option<String>,
@@ -122,7 +122,7 @@ pub async fn reset_password_page(
     render_reset_password_page(&query.token, &notice)
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ResetPasswordForm {
     pub token: String,
     pub password: String,
@@ -176,6 +176,7 @@ pub async fn reset_password_submit(
     }
 }
 
+#[must_use]
 pub fn render_forgot_password_page() -> Response {
     let request_form = form()
         .attr("method", "post")
@@ -207,6 +208,7 @@ pub fn render_forgot_password_page() -> Response {
     render_auth_page("ui_forgot_password_title", request_form)
 }
 
+#[must_use]
 pub fn render_reset_password_page(token: &str, notice: &ResetNotice) -> Response {
     let mut reset_form = form()
         .attr("method", "post")

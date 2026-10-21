@@ -39,12 +39,12 @@ fn being_unreachable_or_unauthorised_is_retried_because_it_can_be_fixed() {
 #[test]
 fn the_wait_grows_with_each_failure_and_stops_at_an_hour() {
     let waits: Vec<f64> = (1..=10).map(backoff_secs).collect();
-    assert_eq!(waits[0], 30.0);
-    assert_eq!(waits[1], 60.0);
-    assert_eq!(waits[2], 120.0);
+    assert!((waits[0] - 30.0).abs() < 1e-6);
+    assert!((waits[1] - 60.0).abs() < 1e-6);
+    assert!((waits[2] - 120.0).abs() < 1e-6);
     assert!(waits.windows(2).all(|pair| pair[1] >= pair[0]));
     assert!(waits.iter().all(|wait| *wait <= 3600.0));
     // A nonsense count still yields the shortest wait rather than panicking.
-    assert_eq!(backoff_secs(0), 30.0);
-    assert_eq!(backoff_secs(i32::MAX), 3600.0);
+    assert!((backoff_secs(0) - 30.0).abs() < 1e-6);
+    assert!((backoff_secs(i32::MAX) - 3600.0).abs() < 1e-6);
 }

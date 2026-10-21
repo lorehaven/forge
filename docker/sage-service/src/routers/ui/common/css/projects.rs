@@ -1,6 +1,14 @@
 use quench_web::prelude::CssRule;
 
+#[must_use]
 pub fn projects_rules() -> Vec<CssRule> {
+    [projects_rules_1(), projects_rules_2()]
+        .into_iter()
+        .flatten()
+        .collect()
+}
+
+fn projects_rules_1() -> Vec<CssRule> {
     vec![
         // Projects & Context Separation
         CssRule::new(".history-section-header")
@@ -76,6 +84,11 @@ pub fn projects_rules() -> Vec<CssRule> {
             .property("max-width", "90%")
             .property("border", "1px solid var(--fui-border)")
             .property("box-shadow", "0 10px 25px rgba(0, 0, 0, 0.5)"),
+    ]
+}
+
+fn projects_rules_2() -> Vec<CssRule> {
+    vec![
         CssRule::new(".modal-content h2")
             .property("margin-top", "0")
             .property("margin-bottom", "1.5rem")

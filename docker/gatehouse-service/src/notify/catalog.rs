@@ -27,6 +27,7 @@ pub struct Var {
     pub kind: VarKind,
 }
 
+#[derive(Debug)]
 struct Copy {
     lang: &'static str,
     subject: &'static str,
@@ -167,16 +168,19 @@ pub static TEMPLATES: [Template; 3] = [
     },
 ];
 
+#[must_use]
 pub fn all() -> &'static [Template] {
     &TEMPLATES
 }
 
+#[must_use]
 pub fn find(id: &str) -> Option<&'static Template> {
     TEMPLATES.iter().find(|template| template.id == id)
 }
 
 impl Template {
     /// The translation key of this kind's name on the account page.
+    #[must_use]
     pub fn label_key(&self) -> String {
         format!("ui_notification_{}", self.id.replace('.', "_"))
     }
@@ -237,6 +241,7 @@ impl Template {
     }
 
     /// The message in `locale` (English when unknown). Validate `vars` first.
+    #[must_use]
     pub fn render(
         &self,
         locale: Option<&str>,
@@ -272,5 +277,11 @@ impl Template {
             text,
             html,
         }
+    }
+}
+
+impl std::fmt::Debug for Template {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("Template { .. }")
     }
 }

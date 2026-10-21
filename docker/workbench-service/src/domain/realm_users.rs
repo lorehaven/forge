@@ -7,6 +7,7 @@ use quench_db::prelude::Db;
 use sqlx::Row;
 
 /// Just enough of `auth.users` for the assignee picker.
+#[derive(Debug)]
 pub struct RealmUser {
     pub username: String,
     pub display_name: Option<String>,
@@ -14,6 +15,7 @@ pub struct RealmUser {
 
 impl RealmUser {
     /// Display name if set, else the username - never both.
+    #[must_use]
     pub fn label(&self) -> &str {
         self.display_name
             .as_deref()

@@ -7,35 +7,39 @@ pub struct ContextLimits {
 }
 
 impl ContextLimits {
-    pub fn new(max_tokens: u32, warning_threshold_percent: u32) -> Self {
+    #[must_use]
+    pub const fn new(max_tokens: u32, warning_threshold_percent: u32) -> Self {
         Self {
             max_tokens,
             warning_threshold_percent,
         }
     }
 
-    pub fn warning_token_count(&self) -> u32 {
+    #[must_use]
+    pub const fn warning_token_count(&self) -> u32 {
         (self.max_tokens * self.warning_threshold_percent) / 100
     }
 
-    pub fn is_near_limit(&self, current_tokens: u32) -> bool {
+    #[must_use]
+    pub const fn is_near_limit(&self, current_tokens: u32) -> bool {
         current_tokens >= self.warning_token_count()
     }
 
-    pub fn is_at_limit(&self, current_tokens: u32) -> bool {
+    #[must_use]
+    pub const fn is_at_limit(&self, current_tokens: u32) -> bool {
         current_tokens >= self.max_tokens
     }
 
-    pub fn remaining_tokens(&self, current_tokens: u32) -> u32 {
+    #[must_use]
+    pub const fn remaining_tokens(&self, current_tokens: u32) -> u32 {
         self.max_tokens.saturating_sub(current_tokens)
     }
 }
 
+#[must_use]
 pub fn get_context_limits(profile: &str) -> ContextLimits {
     match profile {
-        "web_assistant" => ContextLimits::new(4096, 80), // 4K token limit
-        "code_assistant" => ContextLimits::new(8192, 75), // 8K token limit
-        "cli_agent" => ContextLimits::new(8192, 75),     // 8K token limit
+        "code_assistant" | "cli_agent" => ContextLimits::new(8192, 75), // 8K token limit
         _ => ContextLimits::new(4096, 80),
     }
 }
@@ -52,11 +56,12 @@ pub struct ContextStatus {
 }
 
 impl ContextStatus {
+    #[must_use]
     pub fn new(profile: &str, current_tokens: u32) -> Self {
         let limits = get_context_limits(profile);
         let max_tokens = limits.max_tokens;
         let remaining_tokens = limits.remaining_tokens(current_tokens);
-        let usage_percent = (current_tokens as f64 / max_tokens as f64) * 100.0;
+        let usage_percent = (f64::from(current_tokens) / f64::from(max_tokens)) * 100.0;
 
         Self {
             profile: profile.to_string(),
@@ -71,14 +76,17 @@ impl ContextStatus {
 }
 
 /// Simple token counter estimating tokens from character count; a real implementation would use tiktoken or similar.
+#[derive(Debug)]
 pub struct TokenCounter;
 
 impl TokenCounter {
     /// Rough estimation: ~1 token per 4 characters (varies by model); use a real tokenizer for accuracy.
+    #[must_use]
     pub fn count_tokens(text: &str) -> u32 {
-        (text.len() as u32).div_ceil(4)
+        u32::try_from(text.len().div_ceil(4)).unwrap_or(u32::MAX)
     }
 
+    #[must_use]
     pub fn count_tokens_for_messages(messages: &[(String, String)]) -> u32 {
         let mut total = 0;
         for (role, content) in messages {
@@ -97,15 +105,17 @@ pub struct ContextWarning {
     pub max_tokens: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ContextWarningType {
     NearLimit,
     AtLimit,
 }
 
+#[derive(Debug)]
 pub struct ContextManager;
 
 impl ContextManager {
+    #[must_use]
     pub fn check_context(profile: &str, current_tokens: u32) -> Option<ContextWarning> {
         let limits = get_context_limits(profile);
 
@@ -126,7 +136,8 @@ impl ContextManager {
                     "Context window is nearly full: {}/{} tokens used ({}%). Consider pruning old messages.",
                     current_tokens,
                     limits.max_tokens,
-                    (current_tokens as f64 / limits.max_tokens as f64 * 100.0) as u32
+                    u32::try_from(u64::from(current_tokens) * 100 / u64::from(limits.max_tokens),)
+                        .unwrap_or_default()
                 ),
                 current_tokens,
                 max_tokens: limits.max_tokens,
@@ -141,11 +152,7 @@ impl ContextManager {
         let mut freed_tokens = 0;
 
         // Keep system message (usually first), but remove others from the beginning
-        let start_index = if !messages.is_empty() && messages[0].0 == "system" {
-            1
-        } else {
-            0
-        };
+        let start_index = usize::from(!messages.is_empty() && messages[0].0 == "system");
 
         while messages.len() > start_index + 1 {
             let msg = messages.remove(start_index);

@@ -17,6 +17,7 @@ pub enum Trigger {
 }
 
 impl Trigger {
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Push => "push",
@@ -25,6 +26,7 @@ impl Trigger {
         }
     }
 
+    #[must_use]
     pub fn parse(raw: &str) -> Option<Self> {
         match raw.trim().to_ascii_lowercase().as_str() {
             "push" => Some(Self::Push),
@@ -74,12 +76,14 @@ pub struct Run {
 
 impl Run {
     /// The short sha people actually read.
+    #[must_use]
     pub fn short_sha(&self) -> &str {
         let end = self.sha.len().min(7);
         &self.sha[..end]
     }
 
     /// `master` out of `refs/heads/master`, for display and for `when` clauses.
+    #[must_use]
     pub fn ref_name(&self) -> &str {
         self.git_ref
             .strip_prefix("refs/heads/")
@@ -87,6 +91,7 @@ impl Run {
             .unwrap_or(&self.git_ref)
     }
 
+    #[must_use]
     pub fn is_tag(&self) -> bool {
         self.git_ref.starts_with("refs/tags/")
     }

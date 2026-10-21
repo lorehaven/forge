@@ -2,6 +2,9 @@ use super::SearchProvider;
 use async_trait::async_trait;
 use serde::Deserialize;
 
+const MAX_RESULTS: usize = 5;
+
+#[derive(Debug)]
 pub struct SearxngProvider {
     client: reqwest::Client,
     instance_url: String,
@@ -20,7 +23,8 @@ struct SearxngResult {
 }
 
 impl SearxngProvider {
-    pub fn new(instance_url: String) -> Self {
+    #[must_use]
+    pub fn new(instance_url: &str) -> Self {
         Self {
             client: reqwest::Client::new(),
             instance_url: instance_url.trim_end_matches('/').to_string(),
@@ -30,13 +34,13 @@ impl SearxngProvider {
     pub fn from_env() -> Result<Self, String> {
         let instance_url = std::env::var("SEARXNG_INSTANCE_URL")
             .unwrap_or_else(|_| "https://searxng.be".to_string());
-        Ok(Self::new(instance_url))
+        Ok(Self::new(&instance_url))
     }
 }
 
 #[async_trait]
 impl SearchProvider for SearxngProvider {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "searxng"
     }
 
@@ -60,7 +64,7 @@ impl SearchProvider for SearxngProvider {
             .send()
             .await
             .map_err(|e| {
-                let err_msg = format!("Request failed: {}", e);
+                let err_msg = format!("Request failed: {e}");
                 tracing::warn!("SearXNG request failed: {}", e);
                 err_msg
             })?;
@@ -70,19 +74,17 @@ impl SearchProvider for SearxngProvider {
 
         let body = response.text().await.map_err(|e| {
             tracing::warn!("Failed to read response: {}", e);
-            format!("Failed to read response: {}", e)
+            format!("Failed to read response: {e}")
         })?;
 
         tracing::info!("SearXNG response length: {} bytes", body.len());
 
         let data: SearxngResponse = serde_json::from_str(&body).map_err(|e| {
             tracing::warn!("Failed to parse JSON: {}", e);
-            format!("Invalid JSON: {}", e)
+            format!("Invalid JSON: {e}")
         })?;
 
         let mut results = Vec::new();
-        const MAX_RESULTS: usize = 5;
-
         if let Some(search_results) = data.results {
             for result in search_results.iter().take(MAX_RESULTS) {
                 let snippet = result.content.as_deref().unwrap_or(&result.title).trim();
@@ -96,8 +98,7 @@ impl SearchProvider for SearxngProvider {
             tracing::warn!("SearXNG: No results found for '{}'", query);
 
             return Err(format!(
-                "Web search for '{}' could not find results at this time.",
-                query
+                "Web search for '{query}' could not find results at this time."
             ));
         }
 

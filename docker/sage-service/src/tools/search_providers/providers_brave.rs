@@ -2,6 +2,9 @@ use super::SearchProvider;
 use async_trait::async_trait;
 use serde::Deserialize;
 
+const MAX_RESULTS: usize = 5;
+
+#[derive(Debug)]
 pub struct BraveProvider {
     client: reqwest::Client,
     api_key: String,
@@ -25,6 +28,7 @@ struct BraveResult {
 }
 
 impl BraveProvider {
+    #[must_use]
     pub fn new(api_key: String) -> Self {
         Self {
             client: reqwest::Client::new(),
@@ -41,7 +45,7 @@ impl BraveProvider {
 
 #[async_trait]
 impl SearchProvider for BraveProvider {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "brave"
     }
 
@@ -66,7 +70,7 @@ impl SearchProvider for BraveProvider {
             .send()
             .await
             .map_err(|e| {
-                let err_msg = format!("Request failed: {}", e);
+                let err_msg = format!("Request failed: {e}");
                 tracing::warn!("Brave Search request failed: {}", e);
                 err_msg
             })?;
@@ -80,19 +84,17 @@ impl SearchProvider for BraveProvider {
 
         let body = response.text().await.map_err(|e| {
             tracing::warn!("Failed to read response: {}", e);
-            format!("Failed to read response: {}", e)
+            format!("Failed to read response: {e}")
         })?;
 
         tracing::info!("Brave Search response length: {} bytes", body.len());
 
         let data: BraveResponse = serde_json::from_str(&body).map_err(|e| {
             tracing::warn!("Failed to parse JSON: {}", e);
-            format!("Invalid JSON: {}", e)
+            format!("Invalid JSON: {e}")
         })?;
 
         let mut results = Vec::new();
-        const MAX_RESULTS: usize = 5;
-
         if let Some(web) = data.web
             && let Some(search_results) = web.results
         {
@@ -112,8 +114,7 @@ impl SearchProvider for BraveProvider {
             tracing::warn!("Brave Search: No results found for '{}'", query);
 
             return Err(format!(
-                "Web search for '{}' could not find results at this time.",
-                query
+                "Web search for '{query}' could not find results at this time."
             ));
         }
 

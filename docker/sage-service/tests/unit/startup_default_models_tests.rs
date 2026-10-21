@@ -155,11 +155,9 @@ async fn switchboard() -> (
         })))
         .mount(server)
         .await;
-    unsafe {
-        std::env::set_var("SWITCHBOARD_URL", server.uri());
-        std::env::set_var("GATEHOUSE_URL", server.uri());
-        std::env::set_var("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
-    }
+    envmnt::set("SWITCHBOARD_URL", server.uri());
+    envmnt::set("GATEHOUSE_URL", server.uri());
+    envmnt::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
     (
         sage_service::clients::switchboard::SwitchboardClient::new(),
         server,
@@ -169,14 +167,14 @@ async fn switchboard() -> (
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
 #[tokio::test]
 async fn monitor_default_models_returns_early_when_switchboard_is_unreachable() {
-    let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     // Nothing is listening on this address - the request fails outright,
     // with no token mock or retry delay needed.
-    unsafe {
-        std::env::set_var("SWITCHBOARD_URL", "http://127.0.0.1:1");
-        std::env::set_var("GATEHOUSE_URL", "http://127.0.0.1:1");
-        std::env::set_var("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
-    }
+    envmnt::set("SWITCHBOARD_URL", "http://127.0.0.1:1");
+    envmnt::set("GATEHOUSE_URL", "http://127.0.0.1:1");
+    envmnt::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
     let sb = sage_service::clients::switchboard::SwitchboardClient::new();
     let cfg = test_config(&["chat"]);
     let mut attempts = HashMap::new();
@@ -189,7 +187,9 @@ async fn monitor_default_models_returns_early_when_switchboard_is_unreachable() 
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
 #[tokio::test]
 async fn monitor_default_models_launches_the_next_missing_model() {
-    let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let (sb, server) = switchboard().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/vllm/instances"))
@@ -215,7 +215,9 @@ async fn monitor_default_models_launches_the_next_missing_model() {
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
 #[tokio::test]
 async fn monitor_default_models_clears_attempts_once_a_model_is_running() {
-    let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let (sb, server) = switchboard().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/vllm/instances"))
@@ -238,7 +240,9 @@ async fn monitor_default_models_clears_attempts_once_a_model_is_running() {
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
 #[tokio::test]
 async fn request_model_launch_records_the_launched_instance() {
-    let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let (sb, server) = switchboard().await;
     Mock::given(method("POST"))
         .and(path("/api/v1/vllm/instances"))
@@ -260,7 +264,9 @@ async fn request_model_launch_records_the_launched_instance() {
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
 #[tokio::test]
 async fn request_model_launch_does_not_panic_when_the_launch_request_fails() {
-    let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let (sb, server) = switchboard().await;
     Mock::given(method("POST"))
         .and(path("/api/v1/vllm/instances"))
@@ -276,13 +282,13 @@ async fn request_model_launch_does_not_panic_when_the_launch_request_fails() {
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
 #[tokio::test]
 async fn shutdown_is_a_no_op_when_stop_models_on_shutdown_is_disabled() {
-    let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     // No mocks registered at all - a real request here would fail the test.
-    unsafe {
-        std::env::set_var("SWITCHBOARD_URL", "http://127.0.0.1:1");
-        std::env::set_var("GATEHOUSE_URL", "http://127.0.0.1:1");
-        std::env::set_var("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
-    }
+    envmnt::set("SWITCHBOARD_URL", "http://127.0.0.1:1");
+    envmnt::set("GATEHOUSE_URL", "http://127.0.0.1:1");
+    envmnt::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
     let sb = sage_service::clients::switchboard::SwitchboardClient::new();
     let mut cfg = test_config(&["chat"]);
     cfg.stop_models_on_shutdown = false;
@@ -294,12 +300,12 @@ async fn shutdown_is_a_no_op_when_stop_models_on_shutdown_is_disabled() {
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
 #[tokio::test]
 async fn shutdown_returns_early_when_switchboard_is_unreachable() {
-    let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
-    unsafe {
-        std::env::set_var("SWITCHBOARD_URL", "http://127.0.0.1:1");
-        std::env::set_var("GATEHOUSE_URL", "http://127.0.0.1:1");
-        std::env::set_var("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
-    }
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    envmnt::set("SWITCHBOARD_URL", "http://127.0.0.1:1");
+    envmnt::set("GATEHOUSE_URL", "http://127.0.0.1:1");
+    envmnt::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
     let sb = sage_service::clients::switchboard::SwitchboardClient::new();
     let mut cfg = test_config(&["chat"]);
     cfg.stop_models_on_shutdown = true;
@@ -311,7 +317,9 @@ async fn shutdown_returns_early_when_switchboard_is_unreachable() {
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
 #[tokio::test]
 async fn shutdown_stops_an_instance_this_process_launched() {
-    let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let (sb, server) = switchboard().await;
     Mock::given(method("POST"))
         .and(path("/api/v1/vllm/instances"))
@@ -348,7 +356,9 @@ async fn shutdown_stops_an_instance_this_process_launched() {
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
 #[tokio::test]
 async fn shutdown_does_not_stop_an_instance_it_never_launched() {
-    let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let (sb, server) = switchboard().await;
     // An instance that started *after* `launched`'s `process_started_at`
     // and that `launched` never recorded - i.e. relaunched by a different

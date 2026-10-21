@@ -29,18 +29,22 @@ pub struct Limit {
 }
 
 impl Limit {
+    #[must_use]
     pub const fn new(max: usize, window_secs: u64) -> Self {
         Self { max, window_secs }
     }
 
+    #[must_use]
     pub const fn per_minute(max: usize) -> Self {
         Self::new(max, 60)
     }
 
+    #[must_use]
     pub const fn per_hour(max: usize) -> Self {
         Self::new(max, 60 * 60)
     }
 
+    #[must_use]
     pub const fn per_day(max: usize) -> Self {
         Self::new(max, 24 * 60 * 60)
     }
@@ -92,8 +96,9 @@ pub enum Verdict {
 }
 
 impl Verdict {
+    #[must_use]
     pub fn is_allowed(self) -> bool {
-        self == Verdict::Allowed
+        self == Self::Allowed
     }
 }
 
@@ -117,6 +122,7 @@ impl RateLimiter {
     }
 
     /// In-process, for tests.
+    #[must_use]
     pub fn in_memory() -> Self {
         Self::new(CacheStore::in_memory())
     }
@@ -207,6 +213,11 @@ fn fingerprint(subject: &str) -> String {
 fn unix_now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
+        .map_or(0, |d| d.as_secs())
+}
+
+impl std::fmt::Debug for RateLimiter {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("RateLimiter { .. }")
+    }
 }

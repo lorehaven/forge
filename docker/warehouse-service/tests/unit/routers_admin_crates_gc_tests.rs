@@ -1,4 +1,5 @@
 use crate::support;
+use std::fmt::Write as _;
 
 use support::WithCratesStorageRoot as WithStorageRoot;
 use warehouse_service::routers::admin::crates::gc::garbage_collect;
@@ -21,9 +22,11 @@ fn write_index(storage: &WithStorageRoot, name: &str, entries: &[(&str, bool)]) 
     std::fs::create_dir_all(&dir).unwrap();
     let mut content = String::new();
     for (version, yanked) in entries {
-        content.push_str(&format!(
+        write!(
+            content,
             r#"{{"name":"{name}","vers":"{version}","yanked":{yanked}}}"#
-        ));
+        )
+        .unwrap();
         content.push('\n');
     }
     std::fs::write(dir.join(name), content).unwrap();
@@ -72,6 +75,7 @@ async fn garbage_collect_deletes_yanked_and_orphaned_tarballs_but_keeps_indexed_
             .join("orphan-crate/1.0.0/orphan-crate-1.0.0.crate")
             .exists()
     );
+    drop(storage);
 }
 
 #[tokio::test]
@@ -87,6 +91,7 @@ async fn garbage_collect_repairs_an_index_entry_whose_tarball_is_missing() {
 
     let report = garbage_collect().await.expect("gc succeeds");
     assert_eq!(report.removed_index_entries, 1);
+    drop(storage);
 }
 
 #[tokio::test]
@@ -100,6 +105,7 @@ async fn garbage_collect_deletes_an_orphaned_owners_json_with_no_index_file() {
     let report = garbage_collect().await.expect("gc succeeds");
     assert_eq!(report.deleted_owner_files, 1);
     assert!(!dir.join("owners.json").exists());
+    drop(storage);
 }
 
 #[tokio::test]
@@ -112,4 +118,5 @@ async fn garbage_collect_on_an_empty_storage_root_reports_nothing() {
     assert_eq!(report.kept_crates, 0);
     assert_eq!(report.removed_index_entries, 0);
     assert_eq!(report.deleted_owner_files, 0);
+    drop(storage);
 }

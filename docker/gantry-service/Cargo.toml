@@ -15,6 +15,9 @@ readme = { workspace = true }
 name = "gantry_service"
 path = "src/lib.rs"
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "gantry-service"
 path = "src/main.rs"

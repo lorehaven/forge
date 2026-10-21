@@ -11,7 +11,7 @@ async fn platform_versions_reports_not_found_when_disabled() {
         .build()
         .await
         .unwrap();
-    let (app, container) = support::app(container).await;
+    let (app, container) = support::app(container);
 
     let resp = app
         .call(support::req(
@@ -31,7 +31,7 @@ async fn program_versions_reports_not_found_when_disabled() {
         .build()
         .await
         .unwrap();
-    let (app, container) = support::app(container).await;
+    let (app, container) = support::app(container);
 
     let resp = app
         .call(support::req(
@@ -51,7 +51,7 @@ async fn catalog_reports_not_found_when_disabled() {
         .build()
         .await
         .unwrap();
-    let (app, container) = support::app(container).await;
+    let (app, container) = support::app(container);
 
     let resp = app
         .call(support::req(Method::GET, "/api/v1/artifacts", &container))

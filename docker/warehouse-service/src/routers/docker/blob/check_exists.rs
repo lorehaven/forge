@@ -24,18 +24,22 @@ pub async fn handle(Path((_repo, digest)): Path<(String, String)>) -> Response {
             "invalid digest",
         );
     };
-    match std::fs::metadata(&blob_path) {
-        Ok(metadata) => Response::new(StatusCode::OK)
-            .header("content-type", "application/octet-stream")
-            .header("docker-content-digest", &digest)
-            .header("content-length", metadata.len().to_string())
-            .header("accept-ranges", "bytes"),
-        Err(_) => error::response(
-            StatusCode::NOT_FOUND,
-            docker_error::BLOB_UNKNOWN,
-            "blob unknown to registry",
-        ),
-    }
+    std::fs::metadata(&blob_path).map_or_else(
+        |_| {
+            error::response(
+                StatusCode::NOT_FOUND,
+                docker_error::BLOB_UNKNOWN,
+                "blob unknown to registry",
+            )
+        },
+        |metadata| {
+            Response::new(StatusCode::OK)
+                .header("content-type", "application/octet-stream")
+                .header("docker-content-digest", &digest)
+                .header("content-length", metadata.len().to_string())
+                .header("accept-ranges", "bytes")
+        },
+    )
 }
 
 #[allow(non_camel_case_types)]

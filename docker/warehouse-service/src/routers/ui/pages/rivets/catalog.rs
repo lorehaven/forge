@@ -10,7 +10,7 @@ use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 use std::collections::BTreeMap;
 
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct RivetActionForm {
     pub name: String,
     pub version: String,
@@ -141,8 +141,7 @@ pub fn render_rivets_page(
     let name = selected_name.filter(|name| tree.contains_key(*name));
     let version_list: &[&RivetPackage] = name
         .and_then(|name| tree.get(name))
-        .map(Vec::as_slice)
-        .unwrap_or(&[]);
+        .map_or(&[], Vec::as_slice);
 
     // Newest *offerable* first: the page opens on what `latest` would give, not on a yanked row.
     let selected = selected_version
@@ -259,81 +258,86 @@ fn render_package_node(
     )
 }
 
-fn render_metadata_panel(selected: Option<&RivetPackage>, can_manage: bool) -> Element {
-    let title = match selected {
-        Some(p) => div()
-            .class("panel-title")
-            .child(span().attr("data-i18n", "ui_metadata_for"))
-            .child(span().text(format!(" {} {}", p.name, p.version))),
-        None => div().class("panel-title").attr("data-i18n", "ui_metadata"),
-    };
+/// Everything known of one published package version, and (to those who may) the way to yank it.
+fn package_details(p: &RivetPackage, can_manage: bool) -> Element {
+    let mut list = div()
+        .class("meta-list")
+        .child(meta_row("ui_rivet_meta_name", &p.name))
+        .child(meta_row("ui_rivet_meta_version", &p.version))
+        .child(meta_row_value(
+            "ui_meta_status",
+            if p.yanked {
+                span().attr("data-i18n", "ui_status_yanked").text("yanked")
+            } else {
+                span().attr("data-i18n", "ui_status_active").text("active")
+            },
+        ));
 
-    let body = match selected {
-        None => empty_state("ui_rivet_empty_select_version"),
-        Some(p) => {
-            let mut list = div()
-                .class("meta-list")
-                .child(meta_row("ui_rivet_meta_name", &p.name))
-                .child(meta_row("ui_rivet_meta_version", &p.version))
-                .child(meta_row_value(
-                    "ui_meta_status",
-                    if p.yanked {
-                        span().attr("data-i18n", "ui_status_yanked").text("yanked")
-                    } else {
-                        span().attr("data-i18n", "ui_status_active").text("active")
-                    },
-                ));
-
-            if let Some(description) = &p.description {
-                list = list.child(meta_row("ui_rivet_meta_description", description));
-            }
-            if let Some(namespace) = &p.namespace {
-                list = list.child(meta_row("ui_rivet_meta_namespace", namespace));
-            }
-            if let Some(riveter) = p.manifest.0["requires"]["riveter"].as_str() {
-                list = list.child(meta_row("ui_rivet_meta_requires_riveter", riveter));
-            }
-            if let Some(required) = p.manifest.0["requires"]["packages"].as_array() {
-                let joined: Vec<&str> = required.iter().filter_map(|v| v.as_str()).collect();
-                if !joined.is_empty() {
-                    list = list.child(meta_row(
-                        "ui_rivet_meta_requires_packages",
-                        &joined.join(", "),
-                    ));
-                }
-            }
-            if let Some(meta) = p.manifest.0["meta"].as_object() {
-                for (key, value) in meta {
-                    let text = value
-                        .as_str()
-                        .map_or_else(|| value.to_string(), str::to_string);
-                    list = list.child(meta_row_label(key, &text));
-                }
-            }
-
-            list = list
-                .child(meta_row(
-                    "ui_artifact_meta_size",
-                    &format!("{} bytes", p.size_bytes),
-                ))
-                .child(meta_row("ui_meta_checksum", &p.sha256))
-                .child(meta_row("ui_rivet_meta_uploaded_by", &p.uploaded_by))
-                .child(meta_row(
-                    "ui_rivet_meta_published",
-                    &p.created_at.format("%Y-%m-%d %H:%M UTC").to_string(),
-                ))
-                .child(meta_row(
-                    "ui_rivet_meta_install",
-                    &format!("riveter install {}@{}", p.name, p.version),
-                ));
-
-            if can_manage {
-                list = list.child(div().class("mt-4").child(yank_form(p)));
-            }
-
-            list
+    if let Some(description) = &p.description {
+        list = list.child(meta_row("ui_rivet_meta_description", description));
+    }
+    if let Some(namespace) = &p.namespace {
+        list = list.child(meta_row("ui_rivet_meta_namespace", namespace));
+    }
+    if let Some(riveter) = p.manifest.0["requires"]["riveter"].as_str() {
+        list = list.child(meta_row("ui_rivet_meta_requires_riveter", riveter));
+    }
+    if let Some(required) = p.manifest.0["requires"]["packages"].as_array() {
+        let joined: Vec<&str> = required.iter().filter_map(|v| v.as_str()).collect();
+        if !joined.is_empty() {
+            list = list.child(meta_row(
+                "ui_rivet_meta_requires_packages",
+                &joined.join(", "),
+            ));
         }
-    };
+    }
+    if let Some(meta) = p.manifest.0["meta"].as_object() {
+        for (key, value) in meta {
+            let text = value
+                .as_str()
+                .map_or_else(|| value.to_string(), str::to_string);
+            list = list.child(meta_row_label(key, &text));
+        }
+    }
+
+    list = list
+        .child(meta_row(
+            "ui_artifact_meta_size",
+            &format!("{} bytes", p.size_bytes),
+        ))
+        .child(meta_row("ui_meta_checksum", &p.sha256))
+        .child(meta_row("ui_rivet_meta_uploaded_by", &p.uploaded_by))
+        .child(meta_row(
+            "ui_rivet_meta_published",
+            &p.created_at.format("%Y-%m-%d %H:%M UTC").to_string(),
+        ))
+        .child(meta_row(
+            "ui_rivet_meta_install",
+            &format!("riveter install {}@{}", p.name, p.version),
+        ));
+
+    if can_manage {
+        list = list.child(div().class("mt-4").child(yank_form(p)));
+    }
+
+    list
+}
+
+fn render_metadata_panel(selected: Option<&RivetPackage>, can_manage: bool) -> Element {
+    let title = selected.map_or_else(
+        || div().class("panel-title").attr("data-i18n", "ui_metadata"),
+        |p| {
+            div()
+                .class("panel-title")
+                .child(span().attr("data-i18n", "ui_metadata_for"))
+                .child(span().text(format!(" {} {}", p.name, p.version)))
+        },
+    );
+
+    let body = selected.map_or_else(
+        || empty_state("ui_rivet_empty_select_version"),
+        |p| package_details(p, can_manage),
+    );
 
     div()
         .class("h-100 d-flex flex-column")

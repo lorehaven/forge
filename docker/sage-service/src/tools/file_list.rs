@@ -3,7 +3,9 @@ use crate::files::STATUS_READY;
 use crate::tools::{ToolCall, ToolDefinition, ToolExecutor, ToolParameters, ToolResult};
 use quench_db::prelude::{Crud, Db};
 use quench_starter::prelude::human_bytes;
+use std::fmt::Write as _;
 
+#[must_use]
 pub fn get_definition() -> ToolDefinition {
     ToolDefinition {
         name: "file_list".to_string(),
@@ -27,6 +29,7 @@ pub fn get_definition() -> ToolDefinition {
     }
 }
 
+#[derive(Debug)]
 pub struct FileListExecutor {
     db: Db,
     conversation_id: Option<String>,
@@ -36,7 +39,8 @@ pub struct FileListExecutor {
 }
 
 impl FileListExecutor {
-    pub fn new(db: Db, conversation_id: Option<String>, project_id: Option<String>) -> Self {
+    #[must_use]
+    pub const fn new(db: Db, conversation_id: Option<String>, project_id: Option<String>) -> Self {
         Self {
             db,
             conversation_id,
@@ -59,7 +63,7 @@ impl ToolExecutor for FileListExecutor {
         let ready_only = tool_call
             .arguments
             .get("ready_only")
-            .and_then(|v| v.as_bool())
+            .and_then(serde_json::Value::as_bool)
             .unwrap_or(false);
 
         // Prefer the conversation's view (its own files plus its project's); fall back to the
@@ -86,7 +90,7 @@ impl ToolExecutor for FileListExecutor {
             Err(e) => {
                 return ToolResult {
                     tool_use_id: tool_call.id.clone(),
-                    content: format!("Failed to load conversation: {}", e),
+                    content: format!("Failed to load conversation: {e}"),
                     is_error: true,
                 };
             }
@@ -97,7 +101,7 @@ impl ToolExecutor for FileListExecutor {
             Err(e) => {
                 return ToolResult {
                     tool_use_id: tool_call.id.clone(),
-                    content: format!("Failed to list files: {}", e),
+                    content: format!("Failed to list files: {e}"),
                     is_error: true,
                 };
             }
@@ -119,13 +123,14 @@ impl ToolExecutor for FileListExecutor {
 
         let mut content = format!("{} uploaded file(s):\n\n", files.len());
         for file in &files {
-            content.push_str(&format!(
-                "- {} ({}, {}) — {}\n",
+            let _ = writeln!(
+                content,
+                "- {} ({}, {}) — {}",
                 file.file_name,
                 file.mime_type,
                 human_bytes(file.file_size),
                 file.status
-            ));
+            );
         }
         content.push_str("\nUse the file_search tool to search the content of the ready files.");
 

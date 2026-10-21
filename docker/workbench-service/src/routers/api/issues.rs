@@ -12,7 +12,7 @@ use quench_http::prelude::{
 };
 use serde::Deserialize;
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct CreateIssue {
     #[serde(default)]
     pub parent_id: Option<String>,
@@ -69,7 +69,7 @@ pub async fn create(
     Ok(json_created(&issue))
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ListQuery {
     #[serde(default)]
     pub status: Option<String>,
@@ -117,7 +117,7 @@ pub async fn read(
     Ok(json_ok(&issue))
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct UpdateIssue {
     pub title: String,
     #[serde(default)]
@@ -162,13 +162,13 @@ pub async fn update(
         estimate: body.estimate,
     };
 
-    match issue::update(&db, &id, &changes).await? {
-        Some(issue) => Ok(json_ok(&issue)),
-        None => Ok(json_error(StatusCode::NOT_FOUND, "no such issue")),
-    }
+    issue::update(&db, &id, &changes).await?.map_or_else(
+        || Ok(json_error(StatusCode::NOT_FOUND, "no such issue")),
+        |issue| Ok(json_ok(&issue)),
+    )
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct Transition {
     pub status: String,
 }
@@ -203,10 +203,12 @@ pub async fn transition(
         ));
     }
 
-    match issue::transition(&db, &id, &body.status).await? {
-        Some(issue) => Ok(json_ok(&issue)),
-        None => Ok(json_error(StatusCode::NOT_FOUND, "no such issue")),
-    }
+    issue::transition(&db, &id, &body.status)
+        .await?
+        .map_or_else(
+            || Ok(json_error(StatusCode::NOT_FOUND, "no such issue")),
+            |issue| Ok(json_ok(&issue)),
+        )
 }
 
 #[delete("/api/v1/issues/{id}")]
@@ -227,9 +229,10 @@ pub async fn remove(
         ));
     }
 
-    match issue::delete(&db, &id).await? {
-        true => Ok(Response::new(StatusCode::NO_CONTENT)),
-        false => Ok(json_error(StatusCode::NOT_FOUND, "no such issue")),
+    if issue::delete(&db, &id).await? {
+        Ok(Response::new(StatusCode::NO_CONTENT))
+    } else {
+        Ok(json_error(StatusCode::NOT_FOUND, "no such issue"))
     }
 }
 

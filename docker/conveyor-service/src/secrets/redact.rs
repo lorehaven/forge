@@ -29,15 +29,18 @@ impl Redactor {
     }
 
     /// A redactor with nothing to hide, for a job that declared no secrets.
+    #[must_use]
     pub fn none() -> Self {
         Self::default()
     }
 
-    pub fn is_empty(&self) -> bool {
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
         self.values.is_empty()
     }
 
     /// Replaces every occurrence of every value.
+    #[must_use]
     pub fn apply(&self, line: &str) -> String {
         if self.values.is_empty() {
             return line.to_string();
@@ -54,6 +57,7 @@ impl Redactor {
 
     /// Whether any value survives in `line`. Used by the tests, and cheap
     /// enough to assert with.
+    #[must_use]
     pub fn leaks(&self, line: &str) -> bool {
         self.values
             .iter()

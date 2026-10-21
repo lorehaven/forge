@@ -22,6 +22,7 @@ pub enum ModelState {
 
 /// Resolve a model's state from switchboard's instances; if more than one matches (e.g. a
 /// stale failed one alongside a fresh starting one), the healthiest state wins.
+#[must_use]
 pub fn model_state(model: &DefaultModel, instances: &[VllmInstance]) -> ModelState {
     let mut state = ModelState::Pending;
     for inst in instances.iter().filter(|i| i.model == model.name) {
@@ -46,6 +47,7 @@ pub fn model_state(model: &DefaultModel, instances: &[VllmInstance]) -> ModelSta
 }
 
 /// True when every configured default model has a running instance; gates the home page and the initializing screen.
+#[must_use]
 pub fn all_models_running(defaults: &[DefaultModel], instances: &[VllmInstance]) -> bool {
     defaults
         .iter()
@@ -53,10 +55,11 @@ pub fn all_models_running(defaults: &[DefaultModel], instances: &[VllmInstance])
 }
 
 /// Human-friendly label for a model, tagging embedding models so it's obvious why a non-chat model is in the list.
+#[must_use]
 pub fn model_label(model: &DefaultModel) -> Element {
     let name = span().text(&model.name);
     match model.task.as_deref() {
-        Some("embed") | Some("embedding") => span().child(name).child(
+        Some("embed" | "embedding") => span().child(name).child(
             span()
                 .attr("data-i18n", "ui_init_embedding_tag")
                 .text(" (embedding)"),
@@ -66,7 +69,8 @@ pub fn model_label(model: &DefaultModel) -> Element {
 }
 
 /// (icon class, status text, i18n key, css modifier) for a model state.
-pub fn state_presentation(
+#[must_use]
+pub const fn state_presentation(
     state: ModelState,
 ) -> (&'static str, &'static str, &'static str, &'static str) {
     match state {
@@ -99,6 +103,7 @@ pub fn state_presentation(
 }
 
 /// Render the model status rows; shared between the full-page render and the polling fragment so markup stays identical.
+#[must_use]
 pub fn render_model_rows(
     defaults: &[DefaultModel],
     instances_res: &anyhow::Result<Vec<VllmInstance>>,
@@ -106,15 +111,16 @@ pub fn render_model_rows(
     let mut rows = div().class("model-rows");
 
     for model in defaults {
-        let state = match instances_res {
-            Ok(instances) => model_state(model, instances),
-            Err(_) => ModelState::Unknown,
-        };
+        let state = instances_res
+            .as_ref()
+            .map_or(ModelState::Unknown, |instances| {
+                model_state(model, instances)
+            });
         let (icon, label_text, label_key, modifier) = state_presentation(state);
 
         rows = rows.child(
             div()
-                .class(format!("model-row model-row--{}", modifier))
+                .class(format!("model-row model-row--{modifier}"))
                 .child(
                     div()
                         .class("model-row-name")
@@ -123,7 +129,7 @@ pub fn render_model_rows(
                 )
                 .child(
                     div()
-                        .class(format!("model-status model-status--{}", modifier))
+                        .class(format!("model-status model-status--{modifier}"))
                         .child(i().class(icon))
                         .child(span().attr("data-i18n", label_key).text(label_text)),
                 ),
@@ -133,6 +139,7 @@ pub fn render_model_rows(
     rows
 }
 
+#[must_use]
 pub fn render_initializing_page(
     defaults: &[DefaultModel],
     instances_res: &anyhow::Result<Vec<VllmInstance>>,

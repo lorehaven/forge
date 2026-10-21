@@ -169,7 +169,7 @@ fn the_follow_projects_panel_lists_projects_by_path_and_is_omitted_when_empty() 
 
     assert!(follow_projects_panel(&[], &all, &HashSet::new()).is_none());
 
-    let followed: HashSet<&str> = ["child-1"].into_iter().collect();
+    let followed: HashSet<&str> = std::iter::once("child-1").collect();
     let html = follow_projects_panel(&[&root, &child], &all, &followed)
         .expect("a panel")
         .render();

@@ -16,6 +16,7 @@ const MAX_LIST_PAGE_SIZE: usize = 2000;
 
 /// Base `Link` target before `pagination::next_link` appends `n`/`last`;
 /// `prefix`/`desc` must survive onto the next page too.
+#[must_use]
 pub fn list_path(storage_name: &str, prefix: &str, desc: bool) -> String {
     let mut path = format!(
         "/api/v1/files/{}?prefix={}",
@@ -28,7 +29,7 @@ pub fn list_path(storage_name: &str, prefix: &str, desc: bool) -> String {
     path
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct StorageSummary {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -41,14 +42,14 @@ pub struct StorageSummary {
     pub sync_enabled: Option<bool>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct Listing {
     pub storage: String,
     pub prefix: String,
     pub entries: Vec<Entry>,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Debug, Serialize, Clone)]
 pub struct Entry {
     pub name: String,
     pub path: String,
@@ -144,7 +145,7 @@ async fn dynamic_entries(
         &storage.name,
         &prefix,
         query.last.as_deref(),
-        limit as i64 + 1,
+        i64::try_from(limit).unwrap_or(i64::MAX).saturating_add(1),
         query.desc,
     )
     .await
@@ -173,7 +174,7 @@ async fn dynamic_entries(
                 name,
                 path: file.path,
                 kind: "file",
-                size: Some(file.size as u64),
+                size: Some(file.size.cast_unsigned()),
             }
         })
         .collect();
@@ -228,9 +229,8 @@ async fn static_entries(
         return error(StatusCode::FORBIDDEN, "prefix resolves outside the storage");
     }
 
-    let mut reader = match tokio::fs::read_dir(&directory).await {
-        Ok(reader) => reader,
-        Err(_) => return not_found("no such directory"),
+    let Ok(mut reader) = tokio::fs::read_dir(&directory).await else {
+        return not_found("no such directory");
     };
 
     let mut entry_list = Vec::new();
@@ -239,7 +239,11 @@ async fn static_entries(
         let name = entry.file_name().to_string_lossy().to_string();
 
         // Staging files an interrupted upload leaves behind aren't content.
-        if name.starts_with('.') && name.ends_with(".part") {
+        if name.starts_with('.')
+            && std::path::Path::new(&name)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("part"))
+        {
             continue;
         }
 

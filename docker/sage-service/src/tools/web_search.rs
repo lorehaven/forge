@@ -4,6 +4,7 @@ use super::{
 use serde_json::json;
 use std::sync::Arc;
 
+#[must_use]
 pub fn get_definition() -> ToolDefinition {
     ToolDefinition {
         name: "web_search".to_string(),
@@ -22,12 +23,14 @@ pub fn get_definition() -> ToolDefinition {
     }
 }
 
+#[derive(Debug)]
 pub struct WebSearchExecutor {
     provider_registry: Arc<SearchProviderRegistry>,
     default_provider: String,
 }
 
 impl WebSearchExecutor {
+    #[must_use]
     pub fn new(provider_registry: Arc<SearchProviderRegistry>) -> Self {
         Self {
             provider_registry,
@@ -35,6 +38,7 @@ impl WebSearchExecutor {
         }
     }
 
+    #[must_use]
     pub fn with_default_provider(mut self, provider: String) -> Self {
         self.default_provider = provider;
         self
@@ -69,7 +73,7 @@ impl ToolExecutor for WebSearchExecutor {
             },
             Err(e) => ToolResult {
                 tool_use_id: tool_call.id.clone(),
-                content: format!("Web search failed: {}", e),
+                content: format!("Web search failed: {e}"),
                 is_error: true,
             },
         }

@@ -12,6 +12,7 @@ pub const STATUS_FAILED: &str = "failed";
 
 /// Whether a stored file is an image attachment; images skip the text extraction/RAG pipeline
 /// and are sent to vision models as content parts of the message they're attached to.
+#[must_use]
 pub fn is_image_mime(mime: &str) -> bool {
     mime.starts_with("image/")
 }

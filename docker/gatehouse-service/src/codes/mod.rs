@@ -46,6 +46,7 @@ impl Model for AuthorizationCodeRow {
 }
 
 impl AuthorizationCodeRow {
+    #[must_use]
     pub fn is_usable(&self, now: DateTime<Utc>) -> bool {
         self.consumed_at.is_none() && self.expires_at > now
     }

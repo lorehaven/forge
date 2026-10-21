@@ -23,7 +23,7 @@ async fn app() -> (
 ) {
     register_routes();
     let container = support::container_builder().build().await.unwrap();
-    support::app(container).await
+    support::app(container)
 }
 
 #[tokio::test]

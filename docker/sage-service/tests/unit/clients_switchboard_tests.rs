@@ -31,18 +31,18 @@ async fn mock_switchboard() -> MockServer {
         .mount(&server)
         .await;
 
-    unsafe {
-        std::env::set_var("SWITCHBOARD_URL", server.uri());
-        std::env::set_var("GATEHOUSE_URL", server.uri());
-        std::env::set_var("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
-    }
+    envmnt::set("SWITCHBOARD_URL", server.uri());
+    envmnt::set("GATEHOUSE_URL", server.uri());
+    envmnt::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
     server
 }
 
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
 #[tokio::test]
 async fn get_vllm_instances_parses_a_successful_response() {
-    let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let server = mock_switchboard().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/vllm/instances"))
@@ -75,7 +75,9 @@ async fn get_vllm_instances_parses_a_successful_response() {
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
 #[tokio::test]
 async fn get_vllm_instances_errors_when_the_token_exchange_is_refused() {
-    let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/api/v1/token"))
@@ -83,12 +85,9 @@ async fn get_vllm_instances_errors_when_the_token_exchange_is_refused() {
         .mount(&server)
         .await;
 
-    unsafe {
-        std::env::set_var("SWITCHBOARD_URL", server.uri());
-        std::env::set_var("GATEHOUSE_URL", server.uri());
-        std::env::set_var("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
-    }
-
+    envmnt::set("SWITCHBOARD_URL", server.uri());
+    envmnt::set("GATEHOUSE_URL", server.uri());
+    envmnt::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
     let client = SwitchboardClient::new();
     assert!(client.get_vllm_instances().await.is_err());
 }
@@ -96,7 +95,9 @@ async fn get_vllm_instances_errors_when_the_token_exchange_is_refused() {
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
 #[tokio::test]
 async fn stop_instance_succeeds_against_a_mocked_delete() {
-    let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let server = mock_switchboard().await;
     Mock::given(method("DELETE"))
         .and(path("/api/v1/vllm/instances/inst-1"))
@@ -111,7 +112,9 @@ async fn stop_instance_succeeds_against_a_mocked_delete() {
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
 #[tokio::test]
 async fn launch_instance_parses_the_created_instance() {
-    let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let server = mock_switchboard().await;
     Mock::given(method("POST"))
         .and(path("/api/v1/vllm/instances"))

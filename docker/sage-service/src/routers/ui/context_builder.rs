@@ -16,7 +16,7 @@ pub async fn build_conversation_context(
     let messages = msg_repo
         .list()
         .await
-        .map_err(|e| format!("Failed to fetch messages: {}", e))?;
+        .map_err(|e| format!("Failed to fetch messages: {e}"))?;
 
     // Filter messages for this conversation
     let mut conv_messages: Vec<_> = messages
@@ -32,8 +32,7 @@ pub async fn build_conversation_context(
         // Parse created_at from ISO 8601 string
         let created_at = chrono::DateTime::parse_from_rfc3339(&msg.created_at)
             .ok()
-            .map(|dt| dt.with_timezone(&chrono::Utc))
-            .unwrap_or_else(chrono::Utc::now);
+            .map_or_else(chrono::Utc::now, |dt| dt.with_timezone(&chrono::Utc));
 
         let conv_msg = ConversationMessage {
             id: msg.id,
@@ -49,6 +48,7 @@ pub async fn build_conversation_context(
 }
 
 /// Get context messages for LLM with token budgeting
+#[must_use]
 pub fn get_context_for_llm(
     ctx: &ConversationContext,
     system_prompt: &str,
@@ -81,6 +81,7 @@ pub struct TokenUsageInfo {
 }
 
 impl TokenUsageInfo {
+    #[must_use]
     pub fn format_display(&self) -> String {
         format!(
             "Tokens: {}/{} ({:.1}%) | Messages: {} | System: {}",
@@ -92,6 +93,7 @@ impl TokenUsageInfo {
         )
     }
 
+    #[must_use]
     pub fn warning_message(&self) -> Option<String> {
         if self.at_limit {
             Some("⚠️ Context window at capacity - consider starting a new conversation".to_string())
@@ -102,6 +104,7 @@ impl TokenUsageInfo {
         }
     }
 
+    #[must_use]
     pub fn to_json(&self) -> serde_json::Value {
         serde_json::json!({
             "total_messages": self.total_messages,

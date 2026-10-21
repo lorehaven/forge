@@ -8,7 +8,7 @@ async fn app() -> (
 ) {
     warehouse_service::routers::docker::blob::get_upload_status::register_routes();
     let container = support::container_builder().build().await.unwrap();
-    support::app(container).await
+    support::app(container)
 }
 
 #[tokio::test]
@@ -57,6 +57,7 @@ async fn handle_reports_a_zero_range_for_an_empty_upload() {
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
     let (headers, _) = support::parts(resp).await;
     assert_eq!(headers.get("range").unwrap(), "0-0");
+    drop(storage);
 }
 
 #[tokio::test]
@@ -77,4 +78,5 @@ async fn handle_reports_the_written_range_for_a_partial_upload() {
     let (headers, _) = support::parts(resp).await;
     assert_eq!(headers.get("range").unwrap(), "0-4");
     assert_eq!(headers.get("docker-upload-uuid").unwrap(), "upload-1");
+    drop(storage);
 }

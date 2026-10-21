@@ -36,15 +36,18 @@ impl Model for ClientRow {
 }
 
 impl ClientRow {
+    #[must_use]
     pub fn secret_matches(&self, candidate: &str) -> bool {
         self.secret_hash == hash_secret(candidate)
     }
 
+    #[must_use]
     pub fn redirect_uri_matches(&self, candidate: &str) -> bool {
         self.redirect_uris.iter().any(|uri| uri == candidate)
     }
 }
 
+#[must_use]
 pub fn hash_secret(secret: &str) -> String {
     hex::encode(Sha256::digest(secret.as_bytes()))
 }
@@ -87,17 +90,18 @@ pub async fn seed_clients(db: &Db) -> anyhow::Result<()> {
         }
 
         let redirect_uris = match &entry.redirect_path {
-            Some(path) => match redirect_base_url(&entry.client_id) {
-                Some(base) => vec![format!("{base}{path}")],
-                None => {
+            Some(path) => {
+                if let Some(base) = redirect_base_url(&entry.client_id) {
+                    vec![format!("{base}{path}")]
+                } else {
                     tracing::warn!(
                         "no <PREFIX>_UI_URL/<PREFIX>_URL configured for client '{}': it has no \
-                         redirect_uri, so the authorization-code flow will reject it",
+                     redirect_uri, so the authorization-code flow will reject it",
                         entry.client_id
                     );
                     vec![]
                 }
-            },
+            }
             None => vec![],
         };
 
@@ -126,6 +130,7 @@ pub async fn upsert(repo: &Repository<ClientRow>, row: ClientRow) -> anyhow::Res
 }
 
 /// `<PREFIX>_UI_URL`/`<PREFIX>_URL`, with any trailing `/ui/home` trimmed.
+#[must_use]
 pub fn redirect_base_url(client_id: &str) -> Option<String> {
     let prefix = client_id.to_uppercase().replace('-', "_");
     for key in [format!("{prefix}_UI_URL"), format!("{prefix}_URL")] {

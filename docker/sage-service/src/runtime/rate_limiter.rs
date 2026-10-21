@@ -10,7 +10,8 @@ pub struct RateLimitConfig {
 }
 
 impl RateLimitConfig {
-    pub fn new(calls_per_minute: u64, burst_limit: u64) -> Self {
+    #[must_use]
+    pub const fn new(calls_per_minute: u64, burst_limit: u64) -> Self {
         Self {
             calls_per_minute,
             burst_limit,
@@ -18,6 +19,7 @@ impl RateLimitConfig {
     }
 }
 
+#[derive(Debug)]
 pub struct RateLimiter {
     // Profile -> Config
     configs: std::collections::HashMap<String, RateLimitConfig>,
@@ -28,6 +30,7 @@ pub struct RateLimiter {
 }
 
 impl RateLimiter {
+    #[must_use]
     pub fn new() -> Self {
         let mut configs = std::collections::HashMap::new();
 
@@ -65,7 +68,7 @@ impl RateLimiter {
             .unwrap_or_else(|| RateLimitConfig::new(60, 15));
 
         let now = Instant::now();
-        let minute_ago = now - Duration::from_secs(60);
+        let minute_ago = now.checked_sub(Duration::from_secs(60)).unwrap();
 
         // Check user rate limit
         if let Some(user_id) = user_id {
@@ -81,7 +84,7 @@ impl RateLimiter {
             }
 
             // Check if we've exceeded the limit
-            if calls.len() >= config.calls_per_minute as usize {
+            if calls.len() >= usize::try_from(config.calls_per_minute).unwrap_or(usize::MAX) {
                 return Err(RateLimitError::UserRateLimitExceeded {
                     limit: config.calls_per_minute,
                     user_id: user_id.to_string(),
@@ -108,7 +111,7 @@ impl RateLimiter {
             }
 
             // Check burst limit
-            if calls.len() >= config.burst_limit as usize {
+            if calls.len() >= usize::try_from(config.burst_limit).unwrap_or(usize::MAX) {
                 return Err(RateLimitError::BurstLimitExceeded {
                     limit: config.burst_limit,
                     conversation_id: conversation_id.to_string(),
@@ -125,6 +128,7 @@ impl RateLimiter {
         self.configs.insert(profile.to_string(), config);
     }
 
+    #[must_use]
     pub fn get_config(&self, profile: &str) -> Option<RateLimitConfig> {
         self.configs.get(profile).cloned()
     }
@@ -142,6 +146,7 @@ impl RateLimiter {
         self.conversation_calls.clear();
     }
 
+    #[must_use]
     pub fn get_user_remaining_calls(&self, profile: &str, user_id: &str) -> u64 {
         let config = self
             .configs
@@ -149,15 +154,12 @@ impl RateLimiter {
             .cloned()
             .unwrap_or_else(|| RateLimitConfig::new(60, 15));
 
-        let calls = self
-            .user_calls
-            .get(user_id)
-            .map(|c| c.len() as u64)
-            .unwrap_or(0);
+        let calls = self.user_calls.get(user_id).map_or(0, |c| c.len() as u64);
 
         config.calls_per_minute.saturating_sub(calls)
     }
 
+    #[must_use]
     pub fn get_conversation_remaining_calls(&self, profile: &str, conversation_id: &str) -> u64 {
         let config = self
             .configs
@@ -168,8 +170,7 @@ impl RateLimiter {
         let calls = self
             .conversation_calls
             .get(conversation_id)
-            .map(|c| c.len() as u64)
-            .unwrap_or(0);
+            .map_or(0, |c| c.len() as u64);
 
         config.burst_limit.saturating_sub(calls)
     }
@@ -190,21 +191,19 @@ pub enum RateLimitError {
 impl std::fmt::Display for RateLimitError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            RateLimitError::UserRateLimitExceeded { limit, user_id } => {
+            Self::UserRateLimitExceeded { limit, user_id } => {
                 write!(
                     f,
-                    "User '{}' has exceeded rate limit of {} calls per minute",
-                    user_id, limit
+                    "User '{user_id}' has exceeded rate limit of {limit} calls per minute"
                 )
             }
-            RateLimitError::BurstLimitExceeded {
+            Self::BurstLimitExceeded {
                 limit,
                 conversation_id,
             } => {
                 write!(
                     f,
-                    "Conversation '{}' has exceeded burst limit of {} concurrent calls",
-                    conversation_id, limit
+                    "Conversation '{conversation_id}' has exceeded burst limit of {limit} concurrent calls"
                 )
             }
         }

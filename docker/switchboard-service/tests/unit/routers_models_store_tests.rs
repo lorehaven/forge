@@ -52,7 +52,7 @@ async fn insert_model_twice_updates_rather_than_duplicating() {
     let all = store.get_all_models().await;
     let matching: Vec<_> = all.iter().filter(|m| m.path == model.path).collect();
     assert_eq!(matching.len(), 1);
-    assert_eq!(matching[0].params_billion, 13.0);
+    assert!((matching[0].params_billion - 13.0).abs() < 1e-6);
 }
 
 #[tokio::test]

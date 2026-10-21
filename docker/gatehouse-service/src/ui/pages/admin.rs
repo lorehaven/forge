@@ -8,7 +8,7 @@ use crate::invites;
 use crate::notices;
 use crate::realm::{self, RealmError, UserChanges};
 use crate::tokens::VerificationTokens;
-use crate::ui::common::{UiPageKind, render_page, ui_path};
+use crate::ui::common::{FormFields, UiPageKind, render_page, ui_path};
 use async_trait::async_trait;
 use http::StatusCode;
 use quench_auth::domain::auth::{Actions, Permissions, Role, User};
@@ -41,7 +41,7 @@ impl AttrIf for Element {
 }
 
 /// Feedback carried across the redirect that follows every write.
-#[derive(Deserialize, Default)]
+#[derive(Debug, Deserialize, Default)]
 pub struct Notice {
     /// A `RealmError` translation key, validated before it reaches the page.
     #[serde(default)]
@@ -56,6 +56,7 @@ pub struct Notice {
 /// One extractor per catalog action - a route without a gate won't compile.
 macro_rules! admin_actor {
     ($name:ident, $action:literal) => {
+        #[derive(Debug)]
         pub enum $name {
             Yes(Claims),
             NotSignedIn,
@@ -142,15 +143,15 @@ pub async fn edit_user(
         Err(response) => return response,
     };
 
-    match realm::get(&db, &username).await {
-        Ok(user) => render_edit(&catalog, &user, &actor, &notice),
-        Err(_) => back_to_list(&RealmError::NotFound),
-    }
+    realm::get(&db, &username).await.map_or_else(
+        |_| back_to_list(&RealmError::NotFound),
+        |user| render_edit(&catalog, &user, &actor, &notice),
+    )
 }
 
 // --- Forms ---
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct CreateForm {
     pub username: String,
     /// Optional when an email address is given: that account is invited instead.
@@ -292,7 +293,7 @@ pub async fn resend_invite(
 pub async fn save_user(
     actor: EditUserActor,
     Path(username): Path<String>,
-    Form(form): Form<HashMap<String, String>>,
+    Form(form): Form<FormFields>,
     Inject(catalog): Inject<PermissionCatalog>,
     Inject(db): Inject<Db>,
     Inject(sessions): Inject<SessionDb>,
@@ -361,7 +362,7 @@ pub async fn save_user(
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ApplyTemplateForm {
     pub template: String,
 }
@@ -502,8 +503,7 @@ pub async fn disable_user_mfa(
     // Only worth a notice if it was actually on.
     let was_on = realm::get(&db, &username)
         .await
-        .map(|user| user.mfa_enabled)
-        .unwrap_or(false);
+        .is_ok_and(|user| user.mfa_enabled);
     match realm::disable_mfa(&db, &username).await {
         Ok(()) => {
             if was_on {
@@ -520,9 +520,9 @@ pub async fn disable_user_mfa(
 
 /// Reads catalog-declared checkboxes, then folds in whatever `existing` held
 /// with no checkbox (e.g. an API-only resource-scoped grant) so it survives.
-pub fn permissions_from_form(
+pub fn permissions_from_form<S: std::hash::BuildHasher>(
     catalog: &PermissionCatalog,
-    form: &HashMap<String, String>,
+    form: &HashMap<String, String, S>,
     existing: &Permissions,
 ) -> Permissions {
     let mut result: Permissions = catalog
@@ -666,6 +666,7 @@ pub fn user_row(user: &User, actor: &str) -> Element {
 
 /// `show_role_select` is true only for a literal admin - anyone else's role
 /// is forced server-side regardless, so the field's absence avoids a 403.
+#[must_use]
 pub fn create_panel(show_role_select: bool) -> Element {
     let mut create_form = form()
         .attr("method", "post")
@@ -743,33 +744,9 @@ pub fn create_panel(show_role_select: bool) -> Element {
         .child(div().class("meta-list").child(create_form))
 }
 
-pub fn render_edit(
-    catalog: &PermissionCatalog,
-    user: &User,
-    actor: &Claims,
-    notice: &Notice,
-) -> Response {
-    let wildcard = user.has_wildcard();
-    let held = user.get_permissions();
-    let actor_is_admin = actor.has_role(Role::Admin.as_str());
-    let can_edit = actor.can("gatehouse", "edit-user");
-    let can_delete = actor.can("gatehouse", "delete-user");
-    let can_manage_perms = actor.can("gatehouse", "manage-permissions");
-
-    // Disabled, not omitted, for a wildcard target or a read-only viewer.
-    let matrix_disabled = wildcard || !can_edit;
-    let mut matrix = div().class("admin-matrix");
-    for service in catalog.service_names() {
-        matrix = matrix.child(permission_row(
-            catalog,
-            service,
-            held.get(service),
-            wildcard,
-            matrix_disabled,
-        ));
-    }
-
-    let role_row = if actor_is_admin {
+/// The role control: a select for an admin, plain text for anyone else.
+fn role_row(user: &User, actor_is_admin: bool) -> Element {
+    if actor_is_admin {
         div()
             .child(
                 label()
@@ -787,9 +764,20 @@ pub fn render_edit(
                     .attr("data-i18n", "ui_admin_role"),
             )
             .child(span().attr("id", "role").text(primary_role(user).as_str()))
-    };
+    }
+}
 
-    let details = if can_edit {
+/// The user's panel: an edit form, or the same information with no form for a read-only viewer.
+fn details_panel(
+    catalog: &PermissionCatalog,
+    user: &User,
+    can_edit: bool,
+    can_manage_perms: bool,
+    role_row: Element,
+    matrix: Element,
+) -> Element {
+    let wildcard = user.has_wildcard();
+    if can_edit {
         let mut edit_form = form()
             .attr("method", "post")
             .attr(
@@ -859,43 +847,77 @@ pub fn render_edit(
                     )
                     .child(matrix),
             )
-    };
+    }
+}
+
+/// No self-delete control is shown (the caller decides): the realm would refuse it anyway.
+fn delete_panel(user: &User) -> Element {
+    div()
+        .class("panel admin-panel admin-danger")
+        .child(
+            div()
+                .class("panel-title")
+                .attr("data-i18n", "ui_admin_delete_title"),
+        )
+        .child(
+            div().class("meta-list").child(
+                form()
+                    .attr("method", "post")
+                    .attr(
+                        "action",
+                        ui_path(&format!(
+                            "/admin/users/{}/delete",
+                            urlencoding::encode(&user.username)
+                        )),
+                    )
+                    .child(
+                        p().class("admin-hint")
+                            .attr("data-i18n", "ui_admin_delete_hint"),
+                    )
+                    .child(
+                        button()
+                            .attr("type", "submit")
+                            .class("admin-delete")
+                            .attr("data-i18n", "ui_admin_delete"),
+                    ),
+            ),
+        )
+}
+
+#[must_use]
+pub fn render_edit(
+    catalog: &PermissionCatalog,
+    user: &User,
+    actor: &Claims,
+    notice: &Notice,
+) -> Response {
+    let wildcard = user.has_wildcard();
+    let held = user.get_permissions();
+    let actor_is_admin = actor.has_role(Role::Admin.as_str());
+    let can_edit = actor.can("gatehouse", "edit-user");
+    let can_delete = actor.can("gatehouse", "delete-user");
+    let can_manage_perms = actor.can("gatehouse", "manage-permissions");
+
+    // Disabled, not omitted, for a wildcard target or a read-only viewer.
+    let matrix_disabled = wildcard || !can_edit;
+    let mut matrix = div().class("admin-matrix");
+    for service in catalog.service_names() {
+        matrix = matrix.child(permission_row(
+            catalog,
+            service,
+            held.get(service),
+            wildcard,
+            matrix_disabled,
+        ));
+    }
+
+    let role_row = role_row(user, actor_is_admin);
+
+    let details = details_panel(catalog, user, can_edit, can_manage_perms, role_row, matrix);
 
     let status = status_panel(user, can_edit, user.username != actor.sub);
 
-    // No self-delete control: the realm would refuse it anyway.
-    let danger = (can_delete && user.username != actor.sub).then(|| {
-        div()
-            .class("panel admin-panel admin-danger")
-            .child(
-                div()
-                    .class("panel-title")
-                    .attr("data-i18n", "ui_admin_delete_title"),
-            )
-            .child(
-                div().class("meta-list").child(
-                    form()
-                        .attr("method", "post")
-                        .attr(
-                            "action",
-                            ui_path(&format!(
-                                "/admin/users/{}/delete",
-                                urlencoding::encode(&user.username)
-                            )),
-                        )
-                        .child(
-                            p().class("admin-hint")
-                                .attr("data-i18n", "ui_admin_delete_hint"),
-                        )
-                        .child(
-                            button()
-                                .attr("type", "submit")
-                                .class("admin-delete")
-                                .attr("data-i18n", "ui_admin_delete"),
-                        ),
-                ),
-            )
-    });
+    let danger = (can_delete && user.username != actor.sub).then(|| delete_panel(user));
 
     render_page(
         StatusCode::OK,
@@ -918,6 +940,7 @@ pub fn render_edit(
 
 /// Lifecycle/security state, plus the "an admin can undo this" actions - the
 /// latter omitted, not disabled, for a viewer who can't edit.
+#[must_use]
 pub fn status_panel(user: &User, can_edit: bool, allow_self_action: bool) -> Element {
     let mut rows = div()
         .class("meta-list")
@@ -925,111 +948,25 @@ pub fn status_panel(user: &User, can_edit: bool, allow_self_action: bool) -> Ele
             "ui_admin_status_created",
             &format_timestamp(Some(user.created_at)),
         ))
-        .child(match user.last_login_at {
-            Some(ts) => status_row("ui_admin_status_last_login", &format_timestamp(Some(ts))),
-            None => div()
-                .class("admin-status-row")
-                .child(
-                    span()
-                        .class("admin-hint")
-                        .attr("data-i18n", "ui_admin_status_last_login"),
-                )
-                .child(span().attr("data-i18n", "ui_admin_status_never")),
-        });
-
-    if can_edit {
-        rows = rows.child(status_action_row(
-            "ui_admin_status_disabled",
-            user.is_disabled(),
-            "ui_admin_status_yes",
-            "ui_admin_status_no",
-            allow_self_action.then(|| {
-                mfa_action_form(
-                    &user.username,
-                    if user.is_disabled() {
-                        "enable"
-                    } else {
-                        "disable"
-                    },
-                    if user.is_disabled() {
-                        "ui_admin_action_enable"
-                    } else {
-                        "ui_admin_action_disable"
-                    },
-                )
-            }),
+        .child(user.last_login_at.map_or_else(
+            || {
+                div()
+                    .class("admin-status-row")
+                    .child(
+                        span()
+                            .class("admin-hint")
+                            .attr("data-i18n", "ui_admin_status_last_login"),
+                    )
+                    .child(span().attr("data-i18n", "ui_admin_status_never"))
+            },
+            |ts| status_row("ui_admin_status_last_login", &format_timestamp(Some(ts))),
         ));
 
-        rows = rows.child(status_action_row(
-            "ui_admin_status_locked",
-            user.is_locked(),
-            "ui_admin_status_yes",
-            "ui_admin_status_no",
-            user.is_locked()
-                .then(|| mfa_action_form(&user.username, "unlock", "ui_admin_action_unlock")),
-        ));
-
-        rows = rows.child(status_action_row(
-            "ui_admin_status_mfa",
-            user.mfa_enabled,
-            "ui_admin_status_yes",
-            "ui_admin_status_no",
-            user.mfa_enabled.then(|| {
-                mfa_action_form(&user.username, "mfa/disable", "ui_admin_action_mfa_disable")
-            }),
-        ));
-
-        // Only where there is an address to confirm; an unconfirmed one can be
-        // sent another invitation.
-        if user.email.is_some() {
-            let confirmed = user.email_verified_at.is_some();
-            rows = rows.child(status_action_row(
-                "ui_admin_status_email_confirmed",
-                confirmed,
-                "ui_admin_status_yes",
-                "ui_admin_status_no",
-                (!confirmed).then(|| {
-                    mfa_action_form(&user.username, "invite", "ui_admin_action_resend_invite")
-                }),
-            ));
-        }
+    rows = if can_edit {
+        editable_status_rows(rows, user, allow_self_action)
     } else {
-        rows = rows
-            .child(status_row(
-                "ui_admin_status_disabled",
-                if user.is_disabled() {
-                    "ui_admin_status_yes"
-                } else {
-                    "ui_admin_status_no"
-                },
-            ))
-            .child(status_row(
-                "ui_admin_status_locked",
-                if user.is_locked() {
-                    "ui_admin_status_yes"
-                } else {
-                    "ui_admin_status_no"
-                },
-            ))
-            .child(status_row(
-                "ui_admin_status_mfa",
-                if user.mfa_enabled {
-                    "ui_admin_status_yes"
-                } else {
-                    "ui_admin_status_no"
-                },
-            ));
-        if user.email.is_some() {
-            rows = rows.child(status_row(
-                "ui_admin_status_email_confirmed",
-                if user.email_verified_at.is_some() {
-                    "ui_admin_status_yes"
-                } else {
-                    "ui_admin_status_no"
-                },
-            ));
-        }
-    }
+        readonly_status_rows(rows, user)
+    };
 
     div()
         .class("panel admin-panel")
@@ -1039,6 +976,106 @@ pub fn status_panel(user: &User, can_edit: bool, allow_self_action: bool) -> Ele
                 .attr("data-i18n", "ui_admin_status_title"),
         )
         .child(rows)
+}
+
+/// Status rows with the actions an admin can take on each.
+fn editable_status_rows(mut rows: Element, user: &User, allow_self_action: bool) -> Element {
+    rows = rows.child(status_action_row(
+        "ui_admin_status_disabled",
+        user.is_disabled(),
+        "ui_admin_status_yes",
+        "ui_admin_status_no",
+        allow_self_action.then(|| {
+            mfa_action_form(
+                &user.username,
+                if user.is_disabled() {
+                    "enable"
+                } else {
+                    "disable"
+                },
+                if user.is_disabled() {
+                    "ui_admin_action_enable"
+                } else {
+                    "ui_admin_action_disable"
+                },
+            )
+        }),
+    ));
+
+    rows = rows.child(status_action_row(
+        "ui_admin_status_locked",
+        user.is_locked(),
+        "ui_admin_status_yes",
+        "ui_admin_status_no",
+        user.is_locked()
+            .then(|| mfa_action_form(&user.username, "unlock", "ui_admin_action_unlock")),
+    ));
+
+    rows = rows.child(status_action_row(
+        "ui_admin_status_mfa",
+        user.mfa_enabled,
+        "ui_admin_status_yes",
+        "ui_admin_status_no",
+        user.mfa_enabled
+            .then(|| mfa_action_form(&user.username, "mfa/disable", "ui_admin_action_mfa_disable")),
+    ));
+
+    // Only where there is an address to confirm; an unconfirmed one can be
+    // sent another invitation.
+    if user.email.is_some() {
+        let confirmed = user.email_verified_at.is_some();
+        rows = rows.child(status_action_row(
+            "ui_admin_status_email_confirmed",
+            confirmed,
+            "ui_admin_status_yes",
+            "ui_admin_status_no",
+            (!confirmed).then(|| {
+                mfa_action_form(&user.username, "invite", "ui_admin_action_resend_invite")
+            }),
+        ));
+    }
+    rows
+}
+
+/// Status rows as plain yes/no, for a viewer who cannot edit.
+fn readonly_status_rows(mut rows: Element, user: &User) -> Element {
+    rows = rows
+        .child(status_row(
+            "ui_admin_status_disabled",
+            if user.is_disabled() {
+                "ui_admin_status_yes"
+            } else {
+                "ui_admin_status_no"
+            },
+        ))
+        .child(status_row(
+            "ui_admin_status_locked",
+            if user.is_locked() {
+                "ui_admin_status_yes"
+            } else {
+                "ui_admin_status_no"
+            },
+        ))
+        .child(status_row(
+            "ui_admin_status_mfa",
+            if user.mfa_enabled {
+                "ui_admin_status_yes"
+            } else {
+                "ui_admin_status_no"
+            },
+        ));
+    if user.email.is_some() {
+        rows = rows.child(status_row(
+            "ui_admin_status_email_confirmed",
+            if user.email_verified_at.is_some() {
+                "ui_admin_status_yes"
+            } else {
+                "ui_admin_status_no"
+            },
+        ));
+    }
+
+    rows
 }
 
 fn status_row(label_key: &'static str, value: &str) -> Element {
@@ -1081,10 +1118,9 @@ fn mfa_action_form(username: &str, path_suffix: &str, button_key: &'static str) 
 }
 
 fn format_timestamp(value: Option<chrono::DateTime<chrono::Utc>>) -> String {
-    match value {
-        Some(ts) => ts.format("%Y-%m-%d %H:%M UTC").to_string(),
-        None => String::new(),
-    }
+    value.map_or_else(String::new, |ts| {
+        ts.format("%Y-%m-%d %H:%M UTC").to_string()
+    })
 }
 
 /// One checkbox per catalog action, flat (no inherent order between them).
@@ -1257,6 +1293,7 @@ fn back_to_edit(username: &str, err: &RealmError) -> Response {
     ))
 }
 
+#[must_use]
 pub fn forbidden_page() -> Response {
     render_page(
         StatusCode::FORBIDDEN,
@@ -1281,6 +1318,7 @@ pub fn forbidden_page() -> Response {
     )
 }
 
+#[must_use]
 pub fn error_page(err: &RealmError) -> Response {
     render_page(
         err.status(),

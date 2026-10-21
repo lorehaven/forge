@@ -23,6 +23,7 @@ pub struct RequestCost {
 }
 
 impl RequestCost {
+    #[must_use]
     pub fn new(user_id: Option<String>, conversation_id: Option<String>, profile: String) -> Self {
         Self {
             timestamp: chrono::Utc::now().to_rfc3339(),
@@ -43,10 +44,11 @@ impl RequestCost {
         self.tools.push(cost);
     }
 
+    #[must_use]
     pub fn estimate_cost(&self) -> f64 {
         // Simple cost estimate; adjust multipliers below to your actual pricing.
-        let token_cost = self.total_tokens_used as f64 * 0.000002; // $2 per 1M tokens (OpenAI GPT-4 pricing)
-        let api_call_cost = self.total_api_calls as f64 * 0.001; // $0.001 per API call (example)
+        let token_cost = crate::numeric::u64_to_f64(self.total_tokens_used) * 0.000_002; // $2 per 1M tokens (OpenAI GPT-4 pricing)
+        let api_call_cost = f64::from(self.total_api_calls) * 0.001; // $0.001 per API call (example)
         token_cost + api_call_cost
     }
 }
@@ -63,16 +65,17 @@ pub struct ProfileCosts {
 }
 
 impl ProfileCosts {
+    #[must_use]
     pub fn from_requests(profile: String, requests: &[RequestCost]) -> Self {
         let total_duration_ms = requests.iter().map(|r| r.total_duration_ms).sum();
         let total_tokens_used = requests.iter().map(|r| r.total_tokens_used).sum();
         let total_api_calls = requests.iter().map(|r| r.total_api_calls).sum();
 
-        let estimated_cost = requests.iter().map(|r| r.estimate_cost()).sum::<f64>();
+        let estimated_cost = requests.iter().map(RequestCost::estimate_cost).sum::<f64>();
 
-        let request_count = requests.len() as u64;
+        let request_count = u64::try_from(requests.len()).unwrap_or(u64::MAX);
         let avg_cost_per_request = if request_count > 0 {
-            estimated_cost / request_count as f64
+            estimated_cost / crate::numeric::u64_to_f64(request_count)
         } else {
             0.0
         };
@@ -101,16 +104,17 @@ pub struct UserCosts {
 }
 
 impl UserCosts {
+    #[must_use]
     pub fn from_requests(user_id: String, requests: &[RequestCost]) -> Self {
         let total_duration_ms = requests.iter().map(|r| r.total_duration_ms).sum();
         let total_tokens_used = requests.iter().map(|r| r.total_tokens_used).sum();
         let total_api_calls = requests.iter().map(|r| r.total_api_calls).sum();
 
-        let estimated_cost = requests.iter().map(|r| r.estimate_cost()).sum::<f64>();
+        let estimated_cost = requests.iter().map(RequestCost::estimate_cost).sum::<f64>();
 
-        let request_count = requests.len() as u64;
+        let request_count = u64::try_from(requests.len()).unwrap_or(u64::MAX);
         let avg_cost_per_request = if request_count > 0 {
-            estimated_cost / request_count as f64
+            estimated_cost / crate::numeric::u64_to_f64(request_count)
         } else {
             0.0
         };
@@ -127,6 +131,7 @@ impl UserCosts {
     }
 }
 
+#[derive(Debug)]
 pub struct CostTracker {
     // User ID -> Vec of RequestCosts
     user_costs: Arc<DashMap<String, Vec<RequestCost>>>,
@@ -135,6 +140,7 @@ pub struct CostTracker {
 }
 
 impl CostTracker {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             user_costs: Arc::new(DashMap::new()),
@@ -158,18 +164,21 @@ impl CostTracker {
             .push(cost);
     }
 
+    #[must_use]
     pub fn get_user_costs(&self, user_id: &str) -> Option<UserCosts> {
         self.user_costs
             .get(user_id)
             .map(|requests| UserCosts::from_requests(user_id.to_string(), &requests))
     }
 
+    #[must_use]
     pub fn get_profile_costs(&self, profile: &str) -> Option<ProfileCosts> {
         self.profile_costs
             .get(profile)
             .map(|requests| ProfileCosts::from_requests(profile.to_string(), &requests))
     }
 
+    #[must_use]
     pub fn get_all_user_costs(&self) -> Vec<UserCosts> {
         self.user_costs
             .iter()
@@ -177,6 +186,7 @@ impl CostTracker {
             .collect()
     }
 
+    #[must_use]
     pub fn get_all_profile_costs(&self) -> Vec<ProfileCosts> {
         self.profile_costs
             .iter()
@@ -184,6 +194,7 @@ impl CostTracker {
             .collect()
     }
 
+    #[must_use]
     pub fn get_user_request_costs(&self, user_id: &str) -> Option<Vec<RequestCost>> {
         self.user_costs
             .get(user_id)

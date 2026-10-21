@@ -10,10 +10,11 @@ use serde::Deserialize;
 
 const SIGNATURE_HEADER: &str = "x-conveyor-signature-256";
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct GenericProvider;
 
 impl GenericProvider {
+    #[must_use]
     pub const fn new() -> Self {
         Self
     }

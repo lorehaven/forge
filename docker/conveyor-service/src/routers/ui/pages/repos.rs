@@ -31,7 +31,7 @@ impl AttrIf for Element {
 }
 
 /// Feedback carried across the redirect that follows every write.
-#[derive(Deserialize, Default)]
+#[derive(Debug, Deserialize, Default)]
 pub struct Notice {
     /// A known error slug - see `known_error_key`.
     #[serde(default)]
@@ -53,6 +53,7 @@ async fn writable_project_ids(db: &Db, claims: &Claims, all_projects: &[Project]
 }
 
 /// `root/.../leaf`, read from an in-memory project list, not a per-repo query.
+#[must_use]
 pub fn project_path(id: &str, all_projects: &[Project]) -> String {
     let mut names = Vec::new();
     let mut current = all_projects.iter().find(|p| p.id == id);
@@ -187,9 +188,8 @@ pub(super) async fn save_repo(
         Err(response) => return response,
     };
 
-    let repo = match repos::find_by_owner_name(&db, &owner, &name).await {
-        Ok(Some(repo)) => repo,
-        _ => return redirect("/repos?err=not_found"),
+    let Ok(Some(repo)) = repos::find_by_owner_name(&db, &owner, &name).await else {
+        return redirect("/repos?err=not_found");
     };
 
     if !can_on_project_claims(&claims, &db, &repo.project_id, "write").await {
@@ -245,9 +245,8 @@ pub(super) async fn delete_repo(
         Err(response) => return response,
     };
 
-    let repo = match repos::find_by_owner_name(&db, &owner, &name).await {
-        Ok(Some(repo)) => repo,
-        _ => return redirect("/repos?err=not_found"),
+    let Ok(Some(repo)) = repos::find_by_owner_name(&db, &owner, &name).await else {
+        return redirect("/repos?err=not_found");
     };
 
     if !can_on_project_claims(&claims, &db, &repo.project_id, "write").await {
@@ -271,9 +270,8 @@ pub(super) async fn follow_repo(
         Ok(claims) => claims,
         Err(response) => return response,
     };
-    let repo = match repos::find_by_owner_name(&db, &owner, &name).await {
-        Ok(Some(repo)) => repo,
-        _ => return redirect("/repos?err=not_found"),
+    let Ok(Some(repo)) = repos::find_by_owner_name(&db, &owner, &name).await else {
+        return redirect("/repos?err=not_found");
     };
     // Following would tell someone how a project they cannot see is doing.
     if !can_on_project_claims(&claims, &db, &repo.project_id, "read").await {
@@ -296,9 +294,8 @@ pub(super) async fn unfollow_repo(
         Ok(claims) => claims,
         Err(response) => return response,
     };
-    let repo = match repos::find_by_owner_name(&db, &owner, &name).await {
-        Ok(Some(repo)) => repo,
-        _ => return redirect("/repos?err=not_found"),
+    let Ok(Some(repo)) = repos::find_by_owner_name(&db, &owner, &name).await else {
+        return redirect("/repos?err=not_found");
     };
     match subscriptions::unsubscribe(&db, &claims.sub, Scope::Repo(&repo.id)).await {
         Ok(_) => redirect("/repos?ok=unfollowed"),
@@ -428,6 +425,7 @@ async fn render_list(db: &Db, claims: &Claims, notice: &Notice) -> Response {
     )
 }
 
+#[must_use]
 pub fn repo_row(repo: &Repo, project_path: &str, can_edit: bool) -> Element {
     let mut row = div()
         .class("repos-row")
@@ -477,6 +475,7 @@ pub fn repo_row(repo: &Repo, project_path: &str, can_edit: bool) -> Element {
 
 /// The follow/unfollow button for one repository or project. `base` is the UI path of the thing
 /// followed (`/repos/owner/name`, `/projects/id`); the form posts to `<base>/follow` or `<base>/unfollow`.
+#[must_use]
 pub fn follow_form(base: &str, following: bool) -> Element {
     let (verb, label) = if following {
         ("unfollow", "ui_follow_stop")
@@ -501,10 +500,11 @@ pub fn follow_form(base: &str, following: bool) -> Element {
 
 /// Every project the caller can read, each with a follow toggle - following one covers everything
 /// nested beneath it. Omitted when there is nothing to follow.
-pub fn follow_projects_panel(
+#[must_use]
+pub fn follow_projects_panel<S: std::hash::BuildHasher>(
     readable: &[&Project],
     all_projects: &[Project],
-    followed: &HashSet<&str>,
+    followed: &HashSet<&str, S>,
 ) -> Option<Element> {
     if readable.is_empty() {
         return None;
@@ -544,6 +544,7 @@ pub fn follow_projects_panel(
 }
 
 /// Omitted, not disabled, when there's nowhere the caller may register a repo.
+#[must_use]
 pub fn create_panel(writable_projects: &[&Project], all_projects: &[Project]) -> Option<Element> {
     if writable_projects.is_empty() {
         return None;
@@ -646,19 +647,44 @@ pub fn create_panel(writable_projects: &[&Project], all_projects: &[Project]) ->
     )
 }
 
-async fn render_edit(db: &Db, repo: &Repo, claims: &Claims, notice: &Notice) -> Response {
-    let all_projects = projects::list_all(db).await.unwrap_or_default();
-    let writable = writable_project_ids(db, claims, &all_projects).await;
-    let writable_set: HashSet<&str> = writable.iter().map(String::as_str).collect();
-    let can_edit = writable_set.contains(repo.project_id.as_str());
-    let writable_projects: Vec<&Project> = all_projects
-        .iter()
-        .filter(|project| writable_set.contains(project.id.as_str()))
-        .collect();
+/// The delete button and its warning, for a repo the caller can edit.
+fn delete_panel(repo: &Repo) -> Element {
+    div()
+        .class("panel repos-panel repos-danger")
+        .child(
+            div()
+                .class("panel-title")
+                .attr("data-i18n", "ui_repos_delete_title"),
+        )
+        .child(
+            div().class("meta-list").child(
+                form()
+                    .attr("method", "post")
+                    .attr(
+                        "action",
+                        ui_path(&format!(
+                            "/repos/{}/{}/delete",
+                            urlencoding::encode(&repo.owner),
+                            urlencoding::encode(&repo.name)
+                        )),
+                    )
+                    .child(
+                        p().class("repos-hint")
+                            .attr("data-i18n", "ui_repos_delete_hint"),
+                    )
+                    .child(
+                        button()
+                            .attr("type", "submit")
+                            .class("repos-delete")
+                            .attr("data-i18n", "ui_repos_delete"),
+                    ),
+            ),
+        )
+}
 
-    let fields = edit_fields(repo, &all_projects, &writable_projects, !can_edit);
-
-    let panel_body = if can_edit {
+/// The edit form for a repo the caller can edit; otherwise the same fields, read-only.
+fn edit_panel(repo: &Repo, fields: Element, can_edit: bool) -> Element {
+    if can_edit {
         let edit_form = form()
             .attr("method", "post")
             .attr(
@@ -701,41 +727,24 @@ async fn render_edit(db: &Db, repo: &Repo, claims: &Claims, notice: &Notice) -> 
                     )
                     .child(fields),
             )
-    };
+    }
+}
 
-    let danger = can_edit.then(|| {
-        div()
-            .class("panel repos-panel repos-danger")
-            .child(
-                div()
-                    .class("panel-title")
-                    .attr("data-i18n", "ui_repos_delete_title"),
-            )
-            .child(
-                div().class("meta-list").child(
-                    form()
-                        .attr("method", "post")
-                        .attr(
-                            "action",
-                            ui_path(&format!(
-                                "/repos/{}/{}/delete",
-                                urlencoding::encode(&repo.owner),
-                                urlencoding::encode(&repo.name)
-                            )),
-                        )
-                        .child(
-                            p().class("repos-hint")
-                                .attr("data-i18n", "ui_repos_delete_hint"),
-                        )
-                        .child(
-                            button()
-                                .attr("type", "submit")
-                                .class("repos-delete")
-                                .attr("data-i18n", "ui_repos_delete"),
-                        ),
-                ),
-            )
-    });
+async fn render_edit(db: &Db, repo: &Repo, claims: &Claims, notice: &Notice) -> Response {
+    let all_projects = projects::list_all(db).await.unwrap_or_default();
+    let writable = writable_project_ids(db, claims, &all_projects).await;
+    let writable_set: HashSet<&str> = writable.iter().map(String::as_str).collect();
+    let can_edit = writable_set.contains(repo.project_id.as_str());
+    let writable_projects: Vec<&Project> = all_projects
+        .iter()
+        .filter(|project| writable_set.contains(project.id.as_str()))
+        .collect();
+
+    let fields = edit_fields(repo, &all_projects, &writable_projects, !can_edit);
+
+    let panel_body = edit_panel(repo, fields, can_edit);
+
+    let danger = can_edit.then(|| delete_panel(repo));
 
     render_page(
         StatusCode::OK,
@@ -756,6 +765,7 @@ async fn render_edit(db: &Db, repo: &Repo, claims: &Claims, notice: &Notice) -> 
 
 /// Shared by the editable form and read-only view - `disabled` is cosmetic
 /// only, since the server re-checks every field regardless.
+#[must_use]
 pub fn edit_fields(
     repo: &Repo,
     all_projects: &[Project],
@@ -876,10 +886,10 @@ fn redirect(path: &str) -> Response {
 }
 
 fn redirect_to_list(err: Option<&str>) -> Response {
-    match err {
-        Some(key) => redirect(&format!("/repos?err={key}")),
-        None => redirect("/repos"),
-    }
+    err.map_or_else(
+        || redirect("/repos"),
+        |key| redirect(&format!("/repos?err={key}")),
+    )
 }
 
 fn redirect_to_edit(owner: &str, name: &str, err: Option<&str>) -> Response {
@@ -888,10 +898,10 @@ fn redirect_to_edit(owner: &str, name: &str, err: Option<&str>) -> Response {
         urlencoding::encode(owner),
         urlencoding::encode(name)
     );
-    match err {
-        Some(key) => redirect(&format!("{base}?err={key}")),
-        None => redirect(&base),
-    }
+    err.map_or_else(
+        || redirect(&base),
+        |key| redirect(&format!("{base}?err={key}")),
+    )
 }
 
 /// Error slug is checked against a fixed allowlist, so a crafted link can't put arbitrary text on the page.
@@ -910,6 +920,7 @@ pub fn notice_banner(notice: &Notice) -> Option<Element> {
     Some(p().class("repos-notice ok").attr("data-i18n", key))
 }
 
+#[must_use]
 pub fn known_error_key(candidate: &str) -> Option<&'static str> {
     match candidate {
         "owner_name_empty" => Some("ui_repos_err_owner_name_empty"),

@@ -28,8 +28,8 @@ fn test_context_window_management() {
         created_at: chrono::Utc::now(),
     };
 
-    ctx.add_message(msg1.clone());
-    ctx.add_message(msg2.clone());
+    ctx.add_message(msg1);
+    ctx.add_message(msg2);
 
     let stats = ctx.get_token_stats();
     assert_eq!(stats.total_messages, 2);
@@ -48,7 +48,7 @@ fn test_conversation_branching() {
         created_at: chrono::Utc::now(),
     };
 
-    let msg2a = ConversationMessage {
+    let first_answer = ConversationMessage {
         id: "2a".to_string(),
         role: "assistant".to_string(),
         content: "Answer A".to_string(),
@@ -56,7 +56,7 @@ fn test_conversation_branching() {
         created_at: chrono::Utc::now(),
     };
 
-    let msg2b = ConversationMessage {
+    let second_answer = ConversationMessage {
         id: "2b".to_string(),
         role: "assistant".to_string(),
         content: "Answer B (different)".to_string(),
@@ -65,8 +65,8 @@ fn test_conversation_branching() {
     };
 
     ctx.add_message(msg1);
-    ctx.add_message(msg2a);
-    ctx.add_message(msg2b);
+    ctx.add_message(first_answer);
+    ctx.add_message(second_answer);
 
     // Both branches should be available
     let branch_a = ctx.get_messages_by_id(Some("2a"));

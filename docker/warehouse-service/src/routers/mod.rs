@@ -19,15 +19,18 @@ pub fn register_routes() {
 }
 
 /// Read fresh every call, not `LazyLock`-cached - a process-global cache would make this untestable.
+#[must_use]
 pub fn crates_storage_root() -> String {
     envmnt::get_or("CRATES_STORAGE_PATH", "./storage/crates")
 }
 
+#[must_use]
 pub fn docker_storage_root() -> String {
     envmnt::get_or("STORAGE_PATH", "./storage/docker")
 }
 
 /// Root of the artifact store. `APK_STORAGE_PATH` is an honored fallback for the old var name.
+#[must_use]
 pub fn artifact_storage_root() -> String {
     for key in ["ARTIFACT_STORAGE_PATH", "APK_STORAGE_PATH"] {
         if envmnt::exists(key) {
@@ -38,27 +41,48 @@ pub fn artifact_storage_root() -> String {
 }
 
 /// Root of the rivet package store.
+#[must_use]
 pub fn rivet_storage_root() -> String {
     envmnt::get_or("RIVET_STORAGE_PATH", "./storage/rivets")
 }
 
-struct FeatureFlags {
-    docker: bool,
-    crates: bool,
-    files: bool,
-    artifacts: bool,
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Feature {
+    Docker,
+    Crates,
+    Files,
+    Artifacts,
 }
 
-static FEATURE_FLAGS: std::sync::LazyLock<FeatureFlags> =
-    std::sync::LazyLock::new(|| FeatureFlags {
-        docker: feature_enabled("FEATURE_DOCKER_ENABLED", false),
-        crates: feature_enabled("FEATURE_CRATES_ENABLED", false),
-        files: feature_enabled("FEATURE_FILES_ENABLED", false),
-        // `FEATURE_APK_ENABLED` is a fallback - it now gates the whole artifact store.
-        artifacts: feature_enabled("FEATURE_ARTIFACTS_ENABLED", false)
-            || feature_enabled("FEATURE_APK_ENABLED", false),
+/// The features switched on, read once at first use.
+static FEATURE_FLAGS: std::sync::LazyLock<std::collections::BTreeSet<Feature>> =
+    std::sync::LazyLock::new(|| {
+        [
+            (
+                Feature::Docker,
+                feature_enabled("FEATURE_DOCKER_ENABLED", false),
+            ),
+            (
+                Feature::Crates,
+                feature_enabled("FEATURE_CRATES_ENABLED", false),
+            ),
+            (
+                Feature::Files,
+                feature_enabled("FEATURE_FILES_ENABLED", false),
+            ),
+            // `FEATURE_APK_ENABLED` is a fallback - it now gates the whole artifact store.
+            (
+                Feature::Artifacts,
+                feature_enabled("FEATURE_ARTIFACTS_ENABLED", false)
+                    || feature_enabled("FEATURE_APK_ENABLED", false),
+            ),
+        ]
+        .into_iter()
+        .filter_map(|(feature, on)| on.then_some(feature))
+        .collect()
     });
 
+#[must_use]
 pub fn feature_enabled(name: &str, default: bool) -> bool {
     match envmnt::get_or(name, if default { "true" } else { "false" })
         .trim()
@@ -71,23 +95,28 @@ pub fn feature_enabled(name: &str, default: bool) -> bool {
     }
 }
 
+#[must_use]
 pub fn docker_enabled() -> bool {
-    FEATURE_FLAGS.docker
+    FEATURE_FLAGS.contains(&Feature::Docker)
 }
 
+#[must_use]
 pub fn crates_enabled() -> bool {
-    FEATURE_FLAGS.crates
+    FEATURE_FLAGS.contains(&Feature::Crates)
 }
 
+#[must_use]
 pub fn files_enabled() -> bool {
-    FEATURE_FLAGS.files
+    FEATURE_FLAGS.contains(&Feature::Files)
 }
 
+#[must_use]
 pub fn artifacts_enabled() -> bool {
-    FEATURE_FLAGS.artifacts
+    FEATURE_FLAGS.contains(&Feature::Artifacts)
 }
 
 /// Read fresh every call, unlike the other flags, so a test can turn it on for one case.
+#[must_use]
 pub fn rivets_enabled() -> bool {
     feature_enabled("FEATURE_RIVETS_ENABLED", false)
 }

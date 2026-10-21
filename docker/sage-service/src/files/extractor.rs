@@ -40,7 +40,7 @@ pub fn extract_segments(mime_type: &str, data: &[u8]) -> Result<Vec<Segment>, St
                 None => vec![Segment::new(text)],
             }
         }
-        other => return Err(format!("Unsupported MIME type for extraction: {}", other)),
+        other => return Err(format!("Unsupported MIME type for extraction: {other}")),
     };
 
     let segments: Vec<Segment> = segments
@@ -105,11 +105,17 @@ fn language_for_mime(mime: &str) -> Option<&'static str> {
 
 fn extract_pdf(data: &[u8]) -> Result<Vec<Segment>, String> {
     let pages = pdf_extract::extract_text_from_mem_by_pages(data)
-        .map_err(|e| format!("PDF text extraction failed: {}", e))?;
+        .map_err(|e| format!("PDF text extraction failed: {e}"))?;
     Ok(pages
         .into_iter()
         .enumerate()
-        .map(|(i, text)| Segment::with(text, "page", Value::from(i as i64 + 1)))
+        .map(|(i, text)| {
+            Segment::with(
+                text,
+                "page",
+                Value::from(i64::try_from(i).unwrap_or(i64::MAX).saturating_add(1)),
+            )
+        })
         .collect())
 }
 
@@ -119,7 +125,7 @@ fn extract_csv(data: &[u8]) -> Result<Segment, String> {
 
     let headers: Vec<String> = reader
         .headers()
-        .map_err(|e| format!("CSV parsing failed: {}", e))?
+        .map_err(|e| format!("CSV parsing failed: {e}"))?
         .iter()
         .map(|h| h.trim().to_string())
         .collect();
@@ -267,12 +273,9 @@ fn extract_markdown(text: &str) -> Vec<Segment> {
             flush(&mut segments, &current_heading, &buffer);
             buffer.clear();
             current_heading = Some(heading);
-            buffer.push_str(line);
-            buffer.push('\n');
-        } else {
-            buffer.push_str(line);
-            buffer.push('\n');
         }
+        buffer.push_str(line);
+        buffer.push('\n');
     }
     flush(&mut segments, &current_heading, &buffer);
 
@@ -283,6 +286,7 @@ fn extract_markdown(text: &str) -> Vec<Segment> {
 }
 
 /// The text of an ATX heading line (`## Title` -> "Title"), or None.
+#[must_use]
 pub fn parse_heading(line: &str) -> Option<String> {
     let trimmed = line.trim_start();
     if !trimmed.starts_with('#') {

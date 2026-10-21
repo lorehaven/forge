@@ -38,6 +38,7 @@ pub fn to_data_uri(bytes: &[u8]) -> Result<String, AvatarError> {
 
 /// Inverse of [`to_data_uri`], re-checking the type so a stored value can never
 /// be served as anything but an image.
+#[must_use]
 pub fn from_data_uri(uri: &str) -> Option<(&'static str, Vec<u8>)> {
     let (_, payload) = uri.strip_prefix("data:")?.split_once(";base64,")?;
     let bytes = STANDARD.decode(payload).ok()?;

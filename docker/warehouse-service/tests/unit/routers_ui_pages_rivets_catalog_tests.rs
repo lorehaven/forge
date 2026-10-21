@@ -204,7 +204,7 @@ async fn app(jwt: JwtConfig, db: Db) -> (Arc<dyn Endpoint>, Arc<quench_http::di:
         .build()
         .await
         .unwrap();
-    support::app(container).await
+    support::app(container)
 }
 
 async fn db_with(packages: &[RivetPackage]) -> Db {

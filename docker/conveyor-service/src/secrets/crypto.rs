@@ -32,6 +32,7 @@ pub enum CryptoError {
 }
 
 /// The key this deployment seals secrets with. Not `Debug`/`Clone` on purpose.
+#[derive(Debug)]
 pub struct SecretKey {
     cipher: XChaCha20Poly1305,
 }

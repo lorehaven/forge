@@ -2,24 +2,29 @@ use crate::clients::switchboard::{SwitchboardClient, VllmInstance};
 use crate::clients::vllm::VllmClient;
 use quench_db::prelude::Db;
 
+#[derive(Debug)]
 pub struct EmbedderConfig {
     /// Model name to embed with; empty string disables embedding.
     pub model: String,
     pub batch_size: usize,
-    /// Must match the dimension of the file_chunks.embedding column.
+    /// Must match the dimension of the `file_chunks.embedding` column.
     pub dimension: usize,
 }
 
 impl EmbedderConfig {
+    #[must_use]
     pub fn from_env() -> Self {
         Self {
             model: envmnt::get_or("SAGE_EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-0.6B"),
-            batch_size: envmnt::get_u64("SAGE_EMBEDDING_BATCH_SIZE", 32) as usize,
-            dimension: envmnt::get_u64("SAGE_EMBEDDING_DIMENSION", 1024) as usize,
+            batch_size: usize::try_from(envmnt::get_u64("SAGE_EMBEDDING_BATCH_SIZE", 32))
+                .unwrap_or(32),
+            dimension: usize::try_from(envmnt::get_u64("SAGE_EMBEDDING_DIMENSION", 1024))
+                .unwrap_or(1024),
         }
     }
 }
 
+#[derive(Debug)]
 pub enum EmbedOutcome {
     /// Embedding is disabled or no embedding model instance is running; chunks stay without vectors until a reprocess fills them in.
     Skipped(String),
@@ -37,11 +42,11 @@ async fn find_running_instance(
     let instances = switchboard
         .get_vllm_instances()
         .await
-        .map_err(|e| format!("switchboard unavailable: {}", e))?;
+        .map_err(|e| format!("switchboard unavailable: {e}"))?;
     instances
         .into_iter()
         .find(|i| i.model == model && i.status == "running")
-        .ok_or_else(|| format!("no running instance of embedding model '{}'", model))
+        .ok_or_else(|| format!("no running instance of embedding model '{model}'"))
 }
 
 /// Embed arbitrary texts with the configured embedding model; errors if embedding is disabled or no model instance is running.
@@ -57,7 +62,7 @@ pub async fn embed_texts(
     let instance = find_running_instance(switchboard, &config.model).await?;
     vllm.embeddings(&instance.host, instance.port, &config.model, texts)
         .await
-        .map_err(|e| format!("embedding request failed: {}", e))
+        .map_err(|e| format!("embedding request failed: {e}"))
 }
 
 /// Embed all chunks of a file that were just written by the pipeline.
@@ -105,7 +110,7 @@ pub async fn embed_file_chunks(
         let vectors = vllm
             .embeddings(&instance.host, instance.port, &config.model, inputs)
             .await
-            .map_err(|e| format!("embedding request failed: {}", e))?;
+            .map_err(|e| format!("embedding request failed: {e}"))?;
 
         for ((chunk_id, _), vector) in batch.iter().zip(vectors) {
             if vector.len() != config.dimension {
@@ -131,6 +136,7 @@ pub async fn embed_file_chunks(
 }
 
 /// pgvector text literal: "[0.1,0.2,...]".
+#[must_use]
 pub fn vector_literal(vector: &[f32]) -> String {
     let mut out = String::with_capacity(vector.len() * 10 + 2);
     out.push('[');

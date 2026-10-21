@@ -18,41 +18,39 @@ pub enum Platform {
 
 impl Platform {
     /// Every platform, for tests and exhaustive UI listing.
-    pub const ALL: [Platform; 4] = [
-        Platform::Android,
-        Platform::Linux,
-        Platform::Windows,
-        Platform::Macos,
-    ];
+    pub const ALL: [Self; 4] = [Self::Android, Self::Linux, Self::Windows, Self::Macos];
 
-    pub fn as_str(self) -> &'static str {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
         match self {
-            Platform::Android => "android",
-            Platform::Linux => "linux",
-            Platform::Windows => "windows",
-            Platform::Macos => "macos",
+            Self::Android => "android",
+            Self::Linux => "linux",
+            Self::Windows => "windows",
+            Self::Macos => "macos",
         }
     }
 
     /// `None` for anything not in [`Platform::ALL`].
+    #[must_use]
     pub fn parse(value: &str) -> Option<Self> {
         match value {
-            "android" => Some(Platform::Android),
-            "linux" => Some(Platform::Linux),
-            "windows" => Some(Platform::Windows),
-            "macos" => Some(Platform::Macos),
+            "android" => Some(Self::Android),
+            "linux" => Some(Self::Linux),
+            "windows" => Some(Self::Windows),
+            "macos" => Some(Self::Macos),
             _ => None,
         }
     }
 
     /// Whether identity is proven from the file rather than trusted from the URL (Android only).
-    pub fn identity_is_verifiable(self) -> bool {
-        matches!(self, Platform::Android)
+    #[must_use]
+    pub const fn identity_is_verifiable(self) -> bool {
+        matches!(self, Self::Android)
     }
 }
 
 /// Platform-specific extras, kept out of the top-level columns. Absent keys default empty.
-#[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub struct ArtifactMetadata {
     #[serde(default)]
     pub min_sdk_version: Option<i32>,
@@ -62,7 +60,7 @@ pub struct ArtifactMetadata {
     pub permissions: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
 pub struct ArtifactVersion {
     pub id: String,
     pub program: String,
@@ -87,6 +85,7 @@ pub struct ArtifactVersion {
 
 impl ArtifactVersion {
     /// The catalog key a caller addresses a version by.
+    #[must_use]
     pub fn id_for(program: &str, platform: Platform, version_code: i64) -> String {
         format!("{program}/{}@{version_code}", platform.as_str())
     }

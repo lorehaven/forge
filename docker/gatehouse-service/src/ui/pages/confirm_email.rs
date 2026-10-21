@@ -18,7 +18,7 @@ use quench_web::prelude::*;
 use serde::Deserialize;
 use std::sync::Arc;
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ConfirmQuery {
     pub token: String,
 }
@@ -39,7 +39,7 @@ pub async fn confirm_email_page(
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ConfirmForm {
     pub token: String,
 }
@@ -100,6 +100,7 @@ fn redirect(location: &str) -> Response {
     Response::new(StatusCode::FOUND).header("Location", location)
 }
 
+#[must_use]
 pub fn render_confirm_email_page(token: &str, new_email: &str) -> Response {
     let confirm_form = form()
         .attr("method", "post")

@@ -67,12 +67,9 @@ async fn switchboard_returning(instances: serde_json::Value) -> SwitchboardClien
         .mount(&server)
         .await;
 
-    unsafe {
-        std::env::set_var("SWITCHBOARD_URL", server.uri());
-        std::env::set_var("GATEHOUSE_URL", server.uri());
-        std::env::set_var("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
-    }
-    // Leaked deliberately: the client only holds the URL it read at
+    envmnt::set("SWITCHBOARD_URL", server.uri());
+    envmnt::set("GATEHOUSE_URL", server.uri());
+    envmnt::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret"); // Leaked deliberately: the client only holds the URL it read at
     // construction time, and the mock server must outlive every request
     // the handler makes against it during the test.
     Box::leak(Box::new(server));
@@ -118,7 +115,9 @@ async fn body_text(resp: quench_http::response::Response) -> String {
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
 #[tokio::test]
 async fn home_redirects_to_login_when_unauthenticated() {
-    let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let switchboard = switchboard_returning(serde_json::json!([])).await;
     let mut config = JwtConfig::for_tests();
     config.auth_enabled = true;
@@ -131,7 +130,9 @@ async fn home_redirects_to_login_when_unauthenticated() {
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
 #[tokio::test]
 async fn home_renders_the_page_with_no_conversations() {
-    let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let switchboard = switchboard_returning(serde_json::json!([])).await;
     let (app, container) = app(JwtConfig::for_tests(), db(), switchboard).await;
 
@@ -142,7 +143,9 @@ async fn home_renders_the_page_with_no_conversations() {
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
 #[tokio::test]
 async fn home_slash_renders_the_page_too() {
-    let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let switchboard = switchboard_returning(serde_json::json!([])).await;
     let (app, container) = app(JwtConfig::for_tests(), db(), switchboard).await;
 
@@ -153,7 +156,9 @@ async fn home_slash_renders_the_page_too() {
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
 #[tokio::test]
 async fn home_lists_only_the_callers_own_projects_and_conversations() {
-    let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let switchboard = switchboard_returning(serde_json::json!([])).await;
     let db = db();
     db.repository::<Project>()
@@ -203,7 +208,9 @@ async fn home_lists_only_the_callers_own_projects_and_conversations() {
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
 #[tokio::test]
 async fn home_loads_the_active_conversations_message_history() {
-    let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let switchboard = switchboard_returning(serde_json::json!([])).await;
     let db = db();
     db.repository::<Conversation>()

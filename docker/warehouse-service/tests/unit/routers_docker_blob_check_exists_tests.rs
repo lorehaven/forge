@@ -10,7 +10,7 @@ async fn app() -> (
 ) {
     warehouse_service::routers::docker::blob::check_exists::register_routes();
     let container = support::container_builder().build().await.unwrap();
-    support::app(container).await
+    support::app(container)
 }
 
 #[tokio::test]
@@ -61,4 +61,5 @@ async fn handle_reports_the_blob_s_length_and_digest_when_present() {
     let (headers, _) = support::parts(resp).await;
     assert_eq!(headers.get("content-length").unwrap(), "11");
     assert_eq!(headers.get("docker-content-digest").unwrap(), DIGEST);
+    drop(storage);
 }

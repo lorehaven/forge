@@ -4,7 +4,7 @@
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode, errors::Error};
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct DockerTokenConfig {
     pub secret: Vec<u8>,
     pub service_name: String,
@@ -13,6 +13,7 @@ pub struct DockerTokenConfig {
 }
 
 impl DockerTokenConfig {
+    #[must_use]
     pub fn init(service_name: String, realm: String, auth_enabled: bool) -> Self {
         let secret = envmnt::get_or_panic("DOCKER_TOKEN_SECRET").into_bytes();
         Self {

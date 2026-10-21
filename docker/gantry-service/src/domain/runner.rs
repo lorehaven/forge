@@ -1,3 +1,5 @@
+//! The runner validates and executes each step in an operation plan.
+//!
 //! The loop the runner Job executes: validate the plan, run each step's commands, stop at the first
 //! failure, undo what has an undo. Commands go through `Exec`, so the tests record them instead of
 //! running them.
@@ -20,6 +22,7 @@ pub enum Outcome {
 }
 
 impl Outcome {
+    #[must_use]
     pub fn marker(&self) -> String {
         match self {
             Self::Succeeded => format!("{RESULT_MARKER} ok"),
@@ -30,6 +33,7 @@ impl Outcome {
 }
 
 /// What the service reads back out of a finished runner's log.
+#[must_use]
 pub fn parse_outcome(log: &str) -> Option<Outcome> {
     let line = log
         .lines()
@@ -163,7 +167,7 @@ fn execute(plan: &Plan, ctx: &Context, exec: &mut dyn Exec, out: &mut dyn Write)
     Outcome::Succeeded
 }
 
-/// Restarts every workload in `namespace` that uses the ConfigMap or Secret, and waits for each.
+/// Restarts every workload in `namespace` that uses the `ConfigMap` or Secret, and waits for each.
 ///
 /// "Uses" is read from the workloads themselves: an env var, `envFrom` or a volume that names it.
 /// Restarting is the only way a running pod sees a changed value that arrives as an environment variable,
@@ -241,7 +245,7 @@ fn restart_users(
     Ok(())
 }
 
-/// Whether a pod spec mentions the ConfigMap or Secret by name: env, envFrom, or a volume.
+/// Whether a pod spec mentions the `ConfigMap` or Secret by name: env, envFrom, or a volume.
 fn uses(pod_spec: &serde_json::Value, kind: &str, name: &str) -> bool {
     let (ref_key, from_key, volume_key, volume_name_key) = if kind == "secret" {
         ("secretKeyRef", "secretRef", "secret", "secretName")
@@ -324,6 +328,7 @@ fn wait_gone(
 }
 
 /// Runs commands as real processes, their output going to ours (which is the Job's log).
+#[derive(Debug)]
 pub struct ProcessExec;
 
 impl Exec for ProcessExec {

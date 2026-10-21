@@ -78,7 +78,7 @@ pub fn parse_tool_calls(content: &str) -> Vec<ToolCall> {
     calls
 }
 
-/// Parse OpenAI function calling format: {"type": "function", "function": {"name": "...", "arguments": {...}}}
+/// Parse `OpenAI` function calling format: {"type": "function", "function": {"name": "...", "arguments": {...}}}
 fn parse_tool_json_format1(json_str: &str) -> Option<ToolCall> {
     if let Ok(json) = serde_json::from_str::<serde_json::Value>(json_str)
         && let (Some(name), Some(args)) = (
@@ -140,6 +140,7 @@ fn normalize_tool_name(name: &str) -> String {
 
 /// Strips each tag, its balanced JSON object, and trailing punctuation;
 /// residual bare tags with no JSON are stripped last.
+#[must_use]
 pub fn strip_tool_calls(content: &str) -> String {
     // Removes optional trailing junk then a closing tag right after the object.
     let close_re = Regex::new(r"(?s)^[;,\s]*</tool_?call>").unwrap();

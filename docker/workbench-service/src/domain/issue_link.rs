@@ -1,4 +1,4 @@
-//! Typed links between issues ("blocks"/"relates_to"), distinct from
+//! Typed links between issues ("`blocks"/"relates_to`"), distinct from
 //! `Issue::parent_id`'s subtask hierarchy.
 
 use crate::domain::db::{WorkbenchError, pool, schema};
@@ -19,6 +19,7 @@ pub struct IssueLink {
 
 pub const KINDS: [&str; 2] = ["blocks", "relates_to"];
 
+#[must_use]
 pub fn is_valid_kind(kind: &str) -> bool {
     KINDS.contains(&kind)
 }
@@ -101,43 +102,46 @@ pub struct RelatedIssues {
 
 const LINKED_ISSUE_SELECT: &str = "SELECT il.id AS link_id, i.id AS issue_id, \
      p.key AS project_key, i.seq AS seq, i.title AS title, i.status AS status \
-     FROM {schema}.issue_links il \
-     JOIN {schema}.issues i ON i.id = {other} \
-     JOIN {schema}.projects p ON p.id = i.project_id \
-     WHERE {filter} ORDER BY p.key, i.seq";
+     FROM __schema__.issue_links il \
+     JOIN __schema__.issues i ON i.id = __other__ \
+     JOIN __schema__.projects p ON p.id = i.project_id \
+     WHERE __filter__ ORDER BY p.key, i.seq";
 
-/// Links touching `issue_id`, split into blocks/blocked_by/relates_to.
+/// Links touching `issue_id`, split into `blocks/blocked_by/relates_to`.
 pub async fn related(db: &Db, issue_id: &str) -> Result<RelatedIssues, WorkbenchError> {
     let pool = pool(db)?;
     let schema = schema();
 
     let blocks_sql = LINKED_ISSUE_SELECT
-        .replace("{schema}", &schema)
-        .replace("{other}", "il.linked_issue_id")
-        .replace("{filter}", "il.issue_id = $1 AND il.kind = 'blocks'");
+        .replace("__schema__", &schema)
+        .replace("__other__", "il.linked_issue_id")
+        .replace("__filter__", "il.issue_id = $1 AND il.kind = 'blocks'");
     let blocks = sqlx::query(sqlx::AssertSqlSafe(blocks_sql.as_str()))
         .bind(issue_id)
         .fetch_all(pool)
         .await?;
 
     let blocked_by_sql = LINKED_ISSUE_SELECT
-        .replace("{schema}", &schema)
-        .replace("{other}", "il.issue_id")
-        .replace("{filter}", "il.linked_issue_id = $1 AND il.kind = 'blocks'");
+        .replace("__schema__", &schema)
+        .replace("__other__", "il.issue_id")
+        .replace(
+            "__filter__",
+            "il.linked_issue_id = $1 AND il.kind = 'blocks'",
+        );
     let blocked_by = sqlx::query(sqlx::AssertSqlSafe(blocked_by_sql.as_str()))
         .bind(issue_id)
         .fetch_all(pool)
         .await?;
 
     let relates_forward_sql = LINKED_ISSUE_SELECT
-        .replace("{schema}", &schema)
-        .replace("{other}", "il.linked_issue_id")
-        .replace("{filter}", "il.issue_id = $1 AND il.kind = 'relates_to'");
+        .replace("__schema__", &schema)
+        .replace("__other__", "il.linked_issue_id")
+        .replace("__filter__", "il.issue_id = $1 AND il.kind = 'relates_to'");
     let relates_backward_sql = LINKED_ISSUE_SELECT
-        .replace("{schema}", &schema)
-        .replace("{other}", "il.issue_id")
+        .replace("__schema__", &schema)
+        .replace("__other__", "il.issue_id")
         .replace(
-            "{filter}",
+            "__filter__",
             "il.linked_issue_id = $1 AND il.kind = 'relates_to'",
         );
     let mut relates_to = sqlx::query(sqlx::AssertSqlSafe(relates_forward_sql.as_str()))

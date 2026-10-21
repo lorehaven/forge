@@ -350,7 +350,7 @@ fn a_push_body_that_is_not_a_push_is_an_error() {
 async fn reporting_a_status_without_a_token_says_so() {
     // Not a failed run: building without reporting is a reasonable way to run
     // conveyor, and the worker treats this case as a no-op.
-    unsafe { std::env::remove_var("CONVEYOR_GITHUB_TOKEN") };
+    envmnt::remove("CONVEYOR_GITHUB_TOKEN");
     let github = GitHubProvider::from_env();
 
     let repo = Repo {

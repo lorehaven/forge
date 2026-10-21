@@ -27,7 +27,7 @@ pub async fn list(
     Ok(json_ok(&visible))
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct PlanBody {
     /// `start` or `stop`.
     pub action: String,

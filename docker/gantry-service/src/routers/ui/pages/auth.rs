@@ -15,7 +15,7 @@ impl FromRequest for LoginRedirect {
         let sso = req.container().get::<SsoConfig>().map_err(|e| {
             HttpError::status(http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
         })?;
-        Ok(LoginRedirect(login_delegation(req, &sso).await))
+        Ok(Self(login_delegation(req, &sso).await))
     }
 }
 
@@ -37,7 +37,7 @@ impl FromRequest for AuthCallback {
         let sso = req.container().get::<SsoConfig>().map_err(|e| {
             HttpError::status(http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
         })?;
-        Ok(AuthCallback(auth_callback(req, &sso).await))
+        Ok(Self(auth_callback(req, &sso).await))
     }
 }
 
@@ -51,7 +51,7 @@ pub(super) struct Logout(Response);
 #[async_trait::async_trait]
 impl FromRequest for Logout {
     async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
-        Ok(Logout(logout_delegation(req)))
+        Ok(Self(logout_delegation(req)))
     }
 }
 
@@ -68,7 +68,7 @@ impl FromRequest for AuthStatusResponse {
         let config = req.container().get::<JwtConfig>().map_err(|e| {
             HttpError::status(http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
         })?;
-        Ok(AuthStatusResponse(auth_status(req, &config).await))
+        Ok(Self(auth_status(req, &config).await))
     }
 }
 
@@ -83,7 +83,7 @@ pub(super) struct Refresh(Response);
 #[async_trait::async_trait]
 impl FromRequest for Refresh {
     async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
-        Ok(Refresh(refresh_delegation(req).await))
+        Ok(Self(refresh_delegation(req).await))
     }
 }
 

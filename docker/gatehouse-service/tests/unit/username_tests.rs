@@ -218,6 +218,7 @@ fn the_register_page_can_show_the_username_error() {
 #[tokio::test]
 async fn a_hostile_legacy_username_is_shown_as_text_on_the_admin_list() {
     use gatehouse_service::test_support::auth_disabled_guard;
+    use http_body_util::BodyExt;
     use quench_auth::domain::jwt::JwtConfig;
     let _guard = auth_disabled_guard().await;
     gatehouse_service::ui::pages::admin::register_routes();
@@ -268,7 +269,6 @@ async fn a_hostile_legacy_username_is_shown_as_text_on_the_admin_list() {
         ))
         .await;
     assert_eq!(resp.status(), StatusCode::OK);
-    use http_body_util::BodyExt;
     let bytes = resp
         .into_hyper()
         .into_body()

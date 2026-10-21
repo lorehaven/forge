@@ -39,6 +39,7 @@ pub enum RealmError {
 }
 
 impl RealmError {
+    #[must_use]
     pub const fn status(&self) -> http::StatusCode {
         use http::StatusCode;
         match self {
@@ -48,7 +49,9 @@ impl RealmError {
             | Self::PasswordEmpty
             | Self::UnknownGrants(_)
             | Self::EmailInvalid
-            | Self::InviteNeedsEmail => StatusCode::BAD_REQUEST,
+            | Self::InviteNeedsEmail
+            | Self::MfaCodeInvalid
+            | Self::CurrentPasswordInvalid => StatusCode::BAD_REQUEST,
             Self::AlreadyExists
             | Self::AlreadyConfirmed
             | Self::LastAdmin
@@ -56,11 +59,11 @@ impl RealmError {
             | Self::SelfDelete
             | Self::SelfDisable => StatusCode::CONFLICT,
             Self::RolesRequireAdmin => StatusCode::FORBIDDEN,
-            Self::MfaCodeInvalid | Self::CurrentPasswordInvalid => StatusCode::BAD_REQUEST,
             Self::Internal => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 
+    #[must_use]
     pub fn message(&self) -> String {
         match self {
             Self::NotFound => "no such user".to_string(),
@@ -92,6 +95,7 @@ impl RealmError {
 
     /// Kept alongside `message`, not derived from it, so rewording English
     /// text can't silently change which translation is looked up.
+    #[must_use]
     pub const fn i18n_key(&self) -> &'static str {
         match self {
             Self::NotFound => "ui_admin_error_not_found",
@@ -122,9 +126,12 @@ pub type RealmResult<T> = Result<T, RealmError>;
 pub const MAX_USERNAME_LEN: usize = 64;
 
 /// What a username may be made of: ASCII letters and digits plus `. _ - @ +`,
-/// 1 to 64 characters. Usernames are shown on admin pages and put in URLs,
+/// 1 to 64 characters.
+///
+/// Usernames are shown on admin pages and put in URLs,
 /// mail and logs, and anyone can register one - so the set is small enough that
 /// nothing in it is markup, a path separator or a control character.
+#[must_use]
 pub fn valid_username(username: &str) -> bool {
     !username.is_empty()
         && username.len() <= MAX_USERNAME_LEN
@@ -134,7 +141,7 @@ pub fn valid_username(username: &str) -> bool {
 }
 
 /// What to change about a user. `None` leaves a field alone.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct UserChanges {
     pub password: Option<String>,
     pub roles: Option<Vec<Role>>,
@@ -259,6 +266,8 @@ pub async fn create(
     Ok(created)
 }
 
+/// Creates an account that its invited owner will finish setting up.
+///
 /// An account created for someone else, to be finished by them: a password
 /// nobody knows, and the address they will be invited at (send the invitation
 /// with `invites::send_invite`). Until they accept, the unconfirmed address
@@ -588,10 +597,13 @@ pub async fn delete(
 // --- Login ---
 
 /// Whether login must wait for the emailed link: an address is on file and was
-/// never confirmed. No address means nothing to confirm, and `admin` / `service`
+/// never confirmed.
+///
+/// No address means nothing to confirm, and `admin` / `service`
 /// accounts are exempt - the seeded admin needs no verification, and an admin
 /// who later types an address into their profile must not lock the realm's
 /// last admin out.
+#[must_use]
 pub fn requires_email_verification(user: &User) -> bool {
     let has_address = user
         .email
@@ -601,6 +613,7 @@ pub fn requires_email_verification(user: &User) -> bool {
 }
 
 /// What happened when checking a login attempt.
+#[derive(Debug)]
 pub enum AuthOutcome {
     /// Boxed - `User` is large enough next to the data-free variants here to
     /// trip clippy's `large_enum_variant` otherwise.
@@ -673,8 +686,7 @@ pub async fn authenticate(db: &Db, username: &str, password: &str) -> RealmResul
     }
 
     if user.mfa_enabled {
-        let pending = crate::mfa::sign_pending(&user.username)
-            .map_err(|err| internal("failed to sign a pending MFA token", err))?;
+        let pending = crate::mfa::sign_pending(&user.username);
         return Ok(AuthOutcome::MfaRequired { pending });
     }
 

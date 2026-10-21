@@ -1,3 +1,5 @@
+//! Gantry configuration controls cluster access and safe execution defaults.
+//!
 //! Configuration, and the one rule it enforces: the safe default for anything that changes a cluster is to
 //! not change it. Run with nothing set, Gantry has no cluster at all and plans in dry-run; touching a real
 //! one has to be said out loud, twice (`GANTRY_CLUSTER` and `GANTRY_RUNNER`).
@@ -73,6 +75,64 @@ pub struct Settings {
     pub fake_cluster_seed: Option<PathBuf>,
 }
 
+fn parse_cluster(
+    get: &impl Fn(&str) -> Option<String>,
+    in_pod: bool,
+) -> Result<ClusterMode, String> {
+    match get("GANTRY_CLUSTER").as_deref() {
+        Some("in-cluster") => Ok(ClusterMode::InCluster),
+        Some("kubeconfig") => Ok(ClusterMode::Kubeconfig),
+        Some("none") => Ok(ClusterMode::None),
+        Some(other) => Err(format!(
+            "GANTRY_CLUSTER '{other}' is not in-cluster, kubeconfig or none"
+        )),
+        None if in_pod => Ok(ClusterMode::InCluster),
+        None => Ok(ClusterMode::None),
+    }
+}
+
+fn parse_runner(
+    get: &impl Fn(&str) -> Option<String>,
+    cluster: ClusterMode,
+) -> Result<RunnerMode, String> {
+    match get("GANTRY_RUNNER").as_deref() {
+        Some("job") => Ok(RunnerMode::Job),
+        Some("local") => Ok(RunnerMode::Local),
+        Some("dry-run") => Ok(RunnerMode::DryRun),
+        Some("simulate") => Ok(RunnerMode::Simulate),
+        Some(other) => Err(format!(
+            "GANTRY_RUNNER '{other}' is not job, local, dry-run or simulate"
+        )),
+        // Only a pod defaults to changing things; a developer's machine has to ask.
+        None if cluster == ClusterMode::InCluster => Ok(RunnerMode::Job),
+        None => Ok(RunnerMode::DryRun),
+    }
+}
+
+/// Rejects a runner that cannot work with, or would misreport, the cluster it was paired with.
+fn check_modes(runner: RunnerMode, cluster: ClusterMode) -> Result<(), String> {
+    match (runner, cluster) {
+        (RunnerMode::Job, ClusterMode::None) => {
+            Err("GANTRY_RUNNER=job needs a cluster to put the Job in; \
+                    set GANTRY_CLUSTER=in-cluster or kubeconfig"
+                .to_string())
+        }
+        (RunnerMode::Simulate, ClusterMode::Kubeconfig | ClusterMode::InCluster) => Err(
+            "GANTRY_RUNNER=simulate changes the in-memory fake cluster only, so it \
+                    needs GANTRY_CLUSTER=none - against a real cluster it would show changes \
+                    that never happened"
+                .to_string(),
+        ),
+        (RunnerMode::Local, ClusterMode::None | ClusterMode::InCluster) => Err(
+            "GANTRY_RUNNER=local runs kubectl as the developer, so it needs \
+                    GANTRY_CLUSTER=kubeconfig - never the fake cluster, which would \
+                    report one thing while kubectl changed another"
+                .to_string(),
+        ),
+        _ => Ok(()),
+    }
+}
+
 impl Settings {
     pub fn from_env() -> Result<Self, String> {
         Self::from_lookup(|key| std::env::var(key).ok().filter(|value| !value.is_empty()))
@@ -81,56 +141,9 @@ impl Settings {
     pub fn from_lookup(get: impl Fn(&str) -> Option<String>) -> Result<Self, String> {
         let in_pod = get("KUBERNETES_SERVICE_HOST").is_some();
 
-        let cluster = match get("GANTRY_CLUSTER").as_deref() {
-            Some("in-cluster") => ClusterMode::InCluster,
-            Some("kubeconfig") => ClusterMode::Kubeconfig,
-            Some("none") => ClusterMode::None,
-            Some(other) => {
-                return Err(format!(
-                    "GANTRY_CLUSTER '{other}' is not in-cluster, kubeconfig or none"
-                ));
-            }
-            None if in_pod => ClusterMode::InCluster,
-            None => ClusterMode::None,
-        };
-
-        let runner = match get("GANTRY_RUNNER").as_deref() {
-            Some("job") => RunnerMode::Job,
-            Some("local") => RunnerMode::Local,
-            Some("dry-run") => RunnerMode::DryRun,
-            Some("simulate") => RunnerMode::Simulate,
-            Some(other) => {
-                return Err(format!(
-                    "GANTRY_RUNNER '{other}' is not job, local, dry-run or simulate"
-                ));
-            }
-            // Only a pod defaults to changing things; a developer's machine has to ask.
-            None if cluster == ClusterMode::InCluster => RunnerMode::Job,
-            None => RunnerMode::DryRun,
-        };
-
-        match (runner, cluster) {
-            (RunnerMode::Job, ClusterMode::None) => {
-                return Err("GANTRY_RUNNER=job needs a cluster to put the Job in; \
-                            set GANTRY_CLUSTER=in-cluster or kubeconfig"
-                    .to_string());
-            }
-            (RunnerMode::Simulate, ClusterMode::Kubeconfig | ClusterMode::InCluster) => {
-                return Err("GANTRY_RUNNER=simulate changes the in-memory fake cluster only, so it \
-                            needs GANTRY_CLUSTER=none - against a real cluster it would show changes \
-                            that never happened"
-                    .to_string());
-            }
-            (RunnerMode::Local, ClusterMode::None | ClusterMode::InCluster) => {
-                return Err(
-                    "GANTRY_RUNNER=local runs kubectl as the developer, so it needs \
-                            GANTRY_CLUSTER=kubeconfig - never the fake cluster, which would \
-                            report one thing while kubectl changed another"
-                        .to_string(),
-                );
-            }
-            _ => {}
-        }
+        let cluster = parse_cluster(&get, in_pod)?;
+        let runner = parse_runner(&get, cluster)?;
+        check_modes(runner, cluster)?;
 
         let namespace = get("GANTRY_NAMESPACE")
             .or_else(|| {
@@ -197,6 +210,7 @@ impl Settings {
     }
 
     /// A fully local, fully inert configuration: no cluster, dry-run. What tests and a bare run use.
+    #[must_use]
     pub fn inert() -> Self {
         Self::from_lookup(|_| None).expect("the defaults are consistent")
     }

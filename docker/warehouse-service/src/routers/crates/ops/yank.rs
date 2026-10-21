@@ -4,7 +4,7 @@ use crate::routers::crates::{
 use quench_http::prelude::{Path, Response, delete, http::StatusCode};
 use serde::Serialize;
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct OkResponse {
     ok: bool,
 }
@@ -42,9 +42,8 @@ pub async fn set_yanked(name: &str, version: &str, yanked_value: bool) -> Result
         return Err("failed to resolve index path".into());
     };
 
-    let content = match tokio::fs::read_to_string(&index_path).await {
-        Ok(s) => s,
-        Err(_) => return Ok(false), // no index file - version not found
+    let Ok(content) = tokio::fs::read_to_string(&index_path).await else {
+        return Ok(false); // no index file - version not found
     };
 
     let mut found = false;

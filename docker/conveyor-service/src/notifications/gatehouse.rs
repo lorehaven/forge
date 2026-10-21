@@ -82,6 +82,7 @@ impl Notifier for GatehouseNotifier {
 }
 
 /// Reads gatehouse's refusal (`HTTP <status>: <body>`) for whether asking again could ever work.
+#[must_use]
 pub fn classify(error: &str) -> Delivery {
     let permanent = error.contains("HTTP 400")
         || (error.contains("HTTP 502") && error.contains("\"retryable\":false"));
@@ -89,5 +90,11 @@ pub fn classify(error: &str) -> Delivery {
         Delivery::Rejected(error.to_string())
     } else {
         Delivery::Retry(error.to_string())
+    }
+}
+
+impl std::fmt::Debug for GatehouseNotifier {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("GatehouseNotifier { .. }")
     }
 }

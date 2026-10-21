@@ -223,6 +223,13 @@ async fn the_invitation_follows_the_saved_language_then_the_fallback() {
 
 #[tokio::test]
 async fn an_invitation_needs_an_address_and_reports_a_send_failure() {
+    struct Failing;
+    #[async_trait::async_trait]
+    impl Sender for Failing {
+        async fn send(&self, _: &Recipient<'_>, _: &Mail<'_>) -> Result<(), SendError> {
+            Err(SendError::transient("smtp down"))
+        }
+    }
     let db = db().await;
     let no_address = realm::create(
         &db,
@@ -244,13 +251,6 @@ async fn an_invitation_needs_an_address_and_reports_a_send_failure() {
     assert!(err.contains("no email"), "{err}");
     assert!(recorder.sent().is_empty());
 
-    struct Failing;
-    #[async_trait::async_trait]
-    impl Sender for Failing {
-        async fn send(&self, _: &Recipient<'_>, _: &Mail<'_>) -> Result<(), SendError> {
-            Err(SendError::transient("smtp down"))
-        }
-    }
     let user = invited(&db, "alice", "alice@example.test").await;
     let err = send_invite(&tokens, &Failing, &base(), &user, None)
         .await

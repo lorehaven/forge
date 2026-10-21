@@ -1,4 +1,6 @@
-//! `PUT .../{name}/{version}` - publish a package. The archive is fully read and checked
+//! `PUT .../{name}/{version}` - publish a package.
+//!
+//! The archive is fully read and checked
 //! (see `rivet_package::Package::read`) and its own `rivet.toml` must agree with the URL, so the
 //! catalog can't be made to say something the archive doesn't. Republishing is `409`.
 
@@ -15,6 +17,29 @@ use rivet_package::{Limits, Package, PackageError};
 use sha2::{Digest, Sha256};
 use sqlx::types::Json;
 use tokio::io::AsyncWriteExt;
+
+/// Moves the staged archive to its final path, refusing to replace one that is already there.
+///
+/// A hard link fails if the target exists, which makes it the no-clobber move `rename` is not:
+/// of two concurrent publishes of one version, exactly one gets here.
+async fn link_into_place(
+    staging_path: &std::path::Path,
+    final_path: &std::path::Path,
+) -> Result<(), Response> {
+    let linked = tokio::fs::hard_link(staging_path, final_path).await;
+    let _ = tokio::fs::remove_file(staging_path).await;
+    match linked {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Err(error(
+            StatusCode::CONFLICT,
+            "this package version has already been published",
+        )),
+        Err(_) => Err(error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "could not store the package",
+        )),
+    }
+}
 
 #[put("/api/v1/rivets/{name}/{version}")]
 #[tracing::instrument(skip(body))]
@@ -98,24 +123,8 @@ pub async fn handle(
         );
     }
 
-    // A hard link fails if the target exists, which makes it the no-clobber move `rename` is not:
-    // of two concurrent publishes of one version, exactly one gets here.
-    let linked = tokio::fs::hard_link(&staging_path, &final_path).await;
-    let _ = tokio::fs::remove_file(&staging_path).await;
-    match linked {
-        Ok(()) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-            return error(
-                StatusCode::CONFLICT,
-                "this package version has already been published",
-            );
-        }
-        Err(_) => {
-            return error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "could not store the package",
-            );
-        }
+    if let Err(response) = link_into_place(&staging_path, &final_path).await {
+        return response;
     }
 
     let manifest = match serde_json::to_value(&package.manifest) {

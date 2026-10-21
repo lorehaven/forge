@@ -102,7 +102,7 @@ impl Harness {
     }
 }
 
-fn ok_location() -> &'static str {
+const fn ok_location() -> &'static str {
     "resend_requested=1"
 }
 

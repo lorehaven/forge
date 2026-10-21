@@ -7,7 +7,7 @@ pub mod authz;
 pub mod common;
 pub mod pages;
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct PageQuery {
     /// Selected crate name (or docker repository, artifact program, or rivet package)
     pub repo: Option<String>,

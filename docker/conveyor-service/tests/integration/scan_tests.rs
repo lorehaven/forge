@@ -27,34 +27,9 @@ fn new_run(repo_id: &str, sha: &str) -> NewRun {
 
 const SHA: &str = "cccccccccccccccccccccccccccccccccccccccc";
 
-#[tokio::test]
-async fn summarises_lint_machete_and_audit_from_one_job() {
-    let Some((db, _guard)) = database().await else {
-        return skipped("summarises_lint_machete_and_audit_from_one_job");
-    };
-    let repo = register_repo(&db, "scanned", "file:///nowhere").await;
-
-    let enqueued = queue::enqueue(&db, &new_run(&repo.id, SHA))
-        .await
-        .expect("enqueue");
-    let jobs = queue::create_jobs(
-        &db,
-        &enqueued.run().id,
-        &[conveyor_service::scheduler::queue::PlannedJob {
-            stage: "quality".to_string(),
-            name: "checks".to_string(),
-            needs: vec![],
-            status: Status::Success,
-            error: None,
-            reused_from_run: None,
-        }],
-    )
-    .await
-    .expect("create job");
-    let job = &jobs[0];
-
-    let t0 = Utc::now();
-    let steps = vec![
+/// The steps of one job that ran `anvil` lint, machete and audit, one after another from `t0`.
+fn anvil_steps(t0: chrono::DateTime<Utc>) -> Vec<StepState> {
+    vec![
         StepState {
             ordinal: 0,
             kind: "anvil".to_string(),
@@ -82,17 +57,16 @@ async fn summarises_lint_machete_and_audit_from_one_job() {
             started_at: Some(t0 + Duration::seconds(4)),
             finished_at: Some(t0 + Duration::seconds(5)),
         },
-    ];
-    queue::record_steps(&db, &job.id, &steps)
-        .await
-        .expect("record steps");
+    ]
+}
 
-    // Each anvil `--json` step's stdout is its report; a real run would also
-    // carry stderr progress chunks interleaved by timestamp, which `scan`
-    // now filters out (see `collect_job_checks`) - included here as
-    // `Stream::Stderr` chunks to prove that filtering actually happens
-    // rather than merely being untested.
-    let logs = vec![
+// Each anvil `--json` step's stdout is its report; a real run would also
+// carry stderr progress chunks interleaved by timestamp, which `scan`
+// now filters out (see `collect_job_checks`) - included here as
+// `Stream::Stderr` chunks to prove that filtering actually happens
+// rather than merely being untested.
+fn anvil_logs(t0: chrono::DateTime<Utc>) -> Vec<LogChunk> {
+    vec![
         chunk(
             0,
             t0,
@@ -124,7 +98,42 @@ async fn summarises_lint_machete_and_audit_from_one_job() {
             Stream::Stdout,
             r#"{"vulnerabilities":{"found":false,"count":0,"list":[]},"warnings":{}}"#,
         ),
-    ];
+    ]
+}
+
+#[tokio::test]
+async fn summarises_lint_machete_and_audit_from_one_job() {
+    let Some((db, _guard)) = database().await else {
+        return skipped("summarises_lint_machete_and_audit_from_one_job");
+    };
+    let repo = register_repo(&db, "scanned", "file:///nowhere").await;
+
+    let enqueued = queue::enqueue(&db, &new_run(&repo.id, SHA))
+        .await
+        .expect("enqueue");
+    let jobs = queue::create_jobs(
+        &db,
+        &enqueued.run().id,
+        &[conveyor_service::scheduler::queue::PlannedJob {
+            stage: "quality".to_string(),
+            name: "checks".to_string(),
+            needs: vec![],
+            status: Status::Success,
+            error: None,
+            reused_from_run: None,
+        }],
+    )
+    .await
+    .expect("create job");
+    let job = &jobs[0];
+
+    let t0 = Utc::now();
+    let steps = anvil_steps(t0);
+    queue::record_steps(&db, &job.id, &steps)
+        .await
+        .expect("record steps");
+
+    let logs = anvil_logs(t0);
     queue::append_logs(&db, &job.id, &logs)
         .await
         .expect("append logs");

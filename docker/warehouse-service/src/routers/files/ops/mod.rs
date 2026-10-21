@@ -23,19 +23,23 @@ pub fn register_routes() {
     upload::register_routes();
 }
 
+#[must_use]
 pub fn error(status: StatusCode, message: &str) -> Response {
     Response::json(status, &json!({ "error": message })).unwrap_or_else(|_| Response::new(status))
 }
 
+#[must_use]
 pub fn not_found(message: &str) -> Response {
     error(StatusCode::NOT_FOUND, message)
 }
 
+#[must_use]
 pub fn forbidden(message: &str) -> Response {
     error(StatusCode::FORBIDDEN, message)
 }
 
 /// Which kind of storage a name resolved to - env-configured, or database-backed.
+#[derive(Debug)]
 pub enum ResolvedStorage {
     Static(&'static Storage),
     Dynamic(DynamicStorage),
@@ -59,6 +63,7 @@ pub async fn resolve_storage(db: &Db, name: &str) -> Result<ResolvedStorage, Res
 
 /// Static storages: read is open, write needs the blanket `warehouse:write`
 /// grant. Dynamic storages: both gated via `authz::can_on_storage`.
+#[must_use]
 pub fn authorize(
     claims: Option<&Claims>,
     config: &JwtConfig,

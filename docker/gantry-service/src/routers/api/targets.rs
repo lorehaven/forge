@@ -35,7 +35,7 @@ impl From<PlanError> for ApiError {
             PlanError::Registry(_) | PlanError::Cluster(_) => StatusCode::BAD_GATEWAY,
             PlanError::Store(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
-        ApiError::new(status, error.to_string())
+        Self::new(status, error.to_string())
     }
 }
 
@@ -81,7 +81,7 @@ pub async fn read(
     Ok(json_ok(&Detail { target, versions }))
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Debug, Deserialize, Default)]
 pub struct PlanBody {
     #[serde(default)]
     pub version: Option<String>,

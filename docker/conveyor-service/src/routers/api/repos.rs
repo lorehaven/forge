@@ -12,7 +12,7 @@ use quench_http::prelude::{
 };
 use serde::Deserialize;
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct RegisterRepo {
     /// `github` or `generic`. Defaults to `github`.
     #[serde(default)]
@@ -140,7 +140,7 @@ pub async fn read(
         .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct UpdateRepo {
     #[serde(default)]
     pub owner: Option<String>,
@@ -244,7 +244,7 @@ pub async fn update(
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct SetEnabled {
     pub enabled: bool,
 }

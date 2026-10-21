@@ -69,24 +69,24 @@ fn can_is_false_without_claims() {
 #[test]
 fn load_paths_splits_the_env_value_on_colons_and_trims_entries() {
     let key = "SWITCHBOARD_TEST_LOAD_PATHS_A";
-    unsafe { std::env::set_var(key, " /a/one : /a/two ::") };
+    envmnt::set(key, " /a/one : /a/two ::");
     assert_eq!(
         load_paths(key, &["/default"]),
         vec!["/a/one".to_string(), "/a/two".to_string()]
     );
-    unsafe { std::env::remove_var(key) };
+    envmnt::remove(key);
 }
 
 #[test]
 fn load_paths_falls_back_to_defaults_when_env_is_unset_or_blank() {
     let key = "SWITCHBOARD_TEST_LOAD_PATHS_B";
-    unsafe { std::env::remove_var(key) };
+    envmnt::remove(key);
     assert_eq!(
         load_paths(key, &["/default/a", "/default/b"]),
         vec!["/default/a", "/default/b"]
     );
 
-    unsafe { std::env::set_var(key, "   ") };
+    envmnt::set(key, "   ");
     assert_eq!(load_paths(key, &["/default/a"]), vec!["/default/a"]);
-    unsafe { std::env::remove_var(key) };
+    envmnt::remove(key);
 }

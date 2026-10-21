@@ -14,7 +14,7 @@ use quench_http::prelude::{
 };
 use serde::Deserialize;
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct CreateStorage {
     pub name: String,
     pub owner: String,
@@ -86,7 +86,7 @@ pub async fn create(
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct PatchStorage {
     #[serde(default)]
     pub max_file_bytes: Option<i64>,

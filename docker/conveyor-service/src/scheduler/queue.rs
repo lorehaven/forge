@@ -49,6 +49,7 @@ pub fn pool(db: &Db) -> Result<&Pool<Postgres>, QueueError> {
     }
 }
 
+#[must_use]
 pub fn schema() -> String {
     envmnt::get_or("DB_SCHEMA", "conveyor")
 }
@@ -76,12 +77,14 @@ pub enum Enqueued {
 }
 
 impl Enqueued {
+    #[must_use]
     pub fn run(&self) -> &Run {
         match self {
             Self::Created(run) | Self::AlreadySeen(run) => run,
         }
     }
 
+    #[must_use]
     pub const fn is_new(&self) -> bool {
         matches!(self, Self::Created(_))
     }
@@ -222,7 +225,9 @@ pub async fn requeue_stale(db: &Db, stale_after_secs: u64) -> Result<u64, QueueE
     );
 
     let result = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(stale_after_secs as f64)
+        .bind(f64::from(
+            u32::try_from(stale_after_secs).unwrap_or(u32::MAX),
+        ))
         .execute(pool)
         .await?;
 
@@ -594,30 +599,27 @@ pub async fn list_runs_page(
     let limit = limit.clamp(1, 500);
     let offset = offset.max(0);
 
-    let rows = match repo_ids {
-        Some(ids) => {
-            let sql = format!(
-                "SELECT {RUN_COLUMNS} FROM {schema}.runs \
-                 WHERE repo_id = ANY($1) ORDER BY queued_at DESC LIMIT $2 OFFSET $3"
-            );
-            sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-                .bind(ids)
-                .bind(limit)
-                .bind(offset)
-                .fetch_all(pool)
-                .await?
-        }
-        None => {
-            let sql = format!(
-                "SELECT {RUN_COLUMNS} FROM {schema}.runs \
-                 ORDER BY queued_at DESC LIMIT $1 OFFSET $2"
-            );
-            sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-                .bind(limit)
-                .bind(offset)
-                .fetch_all(pool)
-                .await?
-        }
+    let rows = if let Some(ids) = repo_ids {
+        let sql = format!(
+            "SELECT {RUN_COLUMNS} FROM {schema}.runs \
+             WHERE repo_id = ANY($1) ORDER BY queued_at DESC LIMIT $2 OFFSET $3"
+        );
+        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+            .bind(ids)
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(pool)
+            .await?
+    } else {
+        let sql = format!(
+            "SELECT {RUN_COLUMNS} FROM {schema}.runs \
+             ORDER BY queued_at DESC LIMIT $1 OFFSET $2"
+        );
+        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+            .bind(limit)
+            .bind(offset)
+            .fetch_all(pool)
+            .await?
     };
 
     rows.iter().map(run_from_row).collect()
@@ -628,21 +630,17 @@ pub async fn count_runs(db: &Db, repo_ids: Option<&[String]>) -> Result<i64, Que
     let pool = pool(db)?;
     let schema = schema();
 
-    let row = match repo_ids {
-        Some(ids) => {
-            let sql =
-                format!("SELECT COUNT(*) AS count FROM {schema}.runs WHERE repo_id = ANY($1)");
-            sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-                .bind(ids)
-                .fetch_one(pool)
-                .await?
-        }
-        None => {
-            let sql = format!("SELECT COUNT(*) AS count FROM {schema}.runs");
-            sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-                .fetch_one(pool)
-                .await?
-        }
+    let row = if let Some(ids) = repo_ids {
+        let sql = format!("SELECT COUNT(*) AS count FROM {schema}.runs WHERE repo_id = ANY($1)");
+        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+            .bind(ids)
+            .fetch_one(pool)
+            .await?
+    } else {
+        let sql = format!("SELECT COUNT(*) AS count FROM {schema}.runs");
+        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+            .fetch_one(pool)
+            .await?
     };
 
     row.try_get::<i64, _>("count").map_err(QueueError::from)

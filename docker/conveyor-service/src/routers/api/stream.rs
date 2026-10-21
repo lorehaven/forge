@@ -86,12 +86,16 @@ pub async fn stream_logs(
                 .map(move |chunk| Ok(frame(&chunk, format))),
         );
 
-        let live = BroadcastStream::new(tail.live).map(move |message| match message {
-            Ok(chunk) => Ok(frame(&chunk, format)),
-            // Subscriber fell behind the channel; say so rather than pretend.
-            Err(_) => Ok::<_, std::io::Error>(Bytes::from(
-                "event: lagged\ndata: some lines were skipped; reload to see them\n\n",
-            )),
+        let live = BroadcastStream::new(tail.live).map(move |message| {
+            message.map_or_else(
+                // Subscriber fell behind the channel; say so rather than pretend.
+                |_| {
+                    Ok::<_, std::io::Error>(Bytes::from(
+                        "event: lagged\ndata: some lines were skipped; reload to see them\n\n",
+                    ))
+                },
+                |chunk| Ok(frame(&chunk, format)),
+            )
         });
 
         // Say the log is done, or a browser reads a plain close as a drop and refetches everything.
@@ -110,16 +114,16 @@ pub async fn stream_logs(
         Err(error) => return ApiError::from(error).into_response(),
     };
 
-    let mut body: Vec<Bytes> = chunks.iter().map(|chunk| frame(chunk, format)).collect();
-    body.push(done());
+    let body = chunks
+        .into_iter()
+        .map(move |chunk| frame(&chunk, format))
+        .chain(std::iter::once(done()))
+        .map(Ok::<_, std::io::Error>);
 
-    Response::streaming(
-        StatusCode::OK,
-        stream_iter(body.into_iter().map(Ok::<_, std::io::Error>)),
-    )
-    .header("content-type", "text/event-stream")
-    .header("Cache-Control", "no-cache")
-    .header("X-Accel-Buffering", "no")
+    Response::streaming(StatusCode::OK, stream_iter(body))
+        .header("content-type", "text/event-stream")
+        .header("Cache-Control", "no-cache")
+        .header("X-Accel-Buffering", "no")
 }
 
 /// The log as plain lines, no SSE framing - what "open raw" and `grep`-piping want.
@@ -141,11 +145,15 @@ pub async fn raw_logs(
     if let Ok(tail) = executor.0.logs(&handle).await {
         let history = stream_iter(tail.history.into_iter().map(|chunk| Ok(raw_line(&chunk))));
 
-        let live = BroadcastStream::new(tail.live).map(|message| match message {
-            Ok(chunk) => Ok(raw_line(&chunk)),
-            Err(_) => Ok::<_, std::io::Error>(Bytes::from(
-                "\n[some lines were skipped; reload to see them]\n",
-            )),
+        let live = BroadcastStream::new(tail.live).map(|message| {
+            message.map_or_else(
+                |_| {
+                    Ok::<_, std::io::Error>(Bytes::from(
+                        "\n[some lines were skipped; reload to see them]\n",
+                    ))
+                },
+                |chunk| Ok(raw_line(&chunk)),
+            )
         });
 
         return Response::streaming(StatusCode::OK, history.chain(live))
@@ -159,26 +167,29 @@ pub async fn raw_logs(
         Err(error) => return ApiError::from(error).into_response(),
     };
 
-    let body: Vec<Bytes> = chunks.iter().map(raw_line).collect();
+    let body = chunks
+        .into_iter()
+        .map(|chunk| raw_line(&chunk))
+        .map(Ok::<_, std::io::Error>);
 
-    Response::streaming(
-        StatusCode::OK,
-        stream_iter(body.into_iter().map(Ok::<_, std::io::Error>)),
-    )
-    .header("content-type", "text/plain; charset=utf-8")
+    Response::streaming(StatusCode::OK, stream_iter(body))
+        .header("content-type", "text/plain; charset=utf-8")
 }
 
 /// One log line as written - a raw view has nothing else to end the line with.
+#[must_use]
 pub fn raw_line(chunk: &LogChunk) -> Bytes {
     Bytes::from(format!("{}\n", chunk.line))
 }
 
 /// Says the log is complete, so a reader stops rather than reconnecting.
+#[must_use]
 pub fn done() -> Bytes {
     Bytes::from("event: done\ndata: end of log\n\n")
 }
 
 /// One line as an SSE frame - embedded newlines are flattened, or they'd end the frame early.
+#[must_use]
 pub fn frame(chunk: &LogChunk, format: Format) -> Bytes {
     let data = match format {
         Format::Text => chunk.line.replace(['\n', '\r'], " "),

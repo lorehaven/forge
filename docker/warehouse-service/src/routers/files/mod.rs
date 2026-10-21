@@ -15,6 +15,7 @@ pub mod ops;
 pub mod pagination;
 
 /// The verified identity behind this request, if any - read from `Auth`'s extensions.
+#[derive(Debug)]
 pub struct OptionalClaims(pub Option<Claims>);
 
 #[async_trait]
@@ -44,11 +45,13 @@ static MAX_FILE_BYTES: std::sync::LazyLock<u64> = std::sync::LazyLock::new(|| {
     )
 });
 
+#[must_use]
 pub fn max_file_bytes() -> u64 {
     *MAX_FILE_BYTES
 }
 
 /// Whether `name` is safe as a storage name (URL path segment) - static or dynamic alike.
+#[must_use]
 pub fn valid_storage_name(name: &str) -> bool {
     !name.is_empty()
         && name
@@ -97,6 +100,7 @@ pub fn parse_storages(raw: &str) -> Vec<Storage> {
 }
 
 /// The configured storages.
+#[must_use]
 pub fn storages() -> &'static [Storage] {
     &STORAGES
 }
@@ -146,7 +150,8 @@ pub enum PathError {
 }
 
 impl PathError {
-    pub fn message(&self) -> &'static str {
+    #[must_use]
+    pub const fn message(&self) -> &'static str {
         match self {
             Self::Empty => "path is required",
             Self::Absolute => "path must be relative to the storage",

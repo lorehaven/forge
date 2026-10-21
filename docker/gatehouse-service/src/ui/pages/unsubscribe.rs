@@ -9,15 +9,14 @@ use crate::notify::catalog::{self, Template};
 use crate::notify::prefs::Preferences;
 use crate::notify::unsubscribe::Unsubscribe;
 use crate::tokens::{PURPOSE_UNSUBSCRIBE, VerificationTokens};
-use crate::ui::common::ui_path;
+use crate::ui::common::{FormFields, ui_path};
 use http::StatusCode;
 use quench_db::prelude::Db;
 use quench_http::prelude::{Form, Inject, Query, Response, get, post};
 use quench_web::prelude::*;
 use serde::Deserialize;
-use std::collections::HashMap;
 
-#[derive(Deserialize, Default)]
+#[derive(Debug, Deserialize, Default)]
 pub struct TokenQuery {
     #[serde(default)]
     pub token: Option<String>,
@@ -49,7 +48,7 @@ pub async fn unsubscribe_page(
 #[post("/ui/unsubscribe")]
 pub async fn unsubscribe_submit(
     Query(query): Query<TokenQuery>,
-    Form(form): Form<HashMap<String, String>>,
+    Form(form): Form<FormFields>,
     Inject(db): Inject<Db>,
     Inject(tokens): Inject<VerificationTokens>,
 ) -> Response {
@@ -74,6 +73,7 @@ pub async fn unsubscribe_submit(
     }
 }
 
+#[must_use]
 pub fn render_unsubscribe_page(token: &str, template: &Template) -> Response {
     let confirm = form()
         .attr("method", "post")

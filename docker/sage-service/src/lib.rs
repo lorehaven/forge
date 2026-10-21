@@ -8,6 +8,7 @@ pub mod config;
 pub mod domain;
 pub mod files;
 pub mod grounding;
+pub mod numeric;
 pub mod observability;
 pub mod routers;
 pub mod runtime;

@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 static AUTH_FAILURES: LazyLock<Mutex<HashMap<String, Vec<Instant>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
+#[derive(Debug)]
 pub struct WarehouseAuth {
     config: DockerTokenConfig,
     max_failures: usize,
@@ -17,6 +18,7 @@ pub struct WarehouseAuth {
 }
 
 impl WarehouseAuth {
+    #[must_use]
     pub fn new(config: DockerTokenConfig) -> Self {
         let max_failures = envmnt::get_or("MAX_AUTH_FAILURES_PER_MINUTE", "30")
             .parse()
@@ -128,6 +130,7 @@ pub fn repository_action(req: &Request) -> Option<(String, &'static str)> {
     None
 }
 
+#[must_use]
 pub fn scope_allows(scope: &str, repository: &str, action: &str) -> bool {
     scope.split_whitespace().any(|entry| {
         let mut parts = entry.splitn(3, ':');
@@ -167,21 +170,21 @@ fn unauthorized(config: &DockerTokenConfig) -> Response {
 fn client_key(req: &Request) -> String {
     req.header("x-forwarded-for")
         .and_then(|v| v.split(',').next())
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|| "unknown".to_string())
+        .map_or_else(|| "unknown".to_string(), |s| s.trim().to_string())
 }
 
 pub fn too_many_auth_failures(req: &Request, max_failures: usize, window: Duration) -> bool {
     let key = client_key(req);
     let now = Instant::now();
-    let mut map = match AUTH_FAILURES.lock() {
-        Ok(m) => m,
-        Err(_) => return false,
+    let Ok(mut map) = AUTH_FAILURES.lock() else {
+        return false;
     };
 
     let entries = map.entry(key).or_default();
     entries.retain(|t| now.duration_since(*t) <= window);
-    entries.len() >= max_failures
+    let exceeded = entries.len() >= max_failures;
+    drop(map);
+    exceeded
 }
 
 pub fn record_auth_failure(req: &Request, window: Duration) {

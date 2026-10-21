@@ -64,6 +64,7 @@ pub fn provisioning_qr_data_uri(uri: &str) -> anyhow::Result<String> {
 }
 
 /// Whether `code` is a valid current TOTP code for `secret` (base32).
+#[must_use]
 pub fn verify_code(secret: &str, code: &str) -> bool {
     let Ok(secret) = Secret::try_from_base32(secret) else {
         return false;
@@ -76,30 +77,32 @@ pub fn verify_code(secret: &str, code: &str) -> bool {
 
 type HmacSha256 = Hmac<Sha256>;
 
-fn pending_key() -> anyhow::Result<Vec<u8>> {
+fn pending_key() -> Vec<u8> {
     use sha2::Digest;
     let material = envmnt::get_or_panic("GATEHOUSE_KEY_ENCRYPTION_KEY");
-    Ok(Sha256::digest(material.as_bytes()).to_vec())
+    Sha256::digest(material.as_bytes()).to_vec()
 }
 
 /// Signs `username` plus an expiry, carried as a hidden form field instead
 /// of a server-side session store.
-pub fn sign_pending(username: &str) -> anyhow::Result<String> {
+#[must_use]
+pub fn sign_pending(username: &str) -> String {
     let expires_at = chrono::Utc::now().timestamp() + PENDING_TTL_SECS;
     let payload = format!("{username}:{expires_at}");
-    let key = pending_key()?;
+    let key = pending_key();
     let mut mac = HmacSha256::new_from_slice(&key).expect("any key length");
     mac.update(payload.as_bytes());
     let signature = hex::encode(mac.finalize().into_bytes());
-    Ok(format!("{payload}:{signature}"))
+    format!("{payload}:{signature}")
 }
 
 /// The username a pending token was signed for, if valid and unexpired.
+#[must_use]
 pub fn verify_pending(token: &str) -> Option<String> {
     let (payload, signature) = token.rsplit_once(':')?;
     let (username, expires_at) = payload.rsplit_once(':')?;
 
-    let key = pending_key().ok()?;
+    let key = pending_key();
     let mut mac = HmacSha256::new_from_slice(&key).ok()?;
     mac.update(payload.as_bytes());
     let expected = hex::encode(mac.finalize().into_bytes());

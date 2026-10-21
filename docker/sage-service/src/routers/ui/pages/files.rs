@@ -24,6 +24,7 @@ fn status_label(status: &str) -> &str {
 
 /// A compact file chip. `staged` chips self-poll while processing and carry
 /// remove/retry buttons; non-staged chips are read-only, under a sent message.
+#[must_use]
 pub fn render_attachment_chip(file: &File, staged: bool) -> Element {
     // No hidden `file_ids` input: `serde_urlencoded` can't deserialize repeated keys.
     let in_progress = file.status == STATUS_UPLOADED || file.status == STATUS_PROCESSING;
@@ -135,6 +136,7 @@ pub fn render_attachment_chip(file: &File, staged: bool) -> Element {
 }
 
 /// A file row in a project's sidebar: name links to download, menu offers deletion.
+#[must_use]
 pub fn render_project_file_row(file: &File) -> Element {
     let item_id = format!("file-item-{}", file.id);
 
@@ -203,6 +205,7 @@ pub fn render_project_file_row(file: &File) -> Element {
 }
 
 /// The collapsible "Files" sidebar section - header and content as siblings, for the toggle.
+#[must_use]
 pub fn render_project_files_section(files: &[File]) -> Element {
     let header = div()
         .class("history-section-header collapsible files-section-header")
@@ -235,6 +238,7 @@ pub fn render_project_files_section(files: &[File]) -> Element {
 }
 
 /// A read-only row of attachment chips shown inside a sent user message; `None` if there are none.
+#[must_use]
 pub fn render_attachments_row(files: &[File]) -> Option<Element> {
     if files.is_empty() {
         return None;
@@ -264,7 +268,7 @@ fn html(status: StatusCode, body: impl Into<String>) -> Response {
     Response::html(status, body)
 }
 
-/// Uploads a file from the composer, staged (message_id NULL) until the
+/// Uploads a file from the composer, staged (`message_id` NULL) until the
 /// message is sent; creates the conversation row first if it isn't persisted yet.
 #[post("/ui/files/attach")]
 pub async fn attach(
@@ -496,7 +500,7 @@ pub async fn delete_modal(
                                 .class("confirm-actions")
                                 .attr(
                                     "hx-post",
-                                    with_base_path(&format!("/ui/files/delete/{}", file_id)),
+                                    with_base_path(&format!("/ui/files/delete/{file_id}")),
                                 )
                                 .attr("hx-target", "#confirm-delete-modal")
                                 .attr("hx-swap", "outerHTML")
@@ -563,11 +567,11 @@ pub async fn delete_file_ui(
         .class("estimates-modal")
         .render();
     let oob_delete = div()
-        .attr("id", format!("file-item-{}", file_id))
+        .attr("id", format!("file-item-{file_id}"))
         .attr("hx-swap-oob", "delete")
         .render();
 
-    html(StatusCode::OK, format!("{}{}", close_modal, oob_delete))
+    html(StatusCode::OK, format!("{close_modal}{oob_delete}"))
 }
 
 pub fn register_routes() {

@@ -14,7 +14,8 @@ pub struct ToolMetrics {
 }
 
 impl ToolMetrics {
-    pub fn new() -> Self {
+    #[must_use]
+    pub const fn new() -> Self {
         Self {
             calls: 0,
             successes: 0,
@@ -26,19 +27,22 @@ impl ToolMetrics {
         }
     }
 
+    #[must_use]
     pub fn success_rate(&self) -> f64 {
         if self.calls == 0 {
             0.0
         } else {
-            self.successes as f64 / self.calls as f64
+            crate::numeric::u64_to_f64(self.successes) / crate::numeric::u64_to_f64(self.calls)
         }
     }
 
+    #[must_use]
     pub fn avg_duration_ms(&self) -> f64 {
         if self.calls == 0 {
             0.0
         } else {
-            self.total_duration_ms as f64 / self.calls as f64
+            crate::numeric::u128_to_f64(self.total_duration_ms)
+                / crate::numeric::u64_to_f64(self.calls)
         }
     }
 
@@ -75,6 +79,7 @@ pub struct ProfileMetrics {
 }
 
 impl ProfileMetrics {
+    #[must_use]
     pub fn new(profile: String) -> Self {
         Self {
             profile,
@@ -85,11 +90,13 @@ impl ProfileMetrics {
         }
     }
 
+    #[must_use]
     pub fn success_rate(&self) -> f64 {
         if self.total_calls == 0 {
             0.0
         } else {
-            self.total_successes as f64 / self.total_calls as f64
+            crate::numeric::u64_to_f64(self.total_successes)
+                / crate::numeric::u64_to_f64(self.total_calls)
         }
     }
 
@@ -106,12 +113,14 @@ impl ProfileMetrics {
     }
 }
 
+#[derive(Debug)]
 pub struct MetricsCollector {
     // Profile -> (Tool -> Metrics)
     data: Arc<DashMap<String, Arc<DashMap<String, ToolMetrics>>>>,
 }
 
 impl MetricsCollector {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             data: Arc::new(DashMap::new()),
@@ -137,6 +146,7 @@ impl MetricsCollector {
             .record_execution(duration_ms, success, timeout);
     }
 
+    #[must_use]
     pub fn get_profile_metrics(&self, profile: &str) -> Option<ProfileMetrics> {
         self.data.get(profile).map(|profile_map| {
             let mut metrics = ProfileMetrics::new(profile.to_string());
@@ -152,6 +162,7 @@ impl MetricsCollector {
         })
     }
 
+    #[must_use]
     pub fn get_all_profiles_metrics(&self) -> Vec<ProfileMetrics> {
         self.data
             .iter()

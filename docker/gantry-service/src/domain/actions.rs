@@ -162,22 +162,26 @@ pub async fn apply(
         ))
     })?;
 
-    let wanted: Vec<&Row> = match only {
-        Some(target) => group
-            .rows
-            .iter()
-            .filter(|row| {
-                row.kind.eq_ignore_ascii_case(&target.kind)
-                    && row.name == target.name
-                    && row.namespace == target.namespace
-            })
-            .collect(),
-        None => group
-            .rows
-            .iter()
-            .filter(|row| row.state == State::Missing)
-            .collect(),
-    };
+    let wanted: Vec<&Row> = only.map_or_else(
+        || {
+            group
+                .rows
+                .iter()
+                .filter(|row| row.state == State::Missing)
+                .collect()
+        },
+        |target| {
+            group
+                .rows
+                .iter()
+                .filter(|row| {
+                    row.kind.eq_ignore_ascii_case(&target.kind)
+                        && row.name == target.name
+                        && row.namespace == target.namespace
+                })
+                .collect()
+        },
+    );
     if wanted.is_empty() {
         return Err(ActionError::Refused(match only {
             Some(_) => "that is not part of the package".to_string(),
@@ -262,9 +266,11 @@ pub async fn yaml(gantry: &Gantry, package: &str, target: &Target) -> Result<Str
         .await?)
 }
 
-/// Apply edited YAML as it is. What the package declares is untouched; the next install of the package
+/// Apply edited YAML as it is.
+///
+/// What the package declares is untouched; the next install of the package
 /// overwrites the edit, and until then the resource is marked edited. A workload is waited on; what
-/// reads a ConfigMap is restarted so the change is picked up.
+/// reads a `ConfigMap` is restarted so the change is picked up.
 pub async fn edit(
     gantry: &Gantry,
     package: &str,
@@ -351,6 +357,8 @@ pub async fn edit(
     Ok(gantry.submit("edit", &title, plan, by).await?)
 }
 
+/// Refreshes the inventory for a package at its installed version.
+///
 /// Learn what a package declares without changing anything: render it at the installed version and keep
 /// the list. For packages installed before Gantry kept inventories, and after an upgrade by other means.
 pub async fn refresh(gantry: &Gantry, package: &str, by: &str) -> Result<Operation, ActionError> {

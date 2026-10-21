@@ -100,7 +100,7 @@ async fn app() -> (
 ) {
     search::register_routes();
     let container = support::container_builder().build().await.unwrap();
-    support::app(container).await
+    support::app(container)
 }
 
 #[tokio::test]
@@ -176,4 +176,5 @@ async fn handle_skips_a_crate_directory_with_no_version_subdirectories() {
         .await;
     let body = support::json_body(resp).await;
     assert_eq!(body["meta"]["total"], 0);
+    drop(storage);
 }

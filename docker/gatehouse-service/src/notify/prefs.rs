@@ -40,12 +40,14 @@ fn key(username: &str, template: &str) -> String {
     format!("{username}|{template}")
 }
 
+#[derive(Debug)]
 pub struct Preferences<'a> {
     db: &'a Db,
 }
 
 impl<'a> Preferences<'a> {
-    pub fn new(db: &'a Db) -> Self {
+    #[must_use]
+    pub const fn new(db: &'a Db) -> Self {
         Self { db }
     }
 

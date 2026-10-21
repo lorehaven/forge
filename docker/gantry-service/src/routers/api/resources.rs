@@ -24,7 +24,7 @@ impl From<ActionError> for ApiError {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
         };
-        ApiError::new(status, error.to_string())
+        Self::new(status, error.to_string())
     }
 }
 
@@ -49,7 +49,7 @@ pub async fn list(
     Ok(json_ok(&visible))
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct YamlQuery {
     pub package: String,
     #[serde(rename = "apiVersion", default)]
@@ -80,7 +80,7 @@ pub async fn yaml(
     Ok(json_ok(&serde_json::json!({ "yaml": text })))
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ResourceBody {
     pub package: String,
     #[serde(flatten)]

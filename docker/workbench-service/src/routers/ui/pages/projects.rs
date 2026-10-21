@@ -209,7 +209,6 @@ fn priority_tone(priority: &str) -> Tone {
 fn status_i18n_key(status: &str) -> &'static str {
     match status {
         "blocked" => "ui_status_blocked",
-        "todo" => "ui_status_todo",
         "in-progress" => "ui_status_in_progress",
         "done" => "ui_status_done",
         "rejected" => "ui_status_rejected",
@@ -322,7 +321,7 @@ pub(super) async fn create_issue(
     }
 
     let new = NewIssue {
-        project_id: project_id.to_string(),
+        project_id: project_id.clone(),
         parent_id: None,
         kind: form.kind.clone(),
         title: form.title.trim().to_string(),

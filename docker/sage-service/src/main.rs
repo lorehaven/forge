@@ -81,7 +81,7 @@ async fn main() -> std::io::Result<()> {
     routers::register_routes();
 
     let app = quench_starter::http::discover_and_mount(base_path.clone());
-    let app = routers::wrap_auth(app, jwt_config, &base_path);
+    let app = routers::wrap_auth(app, &jwt_config, &base_path);
 
     let result = serve_app("sage-service", app, container).await;
 

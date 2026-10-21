@@ -1,6 +1,14 @@
 use quench_web::prelude::CssRule;
 
+#[must_use]
 pub fn files_rules() -> Vec<CssRule> {
+    [files_rules_1(), files_rules_2(), files_rules_3()]
+        .into_iter()
+        .flatten()
+        .collect()
+}
+
+fn files_rules_1() -> Vec<CssRule> {
     vec![
         // Paperclip attach button in the composer's extras row.
         CssRule::new(".chat-attach-area")
@@ -77,6 +85,11 @@ pub fn files_rules() -> Vec<CssRule> {
         CssRule::new(".attachment-status-ready").property("color", "#4ade80"),
         CssRule::new(".attachment-status-processing").property("color", "#facc15"),
         CssRule::new(".attachment-status-uploaded").property("color", "#facc15"),
+    ]
+}
+
+fn files_rules_2() -> Vec<CssRule> {
+    vec![
         CssRule::new(".attachment-status-failed").property("color", "#f87171"),
         CssRule::new(".attachment-retry")
             .property("border", "none")
@@ -150,6 +163,11 @@ pub fn files_rules() -> Vec<CssRule> {
             .property("overflow", "hidden")
             .property("text-overflow", "ellipsis")
             .property("white-space", "nowrap"),
+    ]
+}
+
+fn files_rules_3() -> Vec<CssRule> {
+    vec![
         CssRule::new(".files-empty")
             .property("margin-left", "1.5rem")
             .property("padding", "0.4rem 0.75rem")

@@ -11,26 +11,26 @@ pub struct SearchQuery {
     page: usize,
 }
 
-fn default_per_page() -> usize {
+const fn default_per_page() -> usize {
     10
 }
-fn default_page() -> usize {
+const fn default_page() -> usize {
     1
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct SearchCrate {
     name: String,
     max_version: String,
     description: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct SearchMeta {
     total: usize,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct SearchResponse {
     crates: Vec<SearchCrate>,
     meta: SearchMeta,
@@ -106,7 +106,7 @@ pub async fn find_max_version(crate_dir: &std::path::Path) -> Option<String> {
     let mut entries = tokio::fs::read_dir(crate_dir).await.ok()?;
     while let Ok(Some(entry)) = entries.next_entry().await {
         let meta = entry.metadata().await;
-        if meta.map(|m| m.is_dir()).unwrap_or(false) {
+        if meta.is_ok_and(|m| m.is_dir()) {
             versions.push(entry.file_name().to_string_lossy().into_owned());
         }
     }
@@ -120,6 +120,7 @@ pub async fn find_max_version(crate_dir: &std::path::Path) -> Option<String> {
 }
 
 /// Compares by semver when both strings parse; otherwise falls back to lexicographic order.
+#[must_use]
 pub fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
     match (parse_semver(a), parse_semver(b)) {
         (Some(av), Some(bv)) => av.cmp(&bv),
@@ -128,13 +129,13 @@ pub fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
 }
 
 /// Parses `major.minor.patch[-pre][+build]` into a comparable tuple; `None` if it doesn't fit.
+#[must_use]
 pub fn parse_semver(v: &str) -> Option<(u64, u64, u64, String)> {
     let v = v.split('+').next()?; // strip build metadata
-    let (numeric, pre) = if let Some(idx) = v.find('-') {
-        (&v[..idx], v[idx + 1..].to_string())
-    } else {
-        (v, String::new())
-    };
+    let (numeric, pre) = v.find('-').map_or_else(
+        || (v, String::new()),
+        |idx| (&v[..idx], v[idx + 1..].to_string()),
+    );
     let mut parts = numeric.split('.');
     let major: u64 = parts.next()?.parse().ok()?;
     let minor: u64 = parts.next()?.parse().ok()?;

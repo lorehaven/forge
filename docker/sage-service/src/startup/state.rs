@@ -94,7 +94,7 @@ fn init_search_providers() -> Arc<tools::SearchProviderRegistry> {
         registry.register(
             "searxng".to_string(),
             Box::new(tools::search_providers::SearxngProvider::new(
-                "https://searxng.be".to_string(),
+                "https://searxng.be",
             )),
         );
         tracing::info!("SearXNG provider registered with default instance");
@@ -173,4 +173,10 @@ fn init_tool_registry(
     );
 
     Arc::new(registry)
+}
+
+impl std::fmt::Debug for AppState {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("AppState { .. }")
+    }
 }

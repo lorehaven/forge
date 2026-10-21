@@ -44,6 +44,7 @@ pub fn render_page_wide(status: http::StatusCode, content: Element) -> Response 
     Response::html(status, UI_SHELL.page_wide(content))
 }
 
+#[must_use]
 pub fn ui_login_redirect() -> Response {
     quench_starter::http::routers::ui::ui_login_redirect()
 }
@@ -56,6 +57,7 @@ pub async fn actor(request: &Request, config: &JwtConfig) -> Option<Claims> {
 
 /// Whether the request carries a usable realm session - for pages that only
 /// gate rendering, not needing the identity itself.
+#[derive(Debug)]
 pub struct PageAuth(pub bool);
 
 #[async_trait]
@@ -90,16 +92,16 @@ impl FromRequest for ActorOrRedirect {
         let Ok(config) = req.container().get::<JwtConfig>() else {
             return Ok(Self::Redirect(ui_login_redirect_for(req)));
         };
-        match actor(req, &config).await {
-            Some(claims) => Ok(Self::Claims(claims)),
-            None => Ok(Self::Redirect(ui_login_redirect_for(req))),
-        }
+        actor(req, &config).await.map_or_else(
+            || Ok(Self::Redirect(ui_login_redirect_for(req))),
+            |claims| Ok(Self::Claims(claims)),
+        )
     }
 }
 
 /// A post-mutation redirect's status code, rendered as an untranslated
 /// banner - not run through i18n since it's operational, not chrome.
-#[derive(Deserialize, Default)]
+#[derive(Debug, Deserialize, Default)]
 pub struct Notice {
     #[serde(default)]
     pub ok: Option<String>,
@@ -107,6 +109,7 @@ pub struct Notice {
     pub error: Option<String>,
 }
 
+#[must_use]
 pub fn notice_banner(notice: &Notice) -> Option<Element> {
     if let Some(code) = &notice.error {
         return Some(alert(Tone::Error, txt(format!("error: {code}"))));
@@ -177,4 +180,10 @@ pub fn assignee_field(
 
 pub fn register_routes() {
     let _ = assets as fn(_) -> _;
+}
+
+impl std::fmt::Debug for ActorOrRedirect {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("ActorOrRedirect { .. }")
+    }
 }

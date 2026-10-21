@@ -20,10 +20,12 @@ use std::sync::{Arc, Mutex, OnceLock};
 // (sage/workbench/gatehouse/switchboard/conveyor).
 // ---------------------------------------------------------------------------
 
-/// Builds the app router plus a bare DI container. Callers add whatever
-/// `.provide(...)`/`.provide_arc(...)` their route needs before `.build()` -
+/// Builds the app router plus a bare DI container.
+///
+/// Callers add whatever `.provide(...)`/`.provide_arc(...)` their route needs before `.build()` -
 /// use `container_builder()` directly rather than this if you need to.
-pub async fn app(
+#[must_use]
+pub fn app(
     container: quench_http::di::Container,
 ) -> (Arc<dyn Endpoint>, Arc<quench_http::di::Container>) {
     (
@@ -32,6 +34,7 @@ pub async fn app(
     )
 }
 
+#[must_use]
 pub fn container_builder() -> ContainerBuilder {
     ContainerBuilder::new()
 }
@@ -48,6 +51,7 @@ pub async fn basic_container(jwt_config: JwtConfig, db: Db) -> quench_http::di::
         .unwrap()
 }
 
+#[must_use]
 pub fn req(method: Method, path: &str, container: &Arc<quench_http::di::Container>) -> Request {
     Request::new(
         method,
@@ -58,10 +62,11 @@ pub fn req(method: Method, path: &str, container: &Arc<quench_http::di::Containe
     )
 }
 
+#[must_use]
 pub fn json_req(
     method: Method,
     path: &str,
-    body: serde_json::Value,
+    body: &serde_json::Value,
     container: &Arc<quench_http::di::Container>,
 ) -> Request {
     let mut headers = HeaderMap::new();
@@ -70,11 +75,12 @@ pub fn json_req(
         method,
         path.parse::<Uri>().unwrap(),
         headers,
-        quench_http::body::InboundBody::from_bytes(Bytes::from(serde_json::to_vec(&body).unwrap())),
+        quench_http::body::InboundBody::from_bytes(Bytes::from(serde_json::to_vec(body).unwrap())),
         container.clone(),
     )
 }
 
+#[must_use]
 pub fn form_req(
     method: Method,
     path: &str,
@@ -99,6 +105,7 @@ pub fn form_req(
 /// A request carrying a raw byte body and arbitrary headers - for docker
 /// registry blob/manifest pushes and anything authenticated by a signature
 /// over exact bytes rather than a parsed form/JSON body.
+#[must_use]
 pub fn raw_req(
     method: Method,
     path: &str,
@@ -148,6 +155,7 @@ pub async fn parts(resp: quench_http::response::Response) -> (http::HeaderMap, S
     )
 }
 
+#[must_use]
 pub fn location(headers: &http::HeaderMap) -> String {
     headers
         .get("location")
@@ -157,8 +165,9 @@ pub fn location(headers: &http::HeaderMap) -> String {
         .to_string()
 }
 
-/// Guards `CRATES_STORAGE_PATH`/`STORAGE_PATH`/`ARTIFACT_STORAGE_PATH`, each
-/// read fresh on every call by
+/// Guards `CRATES_STORAGE_PATH`/`STORAGE_PATH`/`ARTIFACT_STORAGE_PATH`.
+///
+/// Each is read fresh on every call by
 /// `warehouse_service::routers::crates_storage_root`/`docker_storage_root`/
 /// `artifact_storage_root` - two tests setting different values concurrently
 /// would otherwise race each other's storage roots out from under them.
@@ -179,9 +188,10 @@ pub fn redirect_env_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
-/// Points `STORAGE_PATH` (the docker registry's storage root) at a fresh
-/// tempdir for the duration of one test, holding `storage_env_lock` so
-/// concurrent tests doing the same thing don't race each other's roots.
+/// Points `STORAGE_PATH` (the docker registry's storage root) at a fresh tempdir for one test.
+///
+/// Holds `storage_env_lock`, so concurrent tests doing the same thing don't race each other's roots.
+#[derive(Debug)]
 pub struct WithDockerStorageRoot {
     _guard: std::sync::MutexGuard<'static, ()>,
     pub dir: tempfile::TempDir,
@@ -210,9 +220,10 @@ impl Drop for WithDockerStorageRoot {
     }
 }
 
-/// Points `CRATES_STORAGE_PATH` (the cargo registry's storage root) at a
-/// fresh tempdir for the duration of one test, holding `storage_env_lock` so
-/// concurrent tests doing the same thing don't race each other's roots.
+/// Points `CRATES_STORAGE_PATH` (the cargo registry's storage root) at a fresh tempdir for one test.
+///
+/// Holds `storage_env_lock`, so concurrent tests doing the same thing don't race each other's roots.
+#[derive(Debug)]
 pub struct WithCratesStorageRoot {
     _guard: std::sync::MutexGuard<'static, ()>,
     pub dir: tempfile::TempDir,
@@ -241,9 +252,10 @@ impl Drop for WithCratesStorageRoot {
     }
 }
 
-/// Points `ARTIFACT_STORAGE_PATH` (the artifact store's root) at a fresh
-/// tempdir for the duration of one test, holding `storage_env_lock` so
-/// concurrent tests doing the same thing don't race each other's roots.
+/// Points `ARTIFACT_STORAGE_PATH` (the artifact store's root) at a fresh tempdir for one test.
+///
+/// Holds `storage_env_lock`, so concurrent tests doing the same thing don't race each other's roots.
+#[derive(Debug)]
 pub struct WithArtifactStorageRoot {
     _guard: std::sync::MutexGuard<'static, ()>,
     pub dir: tempfile::TempDir,
@@ -272,8 +284,10 @@ impl Drop for WithArtifactStorageRoot {
     }
 }
 
-/// Turns the rivet registry on and points its storage at a fresh tempdir for one test, holding
-/// `storage_env_lock` so concurrent tests don't race each other's roots or the flag.
+/// Turns the rivet registry on and points its storage at a fresh tempdir for one test.
+///
+/// Holds `storage_env_lock`, so concurrent tests don't race each other's roots or the flag.
+#[derive(Debug)]
 pub struct WithRivets {
     _guard: std::sync::MutexGuard<'static, ()>,
     pub dir: tempfile::TempDir,
@@ -297,6 +311,7 @@ impl WithRivets {
     }
 
     /// The registry switched off, still holding the lock so no other test turns it on mid-case.
+    #[must_use]
     pub fn disabled() -> Self {
         let this = Self::new();
         envmnt::remove("FEATURE_RIVETS_ENABLED");

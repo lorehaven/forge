@@ -22,6 +22,7 @@ pub struct StepRecord {
 }
 
 impl StepRecord {
+    #[must_use]
     pub fn duration_secs(&self) -> Option<i64> {
         let started = self.started_at?;
         let finished = self.finished_at?;

@@ -58,7 +58,7 @@ pub struct LiveResource {
     pub owned: bool,
 }
 
-/// A workload (Deployment, StatefulSet or DaemonSet) a package put in the cluster, as Gantry sees it.
+/// A workload (Deployment, `StatefulSet` or `DaemonSet`) a package put in the cluster, as Gantry sees it.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Workload {
     pub kind: String,
@@ -83,6 +83,7 @@ pub enum JobStatus {
 
 impl JobSpec {
     /// The Job as the API server takes it.
+    #[must_use]
     pub fn manifest(&self) -> serde_json::Value {
         let mut volumes = vec![serde_json::json!({"name": "work", "emptyDir": {}})];
         let mut mounts = vec![serde_json::json!({"name": "work", "mountPath": "/work"})];
@@ -268,6 +269,7 @@ impl KubeCluster {
                 .map_err(|e| ClusterError::Kube(e.to_string()))?,
         );
         *cached = Some((std::time::Instant::now(), found.clone()));
+        drop(cached);
         Ok(found)
     }
 }
@@ -663,7 +665,7 @@ pub struct Extra {
     pub yaml: String,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct FakeCluster {
     jobs: Mutex<BTreeMap<String, FakeJob>>,
     workloads: Mutex<Vec<Workload>>,
@@ -715,6 +717,7 @@ fn workload_yaml(workload: &Workload) -> String {
 }
 
 impl FakeCluster {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -824,6 +827,7 @@ impl FakeCluster {
         if !items.contains(&item) {
             items.push(item);
         }
+        drop(catalog);
     }
 
     /// Sets what a package declares, for the simulation to put back.
@@ -928,6 +932,7 @@ impl FakeCluster {
             extra.live.edited = true;
             return Ok(());
         }
+        drop(extras);
         Err(format!("{kind}/{name} does not exist"))
     }
 
@@ -1054,5 +1059,17 @@ impl Cluster for FakeCluster {
             .filter(|w| namespaces.is_empty() || namespaces.contains(&w.namespace))
             .cloned()
             .collect())
+    }
+}
+
+impl std::fmt::Debug for Connected {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("Connected { .. }")
+    }
+}
+
+impl std::fmt::Debug for KubeCluster {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("KubeCluster { .. }")
     }
 }

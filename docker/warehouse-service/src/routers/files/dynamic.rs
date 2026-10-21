@@ -4,6 +4,7 @@
 use std::path::{Path, PathBuf};
 
 /// The blob store's root, or `None` if no dynamic storages are configured.
+#[must_use]
 pub fn root() -> Option<PathBuf> {
     let raw = envmnt::get_or("DYNAMIC_STORAGE_ROOT", "");
     if raw.trim().is_empty() {
@@ -14,12 +15,16 @@ pub fn root() -> Option<PathBuf> {
 }
 
 /// Default quota for a newly created storage: 10 GiB, a phone backup's worth.
+#[must_use]
 pub fn default_quota_bytes() -> i64 {
     let loader = quench_config::ConfigLoader::new("WAREHOUSE");
-    loader.env_u64("DEFAULT_STORAGE_QUOTA_BYTES", 10 * 1024 * 1024 * 1024) as i64
+    loader
+        .env_u64("DEFAULT_STORAGE_QUOTA_BYTES", 10 * 1024 * 1024 * 1024)
+        .cast_signed()
 }
 
 /// Content-addressed path, sharded two levels deep so `.blobs` doesn't fill with millions of entries.
+#[must_use]
 pub fn blob_path(root: &Path, sha256: &str) -> PathBuf {
     let mut path = root.join(".blobs");
     if let Some(a) = sha256.get(0..2) {

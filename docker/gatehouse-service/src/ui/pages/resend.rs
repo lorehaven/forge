@@ -20,7 +20,7 @@ use quench_web::prelude::*;
 use serde::Deserialize;
 use std::sync::Arc;
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ResendForm {
     pub username: String,
 }
@@ -105,6 +105,7 @@ fn redirect(location: &str) -> Response {
     Response::new(StatusCode::FOUND).header("Location", location)
 }
 
+#[must_use]
 pub fn render_resend_page() -> Response {
     let request_form = form()
         .attr("method", "post")

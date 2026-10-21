@@ -24,7 +24,7 @@ async fn app() -> (
 ) {
     warehouse_service::routers::docker::blob::complete_upload::register_routes();
     let container = support::container_builder().build().await.unwrap();
-    support::app(container).await
+    support::app(container)
 }
 
 fn put(
@@ -114,6 +114,7 @@ async fn handle_moves_the_upload_to_its_final_content_addressed_path() {
         .join("_uploads")
         .join("upload-1");
     assert!(!upload_file.exists());
+    drop(storage);
 }
 
 #[tokio::test]
@@ -165,6 +166,7 @@ async fn handle_dedupes_when_the_blob_already_exists_at_the_final_path() {
         .join("_uploads")
         .join("upload-1");
     assert!(!upload_file.exists());
+    drop(storage);
 }
 
 #[tokio::test]
@@ -174,7 +176,9 @@ async fn handle_streams_a_large_monolithic_put_without_buffering_the_whole_blob(
 
     // Larger than the 64 KiB streaming buffer, so this exercises the multi-frame
     // append + off-disk hash path rather than a single read.
-    let blob: Vec<u8> = (0..(256 * 1024 + 7)).map(|i| (i % 251) as u8).collect();
+    let blob: Vec<u8> = (0..(256 * 1024 + 7))
+        .map(|i| u8::try_from(i % 251).unwrap())
+        .collect();
     let digest = digest_of(&blob);
 
     let (app, container) = app().await;

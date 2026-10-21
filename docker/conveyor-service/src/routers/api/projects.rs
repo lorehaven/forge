@@ -23,14 +23,14 @@ async fn can_write_under(
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct CreateProject {
     pub name: String,
     #[serde(default)]
     pub parent_id: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct ProjectView {
     #[serde(flatten)]
     pub project: crate::domain::Project,
@@ -64,7 +64,7 @@ pub async fn create(
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ListQuery {
     #[serde(default)]
     pub parent_id: Option<String>,
@@ -111,7 +111,7 @@ pub async fn read(
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct UpdateProject {
     #[serde(default)]
     pub name: Option<String>,

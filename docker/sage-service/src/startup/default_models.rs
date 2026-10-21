@@ -13,7 +13,7 @@ pub const MAX_LAUNCH_ATTEMPTS: u32 = 3;
 
 /// Instances this monitor launched, by id + `started_at` - both, so a
 /// rolling update's new pod can't have the old pod tear its launch down.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct LaunchedInstances {
     launches: Arc<Mutex<HashMap<String, DateTime<Utc>>>>,
     process_started_at: DateTime<Utc>,
@@ -68,10 +68,10 @@ fn is_active(status: &str) -> bool {
 
 /// Pick the next default model to launch. Models are launched **one at a time**: while any
 /// instance is still starting this returns `None`, so models don't contend for GPU memory at once.
-pub fn next_model_to_launch<'a>(
+pub fn next_model_to_launch<'a, S: std::hash::BuildHasher>(
     config: &'a SageConfig,
     instances: &[VllmInstance],
-    attempts: &HashMap<String, u32>,
+    attempts: &HashMap<String, u32, S>,
 ) -> Option<&'a DefaultModel> {
     if let Some(inst) = instances.iter().find(|inst| is_starting(&inst.status)) {
         tracing::debug!(
@@ -97,10 +97,10 @@ pub fn next_model_to_launch<'a>(
     })
 }
 
-pub async fn monitor_default_models(
+pub async fn monitor_default_models<S: std::hash::BuildHasher>(
     switchboard: &SwitchboardClient,
     config: &SageConfig,
-    attempts: &mut HashMap<String, u32>,
+    attempts: &mut HashMap<String, u32, S>,
     launched: &LaunchedInstances,
 ) {
     tracing::debug!("Checking active instances for default models...");
@@ -237,7 +237,7 @@ pub async fn shutdown(
             }
 
             match switchboard.stop_instance(&inst.id).await {
-                Ok(_) => tracing::info!(
+                Ok(()) => tracing::info!(
                     "Requested graceful stop of default model '{}' (instance {})",
                     model.name,
                     inst.id

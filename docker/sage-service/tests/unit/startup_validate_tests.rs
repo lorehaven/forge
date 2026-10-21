@@ -15,11 +15,11 @@ use sage_service::startup::validate_startup;
 /// elsewhere in this workspace) since every test in this file needs them and
 /// nothing here reads their actual value.
 fn with_switchboard_credentials() {
-    unsafe { std::env::set_var("GATEHOUSE_URL", "https://gatehouse.test") };
-    unsafe { std::env::set_var("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret") };
+    envmnt::set("GATEHOUSE_URL", "https://gatehouse.test");
+    envmnt::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
 }
 
-fn config_with_providers(providers: Vec<String>) -> SageConfig {
+fn config_with_providers(providers: &[&str]) -> SageConfig {
     // `SageConfig` has no small test constructor, and `load()` reads a
     // pile of env vars and a system-prompt file - assembling one field at a
     // time via `serde_json` round-trips through its `Serialize`/
@@ -45,79 +45,83 @@ fn config_with_providers(providers: Vec<String>) -> SageConfig {
 #[tokio::test]
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
 async fn validate_startup_skips_the_switchboard_check_when_asked() {
-    let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     with_switchboard_credentials();
-    unsafe { std::env::set_var("SKIP_SWITCHBOARD_CHECK", "true") };
+    envmnt::set("SKIP_SWITCHBOARD_CHECK", "true");
 
     let switchboard = SwitchboardClient::new();
-    let config = config_with_providers(vec![]);
+    let config = config_with_providers(&[]);
 
     let result = validate_startup(&switchboard, &config).await;
     assert!(result.is_ok());
 
-    unsafe { std::env::remove_var("SKIP_SWITCHBOARD_CHECK") };
+    envmnt::remove("SKIP_SWITCHBOARD_CHECK");
 }
 
 #[tokio::test]
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
 async fn validate_startup_validates_every_known_search_provider_without_network() {
-    let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     with_switchboard_credentials();
-    unsafe { std::env::set_var("SKIP_SWITCHBOARD_CHECK", "true") };
-    unsafe { std::env::remove_var("BRAVE_API_KEY") };
-    unsafe { std::env::remove_var("SERPAPI_API_KEY") };
+    envmnt::set("SKIP_SWITCHBOARD_CHECK", "true");
+    envmnt::remove("BRAVE_API_KEY");
+    envmnt::remove("SERPAPI_API_KEY");
 
     let switchboard = SwitchboardClient::new();
-    let config = config_with_providers(vec![
-        "brave".to_string(),
-        "searxng".to_string(),
-        "serpapi".to_string(),
-        "duckduckgo".to_string(),
-        "some-unknown-provider".to_string(),
+    let config = config_with_providers(&[
+        "brave",
+        "searxng",
+        "serpapi",
+        "duckduckgo",
+        "some-unknown-provider",
     ]);
 
     let result = validate_startup(&switchboard, &config).await;
     assert!(result.is_ok());
 
-    unsafe { std::env::remove_var("SKIP_SWITCHBOARD_CHECK") };
+    envmnt::remove("SKIP_SWITCHBOARD_CHECK");
 }
 
 #[tokio::test]
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
 async fn validate_startup_still_succeeds_when_provider_api_keys_are_configured() {
-    let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     with_switchboard_credentials();
-    unsafe { std::env::set_var("SKIP_SWITCHBOARD_CHECK", "true") };
-    unsafe { std::env::set_var("BRAVE_API_KEY", "key") };
-    unsafe { std::env::set_var("SERPAPI_API_KEY", "key") };
-    unsafe { std::env::set_var("SEARXNG_INSTANCE_URL", "https://searx.example") };
+    envmnt::set("SKIP_SWITCHBOARD_CHECK", "true");
+    envmnt::set("BRAVE_API_KEY", "key");
+    envmnt::set("SERPAPI_API_KEY", "key");
+    envmnt::set("SEARXNG_INSTANCE_URL", "https://searx.example");
 
     let switchboard = SwitchboardClient::new();
-    let config = config_with_providers(vec![
-        "brave".to_string(),
-        "searxng".to_string(),
-        "serpapi".to_string(),
-    ]);
+    let config = config_with_providers(&["brave", "searxng", "serpapi"]);
 
     let result = validate_startup(&switchboard, &config).await;
     assert!(result.is_ok());
 
-    unsafe { std::env::remove_var("SKIP_SWITCHBOARD_CHECK") };
-    unsafe { std::env::remove_var("BRAVE_API_KEY") };
-    unsafe { std::env::remove_var("SERPAPI_API_KEY") };
-    unsafe { std::env::remove_var("SEARXNG_INSTANCE_URL") };
+    envmnt::remove("SKIP_SWITCHBOARD_CHECK");
+    envmnt::remove("BRAVE_API_KEY");
+    envmnt::remove("SERPAPI_API_KEY");
+    envmnt::remove("SEARXNG_INSTANCE_URL");
 }
 
 #[tokio::test]
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
 async fn validate_startup_fails_when_the_switchboard_check_runs_and_switchboard_is_unreachable() {
-    let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     with_switchboard_credentials();
-    unsafe { std::env::remove_var("SKIP_SWITCHBOARD_CHECK") };
-    unsafe { std::env::set_var("SWITCHBOARD_URL", "http://127.0.0.1:1") };
+    envmnt::remove("SKIP_SWITCHBOARD_CHECK");
+    envmnt::set("SWITCHBOARD_URL", "http://127.0.0.1:1");
 
     let switchboard = SwitchboardClient::new();
-    let config = config_with_providers(vec![]);
+    let config = config_with_providers(&[]);
 
     let result = validate_startup(&switchboard, &config).await;
     assert!(result.is_err());
@@ -128,5 +132,5 @@ async fn validate_startup_fails_when_the_switchboard_check_runs_and_switchboard_
             .contains("Failed to connect to Switchboard")
     );
 
-    unsafe { std::env::remove_var("SWITCHBOARD_URL") };
+    envmnt::remove("SWITCHBOARD_URL");
 }

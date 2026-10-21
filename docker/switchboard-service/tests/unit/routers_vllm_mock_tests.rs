@@ -2,7 +2,7 @@
 //! stop removes it (and reports the instance as gone the second time).
 //!
 //! `MOCK_INSTANCES` is a process-global static keyed by `mock-{millisecond
-//! timestamp}`, and `init_engine_selects_mock_mode` (routers_vllm_mod_tests)
+//! timestamp}`, and `init_engine_selects_mock_mode` (`routers_vllm_mod_tests`)
 //! also touches it - every test here holds `mock_lock` for its duration so
 //! two launches never collide on the same millisecond's key.
 

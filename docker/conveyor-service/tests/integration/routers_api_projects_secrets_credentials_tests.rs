@@ -20,10 +20,8 @@ const CREDENTIAL_KEY: &str = "202122232425262728292a2b2c2d2e2f303132333435363738
 /// these do not race any other integration test in this crate over the same
 /// env vars.
 fn configure_keys() {
-    unsafe {
-        std::env::set_var("CONVEYOR_SECRET_KEY", SECRET_KEY);
-        std::env::set_var("CONVEYOR_CREDENTIAL_KEY", CREDENTIAL_KEY);
-    }
+    envmnt::set("CONVEYOR_SECRET_KEY", SECRET_KEY);
+    envmnt::set("CONVEYOR_CREDENTIAL_KEY", CREDENTIAL_KEY);
 }
 
 /// `routers::api::Actor` resolves to the synthetic `"admin"` identity
@@ -73,7 +71,7 @@ async fn create_rejects_an_empty_name() {
         .call(json_req(
             Method::POST,
             "/api/v1/projects",
-            serde_json::json!({ "name": "   " }),
+            &serde_json::json!({ "name": "   " }),
             &container,
         ))
         .await;
@@ -91,7 +89,7 @@ async fn create_then_read_round_trips_with_its_full_path() {
         .call(json_req(
             Method::POST,
             "/api/v1/projects",
-            serde_json::json!({ "name": "api-project-root" }),
+            &serde_json::json!({ "name": "api-project-root" }),
             &container,
         ))
         .await;
@@ -140,7 +138,7 @@ async fn update_renames_and_rejects_an_empty_name() {
         .call(json_req(
             Method::POST,
             "/api/v1/projects",
-            serde_json::json!({ "name": "rename-me" }),
+            &serde_json::json!({ "name": "rename-me" }),
             &container,
         ))
         .await;
@@ -151,7 +149,7 @@ async fn update_renames_and_rejects_an_empty_name() {
         .call(json_req(
             Method::PATCH,
             &format!("/api/v1/projects/{id}"),
-            serde_json::json!({ "name": "renamed" }),
+            &serde_json::json!({ "name": "renamed" }),
             &container,
         ))
         .await;
@@ -163,7 +161,7 @@ async fn update_renames_and_rejects_an_empty_name() {
         .call(json_req(
             Method::PATCH,
             &format!("/api/v1/projects/{id}"),
-            serde_json::json!({ "name": "  " }),
+            &serde_json::json!({ "name": "  " }),
             &container,
         ))
         .await;
@@ -181,7 +179,7 @@ async fn update_move_rejects_a_cycle() {
         .call(json_req(
             Method::POST,
             "/api/v1/projects",
-            serde_json::json!({ "name": "cycle-root" }),
+            &serde_json::json!({ "name": "cycle-root" }),
             &container,
         ))
         .await;
@@ -192,7 +190,7 @@ async fn update_move_rejects_a_cycle() {
         .call(json_req(
             Method::POST,
             "/api/v1/projects",
-            serde_json::json!({ "name": "cycle-child", "parent_id": root_id }),
+            &serde_json::json!({ "name": "cycle-child", "parent_id": root_id }),
             &container,
         ))
         .await;
@@ -203,7 +201,7 @@ async fn update_move_rejects_a_cycle() {
         .call(json_req(
             Method::PATCH,
             &format!("/api/v1/projects/{root_id}"),
-            serde_json::json!({ "parent_id": child_id }),
+            &serde_json::json!({ "parent_id": child_id }),
             &container,
         ))
         .await;
@@ -221,7 +219,7 @@ async fn delete_conflicts_when_children_exist_then_succeeds_once_they_are_gone()
         .call(json_req(
             Method::POST,
             "/api/v1/projects",
-            serde_json::json!({ "name": "delete-root" }),
+            &serde_json::json!({ "name": "delete-root" }),
             &container,
         ))
         .await;
@@ -232,7 +230,7 @@ async fn delete_conflicts_when_children_exist_then_succeeds_once_they_are_gone()
         .call(json_req(
             Method::POST,
             "/api/v1/projects",
-            serde_json::json!({ "name": "delete-child", "parent_id": root_id }),
+            &serde_json::json!({ "name": "delete-child", "parent_id": root_id }),
             &container,
         ))
         .await;
@@ -277,7 +275,7 @@ async fn list_defaults_to_root_level_projects() {
     app.call(json_req(
         Method::POST,
         "/api/v1/projects",
-        serde_json::json!({ "name": "list-visible-root" }),
+        &serde_json::json!({ "name": "list-visible-root" }),
         &container,
     ))
     .await;
@@ -287,13 +285,12 @@ async fn list_defaults_to_root_level_projects() {
         .await;
     assert_eq!(resp.status(), StatusCode::OK);
     let body = json_body(resp).await;
-    let names: Vec<&str> = body
-        .as_array()
-        .expect("array")
-        .iter()
-        .map(|p| p["name"].as_str().expect("name"))
-        .collect();
-    assert!(names.contains(&"list-visible-root"));
+    assert!(
+        body.as_array()
+            .expect("array")
+            .iter()
+            .any(|p| p["name"].as_str().expect("name") == "list-visible-root")
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -312,7 +309,7 @@ async fn estate_secret_round_trips_and_is_removable() {
         .call(json_req(
             Method::PUT,
             "/api/v1/secrets/api_token",
-            serde_json::json!({ "value": "s3cr3t" }),
+            &serde_json::json!({ "value": "s3cr3t" }),
             &container,
         ))
         .await;
@@ -343,14 +340,14 @@ async fn writing_a_secret_without_the_encryption_key_configured_is_service_unava
             "writing_a_secret_without_the_encryption_key_configured_is_service_unavailable",
         );
     };
-    unsafe { std::env::remove_var("CONVEYOR_SECRET_KEY") };
+    envmnt::remove("CONVEYOR_SECRET_KEY");
     let (app, container) = app(db).await;
 
     let resp = app
         .call(json_req(
             Method::PUT,
             "/api/v1/secrets/no_key",
-            serde_json::json!({ "value": "x" }),
+            &serde_json::json!({ "value": "x" }),
             &container,
         ))
         .await;
@@ -406,7 +403,7 @@ async fn repo_secret_round_trips_and_is_scoped_to_that_repo() {
         .call(json_req(
             Method::PUT,
             &format!("/api/v1/repos/{repo_id}/secrets/deploy_key"),
-            serde_json::json!({ "value": "deploy-value" }),
+            &serde_json::json!({ "value": "deploy-value" }),
             &container,
         ))
         .await;
@@ -465,7 +462,7 @@ async fn repo_credential_round_trips_and_shows_null_when_unset() {
         .call(json_req(
             Method::PUT,
             &format!("/api/v1/repos/{repo_id}/credentials"),
-            serde_json::json!({ "name": "deploy", "username": "git", "token": "ghp_abcdefgh" }),
+            &serde_json::json!({ "name": "deploy", "username": "git", "token": "ghp_abcdefgh" }),
             &container,
         ))
         .await;
@@ -500,6 +497,6 @@ async fn credential_rejects_an_unsupported_kind() {
     .expect("create project");
     let (app, container) = app(db).await;
 
-    let resp = app.call(json_req(Method::PUT, &format!("/api/v1/projects/{}/credentials", project.id), serde_json::json!({ "name": "bad-kind", "kind": "ssh_key", "username": "git", "token": "x" }), &container)).await;
+    let resp = app.call(json_req(Method::PUT, &format!("/api/v1/projects/{}/credentials", project.id), &serde_json::json!({ "name": "bad-kind", "kind": "ssh_key", "username": "git", "token": "x" }), &container)).await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }

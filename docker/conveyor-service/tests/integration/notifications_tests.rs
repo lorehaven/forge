@@ -384,7 +384,7 @@ struct Scripted {
 }
 
 impl Scripted {
-    fn new(answer: Delivery) -> Self {
+    const fn new(answer: Delivery) -> Self {
         Self {
             answer: Mutex::new(answer),
             seen: Mutex::new(Vec::new()),
@@ -505,7 +505,10 @@ async fn a_message_that_keeps_failing_is_eventually_given_up_on() {
     let (attempts, _, failed) = row(&db, &run_id).await.unwrap();
     assert_eq!(attempts, MAX_ATTEMPTS);
     assert!(failed);
-    assert_eq!(notifier.seen.lock().unwrap().len() as i32, MAX_ATTEMPTS);
+    assert_eq!(
+        i32::try_from(notifier.seen.lock().unwrap().len()).unwrap(),
+        MAX_ATTEMPTS
+    );
 }
 
 #[tokio::test]

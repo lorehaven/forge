@@ -48,7 +48,7 @@ fn decode_redirect_unwraps_duckduckgo_links() {
 #[test]
 fn merge_hits_round_robins_and_dedupes() {
     let merged = merge_hits(
-        vec![
+        &[
             vec![hit("a1", "https://a.com/1"), hit("a2", "https://a.com/2")],
             vec![hit("b1", "https://a.com/1/"), hit("b2", "https://b.com/2")],
         ],
@@ -61,7 +61,7 @@ fn merge_hits_round_robins_and_dedupes() {
     );
     assert_eq!(
         merge_hits(
-            vec![vec![hit("a", "https://a.com"), hit("b", "https://b.com")]],
+            &[vec![hit("a", "https://a.com"), hit("b", "https://b.com")]],
             1
         )
         .len(),
@@ -95,7 +95,7 @@ fn parse_plan_handles_search_skip_and_garbage() {
 fn cosine_of_parallel_orthogonal_and_zero_vectors() {
     assert!((cosine(&[1.0, 0.0], &[2.0, 0.0]) - 1.0).abs() < 1e-6);
     assert!(cosine(&[1.0, 0.0], &[0.0, 1.0]).abs() < 1e-6);
-    assert_eq!(cosine(&[0.0, 0.0], &[1.0, 1.0]), 0.0);
+    assert!(cosine(&[0.0, 0.0], &[1.0, 1.0]).abs() < 1e-9);
 }
 
 #[test]
@@ -212,7 +212,7 @@ struct FakeProvider {
 
 #[async_trait::async_trait]
 impl sage_service::tools::SearchProvider for FakeProvider {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "fake"
     }
     fn requires_api_key(&self) -> bool {

@@ -53,7 +53,8 @@ pub fn extract<R: Read + Seek>(reader: R) -> Result<ApkMetadata, ApkManifestErro
         let mut manifest_file = archive
             .by_name(MANIFEST_ENTRY)
             .map_err(|_| ApkManifestError::MissingManifest)?;
-        let mut buf = Vec::with_capacity(manifest_file.size() as usize);
+        let capacity = usize::try_from(manifest_file.size()).unwrap_or_default();
+        let mut buf = Vec::with_capacity(capacity);
         manifest_file
             .read_to_end(&mut buf)
             .map_err(|e| ApkManifestError::InvalidManifest(e.to_string()))?;

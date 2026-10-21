@@ -83,8 +83,7 @@ async fn main() -> std::io::Result<()> {
 
     let base_path_app = quench_starter::http::discover_and_mount(base_path.clone());
     let base_path_app = routers::files::wrap_auth(base_path_app, jwt_config.clone(), &base_path);
-    let base_path_app =
-        routers::artifacts::wrap_auth(base_path_app, jwt_config.clone(), &base_path);
+    let base_path_app = routers::artifacts::wrap_auth(base_path_app, &jwt_config, &base_path);
     let base_path_app = routers::rivets::wrap_auth(base_path_app, jwt_config.clone(), &base_path);
     let base_path_app = routers::crates::wrap_auth(
         base_path_app,
@@ -96,7 +95,8 @@ async fn main() -> std::io::Result<()> {
 
     // WarehouseAuth self-restricts to /v2/* and passes /token through, so wrapping the whole tree is safe.
     let loader = quench_config::ConfigLoader::new("WAREHOUSE");
-    let max_concurrent_uploads = loader.env_u64("MAX_CONCURRENT_UPLOADS", 32) as usize;
+    let max_concurrent_uploads =
+        usize::try_from(loader.env_u64("MAX_CONCURRENT_UPLOADS", 32)).unwrap_or(usize::MAX);
     let docker_router: Arc<dyn Endpoint> = Arc::new(discover_routes());
     let docker_router = wrap(docker_router, WarehouseLimits::new(max_concurrent_uploads));
     let docker_router = wrap(docker_router, WarehouseAuth::new(docker_token_config));

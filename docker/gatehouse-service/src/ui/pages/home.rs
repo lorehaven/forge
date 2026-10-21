@@ -11,6 +11,7 @@ use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 
 /// Session validity, plus (cosmetic only) whether to show the admin link.
+#[derive(Debug)]
 pub struct HomeAuth {
     authenticated: bool,
     admin: bool,
@@ -52,6 +53,7 @@ pub async fn home_slash(auth: HomeAuth, Inject(catalog): Inject<PermissionCatalo
     render_home_page(auth.admin, &enabled_services(&catalog))
 }
 
+#[must_use]
 pub fn render_home_page(admin: bool, services: &[ServiceLink]) -> Response {
     let mut sections = div().class("home-sections");
 

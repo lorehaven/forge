@@ -8,13 +8,13 @@ use futures_util::StreamExt;
 use quench_http::prelude::{HttpError, Inject, Json, Path, Response, get, http::StatusCode, post};
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct HistoryMessage {
     pub role: String,
     pub content: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ChatRequest {
     pub instance_id: String,
     pub message: String,
@@ -32,7 +32,7 @@ pub struct ChatRequest {
     pub evidence: Option<Vec<crate::grounding::EvidenceItem>>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct CapabilitiesResponse {
     pub profile: String,
     pub description: String,
@@ -40,15 +40,149 @@ pub struct CapabilitiesResponse {
     pub available_search_providers: Vec<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct MetricsResponse {
     pub profiles: Vec<crate::observability::metrics::ProfileMetrics>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct CostsResponse {
     pub users: Vec<crate::observability::cost_tracking::UserCosts>,
     pub profiles: Vec<crate::observability::cost_tracking::ProfileCosts>,
+}
+
+/// What a grounded answer is generated and checked against.
+struct GroundedContext<'a> {
+    cfg: &'a crate::grounding::GroundingConfig,
+    switchboard: &'a SwitchboardClient,
+    vllm: &'a VllmClient,
+    instance: &'a crate::clients::switchboard::VllmInstance,
+    today: &'a str,
+    question: &'a str,
+}
+
+/// The user and assistant turns of the request's history, as chat messages.
+fn history_messages(req: &ChatRequest) -> Vec<ChatMessage> {
+    req.history
+        .iter()
+        .filter(|m| m.role == "user" || m.role == "assistant")
+        .map(|m| ChatMessage {
+            role: m.role.clone(),
+            content: m.content.clone(),
+            tool_calls: None,
+            images: None,
+        })
+        .collect()
+}
+
+/// A grounded answer is checked as a whole, so it is returned in one piece: the answer, then the
+/// sources it was built from.
+async fn grounded_reply(
+    ctx: &GroundedContext<'_>,
+    g: &crate::grounding::Grounding,
+    mut stream: std::pin::Pin<
+        Box<dyn futures_util::Stream<Item = anyhow::Result<String>> + Send + Sync>,
+    >,
+    retrieve_s: f64,
+) -> Response {
+    let mut answer = String::new();
+    let generate_started = std::time::Instant::now();
+    while let Some(res) = stream.next().await {
+        match res {
+            Ok(chunk) => answer.push_str(&chunk),
+            Err(err) => {
+                tracing::error!("Grounded chat stream failed: {}", err);
+                return Response::text(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "api_error_stream_failed",
+                );
+            }
+        }
+    }
+    let generate_s = generate_started.elapsed().as_secs_f64();
+    let answer = crate::grounding::strip_tool_calls(&answer);
+    let verify_started = std::time::Instant::now();
+    let answer = crate::grounding::finalize_answer(
+        ctx.cfg,
+        ctx.switchboard,
+        ctx.vllm,
+        ctx.instance,
+        &answer,
+        g.sources.len(),
+        &g.evidence,
+        ctx.today,
+        ctx.question,
+    )
+    .await;
+    let verify_s = verify_started.elapsed().as_secs_f64();
+    let sources: Vec<_> = g
+        .sources
+        .iter()
+        .map(|s| serde_json::json!({ "index": s.index, "url": s.url, "domain": s.domain }))
+        .collect();
+    let events = vec![
+        serde_json::json!({ "content": answer }),
+        serde_json::json!({
+            "grounded": true,
+            "sources": sources,
+            "search_failed": g.unavailable,
+            "unsourced": g.unavailable,
+            "timings": {
+                "retrieve_s": (retrieve_s * 10.0).round() / 10.0,
+                "generate_s": (generate_s * 10.0).round() / 10.0,
+                "verify_s": (verify_s * 10.0).round() / 10.0,
+            },
+        }),
+    ];
+    let body = futures_util::stream::iter(
+        events
+            .into_iter()
+            .map(|data| Ok::<_, std::io::Error>(Bytes::from(format!("data: {data}\n\n")))),
+    );
+    Response::streaming(StatusCode::OK, body).header("content-type", "text/event-stream")
+}
+
+/// The system prompt, the history, then the new user message.
+fn build_messages(
+    system_prompt: String,
+    history: Vec<ChatMessage>,
+    message: &str,
+) -> Vec<ChatMessage> {
+    let mut messages = vec![ChatMessage {
+        role: "system".to_string(),
+        content: system_prompt,
+        tool_calls: None,
+        images: None,
+    }];
+    messages.extend(history);
+    messages.push(ChatMessage {
+        role: "user".to_string(),
+        content: message.to_string(),
+        tool_calls: None,
+        images: None,
+    });
+    messages
+}
+
+/// The answer streamed as it is generated, one `data:` event per piece.
+fn plain_reply(
+    stream: std::pin::Pin<
+        Box<dyn futures_util::Stream<Item = anyhow::Result<String>> + Send + Sync>,
+    >,
+) -> Response {
+    let sse_stream = stream.map(|res| match res {
+        Ok(content) => {
+            let data = serde_json::json!({ "content": content });
+            Ok::<_, std::io::Error>(Bytes::from(format!("data: {data}\n\n")))
+        }
+        Err(err) => {
+            // Localization code plus the raw detail for diagnostics.
+            let data = serde_json::json!({ "error": "api_error_stream_failed", "detail": err.to_string() });
+            Ok::<_, std::io::Error>(Bytes::from(format!("data: {data}\n\n")))
+        }
+    });
+
+    Response::streaming(StatusCode::OK, sse_stream).header("content-type", "text/event-stream")
 }
 
 #[post("/api/v1/chat")]
@@ -78,17 +212,7 @@ pub async fn chat(
     let grounding_cfg = crate::grounding::GroundingConfig::from_env();
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
     let mut system_prompt = config.system_prompt_with_date();
-    let history: Vec<ChatMessage> = req
-        .history
-        .iter()
-        .filter(|m| m.role == "user" || m.role == "assistant")
-        .map(|m| ChatMessage {
-            role: m.role.clone(),
-            content: m.content.clone(),
-            tool_calls: None,
-            images: None,
-        })
-        .collect();
+    let history = history_messages(&req);
     let mut grounding = None;
     let retrieve_started = std::time::Instant::now();
     if grounding_cfg.enabled
@@ -123,19 +247,7 @@ pub async fn chat(
         }
     }
 
-    let mut messages = vec![ChatMessage {
-        role: "system".to_string(),
-        content: system_prompt,
-        tool_calls: None,
-        images: None,
-    }];
-    messages.extend(history);
-    messages.push(ChatMessage {
-        role: "user".to_string(),
-        content: req.message.clone(),
-        tool_calls: None,
-        images: None,
-    });
+    let messages = build_messages(system_prompt, history, &req.message);
 
     // Leave room for the prompt: a max_tokens equal to the whole context is rejected.
     let max_tokens = instance.max_model_len.map(|m| m.min(2048));
@@ -161,78 +273,18 @@ pub async fn chat(
     // A grounded answer is checked as a whole, so it is returned in one piece: the answer,
     // then the sources it was built from.
     if let Some(g) = grounding {
-        let mut stream = stream;
-        let mut answer = String::new();
-        let generate_started = std::time::Instant::now();
-        while let Some(res) = stream.next().await {
-            match res {
-                Ok(chunk) => answer.push_str(&chunk),
-                Err(err) => {
-                    tracing::error!("Grounded chat stream failed: {}", err);
-                    return Response::text(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "api_error_stream_failed",
-                    );
-                }
-            }
-        }
-        let generate_s = generate_started.elapsed().as_secs_f64();
-        let answer = crate::grounding::strip_tool_calls(&answer);
-        let verify_started = std::time::Instant::now();
-        let answer = crate::grounding::finalize_answer(
-            &grounding_cfg,
-            &switchboard,
-            &vllm,
-            &instance,
-            &answer,
-            g.sources.len(),
-            &g.evidence,
-            &today,
-            &req.message,
-        )
-        .await;
-        let verify_s = verify_started.elapsed().as_secs_f64();
-        let sources: Vec<_> = g
-            .sources
-            .iter()
-            .map(|s| serde_json::json!({ "index": s.index, "url": s.url, "domain": s.domain }))
-            .collect();
-        let events = vec![
-            serde_json::json!({ "content": answer }),
-            serde_json::json!({
-                "grounded": true,
-                "sources": sources,
-                "search_failed": g.unavailable,
-                "unsourced": g.unavailable,
-                "timings": {
-                    "retrieve_s": (retrieve_s * 10.0).round() / 10.0,
-                    "generate_s": (generate_s * 10.0).round() / 10.0,
-                    "verify_s": (verify_s * 10.0).round() / 10.0,
-                },
-            }),
-        ];
-        let body = futures_util::stream::iter(
-            events
-                .into_iter()
-                .map(|data| Ok::<_, std::io::Error>(Bytes::from(format!("data: {}\n\n", data)))),
-        );
-        return Response::streaming(StatusCode::OK, body)
-            .header("content-type", "text/event-stream");
+        let context = GroundedContext {
+            cfg: &grounding_cfg,
+            switchboard: &switchboard,
+            vllm: &vllm,
+            instance: &instance,
+            today: &today,
+            question: &req.message,
+        };
+        return grounded_reply(&context, &g, stream, retrieve_s).await;
     }
 
-    let sse_stream = stream.map(|res| match res {
-        Ok(content) => {
-            let data = serde_json::json!({ "content": content });
-            Ok::<_, std::io::Error>(Bytes::from(format!("data: {}\n\n", data)))
-        }
-        Err(err) => {
-            // Localization code plus the raw detail for diagnostics.
-            let data = serde_json::json!({ "error": "api_error_stream_failed", "detail": err.to_string() });
-            Ok::<_, std::io::Error>(Bytes::from(format!("data: {}\n\n", data)))
-        }
-    });
-
-    Response::streaming(StatusCode::OK, sse_stream).header("content-type", "text/event-stream")
+    plain_reply(stream)
 }
 
 #[get("/api/v1/chat/capabilities")]
@@ -241,12 +293,15 @@ pub async fn capabilities(
 ) -> Result<Json<CapabilitiesResponse>, HttpError> {
     let profile = &config.capability_profile;
     let mut tools = profile.enabled_tool_names();
-    tools.sort();
+    tools.sort_unstable();
 
     Ok(Json(CapabilitiesResponse {
         profile: profile.name.clone(),
         description: profile.description.clone(),
-        available_tools: tools.into_iter().map(|s| s.to_string()).collect(),
+        available_tools: tools
+            .into_iter()
+            .map(std::string::ToString::to_string)
+            .collect(),
         available_search_providers: config.available_search_providers.clone(),
     }))
 }
@@ -264,11 +319,13 @@ pub async fn get_metrics_by_profile(
     Path(profile): Path<String>,
     Inject(metrics_collector): Inject<MetricsCollector>,
 ) -> Response {
-    match metrics_collector.get_profile_metrics(&profile) {
-        Some(metrics) => Response::json(StatusCode::OK, &metrics)
-            .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR)),
-        None => Response::text(StatusCode::NOT_FOUND, "api_error_metrics_not_found"),
-    }
+    metrics_collector.get_profile_metrics(&profile).map_or_else(
+        || Response::text(StatusCode::NOT_FOUND, "api_error_metrics_not_found"),
+        |metrics| {
+            Response::json(StatusCode::OK, &metrics)
+                .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
+        },
+    )
 }
 
 #[get("/api/v1/chat/costs")]
@@ -283,11 +340,13 @@ pub async fn get_user_costs(
     Path(user_id): Path<String>,
     Inject(cost_tracker): Inject<CostTracker>,
 ) -> Response {
-    match cost_tracker.get_user_costs(&user_id) {
-        Some(costs) => Response::json(StatusCode::OK, &costs)
-            .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR)),
-        None => Response::text(StatusCode::NOT_FOUND, "api_error_costs_not_found"),
-    }
+    cost_tracker.get_user_costs(&user_id).map_or_else(
+        || Response::text(StatusCode::NOT_FOUND, "api_error_costs_not_found"),
+        |costs| {
+            Response::json(StatusCode::OK, &costs)
+                .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
+        },
+    )
 }
 
 #[get("/api/v1/chat/context-status/{profile}")]

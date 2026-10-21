@@ -33,7 +33,7 @@ pub async fn launch_instance(
     }
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct LaunchRequestForm {
     model: String,
     host: Option<String>,
@@ -126,6 +126,7 @@ pub async fn launch_instance_form(
     }
 }
 
+#[must_use]
 pub fn parse_optional_u16(value: Option<&str>) -> Option<u16> {
     value.and_then(|value| {
         let value = value.trim();
@@ -135,6 +136,7 @@ pub fn parse_optional_u16(value: Option<&str>) -> Option<u16> {
     })
 }
 
+#[must_use]
 pub fn parse_optional_u32(value: Option<&str>) -> Option<u32> {
     value.and_then(|value| {
         let value = value.trim();
@@ -144,6 +146,7 @@ pub fn parse_optional_u32(value: Option<&str>) -> Option<u32> {
     })
 }
 
+#[must_use]
 pub fn parse_optional_f32(value: Option<&str>) -> Option<f32> {
     value.and_then(|value| {
         let value = value.trim();

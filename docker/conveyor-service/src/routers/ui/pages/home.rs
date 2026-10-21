@@ -118,17 +118,17 @@ fn runs_section(runs: &[Run], repositories: &[Repo], scope: Option<&str>) -> Ele
 }
 
 fn state_href(scope: Option<&str>) -> String {
-    match scope {
-        Some(project) => ui_path(&format!("/home/state?project={project}")),
-        None => ui_path("/home/state"),
-    }
+    scope.map_or_else(
+        || ui_path("/home/state"),
+        |project| ui_path(&format!("/home/state?project={project}")),
+    )
 }
 
 fn view_all_href(scope: Option<&str>) -> String {
-    match scope {
-        Some(project) => ui_path(&format!("/runs?project={project}")),
-        None => ui_path("/runs"),
-    }
+    scope.map_or_else(
+        || ui_path("/runs"),
+        |project| ui_path(&format!("/runs?project={project}")),
+    )
 }
 
 /// `Some(&[])` for a project that no longer exists, not a fallback to unscoped.
@@ -219,11 +219,11 @@ fn not_found() -> Response {
     )
 }
 
-fn page(
+fn page<S: std::hash::BuildHasher>(
     runs: &[Run],
     repositories: &[Repo],
     all_projects: &[Project],
-    scans: &HashMap<String, ScanSummary>,
+    scans: &HashMap<String, ScanSummary, S>,
     scope: Option<&Project>,
 ) -> Element {
     let scope_id = scope.map(|project| project.id.as_str());
@@ -278,20 +278,22 @@ fn runs_panel(runs: &[Run], repositories: &[Repo], scope: Option<&str>) -> Eleme
 
 /// The registered projects as the tree they form - rendered once per page
 /// load, not polled; see `runs_section` for why that split exists.
-pub fn project_tree_panel(
+#[must_use]
+pub fn project_tree_panel<S: std::hash::BuildHasher>(
     all_projects: &[Project],
     repositories: &[Repo],
-    scans: &HashMap<String, ScanSummary>,
+    scans: &HashMap<String, ScanSummary, S>,
 ) -> Element {
     project_tree_panel_scoped(all_projects, repositories, scans, None)
 }
 
 /// `project_tree_panel`, rooted at `root_id` instead of the top; `root_id`
 /// itself isn't shown, since `breadcrumb` already says where it is.
-pub fn project_tree_panel_scoped(
+#[must_use]
+pub fn project_tree_panel_scoped<S: std::hash::BuildHasher>(
     all_projects: &[Project],
     repositories: &[Repo],
-    scans: &HashMap<String, ScanSummary>,
+    scans: &HashMap<String, ScanSummary, S>,
     root_id: Option<&str>,
 ) -> Element {
     let panel = div().class("panel").child(
@@ -351,11 +353,11 @@ pub fn project_tree_panel_scoped(
 
 /// One level of the tree, sorted into what needs a disclosure and what
 /// doesn't - a leaf's repo (if any) folds into one shared table instead.
-fn render_level(
+fn render_level<S: std::hash::BuildHasher>(
     nodes: &[&Project],
     children_of: &HashMap<Option<&str>, Vec<&Project>>,
     repos_of: &HashMap<&str, Vec<&Repo>>,
-    scans: &HashMap<String, ScanSummary>,
+    scans: &HashMap<String, ScanSummary, S>,
     scope: Option<&str>,
 ) -> Vec<Element> {
     let mut leaf_repos = Vec::new();
@@ -402,11 +404,11 @@ fn project_link(project: &Project) -> Element {
 }
 
 /// A native `<details>` disclosure - only called when `render_level` finds children.
-fn project_node(
+fn project_node<S: std::hash::BuildHasher>(
     project: &Project,
     children_of: &HashMap<Option<&str>, Vec<&Project>>,
     repos_of: &HashMap<&str, Vec<&Repo>>,
-    scans: &HashMap<String, ScanSummary>,
+    scans: &HashMap<String, ScanSummary, S>,
     scope: Option<&str>,
 ) -> Element {
     let mut node = element("details")
@@ -435,9 +437,9 @@ fn project_node(
     node.child(nested)
 }
 
-fn repo_table(
+fn repo_table<S: std::hash::BuildHasher>(
     repos: &[&Repo],
-    scans: &HashMap<String, ScanSummary>,
+    scans: &HashMap<String, ScanSummary, S>,
     scope: Option<&str>,
 ) -> Element {
     let mut table = element("table").class("run-table").child(
@@ -485,6 +487,7 @@ fn repo_row(repo: &Repo, scan: Option<&ScanSummary>, scope: Option<&str>) -> Ele
 }
 
 /// One chip per check, colored by what the most recent run found - the counts mirror the scan page's cards.
+#[must_use]
 pub fn check_chips(summary: Option<&ScanSummary>) -> Element {
     div()
         .class("chip-row")
@@ -503,6 +506,7 @@ pub fn check_chips(summary: Option<&ScanSummary>) -> Element {
         ))
 }
 
+#[must_use]
 pub fn chip(kind: CheckKind, check: Option<&CheckResult>) -> Element {
     let letter = match kind {
         CheckKind::Lint => "L",
@@ -532,15 +536,16 @@ pub fn chip(kind: CheckKind, check: Option<&CheckResult>) -> Element {
 }
 
 /// No button at all when disabled - it would just 409, and that's worse than nothing.
+#[must_use]
 pub fn run_button(repo: &Repo, scope: Option<&str>) -> Element {
     if !repo.enabled {
         return span();
     }
 
-    let href = match scope {
-        Some(project) => format!("/home/repos/{}/run?project={project}", repo.id),
-        None => format!("/home/repos/{}/run", repo.id),
-    };
+    let href = scope.map_or_else(
+        || format!("/home/repos/{}/run", repo.id),
+        |project| format!("/home/repos/{}/run?project={project}", repo.id),
+    );
 
     button()
         .attr("type", "button")

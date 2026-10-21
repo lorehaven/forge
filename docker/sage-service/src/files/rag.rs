@@ -3,8 +3,10 @@ use crate::clients::vllm::VllmClient;
 use crate::domain::models::Conversation;
 use crate::files::{STATUS_READY, embedder};
 use quench_db::prelude::{Crud, Db};
+use std::fmt::Write as _;
 use uuid::Uuid;
 
+#[derive(Debug)]
 pub struct RagConfig {
     pub auto_inject: bool,
     pub top_k: i64,
@@ -13,14 +15,16 @@ pub struct RagConfig {
 }
 
 impl RagConfig {
+    #[must_use]
     pub fn from_env() -> Self {
         Self {
             auto_inject: envmnt::is_or("SAGE_RAG_AUTO_INJECT", true),
-            top_k: envmnt::get_u64("SAGE_RAG_TOP_K", 4) as i64,
+            top_k: i64::try_from(envmnt::get_u64("SAGE_RAG_TOP_K", 4)).unwrap_or(4),
             similarity_threshold: envmnt::get_or("SAGE_RAG_SIMILARITY_THRESHOLD", "0.35")
                 .parse()
                 .unwrap_or(0.35),
-            max_context_chars: envmnt::get_u64("SAGE_RAG_MAX_CONTEXT_CHARS", 2000) as usize,
+            max_context_chars: usize::try_from(envmnt::get_u64("SAGE_RAG_MAX_CONTEXT_CHARS", 2000))
+                .unwrap_or(2000),
         }
     }
 }
@@ -38,7 +42,7 @@ fn query_input(query: &str) -> String {
     if instruction.trim().is_empty() {
         query.to_string()
     } else {
-        format!("Instruct: {}\nQuery: {}", instruction, query)
+        format!("Instruct: {instruction}\nQuery: {query}")
     }
 }
 
@@ -71,13 +75,13 @@ fn db_schema() -> String {
 }
 
 /// Derive a short location label from a chunk's metadata JSON.
-fn detail_from_metadata(metadata: &Option<serde_json::Value>) -> Option<String> {
-    let obj = metadata.as_ref()?.as_object()?;
+fn detail_from_metadata(metadata: Option<&serde_json::Value>) -> Option<String> {
+    let obj = metadata?.as_object()?;
     if let Some(heading) = obj.get("heading").and_then(|v| v.as_str()) {
         return Some(heading.to_string());
     }
-    if let Some(page) = obj.get("page").and_then(|v| v.as_i64()) {
-        return Some(format!("p.{}", page));
+    if let Some(page) = obj.get("page").and_then(serde_json::Value::as_i64) {
+        return Some(format!("p.{page}"));
     }
     None
 }
@@ -142,7 +146,7 @@ pub async fn search_chunks(
         .into_iter()
         .map(
             |(file_id, chunk_id, file_name, chunk_index, content, metadata, similarity)| {
-                let detail = detail_from_metadata(&metadata);
+                let detail = detail_from_metadata(metadata.as_ref());
                 ChunkHit {
                     file_id,
                     chunk_id,
@@ -166,7 +170,7 @@ pub struct RagSource {
     pub similarity: Option<f64>,
 }
 
-/// Persist which chunks fed a message's answer, for UI source attribution; `source` is "auto" (injected into the prompt) or "tool" (file_search).
+/// Persist which chunks fed a message's answer, for UI source attribution; `source` is "auto" (injected into the prompt) or "tool" (`file_search`).
 pub async fn record_rag_contexts(
     db: &Db,
     message_id: &str,
@@ -205,6 +209,7 @@ pub async fn record_rag_contexts(
 }
 
 /// The label and link a web source is stored and shown with: `[1] example.com` and its URL.
+#[must_use]
 pub fn web_source_label(source: &crate::grounding::WebSource) -> (String, String) {
     (
         format!("[{}] {}", source.index, source.domain),
@@ -322,7 +327,7 @@ pub async fn augment_system_prompt(
          Use the file_search tool to look up their content when the question may relate to them:\n",
     );
     for file in &ready_files {
-        out.push_str(&format!("- {}\n", file.file_name));
+        let _ = writeln!(out, "- {}", file.file_name);
     }
 
     let config = RagConfig::from_env();
@@ -370,12 +375,13 @@ pub async fn augment_system_prompt(
                     let location = hit
                         .detail
                         .as_ref()
-                        .map(|d| format!(" · {}", d))
+                        .map(|d| format!(" · {d}"))
                         .unwrap_or_default();
-                    out.push_str(&format!(
-                        "[{}{} · similarity {:.2}]\n{}\n\n",
+                    let _ = writeln!(
+                        out,
+                        "[{}{} · similarity {:.2}]\n{}\n",
                         hit.file_name, location, hit.similarity, content
-                    ));
+                    );
                     injected.push(hit);
                 }
             }

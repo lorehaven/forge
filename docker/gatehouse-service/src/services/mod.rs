@@ -1,3 +1,5 @@
+//! Gatehouse catalogs available services and their destination URLs.
+//!
 //! Services gatehouse can send you to - the catalog says which exist and want a
 //! card (`home = true`); the environment says where they are and whether they
 //! are switched on. A card shows when its URL is configured and its feature
@@ -5,6 +7,7 @@
 
 use crate::catalog::PermissionCatalog;
 
+#[derive(Debug)]
 pub struct ServiceLink {
     pub url: String,
     /// `ui_service_<name>_title` / `_desc`: translations, when a locale has them.
@@ -22,6 +25,7 @@ fn env_prefix(name: &str) -> String {
 }
 
 /// Services to offer, in the catalog's order.
+#[must_use]
 pub fn enabled_services(catalog: &PermissionCatalog) -> Vec<ServiceLink> {
     catalog
         .home_services()
@@ -43,6 +47,7 @@ pub fn enabled_services(catalog: &PermissionCatalog) -> Vec<ServiceLink> {
 
 /// `<PREFIX>_UI_URL`, falling back to `<PREFIX>_URL` so a deployment that
 /// already points gatehouse at a service does not have to repeat itself.
+#[must_use]
 pub fn service_url(prefix: &str) -> Option<String> {
     for key in [format!("{prefix}_UI_URL"), format!("{prefix}_URL")] {
         let value = envmnt::get_or(&key, "");
@@ -55,6 +60,7 @@ pub fn service_url(prefix: &str) -> Option<String> {
 }
 
 /// Matches how the other services read their feature flags.
+#[must_use]
 pub fn feature_enabled(name: &str, default: bool) -> bool {
     match envmnt::get_or(name, if default { "true" } else { "false" })
         .trim()

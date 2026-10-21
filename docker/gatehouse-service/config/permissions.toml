@@ -63,6 +63,11 @@ actions = ["read", "write"]
 # named project, no ancestor walk.
 resource_types = ["project"]
 
+[services.daybook]
+label = "Daybook"
+description = "Personal tasks, inbox and lists."
+actions = ["read", "write"]
+
 [services.gantry]
 label = "Gantry"
 home = true
@@ -98,6 +103,7 @@ warehouse = ["read"]
 switchboard = ["read"]
 conveyor = ["read"]
 workbench = ["read"]
+daybook = ["read"]
 gantry = ["read"]
 
 [templates.editor]
@@ -106,6 +112,7 @@ warehouse = ["read", "write"]
 switchboard = ["read", "launch", "stop"]
 conveyor = ["read", "write"]
 workbench = ["read", "write"]
+daybook = ["read", "write"]
 # Reading only: what Gantry can do to the cluster is granted deliberately, never by a template.
 gantry = ["read"]
 

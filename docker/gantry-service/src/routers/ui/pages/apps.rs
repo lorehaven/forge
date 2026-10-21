@@ -1,10 +1,12 @@
-//! One application: a package, what it declares, and what is in the cluster of it. The resources can be
+//! One application: a package, what it declares, and what is in the cluster of it.
+//!
+//! The resources can be
 //! filtered by kind, state and name; the actions on the whole package sit above them, the actions on one
 //! resource beside it.
 
 use crate::domain::actions;
 use crate::domain::deployments::{self, DeploymentView, Observed};
-use crate::domain::resources::{Row, State};
+use crate::domain::resources::{Group, Row, State, Summary};
 use crate::domain::service::Gantry;
 use crate::routers::api::authz;
 use crate::routers::ui::common::{
@@ -59,35 +61,14 @@ fn state_link(package: &str, state: &str) -> String {
     ui_path(&format!("/apps/{package}?state={}", percent_encode(state)))
 }
 
-#[get("/ui/apps/{name}")]
-pub(super) async fn show(
-    Path(package): Path<String>,
-    actor: ActorOrRedirect,
-    Inject(gantry): Inject<Gantry>,
-    Inject(config): Inject<JwtConfig>,
-    Query(notice): Query<Notice>,
-    Query(filter): Query<Filter>,
-) -> Response {
-    let claims = match actor.or_redirect() {
-        Ok(claims) => claims,
-        Err(response) => return response,
-    };
-    if !authz::can_on_target(Some(&claims), &config, &package, "read") {
-        return redirect("/home", Some(("error", "not allowed")));
-    }
-    let groups = match actions::groups(&gantry).await {
-        Ok(groups) => groups,
-        Err(error) => return redirect("/home", Some(("error", &error.to_string()))),
-    };
-    let Some(group) = groups.iter().find(|g| g.package == package) else {
-        return redirect("/home", Some(("error", "no such package")));
-    };
-    let summary = group.summary();
-    let package = package.as_str();
-
-    let may_scale = authz::can_on_target(Some(&claims), &config, package, "scale");
-    let may_deploy = authz::can_on_target(Some(&claims), &config, package, "deploy");
-
+/// The actions on the whole package.
+fn group_actions(
+    package: &str,
+    group: &Group,
+    summary: &Summary,
+    may_deploy: bool,
+    may_scale: bool,
+) -> Element {
     let mut bar = div().class("gt-group-actions");
     if let (true, Some(latest)) = (may_deploy, &summary.update_to) {
         bar = bar.child(action_with(
@@ -121,14 +102,13 @@ pub(super) async fn show(
             .class("gt-btn")
             .attr("data-i18n", "ui_action_versions"),
     );
+    bar
+}
 
-    let views: Vec<DeploymentView> = deployments::all(&gantry).await.unwrap_or_default();
-    let declared: Vec<&DeploymentView> = views
-        .iter()
-        .filter(|d| d.declared && d.target == package)
-        .collect();
+/// The package's declared deployments, with the stop/start actions on each.
+fn deployments_panel(declared: &[&DeploymentView], may_scale: bool) -> Element {
     let mut deps = div().class("gt-deps");
-    for view in &declared {
+    for view in declared {
         let up = view.observed == Observed::Running;
         let installed = view.observed != Observed::Absent;
         let mut buttons = div().class("gt-right");
@@ -163,7 +143,11 @@ pub(super) async fn show(
                 .child(buttons),
         );
     }
+    deps
+}
 
+/// What the filter offers: the kinds the package has, and the states a resource can be in.
+fn filter_selects(group: &Group, filter: &Filter) -> (Element, Element) {
     // What the filter offers, and what it leaves.
     let mut kind_select = select().attr("name", "kind").child(
         option()
@@ -197,10 +181,11 @@ pub(super) async fn show(
         }
         state_select = state_select.child(opt);
     }
-    let filtering =
-        !(filter.kind.is_empty() && filter.state.is_empty() && filter.q.trim().is_empty());
+    (kind_select, state_select)
+}
 
-    let shown = group.filtered(&filter.kind, &filter.state, &filter.q);
+/// One row per resource, with the actions that apply to it.
+fn resources_table(package: &str, shown: &[&Row], may_scale: bool, may_deploy: bool) -> Element {
     let mut list = table(&[
         "ui_col_kind",
         "ui_col_name",
@@ -208,7 +193,7 @@ pub(super) async fn show(
         "ui_col_status",
         "",
     ]);
-    for resource in &shown {
+    for resource in shown {
         let state = resource.state;
         let mut buttons = div().class("gt-right");
         if may_scale && state == State::Missing {
@@ -254,8 +239,11 @@ pub(super) async fn show(
             buttons,
         ]));
     }
+    list
+}
 
-    // Counts that are also the quickest filters.
+/// Counts that are also the quickest filters.
+fn state_counts(package: &str, summary: &Summary) -> Element {
     let mut counts = div().class("gt-counts");
     for (state, n) in [
         (State::Synced, summary.synced),
@@ -273,6 +261,89 @@ pub(super) async fn show(
                 .child(span().class("gt-muted").text(format!(" {n}"))),
         );
     }
+    counts
+}
+
+/// The filter above the resource table: a name, a kind, a state, and how many of the rows it leaves.
+fn filter_form(package: &str, group: &Group, filter: &Filter, shown: usize) -> Element {
+    let (kind_select, state_select) = filter_selects(group, filter);
+    let filtering =
+        !(filter.kind.is_empty() && filter.state.is_empty() && filter.q.trim().is_empty());
+
+    form()
+        .attr("method", "get")
+        .attr("action", ui_path(&format!("/apps/{package}")))
+        .class("gt-form gt-inline-form gt-filter")
+        .child(
+            input()
+                .attr("type", "text")
+                .attr("name", "q")
+                .attr("placeholder", "name")
+                .attr("value", filter.q.clone()),
+        )
+        .child(kind_select)
+        .child(state_select)
+        .child(
+            button()
+                .attr("type", "submit")
+                .class("gt-btn")
+                .attr("data-i18n", "ui_action_filter"),
+        )
+        .child_opt(filtering.then(|| {
+            a().attr("href", ui_path(&format!("/apps/{package}")))
+                .class("gt-btn")
+                .attr("data-i18n", "ui_action_clear")
+        }))
+        .child(
+            span()
+                .class("gt-muted")
+                .text(format!("{shown} / {}", group.rows.len())),
+        )
+}
+
+#[get("/ui/apps/{name}")]
+pub(super) async fn show(
+    Path(package): Path<String>,
+    actor: ActorOrRedirect,
+    Inject(gantry): Inject<Gantry>,
+    Inject(config): Inject<JwtConfig>,
+    Query(notice): Query<Notice>,
+    Query(filter): Query<Filter>,
+) -> Response {
+    let claims = match actor.or_redirect() {
+        Ok(claims) => claims,
+        Err(response) => return response,
+    };
+    if !authz::can_on_target(Some(&claims), &config, &package, "read") {
+        return redirect("/home", Some(("error", "not allowed")));
+    }
+    let groups = match actions::groups(&gantry).await {
+        Ok(groups) => groups,
+        Err(error) => return redirect("/home", Some(("error", &error.to_string()))),
+    };
+    let Some(group) = groups.iter().find(|g| g.package == package) else {
+        return redirect("/home", Some(("error", "no such package")));
+    };
+    let summary = group.summary();
+    let package = package.as_str();
+
+    let may_scale = authz::can_on_target(Some(&claims), &config, package, "scale");
+    let may_deploy = authz::can_on_target(Some(&claims), &config, package, "deploy");
+
+    let bar = group_actions(package, group, &summary, may_deploy, may_scale);
+
+    let views: Vec<DeploymentView> = deployments::all(&gantry).await.unwrap_or_default();
+    let declared: Vec<&DeploymentView> = views
+        .iter()
+        .filter(|d| d.declared && d.target == package)
+        .collect();
+    let deps = deployments_panel(&declared, may_scale);
+
+    let shown = group.filtered(&filter.kind, &filter.state, &filter.q);
+    let list = resources_table(package, &shown, may_scale, may_deploy);
+
+    // Counts that are also the quickest filters.
+    let counts = state_counts(package, &summary);
 
     let versions = format!(
         "{}{}",
@@ -318,37 +389,7 @@ pub(super) async fn show(
                 )
                 .child(counts)
                 .child_opt((!declared.is_empty()).then_some(deps))
-                .child(
-                    form()
-                        .attr("method", "get")
-                        .attr("action", ui_path(&format!("/apps/{package}")))
-                        .class("gt-form gt-inline-form gt-filter")
-                        .child(
-                            input()
-                                .attr("type", "text")
-                                .attr("name", "q")
-                                .attr("placeholder", "name")
-                                .attr("value", filter.q.clone()),
-                        )
-                        .child(kind_select)
-                        .child(state_select)
-                        .child(
-                            button()
-                                .attr("type", "submit")
-                                .class("gt-btn")
-                                .attr("data-i18n", "ui_action_filter"),
-                        )
-                        .child_opt(filtering.then(|| {
-                            a().attr("href", ui_path(&format!("/apps/{package}")))
-                                .class("gt-btn")
-                                .attr("data-i18n", "ui_action_clear")
-                        }))
-                        .child(span().class("gt-muted").text(format!(
-                            "{} / {}",
-                            shown.len(),
-                            group.rows.len()
-                        ))),
-                )
+                .child(filter_form(package, group, &filter, shown.len()))
                 .child(if group.rows.is_empty() {
                     p().class("gt-muted")
                         .attr("data-i18n", "ui_target_no_units")

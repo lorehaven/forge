@@ -7,6 +7,38 @@ use crate::utils::sha256::sha256_file;
 use quench_http::prelude::{Path, Query, Response, http::StatusCode, put};
 use quench_starter::http::domain::error;
 
+/// `201` for a blob that is (now) in the store.
+fn created(name: &str, digest: &str) -> Response {
+    Response::new(StatusCode::CREATED)
+        .header("location", format!("/v2/{name}/blobs/{digest}"))
+        .header("docker-content-digest", digest)
+}
+
+fn internal_error() -> Response {
+    error::response(
+        StatusCode::INTERNAL_SERVER_ERROR,
+        error::UNSUPPORTED,
+        "internal server error",
+    )
+}
+
+/// What a failed append to the upload file means to the client.
+fn append_error_response(err: &AppendError) -> Response {
+    match err {
+        AppendError::TooLarge(_) => error::response(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            error::UNSUPPORTED,
+            "blob exceeds the maximum allowed size",
+        ),
+        AppendError::Read => error::response(
+            StatusCode::BAD_REQUEST,
+            error::UNSUPPORTED,
+            "the upload was interrupted",
+        ),
+        AppendError::Write => internal_error(),
+    }
+}
+
 // Pattern must match the sibling upload handlers byte-for-byte (quench-http keys routes by pattern string).
 #[put("/v2/{name:.+}/blobs/uploads/{uuid}")]
 pub async fn handle(
@@ -41,9 +73,7 @@ pub async fn handle(
 
     if tokio::fs::metadata(&final_path).await.is_ok() {
         let _ = tokio::fs::remove_file(&upload_file).await;
-        return Response::new(StatusCode::CREATED)
-            .header("location", format!("/v2/{name}/blobs/{digest}"))
-            .header("docker-content-digest", digest);
+        return created(&name, digest);
     }
 
     let current_size = match tokio::fs::metadata(&upload_file).await {
@@ -57,46 +87,18 @@ pub async fn handle(
         }
     };
 
-    match append_body_to_upload(&upload_file, current_size, body).await {
-        Ok(_) => {}
-        Err(AppendError::TooLarge(_)) => {
-            return error::response(
-                StatusCode::PAYLOAD_TOO_LARGE,
-                error::UNSUPPORTED,
-                "blob exceeds the maximum allowed size",
-            );
-        }
-        Err(AppendError::Read) => {
-            return error::response(
-                StatusCode::BAD_REQUEST,
-                error::UNSUPPORTED,
-                "the upload was interrupted",
-            );
-        }
-        Err(AppendError::Write) => {
-            return error::response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                error::UNSUPPORTED,
-                "internal server error",
-            );
-        }
+    if let Err(err) = append_body_to_upload(&upload_file, current_size, body).await {
+        return append_error_response(&err);
     }
 
-    let computed = match sha256_file(&upload_file).await {
-        Ok(hex) => format!("sha256:{hex}"),
-        Err(_) => {
-            if tokio::fs::metadata(&final_path).await.is_ok() {
-                let _ = tokio::fs::remove_file(&upload_file).await;
-                return Response::new(StatusCode::CREATED)
-                    .header("location", format!("/v2/{name}/blobs/{digest}"))
-                    .header("docker-content-digest", digest);
-            }
-            return error::response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                error::UNSUPPORTED,
-                "internal server error",
-            );
+    let computed = if let Ok(hex) = sha256_file(&upload_file).await {
+        format!("sha256:{hex}")
+    } else {
+        if tokio::fs::metadata(&final_path).await.is_ok() {
+            let _ = tokio::fs::remove_file(&upload_file).await;
+            return created(&name, digest);
         }
+        return internal_error();
     };
 
     if &computed != digest {
@@ -108,25 +110,15 @@ pub async fn handle(
     }
 
     let Some(final_parent) = final_path.parent() else {
-        return error::response(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            error::UNSUPPORTED,
-            "internal server error",
-        );
+        return internal_error();
     };
     if tokio::fs::create_dir_all(final_parent).await.is_err() {
-        return error::response(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            error::UNSUPPORTED,
-            "internal server error",
-        );
+        return internal_error();
     }
 
     if tokio::fs::metadata(&final_path).await.is_ok() {
         let _ = tokio::fs::remove_file(&upload_file).await;
-        return Response::new(StatusCode::CREATED)
-            .header("location", format!("/v2/{name}/blobs/{digest}"))
-            .header("docker-content-digest", digest);
+        return created(&name, digest);
     }
 
     if let Err(err) = tokio::fs::rename(&upload_file, &final_path).await {
@@ -134,17 +126,11 @@ pub async fn handle(
             let _ = tokio::fs::remove_file(&upload_file).await;
         } else {
             let _ = err;
-            return error::response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                error::UNSUPPORTED,
-                "internal server error",
-            );
+            return internal_error();
         }
     }
 
-    Response::new(StatusCode::CREATED)
-        .header("location", format!("/v2/{name}/blobs/{digest}"))
-        .header("docker-content-digest", digest)
+    created(&name, digest)
 }
 
 pub fn register_routes() {

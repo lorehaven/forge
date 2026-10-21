@@ -85,11 +85,7 @@ fn parse_list_returns_empty_for_malformed_json_that_looks_like_json() {
 
 #[test]
 fn is_model_supported_matches_glob_style_patterns_case_insensitively() {
-    let config = sample_config(vec![
-        "qwen*".to_string(),
-        "*-instruct".to_string(),
-        "llama?".to_string(),
-    ]);
+    let config = sample_config(&["qwen*", "*-instruct", "llama?"]);
 
     assert!(config.is_model_supported("qwen2.5-coder:7b"));
     assert!(config.is_model_supported("QWEN2.5-CODER"));
@@ -101,11 +97,11 @@ fn is_model_supported_matches_glob_style_patterns_case_insensitively() {
 
 #[test]
 fn is_model_supported_is_false_with_no_configured_patterns() {
-    let config = sample_config(vec![]);
+    let config = sample_config(&[]);
     assert!(!config.is_model_supported("anything"));
 }
 
-fn sample_config(supported_models: Vec<String>) -> SageConfig {
+fn sample_config(supported_models: &[&str]) -> SageConfig {
     let value = serde_json::json!({
         "system_prompt": "test",
         "default_models": [],
@@ -126,7 +122,9 @@ fn sample_config(supported_models: Vec<String>) -> SageConfig {
 
 #[test]
 fn load_uses_defaults_when_nothing_is_configured() {
-    let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     for key in [
         "SAGE_SYSTEM_PROMPT_PATH",
         "SAGE_CAPABILITY_PROFILE",
@@ -137,7 +135,7 @@ fn load_uses_defaults_when_nothing_is_configured() {
         "BRAVE_SEARCH_API_KEY",
         "SERPAPI_API_KEY",
     ] {
-        unsafe { std::env::remove_var(key) };
+        envmnt::remove(key);
     }
 
     let config = SageConfig::load();
@@ -155,20 +153,24 @@ fn load_uses_defaults_when_nothing_is_configured() {
 
 #[test]
 fn load_falls_back_to_web_assistant_for_an_unknown_capability_profile() {
-    let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
-    unsafe { std::env::set_var("SAGE_CAPABILITY_PROFILE", "not-a-real-profile") };
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    envmnt::set("SAGE_CAPABILITY_PROFILE", "not-a-real-profile");
 
     let config = SageConfig::load();
     assert_eq!(config.capability_profile.name, "web_assistant");
 
-    unsafe { std::env::remove_var("SAGE_CAPABILITY_PROFILE") };
+    envmnt::remove("SAGE_CAPABILITY_PROFILE");
 }
 
 #[test]
 fn load_picks_up_search_provider_api_keys() {
-    let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
-    unsafe { std::env::set_var("BRAVE_SEARCH_API_KEY", "key") };
-    unsafe { std::env::set_var("SERPAPI_API_KEY", "key") };
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    envmnt::set("BRAVE_SEARCH_API_KEY", "key");
+    envmnt::set("SERPAPI_API_KEY", "key");
 
     let config = SageConfig::load();
     assert_eq!(
@@ -181,15 +183,17 @@ fn load_picks_up_search_provider_api_keys() {
         ]
     );
 
-    unsafe { std::env::remove_var("BRAVE_SEARCH_API_KEY") };
-    unsafe { std::env::remove_var("SERPAPI_API_KEY") };
+    envmnt::remove("BRAVE_SEARCH_API_KEY");
+    envmnt::remove("SERPAPI_API_KEY");
 }
 
 #[test]
 fn load_stop_models_on_shutdown_and_supported_models_read_their_env_vars() {
-    let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
-    unsafe { std::env::set_var("SAGE_STOP_MODELS_ON_SHUTDOWN", "true") };
-    unsafe { std::env::set_var("SAGE_SUPPORTED_MODELS", "foo, bar , ,baz") };
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    envmnt::set("SAGE_STOP_MODELS_ON_SHUTDOWN", "true");
+    envmnt::set("SAGE_SUPPORTED_MODELS", "foo, bar , ,baz");
 
     let config = SageConfig::load();
     assert!(config.stop_models_on_shutdown);
@@ -198,6 +202,6 @@ fn load_stop_models_on_shutdown_and_supported_models_read_their_env_vars() {
         vec!["foo".to_string(), "bar".to_string(), "baz".to_string()]
     );
 
-    unsafe { std::env::remove_var("SAGE_STOP_MODELS_ON_SHUTDOWN") };
-    unsafe { std::env::remove_var("SAGE_SUPPORTED_MODELS") };
+    envmnt::remove("SAGE_STOP_MODELS_ON_SHUTDOWN");
+    envmnt::remove("SAGE_SUPPORTED_MODELS");
 }

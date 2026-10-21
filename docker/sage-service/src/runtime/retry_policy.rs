@@ -9,7 +9,8 @@ pub struct RetryPolicy {
 }
 
 impl RetryPolicy {
-    pub fn new(max_retries: u32, initial_backoff_ms: u64, max_backoff_ms: u64) -> Self {
+    #[must_use]
+    pub const fn new(max_retries: u32, initial_backoff_ms: u64, max_backoff_ms: u64) -> Self {
         Self {
             max_retries,
             initial_backoff_ms,
@@ -17,7 +18,8 @@ impl RetryPolicy {
         }
     }
 
-    pub fn none() -> Self {
+    #[must_use]
+    pub const fn none() -> Self {
         Self {
             max_retries: 0,
             initial_backoff_ms: 0,
@@ -25,6 +27,7 @@ impl RetryPolicy {
         }
     }
 
+    #[must_use]
     pub fn calculate_backoff(&self, attempt: u32) -> Duration {
         if attempt == 0 {
             return Duration::from_millis(0);
@@ -35,25 +38,20 @@ impl RetryPolicy {
         Duration::from_millis(backoff_ms)
     }
 
-    pub fn should_retry(&self, attempt: u32) -> bool {
+    #[must_use]
+    pub const fn should_retry(&self, attempt: u32) -> bool {
         attempt < self.max_retries
     }
 }
 
+#[must_use]
 pub fn get_retry_policy(tool_name: &str) -> RetryPolicy {
     match tool_name {
         // Network-based tools: retry up to 3 times with exponential backoff
-        "web_search" => RetryPolicy::new(3, 100, 5000),
-        "web_fetch" => RetryPolicy::new(3, 100, 5000),
-        // Code execution: retry once (avoid side effects)
-        "code_executor" => RetryPolicy::new(1, 100, 1000),
-        // Commands: never retry (avoid side effects from shell execution)
-        "command" => RetryPolicy::none(),
-        // File operations: no retry (avoid partial writes)
-        "file_ops" => RetryPolicy::none(),
-        // Calculator: no retry (deterministic)
-        "calculator" => RetryPolicy::none(),
-        // Default: single retry
+        "web_search" | "web_fetch" => RetryPolicy::new(3, 100, 5000),
+        // Commands, file operations and calculator calls are not retried.
+        "command" | "file_ops" | "calculator" => RetryPolicy::none(),
+        // Code execution and unknown tools receive one retry.
         _ => RetryPolicy::new(1, 100, 1000),
     }
 }

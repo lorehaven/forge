@@ -83,12 +83,14 @@ pub struct CredentialRef {
 }
 
 /// A decrypted credential, held only for the duration of a checkout.
+#[derive(Debug)]
 pub struct ResolvedCredential {
     pub username: String,
     pub token: String,
 }
 
 /// Grouped into one argument (rather than four) to stay under clippy's argument-count lint.
+#[derive(Debug)]
 pub struct NewCredential<'a> {
     pub name: &'a str,
     pub kind: &'a str,
@@ -111,7 +113,7 @@ fn validate_name(name: &str) -> Result<(), CredentialError> {
 
 /// Both end up in an `Authorization: Basic` header (`workspace::checkout`), so a newline would let a credential inject a second header.
 fn validate_material(username: &str, token: &str) -> Result<(), CredentialError> {
-    let clean = |s: &str| !s.chars().any(|c| c.is_control());
+    let clean = |s: &str| !s.chars().any(char::is_control);
     if !clean(username) || !clean(token) {
         return Err(CredentialError::BadMaterial);
     }

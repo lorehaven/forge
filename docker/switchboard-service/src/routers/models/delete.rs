@@ -61,7 +61,7 @@ async fn delete_model_path(model_path: &str) -> Response {
     };
 
     match res {
-        Ok(_) => {
+        Ok(()) => {
             get_store().remove_model(model_path).await;
             Response::new(http::StatusCode::OK)
         }

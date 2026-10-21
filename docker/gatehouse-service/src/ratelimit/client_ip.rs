@@ -12,7 +12,9 @@ use async_trait::async_trait;
 use quench_http::prelude::{FromRequest, HttpError, Request};
 use std::net::IpAddr;
 
-/// A client address, or `unknown` when no usable one was sent. Unknown clients
+/// A client address, or `unknown` when no usable one was sent.
+///
+/// Unknown clients
 /// share one bucket rather than each header value getting a bucket of its own -
 /// otherwise a forged header would be an unlimited supply of fresh limits.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,10 +34,12 @@ impl ClientIp {
                     .and_then(|list| list.rsplit(',').next())
                     .map(str::trim)
             });
-        match candidate.and_then(|value| value.parse::<IpAddr>().ok()) {
-            Some(ip) => Self(ip.to_string()),
-            None => Self(Self::UNKNOWN.to_string()),
-        }
+        candidate
+            .and_then(|value| value.parse::<IpAddr>().ok())
+            .map_or_else(
+                || Self(Self::UNKNOWN.to_string()),
+                |ip| Self(ip.to_string()),
+            )
     }
 }
 

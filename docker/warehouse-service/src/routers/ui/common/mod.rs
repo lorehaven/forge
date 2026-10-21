@@ -76,12 +76,14 @@ pub fn render_page(status: StatusCode, content: Element) -> Response {
     Response::html(status, UI_SHELL.page_wide(content))
 }
 
+#[must_use]
 pub fn ui_login_redirect() -> Response {
     quench_starter::http::routers::ui::ui_login_redirect()
 }
 
 /// Whether the request carries a usable realm session - for a page that only
 /// needs to gate rendering, not the identity behind it.
+#[derive(Debug)]
 pub struct PageAuth(pub bool);
 
 #[async_trait]

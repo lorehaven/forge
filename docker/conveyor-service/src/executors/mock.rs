@@ -34,11 +34,13 @@ impl Default for MockOutcome {
 }
 
 impl MockOutcome {
+    #[must_use]
     pub fn success() -> Self {
         Self::default()
     }
 
-    pub fn failure(exit_code: i32) -> Self {
+    #[must_use]
+    pub const fn failure(exit_code: i32) -> Self {
         Self {
             status: Status::Failed,
             exit_code: Some(exit_code),
@@ -54,6 +56,7 @@ impl MockOutcome {
     }
 }
 
+#[derive(Debug)]
 struct Finished {
     state: JobState,
     history: Vec<LogChunk>,
@@ -71,6 +74,7 @@ pub struct MockExecutor {
 }
 
 impl MockExecutor {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -202,10 +206,12 @@ impl JobExecutor for MockExecutor {
             .get(handle.as_str())
             .ok_or_else(|| ExecError::UnknownHandle(handle.clone()))?;
 
-        Ok(LogTail {
+        let tail = LogTail {
             history: job.history.clone(),
             live: job.publisher.subscribe(),
-        })
+        };
+        drop(jobs);
+        Ok(tail)
     }
 
     async fn cancel(&self, handle: &Handle) -> Result<(), ExecError> {
@@ -218,6 +224,7 @@ impl JobExecutor for MockExecutor {
         job.state
             .error
             .get_or_insert_with(|| "cancelled".to_string());
+        drop(jobs);
 
         self.cancelled
             .lock()
@@ -232,5 +239,11 @@ impl JobExecutor for MockExecutor {
             .expect("jobs poisoned")
             .remove(handle.as_str());
         Ok(())
+    }
+}
+
+impl std::fmt::Debug for MockExecutor {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("MockExecutor { .. }")
     }
 }

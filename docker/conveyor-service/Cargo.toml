@@ -15,6 +15,9 @@ readme = "README.md"
 name = "conveyor_service"
 path = "src/lib.rs"
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "conveyor-service"
 path = "src/main.rs"
@@ -34,7 +37,6 @@ forge-ui = { workspace = true }
 http = { workspace = true }
 k8s-openapi = { workspace = true }
 kube = { workspace = true }
-libc = { workspace = true }
 quench-auth = { workspace = true }
 quench-client = { workspace = true }
 quench-db = { workspace = true }

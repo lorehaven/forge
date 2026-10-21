@@ -81,15 +81,17 @@ async fn render_list(db: &Db, claims: &Claims) -> Response {
 }
 
 /// Where a credential lives, resolved to the project id its readability is judged against.
+#[derive(Debug)]
 pub struct Scope<'a> {
     pub project_id: &'a str,
     /// The owning repo for a repo-scoped credential's "repo: owner/name" label.
     pub repo: Option<&'a Repo>,
 }
 
-pub fn credential_scope<'a>(
+#[must_use]
+pub fn credential_scope<'a, S: std::hash::BuildHasher>(
     credential: &'a CredentialRef,
-    repos_by_id: &HashMap<&'a str, &'a Repo>,
+    repos_by_id: &HashMap<&'a str, &'a Repo, S>,
 ) -> Option<Scope<'a>> {
     if let Some(project_id) = credential.project_id.as_deref() {
         return Some(Scope {
@@ -104,15 +106,16 @@ pub fn credential_scope<'a>(
     })
 }
 
+#[must_use]
 pub fn credential_row(
     credential: &CredentialRef,
     scope: &Scope,
     all_projects: &[Project],
 ) -> Element {
-    let scope_label = match scope.repo {
-        Some(repo) => format!("repo: {}/{}", repo.owner, repo.name),
-        None => format!("project: {}", project_path(scope.project_id, all_projects)),
-    };
+    let scope_label = scope.repo.map_or_else(
+        || format!("project: {}", project_path(scope.project_id, all_projects)),
+        |repo| format!("repo: {}/{}", repo.owner, repo.name),
+    );
 
     div()
         .class("repos-row")

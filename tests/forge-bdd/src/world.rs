@@ -20,6 +20,7 @@ pub enum Target {
     Gatehouse,
     Conveyor,
     Workbench,
+    Daybook,
 }
 
 impl Target {
@@ -32,16 +33,18 @@ impl Target {
             Target::Gatehouse => "gatehouse",
             Target::Conveyor => "conveyor",
             Target::Workbench => "workbench",
+            Target::Daybook => "daybook",
         }
     }
 
-    pub const ALL: [Target; 6] = [
+    pub const ALL: [Target; 7] = [
         Target::Sage,
         Target::Switchboard,
         Target::Warehouse,
         Target::Gatehouse,
         Target::Conveyor,
         Target::Workbench,
+        Target::Daybook,
     ];
 
     pub fn parse(value: &str) -> Option<Self> {
@@ -70,6 +73,8 @@ pub struct ForgeWorld {
     pub conveyor_url: String,
     pub workbench_base_url: String,
     pub workbench_url: String,
+    pub daybook_base_url: String,
+    pub daybook_url: String,
 
     pub client: reqwest::Client,
 
@@ -124,6 +129,7 @@ impl ForgeWorld {
         let gatehouse_base_url = service_url("GATEHOUSE_API_URL", "http://127.0.0.1:5443");
         let conveyor_base_url = service_url("CONVEYOR_API_URL", "http://127.0.0.1:9999");
         let workbench_base_url = service_url("WORKBENCH_API_URL", "http://127.0.0.1:10443");
+        let daybook_base_url = service_url("DAYBOOK_API_URL", "http://127.0.0.1:12443");
 
         let client = reqwest::Client::builder()
             .danger_accept_invalid_certs(true)
@@ -162,6 +168,8 @@ impl ForgeWorld {
             conveyor_base_url,
             workbench_url: format!("{workbench_base_url}/workbench"),
             workbench_base_url,
+            daybook_url: format!("{daybook_base_url}/daybook"),
+            daybook_base_url,
             client,
             last_status: None,
             last_json: None,
@@ -197,6 +205,7 @@ impl ForgeWorld {
             Target::Gatehouse => &self.gatehouse_url,
             Target::Conveyor => &self.conveyor_url,
             Target::Workbench => &self.workbench_url,
+            Target::Daybook => &self.daybook_url,
         }
     }
 
@@ -209,6 +218,7 @@ impl ForgeWorld {
             Target::Gatehouse => &self.gatehouse_base_url,
             Target::Conveyor => &self.conveyor_base_url,
             Target::Workbench => &self.workbench_base_url,
+            Target::Daybook => &self.daybook_base_url,
         }
     }
 
@@ -256,6 +266,10 @@ impl ForgeWorld {
     pub fn apply_auth(&self, mut rb: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
         if self.target == Target::Switchboard {
             rb = rb.bearer_auth(&self.switchboard_token);
+        } else if self.target == Target::Daybook {
+            if let Some(token) = &self.access_token {
+                rb = rb.bearer_auth(token);
+            }
         } else if let Some((username, password)) = &self.credentials {
             rb = rb.basic_auth(username, Some(password));
         }

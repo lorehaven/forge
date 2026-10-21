@@ -2,6 +2,7 @@ use super::{ToolCall, ToolDefinition, ToolExecutor, ToolParameters, ToolResult};
 use async_trait::async_trait;
 use serde_json::json;
 
+#[must_use]
 pub fn get_definition() -> ToolDefinition {
     ToolDefinition {
         name: "calculator".to_string(),
@@ -20,6 +21,7 @@ pub fn get_definition() -> ToolDefinition {
     }
 }
 
+#[derive(Debug)]
 pub struct CalculatorExecutor;
 
 #[async_trait]
@@ -49,17 +51,16 @@ impl ToolExecutor for CalculatorExecutor {
             Ok(result) => {
                 // Format the result with proper formatting
                 let formatted_result = if result.fract() == 0.0 {
-                    format!("{:.0}", result)
+                    format!("{result:.0}")
                 } else {
-                    format!("{}", result)
+                    format!("{result}")
                 };
 
                 let content = format!(
                     "**Calculation Result**\n\n\
-                     Expression: `{}`\n\n\
-                     Result: **{}**\n\n\
-                     (Use this result in further calculations or show to the user)",
-                    expression, formatted_result
+                     Expression: `{expression}`\n\n\
+                     Result: **{formatted_result}**\n\n\
+                     (Use this result in further calculations or show to the user)"
                 );
 
                 ToolResult {
@@ -70,7 +71,7 @@ impl ToolExecutor for CalculatorExecutor {
             }
             Err(err) => ToolResult {
                 tool_use_id: tool_call.id.clone(),
-                content: format!("Calculation error: {}", err),
+                content: format!("Calculation error: {err}"),
                 is_error: true,
             },
         }
@@ -85,7 +86,7 @@ pub fn eval_expression(expr: &str) -> Result<f64, String> {
 }
 
 fn eval_expr(expr: &str) -> Result<f64, String> {
-    let expr = expr.replace(" ", "");
+    let expr = expr.replace(' ', "");
     eval_additive(&expr, &mut 0)
 }
 

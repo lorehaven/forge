@@ -79,7 +79,7 @@ fn req(method: Method, path: &str, container: &Arc<quench_http::di::Container>) 
 fn json_req(
     method: Method,
     path: &str,
-    body: serde_json::Value,
+    body: &serde_json::Value,
     container: &Arc<quench_http::di::Container>,
 ) -> Request {
     let mut headers = HeaderMap::new();
@@ -88,7 +88,7 @@ fn json_req(
         method,
         path.parse::<Uri>().unwrap(),
         headers,
-        quench_http::body::InboundBody::from_bytes(Bytes::from(serde_json::to_vec(&body).unwrap())),
+        quench_http::body::InboundBody::from_bytes(Bytes::from(serde_json::to_vec(body).unwrap())),
         container.clone(),
     )
 }
@@ -106,7 +106,7 @@ async fn chat_returns_not_found_for_an_unknown_instance() {
         .call(json_req(
             Method::POST,
             "/api/v1/chat",
-            serde_json::json!({"instance_id": "does-not-exist", "message": "hello"}),
+            &serde_json::json!({"instance_id": "does-not-exist", "message": "hello"}),
             &container,
         ))
         .await;

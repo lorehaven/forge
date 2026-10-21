@@ -2,8 +2,10 @@ use super::{ToolCall, ToolDefinition, ToolExecutor, ToolParameters, ToolResult};
 use async_trait::async_trait;
 use quench_cache::DataCache;
 use serde_json::json;
+use std::fmt::Write as _;
 use std::sync::Arc;
 
+#[must_use]
 pub fn get_definition() -> ToolDefinition {
     ToolDefinition {
         name: "web_fetch".to_string(),
@@ -28,6 +30,7 @@ pub struct WebFetchExecutor {
 }
 
 impl WebFetchExecutor {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             client: reqwest::Client::new(),
@@ -38,11 +41,12 @@ impl WebFetchExecutor {
     fn get_cached(&self, url: &str) -> Option<String> {
         self.cache
             .get(url)
-            .and_then(|val| val.as_str().map(|s| s.to_string()))
+            .and_then(|val| val.as_str().map(std::string::ToString::to_string))
     }
 
-    fn cache_result(&self, url: String, content: String) {
-        self.cache.set_with_ttl(url, json!(content), 300); // 5 min TTL
+    fn cache_result(&self, url: &str, content: &str) {
+        self.cache
+            .set_with_ttl(url.to_string(), json!(content), 300); // 5 min TTL
     }
 }
 
@@ -88,23 +92,23 @@ impl ToolExecutor for WebFetchExecutor {
         if let Some(cached_content) = self.get_cached(&url) {
             return ToolResult {
                 tool_use_id: tool_call.id.clone(),
-                content: format!("Content from {} (cached)\n\n{}", url, cached_content),
+                content: format!("Content from {url} (cached)\n\n{cached_content}"),
                 is_error: false,
             };
         }
 
         match fetch_and_extract(&self.client, &url).await {
             Ok(content) => {
-                self.cache_result(url.clone(), content.clone());
+                self.cache_result(&url, &content);
                 ToolResult {
                     tool_use_id: tool_call.id.clone(),
-                    content: format!("Content from {}\n\n{}", url, content),
+                    content: format!("Content from {url}\n\n{content}"),
                     is_error: false,
                 }
             }
             Err(err) => ToolResult {
                 tool_use_id: tool_call.id.clone(),
-                content: format!("Failed to fetch webpage: {}", err),
+                content: format!("Failed to fetch webpage: {err}"),
                 is_error: true,
             },
         }
@@ -166,6 +170,8 @@ fn collect_json_ld(value: &serde_json::Value, out: &mut Vec<String>) {
     }
 }
 
+/// Extracts readable text and metadata from an HTML page.
+///
 /// Extracts a page's readable content as paragraphs separated by blank lines: title, meta
 /// description, JSON-LD facts, then headings, paragraphs, list items, quotes and table rows
 /// (cells joined with ` | `) in document order, preferring `<main>`/`<article>` and skipping
@@ -282,7 +288,7 @@ async fn fetch_html(client: &reqwest::Client, url: &str) -> Result<String, Strin
         .timeout(std::time::Duration::from_secs(10))
         .send()
         .await
-        .map_err(|e| format!("Request failed: {}", e))?;
+        .map_err(|e| format!("Request failed: {e}"))?;
 
     let status = response.status();
     if !status.is_success() {
@@ -296,7 +302,7 @@ async fn fetch_html(client: &reqwest::Client, url: &str) -> Result<String, Strin
     response
         .text()
         .await
-        .map_err(|e| format!("Failed to read response: {}", e))
+        .map_err(|e| format!("Failed to read response: {e}"))
 }
 
 fn extract_text(html: &str) -> Result<String, String> {
@@ -327,7 +333,7 @@ fn extract_text_limited(
         && let Some(title) = document.select(&selector).next()
         && let Some(title_text) = title.text().next()
     {
-        text.push_str(&format!("# {}\n\n", title_text.trim()));
+        let _ = writeln!(text, "# {}\n", title_text.trim());
     }
 
     // Extract headings and paragraphs
@@ -335,7 +341,7 @@ fn extract_text_limited(
         for h1 in document.select(&h1_selector).take(3) {
             let h1_text: String = h1.text().collect::<Vec<_>>().join(" ");
             if !h1_text.trim().is_empty() {
-                text.push_str(&format!("## {}\n\n", h1_text.trim()));
+                let _ = writeln!(text, "## {}\n", h1_text.trim());
             }
         }
     }
@@ -345,7 +351,7 @@ fn extract_text_limited(
             let p_text: String = p.text().collect::<Vec<_>>().join(" ");
             let cleaned = p_text.trim();
             if !cleaned.is_empty() && cleaned.len() > 20 {
-                text.push_str(&format!("{}\n\n", cleaned));
+                let _ = writeln!(text, "{cleaned}\n");
             }
         }
     }
@@ -365,4 +371,10 @@ fn extract_text_limited(
     }
 
     Ok(text)
+}
+
+impl std::fmt::Debug for WebFetchExecutor {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("WebFetchExecutor { .. }")
+    }
 }

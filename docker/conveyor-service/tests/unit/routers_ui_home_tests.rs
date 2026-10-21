@@ -137,7 +137,7 @@ fn a_repo_with_no_summary_at_all_shows_four_unrun_chips() {
 fn an_enabled_repo_gets_a_run_button_that_posts_to_its_own_id() {
     let html = run_button(&repo(true), None).render();
     assert!(html.contains("<button"));
-    assert!(html.contains(r#"hx-post"#));
+    assert!(html.contains(r"hx-post"));
     assert!(html.contains("repos/repo-1/run"));
     assert!(html.contains("hx-target=\"#home-state\""));
 }

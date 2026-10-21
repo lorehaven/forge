@@ -23,6 +23,7 @@ pub struct SearchProviderRegistry {
 }
 
 impl SearchProviderRegistry {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             providers: std::collections::HashMap::new(),
@@ -40,6 +41,7 @@ impl SearchProviderRegistry {
         }
     }
 
+    #[must_use]
     pub fn get(&self, name: Option<&str>) -> Option<&dyn SearchProvider> {
         let provider_name = name.unwrap_or(&self.default_provider);
         self.providers
@@ -47,6 +49,7 @@ impl SearchProviderRegistry {
             .map(|p| p.as_ref() as &dyn SearchProvider)
     }
 
+    #[must_use]
     pub fn get_default(&self) -> &dyn SearchProvider {
         self.providers
             .get(&self.default_provider)
@@ -54,6 +57,7 @@ impl SearchProviderRegistry {
             .expect("Default provider not registered")
     }
 
+    #[must_use]
     pub fn list(&self) -> Vec<String> {
         self.providers.keys().cloned().collect()
     }
@@ -62,5 +66,11 @@ impl SearchProviderRegistry {
 impl Default for SearchProviderRegistry {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl std::fmt::Debug for SearchProviderRegistry {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("SearchProviderRegistry { .. }")
     }
 }

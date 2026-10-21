@@ -16,18 +16,21 @@ pub struct Workspace {
 impl Workspace {
     /// Wraps an existing directory. Normally produced by [`checkout`]; public
     /// so a test can point an executor at a directory it prepared itself.
+    #[must_use]
     pub const fn new(root: PathBuf) -> Self {
         Self { root }
     }
 
     /// Where the repository is checked out. Steps run with this as their
     /// working directory.
+    #[must_use]
     pub fn root(&self) -> &Path {
         &self.root
     }
 
     /// Resolves a pipeline-named path, refusing anything outside the checkout
     /// (symlinks followed first, so a planted link can't escape it).
+    #[must_use]
     pub fn resolve(&self, relative: &str) -> Option<PathBuf> {
         let candidate = self.root.join(relative);
 

@@ -13,9 +13,9 @@ fn round2_rounds_to_two_decimal_places() {
     // 1.005 is not exactly representable in f64 (it's stored as slightly
     // less than 1.005), so `(1.005 * 100.0).round() / 100.0` lands on 1.0,
     // not 1.01 - use values that round unambiguously instead.
-    assert_eq!(round2(1.006), 1.01);
-    assert_eq!(round2(1.0), 1.0);
-    assert_eq!(round2(1.234), 1.23);
+    assert!((round2(1.006) - 1.01).abs() < 1e-6);
+    assert!((round2(1.0) - 1.0).abs() < 1e-6);
+    assert!((round2(1.234) - 1.23).abs() < 1e-6);
 }
 
 #[test]
@@ -91,7 +91,7 @@ fn infer_hf_quant_config_sizes_compressed_tensors_by_weight_bits() {
 #[test]
 fn infer_context_maps_known_sizes_and_falls_back_to_all() {
     assert_eq!(infer_context(4096), Context::Size4096);
-    assert_eq!(infer_context(131072), Context::Size131072);
+    assert_eq!(infer_context(131_072), Context::Size131072);
     assert_eq!(infer_context(12345), Context::ALL);
 }
 

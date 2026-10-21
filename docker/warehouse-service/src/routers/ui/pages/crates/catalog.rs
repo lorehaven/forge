@@ -6,8 +6,9 @@ use quench_http::prelude::{Form, Query, Response, get, http::StatusCode, post};
 use quench_starter::common::routes::with_base_path;
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
+use std::fmt::Write as _;
 
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct CrateActionForm {
     name: String,
     version: String,
@@ -21,7 +22,7 @@ pub async fn crates_index(
     if !authenticated {
         return ui_login_redirect();
     }
-    render_crates_page(query.repo.clone(), query.tag.clone())
+    render_crates_page(query.repo.as_deref(), query.tag.as_deref())
 }
 
 #[get("/ui/crates/catalog/")]
@@ -32,7 +33,7 @@ pub async fn crates_index_slash(
     if !authenticated {
         return ui_login_redirect();
     }
-    render_crates_page(query.repo.clone(), query.tag.clone())
+    render_crates_page(query.repo.as_deref(), query.tag.as_deref())
 }
 
 #[post("/ui/crates/yank")]
@@ -72,26 +73,22 @@ async fn set_yank_state(authenticated: bool, form: CrateActionForm, yanked: bool
     }
 }
 
+#[must_use]
 pub fn render_crates_page(
-    selected_crate: Option<String>,
-    selected_version: Option<String>,
+    selected_crate: Option<&str>,
+    selected_version: Option<&str>,
 ) -> Response {
     let all_crates = list_crates();
 
     let krate = selected_crate
-        .as_ref()
-        .filter(|n| all_crates.iter().any(|c| c == *n))
-        .cloned();
+        .filter(|n| all_crates.iter().any(|c| c == n))
+        .map(str::to_string);
 
-    let versions: Vec<IndexRecord> = match krate.as_deref() {
-        Some(name) => list_versions(name),
-        None => Vec::new(),
-    };
+    let versions: Vec<IndexRecord> = krate.as_deref().map_or_else(Vec::new, list_versions);
 
     let active_version = selected_version
-        .as_ref()
-        .filter(|v| versions.iter().any(|r| &r.vers == *v))
-        .cloned()
+        .filter(|v| versions.iter().any(|r| r.vers == *v))
+        .map(str::to_string)
         .or_else(|| {
             versions
                 .iter()
@@ -247,6 +244,114 @@ fn render_crate_node(
     item.child(details)
 }
 
+/// Everything the index records of one version, and the yank/unyank action for it.
+fn version_details(krate: Option<&str>, r: &IndexRecord) -> Element {
+    let mut list = div().class("meta-list");
+
+    list = list
+        .child(meta_row("ui_meta_version", &r.vers))
+        .child(meta_row_value(
+            "ui_meta_status",
+            if r.yanked {
+                span().attr("data-i18n", "ui_status_yanked").text("yanked")
+            } else {
+                span().attr("data-i18n", "ui_status_active").text("active")
+            },
+        ))
+        .child(meta_row("ui_meta_checksum", &r.cksum));
+
+    if let Some(rv) = &r.rust_version {
+        list = list.child(meta_row("ui_meta_rust_version", rv));
+    }
+    if let Some(links) = &r.links {
+        list = list.child(meta_row("ui_meta_links", links));
+    }
+
+    if !r.features.is_empty() {
+        let mut all_features: Vec<&str> = r.features.keys().map(String::as_str).collect();
+        if let Some(f2) = &r.features2 {
+            for k in f2.keys() {
+                if !all_features.contains(&k.as_str()) {
+                    all_features.push(k.as_str());
+                }
+            }
+        }
+        all_features.sort_unstable();
+        list = list.child(meta_row("ui_meta_features", &all_features.join(", ")));
+    }
+
+    if !r.deps.is_empty() {
+        list = list.child(render_deps_section(r));
+    }
+
+    let crate_name = krate.unwrap_or("");
+    let action_button = if r.yanked {
+        form()
+            .class("inline-action-form")
+            .attr("hx-post", ui_path("/crates/unyank"))
+            .attr("hx-swap", "none")
+            .child(
+                input()
+                    .attr("type", "hidden")
+                    .attr("name", "name")
+                    .attr("value", crate_name),
+            )
+            .child(
+                input()
+                    .attr("type", "hidden")
+                    .attr("name", "version")
+                    .attr("value", &r.vers),
+            )
+            .child(
+                button()
+                    .class("button-danger-sm")
+                    .attr("type", "submit")
+                    .attr(
+                        "style",
+                        "color: var(--bs-warning); border-color: var(--bs-warning);",
+                    )
+                    .child(i().class("fas fa-undo mr-2"))
+                    .child(
+                        span()
+                            .attr("data-i18n", "ui_unyank_version")
+                            .text("Unyank Version"),
+                    ),
+            )
+    } else {
+        form()
+            .class("inline-action-form")
+            .attr("hx-post", ui_path("/crates/yank"))
+            .attr("hx-swap", "none")
+            .child(
+                input()
+                    .attr("type", "hidden")
+                    .attr("name", "name")
+                    .attr("value", crate_name),
+            )
+            .child(
+                input()
+                    .attr("type", "hidden")
+                    .attr("name", "version")
+                    .attr("value", &r.vers),
+            )
+            .child(
+                button()
+                    .class("button-danger-sm")
+                    .attr("type", "submit")
+                    .child(i().class("fas fa-ban mr-2"))
+                    .child(
+                        span()
+                            .attr("data-i18n", "ui_yank_version")
+                            .text("Yank Version"),
+                    ),
+            )
+    };
+
+    list = list.child(div().class("mt-4").child(action_button));
+
+    list
+}
+
 fn render_metadata_panel(krate: Option<&str>, record: Option<&IndexRecord>) -> Element {
     let title = match (krate, record) {
         (Some(_), Some(r)) => div()
@@ -256,115 +361,10 @@ fn render_metadata_panel(krate: Option<&str>, record: Option<&IndexRecord>) -> E
         _ => div().class("panel-title").attr("data-i18n", "ui_metadata"),
     };
 
-    let body = match record {
-        None => empty_state("ui_empty_select_version"),
-        Some(r) => {
-            let mut list = div().class("meta-list");
-
-            list = list
-                .child(meta_row("ui_meta_version", &r.vers))
-                .child(meta_row_value(
-                    "ui_meta_status",
-                    if r.yanked {
-                        span().attr("data-i18n", "ui_status_yanked").text("yanked")
-                    } else {
-                        span().attr("data-i18n", "ui_status_active").text("active")
-                    },
-                ))
-                .child(meta_row("ui_meta_checksum", &r.cksum));
-
-            if let Some(rv) = &r.rust_version {
-                list = list.child(meta_row("ui_meta_rust_version", rv));
-            }
-            if let Some(links) = &r.links {
-                list = list.child(meta_row("ui_meta_links", links));
-            }
-
-            if !r.features.is_empty() {
-                let mut all_features: Vec<&str> = r.features.keys().map(String::as_str).collect();
-                if let Some(f2) = &r.features2 {
-                    for k in f2.keys() {
-                        if !all_features.contains(&k.as_str()) {
-                            all_features.push(k.as_str());
-                        }
-                    }
-                }
-                all_features.sort();
-                list = list.child(meta_row("ui_meta_features", &all_features.join(", ")));
-            }
-
-            if !r.deps.is_empty() {
-                list = list.child(render_deps_section(r));
-            }
-
-            let crate_name = krate.unwrap_or("");
-            let action_button = if r.yanked {
-                form()
-                    .class("inline-action-form")
-                    .attr("hx-post", ui_path("/crates/unyank"))
-                    .attr("hx-swap", "none")
-                    .child(
-                        input()
-                            .attr("type", "hidden")
-                            .attr("name", "name")
-                            .attr("value", crate_name),
-                    )
-                    .child(
-                        input()
-                            .attr("type", "hidden")
-                            .attr("name", "version")
-                            .attr("value", &r.vers),
-                    )
-                    .child(
-                        button()
-                            .class("button-danger-sm")
-                            .attr("type", "submit")
-                            .attr(
-                                "style",
-                                "color: var(--bs-warning); border-color: var(--bs-warning);",
-                            )
-                            .child(i().class("fas fa-undo mr-2"))
-                            .child(
-                                span()
-                                    .attr("data-i18n", "ui_unyank_version")
-                                    .text("Unyank Version"),
-                            ),
-                    )
-            } else {
-                form()
-                    .class("inline-action-form")
-                    .attr("hx-post", ui_path("/crates/yank"))
-                    .attr("hx-swap", "none")
-                    .child(
-                        input()
-                            .attr("type", "hidden")
-                            .attr("name", "name")
-                            .attr("value", crate_name),
-                    )
-                    .child(
-                        input()
-                            .attr("type", "hidden")
-                            .attr("name", "version")
-                            .attr("value", &r.vers),
-                    )
-                    .child(
-                        button()
-                            .class("button-danger-sm")
-                            .attr("type", "submit")
-                            .child(i().class("fas fa-ban mr-2"))
-                            .child(
-                                span()
-                                    .attr("data-i18n", "ui_yank_version")
-                                    .text("Yank Version"),
-                            ),
-                    )
-            };
-
-            list = list.child(div().class("mt-4").child(action_button));
-
-            list
-        }
-    };
+    let body = record.map_or_else(
+        || empty_state("ui_empty_select_version"),
+        |r| version_details(krate, r),
+    );
 
     div()
         .class("h-100 d-flex flex-column")
@@ -407,18 +407,17 @@ fn deps_group(label_key: &str, deps: &[&IndexDep]) -> Element {
     let mut rows = div().class("deps-group");
     rows = rows.child(div().class("deps-group-label").attr("data-i18n", label_key));
     for dep in deps {
-        let display_name = dep
-            .package
-            .as_deref()
-            .map(|pkg| format!("{} (as {})", pkg, dep.name))
-            .unwrap_or_else(|| dep.name.clone());
+        let display_name = dep.package.as_deref().map_or_else(
+            || dep.name.clone(),
+            |pkg| format!("{} (as {})", pkg, dep.name),
+        );
 
         let mut dep_text = format!("{display_name} {}", dep.req);
         if dep.optional {
             dep_text.push_str(" [optional]");
         }
         if let Some(target) = &dep.target {
-            dep_text.push_str(&format!(" [target: {target}]"));
+            let _ = write!(dep_text, " [target: {target}]");
         }
 
         rows = rows.child(div().class("dep-row mono").text(&dep_text));

@@ -55,7 +55,7 @@ pub async fn process_file(
         let record = FileChunk {
             id: Uuid::new_v4().to_string(),
             file_id: file_id.to_string(),
-            chunk_index: index as i32,
+            chunk_index: i32::try_from(index).unwrap_or(i32::MAX),
             content: chunk.content.clone(),
             embedding_model: None,
             metadata,
@@ -93,9 +93,9 @@ async fn set_status(
         .read(file_id)
         .await
         .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("File {} not found", file_id))?;
+        .ok_or_else(|| format!("File {file_id} not found"))?;
     file.status = status.to_string();
-    file.error_message = error_message.map(|s| s.to_string());
+    file.error_message = error_message.map(std::string::ToString::to_string);
     file.updated_at = Utc::now().to_rfc3339();
     repo.update(&file).await.map_err(|e| e.to_string())
 }
@@ -111,7 +111,7 @@ async fn load_blob(db: &Db, file_id: &str) -> Result<Vec<u8>, String> {
                 .await
                 .map_err(|e| e.to_string())?;
             row.map(|(data,)| data)
-                .ok_or_else(|| format!("Blob for file {} not found", file_id))
+                .ok_or_else(|| format!("Blob for file {file_id} not found"))
         }
         Db::InMemory(_) => Err("File processing requires a Postgres database".to_string()),
     }

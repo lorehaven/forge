@@ -2,11 +2,15 @@ use super::SearchProvider;
 use async_trait::async_trait;
 use scraper::{Html, Selector};
 
+const MAX_RESULTS: usize = 5;
+
+#[derive(Debug)]
 pub struct DuckDuckGoProvider {
     client: reqwest::Client,
 }
 
 impl DuckDuckGoProvider {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             client: reqwest::Client::new(),
@@ -22,7 +26,7 @@ impl Default for DuckDuckGoProvider {
 
 #[async_trait]
 impl SearchProvider for DuckDuckGoProvider {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "duckduckgo"
     }
 
@@ -46,7 +50,7 @@ impl SearchProvider for DuckDuckGoProvider {
             .send()
             .await
             .map_err(|e| {
-                let err_msg = format!("Request failed: {}", e);
+                let err_msg = format!("Request failed: {e}");
                 tracing::warn!("DuckDuckGo request failed: {}", e);
                 err_msg
             })?;
@@ -56,24 +60,22 @@ impl SearchProvider for DuckDuckGoProvider {
 
         let body = response.text().await.map_err(|e| {
             tracing::warn!("Failed to read response: {}", e);
-            format!("Failed to read response: {}", e)
+            format!("Failed to read response: {e}")
         })?;
 
         tracing::info!("DuckDuckGo response length: {} bytes", body.len());
 
         let document = Html::parse_document(&body);
         let mut results = Vec::new();
-        const MAX_RESULTS: usize = 5;
-
         // DuckDuckGo's HTML response uses <div class="result"> for each result.
         let result_selector = Selector::parse(".result")
-            .map_err(|e| format!("Failed to parse HTML selector: {:?}", e))?;
+            .map_err(|e| format!("Failed to parse HTML selector: {e:?}"))?;
 
         let title_selector = Selector::parse("a.result__a")
-            .map_err(|e| format!("Failed to parse title selector: {:?}", e))?;
+            .map_err(|e| format!("Failed to parse title selector: {e:?}"))?;
 
         let snippet_selector = Selector::parse("a.result__snippet")
-            .map_err(|e| format!("Failed to parse snippet selector: {:?}", e))?;
+            .map_err(|e| format!("Failed to parse snippet selector: {e:?}"))?;
 
         for result_elem in document.select(&result_selector).take(MAX_RESULTS) {
             // Get title and URL
@@ -81,12 +83,10 @@ impl SearchProvider for DuckDuckGoProvider {
                 && let Some(href) = title_elem.value().attr("href")
             {
                 // Get snippet
-                let snippet_text =
-                    if let Some(snippet_elem) = result_elem.select(&snippet_selector).next() {
-                        snippet_elem.inner_html()
-                    } else {
-                        title_elem.inner_html()
-                    };
+                let snippet_text = result_elem.select(&snippet_selector).next().map_or_else(
+                    || title_elem.inner_html(),
+                    |snippet_elem| snippet_elem.inner_html(),
+                );
 
                 let clean_snippet = snippet_text
                     .replace("<b>", "")
@@ -94,7 +94,7 @@ impl SearchProvider for DuckDuckGoProvider {
                     .trim()
                     .to_string();
 
-                let formatted = format!("{}\nSource: {}", clean_snippet, href);
+                let formatted = format!("{clean_snippet}\nSource: {href}");
                 results.push(formatted);
             }
         }
@@ -106,8 +106,7 @@ impl SearchProvider for DuckDuckGoProvider {
             );
 
             return Err(format!(
-                "Web search for '{}' could not find results at this time.",
-                query
+                "Web search for '{query}' could not find results at this time."
             ));
         }
 

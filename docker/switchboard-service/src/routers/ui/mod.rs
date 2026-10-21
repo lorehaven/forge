@@ -15,9 +15,9 @@ pub(crate) struct UiAuthenticated(pub bool);
 impl FromRequest for UiAuthenticated {
     async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
         let Ok(config) = req.container().get::<JwtConfig>() else {
-            return Ok(UiAuthenticated(false));
+            return Ok(Self(false));
         };
-        Ok(UiAuthenticated(is_ui_authenticated(req, &config).await))
+        Ok(Self(is_ui_authenticated(req, &config).await))
     }
 }
 

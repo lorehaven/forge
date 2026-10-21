@@ -20,7 +20,7 @@ async fn app(
         .build()
         .await
         .unwrap();
-    support::app(container).await
+    support::app(container)
 }
 
 macro_rules! redirect_test {

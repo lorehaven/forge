@@ -1,0 +1,8 @@
+name = "daybook"
+version = "0.1.0"
+description = "Daybook - personal inbox tasks and custom lists"
+default_schema = "daybook"
+requires = ["auth@^0.2", "quench-core@^0.1"]
+
+[variables]
+auth_schema = "auth"

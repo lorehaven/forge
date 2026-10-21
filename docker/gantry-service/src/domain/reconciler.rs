@@ -1,4 +1,6 @@
-//! The loop that makes operations real. Everything it needs is in the operation row and the runner, so it
+//! The loop that makes operations real.
+//!
+//! Everything it needs is in the operation row and the runner, so it
 //! can be killed at any point and the next tick (in this process or a new one) picks up exactly there:
 //!
 //! - a `running` row whose runner is still going is left alone - that is *adoption*;

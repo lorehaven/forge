@@ -5,7 +5,7 @@ use quench_starter::http::domain::error;
 use serde::Deserialize;
 use uuid::Uuid;
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct MountQuery {
     pub mount: Option<String>,
     pub from: Option<String>,
@@ -32,7 +32,7 @@ pub async fn handle(Path(name): Path<String>, Query(query): Query<MountQuery>) -
 
         if blob_exists(digest).await {
             return Response::new(StatusCode::CREATED)
-                .header("location", format!("/v2/{}/blobs/{}", name, digest))
+                .header("location", format!("/v2/{name}/blobs/{digest}"))
                 .header("docker-content-digest", digest);
         }
     }
@@ -71,7 +71,7 @@ async fn start_regular_upload(name: String) -> Response {
     }
 
     Response::new(StatusCode::ACCEPTED)
-        .header("location", format!("/v2/{}/blobs/uploads/{}", name, uuid))
+        .header("location", format!("/v2/{name}/blobs/uploads/{uuid}"))
         .header("docker-upload-uuid", &uuid)
         .header("range", "0-0")
 }

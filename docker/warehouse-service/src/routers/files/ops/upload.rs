@@ -15,7 +15,7 @@ use sha2::{Digest, Sha256};
 use std::path::{Path as FsPath, PathBuf};
 use tokio::io::AsyncWriteExt;
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct Stored {
     pub path: String,
     pub size: u64,
@@ -142,8 +142,7 @@ async fn handle_dynamic(
 
     let limit = storage
         .max_file_bytes
-        .map(|bytes| bytes as u64)
-        .unwrap_or_else(max_file_bytes);
+        .map_or_else(max_file_bytes, i64::cast_unsigned);
     let staging = dynamic::staging_path(&root);
     if let Some(parent) = staging.parent()
         && tokio::fs::create_dir_all(parent).await.is_err()
@@ -170,7 +169,7 @@ async fn handle_dynamic(
         &storage.name,
         &path,
         &digest,
-        size as i64,
+        size.cast_signed(),
         &staging,
         &blob_path,
     )
@@ -283,10 +282,10 @@ pub fn staging_path(target: &FsPath) -> PathBuf {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
 
-    let name = target
-        .file_name()
-        .map(|name| name.to_string_lossy().to_string())
-        .unwrap_or_else(|| "upload".to_string());
+    let name = target.file_name().map_or_else(
+        || "upload".to_string(),
+        |name| name.to_string_lossy().to_string(),
+    );
 
     let unique = format!(
         ".{name}.{}.{}.part",

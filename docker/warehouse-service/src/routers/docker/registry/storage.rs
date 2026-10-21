@@ -9,6 +9,7 @@ pub enum TagListError {
     NotFound,
 }
 
+#[must_use]
 pub fn list_repositories() -> Vec<String> {
     let mut repos = Vec::new();
     let root = PathBuf::from(docker_storage_root());
@@ -69,10 +70,8 @@ pub fn list_tag_metadata_for_repository(name: &str) -> Result<Vec<TagMetadata>, 
                 continue;
             };
 
-            let digest = match std::fs::read_to_string(entry.path()) {
-                Ok(s) => s.trim().to_string(),
-                Err(_) => String::new(),
-            };
+            let digest = std::fs::read_to_string(entry.path())
+                .map_or_else(|_| String::new(), |s| s.trim().to_string());
 
             let mut media_type = None;
             let mut size_bytes = None;
@@ -119,7 +118,7 @@ fn collect_repositories(dir: &Path, prefix: &str, repos: &mut Vec<String>) {
             let repo_name = if prefix.is_empty() {
                 name.to_string()
             } else {
-                format!("{}/{}", prefix, name)
+                format!("{prefix}/{name}")
             };
 
             if path.join("tags").exists() {
@@ -139,6 +138,7 @@ pub fn detect_media_type(bytes: &[u8]) -> Option<String> {
         .map(str::to_string)
 }
 
+#[must_use]
 pub fn compare_tags_desc(a: &str, b: &str) -> std::cmp::Ordering {
     match (parse_version_tag(a), parse_version_tag(b)) {
         (Some(va), Some(vb)) => compare_version_tags_desc(&va, &vb),
@@ -154,6 +154,7 @@ pub struct VersionTag {
     pub suffix: Option<String>,
 }
 
+#[must_use]
 pub fn parse_version_tag(tag: &str) -> Option<VersionTag> {
     let (version, suffix) = match tag.split_once('-') {
         Some((version, suffix)) => (version, Some(suffix.to_string())),
@@ -176,6 +177,7 @@ pub fn parse_version_tag(tag: &str) -> Option<VersionTag> {
     })
 }
 
+#[must_use]
 pub fn compare_version_tags_desc(a: &VersionTag, b: &VersionTag) -> std::cmp::Ordering {
     b.major
         .cmp(&a.major)

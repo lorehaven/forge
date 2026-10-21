@@ -32,9 +32,8 @@ pub async fn handle(
     };
     let id = ArtifactVersion::id_for(&program, platform, version_code);
 
-    let version = match db.repository::<ArtifactVersion>().read(&id).await {
-        Ok(Some(version)) => version,
-        _ => return not_found("program or version not found"),
+    let Ok(Some(version)) = db.repository::<ArtifactVersion>().read(&id).await else {
+        return not_found("program or version not found");
     };
 
     serve(&version).await
@@ -57,9 +56,8 @@ pub async fn serve(version: &ArtifactVersion) -> Response {
         return not_found("program or version not found");
     };
 
-    let data = match tokio::fs::read(&path).await {
-        Ok(data) => data,
-        Err(_) => return not_found("program or version not found"),
+    let Ok(data) = tokio::fs::read(&path).await else {
+        return not_found("program or version not found");
     };
 
     let content_type = content_type_for(&version.format);
@@ -74,6 +72,7 @@ pub async fn serve(version: &ArtifactVersion) -> Response {
 }
 
 /// The `Content-Type` a build of `format` is served with; anything unlisted is opaque bytes.
+#[must_use]
 pub fn content_type_for(format: &str) -> &'static str {
     match format {
         "apk" => "application/vnd.android.package-archive",

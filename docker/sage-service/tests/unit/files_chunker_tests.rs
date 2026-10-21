@@ -3,7 +3,7 @@
 use sage_service::domain::context::TokenCounter;
 use sage_service::files::chunker::*;
 
-fn config(max_tokens: u32, overlap_tokens: u32) -> ChunkerConfig {
+const fn config(max_tokens: u32, overlap_tokens: u32) -> ChunkerConfig {
     ChunkerConfig {
         max_tokens,
         overlap_tokens,
@@ -58,13 +58,13 @@ fn test_overlap_carried_between_chunks() {
 #[test]
 fn test_all_content_preserved() {
     let text = (0..50)
-        .map(|i| format!("Sentence number {} with some padding words.", i))
+        .map(|i| format!("Sentence number {i} with some padding words."))
         .collect::<Vec<_>>()
         .join("\n\n");
     let chunks = chunk_text(&text, &config(60, 10));
     let combined = chunks.join(" ");
     for i in 0..50 {
-        assert!(combined.contains(&format!("Sentence number {}", i)));
+        assert!(combined.contains(&format!("Sentence number {i}")));
     }
 }
 
@@ -86,11 +86,11 @@ fn test_chunk_segments_carry_metadata() {
     ];
     let chunks = chunk_segments(&segments, &config(50, 10));
     // The oversized first segment yields multiple chunks, all tagged Intro.
-    let intro: Vec<_> = chunks
+    let intro = chunks
         .iter()
         .filter(|c| c.metadata.get("heading") == Some(&json!("Intro")))
-        .collect();
-    assert!(intro.len() > 1);
+        .count();
+    assert!(intro > 1);
     // The second segment's single chunk keeps its page metadata and never mixes with the first segment's heading.
     let paged: Vec<_> = chunks
         .iter()

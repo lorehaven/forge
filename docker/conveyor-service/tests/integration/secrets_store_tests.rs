@@ -22,7 +22,7 @@ fn key() -> SecretKey {
 /// The key the worker reads from the environment. Set under the database
 /// guard, so the tests do not race over it.
 fn configure_key() {
-    unsafe { std::env::set_var("CONVEYOR_SECRET_KEY", HEX_KEY) };
+    envmnt::set("CONVEYOR_SECRET_KEY", HEX_KEY);
 }
 
 // ---------------------------------------------------------------------------

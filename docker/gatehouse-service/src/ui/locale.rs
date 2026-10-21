@@ -22,6 +22,7 @@ fn is_supported(locale: &str) -> bool {
 
 /// Whether the browser holds an explicit language choice: the marker, plus a
 /// `qlocale` this estate can still honour.
+#[derive(Debug)]
 pub struct LocaleCookie(pub bool);
 
 #[async_trait]
@@ -35,6 +36,7 @@ impl FromRequest for LocaleCookie {
 
 /// The language the browser is showing (`qlocale`), when this estate supports
 /// it - the best guess at a stranger's language, e.g. for a registration email.
+#[derive(Debug)]
 pub struct BrowserLocale(pub Option<String>);
 
 #[async_trait]
@@ -48,6 +50,7 @@ impl FromRequest for BrowserLocale {
 
 /// The `Set-Cookie` value to send at sign-in, if any: only when there is no explicit
 /// choice and the saved preference is a locale this estate actually supports.
+#[must_use]
 pub fn default_locale_cookie(has_cookie: &LocaleCookie, preferred: Option<&str>) -> Option<String> {
     let preferred = preferred.filter(|locale| is_supported(locale))?;
     if has_cookie.0 {

@@ -543,10 +543,10 @@ fn redirect_issue(issue_id: &str, error: Option<&str>) -> Response {
 }
 
 fn redirect_home(error: Option<&str>) -> Response {
-    let location = match error {
-        Some(code) => format!("{}?error={code}", ui_path("/home")),
-        None => ui_path("/home"),
-    };
+    let location = error.map_or_else(
+        || ui_path("/home"),
+        |code| format!("{}?error={code}", ui_path("/home")),
+    );
     Response::new(StatusCode::FOUND).header("Location", location)
 }
 

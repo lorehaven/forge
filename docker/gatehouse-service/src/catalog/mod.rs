@@ -25,6 +25,7 @@ struct ServiceEntry {
 }
 
 /// A service the home page may offer - what the catalog knows; the URL comes from the environment.
+#[derive(Debug)]
 pub struct HomeService<'a> {
     pub name: &'a str,
     pub label: &'a str,
@@ -99,6 +100,7 @@ impl PermissionCatalog {
     }
 
     /// Services that asked for a home-page card, in name order.
+    #[must_use]
     pub fn home_services(&self) -> Vec<HomeService<'_>> {
         self.services
             .iter()
@@ -111,6 +113,7 @@ impl PermissionCatalog {
             .collect()
     }
 
+    #[must_use]
     pub fn label<'a>(&'a self, service: &'a str) -> &'a str {
         self.services
             .get(service)
@@ -118,26 +121,28 @@ impl PermissionCatalog {
             .unwrap_or(service)
     }
 
+    #[must_use]
     pub fn actions_for(&self, service: &str) -> &[String] {
         self.services
             .get(service)
-            .map(|entry| entry.actions.as_slice())
-            .unwrap_or(&[])
+            .map_or(&[], |entry| entry.actions.as_slice())
     }
 
+    #[must_use]
     pub fn resource_types_for(&self, service: &str) -> &[String] {
         self.services
             .get(service)
-            .map(|entry| entry.resource_types.as_slice())
-            .unwrap_or(&[])
+            .map_or(&[], |entry| entry.resource_types.as_slice())
     }
 
+    #[must_use]
     pub fn is_known_service(&self, service: &str) -> bool {
         self.services.contains_key(service)
     }
 
     /// A plain enumerated action, or `<resource_type>:<resource_id>:<base_action>`
     /// - the resource id itself is deliberately unchecked.
+    #[must_use]
     pub fn is_known_action(&self, service: &str, action: &str) -> bool {
         if self
             .actions_for(service)
@@ -164,6 +169,7 @@ impl PermissionCatalog {
     }
 
     /// Unrecognised `service`/`service:action` entries; empty if all check out.
+    #[must_use]
     pub fn unknown_grants(&self, permissions: &Permissions) -> Vec<String> {
         let mut unknown = Vec::new();
         for (service, actions) in permissions {
@@ -180,6 +186,7 @@ impl PermissionCatalog {
         unknown
     }
 
+    #[must_use]
     pub fn template(&self, name: &str) -> Option<&Permissions> {
         self.templates.get(name)
     }
@@ -189,6 +196,7 @@ impl PermissionCatalog {
     }
 
     /// What a self-registered account starts with; empty if no default template.
+    #[must_use]
     pub fn default_registration_grants(&self) -> Permissions {
         self.default_registration_template
             .as_deref()

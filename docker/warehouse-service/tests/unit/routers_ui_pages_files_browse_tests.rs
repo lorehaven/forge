@@ -7,7 +7,7 @@ use quench_db::InMemoryDb;
 use quench_db::prelude::Db;
 use quench_http::endpoint::Endpoint;
 use warehouse_service::routers::ui::pages::files::browse::{
-    BrowseFile, BrowseView, PreviewKind, Selection, TreeNode, build_tree, preview_kind,
+    Access, BrowseFile, BrowseView, PreviewKind, Selection, TreeNode, build_tree, preview_kind,
     render_browse_page,
 };
 
@@ -36,8 +36,7 @@ fn file(path: &str, size: i64) -> BrowseFile {
 fn view(selection: Selection, tree: TreeNode) -> BrowseView {
     BrowseView {
         storage: "phone_backup".to_string(),
-        storage_exists: true,
-        read_denied: false,
+        access: Access::Readable,
         can_manage: false,
         tree,
         selection,
@@ -85,7 +84,7 @@ fn preview_kind_classifies_by_extension() {
 #[tokio::test]
 async fn an_unknown_storage_renders_a_not_found_notice() {
     let mut v = view(Selection::Dir(String::new()), TreeNode::default());
-    v.storage_exists = false;
+    v.access = Access::NoSuchStorage;
     assert!(
         body_html(render_browse_page(&v))
             .await
@@ -96,7 +95,7 @@ async fn an_unknown_storage_renders_a_not_found_notice() {
 #[tokio::test]
 async fn a_denied_read_renders_a_forbidden_notice_and_no_tree() {
     let mut v = view(Selection::Dir(String::new()), TreeNode::default());
-    v.read_denied = true;
+    v.access = Access::Denied;
     let html = body_html(render_browse_page(&v)).await;
     assert!(html.contains("api_error_forbidden"));
 }
@@ -208,7 +207,7 @@ async fn app(
         .build()
         .await
         .unwrap();
-    support::app(container).await
+    support::app(container)
 }
 
 #[tokio::test]

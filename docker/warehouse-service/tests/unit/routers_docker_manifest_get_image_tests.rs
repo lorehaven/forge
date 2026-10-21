@@ -189,7 +189,7 @@ async fn app() -> (
 ) {
     warehouse_service::routers::docker::manifest::get_image::register_routes();
     let container = support::container_builder().build().await.unwrap();
-    support::app(container).await
+    support::app(container)
 }
 
 #[tokio::test]
@@ -240,6 +240,7 @@ async fn handle_serves_a_manifest_resolved_by_tag() {
         digest.as_str()
     );
     assert_eq!(body, MANIFEST_JSON);
+    drop(storage);
 }
 
 #[tokio::test]
@@ -256,6 +257,7 @@ async fn handle_serves_a_manifest_resolved_directly_by_digest() {
         ))
         .await;
     assert_eq!(resp.status(), StatusCode::OK);
+    drop(storage);
 }
 
 #[tokio::test]

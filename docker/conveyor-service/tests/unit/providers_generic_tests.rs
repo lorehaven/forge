@@ -20,7 +20,7 @@ fn signed(body: &[u8]) -> HeaderMap {
     map
 }
 
-fn body(extra: serde_json::Value) -> Vec<u8> {
+fn body(extra: &serde_json::Value) -> Vec<u8> {
     let mut payload = json!({
         "delivery_id": "d-1",
         "owner": "me",
@@ -37,14 +37,14 @@ fn body(extra: serde_json::Value) -> Vec<u8> {
 #[test]
 fn a_signed_delivery_is_accepted() {
     let generic = GenericProvider::new();
-    let payload = body(json!({}));
+    let payload = body(&json!({}));
     assert!(generic.verify(&signed(&payload), &payload, SECRET));
 }
 
 #[test]
 fn a_delivery_signed_with_another_secret_is_rejected() {
     let generic = GenericProvider::new();
-    let payload = body(json!({}));
+    let payload = body(&json!({}));
 
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -60,7 +60,7 @@ fn generic_does_not_accept_githubs_header() {
     // Each provider reads its own, so a delivery aimed at one cannot be
     // replayed against the other.
     let generic = GenericProvider::new();
-    let payload = body(json!({}));
+    let payload = body(&json!({}));
 
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -74,7 +74,7 @@ fn generic_does_not_accept_githubs_header() {
 #[test]
 fn a_minimal_payload_becomes_a_push() {
     let generic = GenericProvider::new();
-    let payload = body(json!({}));
+    let payload = body(&json!({}));
 
     let event = generic
         .parse(&signed(&payload), &payload)
@@ -92,7 +92,7 @@ fn a_minimal_payload_becomes_a_push() {
 #[test]
 fn the_event_kind_can_be_named() {
     let generic = GenericProvider::new();
-    let payload = body(json!({ "event": "pull_request" }));
+    let payload = body(&json!({ "event": "pull_request" }));
 
     let event = generic.parse(&signed(&payload), &payload).unwrap().unwrap();
     assert_eq!(event.trigger, Trigger::PullRequest);
@@ -101,7 +101,7 @@ fn the_event_kind_can_be_named() {
 #[test]
 fn an_unknown_event_kind_is_an_error() {
     let generic = GenericProvider::new();
-    let payload = body(json!({ "event": "wat" }));
+    let payload = body(&json!({ "event": "wat" }));
     assert!(generic.parse(&signed(&payload), &payload).is_err());
 }
 

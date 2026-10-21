@@ -73,16 +73,206 @@ struct IndexDep {
     package: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct PublishWarnings {
     invalid_categories: Vec<String>,
     invalid_badges: Vec<String>,
     other: Vec<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct PublishResponse {
     warnings: PublishWarnings,
+}
+
+/// Reads from `body` into `buffer` until it holds `needed` bytes; `short` says what ran out.
+async fn fill<B, E>(
+    body: &mut (impl futures_util::Stream<Item = Result<B, E>> + Unpin),
+    buffer: &mut Vec<u8>,
+    needed: usize,
+    short: &str,
+) -> Result<(), Response>
+where
+    B: AsRef<[u8]>,
+    E: std::fmt::Display,
+{
+    while buffer.len() < needed {
+        match body.next().await {
+            Some(Ok(chunk)) => buffer.extend_from_slice(chunk.as_ref()),
+            Some(Err(e)) => return Err(error_response(StatusCode::BAD_REQUEST, &e.to_string())),
+            None => return Err(error_response(StatusCode::BAD_REQUEST, short)),
+        }
+    }
+    Ok(())
+}
+
+impl IndexRecord {
+    /// The sparse-index line for a version just published.
+    fn new(meta: PublishMetadata, cksum: String) -> Self {
+        let deps = meta
+            .deps
+            .into_iter()
+            .map(|d| {
+                let package = d.explicit_name_in_toml.filter(|p| p != &d.name);
+                IndexDep {
+                    name: d.name,
+                    req: d.version_req,
+                    features: d.features,
+                    optional: d.optional,
+                    default_features: d.default_features,
+                    target: d.target,
+                    kind: d.kind,
+                    registry: d.registry,
+                    package,
+                }
+            })
+            .collect();
+
+        Self {
+            name: meta.name,
+            vers: meta.vers,
+            deps,
+            cksum,
+            features: meta.features,
+            features2: meta.features2,
+            yanked: false,
+            links: meta.links,
+            rust_version: meta.rust_version,
+            v: 1,
+        }
+    }
+}
+
+/// Appends one line to the crate's index file, creating it (and its directory) if need be.
+async fn append_index(index_path: &std::path::Path, line: &str) -> Result<(), Response> {
+    if let Some(parent) = index_path.parent()
+        && tokio::fs::create_dir_all(parent).await.is_err()
+    {
+        return Err(error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to create index directory",
+        ));
+    }
+
+    let mut index_file = tokio::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(index_path)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to open index file {:?}: {}", index_path, e);
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to open index file",
+            )
+        })?;
+
+    index_file.write_all(line.as_bytes()).await.map_err(|e| {
+        tracing::error!("Failed to write to index file {:?}: {}", index_path, e);
+        error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to write index entry",
+        )
+    })
+}
+
+/// Writes the tarball (the bytes already buffered, then the rest of `body`) up to `crate_len`; returns
+/// its SHA-256 as hex.
+async fn write_crate<B, E>(
+    crate_path: &std::path::Path,
+    initial_crate_data: &[u8],
+    body: &mut (impl futures_util::Stream<Item = Result<B, E>> + Unpin),
+    crate_len: usize,
+) -> Result<String, Response>
+where
+    B: AsRef<[u8]>,
+    E: std::fmt::Display,
+{
+    if let Some(parent) = crate_path.parent()
+        && tokio::fs::create_dir_all(parent).await.is_err()
+    {
+        return Err(error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to create storage directory",
+        ));
+    }
+
+    let mut file = match tokio::fs::File::create(crate_path).await {
+        Ok(f) => f,
+        Err(e) => {
+            tracing::error!("Failed to create crate file {:?}: {}", crate_path, e);
+            return Err(error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to create crate file",
+            ));
+        }
+    };
+
+    let mut hasher = Sha256::new();
+    let mut written_len = 0;
+
+    if !initial_crate_data.is_empty() {
+        hasher.update(initial_crate_data);
+        if let Err(e) = file.write_all(initial_crate_data).await {
+            tracing::error!("Failed to write initial crate data: {}", e);
+            return Err(error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to write crate data",
+            ));
+        }
+        written_len += initial_crate_data.len();
+    }
+
+    while let Some(chunk) = body.next().await {
+        let chunk = match chunk {
+            Ok(c) => c,
+            Err(e) => {
+                return Err(error_response(StatusCode::BAD_REQUEST, &e.to_string()));
+            }
+        };
+
+        let chunk = chunk.as_ref();
+        let to_write = if written_len + chunk.len() > crate_len {
+            &chunk[..crate_len - written_len]
+        } else {
+            chunk
+        };
+
+        if !to_write.is_empty() {
+            hasher.update(to_write);
+            if let Err(e) = file.write_all(to_write).await {
+                tracing::error!("Failed to write crate chunk: {}", e);
+                return Err(error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to write crate chunk",
+                ));
+            }
+            written_len += to_write.len();
+        }
+
+        if written_len >= crate_len {
+            break;
+        }
+    }
+
+    if written_len < crate_len {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "payload truncated (crate tarball)",
+        ));
+    }
+
+    if let Err(e) = file.flush().await {
+        tracing::error!("Failed to flush crate file: {}", e);
+    }
+
+    let digest = hasher.finalize();
+    let mut cksum = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        write!(&mut cksum, "{byte:02x}").unwrap();
+    }
+
+    Ok(cksum)
 }
 
 #[put("/api/v1/crates/new")]
@@ -99,29 +289,20 @@ pub async fn handle(
     }
 
     let mut buffer = Vec::new();
-    while buffer.len() < 4 {
-        match body.next().await {
-            Some(Ok(chunk)) => buffer.extend_from_slice(&chunk),
-            Some(Err(e)) => {
-                return error_response(StatusCode::BAD_REQUEST, &e.to_string());
-            }
-            None => {
-                return error_response(StatusCode::BAD_REQUEST, "payload too short");
-            }
-        }
+    if let Err(response) = fill(&mut body, &mut buffer, 4, "payload too short").await {
+        return response;
     }
 
     let json_len = u32::from_le_bytes(buffer[..4].try_into().unwrap()) as usize;
-    while buffer.len() < 4 + json_len + 4 {
-        match body.next().await {
-            Some(Ok(chunk)) => buffer.extend_from_slice(&chunk),
-            Some(Err(e)) => {
-                return error_response(StatusCode::BAD_REQUEST, &e.to_string());
-            }
-            None => {
-                return error_response(StatusCode::BAD_REQUEST, "payload truncated (metadata)");
-            }
-        }
+    if let Err(response) = fill(
+        &mut body,
+        &mut buffer,
+        4 + json_len + 4,
+        "payload truncated (metadata)",
+    )
+    .await
+    {
+        return response;
     }
 
     let json_bytes = &buffer[4..4 + json_len];
@@ -163,119 +344,14 @@ pub async fn handle(
         );
     }
 
-    if let Some(parent) = crate_path.parent()
-        && tokio::fs::create_dir_all(parent).await.is_err()
-    {
-        return error_response(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "failed to create storage directory",
-        );
-    }
-
-    let mut file = match tokio::fs::File::create(&crate_path).await {
-        Ok(f) => f,
-        Err(e) => {
-            tracing::error!("Failed to create crate file {:?}: {}", crate_path, e);
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to create crate file",
-            );
-        }
-    };
-
-    let mut hasher = Sha256::new();
-    let mut written_len = 0;
-
-    // Leftover bytes from buffer after the metadata.
     let initial_crate_data = &buffer[crate_len_offset + 4..];
-    if !initial_crate_data.is_empty() {
-        hasher.update(initial_crate_data);
-        if let Err(e) = file.write_all(initial_crate_data).await {
-            tracing::error!("Failed to write initial crate data: {}", e);
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to write crate data",
-            );
-        }
-        written_len += initial_crate_data.len();
-    }
-
-    while let Some(chunk) = body.next().await {
-        let chunk = match chunk {
-            Ok(c) => c,
-            Err(e) => {
-                return error_response(StatusCode::BAD_REQUEST, &e.to_string());
-            }
-        };
-
-        let to_write = if written_len + chunk.len() > crate_len {
-            &chunk[..crate_len - written_len]
-        } else {
-            &chunk
-        };
-
-        if !to_write.is_empty() {
-            hasher.update(to_write);
-            if let Err(e) = file.write_all(to_write).await {
-                tracing::error!("Failed to write crate chunk: {}", e);
-                return error_response(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "failed to write crate chunk",
-                );
-            }
-            written_len += to_write.len();
-        }
-
-        if written_len >= crate_len {
-            break;
-        }
-    }
-
-    if written_len < crate_len {
-        return error_response(StatusCode::BAD_REQUEST, "payload truncated (crate tarball)");
-    }
-
-    if let Err(e) = file.flush().await {
-        tracing::error!("Failed to flush crate file: {}", e);
-    }
-
-    let digest = hasher.finalize();
-    let mut cksum = String::with_capacity(digest.len() * 2);
-    for byte in digest {
-        write!(&mut cksum, "{:02x}", byte).unwrap();
-    }
-
-    let index_deps: Vec<IndexDep> = meta
-        .deps
-        .into_iter()
-        .map(|d| {
-            let package = d.explicit_name_in_toml.filter(|p| p != &d.name);
-            IndexDep {
-                name: d.name,
-                req: d.version_req,
-                features: d.features,
-                optional: d.optional,
-                default_features: d.default_features,
-                target: d.target,
-                kind: d.kind,
-                registry: d.registry,
-                package,
-            }
-        })
-        .collect();
-
-    let record = IndexRecord {
-        name: meta.name.clone(),
-        vers: meta.vers.clone(),
-        deps: index_deps,
-        cksum,
-        features: meta.features,
-        features2: meta.features2,
-        yanked: false,
-        links: meta.links,
-        rust_version: meta.rust_version,
-        v: 1,
+    let cksum = match write_crate(&crate_path, initial_crate_data, &mut body, crate_len).await {
+        Ok(cksum) => cksum,
+        Err(response) => return response,
     };
+
+    let index_name = meta.name.clone();
+    let record = IndexRecord::new(meta, cksum);
 
     let record_line = match serde_json::to_string(&record) {
         Ok(s) => format!("{s}\n"),
@@ -287,44 +363,15 @@ pub async fn handle(
         }
     };
 
-    let Some(index_path) = index_file_path(&meta.name) else {
+    let Some(index_path) = index_file_path(&index_name) else {
         return error_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             "failed to resolve index path",
         );
     };
 
-    if let Some(parent) = index_path.parent()
-        && tokio::fs::create_dir_all(parent).await.is_err()
-    {
-        return error_response(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "failed to create index directory",
-        );
-    }
-
-    let mut index_file = match tokio::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&index_path)
-        .await
-    {
-        Ok(f) => f,
-        Err(e) => {
-            tracing::error!("Failed to open index file {:?}: {}", index_path, e);
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to open index file",
-            );
-        }
-    };
-
-    if let Err(e) = index_file.write_all(record_line.as_bytes()).await {
-        tracing::error!("Failed to write to index file {:?}: {}", index_path, e);
-        return error_response(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "failed to write index entry",
-        );
+    if let Err(response) = append_index(&index_path, &record_line).await {
+        return response;
     }
 
     Response::json(

@@ -11,7 +11,7 @@ use crate::notify::{Preferences, Template, catalog as notification_catalog};
 use crate::ratelimit::{ClientIp, RateLimiter, policy};
 use crate::realm::{self, RealmError, UserChanges};
 use crate::tokens::VerificationTokens;
-use crate::ui::common::{SUPPORTED_LOCALES, UiPageKind, render_page, ui_path};
+use crate::ui::common::{FormFields, SUPPORTED_LOCALES, UiPageKind, render_page, ui_path};
 use crate::ui::locale::BrowserLocale;
 use async_trait::async_trait;
 use http::StatusCode;
@@ -49,15 +49,15 @@ impl FromRequest for Actor {
         let Ok(config) = req.container().get::<JwtConfig>() else {
             return Ok(Self::Redirect(super::auth::login_redirect()));
         };
-        match get_user_from_req(req, &config).await {
-            Some(claims) => Ok(Self::Claims(claims)),
-            None => Ok(Self::Redirect(super::auth::login_redirect())),
-        }
+        get_user_from_req(req, &config).await.map_or_else(
+            || Ok(Self::Redirect(super::auth::login_redirect())),
+            |claims| Ok(Self::Claims(claims)),
+        )
     }
 }
 
 /// Feedback carried across the redirect that follows every write here.
-#[derive(Deserialize, Default)]
+#[derive(Debug, Deserialize, Default)]
 pub struct Notice {
     #[serde(default)]
     pub err: Option<String>,
@@ -97,6 +97,7 @@ pub async fn account_page(
 }
 
 /// The catalog with everyone's starting choices - for a person who has made none.
+#[must_use]
 pub fn default_subscriptions() -> Vec<(&'static Template, bool)> {
     notification_catalog::all()
         .iter()
@@ -110,7 +111,7 @@ pub fn default_subscriptions() -> Vec<(&'static Template, bool)> {
 #[post("/ui/account/notifications")]
 pub async fn save_notifications(
     actor: Actor,
-    Form(form): Form<HashMap<String, String>>,
+    Form(form): Form<FormFields>,
     Inject(db): Inject<Db>,
 ) -> Response {
     let actor = match actor.or_redirect() {
@@ -268,7 +269,7 @@ fn non_empty(form: &HashMap<String, String>, key: &str) -> Option<String> {
 #[post("/ui/account/password")]
 pub async fn change_password(
     actor: Actor,
-    Form(form): Form<HashMap<String, String>>,
+    Form(form): Form<FormFields>,
     Inject(catalog): Inject<PermissionCatalog>,
     Inject(db): Inject<Db>,
     Inject(sessions): Inject<SessionDb>,
@@ -309,7 +310,7 @@ pub async fn change_password(
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct EmailChangeForm {
     pub email: String,
     pub email_current_password: String,
@@ -429,7 +430,7 @@ pub async fn mfa_enroll_page(actor: Actor) -> Response {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct MfaEnrollForm {
     pub secret: String,
     pub code: String,
@@ -487,8 +488,7 @@ pub async fn mfa_disable(
     // Only worth a notice if it was actually on.
     let was_on = realm::get(&db, &actor.sub)
         .await
-        .map(|user| user.mfa_enabled)
-        .unwrap_or(false);
+        .is_ok_and(|user| user.mfa_enabled);
     match realm::disable_mfa(&db, &actor.sub).await {
         Ok(()) => {
             if was_on {
@@ -509,15 +509,8 @@ pub async fn mfa_disable(
 
 // --- Rendering ---
 
-pub fn render_account_page(user: &User, notice: &Notice) -> Response {
-    render_account_page_with(user, notice, &default_subscriptions())
-}
-
-pub fn render_account_page_with(
-    user: &User,
-    notice: &Notice,
-    subscriptions: &[(&'static Template, bool)],
-) -> Response {
+/// The display name, avatar, title, timezone and locale form.
+fn profile_panel(user: &User) -> Element {
     let profile_form = form()
         .attr("method", "post")
         .attr("enctype", "multipart/form-data")
@@ -551,19 +544,19 @@ pub fn render_account_page_with(
                 .attr("data-i18n", "ui_account_save"),
         );
 
-    let profile_panel = div()
+    div()
         .class("panel admin-panel")
         .child(
             div()
                 .class("panel-title")
                 .attr("data-i18n", "ui_account_profile_title"),
         )
-        .child(div().class("meta-list").child(profile_form));
+        .child(div().class("meta-list").child(profile_form))
+}
 
-    let email_panel = email_panel(user);
-    let notifications_panel = notifications_panel(user, subscriptions);
-
-    let password_panel = div()
+/// The change-password form.
+fn password_panel() -> Element {
+    div()
         .class("panel admin-panel")
         .child(
             div()
@@ -596,9 +589,12 @@ pub fn render_account_page_with(
                             .attr("data-i18n", "ui_account_password_change"),
                     ),
             ),
-        );
+        )
+}
 
-    let mfa_panel = if user.mfa_enabled {
+/// Whether MFA is on, and the way to flip it.
+fn mfa_panel(user: &User) -> Element {
+    if user.mfa_enabled {
         div()
             .class("panel admin-panel")
             .child(
@@ -645,7 +641,28 @@ pub fn render_account_page_with(
                             .attr("data-i18n", "ui_account_mfa_enable"),
                     ),
             )
-    };
+    }
+}
+
+#[must_use]
+pub fn render_account_page(user: &User, notice: &Notice) -> Response {
+    render_account_page_with(user, notice, &default_subscriptions())
+}
+
+#[must_use]
+pub fn render_account_page_with(
+    user: &User,
+    notice: &Notice,
+    subscriptions: &[(&'static Template, bool)],
+) -> Response {
+    let profile_panel = profile_panel(user);
+
+    let email_panel = email_panel(user);
+    let notifications_panel = notifications_panel(user, subscriptions);
+
+    let password_panel = password_panel();
+
+    let mfa_panel = mfa_panel(user);
 
     render_page(
         StatusCode::OK,
@@ -663,6 +680,7 @@ pub fn render_account_page_with(
     )
 }
 
+#[must_use]
 pub fn render_mfa_enroll_page(secret: &str, uri: &str, error: bool) -> Response {
     let mut enroll_form = form()
         .attr("method", "post")
@@ -817,28 +835,30 @@ fn notifications_panel(user: &User, subscriptions: &[(&'static Template, bool)])
 
 /// The address on file (and whether it is confirmed), and the form to change it.
 fn email_panel(user: &User) -> Element {
-    let current = match user
+    let current = user
         .email
         .as_deref()
         .map(str::trim)
         .filter(|address| !address.is_empty())
-    {
-        Some(address) => {
-            let status = if user.email_verified_at.is_some() {
-                "ui_account_email_confirmed"
-            } else {
-                "ui_account_email_unconfirmed"
-            };
-            div()
-                .class("admin-status-row")
-                .child(span().attr("id", "current-email").text(address))
-                .child(span().class("admin-hint").attr("data-i18n", status))
-        }
-        None => div().child(
-            p().class("admin-hint")
-                .attr("data-i18n", "ui_account_email_none"),
-        ),
-    };
+        .map_or_else(
+            || {
+                div().child(
+                    p().class("admin-hint")
+                        .attr("data-i18n", "ui_account_email_none"),
+                )
+            },
+            |address| {
+                let status = if user.email_verified_at.is_some() {
+                    "ui_account_email_confirmed"
+                } else {
+                    "ui_account_email_unconfirmed"
+                };
+                div()
+                    .class("admin-status-row")
+                    .child(span().attr("id", "current-email").text(address))
+                    .child(span().class("admin-hint").attr("data-i18n", status))
+            },
+        );
 
     div()
         .class("panel admin-panel")
@@ -1052,6 +1072,7 @@ fn redirect(path: &str) -> Response {
     Response::new(StatusCode::FOUND).header("Location", ui_path(path))
 }
 
+#[must_use]
 pub fn error_page(err: &RealmError) -> Response {
     render_page(
         err.status(),
@@ -1075,4 +1096,10 @@ pub fn register_routes() {
     let _ = mfa_enroll_page as fn(_) -> _;
     let _ = mfa_enroll_submit as fn(_, _, _, _, _) -> _;
     let _ = mfa_disable as fn(_, _, _, _) -> _;
+}
+
+impl std::fmt::Debug for Actor {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("Actor { .. }")
+    }
 }

@@ -1,4 +1,5 @@
 //! Following the results of a repository or project - the caller's own subscriptions only.
+//!
 //! A project covers every repository nested beneath it. What is sent, and to whom, is
 //! [`crate::notifications`]'s business.
 

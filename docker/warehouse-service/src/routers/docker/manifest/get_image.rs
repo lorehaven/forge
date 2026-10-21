@@ -80,27 +80,21 @@ pub(super) async fn resolve_manifest_response(
             "manifest unknown",
         ));
     };
-    let data = match tokio::fs::read(&manifest_path).await {
-        Ok(d) => d,
-        Err(_) => {
-            return Err(error::response(
-                StatusCode::NOT_FOUND,
-                docker_error::MANIFEST_UNKNOWN,
-                "manifest unknown",
-            ));
-        }
+    let Ok(data) = tokio::fs::read(&manifest_path).await else {
+        return Err(error::response(
+            StatusCode::NOT_FOUND,
+            docker_error::MANIFEST_UNKNOWN,
+            "manifest unknown",
+        ));
     };
 
     // Detect stored media type from JSON
-    let stored_media_type = match detect_manifest_media_type(&data) {
-        Some(mt) => mt,
-        None => {
-            return Err(error::response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                error::UNSUPPORTED,
-                "manifest media type unsupported",
-            ));
-        }
+    let Some(stored_media_type) = detect_manifest_media_type(&data) else {
+        return Err(error::response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            error::UNSUPPORTED,
+            "manifest media type unsupported",
+        ));
     };
 
     // Docker clients probe with varying Accept headers; prefer serving what's stored over a strict 406.
@@ -119,6 +113,7 @@ pub const DOCKER_MANIFEST_LIST_V2: &str =
 pub const OCI_IMAGE_MANIFEST_V1: &str = "application/vnd.oci.image.manifest.v1+json";
 pub const OCI_IMAGE_INDEX_V1: &str = "application/vnd.oci.image.index.v1+json";
 
+#[must_use]
 pub fn detect_manifest_media_type(data: &[u8]) -> Option<&'static str> {
     let v: serde_json::Value = serde_json::from_slice(data).ok()?;
 
@@ -132,7 +127,7 @@ pub fn detect_manifest_media_type(data: &[u8]) -> Option<&'static str> {
         };
     }
 
-    if v.get("schemaVersion").and_then(|s| s.as_u64()) != Some(2) {
+    if v.get("schemaVersion").and_then(serde_json::Value::as_u64) != Some(2) {
         return None;
     }
 
@@ -140,8 +135,7 @@ pub fn detect_manifest_media_type(data: &[u8]) -> Option<&'static str> {
         let is_oci = manifests.iter().any(|m| {
             m.get("mediaType")
                 .and_then(|x| x.as_str())
-                .map(|s| s.starts_with("application/vnd.oci."))
-                .unwrap_or(false)
+                .is_some_and(|s| s.starts_with("application/vnd.oci."))
         });
         return Some(if is_oci {
             OCI_IMAGE_INDEX_V1
@@ -155,21 +149,18 @@ pub fn detect_manifest_media_type(data: &[u8]) -> Option<&'static str> {
             .get("config")
             .and_then(|c| c.get("mediaType"))
             .and_then(|x| x.as_str())
-            .map(|s| s.starts_with("application/vnd.oci."))
-            .unwrap_or(false);
+            .is_some_and(|s| s.starts_with("application/vnd.oci."));
         let layers_is_oci = v
             .get("layers")
             .and_then(|l| l.as_array())
-            .map(|layers| {
+            .is_some_and(|layers| {
                 layers.iter().any(|layer| {
                     layer
                         .get("mediaType")
                         .and_then(|x| x.as_str())
-                        .map(|s| s.starts_with("application/vnd.oci."))
-                        .unwrap_or(false)
+                        .is_some_and(|s| s.starts_with("application/vnd.oci."))
                 })
-            })
-            .unwrap_or(false);
+            });
 
         return Some(if config_is_oci || layers_is_oci {
             OCI_IMAGE_MANIFEST_V1
@@ -181,6 +172,7 @@ pub fn detect_manifest_media_type(data: &[u8]) -> Option<&'static str> {
     None
 }
 
+#[must_use]
 pub fn negotiate_media_type(accept: &str, available: &[&'static str]) -> Option<&'static str> {
     if accept.is_empty() {
         return available.first().copied();
@@ -202,6 +194,7 @@ pub fn negotiate_media_type(accept: &str, available: &[&'static str]) -> Option<
     None
 }
 
+#[must_use]
 pub fn media_match(range: &str, candidate: &str) -> bool {
     if range == "*/*" {
         return true;
@@ -218,8 +211,7 @@ pub fn media_match(range: &str, candidate: &str) -> bool {
     if let Some(prefix) = range.strip_suffix("/*") {
         return candidate
             .get(..prefix.len())
-            .map(|head| head.eq_ignore_ascii_case(prefix))
-            .unwrap_or(false);
+            .is_some_and(|head| head.eq_ignore_ascii_case(prefix));
     }
 
     false
@@ -241,6 +233,7 @@ pub struct MediaRange {
     pub q: f32,
 }
 
+#[must_use]
 pub fn parse_accept(header: &str) -> Vec<MediaRange> {
     header
         .split(',')

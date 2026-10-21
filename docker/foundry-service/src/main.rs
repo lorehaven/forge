@@ -30,7 +30,7 @@ struct Cli {
     #[arg(long, global = true, value_name = "DIR")]
     catalog: Option<PathBuf>,
 
-    /// Postgres connection string (default: $DATABASE_URL).
+    /// Postgres connection string (default: $`DATABASE_URL`).
     #[arg(long, global = true, value_name = "URL")]
     database_url: Option<String>,
 
@@ -43,11 +43,11 @@ struct Cli {
     #[arg(long, global = true, value_name = "SCHEMA")]
     ledger_schema: Option<String>,
 
-    /// Table recording applied migrations (default: forge_migrations).
+    /// Table recording applied migrations (default: `forge_migrations`).
     #[arg(long, global = true, value_name = "TABLE")]
     ledger_table: Option<String>,
 
-    /// Table recording installed module versions (default: forge_modules).
+    /// Table recording installed module versions (default: `forge_modules`).
     #[arg(long, global = true, value_name = "TABLE")]
     module_table: Option<String>,
 
@@ -131,49 +131,7 @@ async fn main() -> Result<()> {
             let db = connect(&config).await?;
             print_installed(&runner, &db, &catalog).await
         }
-        Command::Reset => {
-            if !cli.yes {
-                print_status(
-                    Tone::Error,
-                    "reset",
-                    "refusing to drop schemas without --yes; this destroys data",
-                );
-                for schema in runner.resettable_schemas(&plan) {
-                    print_status(
-                        Tone::Warn,
-                        "would drop",
-                        &format!("schema {schema} (CASCADE)"),
-                    );
-                }
-                std::process::exit(1);
-            }
-
-            let db = connect(&config).await?;
-            let report = runner.reset(&db, &plan).await?;
-            for schema in &report.schemas {
-                print_status(Tone::Warn, "dropped", &format!("schema {schema}"));
-            }
-            print_status(
-                Tone::Info,
-                "reset",
-                &format!(
-                    "forgot {} recorded migration(s)",
-                    report.forgotten_migrations
-                ),
-            );
-
-            let report = runner.apply(&db, &plan).await?;
-            print_report(&report);
-            print_status(
-                Tone::Success,
-                "reset",
-                &format!(
-                    "{} migration(s) reinstalled",
-                    report.count(MigrationOutcome::Applied)
-                ),
-            );
-            Ok(())
-        }
+        Command::Reset => reset(&runner, &plan, &config, cli.yes).await,
         Command::Apply => {
             let db = connect(&config).await?;
             let report = runner.apply(&db, &plan).await?;
@@ -192,6 +150,55 @@ async fn main() -> Result<()> {
     }
 }
 
+async fn reset(
+    runner: &MigrationRunner,
+    plan: &MigrationPlan,
+    config: &RunConfig,
+    yes: bool,
+) -> Result<()> {
+    if !yes {
+        print_status(
+            Tone::Error,
+            "reset",
+            "refusing to drop schemas without --yes; this destroys data",
+        );
+        for schema in runner.resettable_schemas(plan) {
+            print_status(
+                Tone::Warn,
+                "would drop",
+                &format!("schema {schema} (CASCADE)"),
+            );
+        }
+        std::process::exit(1);
+    }
+
+    let db = connect(config).await?;
+    let report = runner.reset(&db, plan).await?;
+    for schema in &report.schemas {
+        print_status(Tone::Warn, "dropped", &format!("schema {schema}"));
+    }
+    print_status(
+        Tone::Info,
+        "reset",
+        &format!(
+            "forgot {} recorded migration(s)",
+            report.forgotten_migrations
+        ),
+    );
+
+    let report = runner.apply(&db, plan).await?;
+    print_report(&report);
+    print_status(
+        Tone::Success,
+        "reset",
+        &format!(
+            "{} migration(s) reinstalled",
+            report.count(MigrationOutcome::Applied)
+        ),
+    );
+    Ok(())
+}
+
 async fn connect(config: &RunConfig) -> Result<PostgresDb> {
     let db = PostgresDb::new(&config.database_url)
         .await
@@ -202,10 +209,10 @@ async fn connect(config: &RunConfig) -> Result<PostgresDb> {
 
 fn print_plan(plan: &MigrationPlan) {
     for (index, module) in plan.modules.iter().enumerate() {
-        let origin = match &module.required_by {
-            Some(parent) => format!(" (required by {parent})"),
-            None => String::new(),
-        };
+        let origin = module
+            .required_by
+            .as_ref()
+            .map_or_else(String::new, |parent| format!(" (required by {parent})"));
         print_status(
             Tone::Info,
             "module",
@@ -265,8 +272,7 @@ async fn print_installed(
     for (module, schema, version) in installed {
         let available = catalog
             .get(&module)
-            .map(|m| m.version().to_string())
-            .unwrap_or_else(|| "not in catalog".to_string());
+            .map_or_else(|| "not in catalog".to_string(), |m| m.version().to_string());
         let tone = if available == version {
             Tone::Success
         } else {

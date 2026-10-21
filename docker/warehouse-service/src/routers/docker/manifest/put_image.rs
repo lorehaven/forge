@@ -17,6 +17,7 @@ pub const OCI_IMAGE_MANIFEST_V1: &str = "application/vnd.oci.image.manifest.v1+j
 pub const OCI_IMAGE_INDEX_V1: &str = "application/vnd.oci.image.index.v1+json";
 
 /// The `Content-Type` header, read via a local extractor (quench-http has none built in).
+#[derive(Debug)]
 pub struct ContentTypeHeader(Option<String>);
 
 #[async_trait]
@@ -139,6 +140,7 @@ pub async fn normalize_manifest_body(body: &[u8]) -> Result<Vec<u8>, &'static st
     serde_json::to_vec(&value).map_err(|_| "invalid manifest payload")
 }
 
+#[derive(Debug)]
 pub enum DescriptorKind {
     Blob,
     Manifest,
@@ -182,11 +184,13 @@ pub async fn populate_descriptor_size(
     Ok(())
 }
 
+#[must_use]
 pub fn normalize_media_type(raw: &str) -> Option<&str> {
     let value = raw.split(';').next()?.trim();
     if value.is_empty() { None } else { Some(value) }
 }
 
+#[must_use]
 pub fn is_supported_manifest_media_type(media_type: &str) -> bool {
     matches!(
         media_type,

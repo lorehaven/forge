@@ -11,6 +11,7 @@ use quench_auth::domain::jwt::{Claims, JwtConfig};
 pub const SERVICE: &str = "gantry";
 
 /// Whether the caller may do `action` anywhere. `auth_enabled` off is the realm-wide dev bypass.
+#[must_use]
 pub fn can(claims: Option<&Claims>, config: &JwtConfig, action: &str) -> bool {
     if !config.auth_enabled {
         return true;
@@ -19,6 +20,7 @@ pub fn can(claims: Option<&Claims>, config: &JwtConfig, action: &str) -> bool {
 }
 
 /// Whether the caller may do `action` on the package `target`, by the blanket grant or one scoped to it.
+#[must_use]
 pub fn can_on_target(
     claims: Option<&Claims>,
     config: &JwtConfig,
@@ -34,6 +36,7 @@ pub fn can_on_target(
 }
 
 /// Packages the caller is directly granted `action` on.
+#[must_use]
 pub fn granted_targets(claims: &Claims, action: &str) -> Vec<String> {
     claims
         .permissions()
@@ -49,6 +52,7 @@ pub fn granted_targets(claims: &Claims, action: &str) -> Vec<String> {
 }
 
 /// Whether the caller may confirm `plan`: the permission its action needs, on every package it touches.
+///
 /// Going to an older version needs `rollback`, a swap needs `activate`, a start or stop `scale`, and
 /// anything else `deploy`.
 pub fn can_confirm(

@@ -2,7 +2,7 @@ use crate::routers::docker::registry::storage::list_repositories;
 use quench_http::prelude::{Query, Response, get, http::StatusCode};
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Default)]
+#[derive(Debug, Deserialize, Default)]
 pub struct CatalogQuery {
     n: Option<usize>,
     last: Option<String>,
@@ -25,8 +25,7 @@ pub async fn handle(query: Query<CatalogQuery>) -> Response {
     let start = last
         .as_ref()
         .and_then(|l| repos.iter().position(|r| r == l))
-        .map(|i| i + 1)
-        .unwrap_or(0);
+        .map_or(0, |i| i + 1);
 
     let page: Vec<String> = repos.into_iter().skip(start).take(n).collect();
 
@@ -41,7 +40,7 @@ pub async fn handle(query: Query<CatalogQuery>) -> Response {
     if page.len() == n
         && let Some(last_item) = page.last()
     {
-        let link = format!("</v2/_catalog?n={}&last={}>; rel=\"next\"", n, last_item);
+        let link = format!("</v2/_catalog?n={n}&last={last_item}>; rel=\"next\"");
         response = response.header("link", link);
     }
 

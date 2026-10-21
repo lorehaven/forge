@@ -6,7 +6,7 @@ Anvil is the workspace build tool for the Forge Cargo workspace. It wraps `cargo
 
 - **Build/test/clean**: workspace-wide or single-package `build`, `test`, and `clean`, mirroring `cargo`'s own flags (`--all`, `--all-features`, `--release`, `-p/--package`).
 - **Faster test runner**: `nextest` runs the same package/test-name selection through `cargo-nextest` — parallel-by-default, per-test timeouts, non-interleaved output. Doesn't cover doctests or `forge-bdd`'s cucumber suite (a binary target, not a `#[test]` harness).
-- **Strict linting**: `lint` runs `cargo clippy` with `--all-targets`, `--all-features`, and warnings-as-errors all defaulting to on.
+- **Strict linting**: `lint` runs `cargo clippy` with `--all-targets`, `--all-features`, and warnings-as-errors all defaulting to on. It keeps going past a failing crate (`--keep-going`) and ends with a "Lint issues per module" table - one row per workspace crate, most issues first, duplicates (a lint hit again by a crate's lib and its tests) counted once. `--json` output is unchanged.
 - **Formatting**: `format [--check]` wraps `cargo fmt`.
 - **Workspace introspection**: `list [--format names|json]` enumerates workspace packages.
 - **Dependency maintenance**: `upgrade [--incompatible]`, `audit` (RustSec advisories via `cargo-audit`), `machete` (unused-dependency detection via `cargo-machete`), `deny` (licenses, banned/duplicate crates, and registry sources via `cargo-deny`, configured in `deny.toml`).

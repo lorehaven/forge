@@ -40,6 +40,7 @@ pub enum CommitState {
 }
 
 impl CommitState {
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Pending => "pending",
@@ -50,6 +51,7 @@ impl CommitState {
     }
 
     /// `Skipped` reads as success (nothing ran, nothing's wrong); `Cancelled` as error, not failure.
+    #[must_use]
     pub const fn from_status(status: Status) -> Self {
         match status {
             Status::Queued | Status::Running => Self::Pending,
@@ -142,12 +144,14 @@ pub trait GitProvider: Send + Sync {
 }
 
 /// Built once at startup - one instance each, not one per request, so HTTP connections stay pooled.
+#[derive(Debug)]
 pub struct Providers {
     github: Arc<GitHubProvider>,
     generic: Arc<GenericProvider>,
 }
 
 impl Providers {
+    #[must_use]
     pub fn from_env() -> Self {
         Self {
             github: Arc::new(GitHubProvider::from_env()),
@@ -155,6 +159,7 @@ impl Providers {
         }
     }
 
+    #[must_use]
     pub fn get(&self, provider: Provider) -> Arc<dyn GitProvider> {
         match provider {
             Provider::GitHub => self.github.clone(),
@@ -163,6 +168,7 @@ impl Providers {
     }
 
     /// Resolves the path segment a webhook arrived on.
+    #[must_use]
     pub fn by_name(&self, name: &str) -> Option<(Provider, Arc<dyn GitProvider>)> {
         let provider = Provider::parse(name)?;
         Some((provider, self.get(provider)))
@@ -176,6 +182,7 @@ impl Default for Providers {
 }
 
 /// Estate-wide fallback for a repository with no secret of its own; `None` means the webhook endpoint refuses to serve.
+#[must_use]
 pub fn webhook_secret() -> Option<String> {
     let secret = envmnt::get_or("CONVEYOR_WEBHOOK_SECRET", "");
     (!secret.trim().is_empty()).then(|| secret.trim().to_string())
@@ -227,6 +234,7 @@ pub(crate) fn verify_sha256_signature(signature: &str, body: &[u8], secret: &[u8
 
 /// The signature conveyor would send for this body, for tests and for
 /// documenting what a sender has to produce.
+#[must_use]
 pub fn sign_sha256(body: &[u8], secret: &[u8]) -> String {
     use hmac::{KeyInit, Mac, SimpleHmac};
 

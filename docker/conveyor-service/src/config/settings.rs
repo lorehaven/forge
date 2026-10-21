@@ -102,18 +102,18 @@ impl ConveyorConfig {
                 "CONVEYOR_MAX_CONCURRENT_RUNS",
                 defaults.max_concurrent_runs,
             ),
-            default_job_timeout_secs: positive(
+            default_job_timeout_secs: positive_u64(
                 "CONVEYOR_JOB_TIMEOUT_SECS",
-                defaults.default_job_timeout_secs as usize,
-            ) as u64,
-            checkout_timeout_secs: positive(
+                defaults.default_job_timeout_secs,
+            ),
+            checkout_timeout_secs: positive_u64(
                 "CONVEYOR_CHECKOUT_TIMEOUT_SECS",
-                defaults.checkout_timeout_secs as usize,
-            ) as u64,
-            claim_stale_after_secs: positive(
+                defaults.checkout_timeout_secs,
+            ),
+            claim_stale_after_secs: positive_u64(
                 "CONVEYOR_CLAIM_STALE_AFTER_SECS",
-                defaults.claim_stale_after_secs as usize,
-            ) as u64,
+                defaults.claim_stale_after_secs,
+            ),
             allow_fork_pr: envmnt::is_or("CONVEYOR_ALLOW_FORK_PR", false),
             home_recent_runs: positive("CONVEYOR_HOME_RECENT_RUNS", defaults.home_recent_runs),
             home_max_runs_per_repo: positive(
@@ -143,6 +143,22 @@ pub fn positive(key: &str, default: usize) -> usize {
     }
 
     match raw.trim().parse::<usize>() {
+        Ok(value) if value > 0 => value,
+        _ => {
+            tracing::warn!("{key}={raw:?} is not a positive integer, using {default}");
+            default
+        }
+    }
+}
+
+/// Reads a positive 64-bit integer, defaulting on missing, unparseable, or zero values.
+fn positive_u64(key: &str, default: u64) -> u64 {
+    let raw = envmnt::get_or(key, "");
+    if raw.trim().is_empty() {
+        return default;
+    }
+
+    match raw.trim().parse::<u64>() {
         Ok(value) if value > 0 => value,
         _ => {
             tracing::warn!("{key}={raw:?} is not a positive integer, using {default}");

@@ -74,7 +74,7 @@ fn a_secret_round_trips_through_encryption_at_rest() {
 #[test]
 fn a_pending_token_verifies_back_to_the_username_it_was_signed_for() {
     with_key(|| {
-        let token = sign_pending("someone").unwrap();
+        let token = sign_pending("someone");
         assert_eq!(verify_pending(&token).as_deref(), Some("someone"));
     });
 }
@@ -82,7 +82,7 @@ fn a_pending_token_verifies_back_to_the_username_it_was_signed_for() {
 #[test]
 fn a_tampered_pending_token_does_not_verify() {
     with_key(|| {
-        let token = sign_pending("someone").unwrap();
+        let token = sign_pending("someone");
         let tampered = token.replace("someone", "someone-else");
         assert_eq!(verify_pending(&tampered), None);
     });

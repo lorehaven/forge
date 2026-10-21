@@ -69,7 +69,7 @@ pub async fn new_modal() -> Response {
     Response::html(StatusCode::OK, modal.render())
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct CreateProjectRequest {
     pub name: String,
 }

@@ -41,9 +41,7 @@ pub async fn build(kind: ExecutorKind) -> Arc<dyn JobExecutor> {
                      Refusing to run pipelines inside this container instead; every job \
                      will fail until it is fixed."
                 );
-                Arc::new(UnavailableExecutor {
-                    reason: error.to_string(),
-                })
+                Arc::new(UnavailableExecutor { reason: error })
             }
         },
     }
@@ -85,5 +83,11 @@ impl JobExecutor for UnavailableExecutor {
 
     async fn forget(&self, _handle: &Handle) -> Result<(), ExecError> {
         Ok(())
+    }
+}
+
+impl std::fmt::Debug for Executor {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("Executor { .. }")
     }
 }

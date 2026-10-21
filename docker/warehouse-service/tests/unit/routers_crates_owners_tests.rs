@@ -19,7 +19,7 @@ async fn app() -> (
 ) {
     owners::register_routes();
     let container = support::container_builder().build().await.unwrap();
-    support::app(container).await
+    support::app(container)
 }
 
 #[tokio::test]
@@ -65,7 +65,7 @@ async fn add_rejects_an_empty_user_list() {
         .call(support::json_req(
             Method::PUT,
             "/api/v1/crates/my-crate/owners",
-            serde_json::json!({ "users": [] }),
+            &serde_json::json!({ "users": [] }),
             &container,
         ))
         .await;
@@ -82,7 +82,7 @@ async fn add_assigns_sequential_ids_and_skips_case_insensitive_duplicates() {
         .call(support::json_req(
             Method::PUT,
             "/api/v1/crates/my-crate/owners",
-            serde_json::json!({ "users": ["alice", "bob"] }),
+            &serde_json::json!({ "users": ["alice", "bob"] }),
             &container,
         ))
         .await;
@@ -93,7 +93,7 @@ async fn add_assigns_sequential_ids_and_skips_case_insensitive_duplicates() {
         .call(support::json_req(
             Method::PUT,
             "/api/v1/crates/my-crate/owners",
-            serde_json::json!({ "users": ["ALICE", "carol"] }),
+            &serde_json::json!({ "users": ["ALICE", "carol"] }),
             &container,
         ))
         .await;
@@ -108,6 +108,7 @@ async fn add_assigns_sequential_ids_and_skips_case_insensitive_duplicates() {
     assert_eq!(users[1]["id"], 2);
     assert_eq!(users[2]["login"], "carol");
     assert_eq!(users[2]["id"], 3);
+    drop(storage);
 }
 
 #[tokio::test]
@@ -137,7 +138,7 @@ async fn remove_deletes_owners_case_insensitively() {
         .call(support::json_req(
             Method::DELETE,
             "/api/v1/crates/my-crate/owners",
-            serde_json::json!({ "users": ["ALICE"] }),
+            &serde_json::json!({ "users": ["ALICE"] }),
             &container,
         ))
         .await;
@@ -147,6 +148,7 @@ async fn remove_deletes_owners_case_insensitively() {
     let users = owners.as_array().unwrap();
     assert_eq!(users.len(), 1);
     assert_eq!(users[0]["login"], "bob");
+    drop(storage);
 }
 
 #[tokio::test]
@@ -159,7 +161,7 @@ async fn remove_rejects_an_empty_user_list() {
         .call(support::json_req(
             Method::DELETE,
             "/api/v1/crates/my-crate/owners",
-            serde_json::json!({ "users": [] }),
+            &serde_json::json!({ "users": [] }),
             &container,
         ))
         .await;
@@ -175,7 +177,7 @@ async fn add_rejects_an_invalid_crate_name() {
         .call(support::json_req(
             Method::PUT,
             "/api/v1/crates/..%2fetc/owners",
-            serde_json::json!({ "users": ["alice"] }),
+            &serde_json::json!({ "users": ["alice"] }),
             &container,
         ))
         .await;

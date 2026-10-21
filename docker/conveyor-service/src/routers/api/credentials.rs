@@ -14,7 +14,7 @@ use serde::Deserialize;
 /// The only kind `workspace::checkout` knows how to use today; rejected at write time, not silently ignored later.
 const HTTP_TOKEN: &str = "http_token";
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct SetCredential {
     pub name: String,
     #[serde(default = "default_kind")]

@@ -14,6 +14,7 @@ pub mod monitor;
 
 pub use monitor::get_gpu_info;
 
+#[derive(Debug)]
 pub struct GpuBroadcaster(pub Sender<String>);
 
 /// Wraps `/api/v1/gpu` in `Auth`. `base_path` matters: `OnPathPrefix` sees
@@ -48,13 +49,15 @@ pub async fn handle_sse(
     let rx = broadcaster.0.subscribe();
 
     let stream = BroadcastStream::new(rx).filter_map(|msg| async move {
-        match msg {
-            Ok(html) => Some(Ok::<Bytes, std::io::Error>(Bytes::from(format!(
-                "event: gpu-status\ndata: {}\n\n",
-                html.replace('\n', "")
-            )))),
-            Err(_) => None,
-        }
+        msg.map_or_else(
+            |_| None,
+            |html| {
+                Some(Ok::<Bytes, std::io::Error>(Bytes::from(format!(
+                    "event: gpu-status\ndata: {}\n\n",
+                    html.replace('\n', "")
+                ))))
+            },
+        )
     });
 
     Ok(Response::streaming(http::StatusCode::OK, stream)

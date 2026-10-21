@@ -25,12 +25,14 @@ const ANDROID: &str = "android";
 
 /// Whether the deprecated `/api/v1/apk` routes still answer. Read fresh every call so a test can
 /// flip it; defaults to on.
+#[must_use]
 pub fn alias_enabled() -> bool {
     crate::routers::feature_enabled("FEATURE_APK_ALIAS_ENABLED", true)
 }
 
 /// The `Sunset` header value, from `APK_ALIAS_SUNSET` (an HTTP-date, e.g.
 /// `Wed, 31 Dec 2026 00:00:00 GMT`); `None` while no removal date is scheduled.
+#[must_use]
 pub fn alias_sunset() -> Option<String> {
     let value = envmnt::get_or("APK_ALIAS_SUNSET", "");
     let value = value.trim();
@@ -39,6 +41,7 @@ pub fn alias_sunset() -> Option<String> {
 
 /// Usage logging and deprecation signalling for `/api/v1/apk`. Mounted inside `Auth` so the log
 /// can name the caller; an unauthenticated probe never reaches it.
+#[derive(Debug)]
 pub struct Deprecation {
     successor: String,
 }
@@ -58,8 +61,7 @@ impl Middleware for Deprecation {
         let subject = req
             .extensions()
             .get::<Claims>()
-            .map(|claims| claims.sub.clone())
-            .unwrap_or_else(|| "anonymous".to_string());
+            .map_or_else(|| "anonymous".to_string(), |claims| claims.sub.clone());
         let user_agent = req.header("user-agent").unwrap_or("-").to_string();
         let method = req.method().clone();
         let path = req.uri().path().to_string();

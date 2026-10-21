@@ -1,7 +1,9 @@
 //! One target: what is running of it, what is published, what was set by hand, and the way to plan a change.
 
 use crate::domain::planner;
+use crate::domain::registry::PackageVersion;
 use crate::domain::service::Gantry;
+use crate::domain::targets::Target;
 use crate::routers::api::authz;
 use crate::routers::ui::common::{
     ActorOrRedirect, Notice, badge, cell_text, notice_banner, redirect, render_page, row, table,
@@ -14,6 +16,61 @@ use serde::Deserialize;
 
 fn forbidden(name: &str) -> Response {
     redirect(&format!("/targets/{name}"), Some(("error", "not allowed")))
+}
+
+/// The workloads the target has in the cluster.
+fn units_table(target: &Target) -> Element {
+    let mut units = table(&[
+        "ui_col_kind",
+        "ui_col_name",
+        "ui_col_version",
+        "ui_col_ready",
+    ]);
+    for unit in &target.units {
+        units = units.child(row(vec![
+            span().class("gt-muted").text(unit.kind.clone()),
+            span().text(format!("{}/{}", unit.namespace, unit.name)),
+            cell_text(unit.version.clone().unwrap_or_else(|| "—".to_string())),
+            cell_text(format!("{}/{}", unit.ready, unit.desired)),
+        ]));
+    }
+    units
+}
+
+/// The version picker for a sync, and the table of what is published.
+fn version_widgets(versions: &[PackageVersion]) -> (Element, Element) {
+    let mut version_select = select()
+        .attr("name", "version")
+        .attr("id", "gt-version")
+        .child(
+            option()
+                .attr("value", "")
+                .attr("data-i18n", "ui_field_version_newest"),
+        );
+    let mut published = table(&["ui_col_version", "ui_col_description", ""]);
+    for version in versions {
+        let mut opt = option()
+            .attr("value", &version.version)
+            .text(version.version.clone());
+        if version.yanked {
+            opt = opt.attr("disabled", "true");
+        }
+        version_select = version_select.child(opt);
+        published = published.child(row(vec![
+            cell_text(&version.version),
+            span()
+                .class("gt-muted")
+                .text(version.description.clone().unwrap_or_default()),
+            if version.yanked {
+                span()
+                    .class("gt-yanked")
+                    .attr("data-i18n", "ui_version_yanked")
+            } else {
+                span()
+            },
+        ]));
+    }
+    (version_select, published)
 }
 
 #[get("/ui/targets/{name}")]
@@ -44,52 +101,9 @@ pub(super) async fn show(
         .and_then(|v| v.as_str().map(str::to_string))
         .unwrap_or_default();
 
-    let mut units = table(&[
-        "ui_col_kind",
-        "ui_col_name",
-        "ui_col_version",
-        "ui_col_ready",
-    ]);
-    for unit in &target.units {
-        units = units.child(row(vec![
-            span().class("gt-muted").text(unit.kind.clone()),
-            span().text(format!("{}/{}", unit.namespace, unit.name)),
-            cell_text(unit.version.clone().unwrap_or_else(|| "—".to_string())),
-            cell_text(format!("{}/{}", unit.ready, unit.desired)),
-        ]));
-    }
+    let units = units_table(&target);
 
-    let mut version_select = select()
-        .attr("name", "version")
-        .attr("id", "gt-version")
-        .child(
-            option()
-                .attr("value", "")
-                .attr("data-i18n", "ui_field_version_newest"),
-        );
-    let mut published = table(&["ui_col_version", "ui_col_description", ""]);
-    for version in &versions {
-        let mut opt = option()
-            .attr("value", &version.version)
-            .text(version.version.clone());
-        if version.yanked {
-            opt = opt.attr("disabled", "true");
-        }
-        version_select = version_select.child(opt);
-        published = published.child(row(vec![
-            cell_text(&version.version),
-            span()
-                .class("gt-muted")
-                .text(version.description.clone().unwrap_or_default()),
-            if version.yanked {
-                span()
-                    .class("gt-yanked")
-                    .attr("data-i18n", "ui_version_yanked")
-            } else {
-                span()
-            },
-        ]));
-    }
+    let (version_select, published) = version_widgets(&versions);
 
     let may_plan = authz::can_on_target(Some(&claims), &config, &name, "read");
 

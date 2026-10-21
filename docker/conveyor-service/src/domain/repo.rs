@@ -16,6 +16,7 @@ pub enum Provider {
 }
 
 impl Provider {
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::GitHub => "github",
@@ -23,6 +24,7 @@ impl Provider {
         }
     }
 
+    #[must_use]
     pub fn parse(raw: &str) -> Option<Self> {
         match raw.trim().to_ascii_lowercase().as_str() {
             "github" => Some(Self::GitHub),
@@ -59,6 +61,7 @@ pub struct Repo {
 
 impl Repo {
     /// `owner/name`, the form used in logs, the UI and provider API paths.
+    #[must_use]
     pub fn slug(&self) -> String {
         format!("{}/{}", self.owner, self.name)
     }

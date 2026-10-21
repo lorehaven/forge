@@ -10,7 +10,7 @@ use quench_db::prelude::Db;
 use quench_http::prelude::{Inject, Json, Path, Response, delete, get, http::StatusCode, post};
 use serde::Deserialize;
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct CreateIssueLink {
     pub linked_issue_id: String,
     pub kind: String,
@@ -108,9 +108,10 @@ pub async fn remove(
         ));
     }
 
-    match issue_link::delete(&db, &id).await? {
-        true => Ok(Response::new(StatusCode::NO_CONTENT)),
-        false => Ok(json_error(StatusCode::NOT_FOUND, "no such link")),
+    if issue_link::delete(&db, &id).await? {
+        Ok(Response::new(StatusCode::NO_CONTENT))
+    } else {
+        Ok(json_error(StatusCode::NOT_FOUND, "no such link"))
     }
 }
 

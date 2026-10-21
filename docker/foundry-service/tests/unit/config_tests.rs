@@ -38,13 +38,13 @@ impl<'a> EnvGuard<'a> {
             .map(|&key| (key, std::env::var(key).ok()))
             .collect();
         for &key in ENV_KEYS {
-            unsafe { std::env::remove_var(key) };
+            envmnt::remove(key);
         }
         Self { _held: held, saved }
     }
 
-    fn set(&self, key: &str, value: &str) {
-        unsafe { std::env::set_var(key, value) };
+    fn set(key: &str, value: &str) {
+        envmnt::set(key, value);
     }
 }
 
@@ -52,8 +52,8 @@ impl Drop for EnvGuard<'_> {
     fn drop(&mut self) {
         for (key, value) in &self.saved {
             match value {
-                Some(value) => unsafe { std::env::set_var(key, value) },
-                None => unsafe { std::env::remove_var(key) },
+                Some(value) => envmnt::set(key, value),
+                None => envmnt::remove(key),
             }
         }
     }
@@ -63,11 +63,11 @@ fn clean_env() -> EnvGuard<'static> {
     EnvGuard::new(
         env_lock()
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()),
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
     )
 }
 
-fn empty_inputs<'a>(installs: &'a [String]) -> ConfigInputs<'a> {
+const fn empty_inputs(installs: &[String]) -> ConfigInputs<'_> {
     ConfigInputs {
         config_path: None,
         catalog: None,
@@ -187,8 +187,8 @@ fn resolve_rejects_empty_install_list() {
 
 #[test]
 fn resolve_cli_flag_beats_env_for_database_url() {
-    let guard = clean_env();
-    guard.set("DATABASE_URL", "postgres://env/db");
+    let _guard = clean_env();
+    EnvGuard::set("DATABASE_URL", "postgres://env/db");
     let installs = vec!["gatehouse".to_string()];
     let mut inputs = empty_inputs(&installs);
     inputs.database_url = Some("postgres://cli/db");
@@ -199,8 +199,8 @@ fn resolve_cli_flag_beats_env_for_database_url() {
 
 #[test]
 fn resolve_falls_back_to_postgres_url_env() {
-    let guard = clean_env();
-    guard.set("POSTGRES_URL", "postgres://postgres-env/db");
+    let _guard = clean_env();
+    EnvGuard::set("POSTGRES_URL", "postgres://postgres-env/db");
     let installs = vec!["gatehouse".to_string()];
     let inputs = empty_inputs(&installs);
 
@@ -222,8 +222,8 @@ fn resolve_parses_explicit_install_specs() {
 
 #[test]
 fn resolve_reads_installs_from_env_when_none_passed() {
-    let guard = clean_env();
-    guard.set("FOUNDRY_INSTALL", " gatehouse , , sage ");
+    let _guard = clean_env();
+    EnvGuard::set("FOUNDRY_INSTALL", " gatehouse , , sage ");
     let installs: Vec<String> = Vec::new();
     let inputs = empty_inputs(&installs);
 
@@ -234,7 +234,7 @@ fn resolve_reads_installs_from_env_when_none_passed() {
 
 #[test]
 fn resolve_uses_config_file_installs_when_nothing_else_given() {
-    let guard = clean_env();
+    let _guard = clean_env();
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("install.toml");
     std::fs::write(
@@ -245,7 +245,7 @@ fn resolve_uses_config_file_installs_when_nothing_else_given() {
             "#,
     )
     .expect("write config");
-    guard.set("FOUNDRY_CONFIG", path.to_str().expect("utf8 path"));
+    EnvGuard::set("FOUNDRY_CONFIG", path.to_str().expect("utf8 path"));
 
     let installs: Vec<String> = Vec::new();
     let inputs = empty_inputs(&installs);
@@ -284,8 +284,8 @@ fn resolve_defaults_ledger_names_when_nothing_overrides_them() {
 
 #[test]
 fn resolve_cli_flag_beats_env_for_ledger_schema() {
-    let guard = clean_env();
-    guard.set("FOUNDRY_LEDGER_SCHEMA", "env_schema");
+    let _guard = clean_env();
+    EnvGuard::set("FOUNDRY_LEDGER_SCHEMA", "env_schema");
     let installs = vec!["gatehouse".to_string()];
     let mut inputs = empty_inputs(&installs);
     inputs.ledger_schema = Some("cli_schema");
@@ -296,7 +296,7 @@ fn resolve_cli_flag_beats_env_for_ledger_schema() {
 
 #[test]
 fn pick_prefers_flag_then_env_then_file_then_default() {
-    let guard = clean_env();
+    let _guard = clean_env();
     assert_eq!(
         pick(
             Some("flag"),
@@ -307,7 +307,7 @@ fn pick_prefers_flag_then_env_then_file_then_default() {
         "flag"
     );
 
-    guard.set("FOUNDRY_LEDGER_SCHEMA", "env");
+    EnvGuard::set("FOUNDRY_LEDGER_SCHEMA", "env");
     assert_eq!(
         pick(
             None,
@@ -318,7 +318,7 @@ fn pick_prefers_flag_then_env_then_file_then_default() {
         "env"
     );
 
-    unsafe { std::env::remove_var("FOUNDRY_LEDGER_SCHEMA") };
+    envmnt::remove("FOUNDRY_LEDGER_SCHEMA");
     assert_eq!(
         pick(
             None,
@@ -336,10 +336,10 @@ fn pick_prefers_flag_then_env_then_file_then_default() {
 
 #[test]
 fn env_value_treats_empty_string_as_absent() {
-    let guard = clean_env();
-    guard.set("FOUNDRY_CATALOG", "");
+    let _guard = clean_env();
+    EnvGuard::set("FOUNDRY_CATALOG", "");
     assert_eq!(env_value("FOUNDRY_CATALOG"), None);
 
-    guard.set("FOUNDRY_CATALOG", "migrations");
+    EnvGuard::set("FOUNDRY_CATALOG", "migrations");
     assert_eq!(env_value("FOUNDRY_CATALOG"), Some("migrations".to_string()));
 }

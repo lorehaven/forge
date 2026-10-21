@@ -15,6 +15,7 @@ pub struct Reported {
     pub description: String,
 }
 
+#[derive(Debug)]
 pub struct MockProvider {
     /// What `verify` should say - set false rather than computing a deliberately wrong signature.
     accept_signatures: Mutex<bool>,
@@ -34,6 +35,7 @@ impl Default for MockProvider {
 }
 
 impl MockProvider {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -53,6 +55,7 @@ impl MockProvider {
     }
 
     /// Plausible values, for a test that only cares about one field of it.
+    #[must_use]
     pub fn sample_event() -> TriggerEvent {
         TriggerEvent {
             delivery_id: "delivery-1".to_string(),

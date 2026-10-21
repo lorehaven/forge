@@ -83,11 +83,11 @@ fn test_extract_generic_text_has_no_language() {
 
 #[test]
 fn test_extract_html() {
-    let html = r#"<html><head><title>My Page</title>
+    let html = r"<html><head><title>My Page</title>
         <style>body { color: red; }</style>
         <script>var hidden = 1;</script></head>
         <body><h1>Heading</h1><p>First <b>paragraph</b>.</p>
-        <ul><li>item one</li><li>item two</li></ul></body></html>"#;
+        <ul><li>item one</li><li>item two</li></ul></body></html>";
     let segments = extract_segments("text/html", html.as_bytes()).unwrap();
     assert_eq!(segments.len(), 1);
     assert_eq!(segments[0].metadata.get("title").unwrap(), "My Page");

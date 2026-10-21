@@ -138,7 +138,8 @@ pub async fn give_up(db: &Db, id: &str, error: &str) -> Result<(), QueueError> {
 }
 
 /// Seconds to wait after the `attempts`-th failure: 30s, 1m, 2m ... capped at an hour.
+#[must_use]
 pub fn backoff_secs(attempts: i32) -> f64 {
-    let exponent = (attempts.max(1) - 1).min(7) as u32;
+    let exponent = (attempts.max(1) - 1).min(7).cast_unsigned();
     (30.0 * f64::from(2u32.pow(exponent))).min(3600.0)
 }

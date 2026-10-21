@@ -87,7 +87,7 @@ fn model(name: &str, source: &str, quant: Quant, context: Context, params: f64) 
     }
 }
 
-fn filters() -> ModelFilters {
+const fn filters() -> ModelFilters {
     ModelFilters {
         source: None,
         search: None,

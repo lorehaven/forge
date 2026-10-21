@@ -20,7 +20,7 @@ async fn app() -> (
 ) {
     warehouse_service::routers::docker::blob::upload_chunk::register_routes();
     let container = support::container_builder().build().await.unwrap();
-    support::app(container).await
+    support::app(container)
 }
 
 fn patch(
@@ -90,6 +90,7 @@ async fn handle_appends_a_chunk_and_reports_the_new_range() {
 
     let content = std::fs::read(&path).unwrap();
     assert_eq!(content, b"hello world");
+    drop(storage);
 }
 
 #[tokio::test]
@@ -99,7 +100,9 @@ async fn handle_streams_a_large_chunk_onto_the_upload_file() {
 
     // Bigger than the 64 KiB streaming buffer, so the append loop runs several
     // iterations rather than a single write.
-    let chunk: Vec<u8> = (0..(200 * 1024)).map(|i| (i % 249) as u8).collect();
+    let chunk: Vec<u8> = (0..(200 * 1024))
+        .map(|i| u8::try_from(i % 249).unwrap())
+        .collect();
 
     let (app, container) = app().await;
     let resp = app
@@ -119,4 +122,5 @@ async fn handle_streams_a_large_chunk_onto_the_upload_file() {
     let mut expected = b"head:".to_vec();
     expected.extend_from_slice(&chunk);
     assert_eq!(std::fs::read(&path).unwrap(), expected);
+    drop(storage);
 }

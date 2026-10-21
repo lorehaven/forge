@@ -28,10 +28,7 @@ async fn save_owners(name: &str, owners: &[Owner]) -> std::io::Result<()> {
 /// Whether the crate has been published.
 async fn crate_exists(name: &str) -> bool {
     let path = PathBuf::from(crates_storage_root()).join(name);
-    tokio::fs::metadata(&path)
-        .await
-        .map(|m| m.is_dir())
-        .unwrap_or(false)
+    tokio::fs::metadata(&path).await.is_ok_and(|m| m.is_dir())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,17 +40,17 @@ pub struct Owner {
     pub name: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct OwnersRequest {
     pub users: Vec<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct OwnersResponse {
     pub users: Vec<Owner>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct OkResponse {
     pub ok: bool,
 }

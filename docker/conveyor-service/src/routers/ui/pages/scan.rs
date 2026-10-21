@@ -109,6 +109,7 @@ fn not_found() -> Response {
 }
 
 // Overview: one card per check.
+#[must_use]
 pub fn overview(repo: &Repo, summary: &ScanSummary) -> Element {
     div()
         .class("home-container")
@@ -126,6 +127,7 @@ fn header_row(repo: &Repo) -> Element {
         )
 }
 
+#[must_use]
 pub fn overview_body(repo: &Repo, summary: &ScanSummary) -> Element {
     let Some(run) = &summary.run else {
         return div().class("panel").child(empty_state("ui_scan_no_runs"));
@@ -159,6 +161,7 @@ fn run_row(run: &crate::domain::Run) -> Element {
         .child(span().class("muted").text(format::relative(run.queued_at)))
 }
 
+#[must_use]
 pub fn card(repo: &Repo, check: &CheckResult) -> Element {
     let status_class = if check.passed {
         "status-success"
@@ -192,6 +195,7 @@ pub fn card(repo: &Repo, check: &CheckResult) -> Element {
 }
 
 // Detail: every finding for one check.
+#[must_use]
 pub fn detail(repo: &Repo, kind: CheckKind, check: &CheckResult) -> Element {
     let back_href = ui_path(&format!("/repos/{}/{}/scan", repo.owner, repo.name));
 

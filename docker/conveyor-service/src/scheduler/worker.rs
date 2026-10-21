@@ -96,28 +96,31 @@ pub fn spawn_pool_notifying(
     });
 
     let host = envmnt::get_or("HOSTNAME", "conveyor");
-    for index in 0..config.max_concurrent_runs {
+    let worker_count = config.max_concurrent_runs;
+    let executor_kind = config.executor;
+    // Every worker is this one, with an id of its own.
+    let template = Worker {
+        id: String::new(),
+        db: db.clone(),
+        config: config.clone(),
+        executor,
+        providers,
+        key,
+        credential_key,
+        artifacts,
+        notifications,
+    };
+    for index in 0..worker_count {
         let worker = Worker {
             id: format!("{host}-{index}-{}", Uuid::new_v4()),
-            db: db.clone(),
-            config: config.clone(),
-            executor: executor.clone(),
-            providers: providers.clone(),
-            key: key.clone(),
-            credential_key: credential_key.clone(),
-            artifacts: artifacts.clone(),
-            notifications: notifications.clone(),
+            ..template.clone()
         };
         tokio::spawn(worker.run_loop());
     }
 
-    tokio::spawn(janitor(db, config.clone()));
+    tokio::spawn(janitor(db, config));
 
-    tracing::info!(
-        "scheduler started: {} worker(s), {} executor",
-        config.max_concurrent_runs,
-        config.executor
-    );
+    tracing::info!("scheduler started: {worker_count} worker(s), {executor_kind} executor");
 }
 
 /// Requeues runs whose worker stopped heartbeating - else a dead worker locks its repo forever.
@@ -131,6 +134,62 @@ async fn janitor(db: Db, config: ConveyorConfig) {
             Err(error) => tracing::error!("could not requeue stale runs: {error}"),
         }
     }
+}
+
+/// For each planned stage, how many stages it still waits on, and which stages wait on it.
+fn stage_graph(
+    spec: &pipeline::PipelineSpec,
+    plan: &[pipeline::StagePlan],
+) -> (Vec<usize>, Vec<Vec<usize>>) {
+    let stage_count = plan.len();
+
+    // A stage can be depended on by several others; reverse edges below find what just became ready.
+    let mut index_of: HashMap<&str, usize> = HashMap::with_capacity(stage_count);
+    for (index, stage_plan) in plan.iter().enumerate() {
+        index_of.insert(spec.stages[stage_plan.index].name.as_str(), index);
+    }
+    let mut stage_remaining: Vec<usize> = vec![0; stage_count];
+    let mut stage_dependents: Vec<Vec<usize>> = vec![Vec::new(); stage_count];
+    for (index, stage_plan) in plan.iter().enumerate() {
+        for need in &spec.stages[stage_plan.index].needs {
+            if let Some(&needed) = index_of.get(need.as_str()) {
+                stage_dependents[needed].push(index);
+                stage_remaining[index] += 1;
+            }
+        }
+    }
+    (stage_remaining, stage_dependents)
+}
+
+/// Every job flattened from its stage, so a stage finishing can check all its jobs did too; and, per
+/// stage, the indexes of its units.
+fn flatten_units<'p>(
+    spec: &'p pipeline::PipelineSpec,
+    plan: &[pipeline::StagePlan],
+    rows: &'p [crate::domain::Job],
+) -> (Vec<Unit<'p>>, Vec<Vec<usize>>) {
+    let mut units: Vec<Unit> = Vec::new();
+    let mut units_of_stage: Vec<Vec<usize>> = vec![Vec::new(); plan.len()];
+    for (stage_index, stage_plan) in plan.iter().enumerate() {
+        let stage = &spec.stages[stage_plan.index];
+        for job_plan in &stage_plan.jobs {
+            let job = &stage.jobs[job_plan.index];
+            let Some(row) = rows
+                .iter()
+                .find(|row| row.stage.as_str().eq(stage.name.as_str()) && row.name == job.name)
+            else {
+                continue;
+            };
+            units_of_stage[stage_index].push(units.len());
+            units.push(Unit {
+                stage_index,
+                job,
+                stage,
+                row,
+            });
+        }
+    }
+    (units, units_of_stage)
 }
 
 /// One job waiting on its stage's outstanding `needs` - `execute_jobs` schedules these, not stages.
@@ -225,7 +284,7 @@ impl Worker {
             Ok(0) => {}
             Ok(queued) => tracing::info!("run {}: queued {queued} notification(s)", run.id),
             Err(error) => {
-                tracing::warn!("could not queue notifications for run {}: {error}", run.id)
+                tracing::warn!("could not queue notifications for run {}: {error}", run.id);
             }
         }
     }
@@ -240,10 +299,9 @@ impl Worker {
             .report_status(repo, &run.sha, &report)
             .await
         {
-            Ok(()) => {}
             // Expected whenever no token is configured, which is a perfectly
             // reasonable way to run conveyor.
-            Err(crate::providers::ProviderError::NotConfigured(_)) => {}
+            Ok(()) | Err(crate::providers::ProviderError::NotConfigured(_)) => {}
             Err(error) => tracing::warn!(
                 "could not report {} for {}@{}: {error}",
                 status,
@@ -378,10 +436,9 @@ impl Worker {
         });
 
         // Backstop: a failed clone's git stderr is the one place a token could leak to the run page.
-        let redactor = resolved
-            .as_ref()
-            .map(|resolved| Redactor::new([resolved.token.clone()]))
-            .unwrap_or_else(Redactor::none);
+        let redactor = resolved.as_ref().map_or_else(Redactor::none, |resolved| {
+            Redactor::new([resolved.token.clone()])
+        });
 
         workspace::checkout(
             &self.config.work_dir,
@@ -411,44 +468,8 @@ impl Worker {
     ) -> Result<(Status, Option<String>), WorkerError> {
         let stage_count = plan.len();
 
-        // A stage can be depended on by several others; reverse edges below find what just became ready.
-        let mut index_of: HashMap<&str, usize> = HashMap::with_capacity(stage_count);
-        for (index, stage_plan) in plan.iter().enumerate() {
-            index_of.insert(spec.stages[stage_plan.index].name.as_str(), index);
-        }
-        let mut stage_remaining: Vec<usize> = vec![0; stage_count];
-        let mut stage_dependents: Vec<Vec<usize>> = vec![Vec::new(); stage_count];
-        for (index, stage_plan) in plan.iter().enumerate() {
-            for need in &spec.stages[stage_plan.index].needs {
-                if let Some(&needed) = index_of.get(need.as_str()) {
-                    stage_dependents[needed].push(index);
-                    stage_remaining[index] += 1;
-                }
-            }
-        }
-
-        // Every job flattened from its stage, so a stage finishing can check all its jobs did too.
-        let mut units: Vec<Unit> = Vec::new();
-        let mut units_of_stage: Vec<Vec<usize>> = vec![Vec::new(); stage_count];
-        for (stage_index, stage_plan) in plan.iter().enumerate() {
-            let stage = &spec.stages[stage_plan.index];
-            for job_plan in &stage_plan.jobs {
-                let job = &stage.jobs[job_plan.index];
-                let Some(row) = rows
-                    .iter()
-                    .find(|row| row.stage == stage.name && row.name == job.name)
-                else {
-                    continue;
-                };
-                units_of_stage[stage_index].push(units.len());
-                units.push(Unit {
-                    stage_index,
-                    job,
-                    stage,
-                    row,
-                });
-            }
-        }
+        let (mut stage_remaining, stage_dependents) = stage_graph(spec, plan);
+        let (units, units_of_stage) = flatten_units(spec, plan, rows);
         let unit_count = units.len();
 
         let mut ready: VecDeque<usize> = VecDeque::new();
@@ -577,7 +598,7 @@ impl Worker {
                     }
                 }
                 Err(error) => {
-                    tracing::warn!("could not read steps for job {}: {error}", source_job.id)
+                    tracing::warn!("could not read steps for job {}: {error}", source_job.id);
                 }
             }
 
@@ -592,7 +613,7 @@ impl Worker {
                     }
                 }
                 Err(error) => {
-                    tracing::warn!("could not read the log for job {}: {error}", source_job.id)
+                    tracing::warn!("could not read the log for job {}: {error}", source_job.id);
                 }
             }
 
@@ -686,7 +707,7 @@ impl Worker {
         }
         let redactor = Redactor::new(redacted);
 
-        let mut env = self.job_environment(run, repo, stage, job, workspace);
+        let mut env = Self::job_environment(run, repo, stage, job, workspace);
         // Last, so a pipeline cannot shadow a secret with a plain `env` entry
         // of the same name and read what it was given.
         env.extend(secrets);
@@ -723,14 +744,14 @@ impl Worker {
         };
 
         let mut polls: u32 = 0;
-        let state = loop {
-            let state = self
+        let outcome = loop {
+            let polled = self
                 .executor
                 .poll(&handle)
                 .await
                 .map_err(|error| WorkerError::Executor(error.to_string()))?;
-            if state.is_finished() {
-                break state;
+            if polled.is_finished() {
+                break polled;
             }
 
             polls = polls.wrapping_add(1);
@@ -746,16 +767,16 @@ impl Worker {
 
         // Steps and output first: if writing the job's status fails, the record
         // of what it actually did is already there.
-        queue::record_steps(&self.db, &row.id, &state.steps).await?;
+        queue::record_steps(&self.db, &row.id, &outcome.steps).await?;
         if let Ok(tail) = self.executor.logs(&handle).await {
             queue::append_logs(&self.db, &row.id, &tail.history).await?;
         }
         queue::finish_job(
             &self.db,
             &row.id,
-            state.status,
-            state.exit_code,
-            state.error.as_deref(),
+            outcome.status,
+            outcome.exit_code,
+            outcome.error.as_deref(),
         )
         .await?;
 
@@ -764,11 +785,11 @@ impl Worker {
 
         // Only for a job that passed. Collecting the output of a failed build
         // would keep whatever half-written thing it left behind.
-        if state.status == Status::Success && !job.artifacts.is_empty() {
+        if outcome.status == Status::Success && !job.artifacts.is_empty() {
             self.keep_artifacts(run, row, job, workspace).await;
         }
 
-        Ok(state.status)
+        Ok(outcome.status)
     }
 
     /// Uploads declared artifacts; never fails the job - a lost copy is a warning, not a red run.
@@ -815,7 +836,6 @@ impl Worker {
 
     /// What a step sees in its environment - `CI` for common tooling, `CONVEYOR_*` for context.
     fn job_environment(
-        &self,
         run: &Run,
         repo: &Repo,
         stage: &pipeline::Stage,
@@ -883,7 +903,8 @@ fn passed_stages(jobs: &[crate::domain::Job]) -> HashSet<String> {
 }
 
 /// Exposed for the tests, which need to know what a decision turns into.
-pub fn planned_status(decision: &Decision) -> Status {
+#[must_use]
+pub const fn planned_status(decision: &Decision) -> Status {
     if decision.will_run() {
         Status::Queued
     } else {
@@ -908,4 +929,10 @@ pub(crate) fn run_url(run_id: &str) -> Option<String> {
     let base = envmnt::get_or("CONVEYOR_PUBLIC_URL", "");
     let base = base.trim().trim_end_matches('/');
     (!base.is_empty()).then(|| format!("{base}/ui/runs/{run_id}"))
+}
+
+impl std::fmt::Debug for Worker {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("Worker { .. }")
+    }
 }

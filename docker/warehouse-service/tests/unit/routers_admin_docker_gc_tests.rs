@@ -124,10 +124,10 @@ fn write_blob(storage: &WithStorageRoot, digest_hex: &str) {
 
 #[tokio::test]
 async fn garbage_collect_keeps_referenced_blobs_and_deletes_unreferenced_ones() {
-    let storage = WithStorageRoot::new();
-
     const MANIFEST_DIGEST: &str =
         "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+    let storage = WithStorageRoot::new();
+
     let manifest = format!(r#"{{"config": {{"digest": "sha256:{DIGEST_A}"}}, "layers": []}}"#);
     write_manifest(&storage, MANIFEST_DIGEST, &manifest);
     write_blob(&storage, DIGEST_A);
@@ -153,6 +153,7 @@ async fn garbage_collect_keeps_referenced_blobs_and_deletes_unreferenced_ones() 
             .join(DIGEST_B)
             .exists()
     );
+    drop(storage);
 }
 
 #[tokio::test]
@@ -163,4 +164,5 @@ async fn garbage_collect_on_an_empty_storage_root_deletes_and_keeps_nothing() {
     let report = garbage_collect().await.expect("gc succeeds");
     assert_eq!(report.deleted, 0);
     assert_eq!(report.kept, 0);
+    drop(storage);
 }

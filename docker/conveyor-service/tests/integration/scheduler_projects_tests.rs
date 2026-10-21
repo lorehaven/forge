@@ -122,7 +122,7 @@ async fn move_to_relocates_a_project_under_a_new_parent() {
         .expect("move")
     {
         MoveOutcome::Moved(project) => {
-            assert_eq!(project.parent_id.as_deref(), Some(parent_b.as_str()))
+            assert_eq!(project.parent_id.as_deref(), Some(parent_b.as_str()));
         }
         _ => panic!("expected Moved"),
     }

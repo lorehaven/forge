@@ -148,7 +148,9 @@ async fn logout_redirects_when_gatehouse_is_configured() {
     // would break any of those tests running concurrently. That means the
     // "not configured" (503) branch can't be exercised reliably from this
     // binary; only the "configured" (redirect) branch is tested here.
-    let _guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
+    let _guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     envmnt::set("GATEHOUSE_URL", "http://127.0.0.1:1");
 
     let (app, container) = app(JwtConfig::for_tests()).await;

@@ -13,6 +13,7 @@ pub struct AuditLogEntry {
     pub execution_ms: u128,
 }
 
+#[derive(Debug)]
 pub struct AuditLogger;
 
 impl AuditLogger {
@@ -63,8 +64,8 @@ impl AuditLogger {
     pub fn log_restricted_tool_attempt(
         tool_name: &str,
         profile_name: &str,
-        user_id: Option<String>,
-        conversation_id: Option<String>,
+        user_id: Option<&str>,
+        conversation_id: Option<&str>,
     ) {
         tracing::warn!(
             target: "audit",
@@ -79,8 +80,8 @@ impl AuditLogger {
     pub fn log_confirmation_required(
         tool_name: &str,
         profile_name: &str,
-        user_id: Option<String>,
-        conversation_id: Option<String>,
+        user_id: Option<&str>,
+        conversation_id: Option<&str>,
     ) {
         tracing::info!(
             target: "audit",

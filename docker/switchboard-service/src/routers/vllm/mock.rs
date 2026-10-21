@@ -8,6 +8,7 @@ use std::sync::{LazyLock, RwLock};
 static MOCK_INSTANCES: LazyLock<RwLock<HashMap<String, VllmInstance>>> =
     LazyLock::new(|| RwLock::new(HashMap::new()));
 
+#[derive(Debug)]
 pub struct MockVllmEngine;
 
 #[async_trait]

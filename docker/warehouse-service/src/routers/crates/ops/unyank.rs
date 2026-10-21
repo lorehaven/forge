@@ -2,7 +2,7 @@ use crate::routers::crates::{crate_file_path, validate_crate_name, validate_vers
 use quench_http::prelude::{Path, Response, http::StatusCode, put};
 use serde::Serialize;
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct OkResponse {
     ok: bool,
 }

@@ -37,7 +37,7 @@ pub enum ArtifactError {
 }
 
 /// Where artifacts go.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct WarehouseStore {
     base_url: String,
     storage: String,
@@ -47,6 +47,7 @@ pub struct WarehouseStore {
 
 impl WarehouseStore {
     /// `None` when this deployment keeps no artifacts.
+    #[must_use]
     pub fn from_env() -> Option<Self> {
         let base_url = envmnt::get_or("WAREHOUSE_URL", "");
         let base_url = base_url.trim().trim_end_matches('/');
@@ -73,7 +74,7 @@ impl WarehouseStore {
     }
 
     /// Scoped by run id so two runs of the same commit don't overwrite each other.
-    fn remote_path(&self, run_id: &str, name: &str) -> String {
+    fn remote_path(run_id: &str, name: &str) -> String {
         format!("conveyor/{run_id}/{name}")
     }
 
@@ -109,6 +110,7 @@ impl WarehouseStore {
 }
 
 /// One artifact, ready to record.
+#[derive(Debug)]
 pub struct Collected {
     pub artifact: Artifact,
 }
@@ -183,7 +185,7 @@ async fn collect_one(
     let digest = format!("sha256:{}", hex::encode(Sha256::digest(&bytes)));
     let size = bytes.len();
     let name = file_name(&resolved, declared);
-    let remote = store.remote_path(run_id, &name);
+    let remote = WarehouseStore::remote_path(run_id, &name);
     let uri = store.upload(&remote, bytes).await?;
 
     tracing::info!("kept {declared} ({size} bytes) as {remote}");
@@ -208,6 +210,5 @@ fn file_name(resolved: &Path, declared: &str) -> String {
     resolved
         .file_name()
         .and_then(|name| name.to_str())
-        .map(str::to_string)
-        .unwrap_or_else(|| declared.replace(['/', '\\'], "_"))
+        .map_or_else(|| declared.replace(['/', '\\'], "_"), str::to_string)
 }

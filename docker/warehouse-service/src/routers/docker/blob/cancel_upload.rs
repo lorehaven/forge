@@ -21,7 +21,7 @@ pub async fn handle(Path((name, uuid)): Path<(String, String)>) -> Response {
     }
 
     match tokio::fs::remove_file(&upload_path).await {
-        Ok(_) => Response::new(StatusCode::NO_CONTENT),
+        Ok(()) => Response::new(StatusCode::NO_CONTENT),
         Err(_) => error::response(
             StatusCode::INTERNAL_SERVER_ERROR,
             error::UNSUPPORTED,

@@ -20,7 +20,7 @@ pub mod yank;
 
 /// The wire shape every read endpoint returns. `id` is omitted (internal storage key only);
 /// `min_sdk_version`/`target_sdk_version`/`permissions` are Android-only, empty elsewhere.
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct ArtifactView {
     pub program: String,
     pub platform: String,
@@ -64,6 +64,7 @@ impl From<&ArtifactVersion> for ArtifactView {
 }
 
 /// The highest non-yanked `version_code`, or `None` if every version is yanked.
+#[must_use]
 pub fn latest_of(versions: &[ArtifactVersion]) -> Option<&ArtifactVersion> {
     versions
         .iter()
@@ -93,21 +94,25 @@ pub fn json_ok<T: Serialize>(value: &T) -> Response {
         .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
 }
 
+#[must_use]
 pub fn error(status: StatusCode, message: &str) -> Response {
     Response::json(status, &json!({ "error": message }))
         .unwrap_or_else(|_| Response::text(status, message))
 }
 
+#[must_use]
 pub fn not_found(message: &str) -> Response {
     error(StatusCode::NOT_FOUND, message)
 }
 
 /// Same 404 as "no such version" - whether artifacts are enabled isn't for an unauthorized caller to learn.
+#[must_use]
 pub fn disabled() -> Response {
     not_found("artifact storage is not enabled")
 }
 
 /// Who is making this request, for `uploaded_by`. Falls back to "dev" when auth is disabled.
+#[derive(Debug)]
 pub struct Actor(pub String);
 
 #[async_trait]
@@ -122,8 +127,7 @@ impl FromRequest for Actor {
         };
         let username = get_user_from_req(req, &config)
             .await
-            .map(|claims| claims.sub)
-            .unwrap_or_else(|| "dev".to_string());
+            .map_or_else(|| "dev".to_string(), |claims| claims.sub);
         Ok(Self(username))
     }
 }

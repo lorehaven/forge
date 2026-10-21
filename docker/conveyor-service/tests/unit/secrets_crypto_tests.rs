@@ -183,14 +183,10 @@ fn from_env_reads_the_secret_key_variable_by_name() {
     // name; this pins that down so the two cannot drift apart.
     // SAFETY: this test does not run concurrently with anything else that
     // reads or writes this variable.
-    unsafe {
-        std::env::remove_var("CONVEYOR_SECRET_KEY");
-    }
+    envmnt::remove("CONVEYOR_SECRET_KEY");
     assert!(SecretKey::from_env().expect("unset is Ok(None)").is_none());
 
-    unsafe {
-        std::env::set_var("CONVEYOR_SECRET_KEY", HEX_KEY);
-    }
+    envmnt::set("CONVEYOR_SECRET_KEY", HEX_KEY);
     assert!(SecretKey::from_env().expect("a valid key").is_some());
     assert!(
         SecretKey::from_env_named("CONVEYOR_SECRET_KEY")
@@ -198,7 +194,5 @@ fn from_env_reads_the_secret_key_variable_by_name() {
             .is_some()
     );
 
-    unsafe {
-        std::env::remove_var("CONVEYOR_SECRET_KEY");
-    }
+    envmnt::remove("CONVEYOR_SECRET_KEY");
 }

@@ -14,6 +14,7 @@ pub mod owners;
 pub mod search;
 
 /// On-disk path for a `.crate` tarball: `<root>/<n>/<version>/<n>-<version>.crate`.
+#[must_use]
 pub fn crate_file_path(name: &str, version: &str) -> Option<PathBuf> {
     if !validate_crate_name(name) || !validate_version(version) {
         return None;
@@ -27,6 +28,7 @@ pub fn crate_file_path(name: &str, version: &str) -> Option<PathBuf> {
 }
 
 /// On-disk path for the sparse index file: `<root>/index/<prefix>/<n>`.
+#[must_use]
 pub fn index_file_path(name: &str) -> Option<PathBuf> {
     if !validate_crate_name(name) {
         return None;
@@ -41,6 +43,7 @@ pub fn index_file_path(name: &str) -> Option<PathBuf> {
 }
 
 /// Sparse-index directory prefix, following the crates.io convention.
+#[must_use]
 pub fn index_prefix(name: &str) -> String {
     let lower = name.to_ascii_lowercase();
     match lower.len() {
@@ -53,6 +56,7 @@ pub fn index_prefix(name: &str) -> String {
 }
 
 /// Validates a crate name: non-empty, ≤64 chars, ASCII alphanumeric / `-` / `_`.
+#[must_use]
 pub fn validate_crate_name(name: &str) -> bool {
     if name.is_empty() || name.len() > 64 {
         return false;
@@ -62,6 +66,7 @@ pub fn validate_crate_name(name: &str) -> bool {
 }
 
 /// Validates a semver-ish version string: non-empty, ≤64 chars, safe characters only.
+#[must_use]
 pub fn validate_version(version: &str) -> bool {
     if version.is_empty() || version.len() > 64 {
         return false;
@@ -71,9 +76,12 @@ pub fn validate_version(version: &str) -> bool {
         .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'+'))
 }
 
-/// Whether index/download/search/owner-listing need a realm identity too. Off by default so
+/// Whether index/download/search/owner-listing need a realm identity too.
+///
+/// Off by default so
 /// existing Cargo clients (which only send a token when the index says `auth-required`) keep
 /// resolving dependencies; every write is authenticated either way.
+#[must_use]
 pub fn reads_require_auth() -> bool {
     envmnt::get_or("CRATES_REQUIRE_AUTH_FOR_READS", "false")
         .parse()

@@ -120,7 +120,7 @@ async fn app() -> (
 ) {
     warehouse_service::routers::docker::manifest::put_image::register_routes();
     let container = support::container_builder().build().await.unwrap();
-    support::app(container).await
+    support::app(container)
 }
 
 fn put(
@@ -129,10 +129,10 @@ fn put(
     body: &[u8],
     container: &std::sync::Arc<quench_http::di::Container>,
 ) -> quench_http::request::Request {
-    match content_type {
-        Some(ct) => support::raw_req(Method::PUT, path, &[("content-type", ct)], body, container),
-        None => support::raw_req(Method::PUT, path, &[], body, container),
-    }
+    content_type.map_or_else(
+        || support::raw_req(Method::PUT, path, &[], body, container),
+        |ct| support::raw_req(Method::PUT, path, &[("content-type", ct)], body, container),
+    )
 }
 
 #[tokio::test]
@@ -203,6 +203,7 @@ async fn handle_stores_the_manifest_by_digest_and_writes_the_tag() {
         .join("tags")
         .join("latest");
     assert_eq!(std::fs::read_to_string(&tag_path).unwrap(), expected_digest);
+    drop(storage);
 }
 
 #[tokio::test]
@@ -224,6 +225,7 @@ async fn handle_does_not_write_a_tag_when_the_reference_is_already_a_digest() {
 
     let tags_dir = storage.dir.path().join("my-repo").join("tags");
     assert!(!tags_dir.exists() || std::fs::read_dir(&tags_dir).unwrap().count() == 0);
+    drop(storage);
 }
 
 #[tokio::test]
@@ -262,6 +264,7 @@ async fn handle_fills_in_descriptor_sizes_from_blobs_already_on_disk() {
     .unwrap();
     let value: Value = serde_json::from_slice(&stored).unwrap();
     assert_eq!(value["config"]["size"], "layer content".len());
+    drop(storage);
 }
 
 #[tokio::test]

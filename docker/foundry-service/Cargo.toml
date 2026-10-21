@@ -15,6 +15,9 @@ readme = "README.md"
 name = "foundry_service"
 path = "src/lib.rs"
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "foundry-service"
 path = "src/main.rs"
@@ -32,5 +35,6 @@ toml = { workspace = true }
 
 [dev-dependencies]
 assert_cmd = { workspace = true }
+envmnt = { workspace = true }
 predicates = { workspace = true }
 tempfile = { workspace = true }

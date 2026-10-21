@@ -54,6 +54,7 @@ pub async fn actor(request: &Request, config: &JwtConfig) -> Option<Claims> {
 
 /// Whether the request carries a usable realm session - for a page that only
 /// needs to gate rendering, not the identity behind it.
+#[derive(Debug)]
 pub struct PageAuth(pub bool);
 
 #[async_trait]
@@ -68,6 +69,7 @@ impl FromRequest for PageAuth {
 
 /// Claims or the 401 - travels as the success value since
 /// `HttpError::into_response` only renders fixed text.
+#[derive(Debug)]
 pub enum RequiredClaims {
     Claims(Claims),
     Unauthorized,
@@ -88,10 +90,9 @@ impl FromRequest for RequiredClaims {
         let Ok(config) = req.container().get::<JwtConfig>() else {
             return Ok(Self::Unauthorized);
         };
-        match actor(req, &config).await {
-            Some(claims) => Ok(Self::Claims(claims)),
-            None => Ok(Self::Unauthorized),
-        }
+        Ok(actor(req, &config)
+            .await
+            .map_or(Self::Unauthorized, Self::Claims))
     }
 }
 
@@ -117,13 +118,19 @@ impl FromRequest for ActorOrRedirect {
         let Ok(config) = req.container().get::<JwtConfig>() else {
             return Ok(Self::Redirect(ui_login_redirect_for(req)));
         };
-        match actor(req, &config).await {
-            Some(claims) => Ok(Self::Claims(claims)),
-            None => Ok(Self::Redirect(ui_login_redirect_for(req))),
-        }
+        actor(req, &config).await.map_or_else(
+            || Ok(Self::Redirect(ui_login_redirect_for(req))),
+            |claims| Ok(Self::Claims(claims)),
+        )
     }
 }
 
 pub fn register_routes() {
     let _ = assets as fn(_) -> _;
+}
+
+impl std::fmt::Debug for ActorOrRedirect {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("ActorOrRedirect { .. }")
+    }
 }

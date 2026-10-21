@@ -5,7 +5,7 @@ use quench_auth::domain::jwt::{Claims, JwtConfig};
 use quench_http::prelude::{Inject, Json, Response, post};
 use serde::Deserialize;
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct TestTokenRequest {
     sub: String,
     #[serde(default)]
@@ -32,8 +32,9 @@ pub async fn mint(
         sub: body.sub.clone(),
         aud: body.aud.clone(),
         scope: body.scope.clone(),
-        iat: body.iat.unwrap_or(now) as usize,
-        exp: body.exp.unwrap_or(now + config.access_token_ttl_secs) as usize,
+        iat: usize::try_from(body.iat.unwrap_or(now)).unwrap_or_default(),
+        exp: usize::try_from(body.exp.unwrap_or(now + config.access_token_ttl_secs))
+            .unwrap_or_default(),
         sid: None,
     };
 

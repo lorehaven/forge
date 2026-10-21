@@ -18,7 +18,7 @@ fn spec() -> JobSpec {
         name: "build/cargo".to_string(),
         steps: vec![Step::Run("cargo build".to_string())],
         env: BTreeMap::new(),
-        timeout: Duration::from_secs(900),
+        timeout: Duration::from_mins(15),
         image: None,
         source: Some(SourceSpec {
             clone_url: "https://example.invalid/thing.git".to_string(),
@@ -206,8 +206,7 @@ fn both_containers_share_the_checkout() {
         container
             .volume_mounts
             .as_ref()
-            .map(|mounts| mounts.iter().any(|m| m.mount_path == WORKSPACE_PATH))
-            .unwrap_or(false)
+            .is_some_and(|mounts| mounts.iter().any(|m| m.mount_path == WORKSPACE_PATH))
     };
 
     assert!(mounts(&pod.containers[0]), "the work container");

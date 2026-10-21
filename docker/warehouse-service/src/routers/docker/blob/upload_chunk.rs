@@ -66,7 +66,7 @@ pub async fn handle(
     Response::new(StatusCode::ACCEPTED)
         .header("range", format!("0-{}", new_size - 1))
         .header("docker-upload-uuid", &uuid)
-        .header("location", format!("/v2/{}/blobs/uploads/{}", name, uuid))
+        .header("location", format!("/v2/{name}/blobs/uploads/{uuid}"))
 }
 
 pub fn register_routes() {

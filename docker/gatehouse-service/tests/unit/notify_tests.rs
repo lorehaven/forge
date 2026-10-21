@@ -74,7 +74,7 @@ fn succeeded() -> &'static catalog::Template {
 #[test]
 fn every_template_is_well_formed() {
     let mut ids: Vec<&str> = TEMPLATES.iter().map(|t| t.id).collect();
-    ids.sort();
+    ids.sort_unstable();
     ids.dedup();
     assert_eq!(ids.len(), TEMPLATES.len(), "ids are unique");
     for template in &TEMPLATES {
@@ -869,6 +869,7 @@ async fn a_notification_goes_out_with_the_standard_one_click_unsubscribe_header(
     assert!(mail.contains("Auto-Submitted: auto-generated"));
     assert!(mail.contains(unsubscribe), "the footer link");
     assert!(mail.contains("https://mail.example.test/conveyor/runs/1234"));
+    drop(mails);
 }
 
 #[tokio::test]
@@ -919,7 +920,7 @@ async fn app(
 }
 
 fn post(
-    body: serde_json::Value,
+    body: &serde_json::Value,
     token: Option<&str>,
     container: &Arc<quench_http::di::Container>,
 ) -> Request {
@@ -983,7 +984,11 @@ async fn the_endpoint_accepts_a_notification() {
     let _guard = gatehouse_service::test_support::auth_disabled_guard().await;
     let (recorder, app, container, _db) = endpoint_world().await;
     let resp = app
-        .call(post(body("alice", "conveyor.run.failed"), None, &container))
+        .call(post(
+            &body("alice", "conveyor.run.failed"),
+            None,
+            &container,
+        ))
         .await;
     assert_eq!(resp.status(), StatusCode::ACCEPTED);
     let json = json(resp).await;
@@ -1001,7 +1006,7 @@ async fn the_endpoint_says_why_it_skipped() {
         ("alice", "conveyor.run.succeeded", "not_subscribed"),
     ] {
         let resp = app
-            .call(post(body(username, template), None, &container))
+            .call(post(&body(username, template), None, &container))
             .await;
         assert_eq!(resp.status(), StatusCode::OK, "{username} {template}");
         let json = json(resp).await;
@@ -1023,7 +1028,7 @@ async fn the_endpoint_rejects_a_malformed_request_with_the_reason() {
             "vars": { "project": "p", "run": "1", "ref": "r", "url": "https://evil.example/x" }
         }),
     ] {
-        let resp = app.call(post(bad, None, &container)).await;
+        let resp = app.call(post(&bad, None, &container)).await;
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
         assert!(
             json(resp).await["error"]
@@ -1032,7 +1037,11 @@ async fn the_endpoint_rejects_a_malformed_request_with_the_reason() {
         );
     }
     let resp = app
-        .call(post(serde_json::json!({ "nonsense": 1 }), None, &container))
+        .call(post(
+            &serde_json::json!({ "nonsense": 1 }),
+            None,
+            &container,
+        ))
         .await;
     assert!(resp.status().is_client_error());
     assert!(recorder.sent().is_empty());
@@ -1064,7 +1073,11 @@ async fn the_endpoint_reports_a_mail_failure_as_a_bad_gateway_with_retryable() {
     .unwrap();
     realm::mark_email_verified(&db, "alice").await.unwrap();
     let resp = app
-        .call(post(body("alice", "conveyor.run.failed"), None, &container))
+        .call(post(
+            &body("alice", "conveyor.run.failed"),
+            None,
+            &container,
+        ))
         .await;
     assert_eq!(resp.status(), StatusCode::BAD_GATEWAY);
     let json = json(resp).await;
@@ -1078,9 +1091,9 @@ async fn a_retry_with_the_same_dedupe_key_is_not_sent_twice() {
     let (recorder, app, container, _db) = endpoint_world().await;
     let mut request = body("alice", "conveyor.run.failed");
     request["dedupe_key"] = serde_json::json!("run-1234");
-    let first = app.call(post(request.clone(), None, &container)).await;
+    let first = app.call(post(&request, None, &container)).await;
     assert_eq!(first.status(), StatusCode::ACCEPTED);
-    let second = app.call(post(request, None, &container)).await;
+    let second = app.call(post(&request, None, &container)).await;
     assert_eq!(second.status(), StatusCode::OK);
     assert_eq!(json(second).await["reason"], "duplicate");
     assert_eq!(recorder.sent_of("notification").len(), 1);
@@ -1102,7 +1115,7 @@ async fn token_with_scope(config: &JwtConfig, scope: &str) -> String {
 
 async fn authed(scope: Option<&str>) -> StatusCode {
     let _guard = service_auth_env_lock().lock().await;
-    unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", "true") };
+    envmnt::set("SERVICE_AUTH_ENABLED", "true");
     let config = JwtConfig::for_tests_with_signing();
     let token = match scope {
         Some(scope) => Some(token_with_scope(&config, scope).await),
@@ -1113,7 +1126,7 @@ async fn authed(scope: Option<&str>) -> StatusCode {
     let sender: Arc<dyn Sender> = recorder;
     let (app, container) = app(db, sender, config).await;
     app.call(post(
-        body("nobody", "conveyor.run.failed"),
+        &body("nobody", "conveyor.run.failed"),
         token.as_deref(),
         &container,
     ))

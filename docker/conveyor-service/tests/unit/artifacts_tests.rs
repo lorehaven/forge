@@ -161,7 +161,7 @@ async fn declaring_nothing_does_nothing() {
 #[test]
 fn no_store_is_built_without_a_warehouse_url() {
     let _guard = env_lock().lock().expect("env lock");
-    unsafe { std::env::remove_var("WAREHOUSE_URL") };
+    envmnt::remove("WAREHOUSE_URL");
     assert!(
         WarehouseStore::from_env().is_none(),
         "a deployment with no warehouse should keep nothing rather than guess"
@@ -171,14 +171,12 @@ fn no_store_is_built_without_a_warehouse_url() {
 #[test]
 fn a_store_is_built_when_a_warehouse_is_configured() {
     let _guard = env_lock().lock().expect("env lock");
-    unsafe {
-        std::env::set_var(
-            "WAREHOUSE_URL",
-            "https://warehouse.example.invalid/warehouse",
-        );
-    }
+    envmnt::set(
+        "WAREHOUSE_URL",
+        "https://warehouse.example.invalid/warehouse",
+    );
     assert!(WarehouseStore::from_env().is_some());
-    unsafe { std::env::remove_var("WAREHOUSE_URL") };
+    envmnt::remove("WAREHOUSE_URL");
 }
 
 #[test]

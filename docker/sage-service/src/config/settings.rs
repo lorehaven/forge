@@ -16,7 +16,7 @@ pub struct DefaultModel {
     #[serde(default)]
     pub dtype: Option<String>,
     /// Multimodal input limit for vision models, passed verbatim as `--limit-mm-per-prompt`
-    /// (e.g. `{"image": 4}`); should cover SAGE_MAX_IMAGES_PER_REQUEST. None = vLLM default (1 per modality).
+    /// (e.g. `{"image": 4}`); should cover `SAGE_MAX_IMAGES_PER_REQUEST`. None = vLLM default (1 per modality).
     #[serde(rename = "limit_mm", default)]
     pub limit_mm_per_prompt: Option<String>,
     /// Cap on concurrent sequences (`--max-num-seqs`). Needed to fit hybrid models such as
@@ -42,18 +42,18 @@ impl DefaultModel {
         }
 
         // Try parsing as a JSON array of DefaultModel objects
-        if let Ok(list) = serde_json::from_str::<Vec<DefaultModel>>(trimmed) {
+        if let Ok(list) = serde_json::from_str::<Vec<Self>>(trimmed) {
             return list;
         }
 
         // Try parsing as a single JSON DefaultModel object
-        if let Ok(single) = serde_json::from_str::<DefaultModel>(trimmed) {
+        if let Ok(single) = serde_json::from_str::<Self>(trimmed) {
             return vec![single];
         }
 
         // Backwards compatibility fallback for raw string name
         if !trimmed.starts_with('{') && !trimmed.starts_with('[') {
-            return vec![DefaultModel {
+            return vec![Self {
                 name: trimmed.to_string(),
                 gpu_memory_utilization: None,
                 max_model_len: None,
@@ -124,7 +124,12 @@ impl SageConfig {
         let tool_defs_count =
             crate::tools::get_tool_definitions_filtered(&capability_profile).len();
 
-        if !tools_def.is_empty() {
+        if tools_def.is_empty() {
+            tracing::warn!(
+                "[CONFIG] No tool definitions loaded! Profile has {} enabled tools but JSON serialization returned empty",
+                capability_profile.enabled_tool_names().len()
+            );
+        } else {
             system_prompt.push_str("\n\n### AVAILABLE TOOLS\n");
             system_prompt.push_str("You have access to the following tools. When you need to use a tool, format your response with tool_call XML tags:\n\n");
             system_prompt.push_str(&tools_def);
@@ -140,11 +145,6 @@ impl SageConfig {
                 capability_profile.enabled_tool_names().len()
             );
             tracing::debug!("[CONFIG] Tool definitions:\n{}", tools_def);
-        } else {
-            tracing::warn!(
-                "[CONFIG] No tool definitions loaded! Profile has {} enabled tools but JSON serialization returned empty",
-                capability_profile.enabled_tool_names().len()
-            );
         }
 
         // Model definitions come from SAGE_DEFAULT_MODELS (see docker/sage-service/.env).
@@ -187,6 +187,7 @@ impl SageConfig {
 
     /// System prompt with today's date appended, so models don't assume their training year
     /// when judging what is recent or building search queries.
+    #[must_use]
     pub fn system_prompt_with_date(&self) -> String {
         format!(
             "{}\n\nCurrent date: {} (UTC).",
@@ -195,14 +196,11 @@ impl SageConfig {
         )
     }
 
+    #[must_use]
     pub fn is_model_supported(&self, model: &str) -> bool {
         self.supported_models.iter().any(|pattern| {
-            let regex_pattern = format!("(?i)^{}$", pattern.replace("*", ".*").replace("?", "."));
-            if let Ok(re) = regex::Regex::new(&regex_pattern) {
-                re.is_match(model)
-            } else {
-                false
-            }
+            let regex_pattern = format!("(?i)^{}$", pattern.replace('*', ".*").replace('?', "."));
+            regex::Regex::new(&regex_pattern).is_ok_and(|re| re.is_match(model))
         })
     }
 }

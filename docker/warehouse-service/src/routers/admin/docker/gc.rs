@@ -5,7 +5,7 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct GcReport {
     pub deleted: usize,
     pub kept: usize,
@@ -13,11 +13,13 @@ pub struct GcReport {
 
 #[post("/admin/docker/gc")]
 pub async fn handle() -> Response {
-    match garbage_collect().await {
-        Ok(report) => Response::json(StatusCode::OK, &report)
-            .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR)),
-        Err(_) => Response::new(StatusCode::INTERNAL_SERVER_ERROR),
-    }
+    garbage_collect().await.map_or_else(
+        |_| Response::new(StatusCode::INTERNAL_SERVER_ERROR),
+        |report| {
+            Response::json(StatusCode::OK, &report)
+                .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
+        },
+    )
 }
 
 pub async fn garbage_collect() -> std::io::Result<GcReport> {
@@ -66,9 +68,8 @@ async fn collect_digest_files(root: &Path, kind: &str) -> std::io::Result<Vec<(S
     let mut stack = vec![root.to_path_buf()];
 
     while let Some(dir) = stack.pop() {
-        let mut entries = match tokio::fs::read_dir(&dir).await {
-            Ok(e) => e,
-            Err(_) => continue,
+        let Ok(mut entries) = tokio::fs::read_dir(&dir).await else {
+            continue;
         };
 
         while let Some(entry) = entries.next_entry().await? {
@@ -99,6 +100,7 @@ async fn collect_digest_files(root: &Path, kind: &str) -> std::io::Result<Vec<(S
     Ok(files)
 }
 
+#[must_use]
 pub fn is_digest_file_path(path: &Path, kind: &str) -> bool {
     let Some(parent) = path.parent() else {
         return false;
@@ -117,13 +119,14 @@ pub fn is_digest_file_path(path: &Path, kind: &str) -> bool {
     sha_dir == "sha256" && kind_dir == kind
 }
 
+#[must_use]
 pub fn is_sha256_hex(v: &str) -> bool {
     v.len() == 64 && v.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
-pub fn mark_manifest_references(
+pub fn mark_manifest_references<S: std::hash::BuildHasher>(
     manifest_data: &[u8],
-    referenced_blobs: &mut HashSet<String>,
+    referenced_blobs: &mut HashSet<String, S>,
     manifests_to_visit: &mut VecDeque<String>,
 ) {
     let Ok(v) = serde_json::from_slice::<Value>(manifest_data) else {
@@ -134,7 +137,7 @@ pub fn mark_manifest_references(
         .get("config")
         .and_then(|c| c.get("digest"))
         .and_then(|d| d.as_str())
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
     {
         referenced_blobs.insert(d);
     }
@@ -180,9 +183,8 @@ async fn cleanup_empty_dirs(root: &Path) -> std::io::Result<()> {
     let mut stack = vec![root.to_path_buf()];
 
     while let Some(dir) = stack.pop() {
-        let mut entries = match tokio::fs::read_dir(&dir).await {
-            Ok(e) => e,
-            Err(_) => continue,
+        let Ok(mut entries) = tokio::fs::read_dir(&dir).await else {
+            continue;
         };
 
         while let Some(entry) = entries.next_entry().await? {

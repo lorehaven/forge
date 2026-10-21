@@ -58,6 +58,10 @@ pub fn render_page(status: http::StatusCode, content: Element, page_kind: UiPage
     Response::html(status, html)
 }
 
+/// The fields of an urlencoded form post, by name.
+pub type FormFields = std::collections::HashMap<String, String>;
+
+#[derive(Clone, Copy, Debug)]
 pub enum UiPageKind {
     Home,
     Auth,
@@ -70,4 +74,5 @@ pub fn register_routes() {
 }
 
 /// This listener's own scheme, for building absolute URLs; `x-forwarded-proto` still wins if set.
+#[derive(Debug)]
 pub struct ExternalScheme(pub &'static str);

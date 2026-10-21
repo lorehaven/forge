@@ -13,6 +13,7 @@ use crate::tools::SearchProviderRegistry;
 use futures_util::future::join_all;
 use serde::Deserialize;
 use std::collections::HashSet;
+use std::fmt::Write as _;
 use std::time::Duration;
 
 /// Candidate hits kept after merging the results of all queries.
@@ -45,13 +46,20 @@ pub struct GroundingConfig {
 }
 
 impl GroundingConfig {
+    #[must_use]
     pub fn from_env() -> Self {
         Self {
             enabled: envmnt::is_or("SAGE_GROUNDED", false),
-            max_queries: (envmnt::get_u64("SAGE_GROUNDED_MAX_QUERIES", 3) as usize).clamp(1, 5),
-            fetch_pages: envmnt::get_u64("SAGE_GROUNDED_FETCH_PAGES", 3) as usize,
-            passages: (envmnt::get_u64("SAGE_GROUNDED_PASSAGES", 6) as usize).max(1),
-            max_chars: envmnt::get_u64("SAGE_GROUNDED_MAX_CHARS", 6000) as usize,
+            max_queries: usize::try_from(envmnt::get_u64("SAGE_GROUNDED_MAX_QUERIES", 3))
+                .unwrap_or(3)
+                .clamp(1, 5),
+            fetch_pages: usize::try_from(envmnt::get_u64("SAGE_GROUNDED_FETCH_PAGES", 3))
+                .unwrap_or(3),
+            passages: usize::try_from(envmnt::get_u64("SAGE_GROUNDED_PASSAGES", 6))
+                .unwrap_or(6)
+                .max(1),
+            max_chars: usize::try_from(envmnt::get_u64("SAGE_GROUNDED_MAX_CHARS", 6000))
+                .unwrap_or(6000),
             timeout: Duration::from_secs(envmnt::get_u64("SAGE_GROUNDED_TIMEOUT_SECS", 25)),
             verify: envmnt::is_or("SAGE_GROUNDED_VERIFY", true),
             verifier_model: Some(envmnt::get_or("SAGE_GROUNDED_VERIFIER_MODEL", ""))
@@ -65,11 +73,12 @@ impl GroundingConfig {
     }
 }
 
-/// Providers tried after the preferred one by default. Only free backends: Brave and SerpAPI are
+/// Providers tried after the preferred one by default. Only free backends: Brave and `SerpAPI` are
 /// metered, so they are used only when chosen as the provider, or listed in `SAGE_SEARCH_FALLBACK`.
 const DEFAULT_FALLBACKS: &str = "searxng,duckduckgo";
 
 /// Parses a comma-separated provider list (`SAGE_SEARCH_FALLBACK`), lowercased, in order.
+#[must_use]
 pub fn fallback_names(spec: &str) -> Vec<String> {
     spec.split(',')
         .map(|n| n.trim().to_lowercase())
@@ -77,6 +86,8 @@ pub fn fallback_names(spec: &str) -> Vec<String> {
         .collect()
 }
 
+/// Searches providers in fallback order until it finds usable results.
+///
 /// Searches with `primary`; if it errors or yields no usable results, tries the allowed
 /// fallback providers (`SAGE_SEARCH_FALLBACK`, default `searxng,duckduckgo`) in order. A scraped
 /// backend being throttled for a minute then costs a log line instead of the whole answer.
@@ -129,7 +140,7 @@ pub async fn search_with_fallback_in(
 }
 
 /// Where the pipeline is, reported to callers that want to show progress.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Stage {
     /// The planner is deciding whether and what to search.
     Planning,
@@ -148,7 +159,7 @@ fn report(progress: Option<&Progress>, stage: Stage) {
 }
 
 /// A source the answer may cite, numbered from 1 as in the prompt block.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WebSource {
     pub index: usize,
     pub url: String,
@@ -166,7 +177,7 @@ pub struct Grounding {
     pub unavailable: bool,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Plan {
     pub needs_search: bool,
     pub queries: Vec<String>,
@@ -185,7 +196,7 @@ struct RawPlan {
 }
 
 /// One search result: the provider's snippet and the page it came from.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Hit {
     pub snippet: String,
     pub url: String,
@@ -197,7 +208,9 @@ struct Passage {
     text: String,
 }
 
-/// Runs the whole pipeline for the latest user message. `None` means the planner decided no
+/// Runs the whole pipeline for the latest user message.
+///
+/// `None` means the planner decided no
 /// search is needed; otherwise the returned block is always present (a "no results" notice
 /// included) so the model never falls back to confident answers from memory.
 #[allow(clippy::too_many_arguments)]
@@ -237,13 +250,12 @@ pub async fn gather(
         )
     };
 
-    match tokio::time::timeout(cfg.timeout, run).await {
-        Ok(result) => result,
-        Err(_) => {
+    tokio::time::timeout(cfg.timeout, run)
+        .await
+        .unwrap_or_else(|_| {
             tracing::warn!("[GROUNDING] timed out after {:?}", cfg.timeout);
             Some(unavailable(today, "the search timed out"))
-        }
-    }
+        })
 }
 
 const PLANNER_PROMPT: &str = "You are the retrieval planner of a web-grounded assistant. \
@@ -319,7 +331,7 @@ async fn plan(
         .filter(|m| m.role == "user" || m.role == "assistant")
         .collect();
     for msg in recent.iter().skip(recent.len().saturating_sub(4)) {
-        context.push_str(&format!("{}: {}\n", msg.role, clip(&msg.content, 400)));
+        let _ = writeln!(context, "{}: {}", msg.role, clip(&msg.content, 400));
     }
 
     let user = if context.is_empty() {
@@ -433,7 +445,7 @@ async fn retrieve(
     )
     .await;
 
-    let hits = merge_hits(per_query, MAX_CANDIDATES);
+    let hits = merge_hits(&per_query, MAX_CANDIDATES);
     if hits.is_empty() {
         return unavailable(today, "the search returned no usable results");
     }
@@ -527,6 +539,7 @@ async fn rank_passages(
     }
 }
 
+#[must_use]
 pub fn cosine(a: &[f32], b: &[f32]) -> f32 {
     let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
     let na: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
@@ -602,8 +615,8 @@ fn build_block(hits: &[Hit], passages: &[Passage], selected: &[usize], today: &s
         let hit = &hits[hit_idx];
         let index = n + 1;
         let domain = domain_of(&hit.url);
-        evidence.push_str(&format!("\n[{index}] {domain} — {}\n", hit.url));
-        block.push_str(&format!("<<<SOURCE {index}: {domain} — {}>>>\n", hit.url));
+        let _ = writeln!(evidence, "\n[{index}] {domain} — {}", hit.url);
+        let _ = writeln!(block, "<<<SOURCE {index}: {domain} — {}>>>", hit.url);
 
         let mut mine: Vec<&Passage> = selected
             .iter()
@@ -617,7 +630,7 @@ fn build_block(hits: &[Hit], passages: &[Passage], selected: &[usize], today: &s
             block.push_str(&defang(p.text.trim()));
             block.push('\n');
         }
-        block.push_str(&format!("<<<END {index}>>>\n\n"));
+        let _ = writeln!(block, "<<<END {index}>>>\n");
         sources.push(WebSource {
             index,
             url: hit.url.clone(),
@@ -663,6 +676,7 @@ fn unavailable(today: &str, why: &str) -> Grounding {
     }
 }
 
+#[must_use]
 pub fn domain_of(url: &str) -> String {
     url.split("://")
         .nth(1)
@@ -675,12 +689,12 @@ pub fn domain_of(url: &str) -> String {
 }
 
 /// Round-robins the per-query results so every query gets a say, dropping duplicate URLs.
-pub fn merge_hits(per_query: Vec<Vec<Hit>>, limit: usize) -> Vec<Hit> {
+pub fn merge_hits(per_query: &[Vec<Hit>], limit: usize) -> Vec<Hit> {
     let mut seen = HashSet::new();
     let mut out = Vec::new();
     let longest = per_query.iter().map(Vec::len).max().unwrap_or(0);
     for rank in 0..longest {
-        for results in &per_query {
+        for results in per_query {
             let Some(hit) = results.get(rank) else {
                 continue;
             };
@@ -698,6 +712,7 @@ pub fn merge_hits(per_query: Vec<Vec<Hit>>, limit: usize) -> Vec<Hit> {
 
 /// Parses the text every search provider emits: an optional `Search results for …` header,
 /// then entries of `snippet\nSource: url` separated by `---` lines.
+#[must_use]
 pub fn parse_search_output(text: &str) -> Vec<Hit> {
     let mut hits = Vec::new();
     for part in text.split("\n---\n") {
@@ -723,13 +738,12 @@ pub fn parse_search_output(text: &str) -> Vec<Hit> {
     hits
 }
 
-/// DuckDuckGo wraps result links as `//duckduckgo.com/l/?uddg=<encoded url>&…`.
+/// `DuckDuckGo` wraps result links as `//duckduckgo.com/l/?uddg=<encoded url>&…`.
+#[must_use]
 pub fn decode_redirect(href: &str) -> String {
-    let href = if let Some(rest) = href.strip_prefix("//") {
-        format!("https://{rest}")
-    } else {
-        href.to_string()
-    };
+    let href = href
+        .strip_prefix("//")
+        .map_or_else(|| href.to_string(), |rest| format!("https://{rest}"));
     if href.contains("duckduckgo.com/l/")
         && let Some((_, query)) = href.split_once('?')
         && let Some(value) = query.split('&').find_map(|kv| kv.strip_prefix("uddg="))
@@ -740,10 +754,13 @@ pub fn decode_redirect(href: &str) -> String {
     href
 }
 
+/// Removes citation markers whose source numbers are out of range.
+///
 /// Removes `[n]` citation markers that point at no source (n is 0 or above `source_count`),
 /// since a small model may invent numbers. Code fences are left alone, and a marker only
 /// counts when it follows whitespace, an opening bracket or the start of the text, so
 /// indexing like `items[1]` is never touched.
+#[must_use]
 pub fn strip_invalid_citations(text: &str, source_count: usize) -> String {
     // `[3]` or a grouped `[1, 2, 3]`, standing alone (after whitespace, `(` or the start).
     let marker = regex::Regex::new(
@@ -770,7 +787,8 @@ pub fn strip_invalid_citations(text: &str, source_count: usize) -> String {
                     if valid.len() == numbers.len() {
                         caps[0].to_string()
                     } else if !valid.is_empty() {
-                        let list: Vec<String> = valid.iter().map(|n| n.to_string()).collect();
+                        let list: Vec<String> =
+                            valid.iter().map(std::string::ToString::to_string).collect();
                         format!("{}[{}]{}", &caps["pre"], list.join(", "), &caps["post"])
                     } else if caps["pre"].trim().is_empty() && !caps["pre"].is_empty() {
                         // Also swallow the space before the marker.
@@ -866,6 +884,7 @@ impl RawClaim {
 
 /// Turns the verifier's JSON into the warning appended to the answer; `None` when nothing is
 /// flagged (or the JSON is unusable, in which case the answer is left as is).
+#[must_use]
 pub fn format_verdict(json: &str) -> Option<String> {
     let verdict: RawVerdict = serde_json::from_str(json.trim()).ok()?;
     let claims: Vec<&RawClaim> = verdict
@@ -885,9 +904,9 @@ pub fn format_verdict(json: &str) -> Option<String> {
     for c in claims {
         let reason = c.reason.trim();
         if reason.is_empty() {
-            out.push_str(&format!("\n- {}", c.claim.trim()));
+            let _ = write!(out, "\n- {}", c.claim.trim());
         } else {
-            out.push_str(&format!("\n- {} — {}", c.claim.trim(), reason));
+            let _ = write!(out, "\n- {} — {}", c.claim.trim(), reason);
         }
     }
     Some(out)
@@ -965,16 +984,16 @@ pub async fn verify(
         }
     };
 
-    match tokio::time::timeout(cfg.verify_timeout, run).await {
-        Ok(note) => note,
-        Err(_) => {
+    tokio::time::timeout(cfg.verify_timeout, run)
+        .await
+        .unwrap_or_else(|_| {
             tracing::warn!("[GROUNDING] verifier timed out");
             None
-        }
-    }
+        })
 }
 
 /// True when `text` carries at least one `[n]` / `[1, 2]` marker that points at a real source.
+#[must_use]
 pub fn has_valid_citation(text: &str, source_count: usize) -> bool {
     let re =
         regex::Regex::new(r"(?:^|[\s(])\[(\d{1,3}(?:\s*,\s*\d{1,3})*)\]").expect("valid regex");
@@ -1035,6 +1054,7 @@ const REFUSAL_HINTS: &[&str] = &[
 ];
 
 /// An answer that states something, has sources to cite, and cites none of them.
+#[must_use]
 pub fn needs_citation_repair(answer: &str, source_count: usize) -> bool {
     let body = answer.split("\n\n\u{26a0}").next().unwrap_or(answer);
     let low = body.to_lowercase();
@@ -1046,6 +1066,7 @@ pub fn needs_citation_repair(answer: &str, source_count: usize) -> bool {
 
 /// Replaces any URL the sources and the question do not contain with `[link removed]`: a
 /// poisoned page can ask the model to repeat a link, but the model should never invent one.
+#[must_use]
 pub fn strip_untrusted_urls(answer: &str, allowed: &str) -> String {
     let re = regex::Regex::new(r#"https?://[^\s)\]>"']+"#).expect("valid regex");
     let allowed = allowed.to_lowercase();
@@ -1139,6 +1160,7 @@ async fn repair_citations(
 }
 
 /// Best-effort language of `text` among pl/de/es/fr/en (English when nothing stands out).
+#[must_use]
 pub fn detect_lang(text: &str) -> &'static str {
     let score = |re: &str| {
         regex::Regex::new(re)
@@ -1168,11 +1190,11 @@ pub fn detect_lang(text: &str) -> &'static str {
         .iter()
         .filter(|(_, n)| *n > 0)
         .max_by_key(|(_, n)| *n)
-        .map(|(l, _)| *l)
-        .unwrap_or("en")
+        .map_or("en", |(l, _)| *l)
 }
 
 /// The notice appended to an answer that has no sources behind it, in the question's language.
+#[must_use]
 pub fn unsourced_notice(lang: &str) -> &'static str {
     match lang {
         "pl" => {
@@ -1194,6 +1216,7 @@ pub fn unsourced_notice(lang: &str) -> &'static str {
 }
 
 /// Appends the "no sources" notice, in the language of `question`.
+#[must_use]
 pub fn mark_unsourced(answer: &str, question: &str) -> String {
     format!(
         "{}\n\n{}",
@@ -1235,11 +1258,14 @@ fn big_numbers(text: &str) -> std::collections::HashSet<String> {
         .collect()
 }
 
+/// Removes sensitive details that could leak from refusal answers.
+///
 /// When an answer says it could not find something, it must not hand over another entity's
 /// details as a consolation. Removes, from such answers, any sentence with an email address or
 /// phone number, and (when the answer opens with the refusal) any sentence with a number of three
 /// or more digits that the question itself did not contain. Answers that are not refusals, and
 /// the refusal sentence itself, are never touched; if nothing would be left, the original stays.
+#[must_use]
 pub fn strip_refusal_leaks(answer: &str, question: &str) -> String {
     let cut = answer.find("\n\n\u{26a0}").unwrap_or(answer.len());
     let (body, tail) = answer.split_at(cut);
@@ -1287,6 +1313,8 @@ pub fn strip_refusal_leaks(answer: &str, question: &str) -> String {
     format!("{cleaned}{tail}")
 }
 
+/// Applies citation, link, and verification cleanup to a grounded answer.
+///
 /// Post-processes a finished grounded answer: drops citation markers that point at no source,
 /// asks once for citations when an answer has none, removes links that did not come from the
 /// sources or the question, then (if enabled) appends a warning for unsupported claims.
@@ -1337,8 +1365,10 @@ pub struct EvidenceItem {
 }
 
 /// Builds the grounding block from fixed passages, skipping the planner, search and fetch.
+///
 /// Lets two models (or two pipeline settings) be compared on identical evidence, independent
 /// of how well the web search happens to work.
+#[must_use]
 pub fn from_evidence(items: &[EvidenceItem], today: &str) -> Grounding {
     let items: Vec<&EvidenceItem> = items.iter().filter(|i| !i.text.trim().is_empty()).collect();
     if items.is_empty() {
@@ -1365,6 +1395,7 @@ pub fn from_evidence(items: &[EvidenceItem], today: &str) -> Grounding {
 }
 
 /// Removes `<toolcall>`/`<tool_call>` blocks a model emitted although tools cannot run.
+#[must_use]
 pub fn strip_tool_calls(text: &str) -> String {
     let re = regex::Regex::new(r"(?s)<(?:tool_call|toolcall)>.*?</(?:tool_call|toolcall)>")
         .expect("valid regex");

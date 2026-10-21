@@ -30,7 +30,7 @@ fn index_config_response() -> Response {
     );
     let config = IndexConfig {
         dl: format!("{base}/api/v1/crates/{{crate}}/{{version}}/download"),
-        api: base.to_string(),
+        api: base,
         auth_required: crate::routers::crates::reads_require_auth(),
     };
     Response::json(StatusCode::OK, &config)
@@ -75,9 +75,8 @@ async fn get_crate_index(
         return Response::new(StatusCode::NOT_FOUND);
     };
 
-    let data = match tokio::fs::read(&index_path).await {
-        Ok(d) => d,
-        Err(_) => return Response::new(StatusCode::NOT_FOUND),
+    let Ok(data) = tokio::fs::read(&index_path).await else {
+        return Response::new(StatusCode::NOT_FOUND);
     };
 
     // ETag based on SHA-256 of the file contents

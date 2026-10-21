@@ -32,7 +32,7 @@ async fn app() -> (
 ) {
     warehouse_service::routers::docker::manifest::delete_image::register_routes();
     let container = support::container_builder().build().await.unwrap();
-    support::app(container).await
+    support::app(container)
 }
 
 #[tokio::test]
@@ -105,4 +105,5 @@ async fn handle_deletes_the_manifest_and_every_tag_pointing_at_it() {
         "tag pointing at the deleted digest should be removed"
     );
     assert!(other_tag.exists(), "unrelated tag should be left alone");
+    drop(storage);
 }

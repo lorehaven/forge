@@ -21,6 +21,7 @@ pub async fn scan_summaries(db: &Db, repositories: &[Repo]) -> HashMap<String, S
 
 /// Newest `max_per_repo` runs per repo, capped at `max_total` total. `runs`
 /// must already be sorted newest first. Clones - cheap at front-page scale.
+#[must_use]
 pub fn cap_per_repo(runs: &[Run], max_total: usize, max_per_repo: usize) -> Vec<Run> {
     let mut seen: HashMap<&str, usize> = HashMap::new();
     let mut selected = Vec::new();
@@ -41,6 +42,7 @@ pub fn cap_per_repo(runs: &[Run], max_total: usize, max_per_repo: usize) -> Vec<
 }
 
 /// `root_id` and every project nested under it, however deep.
+#[must_use]
 pub fn descendant_project_ids(root_id: &str, all_projects: &[Project]) -> HashSet<String> {
     let mut children_of: HashMap<&str, Vec<&Project>> = HashMap::new();
     for project in all_projects {
@@ -67,7 +69,11 @@ pub fn descendant_project_ids(root_id: &str, all_projects: &[Project]) -> HashSe
 }
 
 /// The id list `queue::list_runs_page`/`count_runs` scope by.
-pub fn repo_ids_under(project_ids: &HashSet<String>, repositories: &[Repo]) -> Vec<String> {
+#[must_use]
+pub fn repo_ids_under<S: std::hash::BuildHasher>(
+    project_ids: &HashSet<String, S>,
+    repositories: &[Repo],
+) -> Vec<String> {
     repositories
         .iter()
         .filter(|repo| project_ids.contains(&repo.project_id))
@@ -76,6 +82,7 @@ pub fn repo_ids_under(project_ids: &HashSet<String>, repositories: &[Repo]) -> V
 }
 
 /// `id`'s ancestors, root first, `id` itself last. Empty if `id` names no project.
+#[must_use]
 pub fn ancestor_chain<'a>(id: &str, all_projects: &'a [Project]) -> Vec<&'a Project> {
     let by_id: HashMap<&str, &Project> = all_projects
         .iter()
@@ -97,6 +104,7 @@ pub fn ancestor_chain<'a>(id: &str, all_projects: &'a [Project]) -> Vec<&'a Proj
 }
 
 /// Shared by the front page's capped panel and the full history's paged one, so columns can't drift apart.
+#[must_use]
 pub fn runs_table(runs: &[Run], repositories: &[Repo]) -> Element {
     if runs.is_empty() {
         return empty_state("ui_runs_empty");
@@ -146,6 +154,7 @@ pub fn runs_table(runs: &[Run], repositories: &[Repo]) -> Element {
 }
 
 /// `Home / root / ... / project`, each segment but the last a link back up the tree.
+#[must_use]
 pub fn breadcrumb(all_projects: &[Project], project: &Project) -> Element {
     let chain = ancestor_chain(&project.id, all_projects);
 

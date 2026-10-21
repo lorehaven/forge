@@ -12,7 +12,7 @@ pub mod ui;
 /// actix), and prefixes need `base_path` since `OnPathPrefix` sees the raw un-mounted path.
 pub fn wrap_auth(
     app: Arc<dyn Endpoint>,
-    jwt_config: JwtConfig,
+    jwt_config: &JwtConfig,
     base_path: &str,
 ) -> Arc<dyn Endpoint> {
     let prefixes: [&'static str; 5] = [

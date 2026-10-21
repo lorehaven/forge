@@ -32,7 +32,7 @@ async fn repo_access(
     }
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Debug, Deserialize, Default)]
 pub struct TriggerRun {
     /// Branch or tag to build. Defaults to the repository's default branch.
     #[serde(default)]
@@ -43,6 +43,7 @@ pub struct TriggerRun {
 }
 
 /// `TriggerRun`, but an absent/empty body means "every field default" - `Json<T>` alone rejects zero bytes as invalid JSON.
+#[derive(Debug)]
 pub struct MaybeTriggerRun(pub TriggerRun);
 
 #[async_trait::async_trait]
@@ -85,7 +86,7 @@ impl From<TriggerError> for ApiError {
                 TriggerError::ResolveFailed(_) => StatusCode::BAD_GATEWAY,
                 TriggerError::Queue(_) => unreachable!(),
             };
-            return ApiError::new(status, error.to_string());
+            return Self::new(status, error.to_string());
         };
         Self::from(queue_error)
     }
@@ -114,20 +115,19 @@ pub async fn trigger_manual(
     crate::workspace::checkout::validate_ref(&git_ref)
         .map_err(|error| TriggerError::BadRef(error.to_string()))?;
 
-    let sha = match sha {
-        Some(sha) => sha,
-        None => {
-            // Same credential a checkout would use - this talks to the remote directly, not via `workspace::checkout`.
-            let credential = resolve_credential(db, &repo).await;
-            let header = credential
-                .as_ref()
-                .map(|c| basic_auth_header(&c.username, &c.token));
-            let extra_env = credential_env(header.as_deref());
+    let sha = if let Some(sha) = sha {
+        sha
+    } else {
+        // Same credential a checkout would use - this talks to the remote directly, not via `workspace::checkout`.
+        let credential = resolve_credential(db, &repo).await;
+        let header = credential
+            .as_ref()
+            .map(|c| basic_auth_header(&c.username, &c.token));
+        let extra_env = credential_env(header.as_deref());
 
-            resolve_ref(&repo.clone_url, &git_ref, &extra_env)
-                .await
-                .map_err(TriggerError::ResolveFailed)?
-        }
+        resolve_ref(&repo.clone_url, &git_ref, &extra_env)
+            .await
+            .map_err(TriggerError::ResolveFailed)?
     };
 
     crate::workspace::checkout::validate_sha(&sha)
@@ -172,7 +172,7 @@ pub async fn trigger(
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ListQuery {
     #[serde(default)]
     pub repo_id: Option<String>,
@@ -383,7 +383,7 @@ impl From<RestartError> for ApiError {
                 RestartError::NotRestartable => StatusCode::CONFLICT,
                 RestartError::Queue(_) => unreachable!(),
             };
-            return ApiError::new(status, error.to_string());
+            return Self::new(status, error.to_string());
         };
         Self::from(queue_error)
     }

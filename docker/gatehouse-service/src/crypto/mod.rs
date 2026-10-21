@@ -12,6 +12,7 @@ pub fn realm_cipher() -> anyhow::Result<ChaCha20Poly1305> {
 }
 
 /// `nonce || ChaCha20-Poly1305(plaintext)`, ready to hex-encode for storage.
+#[must_use]
 pub fn encrypt(cipher: &ChaCha20Poly1305, plaintext: &[u8]) -> Vec<u8> {
     let mut nonce_bytes = [0u8; 12];
     getrandom::fill(&mut nonce_bytes).expect("the OS random source is available");

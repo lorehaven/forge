@@ -7,6 +7,7 @@ pub mod get_image;
 pub mod put_image;
 
 /// The `Accept` header, for manifest content-type negotiation.
+#[derive(Debug)]
 pub struct AcceptHeader(pub Option<String>);
 
 #[async_trait]

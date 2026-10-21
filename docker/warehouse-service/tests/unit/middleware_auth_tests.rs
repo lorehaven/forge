@@ -165,19 +165,17 @@ fn too_many_auth_failures_is_scoped_per_client() {
 fn config(auth_enabled: bool) -> DockerTokenConfig {
     let _guard = support::secret_env_lock()
         .lock()
-        .unwrap_or_else(|p| p.into_inner());
-    unsafe {
-        std::env::set_var(
-            "DOCKER_TOKEN_SECRET",
-            "warehouse-auth-middleware-test-secret",
-        )
-    };
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    envmnt::set(
+        "DOCKER_TOKEN_SECRET",
+        "warehouse-auth-middleware-test-secret",
+    );
     let config = DockerTokenConfig::init(
         "warehouse".to_string(),
         "https://warehouse.test/token".to_string(),
         auth_enabled,
     );
-    unsafe { std::env::remove_var("DOCKER_TOKEN_SECRET") };
+    envmnt::remove("DOCKER_TOKEN_SECRET");
     config
 }
 
@@ -194,8 +192,8 @@ fn bearer_for_service(config: &DockerTokenConfig, service: &str, scope: &str) ->
         sub: "alice".to_string(),
         service: service.to_string(),
         scope: scope.to_string(),
-        iat: now.timestamp() as usize,
-        exp: (now + chrono::Duration::minutes(5)).timestamp() as usize,
+        iat: usize::try_from(now.timestamp()).unwrap(),
+        exp: usize::try_from((now + chrono::Duration::minutes(5)).timestamp()).unwrap(),
     };
     format!("Bearer {}", config.encode(&claims).expect("encode"))
 }
@@ -342,12 +340,12 @@ async fn repeated_failures_from_the_same_client_eventually_get_throttled() {
     // low for this test. It's a fixed env var name `new()` reads once at
     // construction time, so no cross-test lock is needed here - the value
     // only matters for the instant `test_app` builds this test's own config.
-    unsafe { std::env::set_var("MAX_AUTH_FAILURES_PER_MINUTE", "2") };
+    envmnt::set("MAX_AUTH_FAILURES_PER_MINUTE", "2");
     let app = test_app(config(true));
     // Safe to clear immediately after: `WarehouseAuth::new` (called inside
     // `test_app`, above) reads the env var once at construction time, not
     // per-request.
-    unsafe { std::env::remove_var("MAX_AUTH_FAILURES_PER_MINUTE") };
+    envmnt::remove("MAX_AUTH_FAILURES_PER_MINUTE");
 
     let peer = "198.51.100.6";
     for _ in 0..2 {

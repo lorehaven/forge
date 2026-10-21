@@ -56,7 +56,7 @@ async fn status_with_auth(auth: bool, method: Method, path: &str, body: Body) ->
     // to default off. Leaving `true` set here after this function returns
     // would leak into whichever test the binary happens to run next.
     let previous = std::env::var("SERVICE_AUTH_ENABLED").ok();
-    unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", if auth { "true" } else { "false" }) };
+    envmnt::set("SERVICE_AUTH_ENABLED", if auth { "true" } else { "false" });
 
     let db = quench_db::prelude::Db::connect("")
         .await
@@ -96,8 +96,8 @@ async fn status_with_auth(auth: bool, method: Method, path: &str, body: Body) ->
     let status = app.call(request).await.status();
 
     match previous {
-        Some(value) => unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", value) },
-        None => unsafe { std::env::remove_var("SERVICE_AUTH_ENABLED") },
+        Some(value) => envmnt::set("SERVICE_AUTH_ENABLED", value),
+        None => envmnt::remove("SERVICE_AUTH_ENABLED"),
     }
 
     status

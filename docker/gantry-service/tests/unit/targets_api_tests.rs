@@ -42,7 +42,7 @@ async fn rig(auth_enabled: bool) -> Rig {
         .build()
         .await
         .unwrap();
-    let (app, container) = support::app(container).await;
+    let (app, container) = support::app(container);
     Rig {
         app,
         container,

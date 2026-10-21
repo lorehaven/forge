@@ -5,11 +5,13 @@ use quench_starter::http::domain::error;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
 
+#[derive(Debug)]
 pub struct WarehouseLimits {
     upload_semaphore: Arc<Semaphore>,
 }
 
 impl WarehouseLimits {
+    #[must_use]
     pub fn new(max_concurrent_uploads: usize) -> Self {
         let permits = max_concurrent_uploads.max(1);
         Self {
@@ -25,15 +27,12 @@ impl Middleware for WarehouseLimits {
             return next.call(req).await;
         }
 
-        let permit = match self.upload_semaphore.clone().try_acquire_owned() {
-            Ok(p) => p,
-            Err(_) => {
-                return error::response(
-                    StatusCode::TOO_MANY_REQUESTS,
-                    error::DENIED,
-                    "too many concurrent upload requests",
-                );
-            }
+        let Ok(permit) = self.upload_semaphore.clone().try_acquire_owned() else {
+            return error::response(
+                StatusCode::TOO_MANY_REQUESTS,
+                error::DENIED,
+                "too many concurrent upload requests",
+            );
         };
 
         let response = next.call(req).await;

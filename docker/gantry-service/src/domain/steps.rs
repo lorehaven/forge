@@ -74,7 +74,7 @@ pub enum Step {
         namespace: Option<String>,
         yaml: String,
     },
-    /// Restart the workloads that use a ConfigMap or a Secret, so a changed value is actually picked up,
+    /// Restart the workloads that use a `ConfigMap` or a Secret, so a changed value is actually picked up,
     /// and wait for them.
     RestartUsers {
         namespace: String,
@@ -138,6 +138,7 @@ pub struct Plan {
 }
 
 impl Step {
+    #[must_use]
     pub fn describe(&self) -> String {
         match self {
             Self::Pull { package, version } => format!("download {package} {version}"),
@@ -174,6 +175,7 @@ impl Step {
     }
 
     /// The Secrets (by name) this step reads variables from.
+    #[must_use]
     pub fn values_secret(&self) -> Option<&str> {
         match self {
             Self::Check { values_secret, .. } | Self::Install { values_secret, .. } => {
@@ -212,6 +214,7 @@ impl Step {
     }
 
     /// Whether this step takes a workload down (to zero), which is what the protected set forbids.
+    #[must_use]
     pub fn stops(&self) -> Vec<(&str, &str)> {
         match self {
             Self::Scale {
@@ -243,6 +246,7 @@ impl Step {
 
 impl Plan {
     /// Every Secret the plan reads variables from, once each.
+    #[must_use]
     pub fn values_secrets(&self) -> Vec<String> {
         let mut names: Vec<String> = self
             .steps
@@ -267,6 +271,45 @@ impl Plan {
         }
         Ok(())
     }
+}
+
+/// Edited YAML is applied as it is, so it has to be one parseable, non-Secret document that stays in
+/// the namespace the step names.
+fn validate_edit(yaml: &str, namespace: Option<&str>, allowed: &[String]) -> Result<(), String> {
+    if yaml.len() > MAX_YAML_BYTES {
+        return Err(format!("the YAML is over {} KiB", MAX_YAML_BYTES / 1024));
+    }
+    let doc: serde_norway::Value =
+        serde_norway::from_str(yaml).map_err(|e| format!("the YAML does not parse: {e}"))?;
+    doc.get("kind")
+        .and_then(serde_norway::Value::as_str)
+        .ok_or("the YAML has no kind")?;
+    doc.get("metadata")
+        .and_then(|m| m.get("name"))
+        .and_then(serde_norway::Value::as_str)
+        .ok_or("the YAML has no metadata.name")?;
+    if doc.get("kind").and_then(serde_norway::Value::as_str) == Some("Secret") {
+        return Err("a Secret is not edited here".to_string());
+    }
+    // What the YAML says must be what the step says: no editing one namespace through another.
+    let declared = doc
+        .get("metadata")
+        .and_then(|m| m.get("namespace"))
+        .and_then(serde_norway::Value::as_str);
+    if declared != namespace {
+        return Err(format!(
+            "the YAML's namespace ({}) is not the one the step targets ({})",
+            declared.unwrap_or("none"),
+            namespace.unwrap_or("none")
+        ));
+    }
+    if namespace.is_none() && !allowed.is_empty() {
+        return Err(format!(
+            "this resource has no namespace, and this Gantry may only act in {}",
+            allowed.join(", ")
+        ));
+    }
+    Ok(())
 }
 
 fn validate_step(step: &Step, allowed: &[String]) -> Result<(), String> {
@@ -331,41 +374,7 @@ fn validate_step(step: &Step, allowed: &[String]) -> Result<(), String> {
                 ));
             }
         }
-        Step::ApplyYaml { namespace, yaml } => {
-            if yaml.len() > MAX_YAML_BYTES {
-                return Err(format!("the YAML is over {} KiB", MAX_YAML_BYTES / 1024));
-            }
-            let doc: serde_norway::Value = serde_norway::from_str(yaml)
-                .map_err(|e| format!("the YAML does not parse: {e}"))?;
-            doc.get("kind")
-                .and_then(serde_norway::Value::as_str)
-                .ok_or("the YAML has no kind")?;
-            doc.get("metadata")
-                .and_then(|m| m.get("name"))
-                .and_then(serde_norway::Value::as_str)
-                .ok_or("the YAML has no metadata.name")?;
-            if doc.get("kind").and_then(serde_norway::Value::as_str) == Some("Secret") {
-                return Err("a Secret is not edited here".to_string());
-            }
-            // What the YAML says must be what the step says: no editing one namespace through another.
-            let declared = doc
-                .get("metadata")
-                .and_then(|m| m.get("namespace"))
-                .and_then(serde_norway::Value::as_str);
-            if declared != namespace.as_deref() {
-                return Err(format!(
-                    "the YAML's namespace ({}) is not the one the step targets ({})",
-                    declared.unwrap_or("none"),
-                    namespace.as_deref().unwrap_or("none")
-                ));
-            }
-            if namespace.is_none() && !allowed.is_empty() {
-                return Err(format!(
-                    "this resource has no namespace, and this Gantry may only act in {}",
-                    allowed.join(", ")
-                ));
-            }
-        }
+        Step::ApplyYaml { namespace, yaml } => validate_edit(yaml, namespace.as_deref(), allowed)?,
         Step::RestartUsers { kind, name: n, .. } => {
             if !matches!(kind.as_str(), "configmap" | "secret") {
                 return Err(format!("'{kind}' is not configmap or secret"));
@@ -479,6 +488,7 @@ fn workload_name(resource: &str) -> Option<&str> {
 }
 
 /// `Deployment/name` from edited YAML, for a step's description.
+#[must_use]
 pub fn yaml_identity(yaml: &str) -> String {
     serde_norway::from_str::<serde_norway::Value>(yaml)
         .ok()

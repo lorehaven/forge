@@ -17,6 +17,7 @@ pub mod format;
 pub use forge_ui::{SUPPORTED_LOCALES, supported_locales};
 
 /// Writes the service stylesheet (forge-ui's plus `conveyor.css`) to `dist/assets/css`.
+#[must_use]
 pub fn conveyor_stylesheet() -> String {
     forge_ui::stylesheet_with(include_str!("conveyor.css"), &[])
 }
@@ -50,6 +51,7 @@ pub async fn assets(Path(path): Path<String>) -> Response {
 }
 
 /// `.status` carries the shape, `.status-<state>` the color; the label is a translation key.
+#[must_use]
 pub fn status_pill(status: crate::domain::Status) -> Element {
     span()
         .class(format!("status status-{status}"))
@@ -67,6 +69,7 @@ pub async fn actor(request: &Request, config: &JwtConfig) -> Option<Claims> {
 }
 
 /// For a page that only needs to gate rendering, not the identity behind it.
+#[derive(Debug)]
 pub struct PageAuth(pub bool);
 
 #[async_trait]
@@ -101,10 +104,10 @@ impl FromRequest for ActorOrRedirect {
         let Ok(config) = req.container().get::<JwtConfig>() else {
             return Ok(Self::Redirect(ui_login_redirect_for(req)));
         };
-        match actor(req, &config).await {
-            Some(claims) => Ok(Self::Claims(claims)),
-            None => Ok(Self::Redirect(ui_login_redirect_for(req))),
-        }
+        actor(req, &config).await.map_or_else(
+            || Ok(Self::Redirect(ui_login_redirect_for(req))),
+            |claims| Ok(Self::Claims(claims)),
+        )
     }
 }
 
@@ -140,4 +143,16 @@ impl FromRequest for PageGate {
 
 pub fn register_routes() {
     let _ = assets as fn(_) -> _;
+}
+
+impl std::fmt::Debug for ActorOrRedirect {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("ActorOrRedirect { .. }")
+    }
+}
+
+impl std::fmt::Debug for PageGate {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("PageGate { .. }")
+    }
 }

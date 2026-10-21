@@ -9,6 +9,7 @@ pub enum VllmManagementMode {
 }
 
 impl VllmManagementMode {
+    #[must_use]
     pub fn from_env() -> Self {
         match envmnt::get_or("VLLM_MANAGEMENT_MODE", "")
             .to_lowercase()

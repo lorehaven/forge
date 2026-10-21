@@ -15,9 +15,9 @@ struct UiRoot(bool);
 impl FromRequest for UiRoot {
     async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
         let Ok(config) = req.container().get::<JwtConfig>() else {
-            return Ok(UiRoot(false));
+            return Ok(Self(false));
         };
-        Ok(UiRoot(common::is_ui_authenticated(req, &config).await))
+        Ok(Self(common::is_ui_authenticated(req, &config).await))
     }
 }
 

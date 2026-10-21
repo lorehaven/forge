@@ -13,12 +13,12 @@ use quench_http::prelude::{Form, Inject, Query, Response, get, post};
 use quench_web::prelude::*;
 use serde::Deserialize;
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct AcceptQuery {
     pub token: String,
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Debug, Deserialize, Default)]
 pub struct AcceptNotice {
     #[serde(default)]
     pub err: Option<String>,
@@ -32,7 +32,7 @@ pub async fn accept_invite_page(
     render_accept_invite_page(&query.token, &notice)
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct AcceptForm {
     pub token: String,
     pub password: String,
@@ -82,6 +82,7 @@ fn redirect(location: &str) -> Response {
     Response::new(StatusCode::FOUND).header("Location", location)
 }
 
+#[must_use]
 pub fn render_accept_invite_page(token: &str, notice: &AcceptNotice) -> Response {
     let mut accept_form = form()
         .attr("method", "post")

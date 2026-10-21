@@ -65,8 +65,8 @@ fn context_invalid_value_is_rejected() {
 #[test]
 fn context_as_usize_matches_the_advertised_size() {
     assert_eq!(Context::Size512.as_usize(), 512);
-    assert_eq!(Context::Size131072.as_usize(), 131072);
-    assert_eq!(Context::ALL.as_usize(), 131072);
+    assert_eq!(Context::Size131072.as_usize(), 131_072);
+    assert_eq!(Context::ALL.as_usize(), 131_072);
 }
 
 #[test]
@@ -90,9 +90,9 @@ fn quant_aliases_deserialize_to_the_same_variant() {
 
 #[test]
 fn quant_bytes_per_weight_covers_every_variant() {
-    assert_eq!(Quant::FP16.bytes_per_weight(), 2.0);
-    assert_eq!(Quant::Q2K.bytes_per_weight(), 0.35);
-    assert_eq!(Quant::ALL.bytes_per_weight(), 0.0);
+    assert!((Quant::FP16.bytes_per_weight() - 2.0).abs() < 1e-6);
+    assert!((Quant::Q2K.bytes_per_weight() - 0.35).abs() < 1e-6);
+    assert!((Quant::ALL.bytes_per_weight() - 0.0).abs() < 1e-6);
 }
 
 #[test]
@@ -156,5 +156,5 @@ fn model_estimate_round_trips_through_json() {
     let back: ModelEstimate = serde_json::from_value(value).unwrap();
     assert_eq!(back.quant, Quant::Q4KM);
     assert_eq!(back.context, Context::Size8192);
-    assert_eq!(back.total_gb, 5.7);
+    assert!((back.total_gb - 5.7).abs() < 1e-6);
 }

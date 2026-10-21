@@ -16,7 +16,7 @@ pub mod unyank;
 pub mod yank;
 
 /// The wire shape every read endpoint returns. `id` is omitted (internal storage key only).
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct RivetView {
     pub name: String,
     pub version: String,
@@ -51,6 +51,7 @@ impl From<&RivetPackage> for RivetView {
 }
 
 /// Same 404 as "no such version" - whether rivets are enabled isn't for an unauthorized caller to learn.
+#[must_use]
 pub fn disabled() -> Response {
     not_found("rivet storage is not enabled")
 }

@@ -8,6 +8,7 @@ use quench_http::prelude::{FromRequest, HttpError, Request, Response, http::Stat
 use quench_starter::http::routers::ui::ui_login_redirect_for;
 
 /// Whether `claims` may perform a management mutation in the warehouse UI.
+#[must_use]
 pub fn can_manage(claims: &Claims) -> bool {
     claims.can("warehouse", "write")
 }
@@ -19,6 +20,7 @@ pub async fn ui_claims(request: &Request, config: &JwtConfig) -> Option<Claims> 
 
 /// The caller's claims, for a page that also needs to know if it may manage
 /// this content (to show/hide a mutating control) beyond the plain `PageAuth` gate.
+#[derive(Debug)]
 pub struct OptionalUiClaims(pub Option<Claims>);
 
 #[async_trait]
@@ -61,5 +63,11 @@ impl FromRequest for ManageGate {
             Some(_) => Ok(Self::Forbidden),
             None => Ok(Self::Redirect(ui_login_redirect_for(req))),
         }
+    }
+}
+
+impl std::fmt::Debug for ManageGate {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("ManageGate { .. }")
     }
 }

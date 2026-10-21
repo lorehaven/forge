@@ -6,6 +6,7 @@ use gantry_service::domain::registry::MemoryRegistry;
 use gantry_service::domain::service::{Gantry, SubmitError};
 use gantry_service::domain::settings::Settings;
 use gantry_service::domain::steps::{Plan, Step};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 struct Rig {
@@ -48,8 +49,8 @@ fn plan() -> Plan {
             package: "media".into(),
             version: "1.0.0".into(),
             namespace: "media".into(),
-            sets: Default::default(),
-            replicas: Default::default(),
+            sets: BTreeMap::default(),
+            replicas: BTreeMap::default(),
             values_secret: Some("gantry-values-media".into()),
             timeout_secs: None,
             targets: vec![],

@@ -19,7 +19,7 @@ use quench_http::prelude::{FromRequest, HttpError, Inject, Query, Request, Respo
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct AuthorizeQuery {
     client_id: String,
     redirect_uri: String,
@@ -33,6 +33,7 @@ pub struct AuthorizeQuery {
 
 /// Raw query string (to rebuild the login redirect) plus any subject
 /// already proved by the session cookie.
+#[derive(Debug)]
 pub struct AuthorizeContext {
     query_string: String,
     claims: Option<Claims>,
@@ -127,7 +128,7 @@ pub async fn authorize(
     Response::new(StatusCode::FOUND).header("Location", redirect)
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct TokenRequest {
     pub grant_type: String,
     #[serde(default)]
@@ -297,6 +298,7 @@ pub async fn subject_from_cookie(
         .then_some(claims)
 }
 
+#[must_use]
 pub fn random_code() -> String {
     let mut buf = [0u8; 32];
     getrandom::fill(&mut buf).expect("the OS random source is available");

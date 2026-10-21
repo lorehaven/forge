@@ -16,7 +16,12 @@ fn key() -> SecretKey {
     SecretKey::parse("CONVEYOR_CREDENTIAL_KEY", HEX_KEY).expect("key")
 }
 
-fn token<'a>(name: &'a str, kind: &'a str, username: &'a str, token: &'a str) -> NewCredential<'a> {
+const fn token<'a>(
+    name: &'a str,
+    kind: &'a str,
+    username: &'a str,
+    token: &'a str,
+) -> NewCredential<'a> {
     NewCredential {
         name,
         kind,

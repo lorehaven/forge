@@ -56,6 +56,70 @@ pub async fn fetch_models(
         .collect()
 }
 
+/// What one `config.json` says about the model beside it.
+struct ScannedModel {
+    name: String,
+    path: String,
+    architecture: Option<String>,
+    quant: Quant,
+    context: Context,
+    layers: usize,
+    hidden_size: usize,
+    params: f64,
+}
+
+/// Reads one model's `config.json`; `None` (with a warning) when it cannot be read or parsed.
+fn read_hf_config(config_path: &Path) -> Option<ScannedModel> {
+    let model_dir = config_path.ancestors().nth(3)?;
+    let path = model_dir.to_string_lossy().to_string();
+    let name = normalize_hf_name(model_dir);
+
+    let config_json_text = std::fs::read_to_string(config_path)
+        .inspect_err(|e| tracing::warn!("Failed to read config.json at {config_path:?}: {e}"))
+        .ok()?;
+    let json: serde_json::Value = serde_json::from_str(&config_json_text)
+        .inspect_err(|e| tracing::warn!("Failed to parse config.json at {config_path:?}: {e}"))
+        .ok()?;
+
+    let hidden_size = usize::try_from(json["hidden_size"].as_u64().unwrap_or(4096)).unwrap_or(4096);
+    let layers = usize::try_from(json["num_hidden_layers"].as_u64().unwrap_or(32)).unwrap_or(32);
+    let vocab_size =
+        f64::from(u32::try_from(json["vocab_size"].as_u64().unwrap_or(32000)).unwrap_or(32000));
+    let max_position_embeddings = json["max_position_embeddings"].as_u64().unwrap_or(4096);
+    let torch_dtype = json["torch_dtype"].as_str().unwrap_or("float16");
+    let architecture = json["architectures"]
+        .as_array()
+        .and_then(|a| a.first())
+        .and_then(|v| v.as_str())
+        .map(std::string::ToString::to_string);
+
+    let quant = infer_hf_quant_config(&json).unwrap_or_else(|| infer_hf_quant(torch_dtype));
+    let context = infer_context(max_position_embeddings);
+    let params = infer_params_from_name(&name)
+        .unwrap_or_else(|| estimate_dense_transformer_params(hidden_size, layers, vocab_size));
+
+    Some(ScannedModel {
+        name,
+        path,
+        architecture,
+        quant,
+        context,
+        layers,
+        hidden_size,
+        params,
+    })
+}
+
+/// Every model under `root`, found by its `config.json`.
+fn scan_hf_root(root: &str) -> Vec<ScannedModel> {
+    WalkDir::new(root)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_name() == "config.json")
+        .filter_map(|entry| read_hf_config(entry.path()))
+        .collect()
+}
+
 #[tracing::instrument]
 pub async fn fetch_hf_models() -> Vec<Model> {
     let store = get_store();
@@ -63,7 +127,7 @@ pub async fn fetch_hf_models() -> Vec<Model> {
     models.retain(|m| m.source == format!("{:?}", ModelType::HF));
 
     // Re-verify vLLM support in case architectures list was updated
-    for model in models.iter_mut() {
+    for model in &mut models {
         if let Some(arch) = &model.architecture {
             model.vllm_supported = store.is_vllm_supported(arch);
         }
@@ -72,85 +136,29 @@ pub async fn fetch_hf_models() -> Vec<Model> {
     let mut discovered_models = Vec::new();
 
     for root in HF_ROOTS.iter() {
-        let root = root.to_string();
+        let root = root.clone();
         if !Path::new(&root).exists() {
             continue;
         }
 
-        let models_batch = tokio::task::spawn_blocking(move || {
-            let mut batch = Vec::new();
-            for entry in WalkDir::new(&root).into_iter().filter_map(Result::ok) {
-                if entry.file_name() != "config.json" {
-                    continue;
-                }
+        let models_batch = tokio::task::spawn_blocking(move || scan_hf_root(&root))
+            .await
+            .unwrap_or_default();
 
-                let config_path = entry.path();
-                let model_dir = match config_path.ancestors().nth(3) {
-                    Some(p) => p,
-                    None => continue,
-                };
-
-                let path_str = model_dir.to_string_lossy().to_string();
-
-                let name = normalize_hf_name(model_dir);
-
-                let content = match std::fs::read_to_string(config_path) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        tracing::warn!("Failed to read config.json at {:?}: {}", config_path, e);
-                        continue;
-                    }
-                };
-
-                let json: serde_json::Value = match serde_json::from_str(&content) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        tracing::warn!("Failed to parse config.json at {:?}: {}", config_path, e);
-                        continue;
-                    }
-                };
-
-                let hidden_size = json["hidden_size"].as_u64().unwrap_or(4096) as usize;
-                let layers = json["num_hidden_layers"].as_u64().unwrap_or(32) as usize;
-                let vocab_size = json["vocab_size"].as_u64().unwrap_or(32000) as f64;
-                let max_position_embeddings =
-                    json["max_position_embeddings"].as_u64().unwrap_or(4096);
-                let torch_dtype = json["torch_dtype"].as_str().unwrap_or("float16");
-                let architecture = json["architectures"]
-                    .as_array()
-                    .and_then(|a| a.first())
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
-
-                let quant =
-                    infer_hf_quant_config(&json).unwrap_or_else(|| infer_hf_quant(torch_dtype));
-                let context = infer_context(max_position_embeddings);
-                let params = infer_params_from_name(&name).unwrap_or_else(|| {
-                    estimate_dense_transformer_params(hidden_size, layers, vocab_size)
-                });
-
-                batch.push((
-                    name,
-                    path_str,
-                    architecture,
-                    quant,
-                    context,
-                    layers,
-                    hidden_size,
-                    params,
-                ));
-            }
-            batch
-        })
-        .await
-        .unwrap_or_default();
-
-        for (name, path, architecture, quant, context, layers, hidden_size, params) in models_batch
+        for ScannedModel {
+            name,
+            path,
+            architecture,
+            quant,
+            context,
+            layers,
+            hidden_size,
+            params,
+        } in models_batch
         {
             let vllm_supported = architecture
                 .as_ref()
-                .map(|arch| store.is_vllm_supported(arch))
-                .unwrap_or(false);
+                .is_some_and(|arch| store.is_vllm_supported(arch));
 
             // Known models are re-read too, so improvements to inference (e.g. picking up
             // `quantization_config`) reach entries cached by an older build. Unchanged
@@ -160,7 +168,7 @@ pub async fn fetch_hf_models() -> Vec<Model> {
                 && existing.context == context
                 && existing.layers == layers
                 && existing.hidden_size == hidden_size
-                && existing.params_billion == round2(params)
+                && existing.params_billion.total_cmp(&round2(params)).is_eq()
             {
                 continue;
             }
@@ -207,7 +215,7 @@ pub async fn fetch_gguf_models() -> Vec<Model> {
     let mut discovered_models = Vec::new();
 
     for root in GGUF_ROOTS.iter() {
-        let root = root.to_string();
+        let root = root.clone();
         if !Path::new(&root).exists() {
             continue;
         }
@@ -304,32 +312,42 @@ pub fn get_on_disk_model_paths() -> HashSet<String> {
     on_disk_paths
 }
 
+#[must_use]
 pub fn round2(v: f64) -> f64 {
     (v * 100.0).round() / 100.0
 }
 
+#[must_use]
 pub fn normalize_hf_name(path: &Path) -> String {
     let full = path.to_string_lossy();
     let marker = "models--";
 
-    let idx = match full.find(marker) {
-        Some(v) => v,
-        None => {
-            return path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-        }
+    let Some(idx) = full.find(marker) else {
+        return path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
     };
 
     full[idx + marker.len()..].replace("--", "/")
 }
 
-pub fn estimate_dense_transformer_params(hidden: usize, layers: usize, vocab: f64) -> f64 {
-    (12.0 * layers as f64 * (hidden as f64).powi(2) + vocab * hidden as f64) / 1e9
+/// `n` as an `f64`, exact up to 2^53 (far past any layer, width or context size).
+fn usize_to_f64(n: usize) -> f64 {
+    let n = u64::try_from(n).unwrap_or(u64::MAX);
+    let high = u32::try_from(n >> 32).unwrap_or(u32::MAX);
+    let low = u32::try_from(n & 0xFFFF_FFFF).unwrap_or(u32::MAX);
+    f64::from(high) * 4_294_967_296.0 + f64::from(low)
 }
 
+#[must_use]
+pub fn estimate_dense_transformer_params(hidden: usize, layers: usize, vocab: f64) -> f64 {
+    let hidden = usize_to_f64(hidden);
+    vocab.mul_add(hidden, 12.0 * usize_to_f64(layers) * hidden.powi(2)) / 1e9
+}
+
+#[must_use]
 pub fn infer_hf_quant(dtype: &str) -> Quant {
     match dtype {
         "bfloat16" => Quant::BF16,
@@ -340,9 +358,12 @@ pub fn infer_hf_quant(dtype: &str) -> Quant {
     }
 }
 
+/// Infers a model's quantization from its checkpoint metadata.
+///
 /// Quant declared by a pre-quantized checkpoint's `quantization_config`, which takes
 /// precedence over `torch_dtype` (that only describes the activation dtype, so a 4-bit
 /// build would otherwise be sized as a 2-byte-per-weight model).
+#[must_use]
 pub fn infer_hf_quant_config(config: &serde_json::Value) -> Option<Quant> {
     let qc = config.get("quantization_config")?;
     match qc["quant_method"].as_str()? {
@@ -367,7 +388,8 @@ pub fn infer_hf_quant_config(config: &serde_json::Value) -> Option<Quant> {
     }
 }
 
-pub fn infer_context(ctx: u64) -> Context {
+#[must_use]
+pub const fn infer_context(ctx: u64) -> Context {
     match ctx {
         512 => Context::Size512,
         1024 => Context::Size1024,
@@ -377,7 +399,7 @@ pub fn infer_context(ctx: u64) -> Context {
         16384 => Context::Size16384,
         32768 => Context::Size32768,
         65536 => Context::Size65536,
-        131072 => Context::Size131072,
+        131_072 => Context::Size131072,
         _ => Context::ALL,
     }
 }
@@ -403,6 +425,7 @@ pub fn infer_params_from_name(name: &str) -> Option<f64> {
         .ok()
 }
 
+#[must_use]
 pub fn infer_architecture(path: &str) -> Option<(usize, usize, usize)> {
     let mut file = File::open(path).ok()?;
 
@@ -420,10 +443,10 @@ pub fn infer_architecture(path: &str) -> Option<(usize, usize, usize)> {
         .iter()
         .find(|kv| kv.key.ends_with(".block_count"))
         .and_then(|kv| match &kv.value {
-            GGUFMetadataValue::Uint32(v) => Some(*v as usize),
-            GGUFMetadataValue::Uint64(v) => Some(*v as usize),
-            GGUFMetadataValue::Int32(v) => Some(*v as usize),
-            GGUFMetadataValue::Int64(v) => Some(*v as usize),
+            GGUFMetadataValue::Uint32(v) => usize::try_from(*v).ok(),
+            GGUFMetadataValue::Uint64(v) => usize::try_from(*v).ok(),
+            GGUFMetadataValue::Int32(v) => usize::try_from(*v).ok(),
+            GGUFMetadataValue::Int64(v) => usize::try_from(*v).ok(),
             _ => None,
         })?;
 
@@ -431,10 +454,10 @@ pub fn infer_architecture(path: &str) -> Option<(usize, usize, usize)> {
         .iter()
         .find(|kv| kv.key.ends_with(".embedding_length"))
         .and_then(|kv| match &kv.value {
-            GGUFMetadataValue::Uint32(v) => Some(*v as usize),
-            GGUFMetadataValue::Uint64(v) => Some(*v as usize),
-            GGUFMetadataValue::Int32(v) => Some(*v as usize),
-            GGUFMetadataValue::Int64(v) => Some(*v as usize),
+            GGUFMetadataValue::Uint32(v) => usize::try_from(*v).ok(),
+            GGUFMetadataValue::Uint64(v) => usize::try_from(*v).ok(),
+            GGUFMetadataValue::Int32(v) => usize::try_from(*v).ok(),
+            GGUFMetadataValue::Int64(v) => usize::try_from(*v).ok(),
             _ => None,
         })?;
 
@@ -442,10 +465,10 @@ pub fn infer_architecture(path: &str) -> Option<(usize, usize, usize)> {
         .iter()
         .find(|kv| kv.key.ends_with(".context_length"))
         .and_then(|kv| match &kv.value {
-            GGUFMetadataValue::Uint32(v) => Some(*v as usize),
-            GGUFMetadataValue::Uint64(v) => Some(*v as usize),
-            GGUFMetadataValue::Int32(v) => Some(*v as usize),
-            GGUFMetadataValue::Int64(v) => Some(*v as usize),
+            GGUFMetadataValue::Uint32(v) => usize::try_from(*v).ok(),
+            GGUFMetadataValue::Uint64(v) => usize::try_from(*v).ok(),
+            GGUFMetadataValue::Int32(v) => usize::try_from(*v).ok(),
+            GGUFMetadataValue::Int64(v) => usize::try_from(*v).ok(),
             _ => None,
         })?;
 
@@ -456,6 +479,7 @@ const OVERHEAD_GB: f64 = 3.0;
 const FRAGMENTATION_MARGIN: f64 = 1.15;
 const KV_BYTES: f64 = 2.0;
 
+#[must_use]
 pub fn build_hf_estimates(model: &Model) -> Vec<ModelEstimate> {
     let mut rows = vec![];
 
@@ -485,6 +509,7 @@ pub fn build_hf_estimates(model: &Model) -> Vec<ModelEstimate> {
     rows
 }
 
+#[must_use]
 pub fn build_gguf_estimates(model: &Model) -> Vec<ModelEstimate> {
     let mut rows = vec![];
 
@@ -512,11 +537,14 @@ pub fn build_gguf_estimates(model: &Model) -> Vec<ModelEstimate> {
     rows
 }
 
+#[must_use]
 pub fn estimate_weights_gb(params_billion: f64, bytes_per_weight: f64) -> f64 {
     (params_billion * 1e9 * bytes_per_weight) / (1024.0f64.powi(3))
 }
 
+#[must_use]
 pub fn estimate_kv_cache_gb(layers: usize, hidden: usize, context: usize) -> f64 {
-    let bytes = 2 * layers * hidden * context * KV_BYTES as usize;
-    bytes as f64 / (1024.0f64.powi(3))
+    let bytes =
+        2.0 * KV_BYTES * usize_to_f64(layers) * usize_to_f64(hidden) * usize_to_f64(context);
+    bytes / (1024.0f64.powi(3))
 }

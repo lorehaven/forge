@@ -20,6 +20,7 @@ pub enum Status {
 }
 
 impl Status {
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Queued => "queued",
@@ -31,6 +32,7 @@ impl Status {
         }
     }
 
+    #[must_use]
     pub fn parse(raw: &str) -> Option<Self> {
         match raw.trim().to_ascii_lowercase().as_str() {
             "queued" => Some(Self::Queued),
@@ -44,6 +46,7 @@ impl Status {
     }
 
     /// Whether this is a resting state. A terminal status is never written over.
+    #[must_use]
     pub const fn is_terminal(self) -> bool {
         matches!(
             self,
@@ -52,6 +55,7 @@ impl Status {
     }
 
     /// `Skipped` is deliberately not a failure - a `when`-excluded stage did what the pipeline asked.
+    #[must_use]
     pub const fn is_failure(self) -> bool {
         matches!(self, Self::Failed | Self::Cancelled)
     }

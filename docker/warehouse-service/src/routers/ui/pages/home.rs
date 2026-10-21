@@ -35,6 +35,7 @@ fn service_card(href: &str, title_key: &str, desc_key: &str, extra_class: &str) 
         .child(div().class("home-card-arrow").text("→"))
 }
 
+#[must_use]
 pub fn render_home_page() -> Response {
     let mut service_cards = div().class("home-grid");
     let mut has_service_cards = false;

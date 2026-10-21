@@ -15,7 +15,7 @@ pub fn service_auth_env_lock() -> &'static Mutex<()> {
 /// Pins `SERVICE_AUTH_ENABLED` to "false"; every test relying on that default must hold this too.
 pub async fn auth_disabled_guard() -> MutexGuard<'static, ()> {
     let guard = service_auth_env_lock().lock().await;
-    unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", "false") };
+    envmnt::set("SERVICE_AUTH_ENABLED", "false");
     guard
 }
 
@@ -38,7 +38,7 @@ pub struct SentMail {
 
 /// Captures what would have been emailed, so a test can assert on the link
 /// instead of scraping logs.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct RecordingSender {
     sent: std::sync::Mutex<Vec<SentMail>>,
 }

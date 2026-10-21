@@ -25,12 +25,14 @@ impl FromRequest for RawBody {
 
 /// Hard ceiling on a single blob's assembled size, enforced as bytes stream in.
 /// Override with `MAX_DOCKER_BLOB_BYTES`.
+#[must_use]
 pub fn max_docker_blob_bytes() -> u64 {
     quench_config::ConfigLoader::new("WAREHOUSE")
         .env_u64("MAX_DOCKER_BLOB_BYTES", 32 * 1024 * 1024 * 1024)
 }
 
 /// Why streaming a request body onto a blob upload file stopped early.
+#[derive(Debug)]
 pub enum AppendError {
     /// The client connection dropped or errored mid-body.
     Read,
@@ -73,11 +75,13 @@ pub async fn append_body_to_upload(
     Ok(written)
 }
 
+#[must_use]
 pub fn upload_path(name: &str, uuid: &str) -> Option<PathBuf> {
     let repo = repository_path(name)?;
     Some(repo.join("_uploads").join(uuid))
 }
 
+#[must_use]
 pub fn blob_path(digest: &str) -> Option<PathBuf> {
     let hex = digest_hex(digest)?;
     Some(
@@ -88,6 +92,7 @@ pub fn blob_path(digest: &str) -> Option<PathBuf> {
     )
 }
 
+#[must_use]
 pub fn manifest_path(digest: &str) -> Option<PathBuf> {
     let hex = digest_hex(digest)?;
     Some(
@@ -105,6 +110,7 @@ pub async fn blob_exists(digest: &str) -> bool {
     tokio::fs::metadata(path).await.is_ok()
 }
 
+#[must_use]
 pub fn validate_digest(digest: &str) -> bool {
     let Some(hex) = digest.strip_prefix("sha256:") else {
         return false;
@@ -112,6 +118,7 @@ pub fn validate_digest(digest: &str) -> bool {
     hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
+#[must_use]
 pub fn digest_hex(digest: &str) -> Option<&str> {
     if !validate_digest(digest) {
         return None;
@@ -119,6 +126,7 @@ pub fn digest_hex(digest: &str) -> Option<&str> {
     digest.strip_prefix("sha256:")
 }
 
+#[must_use]
 pub fn repository_path(name: &str) -> Option<PathBuf> {
     if !validate_repository_name(name) {
         return None;
@@ -126,6 +134,7 @@ pub fn repository_path(name: &str) -> Option<PathBuf> {
     Some(PathBuf::from(docker_storage_root()).join(name))
 }
 
+#[must_use]
 pub fn validate_repository_name(name: &str) -> bool {
     if name.is_empty() || name.contains('\\') {
         return false;
@@ -136,6 +145,7 @@ pub fn validate_repository_name(name: &str) -> bool {
         .all(|c| matches!(c, Component::Normal(_)))
 }
 
+#[must_use]
 pub fn validate_tag_reference(reference: &str) -> bool {
     if reference.is_empty() || reference.contains('\\') {
         return false;
@@ -145,7 +155,7 @@ pub fn validate_tag_reference(reference: &str) -> bool {
     matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none()
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct DigestQuery {
     digest: String,
 }
@@ -155,4 +165,10 @@ pub fn register_routes() {
     blob::register_routes();
     manifest::register_routes();
     token::register_routes();
+}
+
+impl std::fmt::Debug for RawBody {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("RawBody { .. }")
+    }
 }

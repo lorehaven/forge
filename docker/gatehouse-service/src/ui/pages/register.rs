@@ -18,7 +18,7 @@ use std::sync::Arc;
 /// A verification link is good for a day.
 pub const VERIFICATION_TTL_SECS: u64 = 24 * 60 * 60;
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct RegisterForm {
     pub username: String,
     pub password: String,
@@ -35,7 +35,7 @@ pub async fn register_page_slash(Query(query): Query<Notice>) -> Response {
     render_register_page(&query)
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Debug, Deserialize, Default)]
 pub struct Notice {
     #[serde(default)]
     pub err: Option<String>,
@@ -137,7 +137,7 @@ pub async fn verify(
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct VerifyQuery {
     pub token: String,
 }

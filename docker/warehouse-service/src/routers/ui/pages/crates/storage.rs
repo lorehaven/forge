@@ -24,7 +24,7 @@ pub struct IndexRecord {
     pub v: u8,
 }
 
-fn default_v() -> u8 {
+const fn default_v() -> u8 {
     1
 }
 
@@ -46,6 +46,7 @@ pub struct IndexDep {
 // --- Listing helpers ---
 
 /// Returns a sorted list of all crate names that have an index file.
+#[must_use]
 pub fn list_crates() -> Vec<String> {
     let root = PathBuf::from(crates_storage_root()).join("index");
     let mut names: Vec<String> = Vec::new();
@@ -73,6 +74,7 @@ fn collect_index_names(dir: &std::path::Path, out: &mut Vec<String>) {
 }
 
 /// Reads all version records for a crate's index file, in published order (oldest first).
+#[must_use]
 pub fn list_versions(crate_name: &str) -> Vec<IndexRecord> {
     let Some(path) = crate::routers::crates::index_file_path(crate_name) else {
         return Vec::new();

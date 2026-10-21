@@ -39,7 +39,7 @@ async fn app(
         .build()
         .await
         .unwrap();
-    support::app(container).await
+    support::app(container)
 }
 
 fn post(

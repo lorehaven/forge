@@ -91,10 +91,10 @@ impl SmtpConfig {
         let address: Address = address
             .parse()
             .map_err(|_| format!("MAIL_FROM {address:?} is not a valid email address"))?;
-        let name = match get("MAIL_FROM_NAME") {
-            Some(name) => Some(name.trim().to_string()).filter(|n| !n.is_empty()),
-            None => Some("Forge".to_string()),
-        };
+        let name = get("MAIL_FROM_NAME").map_or_else(
+            || Some("Forge".to_string()),
+            |name| Some(name.trim().to_string()).filter(|n| !n.is_empty()),
+        );
         let timeout_secs = var("SMTP_TIMEOUT_SECS")
             .map(|t| {
                 t.parse::<u64>()
@@ -117,6 +117,7 @@ impl SmtpConfig {
     }
 }
 
+#[derive(Debug)]
 pub struct SmtpSender {
     mailer: Mailer,
     from: Mailbox,

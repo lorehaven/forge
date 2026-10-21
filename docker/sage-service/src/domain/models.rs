@@ -13,7 +13,7 @@ pub struct Project {
 impl Model for Project {
     fn table_name() -> String {
         let schema = envmnt::get_or("DB_SCHEMA", "sage");
-        format!("{}.projects", schema)
+        format!("{schema}.projects")
     }
 
     fn columns() -> Vec<&'static str> {
@@ -38,7 +38,7 @@ pub struct Conversation {
 impl Model for Conversation {
     fn table_name() -> String {
         let schema = envmnt::get_or("DB_SCHEMA", "sage");
-        format!("{}.conversations", schema)
+        format!("{schema}.conversations")
     }
 
     fn columns() -> Vec<&'static str> {
@@ -78,7 +78,7 @@ pub struct File {
 impl Model for File {
     fn table_name() -> String {
         let schema = envmnt::get_or("DB_SCHEMA", "sage");
-        format!("{}.files", schema)
+        format!("{schema}.files")
     }
 
     fn columns() -> Vec<&'static str> {
@@ -118,7 +118,7 @@ pub struct FileChunk {
 impl Model for FileChunk {
     fn table_name() -> String {
         let schema = envmnt::get_or("DB_SCHEMA", "sage");
-        format!("{}.file_chunks", schema)
+        format!("{schema}.file_chunks")
     }
 
     fn columns() -> Vec<&'static str> {
@@ -151,7 +151,7 @@ pub struct Message {
 impl Model for Message {
     fn table_name() -> String {
         let schema = envmnt::get_or("DB_SCHEMA", "sage");
-        format!("{}.messages", schema)
+        format!("{schema}.messages")
     }
 
     fn columns() -> Vec<&'static str> {

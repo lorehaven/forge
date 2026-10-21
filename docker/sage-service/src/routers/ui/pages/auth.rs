@@ -16,7 +16,7 @@ impl FromRequest for LoginRedirect {
         let sso = req.container().get::<SsoConfig>().map_err(|e| {
             HttpError::status(http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
         })?;
-        Ok(LoginRedirect(login_delegation(req, &sso).await))
+        Ok(Self(login_delegation(req, &sso).await))
     }
 }
 
@@ -38,7 +38,7 @@ impl FromRequest for AuthCallback {
         let sso = req.container().get::<SsoConfig>().map_err(|e| {
             HttpError::status(http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
         })?;
-        Ok(AuthCallback(auth_callback(req, &sso).await))
+        Ok(Self(auth_callback(req, &sso).await))
     }
 }
 
@@ -52,7 +52,7 @@ pub(super) struct Logout(Response);
 #[async_trait::async_trait]
 impl FromRequest for Logout {
     async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
-        Ok(Logout(logout_delegation(req)))
+        Ok(Self(logout_delegation(req)))
     }
 }
 
@@ -66,7 +66,7 @@ pub(super) struct Refresh(Response);
 #[async_trait::async_trait]
 impl FromRequest for Refresh {
     async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
-        Ok(Refresh(refresh_delegation(req).await))
+        Ok(Self(refresh_delegation(req).await))
     }
 }
 
@@ -87,12 +87,10 @@ pub(super) struct SessionCookie(Option<String>);
 #[async_trait::async_trait]
 impl FromRequest for SessionCookie {
     async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
-        Ok(SessionCookie(
-            quench_auth::http::domain::cookies::cookie_value(
-                req,
-                &quench_auth::domain::realm::session_cookie_name(),
-            ),
-        ))
+        Ok(Self(quench_auth::http::domain::cookies::cookie_value(
+            req,
+            &quench_auth::domain::realm::session_cookie_name(),
+        )))
     }
 }
 
@@ -101,13 +99,13 @@ pub(super) async fn auth_status(
     Inject(config): Inject<JwtConfig>,
     SessionCookie(cookie): SessionCookie,
 ) -> Response {
-    fn respond(status: AuthStatus) -> Response {
+    fn respond(status: &AuthStatus) -> Response {
         Response::json(http::StatusCode::OK, &status)
             .unwrap_or_else(|_| Response::new(http::StatusCode::INTERNAL_SERVER_ERROR))
     }
 
     if !config.auth_enabled {
-        return respond(AuthStatus {
+        return respond(&AuthStatus {
             authenticated: true,
             username: Some("dev".to_string()),
             roles: vec!["admin".to_string()],
@@ -115,7 +113,7 @@ pub(super) async fn auth_status(
     }
 
     let Some(cookie) = cookie else {
-        return respond(AuthStatus {
+        return respond(&AuthStatus {
             authenticated: false,
             username: None,
             roles: vec![],
@@ -123,17 +121,17 @@ pub(super) async fn auth_status(
     };
 
     match config.decode_claims(&cookie).await {
-        Ok(claims) => respond(AuthStatus {
+        Ok(claims) => respond(&AuthStatus {
             authenticated: true,
             username: Some(claims.sub),
             roles: claims
                 .scope
                 .split(',')
                 .filter(|s| !s.is_empty())
-                .map(|s| s.to_string())
+                .map(std::string::ToString::to_string)
                 .collect(),
         }),
-        Err(_) => respond(AuthStatus {
+        Err(_) => respond(&AuthStatus {
             authenticated: false,
             username: None,
             roles: vec![],

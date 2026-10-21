@@ -27,6 +27,7 @@ fn artifact_dir(program: &str, platform: Platform, version_code: i64) -> Option<
 }
 
 /// On-disk path for a published artifact's bytes; `filename` is validated to one path component.
+#[must_use]
 pub fn artifact_file_path(
     program: &str,
     platform: Platform,
@@ -41,6 +42,7 @@ pub fn artifact_file_path(
 
 /// Where an in-flight upload streams before its identity is checked and it's renamed into place.
 /// The pid+counter suffix keeps two concurrent publishes of the same version from colliding.
+#[must_use]
 pub fn artifact_staging_path(
     program: &str,
     platform: Platform,
@@ -61,6 +63,7 @@ pub fn artifact_staging_path(
 
 /// A Java-style dot-separated identifier, ≤255 chars - strict enough that it can't traverse
 /// a path once used as one.
+#[must_use]
 pub fn validate_program(name: &str) -> bool {
     if name.is_empty() || name.len() > 255 {
         return false;
@@ -77,6 +80,7 @@ pub fn validate_program(name: &str) -> bool {
 }
 
 /// One path component, no separators/`..`/control bytes, ≤255 chars; liberal otherwise.
+#[must_use]
 pub fn validate_filename(name: &str) -> bool {
     if name.is_empty() || name.len() > 255 || name == "." || name == ".." {
         return false;
@@ -87,6 +91,7 @@ pub fn validate_filename(name: &str) -> bool {
 }
 
 /// Stored filename when a publish didn't supply one.
+#[must_use]
 pub fn default_filename(program: &str, version_code: i64, format: &str) -> String {
     format!("{program}-{version_code}.{format}")
 }
@@ -164,7 +169,7 @@ pub fn relocate_legacy_apk_storage() {
 /// already `PUT`/`DELETE`, so the blanket `warehouse:write` grant is the right bar.
 pub fn wrap_auth(
     app: Arc<dyn Endpoint>,
-    jwt_config: JwtConfig,
+    jwt_config: &JwtConfig,
     base_path: &str,
 ) -> Arc<dyn Endpoint> {
     let prefixes: [&'static str; 2] = [

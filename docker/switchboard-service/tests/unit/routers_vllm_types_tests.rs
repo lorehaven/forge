@@ -9,7 +9,7 @@ use switchboard_service::routers::vllm::types::{
 };
 
 fn parts(args: &[&str]) -> Vec<String> {
-    args.iter().map(|s| s.to_string()).collect()
+    args.iter().map(std::string::ToString::to_string).collect()
 }
 
 #[test]
@@ -124,14 +124,12 @@ fn device_from_args_recovers_the_device_flag_value() {
 #[tokio::test]
 async fn cpu_image_defaults_to_upstream_and_honours_the_env_override() {
     let _guard = env_lock().lock().await;
-    unsafe { std::env::remove_var("VLLM_CPU_IMAGE") };
+    envmnt::remove("VLLM_CPU_IMAGE");
     assert_eq!(cpu_image(), "vllm/vllm-openai-cpu:latest-x86_64");
-    unsafe {
-        std::env::set_var(
-            "VLLM_CPU_IMAGE",
-            "reg.local/forge/vllm/vllm-openai-cpu:v0.25.1",
-        )
-    };
+    envmnt::set(
+        "VLLM_CPU_IMAGE",
+        "reg.local/forge/vllm/vllm-openai-cpu:v0.25.1",
+    );
     assert_eq!(cpu_image(), "reg.local/forge/vllm/vllm-openai-cpu:v0.25.1");
-    unsafe { std::env::remove_var("VLLM_CPU_IMAGE") };
+    envmnt::remove("VLLM_CPU_IMAGE");
 }

@@ -26,10 +26,12 @@ pub struct Job {
 
 impl Job {
     /// `build/cargo`, the form used in logs and in the UI's job list.
+    #[must_use]
     pub fn qualified_name(&self) -> String {
         format!("{}/{}", self.stage, self.name)
     }
 
+    #[must_use]
     pub fn duration_secs(&self) -> Option<i64> {
         let started = self.started_at?;
         let finished = self.finished_at?;

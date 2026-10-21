@@ -10,7 +10,7 @@ use switchboard_service::routers::vllm::native::{
 };
 
 fn parts(args: &[&str]) -> Vec<String> {
-    args.iter().map(|s| s.to_string()).collect()
+    args.iter().map(std::string::ToString::to_string).collect()
 }
 
 #[test]
@@ -53,7 +53,7 @@ fn create_pid_log_path_appends_when_there_is_no_log_suffix_to_replace() {
 async fn create_launch_log_path_uses_vllm_log_dir_and_embeds_model_and_port() {
     let _guard = env_lock().lock().await;
     let dir = tempfile::tempdir().expect("tempdir");
-    unsafe { std::env::set_var("VLLM_LOG_DIR", dir.path().to_str().unwrap()) };
+    envmnt::set("VLLM_LOG_DIR", dir.path().to_str().unwrap());
 
     let path = create_launch_log_path("meta/llama-3-8b", 8000);
 
@@ -62,7 +62,7 @@ async fn create_launch_log_path_uses_vllm_log_dir_and_embeds_model_and_port() {
     assert!(path.contains("-8000.log"));
     assert!(dir.path().exists()); // create_dir_all ran
 
-    unsafe { std::env::remove_var("VLLM_LOG_DIR") };
+    envmnt::remove("VLLM_LOG_DIR");
 }
 
 #[test]

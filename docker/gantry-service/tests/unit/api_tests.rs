@@ -15,7 +15,7 @@ async fn app(
         Db::InMemory(InMemoryDb::new()),
     )
     .await;
-    support::app(container).await
+    support::app(container)
 }
 
 #[tokio::test]

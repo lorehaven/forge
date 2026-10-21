@@ -41,7 +41,7 @@ fn job_in(id: &str, stage: &str, name: &str, needs: &[&str], status: Status) -> 
         run_id: "run-1".to_string(),
         stage: stage.to_string(),
         name: name.to_string(),
-        needs: needs.iter().map(|need| need.to_string()).collect(),
+        needs: needs.iter().map(std::string::ToString::to_string).collect(),
         status,
         exit_code: None,
         started_at: Some(Utc::now() - Duration::seconds(30)),

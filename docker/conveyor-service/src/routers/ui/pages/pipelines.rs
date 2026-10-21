@@ -82,6 +82,7 @@ fn not_found() -> Response {
 }
 
 /// At least 1, even for `total == 0`, so an empty history still has a "page 1 of 1".
+#[must_use]
 pub fn page_count(total: i64, page_size: i64) -> u32 {
     if total <= 0 {
         return 1;
@@ -116,10 +117,10 @@ fn page_body(
 }
 
 fn header(all_projects: &[Project], scope: Option<&Project>) -> Element {
-    let title = match scope {
-        Some(project) => shared::breadcrumb(all_projects, project),
-        None => h3().attr("data-i18n", "ui_pipelines_title"),
-    };
+    let title = scope.map_or_else(
+        || h3().attr("data-i18n", "ui_pipelines_title"),
+        |project| shared::breadcrumb(all_projects, project),
+    );
 
     div().class("home-header").child(title).child(
         p().class("home-subtitle")
@@ -127,6 +128,7 @@ fn header(all_projects: &[Project], scope: Option<&Project>) -> Element {
     )
 }
 
+#[must_use]
 pub fn pager(scope: Option<&Project>, page: u32, total_pages: u32) -> Element {
     div()
         .class("pager")
@@ -153,22 +155,25 @@ pub fn pager(scope: Option<&Project>, page: u32, total_pages: u32) -> Element {
 
 /// Disabled with the same label when there's no page to go to, so nothing shifts position.
 fn pager_link(scope: Option<&Project>, target: Option<u32>, label_key: &str) -> Element {
-    match target {
-        Some(page) => a()
-            .class("pager-link")
-            .attr("href", page_href(scope, page))
-            .attr("data-i18n", label_key),
-        None => span()
-            .class("pager-link pager-link-disabled")
-            .attr("data-i18n", label_key),
-    }
+    target.map_or_else(
+        || {
+            span()
+                .class("pager-link pager-link-disabled")
+                .attr("data-i18n", label_key)
+        },
+        |page| {
+            a().class("pager-link")
+                .attr("href", page_href(scope, page))
+                .attr("data-i18n", label_key)
+        },
+    )
 }
 
 fn page_href(scope: Option<&Project>, page: u32) -> String {
-    match scope {
-        Some(project) => ui_path(&format!("/runs?project={}&page={page}", project.id)),
-        None => ui_path(&format!("/runs?page={page}")),
-    }
+    scope.map_or_else(
+        || ui_path(&format!("/runs?page={page}")),
+        |project| ui_path(&format!("/runs?project={}&page={page}", project.id)),
+    )
 }
 
 pub(super) fn register_routes() {

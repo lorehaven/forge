@@ -16,6 +16,7 @@ const DELIVERY_HEADER: &str = "x-github-delivery";
 /// A sha of all zeros: what a push event carries when a branch was deleted.
 const ZERO_SHA: &str = "0000000000000000000000000000000000000000";
 
+#[derive(Debug)]
 pub struct GitHubProvider {
     api_base: String,
     /// A token with `repo:status`; without it conveyor still builds, just can't report.

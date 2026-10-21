@@ -34,7 +34,8 @@ impl CheckKind {
         }
     }
 
-    pub fn label(self) -> &'static str {
+    #[must_use]
+    pub const fn label(self) -> &'static str {
         match self {
             Self::Lint => "ui_scan_lint_title",
             Self::Machete => "ui_scan_machete_title",
@@ -44,7 +45,8 @@ impl CheckKind {
     }
 
     /// The URL segment this check's detail subpage lives at.
-    pub fn slug(self) -> &'static str {
+    #[must_use]
+    pub const fn slug(self) -> &'static str {
         match self {
             Self::Lint => "lint",
             Self::Machete => "machete",
@@ -53,6 +55,7 @@ impl CheckKind {
         }
     }
 
+    #[must_use]
     pub fn from_slug(slug: &str) -> Option<Self> {
         match slug {
             "lint" => Some(Self::Lint),
@@ -105,14 +108,16 @@ pub struct ScanSummary {
 }
 
 impl ScanSummary {
-    pub fn is_empty(&self) -> bool {
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
         self.lint.is_none()
             && self.machete.is_none()
             && self.audit.is_none()
             && self.coverage.is_none()
     }
 
-    pub fn get(&self, kind: CheckKind) -> Option<&CheckResult> {
+    #[must_use]
+    pub const fn get(&self, kind: CheckKind) -> Option<&CheckResult> {
         match kind {
             CheckKind::Lint => self.lint.as_ref(),
             CheckKind::Machete => self.machete.as_ref(),
@@ -215,6 +220,7 @@ async fn collect_job_checks(
 const MAX_FINDINGS: usize = 50;
 
 impl CheckResult {
+    #[must_use]
     pub fn parsed(mut self, lines: &[&str], exit_code: Option<i32>) -> Self {
         let stripped: Vec<String> = lines.iter().map(|line| strip_ansi(line)).collect();
         let borrowed: Vec<&str> = stripped.iter().map(String::as_str).collect();
@@ -247,10 +253,10 @@ impl CheckResult {
             return self;
         }
 
-        self.headline = match exit_code {
-            Some(code) => format!("failed (exit {code})"),
-            None => "failed".to_string(),
-        };
+        self.headline = exit_code.map_or_else(
+            || "failed".to_string(),
+            |code| format!("failed (exit {code})"),
+        );
         // Unparseable failure: the log tail is the closest thing to a finding.
         self.findings = stripped
             .iter()
@@ -268,6 +274,8 @@ impl CheckResult {
     }
 }
 
+/// Parses cargo and Clippy diagnostics from an Anvil lint step.
+///
 /// `anvil lint --json`: NDJSON, one `cargo`/clippy message per line (`cargo
 /// clippy --message-format=json`'s own format - anvil passes it through
 /// unmodified). Non-diagnostic lines (`compiler-artifact`, `build-finished`,
@@ -355,6 +363,8 @@ pub fn parse_lint(lines: &[&str]) -> Option<(String, Vec<Finding>)> {
     Some((headline, findings))
 }
 
+/// Parses Anvil's report of unused dependencies.
+///
 /// `anvil machete --json`: a single `{"findings": [{"package", "manifest",
 /// "unused"}, ...]}` line (cargo-machete has no JSON of its own; this is
 /// anvil's own report of its parsed text - see
@@ -396,6 +406,8 @@ pub fn parse_machete(lines: &[&str]) -> Option<(String, Vec<Finding>)> {
     Some((headline, findings))
 }
 
+/// Parses vulnerability and advisory findings from an Anvil audit step.
+///
 /// `anvil audit --json`: a single `cargo-audit --format json` document (its
 /// `vulnerabilities.list` plus every `warnings.*` entry - `unmaintained`,
 /// `yanked`, ... - each shaped the same as a `list` entry). Always present,
@@ -487,6 +499,7 @@ fn audit_entry(entry: &serde_json::Value) -> Option<Finding> {
 
 /// `cargo llvm-cov report`'s per-file table. Only columns 0/7/8/9 (filename,
 /// lines, missed, line%) are read - the only ones stable across versions.
+#[must_use]
 pub fn parse_coverage(lines: &[&str]) -> Option<(String, Vec<Finding>, String)> {
     let mut files = Vec::new();
     let mut total: Option<CoverageRow> = None;
@@ -558,16 +571,17 @@ impl CoverageRow {
     }
 }
 
-fn plural(count: usize) -> &'static str {
+const fn plural(count: usize) -> &'static str {
     if count == 1 { "" } else { "s" }
 }
 
-fn plural_y(count: usize) -> &'static str {
+const fn plural_y(count: usize) -> &'static str {
     if count == 1 { "y" } else { "ies" }
 }
 
 /// Strips SGR color codes - a piped subprocess doesn't always disable them,
 /// and left in place they'd break every `starts_with` check above.
+#[must_use]
 pub fn strip_ansi(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
     let mut chars = line.chars().peekable();

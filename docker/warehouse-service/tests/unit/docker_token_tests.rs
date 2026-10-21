@@ -70,8 +70,8 @@ fn init_builds_a_working_config_from_the_docker_token_secret_env_var() {
     // holds `secret_env_lock` for as long as `DOCKER_TOKEN_SECRET` is set.
     let _guard = support::secret_env_lock()
         .lock()
-        .unwrap_or_else(|p| p.into_inner());
-    unsafe { std::env::set_var("DOCKER_TOKEN_SECRET", "unit-test-secret-value") };
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    envmnt::set("DOCKER_TOKEN_SECRET", "unit-test-secret-value");
 
     let config = DockerTokenConfig::init("warehouse".to_string(), "r".to_string(), false);
     assert!(!config.auth_enabled);
@@ -81,5 +81,5 @@ fn init_builds_a_working_config_from_the_docker_token_secret_env_var() {
     let decoded = config.decode(&token).expect("decode");
     assert_eq!(decoded.sub, "alice");
 
-    unsafe { std::env::remove_var("DOCKER_TOKEN_SECRET") };
+    envmnt::remove("DOCKER_TOKEN_SECRET");
 }

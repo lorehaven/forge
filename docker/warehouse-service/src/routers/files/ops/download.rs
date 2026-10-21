@@ -171,9 +171,8 @@ quench_http::inventory::submit! {
 /// Streams `target` back. `display_path` carries the real name/extension a
 /// dynamic storage's blob-digest `target` no longer has; `inline` renders in place instead of saving.
 async fn stream_file(target: &FsPath, display_path: &str, inline: bool) -> Response {
-    let metadata = match tokio::fs::metadata(target).await {
-        Ok(metadata) => metadata,
-        Err(_) => return not_found("no such file"),
+    let Ok(metadata) = tokio::fs::metadata(target).await else {
+        return not_found("no such file");
     };
 
     // `GET /{storage}` lists directories; this only ever serves a file.
@@ -181,9 +180,8 @@ async fn stream_file(target: &FsPath, display_path: &str, inline: bool) -> Respo
         return not_found("no such file");
     }
 
-    let file = match tokio::fs::File::open(target).await {
-        Ok(file) => file,
-        Err(_) => return not_found("no such file"),
+    let Ok(file) = tokio::fs::File::open(target).await else {
+        return not_found("no such file");
     };
 
     let name = display_name(display_path);
@@ -220,6 +218,7 @@ fn display_name(path: &str) -> String {
 }
 
 /// `Content-Type` guessed from `path`'s extension, for `?disposition=inline` only.
+#[must_use]
 pub fn content_type_for(path: &str) -> &'static str {
     let ext = path
         .rsplit('.')
@@ -261,11 +260,12 @@ pub fn content_type_for(path: &str) -> &'static str {
 }
 
 /// The file's own name for a browser saving it; quotes/control bytes dropped, not escaped.
+#[must_use]
 pub fn download_name(target: &FsPath) -> String {
-    let name = target
-        .file_name()
-        .map(|name| name.to_string_lossy().to_string())
-        .unwrap_or_else(|| "download".to_string());
+    let name = target.file_name().map_or_else(
+        || "download".to_string(),
+        |name| name.to_string_lossy().to_string(),
+    );
 
     let cleaned: String = name
         .chars()

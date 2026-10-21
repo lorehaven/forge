@@ -10,7 +10,7 @@ use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 use std::collections::BTreeMap;
 
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct ArtifactActionForm {
     pub program: String,
     pub platform: String,
@@ -154,8 +154,7 @@ pub fn render_artifacts_page(
 
     let version_list: &[&ArtifactVersion] = platform
         .and_then(|p| platforms.and_then(|m| m.get(p)))
-        .map(Vec::as_slice)
-        .unwrap_or(&[]);
+        .map_or(&[], Vec::as_slice);
 
     let selected = selected_code
         .and_then(|code| version_list.iter().find(|v| v.version_code == code))
@@ -342,84 +341,94 @@ fn render_platform_node(
     details.child(list)
 }
 
+/// Everything known of one published version, and (to those who may) the way to yank it.
+fn version_details(
+    v: &ArtifactVersion,
+    program: Option<&str>,
+    platform: Option<&str>,
+    can_manage: bool,
+) -> Element {
+    let mut list = div()
+        .class("meta-list")
+        .child(meta_row("ui_artifact_meta_program", &v.program))
+        .child(meta_row("ui_artifact_meta_platform", &v.platform))
+        .child(meta_row("ui_artifact_meta_format", &v.format))
+        .child(meta_row("ui_artifact_meta_version_name", &v.version_name))
+        .child(meta_row(
+            "ui_artifact_meta_version_code",
+            &v.version_code.to_string(),
+        ))
+        .child(meta_row_value(
+            "ui_meta_status",
+            if v.yanked {
+                span().attr("data-i18n", "ui_status_yanked").text("yanked")
+            } else {
+                span().attr("data-i18n", "ui_status_active").text("active")
+            },
+        ));
+
+    if let Some(arch) = &v.arch {
+        list = list.child(meta_row("ui_artifact_meta_arch", arch));
+    }
+    if let Some(label) = &v.label {
+        list = list.child(meta_row("ui_artifact_meta_label", label));
+    }
+    if let Some(min_sdk) = v.metadata.0.min_sdk_version {
+        list = list.child(meta_row("ui_artifact_meta_min_sdk", &min_sdk.to_string()));
+    }
+    if let Some(target_sdk) = v.metadata.0.target_sdk_version {
+        list = list.child(meta_row(
+            "ui_artifact_meta_target_sdk",
+            &target_sdk.to_string(),
+        ));
+    }
+    list = list
+        .child(meta_row("ui_artifact_meta_filename", &v.filename))
+        .child(meta_row(
+            "ui_artifact_meta_size",
+            &format!("{} bytes", v.size_bytes),
+        ))
+        .child(meta_row("ui_meta_checksum", &v.sha256))
+        .child(meta_row("ui_artifact_meta_uploaded_by", &v.uploaded_by));
+
+    if !v.metadata.0.permissions.is_empty() {
+        list = list.child(meta_row(
+            "ui_artifact_meta_permissions",
+            &v.metadata.0.permissions.join(", "),
+        ));
+    }
+
+    if can_manage {
+        list = list.child(div().class("mt-4").child(yank_form(
+            program.unwrap_or(""),
+            platform.unwrap_or(""),
+            v,
+        )));
+    }
+
+    list
+}
+
 fn render_metadata_panel(
     program: Option<&str>,
     platform: Option<&str>,
     selected: Option<&ArtifactVersion>,
     can_manage: bool,
 ) -> Element {
-    let title = match selected {
-        Some(v) => div()
-            .class("panel-title")
-            .child(span().attr("data-i18n", "ui_metadata_for"))
-            .child(span().text(format!(" {} ({})", v.version_name, v.version_code))),
-        None => div().class("panel-title").attr("data-i18n", "ui_metadata"),
-    };
+    let title = selected.map_or_else(
+        || div().class("panel-title").attr("data-i18n", "ui_metadata"),
+        |v| {
+            div()
+                .class("panel-title")
+                .child(span().attr("data-i18n", "ui_metadata_for"))
+                .child(span().text(format!(" {} ({})", v.version_name, v.version_code)))
+        },
+    );
 
-    let body = match selected {
-        None => empty_state("ui_artifact_empty_select_version"),
-        Some(v) => {
-            let mut list = div()
-                .class("meta-list")
-                .child(meta_row("ui_artifact_meta_program", &v.program))
-                .child(meta_row("ui_artifact_meta_platform", &v.platform))
-                .child(meta_row("ui_artifact_meta_format", &v.format))
-                .child(meta_row("ui_artifact_meta_version_name", &v.version_name))
-                .child(meta_row(
-                    "ui_artifact_meta_version_code",
-                    &v.version_code.to_string(),
-                ))
-                .child(meta_row_value(
-                    "ui_meta_status",
-                    if v.yanked {
-                        span().attr("data-i18n", "ui_status_yanked").text("yanked")
-                    } else {
-                        span().attr("data-i18n", "ui_status_active").text("active")
-                    },
-                ));
-
-            if let Some(arch) = &v.arch {
-                list = list.child(meta_row("ui_artifact_meta_arch", arch));
-            }
-            if let Some(label) = &v.label {
-                list = list.child(meta_row("ui_artifact_meta_label", label));
-            }
-            if let Some(min_sdk) = v.metadata.0.min_sdk_version {
-                list = list.child(meta_row("ui_artifact_meta_min_sdk", &min_sdk.to_string()));
-            }
-            if let Some(target_sdk) = v.metadata.0.target_sdk_version {
-                list = list.child(meta_row(
-                    "ui_artifact_meta_target_sdk",
-                    &target_sdk.to_string(),
-                ));
-            }
-            list = list
-                .child(meta_row("ui_artifact_meta_filename", &v.filename))
-                .child(meta_row(
-                    "ui_artifact_meta_size",
-                    &format!("{} bytes", v.size_bytes),
-                ))
-                .child(meta_row("ui_meta_checksum", &v.sha256))
-                .child(meta_row("ui_artifact_meta_uploaded_by", &v.uploaded_by));
-
-            if !v.metadata.0.permissions.is_empty() {
-                list = list.child(meta_row(
-                    "ui_artifact_meta_permissions",
-                    &v.metadata.0.permissions.join(", "),
-                ));
-            }
-
-            if can_manage {
-                list = list.child(div().class("mt-4").child(yank_form(
-                    program.unwrap_or(""),
-                    platform.unwrap_or(""),
-                    v,
-                )));
-            }
-
-            list
-        }
-    };
+    let body = selected.map_or_else(
+        || empty_state("ui_artifact_empty_select_version"),
+        |v| version_details(v, program, platform, can_manage),
+    );
 
     div()
         .class("h-100 d-flex flex-column")

@@ -25,7 +25,7 @@ use std::sync::Arc;
 
 /// Separate from `User` (not a skipped field) so "the hash never leaves" is
 /// a property of the type, not a derive attribute someone could remove.
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct UserView {
     pub username: String,
     pub roles: Vec<Role>,
@@ -54,7 +54,7 @@ impl From<&User> for UserView {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct CreateUserRequest {
     pub username: String,
     /// Not needed for an invited user: they choose their own.
@@ -73,14 +73,14 @@ pub struct CreateUserRequest {
 }
 
 /// Every field optional, so a `PATCH` can touch just one.
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct UpdateUserRequest {
     pub password: Option<String>,
     pub roles: Option<Vec<Role>>,
     pub permissions: Option<Permissions>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ReplacePermissionsRequest {
     #[serde(default)]
     pub permissions: Permissions,
@@ -88,7 +88,7 @@ pub struct ReplacePermissionsRequest {
 
 /// What the caller may do, wildcard already resolved - unlike `/userinfo`,
 /// which just reports the token's literal role.
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Me {
     pub username: String,
     pub roles: Vec<Role>,
@@ -97,7 +97,7 @@ pub struct Me {
     pub effective: Permissions,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct ApplyTemplateRequest {
     pub template: String,
 }
@@ -106,6 +106,7 @@ pub struct ApplyTemplateRequest {
 
 /// A verified realm token - not behind `Auth` middleware (gatehouse mints the
 /// token, so can't require one), so the checks happen here instead.
+#[derive(Debug)]
 pub struct SubjectClaims(pub Claims);
 
 #[async_trait]
@@ -168,6 +169,7 @@ macro_rules! action_claims {
     ($name:ident, $action:literal) => {
         // Some routes only need the gate, never the claims themselves.
         #[allow(dead_code)]
+        #[derive(Debug)]
         pub struct $name(pub Claims);
 
         #[async_trait]
@@ -398,22 +400,23 @@ async fn me(
 
     // Read the user, not the token's scope, so a grant added since minting shows up.
     let user = users.get_user(&claims.sub).await;
-    let (roles, wildcard) = match &user {
-        Some(user) => (user.get_roles(), user.has_wildcard()),
-        None => (
-            claims
-                .roles()
-                .iter()
-                .filter_map(|entry| Role::parse(entry))
-                .collect(),
-            claims.has_wildcard(),
-        ),
-    };
+    let (roles, wildcard) = user.as_ref().map_or_else(
+        || {
+            (
+                claims
+                    .roles()
+                    .iter()
+                    .filter_map(|entry| Role::parse(entry))
+                    .collect(),
+                claims.has_wildcard(),
+            )
+        },
+        |user| (user.get_roles(), user.has_wildcard()),
+    );
 
     let granted = user
         .as_ref()
-        .map(User::get_permissions)
-        .unwrap_or_else(|| claims.permissions());
+        .map_or_else(|| claims.permissions(), User::get_permissions);
 
     let effective = catalog
         .service_names()
@@ -447,7 +450,7 @@ pub fn register_routes() {
     let _ = me as fn(_, _, _) -> _;
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Problem {
     pub error: String,
 }

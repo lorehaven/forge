@@ -132,6 +132,7 @@ fn ignored(reason: &str) -> Response {
 }
 
 /// Raw headers as `http::HeaderMap` - see `Actor` in `routers/api/mod.rs` for why not `Request`.
+#[derive(Debug)]
 pub struct RawHeaders(pub http::HeaderMap);
 
 #[async_trait::async_trait]

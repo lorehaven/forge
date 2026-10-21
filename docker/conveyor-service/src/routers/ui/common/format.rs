@@ -3,6 +3,7 @@
 use chrono::{DateTime, Utc};
 
 /// Coarsest still-informative unit - exact times live in the title attribute instead.
+#[must_use]
 pub fn relative(when: DateTime<Utc>) -> String {
     let seconds = (Utc::now() - when).num_seconds();
 
@@ -21,6 +22,7 @@ pub fn relative(when: DateTime<Utc>) -> String {
 }
 
 /// How long something took.
+#[must_use]
 pub fn duration(seconds: i64) -> String {
     if seconds < 0 {
         return "-".to_string();
@@ -38,6 +40,7 @@ pub fn duration(seconds: i64) -> String {
 }
 
 /// The gap between two instants, when both are known.
+#[must_use]
 pub fn elapsed(from: Option<DateTime<Utc>>, to: Option<DateTime<Utc>>) -> String {
     match (from, to) {
         (Some(from), Some(to)) => duration((to - from).num_seconds()),

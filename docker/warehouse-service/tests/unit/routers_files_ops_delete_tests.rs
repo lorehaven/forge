@@ -13,7 +13,7 @@ async fn handle_reports_not_found_when_file_storage_is_disabled() {
         .build()
         .await
         .unwrap();
-    let (app, container) = support::app(container).await;
+    let (app, container) = support::app(container);
 
     let resp = app
         .call(support::req(

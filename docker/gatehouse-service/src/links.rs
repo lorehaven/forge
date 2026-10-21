@@ -16,6 +16,7 @@ const DEV_DEFAULT: &str = "http://localhost:5443";
 impl PublicBase {
     /// `PUBLIC_BASE_URL`, else the origin of `GATEHOUSE_URL` (which carries the
     /// base path, e.g. `https://host/gatehouse`), else the dev default.
+    #[must_use]
     pub fn from_env() -> Self {
         let explicit = envmnt::get_or("PUBLIC_BASE_URL", "");
         let gatehouse = envmnt::get_or("GATEHOUSE_URL", "");
@@ -29,6 +30,7 @@ impl PublicBase {
             .map_or_else(|| Self(DEV_DEFAULT.to_string()), Self)
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }

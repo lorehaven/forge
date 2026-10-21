@@ -3,6 +3,7 @@ use gatehouse_service::realm::*;
 use quench_auth::prelude::{Permissions, Role, SessionDb, User};
 use quench_cache::CacheStore;
 use quench_db::prelude::Db;
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 /// `GATEHOUSE_KEY_ENCRYPTION_KEY` is read (via `mfa`/`crypto`) by the MFA
@@ -232,7 +233,7 @@ async fn create_rejects_a_duplicate_username() {
 async fn create_rejects_grants_the_catalog_does_not_recognize() {
     let db = db().await;
     let mut permissions = Permissions::new();
-    permissions.insert("not-a-real-service".to_string(), Default::default());
+    permissions.insert("not-a-real-service".to_string(), BTreeSet::default());
 
     let error = create(
         &db,
@@ -437,7 +438,7 @@ async fn update_rejects_unknown_grants() {
     let sessions = sessions();
     seed_user(&db, "alice", "password", vec![]).await;
     let mut permissions = Permissions::new();
-    permissions.insert("not-a-real-service".to_string(), Default::default());
+    permissions.insert("not-a-real-service".to_string(), BTreeSet::default());
 
     let error = update(
         &db,

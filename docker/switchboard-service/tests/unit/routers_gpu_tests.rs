@@ -20,8 +20,16 @@ async fn get_status_returns_gpu_info_as_json() {
     // deserialized elsewhere in this crate), so round-trip through JSON
     // rather than asserting on struct fields directly.
     let body: serde_json::Value = serde_json::to_value(&info).unwrap();
-    assert!(body.get("total_gb").and_then(|v| v.as_f64()).is_some());
-    assert!(body.get("free_gb").and_then(|v| v.as_f64()).is_some());
+    assert!(
+        body.get("total_gb")
+            .and_then(serde_json::Value::as_f64)
+            .is_some()
+    );
+    assert!(
+        body.get("free_gb")
+            .and_then(serde_json::Value::as_f64)
+            .is_some()
+    );
 }
 
 #[tokio::test]

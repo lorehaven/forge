@@ -41,6 +41,7 @@ pub struct PackageVersion {
 impl PackageVersion {
     /// The `[[deployment]]`s the package declares, or `None` if the manifest is not readable. A package
     /// that declares none is one deployment named after it; that is the planner's concern, not this.
+    #[must_use]
     pub fn deployments(&self) -> Vec<rivet_package::Deployment> {
         self.manifest
             .get("deployment")
@@ -60,6 +61,7 @@ pub trait Registry: Send + Sync {
 
 /// Semver precedence, then (for versions that differ only in build metadata, which semver ignores) the
 /// build metadata as text - the same order Warehouse itself uses for "newest".
+#[must_use]
 pub fn compare(a: &str, b: &str) -> Ordering {
     match (semver::Version::parse(a), semver::Version::parse(b)) {
         (Ok(x), Ok(y)) => x.cmp_precedence(&y).then_with(|| x.build.cmp(&y.build)),
@@ -70,6 +72,7 @@ pub fn compare(a: &str, b: &str) -> Ordering {
 }
 
 /// The newest non-yanked version in a list.
+#[must_use]
 pub fn newest(versions: &[PackageVersion]) -> Option<&PackageVersion> {
     versions
         .iter()
@@ -171,6 +174,7 @@ impl Registry for WarehouseRegistry {
 
 /// Packages as `.rivet` files in a directory, for running without Warehouse: a developer's `riveter pack
 /// --out` directory works as-is.
+#[derive(Debug)]
 pub struct DirRegistry {
     pub dir: PathBuf,
 }
@@ -241,7 +245,7 @@ impl Registry for DirRegistry {
 // ---------------------------------------------------------------- memory
 
 /// A registry a test fills in, and what a bare run has: empty.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct MemoryRegistry {
     packages: Mutex<Vec<PackageVersion>>,
 }
@@ -318,5 +322,11 @@ impl Registry for MemoryRegistry {
             self.all().into_iter().filter(|p| p.name == name).collect();
         versions.sort_by(|a, b| compare(&b.version, &a.version));
         Ok(versions)
+    }
+}
+
+impl std::fmt::Debug for WarehouseRegistry {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("WarehouseRegistry { .. }")
     }
 }

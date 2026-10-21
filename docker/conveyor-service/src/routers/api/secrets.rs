@@ -11,7 +11,7 @@ use quench_db::prelude::Db;
 use quench_http::prelude::{Inject, Json, Path, Response, delete, get, http::StatusCode, put};
 use serde::Deserialize;
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct SetSecret {
     pub value: String,
 }

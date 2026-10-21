@@ -13,6 +13,7 @@ use quench_starter::common::routes::with_base_path;
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::path::Path;
 
 const GIB: f64 = 1024.0 * 1024.0 * 1024.0;
@@ -27,7 +28,7 @@ const DYNAMIC_PAGE_SIZE: i64 = 2000;
 
 // --- Query ---
 
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct BrowseQuery {
     pub storage: Option<String>,
     #[serde(default)]
@@ -37,20 +38,22 @@ pub struct BrowseQuery {
 // --- View model (kept free of `Db` so `render_browse_page` is pure) ---
 
 /// One file, as fed to [`build_tree`].
+#[derive(Debug)]
 pub struct BrowseFile {
     pub path: String,
     pub size: Option<i64>,
 }
 
 /// A node in the storage's directory tree - a leaf with `is_file` set is a file.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct TreeNode {
-    pub children: BTreeMap<String, TreeNode>,
+    pub children: BTreeMap<String, Self>,
     pub is_file: bool,
     pub size: Option<i64>,
 }
 
 /// What `?path=` resolved to within the tree.
+#[derive(Debug)]
 pub enum Selection {
     /// A directory - the storage root when the string is empty.
     Dir(String),
@@ -60,10 +63,18 @@ pub enum Selection {
     Missing(String),
 }
 
+/// Whether the storage exists, and if so whether the caller may read it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Access {
+    NoSuchStorage,
+    Denied,
+    Readable,
+}
+
+#[derive(Debug)]
 pub struct BrowseView {
     pub storage: String,
-    pub storage_exists: bool,
-    pub read_denied: bool,
+    pub access: Access,
     pub can_manage: bool,
     pub tree: TreeNode,
     pub selection: Selection,
@@ -82,6 +93,7 @@ pub enum PreviewKind {
     None,
 }
 
+#[must_use]
 pub fn preview_kind(path: &str) -> PreviewKind {
     let content_type = content_type_for(path);
     if content_type.starts_with("image/") {
@@ -151,8 +163,11 @@ async fn handle(
 
     let mut view = BrowseView {
         storage: name.to_string(),
-        storage_exists: dyn_storage.is_some() || static_storage.is_some(),
-        read_denied: false,
+        access: if dyn_storage.is_some() || static_storage.is_some() {
+            Access::Readable
+        } else {
+            Access::NoSuchStorage
+        },
         can_manage: manage,
         tree: TreeNode::default(),
         selection: Selection::Dir(path.clone()),
@@ -163,13 +178,13 @@ async fn handle(
         let read_ok = claims
             .as_ref()
             .is_some_and(|c| can_on_storage_claims(c, dynamic_storage, "read"));
-        if !read_ok {
-            view.read_denied = true;
-        } else {
+        if read_ok {
             let (files, truncated) = dynamic_files(db, name).await;
             view.tree = build_tree(&files);
             view.truncated = truncated;
             view.selection = resolve(&view.tree, &path);
+        } else {
+            view.access = Access::Denied;
         }
     } else if let Some(static_storage) = static_storage {
         // A static storage's read is open to any realm session, the same bar
@@ -199,7 +214,8 @@ async fn dynamic_files(db: &Db, name: &str) -> (Vec<BrowseFile>, bool) {
 
     loop {
         let remaining = TREE_FILE_CAP + 1 - files.len();
-        let limit = remaining.min(DYNAMIC_PAGE_SIZE as usize) as i64;
+        let page_rows = remaining.min(usize::try_from(DYNAMIC_PAGE_SIZE).unwrap_or(usize::MAX));
+        let limit = i64::try_from(page_rows).unwrap_or(i64::MAX);
         let rows = storage_file::list_files_page(db, name, "", after.as_deref(), limit, false)
             .await
             .unwrap_or_default();
@@ -215,7 +231,7 @@ async fn dynamic_files(db: &Db, name: &str) -> (Vec<BrowseFile>, bool) {
             truncated = true;
             break;
         }
-        if page_len < limit as usize {
+        if page_len < page_rows {
             break;
         }
     }
@@ -239,7 +255,11 @@ async fn static_files(root: &Path) -> (Vec<BrowseFile>, bool) {
                 break;
             }
             let file_name = entry.file_name().to_string_lossy().to_string();
-            if file_name.starts_with('.') && file_name.ends_with(".part") {
+            if file_name.starts_with('.')
+                && Path::new(&file_name)
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("part"))
+            {
                 continue;
             }
             let child_rel = if rel.is_empty() {
@@ -255,7 +275,7 @@ async fn static_files(root: &Path) -> (Vec<BrowseFile>, bool) {
             } else if metadata.is_file() {
                 out.push(BrowseFile {
                     path: child_rel,
-                    size: Some(metadata.len() as i64),
+                    size: Some(metadata.len().cast_signed()),
                 });
             }
         }
@@ -270,6 +290,7 @@ async fn static_files(root: &Path) -> (Vec<BrowseFile>, bool) {
 
 // --- Tree building / selection ---
 
+#[must_use]
 pub fn build_tree(files: &[BrowseFile]) -> TreeNode {
     let mut root = TreeNode::default();
     for file in files {
@@ -317,6 +338,7 @@ fn node_at<'a>(tree: &'a TreeNode, path: &str) -> Option<&'a TreeNode> {
 
 // --- Rendering ---
 
+#[must_use]
 pub fn render_browse_page(view: &BrowseView) -> Response {
     let left = div()
         .class("split-left panel")
@@ -348,17 +370,17 @@ pub fn render_browse_page(view: &BrowseView) -> Response {
 }
 
 fn render_tree(view: &BrowseView) -> Element {
-    if !view.storage_exists {
+    if view.access == Access::NoSuchStorage {
         return empty_state("ui_storage_not_found");
     }
-    if view.read_denied {
+    if view.access == Access::Denied {
         return empty_state("api_error_forbidden");
     }
 
     let selected = match &view.selection {
-        Selection::Dir(path) => path.as_str(),
-        Selection::File { path, .. } => path.as_str(),
-        Selection::Missing(path) => path.as_str(),
+        Selection::Dir(path) | Selection::File { path, .. } | Selection::Missing(path) => {
+            path.as_str()
+        }
     };
 
     let mut wrapper = div();
@@ -503,7 +525,7 @@ fn render_tree_node(
 }
 
 fn render_detail(view: &BrowseView) -> Element {
-    if !view.storage_exists {
+    if view.access == Access::NoSuchStorage {
         return detail_shell(
             div()
                 .class("panel-title")
@@ -511,7 +533,7 @@ fn render_detail(view: &BrowseView) -> Element {
             empty_state("ui_storage_not_found"),
         );
     }
-    if view.read_denied {
+    if view.access == Access::Denied {
         return detail_shell(
             div()
                 .class("panel-title")
@@ -630,7 +652,7 @@ fn render_dir_listing(view: &BrowseView, path: &str) -> Element {
     let mut list = ul().class("file-list");
     for (name, child) in sorted_children(node) {
         let child_path = if path.is_empty() {
-            name.to_string()
+            name.clone()
         } else {
             format!("{path}/{name}")
         };
@@ -662,7 +684,7 @@ fn render_dir_listing(view: &BrowseView, path: &str) -> Element {
 
 fn render_file_detail(view: &BrowseView, path: &str, size: Option<i64>) -> Element {
     let content_type = content_type_for(path);
-    let size_text = size.map(format_bytes).unwrap_or_else(|| "—".to_string());
+    let size_text = size.map_or_else(|| "—".to_string(), format_bytes);
 
     let meta = div()
         .class("meta-list")
@@ -782,7 +804,7 @@ fn file_icon(name: &str) -> &'static str {
 }
 
 fn format_bytes(bytes: i64) -> String {
-    let b = bytes as f64;
+    let b = crate::utils::num::i64_to_f64(bytes);
     if b >= GIB {
         format!("{:.2} GiB", b / GIB)
     } else if b >= MIB {
@@ -808,7 +830,9 @@ fn encode_query_component(value: &str) -> String {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
                 encoded.push(byte as char);
             }
-            _ => encoded.push_str(&format!("%{byte:02X}")),
+            _ => {
+                let _ = write!(encoded, "%{byte:02X}");
+            }
         }
     }
     encoded

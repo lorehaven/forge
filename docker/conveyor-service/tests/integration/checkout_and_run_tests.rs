@@ -129,12 +129,12 @@ async fn perform_run(origin: &Origin, git_ref: &str, work: &Path) -> (Workspace,
                 .await
                 .expect("start");
 
-            let state = wait(&executor, &handle).await;
+            let finished = wait(&executor, &handle).await;
             outcome.ran.push(name.clone());
-            outcome.statuses.push((name, state.status));
+            outcome.statuses.push((name, finished.status));
 
             // A failed stage ends the run, which is what phase 4 will do too.
-            if state.status.is_failure() {
+            if finished.status.is_failure() {
                 break;
             }
         }

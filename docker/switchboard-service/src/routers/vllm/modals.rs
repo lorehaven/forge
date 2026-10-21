@@ -4,7 +4,7 @@ use quench_http::prelude::{Query, Response, get};
 use quench_starter::common::routes::with_base_path;
 use quench_web::prelude::*;
 
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct LaunchModalQuery {
     pub model: Option<String>,
     pub host: Option<String>,
@@ -22,7 +22,7 @@ pub struct LaunchModalQuery {
     pub recalculate_gpu_util: Option<bool>,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct StopModalQuery {
     pub id: String,
     pub model: Option<String>,
@@ -34,7 +34,7 @@ pub async fn handle_launch_modal(Query(query): Query<LaunchModalQuery>) -> Respo
     let gpu = get_gpu_info().unwrap_or_default();
     let html = format!(
         "<!-- launch-instance-modal -->{}",
-        render_launch_modal(models, &query, &gpu)
+        render_launch_modal(&models, &query, &gpu)
     );
     Response::html(http::StatusCode::OK, html)
 }
@@ -78,8 +78,79 @@ pub async fn empty_stop_modal() -> Response {
     )
 }
 
+/// The title and subtitle, and the close button.
+fn launch_modal_header() -> Element {
+    div()
+            .class("modal-header")
+            .child(
+                div()
+                    .class("launch-modal-heading")
+                    .child(
+                        h3().attr("data-i18n", "ui_vllm_launch_modal_title")
+                            .text("Launch vLLM Instance"),
+                    )
+                    .child(
+                        p().class("launch-modal-subtitle")
+                            .attr("data-i18n", "ui_vllm_launch_modal_subtitle")
+                            .text(
+                            "Configure an endpoint, memory budget, and optional runtime quantization.",
+                        ),
+                    ),
+            )
+            .child(close_launch_button())
+}
+
+/// The line that says whether the chosen model fits.
+fn fit_note(class: &str, i18n: &str, args: Option<String>, text: String) -> Element {
+    div().attr("id", "launch-fit-note").class("fit-note").child(
+        div()
+            .class(class)
+            .child(i().class(fit_note_icon_class(class)))
+            .child({
+                let mut note = span().attr("data-i18n", i18n);
+                if let Some(args) = args {
+                    note = note.attr("data-i18n-args", args);
+                }
+                note.text(text)
+            }),
+    )
+}
+
+/// Cancel and Launch (the latter disabled when the launch cannot work).
+fn launch_modal_footer(launch_disabled: bool) -> Element {
+    div()
+        .class("modal-footer")
+        .child(
+            button()
+                .class("button")
+                .attr("type", "button")
+                .attr("data-i18n", "ui_common_cancel")
+                .attr("hx-get", with_base_path("/api/v1/vllm/launch-modal/empty"))
+                .attr("hx-target", "#launch-modal")
+                .attr("hx-swap", "outerHTML")
+                .text("Cancel"),
+        )
+        .child({
+            let mut btn = button()
+                .class("button primary")
+                .attr("id", "confirm-launch-btn")
+                .attr("type", "button")
+                .attr("data-i18n", "ui_vllm_launch_confirm")
+                .attr("hx-post", with_base_path("/api/v1/vllm/launch"))
+                .attr("hx-include", "#launch-form")
+                .attr("hx-target", "#launch-modal")
+                .attr("hx-swap", "outerHTML")
+                .text("Launch");
+            if launch_disabled {
+                btn = btn.attr("disabled", "disabled");
+            }
+            btn
+        })
+}
+
+#[must_use]
 pub fn render_launch_modal(
-    models: Vec<crate::routers::models::Model>,
+    models: &[crate::routers::models::Model],
     query: &LaunchModalQuery,
     gpu: &crate::routers::gpu::monitor::GpuInfo,
 ) -> String {
@@ -113,26 +184,7 @@ pub fn render_launch_modal(
         .child(
             div()
                 .class("modal-content launch-modal-content")
-                .child(
-                    div()
-                        .class("modal-header")
-                        .child(
-                            div()
-                                .class("launch-modal-heading")
-                                .child(
-                                    h3().attr("data-i18n", "ui_vllm_launch_modal_title")
-                                        .text("Launch vLLM Instance"),
-                                )
-                                .child(
-                                    p().class("launch-modal-subtitle")
-                                        .attr("data-i18n", "ui_vllm_launch_modal_subtitle")
-                                        .text(
-                                        "Configure an endpoint, memory budget, and optional runtime quantization.",
-                                    ),
-                                ),
-                        )
-                        .child(close_launch_button()),
-                )
+                .child(launch_modal_header())
                 .child(
                     div().class("modal-body").child(
                         form()
@@ -141,59 +193,21 @@ pub fn render_launch_modal(
                             .attr("hx-target", "#launch-modal")
                             .attr("hx-swap", "outerHTML")
                             .attr("hx-trigger", "change")
-                            .child(model_select(&models, query.model.as_deref()))
+                            .child(model_select(models, query.model.as_deref()))
                             .child(endpoint_fields(query))
                             .child(namespace_field(query))
                             .child(runtime_fields(query))
                             .child(memory_fields(gpu_util, prefix_caching, cpu))
                             .child(task_fields(query))
-                            .child(
-                                div().attr("id", "launch-fit-note").class("fit-note").child(
-                                    div()
-                                        .class(fit_note_class)
-                                        .child(i().class(fit_note_icon_class(fit_note_class)))
-                                        .child({
-                                            let mut note =
-                                                span().attr("data-i18n", fit_note_i18n);
-                                            if let Some(args) = fit_note_args {
-                                                note = note.attr("data-i18n-args", args);
-                                            }
-                                            note.text(fit_note_text)
-                                        }),
-                                ),
-                            ),
+                            .child(fit_note(
+                                fit_note_class,
+                                fit_note_i18n,
+                                fit_note_args,
+                                fit_note_text,
+                            )),
                     ),
                 )
-                .child(
-                    div()
-                        .class("modal-footer")
-                        .child(
-                            button()
-                                .class("button")
-                                .attr("type", "button")
-                                .attr("data-i18n", "ui_common_cancel")
-                                .attr("hx-get", with_base_path("/api/v1/vllm/launch-modal/empty"))
-                                .attr("hx-target", "#launch-modal")
-                                .attr("hx-swap", "outerHTML")
-                                .text("Cancel"),
-                        )
-                        .child({
-                            let mut btn = button()
-                                .class("button primary")
-                                .attr("id", "confirm-launch-btn")
-                                .attr("type", "button")
-                                .attr("data-i18n", "ui_vllm_launch_confirm")
-                                .attr("hx-post", with_base_path("/api/v1/vllm/launch"))
-                                .attr("hx-include", "#launch-form")
-                                .attr("hx-target", "#launch-modal")
-                                .attr("hx-swap", "outerHTML")
-                                .text("Launch");
-                            if launch_disabled {
-                                btn = btn.attr("disabled", "disabled");
-                            }
-                            btn
-                        }),
-                ),
+                .child(launch_modal_footer(launch_disabled)),
         )
         .render()
 }
@@ -552,6 +566,7 @@ fn close_launch_button() -> Element {
         .text("x")
 }
 
+#[must_use]
 pub fn render_stop_modal(id: &str, model: Option<&str>) -> String {
     div()
         .attr("id", "confirm-stop-instance-modal")
@@ -594,13 +609,15 @@ pub fn render_stop_modal(id: &str, model: Option<&str>) -> String {
                             p().attr("data-i18n", "ui_vllm_stop_modal_text")
                                 .text("Are you sure you want to stop this instance?"),
                         )
-                        .child(match model {
-                            Some(model) => div().class("model-to-delete-name").text(model),
-                            None => div()
-                                .class("model-to-delete-name")
-                                .attr("data-i18n", "ui_vllm_unknown_model")
-                                .text("Unknown Model"),
-                        })
+                        .child(model.map_or_else(
+                            || {
+                                div()
+                                    .class("model-to-delete-name")
+                                    .attr("data-i18n", "ui_vllm_unknown_model")
+                                    .text("Unknown Model")
+                            },
+                            |model| div().class("model-to-delete-name").text(model),
+                        ))
                         .child(
                             div()
                                 .class("confirm-actions")
@@ -636,6 +653,7 @@ pub fn render_stop_modal(id: &str, model: Option<&str>) -> String {
         .render()
 }
 
+#[must_use]
 pub fn launch_fit_note(
     model: Option<&crate::routers::models::Model>,
     quantization: &str,
@@ -663,8 +681,10 @@ pub fn launch_fit_note(
         );
     };
 
-    let estimated_model_gb = estimate.weights_gb + (estimate.kv_gb * gpu_util as f64);
-    let total_budget_gb = gpu.total_gb * gpu_util as f64;
+    let estimated_model_gb = estimate
+        .kv_gb
+        .mul_add(f64::from(gpu_util), estimate.weights_gb);
+    let total_budget_gb = gpu.total_gb * f64::from(gpu_util);
     let required_gb = estimated_model_gb.max(total_budget_gb);
     let remaining_gb = gpu.free_gb - required_gb;
 
@@ -723,6 +743,7 @@ pub fn launch_fit_note(
     }
 }
 
+#[must_use]
 pub fn launch_gpu_util(
     model: Option<&crate::routers::models::Model>,
     quantization: &str,
@@ -746,6 +767,12 @@ pub fn launch_gpu_util(
     calculate_minimum_gpu_util(estimate, gpu.total_gb).unwrap_or(0.90)
 }
 
+/// The nearest `f32` to `value`, by way of its shortest decimal form (so 0.35 stays 0.35).
+fn f64_to_f32(value: f64) -> f32 {
+    value.to_string().parse().unwrap_or(0.20)
+}
+
+#[must_use]
 pub fn calculate_minimum_gpu_util(
     estimate: &crate::routers::models::ModelEstimate,
     total_gpu_gb: f64,
@@ -768,13 +795,15 @@ pub fn calculate_minimum_gpu_util(
         return Some(0.20);
     }
 
-    Some(round_gpu_util_up(raw).clamp(0.20, 1.0) as f32)
+    Some(f64_to_f32(round_gpu_util_up(raw).clamp(0.20, 1.0)))
 }
 
+#[must_use]
 pub fn round_gpu_util_up(value: f64) -> f64 {
     (value * 20.0).ceil() / 20.0
 }
 
+#[must_use]
 pub fn fit_note_icon_class(class: &str) -> &'static str {
     if class.contains("fit-no") {
         "fa-solid fa-circle-xmark"
@@ -785,6 +814,7 @@ pub fn fit_note_icon_class(class: &str) -> &'static str {
     }
 }
 
+#[must_use]
 pub fn find_launch_estimate<'a>(
     model: &'a crate::routers::models::Model,
     quantization: &str,
@@ -821,15 +851,18 @@ pub fn find_launch_estimate<'a>(
         return candidates
             .into_iter()
             .find(|estimate| estimate.context.as_usize() >= ctx as usize)
-            .or(model
-                .estimates
-                .iter()
-                .max_by_key(|estimate| estimate.context.as_usize()));
+            .or_else(|| {
+                model
+                    .estimates
+                    .iter()
+                    .max_by_key(|estimate| estimate.context.as_usize())
+            });
     }
 
     candidates.first().copied()
 }
 
+#[must_use]
 pub fn get_vllm_namespace() -> String {
     use crate::routers::vllm::engine::VllmManagementMode;
     match VllmManagementMode::from_env() {
@@ -847,6 +880,7 @@ pub fn get_vllm_namespace() -> String {
     }
 }
 
+#[must_use]
 pub fn parse_optional_u32(value: Option<&str>) -> Option<u32> {
     value.and_then(|value| {
         let value = value.trim();
@@ -856,6 +890,7 @@ pub fn parse_optional_u32(value: Option<&str>) -> Option<u32> {
     })
 }
 
+#[must_use]
 pub fn parse_optional_f32(value: Option<&str>) -> Option<f32> {
     value.and_then(|value| {
         let value = value.trim();

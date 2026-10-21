@@ -58,7 +58,7 @@ async fn render_crates_page_with_an_unknown_selected_crate_ignores_the_selection
     write_index_line("my-crate", &sample_record("1.0.0", false));
     let _ = &storage;
 
-    let resp = render_crates_page(Some("no-such-crate".to_string()), None);
+    let resp = render_crates_page(Some("no-such-crate"), None);
     let html = body_html(resp).await;
     assert!(html.contains("ui_empty_select_version"));
 }
@@ -70,7 +70,7 @@ async fn render_crates_page_defaults_to_the_latest_non_yanked_version() {
     write_index_line("my-crate", &sample_record("2.0.0", true));
     let _ = &storage;
 
-    let resp = render_crates_page(Some("my-crate".to_string()), None);
+    let resp = render_crates_page(Some("my-crate"), None);
     let html = body_html(resp).await;
     assert!(html.contains("1.0.0"));
     assert!(html.contains("ui_yank_version"));
@@ -82,7 +82,7 @@ async fn render_crates_page_falls_back_to_the_last_version_when_all_are_yanked()
     write_index_line("my-crate", &sample_record("1.0.0", true));
     let _ = &storage;
 
-    let resp = render_crates_page(Some("my-crate".to_string()), None);
+    let resp = render_crates_page(Some("my-crate"), None);
     let html = body_html(resp).await;
     assert!(html.contains("ui_status_yanked"));
     assert!(html.contains("ui_unyank_version"));
@@ -135,7 +135,7 @@ async fn render_crates_page_shows_deps_features_and_metadata_fields() {
     write_index_line("my-crate", &record);
     let _ = &storage;
 
-    let resp = render_crates_page(Some("my-crate".to_string()), Some("1.0.0".to_string()));
+    let resp = render_crates_page(Some("my-crate"), Some("1.0.0"));
     let html = body_html(resp).await;
     assert!(html.contains("1.75"));
     assert!(html.contains("libfoo"));
@@ -169,7 +169,7 @@ async fn app(
         .build()
         .await
         .unwrap();
-    support::app(container).await
+    support::app(container)
 }
 
 #[tokio::test]

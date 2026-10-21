@@ -166,7 +166,7 @@ impl ModelStore {
             "ArcticForCausalLM",
         ]
         .iter()
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .collect()
     }
 
@@ -176,8 +176,9 @@ impl ModelStore {
 
     #[tracing::instrument(skip(self))]
     pub async fn get_model(&self, path: &str) -> Option<Model> {
-        if let Some(cached) = self.cache.read().unwrap().get(path).cloned() {
-            return Some(cached);
+        let cached = self.cache.read().unwrap().get(path).cloned();
+        if cached.is_some() {
+            return cached;
         }
 
         if let Ok(Some(cached_db)) = self.model_repo.read(path).await
@@ -210,10 +211,8 @@ impl ModelStore {
             if let Err(e) = self.model_repo.update(&cached_model).await {
                 tracing::error!("Failed to update model {}: {}", model.path, e);
             }
-        } else {
-            if let Err(e) = self.model_repo.create(&cached_model).await {
-                tracing::error!("Failed to create model {}: {}", model.path, e);
-            }
+        } else if let Err(e) = self.model_repo.create(&cached_model).await {
+            tracing::error!("Failed to create model {}: {}", model.path, e);
         }
     }
 
@@ -246,4 +245,10 @@ pub fn get_store() -> Arc<ModelStore> {
 pub async fn warm_model_cache() {
     fetch_hf_models().await;
     fetch_gguf_models().await;
+}
+
+impl std::fmt::Debug for ModelStore {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("ModelStore { .. }")
+    }
 }

@@ -5,6 +5,7 @@ use quench_auth::domain::jwt::{Claims, JwtConfig};
 
 /// Whether the caller may do `action` on `project_id`, via the unscoped or
 /// resource-scoped grant. `auth_enabled` off is the realm-wide dev bypass.
+#[must_use]
 pub fn can_on_project(
     claims: Option<&Claims>,
     config: &JwtConfig,
@@ -22,6 +23,7 @@ pub fn can_on_project(
     can_on_project_claims(claims, project_id, action)
 }
 
+#[must_use]
 pub fn can_on_project_claims(claims: &Claims, project_id: &str, action: &str) -> bool {
     claims.can("workbench", action)
         || claims.can("workbench", &format!("project:{project_id}:{action}"))
@@ -29,6 +31,7 @@ pub fn can_on_project_claims(claims: &Claims, project_id: &str, action: &str) ->
 
 /// Whether the caller holds the blanket grant, for writes with no project
 /// to scope to yet (e.g. creating one).
+#[must_use]
 pub fn can_unscoped(claims: Option<&Claims>, config: &JwtConfig, action: &str) -> bool {
     if !config.auth_enabled {
         return true;
@@ -38,6 +41,7 @@ pub fn can_unscoped(claims: Option<&Claims>, config: &JwtConfig, action: &str) -
 }
 
 /// Project ids `claims` is directly granted `action` on.
+#[must_use]
 pub fn granted_project_ids(claims: &Claims, action: &str) -> Vec<String> {
     claims
         .permissions()

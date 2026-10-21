@@ -31,6 +31,7 @@ pub const STATUSES: [&str; 5] = ["blocked", "todo", "in-progress", "done", "reje
 
 impl Issue {
     /// `WB-3`; not stored - built from `seq` to avoid a join on every read.
+    #[must_use]
     pub fn key(&self, project_key: &str) -> String {
         format!("{project_key}-{}", self.seq)
     }
@@ -139,26 +140,23 @@ pub async fn list_by_project(
     let pool = pool(db)?;
     let schema = schema();
 
-    let rows = match status {
-        Some(status) => {
-            let sql = format!(
-                "SELECT {COLUMNS} FROM {schema}.issues \
-                 WHERE project_id = $1 AND status = $2 ORDER BY seq"
-            );
-            sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-                .bind(project_id)
-                .bind(status)
-                .fetch_all(pool)
-                .await?
-        }
-        None => {
-            let sql =
-                format!("SELECT {COLUMNS} FROM {schema}.issues WHERE project_id = $1 ORDER BY seq");
-            sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-                .bind(project_id)
-                .fetch_all(pool)
-                .await?
-        }
+    let rows = if let Some(status) = status {
+        let sql = format!(
+            "SELECT {COLUMNS} FROM {schema}.issues \
+             WHERE project_id = $1 AND status = $2 ORDER BY seq"
+        );
+        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+            .bind(project_id)
+            .bind(status)
+            .fetch_all(pool)
+            .await?
+    } else {
+        let sql =
+            format!("SELECT {COLUMNS} FROM {schema}.issues WHERE project_id = $1 ORDER BY seq");
+        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+            .bind(project_id)
+            .fetch_all(pool)
+            .await?
     };
 
     rows.iter().map(from_row).collect()
@@ -202,6 +200,7 @@ pub async fn update(
 }
 
 /// Whether `status` is one of the fixed v1 workflow's states.
+#[must_use]
 pub fn is_valid_status(status: &str) -> bool {
     STATUSES.contains(&status)
 }

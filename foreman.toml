@@ -349,6 +349,14 @@ cert_from = "docker/warehouse-service"
 [services.env]
 GATEHOUSE_CLIENT_SECRET = "${client_secret_workbench}"
 
+[[services]]
+name = "daybook"
+package = "daybook-service"
+port = 12443
+base_path = "/daybook"
+needs = ["gatehouse"]
+cert_from = "docker/warehouse-service"
+
 # Gantry reads Warehouse and the cluster rather than depending on the services it manages, so the realm
 # is all it waits for.
 [[services]]

@@ -20,11 +20,13 @@ pub struct Ticket {
 }
 
 impl Ticket {
+    #[must_use]
     pub fn encode(&self) -> String {
         serde_json::to_string(self).expect("a ticket always serialises")
     }
 
     /// `None` for anything that is not a ticket this module wrote.
+    #[must_use]
     pub fn decode(raw: &str) -> Option<Self> {
         serde_json::from_str(raw).ok()
     }

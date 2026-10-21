@@ -8,18 +8,19 @@ use quench_http::prelude::{Form, Inject, Path, Query, Response, get, http::Statu
 use quench_starter::common::routes::with_base_path;
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
+use std::fmt::Write as _;
 
 const GIB: f64 = 1024.0 * 1024.0 * 1024.0;
 const MIB: f64 = 1024.0 * 1024.0;
 
 // --- Query / form shapes ---
 
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct FilesQuery {
     pub storage: Option<String>,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct CreateStorageForm {
     pub name: String,
     pub owner: String,
@@ -31,7 +32,7 @@ pub struct CreateStorageForm {
     pub sync_enabled: Option<String>,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct EditStorageForm {
     #[serde(default)]
     pub quota_gib: String,
@@ -43,24 +44,25 @@ pub struct EditStorageForm {
     pub sync_enabled: Option<String>,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct DeleteStorageForm {
     pub name: String,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct DeleteFileForm {
     pub storage: String,
     pub path: String,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct DeleteStorageModalQuery {
     pub storage: String,
 }
 
 // --- View model (kept free of `Db` so tests can drive `render_storages_page` directly) ---
 
+#[derive(Debug)]
 pub struct SelectedView {
     pub name: String,
     /// `Some` for a database-backed storage, `None` for a static one.
@@ -71,7 +73,7 @@ pub struct SelectedView {
     pub notice: Option<&'static str>,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct StoragesView {
     pub static_names: Vec<String>,
     pub dynamic: Vec<DynamicStorage>,
@@ -198,9 +200,8 @@ pub async fn create_storage(
         Ok(None) => dynamic::default_quota_bytes(),
         Err(()) => return Response::text(StatusCode::BAD_REQUEST, "api_error_invalid_quota"),
     };
-    let max_file_bytes = match parse_scaled(&form.max_file_mib, MIB) {
-        Ok(value) => value,
-        Err(()) => return Response::text(StatusCode::BAD_REQUEST, "api_error_invalid_max_file"),
+    let Ok(max_file_bytes) = parse_scaled(&form.max_file_mib, MIB) else {
+        return Response::text(StatusCode::BAD_REQUEST, "api_error_invalid_max_file");
     };
 
     let new = NewStorage {
@@ -208,7 +209,7 @@ pub async fn create_storage(
         owner,
         max_file_bytes,
         quota_bytes,
-        sync_enabled: checkbox_on(&form.sync_enabled),
+        sync_enabled: checkbox_on(form.sync_enabled.as_deref()),
     };
 
     match storage::create(&db, &new).await {
@@ -242,12 +243,11 @@ pub async fn edit_storage(
         return Response::text(StatusCode::NOT_FOUND, "api_error_files_disabled");
     }
 
-    let quota_bytes = match parse_scaled(&form.quota_gib, GIB) {
-        Ok(value) => value,
-        Err(()) => return Response::text(StatusCode::BAD_REQUEST, "api_error_invalid_quota"),
+    let Ok(quota_bytes) = parse_scaled(&form.quota_gib, GIB) else {
+        return Response::text(StatusCode::BAD_REQUEST, "api_error_invalid_quota");
     };
 
-    let max_file_bytes = if checkbox_on(&form.clear_max_file) {
+    let max_file_bytes = if checkbox_on(form.clear_max_file.as_deref()) {
         Some(None)
     } else {
         match parse_scaled(&form.max_file_mib, MIB) {
@@ -262,7 +262,7 @@ pub async fn edit_storage(
     let changes = StorageUpdate {
         max_file_bytes,
         quota_bytes,
-        sync_enabled: Some(checkbox_on(&form.sync_enabled)),
+        sync_enabled: Some(checkbox_on(form.sync_enabled.as_deref())),
     };
 
     match storage::update(&db, &name, &changes).await {
@@ -380,7 +380,7 @@ pub async fn delete_file(
         })
         .await
         {
-            Ok(true) => redirect_to_browse(&storage_name, parent_dir(&path)),
+            Ok(true) => redirect_to_browse(&storage_name, &parent_dir(&path)),
             Ok(false) => Response::text(StatusCode::NOT_FOUND, "api_error_file_not_found"),
             Err(problem) => {
                 tracing::error!("UI delete dynamic file failed: {problem}");
@@ -400,7 +400,7 @@ pub async fn delete_file(
         return Response::text(StatusCode::FORBIDDEN, "api_error_path_escapes_storage");
     }
     match tokio::fs::remove_file(&target).await {
-        Ok(()) => redirect_to_browse(&storage_name, parent_dir(&path)),
+        Ok(()) => redirect_to_browse(&storage_name, &parent_dir(&path)),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
             Response::text(StatusCode::NOT_FOUND, "api_error_file_not_found")
         }
@@ -414,8 +414,8 @@ pub async fn delete_file(
 // --- Helpers ---
 
 /// A checkbox is only submitted when checked, so any value present means on.
-fn checkbox_on(value: &Option<String>) -> bool {
-    value.as_deref().is_some_and(|v| !v.is_empty())
+fn checkbox_on(value: Option<&str>) -> bool {
+    value.is_some_and(|v| !v.is_empty())
 }
 
 /// Parses `raw` in units of `scale` bytes; blank -> `None`, non-negative -> `Some`, else `Err`.
@@ -428,11 +428,11 @@ fn parse_scaled(raw: &str, scale: f64) -> Result<Option<i64>, ()> {
     if !value.is_finite() || value < 0.0 {
         return Err(());
     }
-    Ok(Some((value * scale).round() as i64))
+    Ok(Some(crate::utils::num::f64_to_i64(value * scale)))
 }
 
 fn format_bytes(bytes: i64) -> String {
-    let b = bytes as f64;
+    let b = crate::utils::num::i64_to_f64(bytes);
     if b >= GIB {
         format!("{:.2} GiB", b / GIB)
     } else if b >= MIB {
@@ -445,11 +445,11 @@ fn format_bytes(bytes: i64) -> String {
 }
 
 fn gib_string(bytes: i64) -> String {
-    format!("{:.2}", bytes as f64 / GIB)
+    format!("{:.2}", crate::utils::num::i64_to_f64(bytes) / GIB)
 }
 
 fn mib_string(bytes: i64) -> String {
-    format!("{:.2}", bytes as f64 / MIB)
+    format!("{:.2}", crate::utils::num::i64_to_f64(bytes) / MIB)
 }
 
 fn redirect_to_storage(name: &str) -> Response {
@@ -461,13 +461,13 @@ fn redirect_to_storage(name: &str) -> Response {
 
 /// After a delete, land back on the file browser at the deleted file's parent
 /// directory - the browser is the only page that offers the delete now.
-fn redirect_to_browse(storage: &str, path: String) -> Response {
+fn redirect_to_browse(storage: &str, path: &str) -> Response {
     Response::new(StatusCode::NO_CONTENT).header(
         "HX-Redirect",
         with_base_path(&format!(
             "/ui/files/browse?storage={}&path={}",
             encode_query_component(storage),
-            encode_query_component(&path)
+            encode_query_component(path)
         )),
     )
 }
@@ -482,6 +482,7 @@ fn parent_dir(path: &str) -> String {
 
 // --- Rendering ---
 
+#[must_use]
 pub fn render_storages_page(view: &StoragesView, can_manage: bool) -> Response {
     let left = div()
         .class("split-left panel")
@@ -634,15 +635,17 @@ fn render_detail_panel(view: &StoragesView, can_manage: bool) -> Element {
 
 fn render_dynamic_meta(storage: &DynamicStorage) -> Element {
     let pct = if storage.quota_bytes > 0 {
-        ((storage.used_bytes as f64 / storage.quota_bytes as f64) * 100.0).clamp(0.0, 100.0)
+        ((crate::utils::num::i64_to_f64(storage.used_bytes)
+            / crate::utils::num::i64_to_f64(storage.quota_bytes))
+            * 100.0)
+            .clamp(0.0, 100.0)
     } else {
         0.0
     };
 
-    let max_file = match storage.max_file_bytes {
-        Some(bytes) => format_bytes(bytes),
-        None => "—".to_string(),
-    };
+    let max_file = storage
+        .max_file_bytes
+        .map_or_else(|| "—".to_string(), format_bytes);
 
     div()
         .class("meta-list")
@@ -812,6 +815,7 @@ fn render_delete_button(name: &str) -> Element {
         )
 }
 
+#[must_use]
 pub fn render_delete_storage_modal(name: &str) -> String {
     div()
         .attr("id", "confirm-delete-storage-modal")
@@ -906,7 +910,9 @@ fn encode_query_component(value: &str) -> String {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
                 encoded.push(byte as char);
             }
-            _ => encoded.push_str(&format!("%{byte:02X}")),
+            _ => {
+                let _ = write!(encoded, "%{byte:02X}");
+            }
         }
     }
     encoded

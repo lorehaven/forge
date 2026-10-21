@@ -1,3 +1,5 @@
+//! Invitations let new account owners set a password and confirm their address.
+//!
 //! Inviting someone to an account an administrator created for them.
 //!
 //! The account starts with a password nobody knows and an address nobody has
@@ -18,6 +20,7 @@ pub const INVITE_TTL_SECS: u64 = 7 * 24 * 60 * 60;
 /// A password nobody is told: a fresh random one for an account that is invited
 /// rather than given one, so the account is unusable until the invitation is
 /// accepted.
+#[must_use]
 pub fn unusable_password() -> String {
     format!(
         "{}{}",
@@ -26,6 +29,8 @@ pub fn unusable_password() -> String {
     )
 }
 
+/// Sends an invitation link to a newly created account's email address.
+///
 /// Mints an invitation token for `user` and emails it to the address on file, in
 /// their saved language, else `fallback_locale`, else English. `Err` carries why
 /// it could not be sent - the account exists either way, so the caller reports

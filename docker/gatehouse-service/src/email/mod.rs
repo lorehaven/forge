@@ -52,7 +52,8 @@ impl SendError {
         Self::new(message, false)
     }
 
-    pub fn is_transient(&self) -> bool {
+    #[must_use]
+    pub const fn is_transient(&self) -> bool {
         self.transient
     }
 }
@@ -99,7 +100,8 @@ pub enum Mail<'a> {
 }
 
 impl<'a> Mail<'a> {
-    pub fn kind(&self) -> Kind {
+    #[must_use]
+    pub const fn kind(&self) -> Kind {
         match self {
             Mail::Verification { .. } => Kind::Verification,
             Mail::PasswordReset { .. } => Kind::PasswordReset,
@@ -114,7 +116,8 @@ impl<'a> Mail<'a> {
     }
 
     /// The link the message carries, empty for notices.
-    pub fn link(&self) -> &'a str {
+    #[must_use]
+    pub const fn link(&self) -> &'a str {
         match self {
             Mail::Verification { link }
             | Mail::PasswordReset { link }
@@ -127,7 +130,8 @@ impl<'a> Mail<'a> {
 
     /// What else identifies the message: the address a change notice names, or a
     /// notification's template id. Empty when there is nothing.
-    pub fn detail(&self) -> &'a str {
+    #[must_use]
+    pub const fn detail(&self) -> &'a str {
         match self {
             Mail::EmailChanged { new_email } => new_email,
             Mail::Notification { template, .. } => template,
@@ -136,14 +140,16 @@ impl<'a> Mail<'a> {
     }
 
     /// The address named in the message, empty when it names none.
-    pub fn new_email(&self) -> &'a str {
+    #[must_use]
+    pub const fn new_email(&self) -> &'a str {
         match self {
             Mail::EmailChanged { new_email } => new_email,
             _ => "",
         }
     }
 
-    pub fn vars(&self, username: &'a str) -> Vars<'a> {
+    #[must_use]
+    pub const fn vars(&self, username: &'a str) -> Vars<'a> {
         Vars {
             username,
             link: self.link(),
@@ -170,6 +176,7 @@ pub trait Sender: Send + Sync {
 /// Logs the message instead of emailing it - dev/BDD only, never a real
 /// deployment. The `visit <link> to ...` shape of the verification and reset
 /// lines is what the BDD suite reads the links back from.
+#[derive(Debug)]
 pub struct LoggingSender;
 
 #[async_trait]
@@ -201,7 +208,7 @@ impl Sender for LoggingSender {
                 "email({kind}) to={address} user={user}: {template} (unsubscribe: {unsubscribe})"
             ),
             Mail::PasswordChanged | Mail::MfaEnabled | Mail::MfaDisabled => {
-                tracing::info!("email({kind}) to={address} user={user}")
+                tracing::info!("email({kind}) to={address} user={user}");
             }
         }
         Ok(())

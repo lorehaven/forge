@@ -47,7 +47,7 @@ fn sessions() -> Arc<SessionDb> {
 /// var to "true" for its own tests.
 async fn auth_disabled() -> MutexGuard<'static, ()> {
     let guard = service_auth_env_lock().lock().await;
-    unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", "false") };
+    envmnt::set("SERVICE_AUTH_ENABLED", "false");
     guard
 }
 
@@ -114,7 +114,7 @@ fn req_with_auth(
 fn json_req(
     method: Method,
     path: &str,
-    body: serde_json::Value,
+    body: &serde_json::Value,
     container: &Arc<quench_http::di::Container>,
 ) -> Request {
     let mut headers = HeaderMap::new();
@@ -123,7 +123,7 @@ fn json_req(
         method,
         path.parse::<Uri>().unwrap(),
         headers,
-        quench_http::body::InboundBody::from_bytes(Bytes::from(serde_json::to_vec(&body).unwrap())),
+        quench_http::body::InboundBody::from_bytes(Bytes::from(serde_json::to_vec(body).unwrap())),
         container.clone(),
     )
 }
@@ -143,7 +143,7 @@ async fn create_then_list_then_get_a_user() {
         .call(json_req(
             Method::POST,
             "/api/v1/users",
-            serde_json::json!({ "username": "alice", "password": "password123" }),
+            &serde_json::json!({ "username": "alice", "password": "password123" }),
             &container,
         ))
         .await;
@@ -187,16 +187,11 @@ async fn create_rejects_a_duplicate_username_with_conflict() {
     let (app, container) = app(db, permission_catalog(), JwtConfig::for_tests()).await;
 
     let body = serde_json::json!({ "username": "alice", "password": "password123" });
-    app.call(json_req(
-        Method::POST,
-        "/api/v1/users",
-        body.clone(),
-        &container,
-    ))
-    .await;
+    app.call(json_req(Method::POST, "/api/v1/users", &body, &container))
+        .await;
 
     let resp = app
-        .call(json_req(Method::POST, "/api/v1/users", body, &container))
+        .call(json_req(Method::POST, "/api/v1/users", &body, &container))
         .await;
     assert_eq!(resp.status(), StatusCode::CONFLICT);
 }
@@ -210,7 +205,7 @@ async fn update_changes_the_password() {
     app.call(json_req(
         Method::POST,
         "/api/v1/users",
-        serde_json::json!({ "username": "alice", "password": "old-password" }),
+        &serde_json::json!({ "username": "alice", "password": "old-password" }),
         &container,
     ))
     .await;
@@ -219,7 +214,7 @@ async fn update_changes_the_password() {
         .call(json_req(
             Method::PATCH,
             "/api/v1/users/alice",
-            serde_json::json!({ "password": "new-password" }),
+            &serde_json::json!({ "password": "new-password" }),
             &container,
         ))
         .await;
@@ -238,7 +233,7 @@ async fn replace_permissions_rejects_unknown_grants() {
     app.call(json_req(
         Method::POST,
         "/api/v1/users",
-        serde_json::json!({ "username": "alice", "password": "password123" }),
+        &serde_json::json!({ "username": "alice", "password": "password123" }),
         &container,
     ))
     .await;
@@ -247,7 +242,7 @@ async fn replace_permissions_rejects_unknown_grants() {
         .call(json_req(
             Method::PUT,
             "/api/v1/users/alice/permissions",
-            serde_json::json!({ "permissions": { "not-a-real-service": ["read"] } }),
+            &serde_json::json!({ "permissions": { "not-a-real-service": ["read"] } }),
             &container,
         ))
         .await;
@@ -263,7 +258,7 @@ async fn delete_removes_the_user() {
     app.call(json_req(
         Method::POST,
         "/api/v1/users",
-        serde_json::json!({ "username": "alice", "password": "password123" }),
+        &serde_json::json!({ "username": "alice", "password": "password123" }),
         &container,
     ))
     .await;
@@ -297,7 +292,7 @@ async fn me_reports_wildcard_access_for_the_anonymous_admin_bypass() {
 
 async fn auth_enabled() -> MutexGuard<'static, ()> {
     let guard = service_auth_env_lock().lock().await;
-    unsafe { std::env::set_var("SERVICE_AUTH_ENABLED", "true") };
+    envmnt::set("SERVICE_AUTH_ENABLED", "true");
     guard
 }
 
@@ -414,7 +409,7 @@ async fn a_password_change_through_the_api_tells_a_confirmed_address_only() {
         app.call(json_req(
             Method::POST,
             "/api/v1/users",
-            serde_json::json!({ "username": name, "password": "old-password", "email": address }),
+            &serde_json::json!({ "username": name, "password": "old-password", "email": address }),
             &container,
         ))
         .await;
@@ -428,7 +423,7 @@ async fn a_password_change_through_the_api_tells_a_confirmed_address_only() {
             .call(json_req(
                 Method::PATCH,
                 &format!("/api/v1/users/{name}"),
-                serde_json::json!({ "password": "new-password" }),
+                &serde_json::json!({ "password": "new-password" }),
                 &container,
             ))
             .await;
@@ -438,7 +433,7 @@ async fn a_password_change_through_the_api_tells_a_confirmed_address_only() {
     app.call(json_req(
         Method::PATCH,
         "/api/v1/users/confirmed",
-        serde_json::json!({ "roles": ["user"] }),
+        &serde_json::json!({ "roles": ["user"] }),
         &container,
     ))
     .await;
@@ -478,7 +473,7 @@ async fn creating_an_invited_user_emails_the_address_and_reports_it() {
         .call(json_req(
             Method::POST,
             "/api/v1/users",
-            serde_json::json!({ "username": "newbie", "email": "newbie@example.test", "invite": true }),
+            &serde_json::json!({ "username": "newbie", "email": "newbie@example.test", "invite": true }),
             &container,
         ))
         .await;
@@ -510,7 +505,7 @@ async fn an_invitation_needs_a_valid_address() {
         ),
     ] {
         let resp = app
-            .call(json_req(Method::POST, "/api/v1/users", body, &container))
+            .call(json_req(Method::POST, "/api/v1/users", &body, &container))
             .await;
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST, "{name}");
         assert!(
@@ -529,7 +524,7 @@ async fn an_ordinary_create_neither_invites_nor_mentions_it() {
         .call(json_req(
             Method::POST,
             "/api/v1/users",
-            serde_json::json!({ "username": "plain", "password": "given-password", "email": "p@example.test" }),
+            &serde_json::json!({ "username": "plain", "password": "given-password", "email": "p@example.test" }),
             &container,
         ))
         .await;
@@ -547,7 +542,7 @@ async fn a_plain_create_still_needs_a_password() {
         .call(json_req(
             Method::POST,
             "/api/v1/users",
-            serde_json::json!({ "username": "nopw" }),
+            &serde_json::json!({ "username": "nopw" }),
             &container,
         ))
         .await;
@@ -580,7 +575,7 @@ async fn a_failed_invitation_email_still_creates_the_account() {
         .call(json_req(
             Method::POST,
             "/api/v1/users",
-            serde_json::json!({ "username": "newbie", "email": "newbie@example.test", "invite": true }),
+            &serde_json::json!({ "username": "newbie", "email": "newbie@example.test", "invite": true }),
             &container,
         ))
         .await;

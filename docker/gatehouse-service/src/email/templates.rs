@@ -4,6 +4,8 @@
 //! `<p>` per paragraph, a paragraph that is exactly the link becomes an anchor),
 //! so the two cannot drift apart. Everything substituted in is escaped for HTML.
 
+use std::fmt::Write as _;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     /// Confirm an address after registering.
@@ -23,17 +25,18 @@ pub enum Kind {
 }
 
 impl Kind {
+    #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
-            Kind::Verification => "verification",
-            Kind::PasswordReset => "password-reset",
-            Kind::Invite => "invite",
-            Kind::EmailChange => "email-change",
-            Kind::EmailChanged => "email-changed",
-            Kind::PasswordChanged => "password-changed",
-            Kind::MfaEnabled => "mfa-enabled",
-            Kind::MfaDisabled => "mfa-disabled",
-            Kind::Notification => "notification",
+            Self::Verification => "verification",
+            Self::PasswordReset => "password-reset",
+            Self::Invite => "invite",
+            Self::EmailChange => "email-change",
+            Self::EmailChanged => "email-changed",
+            Self::PasswordChanged => "password-changed",
+            Self::MfaEnabled => "mfa-enabled",
+            Self::MfaDisabled => "mfa-disabled",
+            Self::Notification => "notification",
         }
     }
 }
@@ -284,9 +287,9 @@ const MFA_DISABLED: [Copy; 5] = [
     },
 ];
 
-fn copies(kind: Kind) -> &'static [Copy; 5] {
+const fn copies(kind: Kind) -> &'static [Copy; 5] {
     match kind {
-        Kind::Verification => &VERIFICATION,
+        Kind::Verification | Kind::Notification => &VERIFICATION,
         Kind::PasswordReset => &PASSWORD_RESET,
         Kind::Invite => &INVITE,
         Kind::EmailChange => &EMAIL_CHANGE,
@@ -294,13 +297,12 @@ fn copies(kind: Kind) -> &'static [Copy; 5] {
         Kind::PasswordChanged => &PASSWORD_CHANGED,
         Kind::MfaEnabled => &MFA_ENABLED,
         Kind::MfaDisabled => &MFA_DISABLED,
-        // Notifications carry their own text (`crate::notify`), never this table.
-        Kind::Notification => &VERIFICATION,
     }
 }
 
 /// `pl-PL`, `pl_PL`, `PL` and `pl` all mean Polish; anything unknown, or no
 /// preference at all, means English.
+#[must_use]
 pub fn language(locale: Option<&str>) -> &'static str {
     let tag = locale.unwrap_or("").trim();
     let primary = tag
@@ -315,6 +317,7 @@ pub fn language(locale: Option<&str>) -> &'static str {
 }
 
 /// The common case: a message with a username and a link.
+#[must_use]
 pub fn render(kind: Kind, locale: Option<&str>, username: &str, link: &str) -> Rendered {
     render_with(
         kind,
@@ -327,12 +330,15 @@ pub fn render(kind: Kind, locale: Option<&str>, username: &str, link: &str) -> R
     )
 }
 
+#[must_use]
 pub fn render_with(kind: Kind, locale: Option<&str>, vars: &Vars<'_>) -> Rendered {
     let lang = language(locale);
     let all = copies(kind);
     let copy = all.iter().find(|c| c.lang == lang).unwrap_or(&all[0]);
     let text = fill(copy.body, vars);
-    let links: Vec<&str> = [vars.link].into_iter().filter(|l| !l.is_empty()).collect();
+    let links: Vec<&str> = std::iter::once(vars.link)
+        .filter(|l| !l.is_empty())
+        .collect();
     let html = html(lang, &text, &links);
     Rendered {
         subject: copy.subject.to_string(),
@@ -364,15 +370,12 @@ pub fn fill_with<'v>(template: &str, lookup: impl Fn(&str) -> Option<&'v str>) -
             .find('}')
             .map(|end| (&tail[1..end], &tail[end + 1..]))
             .and_then(|(name, after)| lookup(name).map(|value| (value, after)));
-        match named {
-            Some((value, after)) => {
-                out.push_str(value);
-                rest = after;
-            }
-            None => {
-                out.push('{');
-                rest = &tail[1..];
-            }
+        if let Some((value, after)) = named {
+            out.push_str(value);
+            rest = after;
+        } else {
+            out.push('{');
+            rest = &tail[1..];
         }
     }
     out.push_str(rest);
@@ -381,6 +384,7 @@ pub fn fill_with<'v>(template: &str, lookup: impl Fn(&str) -> Option<&'v str>) -
 
 /// The HTML twin of `text`: a paragraph that is exactly one of `links` becomes an
 /// anchor, every other paragraph is escaped text.
+#[must_use]
 pub fn html(lang: &str, text: &str, links: &[&str]) -> String {
     let mut out = format!(
         "<!doctype html>\n<html lang=\"{lang}\"><body style=\"font-family:sans-serif;line-height:1.5\">\n"
@@ -392,12 +396,9 @@ pub fn html(lang: &str, text: &str, links: &[&str]) -> String {
         }
         if !paragraph.is_empty() && links.contains(&paragraph) {
             let href = escape(paragraph);
-            out.push_str(&format!("<p><a href=\"{href}\">{href}</a></p>\n"));
+            let _ = writeln!(out, "<p><a href=\"{href}\">{href}</a></p>");
         } else {
-            out.push_str(&format!(
-                "<p>{}</p>\n",
-                escape(paragraph).replace('\n', "<br>")
-            ));
+            let _ = writeln!(out, "<p>{}</p>", escape(paragraph).replace('\n', "<br>"));
         }
     }
     out.push_str("</body></html>\n");

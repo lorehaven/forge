@@ -1,3 +1,5 @@
+//! The notification endpoint lets services request localized messages for users.
+//!
 //! `POST /api/v1/notify` - a service asking gatehouse to tell someone something.
 //!
 //! The caller says *what happened* (a template id and its variables) and *to
@@ -20,9 +22,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+/// Identifies callers permitted to send service notifications.
+///
 /// A verified token allowed to send notifications: a machine identity (the
 /// `service` role is a wildcard) or someone explicitly granted `gatehouse:notify`.
 /// An ordinary user's token is refused - this endpoint sends mail as the estate.
+#[derive(Debug)]
 pub struct NotifyClaims(pub Claims);
 
 #[async_trait]

@@ -30,8 +30,9 @@ pub struct VllmInstance {
 
 impl VllmInstance {
     /// Whether this instance can serve chat completions; embedding (pooling) instances yield a 404 if routed chat.
+    #[must_use]
     pub fn is_chat_capable(&self) -> bool {
-        !matches!(self.task.as_deref(), Some("embed") | Some("embedding"))
+        !matches!(self.task.as_deref(), Some("embed" | "embedding"))
     }
 }
 
@@ -54,22 +55,21 @@ impl SwitchboardClient {
         let gatehouse_url = envmnt::get_or("GATEHOUSE_URL", "");
         let client_secret = envmnt::get_or("CLIENT_SECRET_SAGE_SWITCHBOARD", "");
 
-        if gatehouse_url.is_empty() || client_secret.is_empty() {
-            panic!(
-                "Missing required environment variables: GATEHOUSE_URL={}, \
-                 CLIENT_SECRET_SAGE_SWITCHBOARD={}",
-                if gatehouse_url.is_empty() {
-                    "NOT SET"
-                } else {
-                    "SET"
-                },
-                if client_secret.is_empty() {
-                    "NOT SET"
-                } else {
-                    "SET"
-                },
-            );
-        }
+        assert!(
+            !(gatehouse_url.is_empty() || client_secret.is_empty()),
+            "Missing required environment variables: GATEHOUSE_URL={}, \
+             CLIENT_SECRET_SAGE_SWITCHBOARD={}",
+            if gatehouse_url.is_empty() {
+                "NOT SET"
+            } else {
+                "SET"
+            },
+            if client_secret.is_empty() {
+                "NOT SET"
+            } else {
+                "SET"
+            },
+        );
 
         let tls_verify = envmnt::get_or("SWITCHBOARD_TLS_VERIFY", "true")
             .parse::<bool>()
@@ -97,6 +97,7 @@ impl SwitchboardClient {
         }
     }
 
+    #[must_use]
     pub fn metrics(&self) -> Arc<RequestMetrics> {
         self.metrics.clone()
     }
@@ -118,7 +119,7 @@ impl SwitchboardClient {
                 client
                     .get("/api/v1/vllm/instances")
                     .await
-                    .map_err(|e| format!("{}", e))
+                    .map_err(|e| format!("{e}"))
             },
             RetryConfig {
                 max_attempts: 3,
@@ -137,13 +138,13 @@ impl SwitchboardClient {
                 tracing::debug!("get_vllm_instances completed in {}ms", latency_ms);
             }
             Err(e) => {
-                metrics.record_error(&e.to_string());
+                metrics.record_error(&e.clone());
                 self.circuit_breaker.call_failed();
                 tracing::error!("get_vllm_instances failed: {}", e);
             }
         }
 
-        result.map_err(|e| anyhow::anyhow!("{}", e))
+        result.map_err(|e| anyhow::anyhow!("{e}"))
     }
 
     /// Request a graceful stop of a running vLLM instance (switchboard sends SIGTERM so it can
@@ -159,7 +160,7 @@ impl SwitchboardClient {
         let client = self.client.clone();
         let metrics = self.metrics.clone();
         let timer = TimedBlock::new();
-        let path = format!("/api/v1/vllm/instances/{}", id);
+        let path = format!("/api/v1/vllm/instances/{id}");
 
         let result = retry_with_backoff(
             || {
@@ -169,7 +170,7 @@ impl SwitchboardClient {
                     client
                         .delete_expect_success(&path)
                         .await
-                        .map_err(|e| format!("{}", e))
+                        .map_err(|e| format!("{e}"))
                 }
             },
             RetryConfig {
@@ -182,20 +183,20 @@ impl SwitchboardClient {
         .await;
 
         match &result {
-            Ok(_) => {
+            Ok(()) => {
                 let latency_ms = timer.elapsed_ms();
                 metrics.record_success(latency_ms);
                 self.circuit_breaker.call_succeeded();
                 tracing::info!("stop_instance({}) completed in {}ms", id, latency_ms);
             }
             Err(e) => {
-                metrics.record_error(&e.to_string());
+                metrics.record_error(&e.clone());
                 self.circuit_breaker.call_failed();
                 tracing::error!("stop_instance({}) failed: {}", id, e);
             }
         }
 
-        result.map_err(|e| anyhow::anyhow!("{}", e))
+        result.map_err(|e| anyhow::anyhow!("{e}"))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -248,7 +249,7 @@ impl SwitchboardClient {
                     client
                         .post("/api/v1/vllm/instances", &req)
                         .await
-                        .map_err(|e| format!("{}", e))
+                        .map_err(|e| format!("{e}"))
                 }
             },
             RetryConfig {
@@ -268,12 +269,18 @@ impl SwitchboardClient {
                 tracing::info!("launch_instance({}) completed in {}ms", model, latency_ms);
             }
             Err(e) => {
-                metrics.record_error(&e.to_string());
+                metrics.record_error(&e.clone());
                 self.circuit_breaker.call_failed();
                 tracing::error!("launch_instance({}) failed: {}", model, e);
             }
         }
 
-        result.map_err(|e| anyhow::anyhow!("{}", e))
+        result.map_err(|e| anyhow::anyhow!("{e}"))
+    }
+}
+
+impl std::fmt::Debug for SwitchboardClient {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("SwitchboardClient { .. }")
     }
 }

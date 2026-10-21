@@ -2,6 +2,7 @@ use super::{ToolCall, ToolDefinition, ToolExecutor, ToolParameters, ToolResult};
 use async_trait::async_trait;
 use serde_json::json;
 
+#[must_use]
 pub fn get_definition() -> ToolDefinition {
     ToolDefinition {
         name: "file_ops".to_string(),
@@ -30,12 +31,14 @@ pub fn get_definition() -> ToolDefinition {
     }
 }
 
+#[derive(Debug)]
 pub struct FileOpsExecutor {
     base_path: std::path::PathBuf,
     canonical_base: std::path::PathBuf,
 }
 
 impl FileOpsExecutor {
+    #[must_use]
     pub fn new(base_path: String) -> Self {
         let path = std::path::PathBuf::from(base_path);
         let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
@@ -45,6 +48,7 @@ impl FileOpsExecutor {
         }
     }
 
+    #[must_use]
     pub fn from_env() -> Self {
         let base_path = std::env::var("FILE_OPS_BASE_PATH").unwrap_or_else(|_| ".".to_string());
         Self::new(base_path)
@@ -64,20 +68,17 @@ impl FileOpsExecutor {
 
         // Check symlink resolution
         let full_path = self.base_path.join(path);
-        match full_path.canonicalize() {
-            Ok(canonical) => canonical.starts_with(&self.canonical_base),
-            Err(_) => {
+        full_path.canonicalize().map_or_else(
+            |_| {
                 // For non-existent files, check parent
-                if let Some(parent) = full_path.parent() {
-                    match parent.canonicalize() {
-                        Ok(canonical_parent) => canonical_parent.starts_with(&self.canonical_base),
-                        Err(_) => false,
-                    }
-                } else {
-                    false
-                }
-            }
-        }
+                full_path.parent().is_some_and(|parent| {
+                    parent.canonicalize().is_ok_and(|canonical_parent| {
+                        canonical_parent.starts_with(&self.canonical_base)
+                    })
+                })
+            },
+            |canonical| canonical.starts_with(&self.canonical_base),
+        )
     }
 }
 
@@ -87,160 +88,123 @@ impl Default for FileOpsExecutor {
     }
 }
 
+/// A result for `tool_call`: the output when `is_error` is false, the error otherwise.
+fn outcome(tool_call: &ToolCall, content: impl Into<String>, is_error: bool) -> ToolResult {
+    ToolResult {
+        tool_use_id: tool_call.id.clone(),
+        content: content.into(),
+        is_error,
+    }
+}
+
+/// The string argument `key`, or the error result to return when it is missing or not a string.
+fn string_arg<'a>(
+    tool_call: &'a ToolCall,
+    key: &str,
+    missing: &str,
+) -> Result<&'a str, ToolResult> {
+    tool_call.arguments.get(key).map_or_else(
+        || Err(outcome(tool_call, missing, true)),
+        |val| {
+            val.as_str()
+                .ok_or_else(|| outcome(tool_call, format!("Invalid {key}: must be a string"), true))
+        },
+    )
+}
+
+/// One line per entry (at most 50) of the directory, with its size or `/` for a directory.
+fn list_entries(entries: std::fs::ReadDir) -> Vec<String> {
+    entries
+        .take(50)
+        .flatten()
+        .filter_map(|entry| {
+            let metadata = entry.metadata().ok()?;
+            let is_dir = metadata.is_dir();
+            let name = entry.file_name();
+            Some(format!(
+                "{}{} ({})",
+                name.to_string_lossy(),
+                if is_dir { "/" } else { "" },
+                if is_dir {
+                    "dir".to_string()
+                } else {
+                    format!("{} bytes", metadata.len())
+                }
+            ))
+        })
+        .collect()
+}
+
 #[async_trait]
 impl ToolExecutor for FileOpsExecutor {
     async fn execute(&self, tool_call: &ToolCall) -> ToolResult {
-        let operation = match tool_call.arguments.get("operation") {
-            Some(val) => match val.as_str() {
-                Some(s) => s,
-                None => {
-                    return ToolResult {
-                        tool_use_id: tool_call.id.clone(),
-                        content: "Invalid operation: must be a string".to_string(),
-                        is_error: true,
-                    };
-                }
-            },
-            None => {
-                return ToolResult {
-                    tool_use_id: tool_call.id.clone(),
-                    content: "Missing 'operation' argument".to_string(),
-                    is_error: true,
-                };
-            }
+        let operation = match string_arg(tool_call, "operation", "Missing 'operation' argument") {
+            Ok(operation) => operation,
+            Err(result) => return result,
         };
-
-        let path = match tool_call.arguments.get("path") {
-            Some(val) => match val.as_str() {
-                Some(s) => s,
-                None => {
-                    return ToolResult {
-                        tool_use_id: tool_call.id.clone(),
-                        content: "Invalid path: must be a string".to_string(),
-                        is_error: true,
-                    };
-                }
-            },
-            None => {
-                return ToolResult {
-                    tool_use_id: tool_call.id.clone(),
-                    content: "Missing 'path' argument".to_string(),
-                    is_error: true,
-                };
-            }
+        let path = match string_arg(tool_call, "path", "Missing 'path' argument") {
+            Ok(path) => path,
+            Err(result) => return result,
         };
 
         // Security: ensure path is within base_path
         if !self.is_safe(path) {
-            return ToolResult {
-                tool_use_id: tool_call.id.clone(),
-                content: "Access denied: path is outside allowed directory or contains dangerous characters".to_string(),
-                is_error: true,
-            };
+            return outcome(
+                tool_call,
+                "Access denied: path is outside allowed directory or contains dangerous characters",
+                true,
+            );
         }
 
         let full_path = self.base_path.join(path);
 
         match operation {
             "read" => match std::fs::read_to_string(&full_path) {
-                Ok(content) => ToolResult {
-                    tool_use_id: tool_call.id.clone(),
-                    content,
-                    is_error: false,
-                },
-                Err(e) => ToolResult {
-                    tool_use_id: tool_call.id.clone(),
-                    content: format!("Failed to read file: {}", e),
-                    is_error: true,
-                },
+                Ok(content) => outcome(tool_call, content, false),
+                Err(e) => outcome(tool_call, format!("Failed to read file: {e}"), true),
             },
             "write" => {
-                let content = match tool_call.arguments.get("content") {
-                    Some(val) => match val.as_str() {
-                        Some(s) => s,
-                        None => {
-                            return ToolResult {
-                                tool_use_id: tool_call.id.clone(),
-                                content: "Invalid content: must be a string".to_string(),
-                                is_error: true,
-                            };
-                        }
-                    },
-                    None => {
-                        return ToolResult {
-                            tool_use_id: tool_call.id.clone(),
-                            content: "Missing 'content' argument for write operation".to_string(),
-                            is_error: true,
-                        };
-                    }
+                let content = match string_arg(
+                    tool_call,
+                    "content",
+                    "Missing 'content' argument for write operation",
+                ) {
+                    Ok(content) => content,
+                    Err(result) => return result,
                 };
 
                 match std::fs::write(&full_path, content) {
-                    Ok(_) => ToolResult {
-                        tool_use_id: tool_call.id.clone(),
-                        content: format!("Successfully wrote to {}", path),
-                        is_error: false,
-                    },
-                    Err(e) => ToolResult {
-                        tool_use_id: tool_call.id.clone(),
-                        content: format!("Failed to write file: {}", e),
-                        is_error: true,
-                    },
+                    Ok(()) => outcome(tool_call, format!("Successfully wrote to {path}"), false),
+                    Err(e) => outcome(tool_call, format!("Failed to write file: {e}"), true),
                 }
             }
             "list" => match std::fs::read_dir(&full_path) {
-                Ok(entries) => {
-                    let mut files = Vec::new();
-                    for entry in entries.take(50).flatten() {
-                        if let Ok(metadata) = entry.metadata() {
-                            let is_dir = metadata.is_dir();
-                            let name = entry.file_name();
-                            let name_str = name.to_string_lossy();
-                            files.push(format!(
-                                "{}{} ({})",
-                                name_str,
-                                if is_dir { "/" } else { "" },
-                                if is_dir {
-                                    "dir".to_string()
-                                } else {
-                                    format!("{} bytes", metadata.len())
-                                }
-                            ));
-                        }
-                    }
-
-                    ToolResult {
-                        tool_use_id: tool_call.id.clone(),
-                        content: format!("Files in {}:\n{}", path, files.join("\n")),
-                        is_error: false,
-                    }
-                }
-                Err(e) => ToolResult {
-                    tool_use_id: tool_call.id.clone(),
-                    content: format!("Failed to list directory: {}", e),
-                    is_error: true,
-                },
+                Ok(entries) => outcome(
+                    tool_call,
+                    format!("Files in {}:\n{}", path, list_entries(entries).join("\n")),
+                    false,
+                ),
+                Err(e) => outcome(tool_call, format!("Failed to list directory: {e}"), true),
             },
             "exists" => {
                 let exists = full_path.exists();
-                ToolResult {
-                    tool_use_id: tool_call.id.clone(),
-                    content: format!(
+                outcome(
+                    tool_call,
+                    format!(
                         "{}: {}",
                         path,
                         if exists { "exists" } else { "does not exist" }
                     ),
-                    is_error: false,
-                }
+                    false,
+                )
             }
-            _ => ToolResult {
-                tool_use_id: tool_call.id.clone(),
-                content: format!(
-                    "Unknown operation: {}. Must be one of: read, write, list, exists",
-                    operation
+            _ => outcome(
+                tool_call,
+                format!(
+                    "Unknown operation: {operation}. Must be one of: read, write, list, exists"
                 ),
-                is_error: true,
-            },
+                true,
+            ),
         }
     }
 }

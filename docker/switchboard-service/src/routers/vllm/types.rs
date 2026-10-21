@@ -69,12 +69,14 @@ pub struct LaunchRequest {
 }
 
 /// Whether `device` selects CPU execution (case-insensitive `"cpu"`).
+#[must_use]
 pub fn is_cpu_device(device: Option<&str>) -> bool {
     matches!(device, Some(d) if d.trim().eq_ignore_ascii_case("cpu"))
 }
 
 /// CPU is selected by the runtime, not a flag - vLLM's `--device` rejects
 /// `"cpu"`, so only a real accelerator name is passed through.
+#[must_use]
 pub fn device_launch_args(device: &str) -> Vec<String> {
     match device.trim().to_lowercase().as_str() {
         "" | "gpu" | "auto" | "default" | "cpu" => vec![],
@@ -84,22 +86,25 @@ pub fn device_launch_args(device: &str) -> Vec<String> {
 
 /// Recover a `device` value from a running instance's CLI args, the inverse of
 /// [`device_launch_args`]. `None` when no `--device` flag is present.
+#[must_use]
 pub fn device_from_args(parts: &[String]) -> Option<String> {
     parts
         .iter()
         .position(|p| p == "--device")
         .and_then(|i| parts.get(i + 1))
-        .map(|v| v.to_string())
+        .cloned()
 }
 
 /// GiB the CPU backend reserves for KV cache - `VLLM_CPU_KVCACHE_SPACE` is
 /// the CPU equivalent of `--gpu-memory-utilization`.
+#[must_use]
 pub fn cpu_kvcache_space_gib() -> String {
     std::env::var("VLLM_CPU_KVCACHE_SPACE").unwrap_or_else(|_| "4".to_string())
 }
 
 /// CPU launch image - ships its own vLLM/entrypoint, so it needs no venv,
-/// ROCm, or device mounts unlike the GPU path.
+/// `ROCm`, or device mounts unlike the GPU path.
+#[must_use]
 pub fn cpu_image() -> String {
     std::env::var("VLLM_CPU_IMAGE")
         .unwrap_or_else(|_| "vllm/vllm-openai-cpu:latest-x86_64".to_string())
@@ -107,6 +112,7 @@ pub fn cpu_image() -> String {
 
 /// Translate a task value into vLLM CLI flags - `--task` is gone in current
 /// vLLM, replaced by `--runner`/`--convert` (e.g. embed = pooling+embed).
+#[must_use]
 pub fn task_launch_args(task: &str) -> Vec<String> {
     match task {
         "embed" | "embedding" => vec![
@@ -129,13 +135,14 @@ pub fn task_launch_args(task: &str) -> Vec<String> {
 }
 
 /// Recover a task value from CLI args, the inverse of [`task_launch_args`].
+#[must_use]
 pub fn task_from_args(parts: &[String]) -> Option<String> {
     let flag_value = |flag: &str| {
         parts
             .iter()
             .position(|p| p == flag)
             .and_then(|i| parts.get(i + 1))
-            .map(|v| v.to_string())
+            .cloned()
     };
     // Prefer --convert (embed/classify), then fall back to --runner, then the
     // legacy --task flag for instances launched by older switchboard builds.

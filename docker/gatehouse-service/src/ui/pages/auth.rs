@@ -20,8 +20,9 @@ use quench_http::prelude::{
 };
 use quench_web::prelude::*;
 use serde::Deserialize;
+use std::fmt::Write as _;
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct LoginForm {
     pub username: String,
     pub password: String,
@@ -32,7 +33,7 @@ pub struct LoginForm {
 
 /// Notices beyond "wrong credentials" - separate from `LoginQuery`, which is
 /// shared with every service's login redirect.
-#[derive(Deserialize, Default)]
+#[derive(Debug, Deserialize, Default)]
 pub struct LoginNotices {
     #[serde(default)]
     pub registered: Option<String>,
@@ -199,7 +200,7 @@ pub async fn login_submit(
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct MfaQuery {
     pub pending: String,
     #[serde(default)]
@@ -217,7 +218,7 @@ pub async fn login_mfa(Query(query): Query<MfaQuery>) -> Response {
     )
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct MfaForm {
     pub pending: String,
     pub code: String,
@@ -292,6 +293,7 @@ pub async fn login_mfa_submit(
     }
 }
 
+#[must_use]
 pub fn mfa_challenge_url(pending: &str, redirect: Option<&str>, err: bool) -> String {
     let mut url = format!(
         "{}?pending={}",
@@ -299,7 +301,7 @@ pub fn mfa_challenge_url(pending: &str, redirect: Option<&str>, err: bool) -> St
         urlencoding::encode(pending)
     );
     if let Some(target) = redirect.filter(|value| !value.is_empty()) {
-        url.push_str(&format!("&redirect={}", urlencoding::encode(target)));
+        let _ = write!(url, "&redirect={}", urlencoding::encode(target));
     }
     if err {
         url.push_str("&err=1");
@@ -360,6 +362,7 @@ pub async fn refresh(RefreshResponse(resp): RefreshResponse) -> Response {
     resp
 }
 
+#[derive(Debug)]
 pub struct LogoutContext {
     refresh_cookie: Option<String>,
     redirect: Option<String>,
@@ -391,6 +394,7 @@ pub async fn logout(ctx: LogoutContext, Inject(session_db): Inject<SessionDb>) -
         .append_header("set-cookie", realm::cleared_refresh_cookie().to_string())
 }
 
+#[must_use]
 pub fn render_login_page(
     redirect: Option<String>,
     error: bool,
@@ -496,6 +500,7 @@ pub fn render_login_page(
 }
 
 /// Checked against a fixed list, not trusted from the query string.
+#[must_use]
 pub fn login_error_key(notices: &LoginNotices) -> Option<&'static str> {
     match notices.err.as_deref() {
         Some("ui_login_verify_invalid") => Some("ui_login_verify_invalid"),
@@ -511,7 +516,8 @@ pub fn login_error_key(notices: &LoginNotices) -> Option<&'static str> {
 }
 
 /// Order matters: a successful reset is more specific than "link sent".
-pub fn login_ok_key(notices: &LoginNotices) -> Option<&'static str> {
+#[must_use]
+pub const fn login_ok_key(notices: &LoginNotices) -> Option<&'static str> {
     if notices.reset.is_some() {
         Some("ui_login_reset_ok")
     } else if notices.reset_requested.is_some() {
@@ -531,6 +537,7 @@ pub fn login_ok_key(notices: &LoginNotices) -> Option<&'static str> {
     }
 }
 
+#[must_use]
 pub fn render_mfa_page(pending: &str, redirect: Option<&str>, error: bool) -> Response {
     let mut mfa_form = form()
         .attr("method", "post")
@@ -598,6 +605,7 @@ fn render_auth_page(title_key: &'static str, inner_form: Element) -> Response {
 }
 
 /// Anything under `/ui` that is not a page sends you to the login form.
+#[must_use]
 pub fn login_redirect() -> Response {
     Response::new(StatusCode::FOUND).header("Location", ui_path("/login"))
 }
@@ -611,4 +619,22 @@ pub fn register_routes() {
     let _ = status as fn(_) -> _;
     let _ = refresh as fn(_) -> _;
     let _ = logout as fn(_, _) -> _;
+}
+
+impl std::fmt::Debug for LoginContext {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("LoginContext { .. }")
+    }
+}
+
+impl std::fmt::Debug for AuthStatusResponse {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("AuthStatusResponse { .. }")
+    }
+}
+
+impl std::fmt::Debug for RefreshResponse {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("RefreshResponse { .. }")
+    }
 }

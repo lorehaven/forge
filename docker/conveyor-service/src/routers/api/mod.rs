@@ -22,6 +22,7 @@ pub mod subscriptions;
 pub mod webhooks;
 
 /// The verified identity behind this request, if any - `Auth` puts it in the request's extensions.
+#[derive(Debug)]
 pub struct OptionalClaims(pub Option<Claims>);
 
 #[async_trait]
@@ -33,6 +34,7 @@ impl FromRequest for OptionalClaims {
 
 /// Who is making this request, for `registered_by`/`owner` columns. A `FromRequest` extractor since
 /// quench-http has no extractor that hands a handler the raw request itself.
+#[derive(Debug)]
 pub struct Actor(pub String);
 
 #[async_trait]
@@ -44,8 +46,7 @@ impl FromRequest for Actor {
         };
         let username = get_user_from_req(req, &config)
             .await
-            .map(|claims| claims.sub)
-            .unwrap_or_else(|| "dev".to_string());
+            .map_or_else(|| "dev".to_string(), |claims| claims.sub);
         Ok(Self(username))
     }
 }
@@ -117,13 +118,13 @@ impl From<QueueError> for ApiError {
                 "the id given for a related record (project, repository, ...) \
                  does not exist"
             };
-            return ApiError::new(http::StatusCode::BAD_REQUEST, message);
+            return Self::new(http::StatusCode::BAD_REQUEST, message);
         }
 
         if let QueueError::Sql(sqlx::Error::Database(database)) = &error
             && database.code().as_deref() == Some("23505")
         {
-            return ApiError::new(
+            return Self::new(
                 http::StatusCode::CONFLICT,
                 "a record with that identity already exists",
             );
@@ -136,6 +137,6 @@ impl From<QueueError> for ApiError {
             QueueError::BadRow(_) | QueueError::Sql(_) => http::StatusCode::INTERNAL_SERVER_ERROR,
         };
 
-        ApiError::new(status, error.to_string())
+        Self::new(status, error.to_string())
     }
 }

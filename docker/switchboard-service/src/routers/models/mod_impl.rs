@@ -13,26 +13,27 @@ pub static GGUF_ROOTS: LazyLock<Vec<String>> =
 
 /// The caller's claims, from `Auth`-populated extensions or a decoded
 /// session cookie - quench-http never hands a handler the raw `Request`.
+#[derive(Debug)]
 pub struct OptionalClaims(pub Option<Claims>);
 
 #[async_trait]
 impl FromRequest for OptionalClaims {
     async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
         if let Some(claims) = req.extensions().get::<Claims>() {
-            return Ok(OptionalClaims(Some(claims.clone())));
+            return Ok(Self(Some(claims.clone())));
         }
 
         let Ok(config) = req.container().get::<JwtConfig>() else {
-            return Ok(OptionalClaims(None));
+            return Ok(Self(None));
         };
         let Some(cookie) = cookie_value(req, &realm::session_cookie_name()) else {
-            return Ok(OptionalClaims(None));
+            return Ok(Self(None));
         };
 
-        match config.decode_claims(&cookie).await {
-            Ok(claims) => Ok(OptionalClaims(Some(claims))),
-            Err(_) => Ok(OptionalClaims(None)),
-        }
+        config
+            .decode_claims(&cookie)
+            .await
+            .map_or(Ok(Self(None)), |claims| Ok(Self(Some(claims))))
     }
 }
 
@@ -44,10 +45,12 @@ pub fn is_admin(claims: Option<&Claims>, config: &JwtConfig) -> bool {
 
 /// Whether the caller may perform `action` - replaces the blanket
 /// `RequireWrite` these scopes deliberately don't declare a `"write"` for.
+#[must_use]
 pub fn can(claims: Option<&Claims>, config: &JwtConfig, action: &str) -> bool {
     !config.auth_enabled || claims.is_some_and(|c| c.can(&config.service_name, action))
 }
 
+#[must_use]
 pub fn load_paths(env_key: &str, defaults: &[&str]) -> Vec<String> {
     std::env::var(env_key)
         .ok()
@@ -58,5 +61,10 @@ pub fn load_paths(env_key: &str, defaults: &[&str]) -> Vec<String> {
                 .collect()
         })
         .filter(|v: &Vec<String>| !v.is_empty())
-        .unwrap_or_else(|| defaults.iter().map(|s| s.to_string()).collect())
+        .unwrap_or_else(|| {
+            defaults
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect()
+        })
 }

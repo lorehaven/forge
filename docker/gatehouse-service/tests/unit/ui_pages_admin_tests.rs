@@ -33,7 +33,10 @@ async fn seed_user(db: &Db, username: &str, roles: Vec<Role>, grants: &[(&str, &
         .map(|(service, actions)| {
             (
                 (*service).to_string(),
-                actions.iter().map(|a| a.to_string()).collect(),
+                actions
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect(),
             )
         })
         .collect();
@@ -103,7 +106,7 @@ fn a_resource_scoped_grant_survives_a_plain_checkbox_save() {
     let mut existing = Permissions::new();
     existing.insert(
         "conveyor".to_string(),
-        ["project:abc-123:write".to_string()].into_iter().collect(),
+        std::iter::once("project:abc-123:write".to_string()).collect(),
     );
 
     // The form checks conveyor's plain "read" box and leaves "write"
@@ -132,7 +135,7 @@ fn a_plain_grant_can_still_be_revoked() {
     let mut existing = Permissions::new();
     existing.insert(
         "conveyor".to_string(),
-        ["read".to_string()].into_iter().collect(),
+        std::iter::once("read".to_string()).collect(),
     );
 
     // Nothing checked at all - unchecking every box should still clear a
@@ -349,11 +352,10 @@ async fn render_edit_for_a_viewer_without_edit_user_shows_no_form() {
         "viewer".to_string(),
         "pw".to_string(),
         vec![Role::User],
-        [(
+        std::iter::once((
             "gatehouse".to_string(),
-            ["read-users".to_string()].into_iter().collect(),
-        )]
-        .into_iter()
+            std::iter::once("read-users".to_string()).collect(),
+        ))
         .collect(),
         None,
     )

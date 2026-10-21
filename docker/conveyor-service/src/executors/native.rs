@@ -25,7 +25,7 @@ const LOG_CHANNEL_CAPACITY: usize = 1024;
 /// Bound on the reader-to-job-task queue; backpressure slows a fast step's own pipe, not drops output.
 const LINE_QUEUE_CAPACITY: usize = 256;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct Running {
     state: Arc<Mutex<JobState>>,
     history: Arc<Mutex<Vec<LogChunk>>>,
@@ -39,6 +39,7 @@ pub struct NativeExecutor {
 }
 
 impl NativeExecutor {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -111,9 +112,9 @@ impl JobExecutor for NativeExecutor {
         let (cancel, cancel_rx) = watch::channel(false);
 
         let running = Running {
-            state: state.clone(),
+            state,
             history: Arc::new(Mutex::new(Vec::new())),
-            publisher: publisher.clone(),
+            publisher,
             cancel,
         };
 
@@ -219,7 +220,7 @@ async fn run_job(mut context: JobContext) {
         }
 
         begin_step(&context.running, ordinal);
-        emitter.emit(Stream::Stdout, format!("$ {command}"));
+        emitter.emit(Stream::Stdout, &format!("$ {command}"));
 
         let outcome = run_step(
             argv,
@@ -242,7 +243,7 @@ async fn run_job(mut context: JobContext) {
                 job_exit_code = code;
                 emitter.emit(
                     Stream::Stderr,
-                    format!(
+                    &format!(
                         "step failed with exit code {}",
                         code.map_or_else(|| "signal".to_string(), |c| c.to_string())
                     ),
@@ -253,7 +254,7 @@ async fn run_job(mut context: JobContext) {
                 finish_step(&context.running, ordinal, Status::Cancelled, None);
                 job_status = Status::Cancelled;
                 job_error = Some("cancelled".to_string());
-                emitter.emit(Stream::Stderr, "step cancelled".to_string());
+                emitter.emit(Stream::Stderr, "step cancelled");
                 break;
             }
             StepOutcome::TimedOut => {
@@ -266,7 +267,7 @@ async fn run_job(mut context: JobContext) {
                 ));
                 emitter.emit(
                     Stream::Stderr,
-                    format!("timed out after {}s", context.timeout.as_secs()),
+                    &format!("timed out after {}s", context.timeout.as_secs()),
                 );
                 break;
             }
@@ -274,7 +275,7 @@ async fn run_job(mut context: JobContext) {
                 finish_step(&context.running, ordinal, Status::Failed, None);
                 job_status = Status::Failed;
                 job_error = Some(reason.clone());
-                emitter.emit(Stream::Stderr, reason);
+                emitter.emit(Stream::Stderr, &reason);
                 break;
             }
         }
@@ -293,6 +294,7 @@ async fn run_job(mut context: JobContext) {
     state.finished_at = Some(Utc::now());
 
     tracing::info!("job {} finished: {}", context.name, state.status);
+    drop(state);
 }
 
 async fn run_step(
@@ -341,7 +343,7 @@ async fn run_step(
             // Biased: drain queued output before noticing exit, or a fast step's last lines look like they came from nowhere.
             biased;
 
-            Some((stream, line)) = queue.recv() => emitter.emit(stream, line),
+            Some((stream, line)) = queue.recv() => emitter.emit(stream, &line),
 
             status = child.wait() => break match status {
                 Ok(status) if status.success() => StepOutcome::Passed,
@@ -364,7 +366,7 @@ async fn run_step(
     };
 
     while let Some((stream, line)) = queue.recv().await {
-        emitter.emit(stream, line);
+        emitter.emit(stream, &line);
     }
 
     outcome
@@ -377,9 +379,14 @@ fn kill_group(child: &tokio::process::Child) {
         return;
     };
 
-    // SAFETY: `pid` is this step's own process group (`process_group(0)`), not an untrusted value.
-    unsafe {
-        libc::kill(-(pid as libc::pid_t), libc::SIGKILL);
+    // `pid` is this step's own process group (`process_group(0)`); a negative pid addresses the group.
+    let killed = std::process::Command::new("kill")
+        .args(["-s", "KILL", "--", &format!("-{pid}")])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    if let Err(error) = killed {
+        tracing::warn!("could not kill process group {pid}: {error}");
     }
 }
 
@@ -404,11 +411,11 @@ struct Emitter {
 }
 
 impl Emitter {
-    fn emit(&mut self, stream: Stream, line: String) {
+    fn emit(&mut self, stream: Stream, line: &str) {
         let chunk = LogChunk {
             seq: self.seq,
             stream,
-            line: self.redactor.apply(&line),
+            line: self.redactor.apply(line),
             at: Utc::now(),
         };
         self.seq += 1;
@@ -438,5 +445,11 @@ fn finish_step(running: &Running, ordinal: usize, status: Status, exit_code: Opt
         step.status = status;
         step.exit_code = exit_code;
         step.finished_at = Some(Utc::now());
+    }
+}
+
+impl std::fmt::Debug for NativeExecutor {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("NativeExecutor { .. }")
     }
 }

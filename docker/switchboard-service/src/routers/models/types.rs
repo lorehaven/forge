@@ -45,72 +45,66 @@ pub enum Quant {
 
 impl std::fmt::Display for Quant {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 
 impl Quant {
-    pub const HF_VALUES: [(Quant, f64); 7] = [
-        (Quant::FP16, 2.0),
-        (Quant::BF16, 2.0),
-        (Quant::FP8, 1.0),
-        (Quant::INT8, 1.0),
-        (Quant::AWQ, 0.5),
-        (Quant::GPTQ, 0.5),
-        (Quant::Q80, 1.0),
+    pub const HF_VALUES: [(Self, f64); 7] = [
+        (Self::FP16, 2.0),
+        (Self::BF16, 2.0),
+        (Self::FP8, 1.0),
+        (Self::INT8, 1.0),
+        (Self::AWQ, 0.5),
+        (Self::GPTQ, 0.5),
+        (Self::Q80, 1.0),
     ];
 
-    pub const GGUF_VALUES: [(Quant, f64); 8] = [
-        (Quant::Q80, 1.0),
-        (Quant::Q6K, 0.75),
-        (Quant::Q5KM, 0.65),
-        (Quant::Q50, 0.625),
-        (Quant::Q4KM, 0.55),
-        (Quant::Q40, 0.5),
-        (Quant::Q3KM, 0.45),
-        (Quant::Q2K, 0.35),
+    pub const GGUF_VALUES: [(Self, f64); 8] = [
+        (Self::Q80, 1.0),
+        (Self::Q6K, 0.75),
+        (Self::Q5KM, 0.65),
+        (Self::Q50, 0.625),
+        (Self::Q4KM, 0.55),
+        (Self::Q40, 0.5),
+        (Self::Q3KM, 0.45),
+        (Self::Q2K, 0.35),
     ];
 
-    pub fn bytes_per_weight(&self) -> f64 {
+    #[must_use]
+    pub const fn bytes_per_weight(&self) -> f64 {
         match self {
-            Quant::FP16 => 2.0,
-            Quant::BF16 => 2.0,
-            Quant::FP8 => 1.0,
-            Quant::INT8 => 1.0,
+            Self::FP16 | Self::BF16 => 2.0,
+            Self::FP8 | Self::INT8 | Self::Q80 => 1.0,
+            Self::Q6K => 0.75,
+            Self::Q5KM => 0.65,
+            Self::Q50 => 0.625,
+            Self::Q4KM => 0.55,
+            Self::Q40 | Self::AWQ | Self::GPTQ => 0.5,
+            Self::Q3KM => 0.45,
+            Self::Q2K => 0.35,
 
-            Quant::Q80 => 1.0,
-            Quant::Q6K => 0.75,
-            Quant::Q5KM => 0.65,
-            Quant::Q50 => 0.625,
-            Quant::Q4KM => 0.55,
-            Quant::Q40 => 0.5,
-            Quant::Q3KM => 0.45,
-            Quant::Q2K => 0.35,
-
-            Quant::AWQ => 0.5,
-            Quant::GPTQ => 0.5,
-
-            Quant::ALL => 0.0,
+            Self::ALL => 0.0,
         }
     }
 
-    pub fn rank(&self) -> i32 {
+    #[must_use]
+    pub const fn rank(&self) -> i32 {
         match self {
-            Quant::FP16 => 100,
-            Quant::BF16 => 95,
-            Quant::FP8 => 90,
-            Quant::INT8 => 80,
-            Quant::Q80 => 70,
-            Quant::Q6K => 60,
-            Quant::Q5KM => 50,
-            Quant::Q50 => 45,
-            Quant::Q4KM => 40,
-            Quant::Q40 => 35,
-            Quant::Q3KM => 30,
-            Quant::Q2K => 20,
-            Quant::AWQ => 55,
-            Quant::GPTQ => 50,
-            Quant::ALL => 0,
+            Self::FP16 => 100,
+            Self::BF16 => 95,
+            Self::FP8 => 90,
+            Self::INT8 => 80,
+            Self::Q80 => 70,
+            Self::Q6K => 60,
+            Self::Q5KM | Self::GPTQ => 50,
+            Self::Q50 => 45,
+            Self::Q4KM => 40,
+            Self::Q40 => 35,
+            Self::Q3KM => 30,
+            Self::Q2K => 20,
+            Self::AWQ => 55,
+            Self::ALL => 0,
         }
     }
 }
@@ -133,16 +127,16 @@ pub enum Context {
 impl std::fmt::Display for Context {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Context::ALL => write!(f, "ALL"),
-            Context::Size512 => write!(f, "512"),
-            Context::Size1024 => write!(f, "1024"),
-            Context::Size2048 => write!(f, "2048"),
-            Context::Size4096 => write!(f, "4096"),
-            Context::Size8192 => write!(f, "8192"),
-            Context::Size16384 => write!(f, "16384"),
-            Context::Size32768 => write!(f, "32768"),
-            Context::Size65536 => write!(f, "65536"),
-            Context::Size131072 => write!(f, "131072"),
+            Self::ALL => write!(f, "ALL"),
+            Self::Size512 => write!(f, "512"),
+            Self::Size1024 => write!(f, "1024"),
+            Self::Size2048 => write!(f, "2048"),
+            Self::Size4096 => write!(f, "4096"),
+            Self::Size8192 => write!(f, "8192"),
+            Self::Size16384 => write!(f, "16384"),
+            Self::Size32768 => write!(f, "32768"),
+            Self::Size65536 => write!(f, "65536"),
+            Self::Size131072 => write!(f, "131072"),
         }
     }
 }
@@ -159,28 +153,26 @@ impl<'de> Deserialize<'de> for Context {
             serde_json::Value::Number(n) => n.to_string(),
             _ => {
                 return Err(serde::de::Error::custom(format!(
-                    "invalid context type: expected string or number, got {:?}",
-                    value
+                    "invalid context type: expected string or number, got {value:?}"
                 )));
             }
         };
 
         match s.as_str() {
-            "0" | "all" | "ALL" => Ok(Context::ALL),
+            "0" | "all" | "ALL" => Ok(Self::ALL),
 
-            "512" => Ok(Context::Size512),
-            "1024" => Ok(Context::Size1024),
-            "2048" => Ok(Context::Size2048),
-            "4096" => Ok(Context::Size4096),
-            "8192" => Ok(Context::Size8192),
-            "16384" => Ok(Context::Size16384),
-            "32768" => Ok(Context::Size32768),
-            "65536" => Ok(Context::Size65536),
-            "131072" => Ok(Context::Size131072),
+            "512" => Ok(Self::Size512),
+            "1024" => Ok(Self::Size1024),
+            "2048" => Ok(Self::Size2048),
+            "4096" => Ok(Self::Size4096),
+            "8192" => Ok(Self::Size8192),
+            "16384" => Ok(Self::Size16384),
+            "32768" => Ok(Self::Size32768),
+            "65536" => Ok(Self::Size65536),
+            "131072" => Ok(Self::Size131072),
 
             _ => Err(serde::de::Error::custom(format!(
-                "invalid context value: {}",
-                s
+                "invalid context value: {s}"
             ))),
         }
     }
@@ -192,47 +184,47 @@ impl Serialize for Context {
         S: Serializer,
     {
         match self {
-            Context::ALL => serializer.serialize_str("ALL"),
+            Self::ALL => serializer.serialize_str("ALL"),
 
-            Context::Size512 => serializer.serialize_u32(512),
-            Context::Size1024 => serializer.serialize_u32(1024),
-            Context::Size2048 => serializer.serialize_u32(2048),
-            Context::Size4096 => serializer.serialize_u32(4096),
-            Context::Size8192 => serializer.serialize_u32(8192),
-            Context::Size16384 => serializer.serialize_u32(16384),
-            Context::Size32768 => serializer.serialize_u32(32768),
-            Context::Size65536 => serializer.serialize_u32(65536),
-            Context::Size131072 => serializer.serialize_u32(131072),
+            Self::Size512 => serializer.serialize_u32(512),
+            Self::Size1024 => serializer.serialize_u32(1024),
+            Self::Size2048 => serializer.serialize_u32(2048),
+            Self::Size4096 => serializer.serialize_u32(4096),
+            Self::Size8192 => serializer.serialize_u32(8192),
+            Self::Size16384 => serializer.serialize_u32(16384),
+            Self::Size32768 => serializer.serialize_u32(32768),
+            Self::Size65536 => serializer.serialize_u32(65536),
+            Self::Size131072 => serializer.serialize_u32(131_072),
         }
     }
 }
 
 impl Context {
-    pub const ALL_VALUES: [Context; 9] = [
-        Context::Size512,
-        Context::Size1024,
-        Context::Size2048,
-        Context::Size4096,
-        Context::Size8192,
-        Context::Size16384,
-        Context::Size32768,
-        Context::Size65536,
-        Context::Size131072,
+    pub const ALL_VALUES: [Self; 9] = [
+        Self::Size512,
+        Self::Size1024,
+        Self::Size2048,
+        Self::Size4096,
+        Self::Size8192,
+        Self::Size16384,
+        Self::Size32768,
+        Self::Size65536,
+        Self::Size131072,
     ];
 
-    pub fn as_usize(&self) -> usize {
+    #[must_use]
+    pub const fn as_usize(&self) -> usize {
         match self {
-            Context::ALL => 131072,
+            Self::ALL | Self::Size131072 => 131_072,
 
-            Context::Size512 => 512,
-            Context::Size1024 => 1024,
-            Context::Size2048 => 2048,
-            Context::Size4096 => 4096,
-            Context::Size8192 => 8192,
-            Context::Size16384 => 16384,
-            Context::Size32768 => 32768,
-            Context::Size65536 => 65536,
-            Context::Size131072 => 131072,
+            Self::Size512 => 512,
+            Self::Size1024 => 1024,
+            Self::Size2048 => 2048,
+            Self::Size4096 => 4096,
+            Self::Size8192 => 8192,
+            Self::Size16384 => 16384,
+            Self::Size32768 => 32768,
+            Self::Size65536 => 65536,
         }
     }
 }

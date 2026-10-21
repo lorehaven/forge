@@ -16,7 +16,7 @@ pub async fn stop_instance(
     }
 
     match engine.stop_instance(id).await {
-        Ok(_) => Response::html(
+        Ok(()) => Response::html(
             http::StatusCode::OK,
             r#"<div id="confirm-stop-instance-modal" class="estimates-modal"></div>"#,
         ),

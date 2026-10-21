@@ -61,7 +61,7 @@ struct Rig {
     gantry: Gantry,
 }
 
-/// A package `ml` with a Deployment, a Service, a ConfigMap, a Secret and a ClusterRole in its inventory.
+/// A package `ml` with a Deployment, a Service, a `ConfigMap`, a Secret and a `ClusterRole` in its inventory.
 async fn rig_with(settings: Settings) -> Rig {
     let cluster = Arc::new(FakeCluster::new());
     let registry = Arc::new(MemoryRegistry::default());
@@ -876,7 +876,6 @@ fn edit_and_delete_steps_are_validated_like_every_other() {
             yaml: "just text".into()
         })
         .contains("kind")
-            || true
     );
     assert!(
         bad(Step::ApplyYaml {

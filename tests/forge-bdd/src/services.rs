@@ -150,6 +150,7 @@ impl Fixture {
             Target::Gatehouse => self.start_gatehouse().await,
             Target::Conveyor => self.start_conveyor().await,
             Target::Workbench => self.start_workbench().await,
+            Target::Daybook => self.start_daybook().await,
         }
     }
 
@@ -220,6 +221,32 @@ impl Fixture {
         Service {
             target: Target::Workbench,
             child: command.spawn().expect("failed to start workbench-service"),
+        }
+    }
+
+    /// Daybook's API is exercised here with an in-memory database. CRUD
+    /// persistence and owner isolation are covered by its Postgres-backed
+    /// integration suite.
+    async fn start_daybook(&self) -> Service {
+        self.build("daybook-service").await;
+        println!("Starting daybook-service...");
+
+        let mut command = Command::new(self.binary("daybook-service"));
+        command
+            .current_dir(self.service_dir("daybook-service"))
+            .envs(std::env::vars());
+        self.common_env(&mut command, "daybook");
+        command
+            .env("SERVER_ADDR", "127.0.0.1:12443")
+            .env("BASE_PATH", "/daybook")
+            .env("DB_SCHEMA", "test_daybook")
+            .env("SERVICE_AUTH_ENABLED", "true")
+            .env("SERVER_CERT_PATH", "missing.pem")
+            .env("SERVER_KEY_PATH", "missing.pem");
+
+        Service {
+            target: Target::Daybook,
+            child: command.spawn().expect("failed to start daybook-service"),
         }
     }
 
@@ -357,7 +384,7 @@ impl Fixture {
             // reading this env block for the old story.
             .env(
                 "SERVICE_AUDIENCES",
-                "sage,switchboard,warehouse,conveyor,workbench,gatehouse",
+                "sage,switchboard,warehouse,conveyor,workbench,daybook,gatehouse",
             )
             // Signing keys are encrypted at rest even in this throwaway
             // in-memory database - see `keys.rs`.

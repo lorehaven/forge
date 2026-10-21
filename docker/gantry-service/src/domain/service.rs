@@ -103,3 +103,9 @@ impl Gantry {
         self.wake.notified().await;
     }
 }
+
+impl std::fmt::Debug for Gantry {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("Gantry { .. }")
+    }
+}

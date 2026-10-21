@@ -12,13 +12,13 @@ use quench_db::prelude::Db;
 use quench_http::prelude::{FromRequest, HttpError, Inject, Json, Request, Response, get, post};
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct LoginRequest {
     pub username: String,
     pub password: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct RefreshRequest {
     pub refresh_token: String,
 }
@@ -40,7 +40,7 @@ struct LoginError {
 
 impl LoginError {
     fn response(error: &'static str) -> Response {
-        Response::json(StatusCode::UNAUTHORIZED, &LoginError { error })
+        Response::json(StatusCode::UNAUTHORIZED, &Self { error })
             .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
     }
 }
@@ -84,9 +84,10 @@ struct RefreshCookie(Option<String>);
 #[async_trait]
 impl FromRequest for RefreshCookie {
     async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
-        Ok(RefreshCookie(
-            quench_auth::http::domain::cookies::cookie_value(req, &realm::refresh_cookie_name()),
-        ))
+        Ok(Self(quench_auth::http::domain::cookies::cookie_value(
+            req,
+            &realm::refresh_cookie_name(),
+        )))
     }
 }
 
@@ -159,7 +160,7 @@ async fn logout(
     }
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct UserInfo {
     pub sub: String,
     pub roles: Vec<String>,
@@ -185,19 +186,19 @@ impl FromRequest for MaybeAccessClaims {
             .map_err(|e| HttpError::status(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
         let Some(token) = super::users::bearer_token(req) else {
-            return Ok(MaybeAccessClaims(None));
+            return Ok(Self(None));
         };
         let Ok(claims) = config.decode_claims(&token).await else {
-            return Ok(MaybeAccessClaims(None));
+            return Ok(Self(None));
         };
         let Some(session_id) = claims.sid.clone() else {
-            return Ok(MaybeAccessClaims(None));
+            return Ok(Self(None));
         };
         let active = sessions
             .is_active(&session_id, &claims.sub)
             .await
             .unwrap_or(false);
-        Ok(MaybeAccessClaims(
+        Ok(Self(
             (claims.allows(&config.service_name) && active).then_some(claims),
         ))
     }
@@ -245,7 +246,9 @@ async fn rotate_serialized(
     sessions.rotate(refresh_token, ttl_secs).await
 }
 
-/// Renews a session from its refresh token, in-process. Gatehouse can't use
+/// Renews a session from its refresh token, in-process.
+///
+/// Gatehouse can't use
 /// `sso_client::refresh` on itself: that goes out over HTTP to `GATEHOUSE_URL`,
 /// which gatehouse deliberately runs without. `None` for an unknown or expired
 /// token, or when the user is gone - the caller falls back to the login form.
@@ -358,6 +361,7 @@ pub async fn token_response(
 }
 
 /// Scope claim: roles, then `service:action` per grant (wildcard roles emit the role alone).
+#[must_use]
 pub fn user_scope(user: &User) -> String {
     let mut entries: Vec<String> = user
         .get_roles()
@@ -377,6 +381,7 @@ pub fn user_scope(user: &User) -> String {
 }
 
 /// Audiences this token is valid for; gatehouse itself is always included (serves login/refresh).
+#[must_use]
 pub fn user_audiences(config: &JwtConfig, user: &User) -> Vec<String> {
     if user.has_wildcard() {
         return config.audiences.clone();

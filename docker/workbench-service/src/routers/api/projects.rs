@@ -10,7 +10,7 @@ use quench_http::prelude::{
 };
 use serde::Deserialize;
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct CreateProject {
     pub key: String,
     pub name: String,
@@ -83,13 +83,13 @@ pub async fn read(
         return Ok(json_error(StatusCode::FORBIDDEN, "no read access here"));
     }
 
-    match project::read(&db, &id).await? {
-        Some(project) => Ok(json_ok(&project)),
-        None => Ok(json_error(StatusCode::NOT_FOUND, "no such project")),
-    }
+    project::read(&db, &id).await?.map_or_else(
+        || Ok(json_error(StatusCode::NOT_FOUND, "no such project")),
+        |project| Ok(json_ok(&project)),
+    )
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct UpdateProject {
     pub name: String,
     #[serde(default)]
@@ -117,10 +117,10 @@ pub async fn update(
         description: body.description.clone(),
     };
 
-    match project::update(&db, &id, &changes).await? {
-        Some(project) => Ok(json_ok(&project)),
-        None => Ok(json_error(StatusCode::NOT_FOUND, "no such project")),
-    }
+    project::update(&db, &id, &changes).await?.map_or_else(
+        || Ok(json_error(StatusCode::NOT_FOUND, "no such project")),
+        |project| Ok(json_ok(&project)),
+    )
 }
 
 #[delete("/api/v1/projects/{id}")]
@@ -134,9 +134,10 @@ pub async fn remove(
         return Ok(json_error(StatusCode::FORBIDDEN, "no write access here"));
     }
 
-    match project::delete(&db, &id).await? {
-        true => Ok(Response::new(StatusCode::NO_CONTENT)),
-        false => Ok(json_error(StatusCode::NOT_FOUND, "no such project")),
+    if project::delete(&db, &id).await? {
+        Ok(Response::new(StatusCode::NO_CONTENT))
+    } else {
+        Ok(json_error(StatusCode::NOT_FOUND, "no such project"))
     }
 }
 

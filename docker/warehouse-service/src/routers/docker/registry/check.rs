@@ -5,7 +5,7 @@ use quench_http::prelude::{
 
 #[get("/v2/")]
 pub async fn handle_get() -> Response {
-    respond().await
+    respond()
 }
 
 // No `#[head]` macro exists - hand-expanded from `route_impl` in quench-http-macros.
@@ -15,7 +15,7 @@ struct __quench_route_handle_head;
 #[async_trait::async_trait]
 impl Endpoint for __quench_route_handle_head {
     async fn call(&self, _req: Request) -> Response {
-        respond().await
+        respond()
     }
 }
 
@@ -27,7 +27,7 @@ quench_http::inventory::submit! {
     }
 }
 
-async fn respond() -> Response {
+fn respond() -> Response {
     Response::new(StatusCode::OK).header("docker-distribution-api-version", "registry/2.0")
 }
 

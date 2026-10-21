@@ -41,7 +41,7 @@ pub fn set_output_mode(mode: OutputMode) {
     let _ = OUTPUT_MODE.set(mode);
 }
 
-fn output_mode() -> OutputMode {
+pub fn output_mode() -> OutputMode {
     OUTPUT_MODE.get().copied().unwrap_or_default()
 }
 

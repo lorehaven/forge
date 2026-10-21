@@ -218,7 +218,7 @@ impl Origin {
     }
 }
 
-fn request<'a>(url: &'a str, git_ref: &'a str, sha: &'a str) -> CheckoutRequest<'a> {
+const fn request<'a>(url: &'a str, git_ref: &'a str, sha: &'a str) -> CheckoutRequest<'a> {
     CheckoutRequest {
         clone_url: url,
         git_ref,

@@ -46,7 +46,7 @@ fn req(method: Method, path: &str, container: &Arc<quench_http::di::Container>) 
 fn json_req(
     method: Method,
     path: &str,
-    body: serde_json::Value,
+    body: &serde_json::Value,
     container: &Arc<quench_http::di::Container>,
 ) -> Request {
     let mut headers = HeaderMap::new();
@@ -55,7 +55,7 @@ fn json_req(
         method,
         path.parse::<Uri>().unwrap(),
         headers,
-        quench_http::body::InboundBody::from_bytes(Bytes::from(serde_json::to_vec(&body).unwrap())),
+        quench_http::body::InboundBody::from_bytes(Bytes::from(serde_json::to_vec(body).unwrap())),
         container.clone(),
     )
 }
@@ -93,7 +93,7 @@ async fn create_project_rejects_empty_key_or_name() {
         .call(json_req(
             Method::POST,
             "/api/v1/projects",
-            json!({"key": "  ", "name": "Anything"}),
+            &json!({"key": "  ", "name": "Anything"}),
             &container,
         ))
         .await;
@@ -111,7 +111,7 @@ async fn create_and_read_a_project_round_trips() {
         .call(json_req(
             Method::POST,
             "/api/v1/projects",
-            json!({"key": "WB", "name": "Workbench"}),
+            &json!({"key": "WB", "name": "Workbench"}),
             &container,
         ))
         .await;
@@ -177,7 +177,7 @@ async fn update_project_rejects_empty_name_then_applies_a_valid_one() {
         .call(json_req(
             Method::PUT,
             &format!("/api/v1/projects/{}", project.id),
-            json!({"name": ""}),
+            &json!({"name": ""}),
             &container,
         ))
         .await;
@@ -187,7 +187,7 @@ async fn update_project_rejects_empty_name_then_applies_a_valid_one() {
         .call(json_req(
             Method::PUT,
             &format!("/api/v1/projects/{}", project.id),
-            json!({"name": "Renamed", "description": "new"}),
+            &json!({"name": "Renamed", "description": "new"}),
             &container,
         ))
         .await;
@@ -207,7 +207,7 @@ async fn update_a_missing_project_is_404() {
         .call(json_req(
             Method::PUT,
             "/api/v1/projects/no-such-id",
-            json!({"name": "Renamed"}),
+            &json!({"name": "Renamed"}),
             &container,
         ))
         .await;
@@ -257,7 +257,7 @@ async fn create_issue_rejects_empty_title() {
         .call(json_req(
             Method::POST,
             &format!("/api/v1/projects/{}/issues", project.id),
-            json!({"title": "   "}),
+            &json!({"title": "   "}),
             &container,
         ))
         .await;
@@ -276,7 +276,7 @@ async fn create_list_read_update_transition_and_remove_an_issue() {
         .call(json_req(
             Method::POST,
             &format!("/api/v1/projects/{}/issues", project.id),
-            json!({"title": "Do the thing"}),
+            &json!({"title": "Do the thing"}),
             &container,
         ))
         .await;
@@ -310,7 +310,7 @@ async fn create_list_read_update_transition_and_remove_an_issue() {
         .call(json_req(
             Method::PUT,
             &format!("/api/v1/issues/{id}"),
-            json!({"title": "  ", "kind": "task", "priority": "high"}),
+            &json!({"title": "  ", "kind": "task", "priority": "high"}),
             &container,
         ))
         .await;
@@ -320,7 +320,7 @@ async fn create_list_read_update_transition_and_remove_an_issue() {
         .call(json_req(
             Method::PUT,
             &format!("/api/v1/issues/{id}"),
-            json!({"title": "Do the updated thing", "kind": "bug", "priority": "high"}),
+            &json!({"title": "Do the updated thing", "kind": "bug", "priority": "high"}),
             &container,
         ))
         .await;
@@ -332,7 +332,7 @@ async fn create_list_read_update_transition_and_remove_an_issue() {
         .call(json_req(
             Method::POST,
             &format!("/api/v1/issues/{id}/transition"),
-            json!({"status": "not-a-status"}),
+            &json!({"status": "not-a-status"}),
             &container,
         ))
         .await;
@@ -342,7 +342,7 @@ async fn create_list_read_update_transition_and_remove_an_issue() {
         .call(json_req(
             Method::POST,
             &format!("/api/v1/issues/{id}/transition"),
-            json!({"status": "in-progress"}),
+            &json!({"status": "in-progress"}),
             &container,
         ))
         .await;
@@ -380,7 +380,7 @@ async fn issue_actions_on_a_missing_issue_are_404() {
         .call(json_req(
             Method::PUT,
             "/api/v1/issues/no-such-id",
-            json!({"title": "x", "kind": "task", "priority": "medium"}),
+            &json!({"title": "x", "kind": "task", "priority": "medium"}),
             &container,
         ))
         .await;
@@ -390,7 +390,7 @@ async fn issue_actions_on_a_missing_issue_are_404() {
         .call(json_req(
             Method::POST,
             "/api/v1/issues/no-such-id/transition",
-            json!({"status": "todo"}),
+            &json!({"status": "todo"}),
             &container,
         ))
         .await;
@@ -418,7 +418,7 @@ async fn create_list_attach_and_detach_a_label() {
         .call(json_req(
             Method::POST,
             &format!("/api/v1/projects/{}/labels", project.id),
-            json!({"name": "  "}),
+            &json!({"name": "  "}),
             &container,
         ))
         .await;
@@ -428,7 +428,7 @@ async fn create_list_attach_and_detach_a_label() {
         .call(json_req(
             Method::POST,
             &format!("/api/v1/projects/{}/labels", project.id),
-            json!({"name": "bug"}),
+            &json!({"name": "bug"}),
             &container,
         ))
         .await;
@@ -451,7 +451,7 @@ async fn create_list_attach_and_detach_a_label() {
         .call(json_req(
             Method::POST,
             &format!("/api/v1/projects/{}/issues", project.id),
-            json!({"title": "Labeled"}),
+            &json!({"title": "Labeled"}),
             &container,
         ))
         .await;
@@ -524,7 +524,7 @@ async fn create_rejects_empty_body_then_lists_and_removes_a_comment() {
         .call(json_req(
             Method::POST,
             &format!("/api/v1/projects/{}/issues", project.id),
-            json!({"title": "Commented"}),
+            &json!({"title": "Commented"}),
             &container,
         ))
         .await;
@@ -535,7 +535,7 @@ async fn create_rejects_empty_body_then_lists_and_removes_a_comment() {
         .call(json_req(
             Method::POST,
             &format!("/api/v1/issues/{issue_id}/comments"),
-            json!({"body": "   "}),
+            &json!({"body": "   "}),
             &container,
         ))
         .await;
@@ -545,7 +545,7 @@ async fn create_rejects_empty_body_then_lists_and_removes_a_comment() {
         .call(json_req(
             Method::POST,
             "/api/v1/issues/no-such-issue/comments",
-            json!({"body": "hi"}),
+            &json!({"body": "hi"}),
             &container,
         ))
         .await;
@@ -555,7 +555,7 @@ async fn create_rejects_empty_body_then_lists_and_removes_a_comment() {
         .call(json_req(
             Method::POST,
             &format!("/api/v1/issues/{issue_id}/comments"),
-            json!({"body": "First comment"}),
+            &json!({"body": "First comment"}),
             &container,
         ))
         .await;
@@ -609,7 +609,7 @@ async fn issue_link_validation_then_create_list_and_remove() {
         .call(json_req(
             Method::POST,
             &format!("/api/v1/projects/{}/issues", project.id),
-            json!({"title": "Blocker"}),
+            &json!({"title": "Blocker"}),
             &container,
         ))
         .await;
@@ -620,28 +620,18 @@ async fn issue_link_validation_then_create_list_and_remove() {
         .call(json_req(
             Method::POST,
             &format!("/api/v1/projects/{}/issues", project.id),
-            json!({"title": "Blocked"}),
+            &json!({"title": "Blocked"}),
             &container,
         ))
         .await;
-    let blocked = json_body(resp).await;
-    let blocked_id = blocked["id"].as_str().unwrap().to_string();
+    let dependent = json_body(resp).await;
+    let dependent_id = dependent["id"].as_str().unwrap().to_string();
 
     let resp = app
         .call(json_req(
             Method::POST,
             &format!("/api/v1/issues/{blocker_id}/links"),
-            json!({"linked_issue_id": blocked_id, "kind": "not-a-kind"}),
-            &container,
-        ))
-        .await;
-    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-
-    let resp = app
-        .call(json_req(
-            Method::POST,
-            &format!("/api/v1/issues/{blocker_id}/links"),
-            json!({"linked_issue_id": blocker_id, "kind": "blocks"}),
+            &json!({"linked_issue_id": dependent_id, "kind": "not-a-kind"}),
             &container,
         ))
         .await;
@@ -651,7 +641,17 @@ async fn issue_link_validation_then_create_list_and_remove() {
         .call(json_req(
             Method::POST,
             &format!("/api/v1/issues/{blocker_id}/links"),
-            json!({"linked_issue_id": blocked_id, "kind": "blocks"}),
+            &json!({"linked_issue_id": blocker_id, "kind": "blocks"}),
+            &container,
+        ))
+        .await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+    let resp = app
+        .call(json_req(
+            Method::POST,
+            &format!("/api/v1/issues/{blocker_id}/links"),
+            &json!({"linked_issue_id": dependent_id, "kind": "blocks"}),
             &container,
         ))
         .await;

@@ -36,6 +36,7 @@ fn list_repositories_is_empty_on_a_fresh_storage_root() {
     let storage = WithStorageRoot::new();
     std::fs::create_dir_all(storage.dir.path()).unwrap();
     assert!(list_repositories().is_empty());
+    drop(storage);
 }
 
 #[test]
@@ -53,6 +54,7 @@ fn list_repositories_finds_every_repo_with_a_tags_directory_and_skips_reserved_n
         repos,
         vec!["another-repo".to_string(), "my/repo".to_string()]
     );
+    drop(storage);
 }
 
 #[test]

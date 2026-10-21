@@ -69,9 +69,9 @@ fn parse_optional_u32_and_f32_trim_and_reject_blank_or_invalid() {
 
 #[test]
 fn round_gpu_util_up_rounds_to_the_next_twentieth() {
-    assert_eq!(round_gpu_util_up(0.81), 0.85);
-    assert_eq!(round_gpu_util_up(0.80), 0.80); // already exact
-    assert_eq!(round_gpu_util_up(0.001), 0.05);
+    assert!((round_gpu_util_up(0.81) - 0.85).abs() < 1e-6);
+    assert!((round_gpu_util_up(0.80) - 0.80).abs() < 1e-6); // already exact
+    assert!((round_gpu_util_up(0.001) - 0.05).abs() < 1e-6);
 }
 
 #[test]
@@ -79,7 +79,7 @@ fn calculate_minimum_gpu_util_covers_the_estimate_against_the_gpu_with_a_safety_
     let est = estimate(Quant::FP16, Context::Size4096, 14.0, 2.0);
     // (14 + 1.5) / (24 - 2) = 0.704545... -> rounds up to 0.75
     let result = calculate_minimum_gpu_util(&est, 24.0).unwrap();
-    assert_eq!(result, 0.75);
+    assert!((result - 0.75).abs() < 1e-6);
 }
 
 #[test]
@@ -223,7 +223,7 @@ fn launch_gpu_util_uses_the_explicit_query_value_unless_recalculating() {
     let model = model_with_estimates(vec![estimate(Quant::FP16, Context::Size4096, 14.0, 2.0)]);
     let q = query(Some("0.5"), None);
     let value = launch_gpu_util(Some(&model), "", None, &q, &gpu(24.0, 20.0));
-    assert_eq!(value, 0.5);
+    assert!((value - 0.5).abs() < 1e-6);
 }
 
 #[test]
@@ -231,14 +231,14 @@ fn launch_gpu_util_recalculates_from_the_estimate_when_asked() {
     let model = model_with_estimates(vec![estimate(Quant::FP16, Context::Size4096, 14.0, 2.0)]);
     let q = query(Some("0.5"), Some(true));
     let value = launch_gpu_util(Some(&model), "", None, &q, &gpu(24.0, 20.0));
-    assert_eq!(value, round_gpu_util_up((14.0 + 1.5) / (24.0 - 2.0)) as f32);
+    assert!((f64::from(value) - round_gpu_util_up((14.0 + 1.5) / (24.0 - 2.0))).abs() < 1e-6);
 }
 
 #[test]
 fn launch_gpu_util_defaults_to_0_90_with_no_model_and_no_query_value() {
     let q = query(None, None);
     let value = launch_gpu_util(None, "", None, &q, &gpu(24.0, 20.0));
-    assert_eq!(value, 0.90);
+    assert!((value - 0.90).abs() < 1e-6);
 }
 
 #[test]
@@ -246,7 +246,7 @@ fn launch_gpu_util_defaults_to_0_90_when_the_model_has_no_matching_estimate() {
     let model = model_with_estimates(vec![]);
     let q = query(None, None);
     let value = launch_gpu_util(Some(&model), "", None, &q, &gpu(24.0, 20.0));
-    assert_eq!(value, 0.90);
+    assert!((value - 0.90).abs() < 1e-6);
 }
 
 // ---------------------------------------------------------------------------
@@ -344,13 +344,13 @@ async fn get_vllm_namespace_reflects_mock_and_native_management_modes() {
     // this deterministic under the default parallel test runner.
     use crate::env_support::env_lock;
     let _guard = env_lock().lock().await;
-    unsafe { std::env::set_var("VLLM_MANAGEMENT_MODE", "mock") };
+    envmnt::set("VLLM_MANAGEMENT_MODE", "mock");
     assert_eq!(get_vllm_namespace(), "mock");
 
-    unsafe { std::env::set_var("VLLM_MANAGEMENT_MODE", "native") };
+    envmnt::set("VLLM_MANAGEMENT_MODE", "native");
     assert_eq!(get_vllm_namespace(), "native");
 
-    unsafe { std::env::remove_var("VLLM_MANAGEMENT_MODE") };
+    envmnt::remove("VLLM_MANAGEMENT_MODE");
 }
 
 // ---------------------------------------------------------------------------
@@ -361,7 +361,7 @@ async fn get_vllm_namespace_reflects_mock_and_native_management_modes() {
 fn render_launch_modal_includes_the_model_select_and_fit_note() {
     let model = model_with_estimates(vec![estimate(Quant::FP16, Context::Size4096, 5.0, 1.0)]);
     let q = query(None, None);
-    let html = render_launch_modal(vec![model], &q, &gpu(24.0, 24.0));
+    let html = render_launch_modal(&[model], &q, &gpu(24.0, 24.0));
     assert!(html.contains("launch-instance-modal"));
     assert!(html.contains("test-model"));
     assert!(html.contains("fit-line"));
@@ -371,7 +371,7 @@ fn render_launch_modal_includes_the_model_select_and_fit_note() {
 fn render_launch_modal_offers_a_device_select_defaulting_to_gpu() {
     let model = model_with_estimates(vec![estimate(Quant::FP16, Context::Size4096, 5.0, 1.0)]);
     let q = query(None, None);
-    let html = render_launch_modal(vec![model], &q, &gpu(24.0, 24.0));
+    let html = render_launch_modal(&[model], &q, &gpu(24.0, 24.0));
     assert!(html.contains(r#"name="device""#));
     assert!(html.contains(">GPU<"));
     assert!(html.contains(">CPU<"));
@@ -385,7 +385,7 @@ fn render_launch_modal_for_cpu_disables_gpu_util_and_skips_the_vram_fit_note() {
     let model = model_with_estimates(vec![estimate(Quant::FP16, Context::Size4096, 5.0, 1.0)]);
     let mut q = query(None, None);
     q.device = Some("cpu".to_string());
-    let html = render_launch_modal(vec![model], &q, &gpu(24.0, 24.0));
+    let html = render_launch_modal(&[model], &q, &gpu(24.0, 24.0));
     assert!(html.contains("ui_vllm_fit_note_cpu"));
     // Only the GPU-utilization input is disabled on the CPU path.
     assert!(html.contains(r#"id="launch-gpu-util""#));

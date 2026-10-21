@@ -42,6 +42,7 @@ pub enum Scope {
 }
 
 impl Scope {
+    #[must_use]
     pub fn repo_id(&self) -> Option<&str> {
         match self {
             Self::Global => None,

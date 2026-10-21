@@ -2,6 +2,7 @@
 //! will do is testable - and printable in a dry run - without a cluster.
 
 use crate::domain::steps::Step;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -47,49 +48,27 @@ pub struct Context {
 
 /// Where an edit's YAML is written for `kubectl apply`: named by its content, so the same edit is the
 /// same file.
+#[must_use]
 pub fn edit_file(dir: &Path, yaml: &str) -> PathBuf {
     let digest = rivet_package::sha256_hex(yaml.as_bytes());
     dir.join(format!("edit-{}.yaml", &digest[..12]))
 }
 
+#[must_use]
 pub fn package_file(packages_dir: &Path, package: &str, version: &str) -> PathBuf {
     packages_dir.join(format!("{package}-{version}.rivet"))
 }
 
 impl Step {
+    #[must_use]
     pub fn commands(&self, ctx: &Context) -> Vec<Command> {
         match self {
-            Self::Pull { package, version } if ctx.source_dir.is_some() => {
-                let source = ctx.source_dir.as_deref().unwrap_or(&ctx.packages_dir);
-                vec![Command::new(
-                    "cp",
-                    vec![
-                        package_file(source, package, version).display().to_string(),
-                        ctx.packages_dir.display().to_string(),
-                    ],
-                    false,
-                )]
-            }
-            Self::Pull { package, version } => vec![Command::new(
-                "riveter",
-                vec![
-                    "pull".into(),
-                    format!("{package}@{version}"),
-                    "--out".into(),
-                    ctx.packages_dir.display().to_string(),
-                ],
-                false,
-            )],
+            Self::Pull { package, version } => pull_commands(ctx, package, version),
             Self::Check {
                 package,
                 version,
                 values_secret,
-            } => {
-                let mut args = install_args(ctx, package, version, values_secret.as_deref());
-                args.push("--inventory".into());
-                args.push("--dry-run".into());
-                vec![Command::new("riveter", args, false)]
-            }
+            } => check_commands(ctx, package, version, values_secret.as_deref()),
             Self::Install {
                 package,
                 version,
@@ -105,31 +84,8 @@ impl Step {
                 let mut args = install_args(ctx, package, version, values_secret.as_deref());
                 // The package's own record of itself, whatever part of it this applies.
                 args.push("--inventory".into());
-                for (key, value) in sets {
-                    args.push("--set".into());
-                    args.push(format!("{key}={value}"));
-                }
-                for (resource, count) in replicas {
-                    args.push("--replicas".into());
-                    args.push(format!("{resource}={count}"));
-                }
-                if let Some(seconds) = timeout_secs {
-                    args.push("--timeout".into());
-                    args.push(seconds.to_string());
-                }
-                // Riveter's own client-side dry run reaches no cluster, so it is safe to actually run.
-                for resource in except {
-                    args.push("--except".into());
-                    args.push(resource.clone());
-                }
-                if *no_wait {
-                    args.push("--no-wait".into());
-                }
-                if ctx.dry_run {
-                    args.push("--dry-run".into());
-                }
-                // Positional: only these resources of the package.
-                args.extend(targets.iter().cloned());
+                push_overrides(&mut args, sets, replicas, *timeout_secs);
+                push_selection(&mut args, ctx, except, *no_wait, targets);
                 vec![Command::new("riveter", args, !ctx.dry_run)]
             }
             Self::Scale {
@@ -137,32 +93,11 @@ impl Step {
                 kind,
                 name,
                 replicas,
-            } => vec![Command::new(
-                "kubectl",
-                vec![
-                    "-n".into(),
-                    namespace.clone(),
-                    "scale".into(),
-                    format!("{kind}/{name}"),
-                    format!("--replicas={replicas}"),
-                ],
-                true,
-            )],
+            } => scale_commands(namespace, kind, name, *replicas),
             Self::Delete {
                 resource,
                 namespace,
-            } => {
-                let mut args = vec![
-                    "delete".to_string(),
-                    resource.clone(),
-                    "--ignore-not-found".into(),
-                    "--timeout=120s".into(),
-                ];
-                if let Some(namespace) = namespace {
-                    args.extend(["-n".to_string(), namespace.clone()]);
-                }
-                vec![Command::new("kubectl", args, true)]
-            }
+            } => delete_commands(resource, namespace.as_deref()),
             Self::ApplyYaml { yaml, .. } => vec![Command::new(
                 "kubectl",
                 vec![
@@ -175,54 +110,33 @@ impl Step {
             // Executed by the runner, which has to read what uses it (see `runner::restart_users`).
             Self::RestartUsers { namespace, .. } => vec![Command::new(
                 "kubectl",
-                vec![
-                    "-n".to_string(),
-                    namespace.clone(),
-                    "get".into(),
-                    "deployments,statefulsets,daemonsets".into(),
-                    "-o".into(),
-                    "json".into(),
-                ],
+                namespaced(
+                    namespace,
+                    ["get", "deployments,statefulsets,daemonsets", "-o", "json"],
+                ),
                 false,
             )],
             Self::DeletePods {
                 selector,
                 namespaces,
-            } => scopes(ctx, namespaces)
-                .into_iter()
-                .map(|scope| {
-                    let mut args = vec![
-                        "delete".to_string(),
-                        "pods".into(),
-                        "-l".into(),
-                        selector.clone(),
-                        "--wait=false".into(),
-                    ];
-                    args.extend(scope);
-                    Command::new("kubectl", args, true)
-                })
-                .collect(),
+            } => per_scope(
+                ctx,
+                namespaces,
+                ["delete", "pods", "-l", selector, "--wait=false"],
+                true,
+            ),
             // Executed by the runner as a poll (see `runner::wait_gone`), because `kubectl wait` fails when
             // nothing matches - and "nothing matches" is exactly the state being waited for.
             Self::WaitGone {
                 selector,
                 namespaces,
                 ..
-            } => scopes(ctx, namespaces)
-                .into_iter()
-                .map(|scope| {
-                    let mut args = vec![
-                        "get".to_string(),
-                        "pods".into(),
-                        "-l".into(),
-                        selector.clone(),
-                        "-o".into(),
-                        "name".into(),
-                    ];
-                    args.extend(scope);
-                    Command::new("kubectl", args, false)
-                })
-                .collect(),
+            } => per_scope(
+                ctx,
+                namespaces,
+                ["get", "pods", "-l", selector, "-o", "name"],
+                false,
+            ),
             Self::Rollout {
                 namespace,
                 kind,
@@ -231,20 +145,22 @@ impl Step {
                 ..
             } => vec![Command::new(
                 "kubectl",
-                vec![
-                    "-n".into(),
-                    namespace.clone(),
-                    "rollout".into(),
-                    "status".into(),
-                    format!("{kind}/{name}"),
-                    format!("--timeout={timeout_secs}s"),
-                ],
+                namespaced(
+                    namespace,
+                    [
+                        "rollout",
+                        "status",
+                        &format!("{kind}/{name}"),
+                        &format!("--timeout={timeout_secs}s"),
+                    ],
+                ),
                 false,
             )],
         }
     }
 
     /// What undoes a failed step, for the steps that have one.
+    #[must_use]
     pub fn rollback(&self) -> Option<Command> {
         match self {
             Self::Rollout {
@@ -255,18 +171,145 @@ impl Step {
                 ..
             } => Some(Command::new(
                 "kubectl",
-                vec![
-                    "-n".into(),
-                    namespace.clone(),
-                    "rollout".into(),
-                    "undo".into(),
-                    format!("{kind}/{name}"),
-                ],
+                namespaced(namespace, ["rollout", "undo", &format!("{kind}/{name}")]),
                 true,
             )),
             _ => None,
         }
     }
+}
+
+/// A package into `packages_dir`: copied from a local source directory when there is one, else pulled
+/// from Warehouse.
+/// Renders the package with its variables and dry-runs it, reaching no cluster.
+fn check_commands(
+    ctx: &Context,
+    package: &str,
+    version: &str,
+    values_secret: Option<&str>,
+) -> Vec<Command> {
+    let mut args = install_args(ctx, package, version, values_secret);
+    args.push("--inventory".into());
+    args.push("--dry-run".into());
+    vec![Command::new("riveter", args, false)]
+}
+
+/// `kubectl scale` of one workload to a replica count.
+fn scale_commands(namespace: &str, kind: &str, name: &str, replicas: u32) -> Vec<Command> {
+    let target = format!("{kind}/{name}");
+    let count = format!("--replicas={replicas}");
+    vec![Command::new(
+        "kubectl",
+        namespaced(namespace, ["scale", &target, &count]),
+        true,
+    )]
+}
+
+/// Deletes one resource of any kind; a missing one is not an error.
+fn delete_commands(resource: &str, namespace: Option<&str>) -> Vec<Command> {
+    let mut args = vec![
+        "delete".to_string(),
+        resource.to_string(),
+        "--ignore-not-found".into(),
+        "--timeout=120s".into(),
+    ];
+    if let Some(namespace) = namespace {
+        args.extend(["-n".to_string(), namespace.to_string()]);
+    }
+    vec![Command::new("kubectl", args, true)]
+}
+
+fn pull_commands(ctx: &Context, package: &str, version: &str) -> Vec<Command> {
+    if let Some(source) = ctx.source_dir.as_deref() {
+        return vec![Command::new(
+            "cp",
+            vec![
+                package_file(source, package, version).display().to_string(),
+                ctx.packages_dir.display().to_string(),
+            ],
+            false,
+        )];
+    }
+    vec![Command::new(
+        "riveter",
+        vec![
+            "pull".into(),
+            format!("{package}@{version}"),
+            "--out".into(),
+            ctx.packages_dir.display().to_string(),
+        ],
+        false,
+    )]
+}
+
+/// `kubectl -n <namespace> <rest...>`.
+fn namespaced<const N: usize>(namespace: &str, rest: [&str; N]) -> Vec<String> {
+    ["-n", namespace]
+        .into_iter()
+        .chain(rest)
+        .map(str::to_string)
+        .collect()
+}
+
+/// One `kubectl <base...> <scope>` per namespace scope the runner may touch.
+fn per_scope<const N: usize>(
+    ctx: &Context,
+    namespaces: &[String],
+    base: [&str; N],
+    mutating: bool,
+) -> Vec<Command> {
+    scopes(ctx, namespaces)
+        .into_iter()
+        .map(|scope| {
+            let mut args: Vec<String> = base.iter().map(ToString::to_string).collect();
+            args.extend(scope);
+            Command::new("kubectl", args, mutating)
+        })
+        .collect()
+}
+
+/// `--set`, `--replicas` and `--timeout`: what an install changes about the package it applies.
+fn push_overrides(
+    args: &mut Vec<String>,
+    sets: &BTreeMap<String, String>,
+    replicas: &BTreeMap<String, u32>,
+    timeout_secs: Option<u64>,
+) {
+    for (key, value) in sets {
+        args.push("--set".into());
+        args.push(format!("{key}={value}"));
+    }
+    for (resource, count) in replicas {
+        args.push("--replicas".into());
+        args.push(format!("{resource}={count}"));
+    }
+    if let Some(seconds) = timeout_secs {
+        args.push("--timeout".into());
+        args.push(seconds.to_string());
+    }
+}
+
+/// Which resources an install applies, and whether it waits for them.
+fn push_selection(
+    args: &mut Vec<String>,
+    ctx: &Context,
+    except: &[String],
+    no_wait: bool,
+    targets: &[String],
+) {
+    // Riveter's own client-side dry run reaches no cluster, so it is safe to actually run.
+    for resource in except {
+        args.push("--except".into());
+        args.push(resource.clone());
+    }
+    if no_wait {
+        args.push("--no-wait".into());
+    }
+    if ctx.dry_run {
+        args.push("--dry-run".into());
+    }
+    // Positional: only these resources of the package.
+    args.extend(targets.iter().cloned());
 }
 
 fn install_args(ctx: &Context, package: &str, version: &str, secret: Option<&str>) -> Vec<String> {

@@ -10,7 +10,7 @@ struct TagsResponse {
     tags: Vec<String>,
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Debug, Deserialize, Default)]
 pub struct TagsQuery {
     n: Option<usize>,
     last: Option<String>,
@@ -43,8 +43,7 @@ pub async fn handle(Path(name): Path<String>, query: Query<TagsQuery>) -> Respon
     let start = last
         .as_ref()
         .and_then(|l| tags.iter().position(|r| r == l))
-        .map(|i| i + 1)
-        .unwrap_or(0);
+        .map_or(0, |i| i + 1);
 
     let page: Vec<String> = tags.into_iter().skip(start).take(n).collect();
 
@@ -60,10 +59,7 @@ pub async fn handle(Path(name): Path<String>, query: Query<TagsQuery>) -> Respon
     if page.len() == n
         && let Some(last_item) = page.last()
     {
-        let link = format!(
-            "</v2/{}/tags/list?n={}&last={}>; rel=\"next\"",
-            name, n, last_item
-        );
+        let link = format!("</v2/{name}/tags/list?n={n}&last={last_item}>; rel=\"next\"");
         response = response.header("link", link);
     }
 

@@ -18,7 +18,10 @@ fn user(roles: Vec<Role>, grants: &[(&str, &[&str])]) -> User {
         .map(|(service, actions)| {
             (
                 (*service).to_string(),
-                actions.iter().map(|action| action.to_string()).collect(),
+                actions
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect(),
             )
         })
         .collect();

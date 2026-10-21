@@ -168,6 +168,7 @@ async fn fetch(root: &Path, request: &CheckoutRequest<'_>) -> Result<(), Checkou
 
 /// `Authorization: Basic ...`, built once for both fetch attempts.
 /// `pub` so a test can check this without driving a real git server.
+#[must_use]
 pub fn basic_auth_header(username: &str, token: &str) -> String {
     use base64::Engine;
     let encoded = base64::engine::general_purpose::STANDARD.encode(format!("{username}:{token}"));
@@ -176,15 +177,15 @@ pub fn basic_auth_header(username: &str, token: &str) -> String {
 
 /// Passes the credential via `GIT_CONFIG_*` env, not argv or `.git/config`,
 /// so it never appears in `ps` or a build step's `git config --list`.
+#[must_use]
 pub fn credential_env(header: Option<&str>) -> Vec<(&str, &str)> {
-    match header {
-        Some(header) => vec![
+    header.map_or_else(Vec::new, |header| {
+        vec![
             ("GIT_CONFIG_COUNT", "1"),
             ("GIT_CONFIG_KEY_0", "http.extraheader"),
             ("GIT_CONFIG_VALUE_0", header),
-        ],
-        None => Vec::new(),
-    }
+        ]
+    })
 }
 
 async fn git(
@@ -307,7 +308,11 @@ pub fn validate_ref(git_ref: &str) -> Result<(), CheckoutError> {
     if git_ref.starts_with('/') || git_ref.ends_with('/') {
         return invalid("starts or ends with '/'");
     }
-    if git_ref.ends_with('.') || git_ref.ends_with(".lock") {
+    if git_ref.ends_with('.')
+        || std::path::Path::new(git_ref)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("lock"))
+    {
         return invalid("ends with '.' or '.lock'");
     }
     Ok(())
@@ -329,7 +334,7 @@ pub fn validate_url(url: &str) -> Result<(), CheckoutError> {
     if url.starts_with('-') {
         return invalid("starts with '-', which git would read as an option");
     }
-    if url.chars().any(|c| c.is_control()) {
+    if url.chars().any(char::is_control) {
         return invalid("contains a control character");
     }
     Ok(())

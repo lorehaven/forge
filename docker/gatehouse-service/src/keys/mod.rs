@@ -50,6 +50,7 @@ impl Model for SigningKeyRow {
 }
 
 /// A key with its private half already decrypted, held only in memory.
+#[derive(Debug)]
 struct LoadedKey {
     kid: String,
     private_key_der: Vec<u8>,
@@ -151,6 +152,7 @@ impl SigningKeys {
                 })
             })
             .collect();
+        drop(keys);
         serde_json::json!({ "keys": entries })
     }
 }
@@ -176,5 +178,11 @@ impl KeySigner for SigningKeys {
             .iter()
             .find(|key| key.not_after.is_none())
             .map(|key| (key.kid.clone(), encoding_key(&key.private_key_der)))
+    }
+}
+
+impl std::fmt::Debug for SigningKeys {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("SigningKeys { .. }")
     }
 }

@@ -20,15 +20,17 @@ struct EnvGuard(#[allow(dead_code)] std::sync::MutexGuard<'static, ()>);
 impl Drop for EnvGuard {
     fn drop(&mut self) {
         for key in KEYS {
-            unsafe { std::env::remove_var(key) };
+            envmnt::remove(key);
         }
     }
 }
 
 fn clean_env() -> EnvGuard {
-    let guard = env_lock().lock().unwrap_or_else(|p| p.into_inner());
+    let guard = env_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     for key in KEYS {
-        unsafe { std::env::remove_var(key) };
+        envmnt::remove(key);
     }
     EnvGuard(guard)
 }
@@ -47,9 +49,9 @@ async fn seed_users_does_nothing_when_bootstrap_is_off() {
 #[tokio::test]
 async fn seed_users_creates_the_admin_account_when_enabled() {
     let _guard = clean_env();
-    unsafe { std::env::set_var("AUTH_BOOTSTRAP", "true") };
-    unsafe { std::env::set_var("SERVICE_USERNAME", "admin") };
-    unsafe { std::env::set_var("SERVICE_PASSWORD", "admin-password") };
+    envmnt::set("AUTH_BOOTSTRAP", "true");
+    envmnt::set("SERVICE_USERNAME", "admin");
+    envmnt::set("SERVICE_PASSWORD", "admin-password");
 
     let db = Db::connect("").await.expect("in-memory db");
     seed_users(&db).await;
@@ -63,16 +65,16 @@ async fn seed_users_creates_the_admin_account_when_enabled() {
 #[tokio::test]
 async fn seed_users_does_not_overwrite_an_existing_admin() {
     let _guard = clean_env();
-    unsafe { std::env::set_var("AUTH_BOOTSTRAP", "true") };
-    unsafe { std::env::set_var("SERVICE_USERNAME", "admin") };
-    unsafe { std::env::set_var("SERVICE_PASSWORD", "first-password") };
+    envmnt::set("AUTH_BOOTSTRAP", "true");
+    envmnt::set("SERVICE_USERNAME", "admin");
+    envmnt::set("SERVICE_PASSWORD", "first-password");
 
     let db = Db::connect("").await.expect("in-memory db");
     seed_users(&db).await;
 
     // A second boot with a different SERVICE_PASSWORD must not touch the
     // already-seeded account.
-    unsafe { std::env::set_var("SERVICE_PASSWORD", "second-password") };
+    envmnt::set("SERVICE_PASSWORD", "second-password");
     seed_users(&db).await;
 
     let repo = db.repository::<User>();
@@ -84,9 +86,9 @@ async fn seed_users_does_not_overwrite_an_existing_admin() {
 #[tokio::test]
 async fn seed_users_skips_the_tech_account_when_unset() {
     let _guard = clean_env();
-    unsafe { std::env::set_var("AUTH_BOOTSTRAP", "true") };
-    unsafe { std::env::set_var("SERVICE_USERNAME", "admin") };
-    unsafe { std::env::set_var("SERVICE_PASSWORD", "admin-password") };
+    envmnt::set("AUTH_BOOTSTRAP", "true");
+    envmnt::set("SERVICE_USERNAME", "admin");
+    envmnt::set("SERVICE_PASSWORD", "admin-password");
 
     let db = Db::connect("").await.expect("in-memory db");
     seed_users(&db).await;
@@ -98,11 +100,11 @@ async fn seed_users_skips_the_tech_account_when_unset() {
 #[tokio::test]
 async fn seed_users_creates_the_tech_account_when_configured() {
     let _guard = clean_env();
-    unsafe { std::env::set_var("AUTH_BOOTSTRAP", "true") };
-    unsafe { std::env::set_var("SERVICE_USERNAME", "admin") };
-    unsafe { std::env::set_var("SERVICE_PASSWORD", "admin-password") };
-    unsafe { std::env::set_var("SERVICE_TECH_USERNAME", "tech") };
-    unsafe { std::env::set_var("SERVICE_TECH_PASSWORD", "tech-password") };
+    envmnt::set("AUTH_BOOTSTRAP", "true");
+    envmnt::set("SERVICE_USERNAME", "admin");
+    envmnt::set("SERVICE_PASSWORD", "admin-password");
+    envmnt::set("SERVICE_TECH_USERNAME", "tech");
+    envmnt::set("SERVICE_TECH_PASSWORD", "tech-password");
 
     let db = Db::connect("").await.expect("in-memory db");
     seed_users(&db).await;

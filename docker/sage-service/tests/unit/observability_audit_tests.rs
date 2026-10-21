@@ -36,17 +36,12 @@ fn log_restricted_tool_attempt_does_not_panic() {
     AuditLogger::log_restricted_tool_attempt(
         "code_executor",
         "web_assistant",
-        Some("user-2".to_string()),
+        Some("user-2"),
         None,
     );
 }
 
 #[test]
 fn log_confirmation_required_does_not_panic() {
-    AuditLogger::log_confirmation_required(
-        "command",
-        "cli_agent",
-        None,
-        Some("conv-2".to_string()),
-    );
+    AuditLogger::log_confirmation_required("command", "cli_agent", None, Some("conv-2"));
 }

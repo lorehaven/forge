@@ -27,7 +27,8 @@ pub enum State {
 }
 
 impl State {
-    pub fn as_str(self) -> &'static str {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::Queued => "queued",
             Self::Running => "running",
@@ -38,6 +39,7 @@ impl State {
         }
     }
 
+    #[must_use]
     pub fn parse(value: &str) -> Option<Self> {
         Some(match value {
             "queued" => Self::Queued,
@@ -50,7 +52,8 @@ impl State {
         })
     }
 
-    pub fn is_terminal(self) -> bool {
+    #[must_use]
+    pub const fn is_terminal(self) -> bool {
         !matches!(self, Self::Queued | Self::Running)
     }
 }
@@ -173,7 +176,7 @@ pub const CLAIMING: &str = "claiming";
 
 // ---------------------------------------------------------------- memory
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct MemoryStore {
     rows: Mutex<Vec<Operation>>,
     plans: Mutex<Vec<StoredPlan>>,
@@ -182,6 +185,7 @@ pub struct MemoryStore {
 }
 
 impl MemoryStore {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -248,12 +252,14 @@ impl Store for MemoryStore {
             .iter_mut()
             .filter(|row| row.state == State::Queued && !busy.contains(&row.scope))
             .min_by_key(|row| row.created_at);
-        Ok(next.map(|row| {
+        let claimed = next.map(|row| {
             row.state = State::Running;
             row.started_at = Some(Utc::now());
             row.runner_job = Some(job_name(&row.id));
             row.clone()
-        }))
+        });
+        drop(rows);
+        Ok(claimed)
     }
 
     async fn request_cancel(&self, id: &str) -> Result<Option<Operation>, GantryError> {
@@ -269,7 +275,9 @@ impl Store for MemoryStore {
             State::Running => row.cancel_requested = true,
             _ => {}
         }
-        Ok(Some(row.clone()))
+        let cancelled = row.clone();
+        drop(rows);
+        Ok(Some(cancelled))
     }
 
     async fn finish(
@@ -389,12 +397,14 @@ impl Store for MemoryStore {
 const COLUMNS: &str = "id, kind, title, scope, state, plan, result, runner_job, requested_by, \
                        cancel_requested, error, log, created_at, started_at, finished_at";
 
+#[derive(Debug)]
 pub struct PgStore {
     db: Db,
 }
 
 impl PgStore {
-    pub fn new(db: Db) -> Self {
+    #[must_use]
+    pub const fn new(db: Db) -> Self {
         Self { db }
     }
 }

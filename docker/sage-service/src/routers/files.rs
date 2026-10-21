@@ -83,6 +83,7 @@ pub const ALLOWED_UPLOAD_TYPES: &[(&str, &str)] = &[
 
 /// Map a file name to its stored MIME type; `None` if the extension is unsupported, or if it's
 /// an image extension and `SAGE_IMAGES_ENABLED` is off (see `files::images::images_enabled`).
+#[must_use]
 pub fn allowed_mime_type(file_name: &str) -> Option<&'static str> {
     let ext = file_name.rsplit('.').next()?.to_lowercase();
     let images_enabled = crate::files::images::images_enabled();
@@ -92,9 +93,12 @@ pub fn allowed_mime_type(file_name: &str) -> Option<&'static str> {
         .map(|(_, mime)| *mime)
 }
 
+/// Builds the upload input's `accept` value from currently allowed file types.
+///
 /// Value for the `accept` attribute of the upload inputs: every extension the server accepts,
 /// so the browser's file picker offers exactly those. Excludes image extensions when
 /// `SAGE_IMAGES_ENABLED` is off, so the picker doesn't offer files the server will reject.
+#[must_use]
 pub fn upload_accept_attribute() -> String {
     let images_enabled = crate::files::images::images_enabled();
     ALLOWED_UPLOAD_TYPES
@@ -105,6 +109,7 @@ pub fn upload_accept_attribute() -> String {
         .join(",")
 }
 
+#[derive(Debug)]
 pub struct FileUploadForm {
     pub file_name: Option<String>,
     pub file_data: Bytes,
@@ -123,7 +128,7 @@ pub(crate) async fn parse_upload_form(mut form: Multipart) -> Result<FileUploadF
     while let Some(field) = form.next_field().await? {
         match field.name() {
             Some("file") => {
-                file_name = field.file_name().map(|s| s.to_string());
+                file_name = field.file_name().map(std::string::ToString::to_string);
                 file_data = field.bytes().await?;
             }
             Some("conversation_id") => conversation_id = Some(field.text().await?),
@@ -144,6 +149,109 @@ pub(crate) async fn parse_upload_form(mut form: Multipart) -> Result<FileUploadF
 fn internal_error<E: std::fmt::Display>(e: E) -> Response {
     tracing::error!("Internal error: {}", e);
     Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal")
+}
+
+/// The conversation / project an upload targets must exist and belong to the requesting user.
+async fn check_target_owned(
+    db: &Db,
+    username: &str,
+    conversation_id: Option<&str>,
+    project_id: Option<&str>,
+) -> Result<(), Response> {
+    if let Some(cid) = conversation_id {
+        match db.repository::<Conversation>().read(cid).await {
+            Ok(Some(c)) if c.owner == username => {}
+            Ok(Some(_)) => return Err(Response::new(StatusCode::FORBIDDEN)),
+            Ok(None) => {
+                return Err(Response::text(
+                    StatusCode::NOT_FOUND,
+                    "api_error_conversation_not_found",
+                ));
+            }
+            Err(e) => return Err(internal_error(e)),
+        }
+    }
+    if let Some(pid) = project_id {
+        match db.repository::<Project>().read(pid).await {
+            Ok(Some(p)) if p.owner == username => {}
+            Ok(Some(_)) => return Err(Response::new(StatusCode::FORBIDDEN)),
+            Ok(None) => {
+                return Err(Response::text(
+                    StatusCode::NOT_FOUND,
+                    "api_error_project_not_found",
+                ));
+            }
+            Err(e) => return Err(internal_error(e)),
+        }
+    }
+    Ok(())
+}
+
+/// A conversation or project holds at most `SAGE_MAX_FILES_PER_SCOPE` files.
+async fn check_file_limit(
+    db: &Db,
+    conversation_id: Option<&String>,
+    project_id: Option<&String>,
+) -> Result<(), Response> {
+    let max_files = envmnt::get_u64("SAGE_MAX_FILES_PER_SCOPE", 50);
+    if let Db::Postgres(pg_db) = db {
+        let schema = db_schema();
+        let count_sql = format!(
+            "SELECT count(*) FROM {schema}.files WHERE conversation_id = $1 OR project_id = $2"
+        );
+        let (count,): (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(count_sql.as_str()))
+            .bind(conversation_id)
+            .bind(project_id)
+            .fetch_one(pg_db.pool())
+            .await
+            .map_err(internal_error)?;
+        if u64::try_from(count).unwrap_or(0) >= max_files {
+            return Err(Response::text(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "api_error_file_limit_reached",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Stores the file row and its bytes in one transaction.
+async fn insert_file_with_blob(
+    pg_db: &quench_db::prelude::PostgresDb,
+    file: &File,
+    data: &[u8],
+) -> Result<(), sqlx::Error> {
+    let schema = db_schema();
+    let insert_file = format!(
+        "INSERT INTO {schema}.files (id, owner, file_name, mime_type, file_size, conversation_id, project_id, status, error_message, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"
+    );
+    let insert_blob = format!("INSERT INTO {schema}.file_blobs (file_id, data) VALUES ($1, $2)");
+
+    async {
+        let mut tx = pg_db.pool().begin().await?;
+        sqlx::query(sqlx::AssertSqlSafe(insert_file.as_str()))
+            .bind(&file.id)
+            .bind(&file.owner)
+            .bind(&file.file_name)
+            .bind(&file.mime_type)
+            .bind(file.file_size)
+            .bind(&file.conversation_id)
+            .bind(&file.project_id)
+            .bind(&file.status)
+            .bind(&file.error_message)
+            .bind(&file.created_at)
+            .bind(&file.updated_at)
+            .execute(&mut *tx)
+            .await?;
+        sqlx::query(sqlx::AssertSqlSafe(insert_blob.as_str()))
+            .bind(&file.id)
+            .bind(data)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+    .await
 }
 
 /// Validate and store an uploaded file, then start background processing. Shared by the JSON
@@ -194,53 +302,15 @@ pub async fn create_uploaded_file(
         ));
     }
 
-    // The upload target must exist and belong to the requesting user.
-    if let Some(cid) = &conversation_id {
-        match db.repository::<Conversation>().read(cid).await {
-            Ok(Some(c)) if c.owner == username => {}
-            Ok(Some(_)) => return Err(Response::new(StatusCode::FORBIDDEN)),
-            Ok(None) => {
-                return Err(Response::text(
-                    StatusCode::NOT_FOUND,
-                    "api_error_conversation_not_found",
-                ));
-            }
-            Err(e) => return Err(internal_error(e)),
-        }
-    }
-    if let Some(pid) = &project_id {
-        match db.repository::<Project>().read(pid).await {
-            Ok(Some(p)) if p.owner == username => {}
-            Ok(Some(_)) => return Err(Response::new(StatusCode::FORBIDDEN)),
-            Ok(None) => {
-                return Err(Response::text(
-                    StatusCode::NOT_FOUND,
-                    "api_error_project_not_found",
-                ));
-            }
-            Err(e) => return Err(internal_error(e)),
-        }
-    }
+    check_target_owned(
+        db,
+        username,
+        conversation_id.as_deref(),
+        project_id.as_deref(),
+    )
+    .await?;
 
-    let max_files = envmnt::get_u64("SAGE_MAX_FILES_PER_SCOPE", 50);
-    if let Db::Postgres(pg_db) = db {
-        let schema = db_schema();
-        let count_sql = format!(
-            "SELECT count(*) FROM {schema}.files WHERE conversation_id = $1 OR project_id = $2"
-        );
-        let (count,): (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(count_sql.as_str()))
-            .bind(&conversation_id)
-            .bind(&project_id)
-            .fetch_one(pg_db.pool())
-            .await
-            .map_err(internal_error)?;
-        if count as u64 >= max_files {
-            return Err(Response::text(
-                StatusCode::UNPROCESSABLE_ENTITY,
-                "api_error_file_limit_reached",
-            ));
-        }
-    }
+    check_file_limit(db, conversation_id.as_ref(), project_id.as_ref()).await?;
 
     // Images are not text-extracted: ready as soon as the blob is stored, never enter the chunk/embed pipeline.
     let is_image = crate::files::is_image_mime(mime_type);
@@ -250,7 +320,7 @@ pub async fn create_uploaded_file(
         owner: username.to_string(),
         file_name,
         mime_type: mime_type.to_string(),
-        file_size: form.file_data.len() as i64,
+        file_size: i64::try_from(form.file_data.len()).unwrap_or(i64::MAX),
         conversation_id,
         project_id,
         message_id: None,
@@ -266,38 +336,7 @@ pub async fn create_uploaded_file(
 
     match db {
         Db::Postgres(pg_db) => {
-            let schema = db_schema();
-            let insert_file = format!(
-                "INSERT INTO {schema}.files (id, owner, file_name, mime_type, file_size, conversation_id, project_id, status, error_message, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"
-            );
-            let insert_blob =
-                format!("INSERT INTO {schema}.file_blobs (file_id, data) VALUES ($1, $2)");
-
-            let result: Result<(), sqlx::Error> = async {
-                let mut tx = pg_db.pool().begin().await?;
-                sqlx::query(sqlx::AssertSqlSafe(insert_file.as_str()))
-                    .bind(&file.id)
-                    .bind(&file.owner)
-                    .bind(&file.file_name)
-                    .bind(&file.mime_type)
-                    .bind(file.file_size)
-                    .bind(&file.conversation_id)
-                    .bind(&file.project_id)
-                    .bind(&file.status)
-                    .bind(&file.error_message)
-                    .bind(&file.created_at)
-                    .bind(&file.updated_at)
-                    .execute(&mut *tx)
-                    .await?;
-                sqlx::query(sqlx::AssertSqlSafe(insert_blob.as_str()))
-                    .bind(&file.id)
-                    .bind(form.file_data.as_ref())
-                    .execute(&mut *tx)
-                    .await?;
-                tx.commit().await?;
-                Ok(())
-            }
-            .await;
+            let result = insert_file_with_blob(pg_db, &file, form.file_data.as_ref()).await;
 
             if let Err(e) = result {
                 tracing::error!("Failed to store uploaded file: {}", e);
@@ -327,6 +366,7 @@ pub async fn create_uploaded_file(
 
 /// Username or the 401 to answer - `HttpError::into_response` only renders
 /// fixed text, so this travels as the success value instead.
+#[derive(Debug)]
 pub enum Username {
     Ok(String),
     Unauthorized,
@@ -377,7 +417,7 @@ pub async fn upload_file(
     )
 }
 
-#[derive(serde::Deserialize)]
+#[derive(Debug, serde::Deserialize)]
 pub struct ListFilesQuery {
     pub conversation_id: Option<String>,
     pub project_id: Option<String>,
@@ -661,7 +701,7 @@ pub async fn download_file(
                         .header("content-type", &file.mime_type)
                         .header(
                             "Content-Disposition",
-                            format!("{}; filename=\"{}\"", disposition, safe_name),
+                            format!("{disposition}; filename=\"{safe_name}\""),
                         )
                 }
                 Ok(None) => {

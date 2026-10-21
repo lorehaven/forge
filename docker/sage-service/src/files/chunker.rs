@@ -2,16 +2,20 @@ use crate::domain::context::TokenCounter;
 use crate::files::extractor::Segment;
 use serde_json::{Map, Value};
 
+#[derive(Debug)]
 pub struct ChunkerConfig {
     pub max_tokens: u32,
     pub overlap_tokens: u32,
 }
 
 impl ChunkerConfig {
+    #[must_use]
     pub fn from_env() -> Self {
         Self {
-            max_tokens: envmnt::get_u64("SAGE_CHUNK_SIZE_TOKENS", 512) as u32,
-            overlap_tokens: envmnt::get_u64("SAGE_CHUNK_OVERLAP_TOKENS", 50) as u32,
+            max_tokens: u32::try_from(envmnt::get_u64("SAGE_CHUNK_SIZE_TOKENS", 512))
+                .unwrap_or(u32::MAX),
+            overlap_tokens: u32::try_from(envmnt::get_u64("SAGE_CHUNK_OVERLAP_TOKENS", 50))
+                .unwrap_or(u32::MAX),
         }
     }
 }
@@ -24,6 +28,7 @@ pub struct Chunk {
 }
 
 /// Chunk each segment independently so a chunk never spans two segments, tagging every chunk with its segment's metadata.
+#[must_use]
 pub fn chunk_segments(segments: &[Segment], config: &ChunkerConfig) -> Vec<Chunk> {
     let mut chunks = Vec::new();
     for segment in segments {
@@ -39,11 +44,12 @@ pub fn chunk_segments(segments: &[Segment], config: &ChunkerConfig) -> Vec<Chunk
 
 /// Split text into chunks of roughly `max_tokens`, preferring paragraph boundaries. Consecutive
 /// chunks share an overlap so context spanning a boundary isn't lost.
+#[must_use]
 pub fn chunk_text(text: &str, config: &ChunkerConfig) -> Vec<String> {
     let max_tokens = config.max_tokens.max(1);
     let paragraphs: Vec<&str> = text
         .split("\n\n")
-        .map(|p| p.trim())
+        .map(str::trim)
         .filter(|p| !p.is_empty())
         .collect();
 
@@ -111,8 +117,8 @@ fn tail_overlap(chunk: &str, overlap_tokens: u32) -> String {
         start += 1;
     }
     let tail = &chunk[start..];
-    match tail.find(char::is_whitespace) {
-        Some(pos) => tail[pos..].trim_start().to_string(),
-        None => tail.to_string(),
-    }
+    tail.find(char::is_whitespace).map_or_else(
+        || tail.to_string(),
+        |pos| tail[pos..].trim_start().to_string(),
+    )
 }

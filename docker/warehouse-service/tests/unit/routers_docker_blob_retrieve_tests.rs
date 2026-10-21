@@ -96,7 +96,7 @@ async fn app() -> (
 ) {
     warehouse_service::routers::docker::blob::retrieve::register_routes();
     let container = support::container_builder().build().await.unwrap();
-    support::app(container).await
+    support::app(container)
 }
 
 fn get_with_range(
@@ -104,10 +104,10 @@ fn get_with_range(
     range: Option<&str>,
     container: &std::sync::Arc<quench_http::di::Container>,
 ) -> quench_http::request::Request {
-    match range {
-        Some(r) => support::raw_req(Method::GET, path, &[("range", r)], b"", container),
-        None => support::req(Method::GET, path, container),
-    }
+    range.map_or_else(
+        || support::req(Method::GET, path, container),
+        |r| support::raw_req(Method::GET, path, &[("range", r)], b"", container),
+    )
 }
 
 #[tokio::test]
@@ -192,9 +192,12 @@ async fn handle_reports_range_not_satisfiable_for_a_bogus_range() {
 
 #[tokio::test]
 async fn handle_streams_a_large_full_blob_across_many_frames() {
+    use http_body_util::BodyExt;
     let storage = support::WithDockerStorageRoot::new();
     // Well past ReaderStream's frame size, so the body is delivered in pieces.
-    let blob: Vec<u8> = (0..(512 * 1024 + 3)).map(|i| (i % 253) as u8).collect();
+    let blob: Vec<u8> = (0..(512 * 1024 + 3))
+        .map(|i| u8::try_from(i % 253).unwrap())
+        .collect();
     write_blob(&storage, &blob);
 
     let (app, container) = app().await;
@@ -208,7 +211,6 @@ async fn handle_streams_a_large_full_blob_across_many_frames() {
     assert_eq!(resp.status(), StatusCode::OK);
     // Binary content, so read headers+body from one `into_hyper()` call rather
     // than `support::parts` (which lossily re-decodes the body as UTF-8 text).
-    use http_body_util::BodyExt;
     let (parts, body) = resp.into_hyper().into_parts();
     assert_eq!(
         parts.headers.get("content-length").unwrap(),
@@ -221,7 +223,9 @@ async fn handle_streams_a_large_full_blob_across_many_frames() {
 #[tokio::test]
 async fn handle_streams_a_partial_range_out_of_a_large_blob() {
     let storage = support::WithDockerStorageRoot::new();
-    let blob: Vec<u8> = (0..(512 * 1024)).map(|i| (i % 253) as u8).collect();
+    let blob: Vec<u8> = (0..(512 * 1024))
+        .map(|i| u8::try_from(i % 253).unwrap())
+        .collect();
     write_blob(&storage, &blob);
 
     let (app, container) = app().await;

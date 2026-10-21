@@ -89,7 +89,7 @@ async fn register_rejects_an_unknown_provider() {
     let project_id = seed_project(&db).await;
     let (app, container) = app(db).await;
 
-    let resp = app.call(json_req(Method::POST, "/api/v1/repos", serde_json::json!({ "provider": "not-a-provider", "owner": "tests", "name": "widget", "clone_url": "https://example.test/widget.git", "project_id": project_id }), &container)).await;
+    let resp = app.call(json_req(Method::POST, "/api/v1/repos", &serde_json::json!({ "provider": "not-a-provider", "owner": "tests", "name": "widget", "clone_url": "https://example.test/widget.git", "project_id": project_id }), &container)).await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
@@ -101,7 +101,7 @@ async fn register_creates_a_repo_when_valid() {
     let project_id = seed_project(&db).await;
     let (app, container) = app(db).await;
 
-    let resp = app.call(json_req(Method::POST, "/api/v1/repos", serde_json::json!({ "owner": "tests", "name": "widget", "clone_url": "https://example.test/widget.git", "project_id": project_id }), &container)).await;
+    let resp = app.call(json_req(Method::POST, "/api/v1/repos", &serde_json::json!({ "owner": "tests", "name": "widget", "clone_url": "https://example.test/widget.git", "project_id": project_id }), &container)).await;
     assert_eq!(resp.status(), StatusCode::CREATED);
 }
 
@@ -167,7 +167,7 @@ async fn update_rejects_an_empty_name() {
         .call(json_req(
             Method::PATCH,
             &format!("/api/v1/repos/{}", repo.id),
-            serde_json::json!({ "name": "   " }),
+            &serde_json::json!({ "name": "   " }),
             &container,
         ))
         .await;
@@ -187,7 +187,7 @@ async fn update_applies_a_valid_partial_change() {
         .call(json_req(
             Method::PATCH,
             &format!("/api/v1/repos/{}", repo.id),
-            serde_json::json!({ "default_branch": "develop" }),
+            &serde_json::json!({ "default_branch": "develop" }),
             &container,
         ))
         .await;
@@ -211,7 +211,7 @@ async fn set_enabled_toggles_the_flag() {
         .call(json_req(
             Method::POST,
             &format!("/api/v1/repos/{}/enabled", repo.id),
-            serde_json::json!({ "enabled": false }),
+            &serde_json::json!({ "enabled": false }),
             &container,
         ))
         .await;

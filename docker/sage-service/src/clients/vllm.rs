@@ -20,13 +20,13 @@ pub struct ChatMessage {
     pub content: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCall>>,
-    /// Image attachments as data URIs. When present, the message serializes as an OpenAI
+    /// Image attachments as data URIs. When present, the message serializes as an `OpenAI`
     /// content-parts array so vision models receive the images alongside the text.
     #[serde(default)]
     pub images: Option<Vec<String>>,
 }
 
-/// Serialize to OpenAI chat format: plain string `content` for text-only messages, an array of `text`/`image_url` parts when images are attached.
+/// Serialize to `OpenAI` chat format: plain string `content` for text-only messages, an array of `text`/`image_url` parts when images are attached.
 impl Serialize for ChatMessage {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeStruct;
@@ -78,7 +78,7 @@ pub struct ChatCompletionRequest {
     /// Qwen3.5/Gemma 4 (no reasoning parser is configured, so it would leak into replies).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chat_template_kwargs: Option<serde_json::Value>,
-    /// OpenAI `response_format`; used with a JSON schema for constrained (guided) decoding.
+    /// `OpenAI` `response_format`; used with a JSON schema for constrained (guided) decoding.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub response_format: Option<serde_json::Value>,
 }
@@ -137,10 +137,9 @@ pub fn flush_streamed_tool_calls(
         } else {
             args
         };
-        let name_json = serde_json::to_string(&name).unwrap_or_else(|_| format!("\"{}\"", name));
+        let name_json = serde_json::to_string(&name).unwrap_or_else(|_| format!("\"{name}\""));
         out.push(format!(
-            "<tool_call>{{\"name\": {}, \"arguments\": {}}}</tool_call>",
-            name_json, args
+            "<tool_call>{{\"name\": {name_json}, \"arguments\": {args}}}</tool_call>"
         ));
     }
     out
@@ -159,7 +158,31 @@ impl Default for VllmClient {
     }
 }
 
+/// The chat-completions request for a streamed turn. Low temperature, for precision.
+fn streaming_request(
+    model: &str,
+    messages: Vec<ChatMessage>,
+    max_tokens: Option<u32>,
+    tools: Option<Vec<serde_json::Value>>,
+) -> ChatCompletionRequest {
+    ChatCompletionRequest {
+        model: model.to_string(),
+        messages,
+        stream: true,
+        temperature: Some(0.1), // LOW TEMPERATURE FOR PRECISION
+        top_p: Some(0.9),
+        presence_penalty: Some(0.0),
+        frequency_penalty: Some(0.0),
+        max_tokens,
+        tools,
+        tool_choice: None,
+        chat_template_kwargs: Some(serde_json::json!({ "enable_thinking": false })),
+        response_format: None,
+    }
+}
+
 impl VllmClient {
+    #[must_use]
     pub fn new() -> Self {
         let tls_verify = envmnt::get_or("VLLM_TLS_VERIFY", "true")
             .parse::<bool>()
@@ -177,6 +200,7 @@ impl VllmClient {
         }
     }
 
+    #[must_use]
     pub fn metrics(&self) -> Arc<RequestMetrics> {
         self.metrics.clone()
     }
@@ -191,6 +215,34 @@ impl VllmClient {
     ) -> Result<Pin<Box<dyn Stream<Item = Result<String>> + Send + Sync>>> {
         self.chat_stream_with_tools(host, port, model, messages, max_tokens, None)
             .await
+    }
+
+    /// POSTs the request; a refusal trips the circuit breaker and becomes the error.
+    async fn send_streaming(
+        &self,
+        url: &str,
+        request: &ChatCompletionRequest,
+    ) -> Result<reqwest::Response> {
+        let res = self
+            .http
+            .post(url)
+            .json(request)
+            .send()
+            .await
+            .with_context(|| format!("Failed to connect to vLLM instance at {url}"))?;
+
+        if !res.status().is_success() {
+            let status = res.status();
+            let err_text = res
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            tracing::error!("vLLM returned error {}: {}", status, err_text);
+            self.circuit_breaker.call_failed();
+            anyhow::bail!("vLLM returned error {status}: {err_text}");
+        }
+
+        Ok(res)
     }
 
     pub async fn chat_stream_with_tools(
@@ -212,22 +264,9 @@ impl VllmClient {
         let host = host
             .trim_start_matches("http://")
             .trim_start_matches("https://");
-        let url = format!("http://{}:{}/v1/chat/completions", host, port);
+        let url = format!("http://{host}:{port}/v1/chat/completions");
 
-        let request = ChatCompletionRequest {
-            model: model.to_string(),
-            messages,
-            stream: true,
-            temperature: Some(0.1), // LOW TEMPERATURE FOR PRECISION
-            top_p: Some(0.9),
-            presence_penalty: Some(0.0),
-            frequency_penalty: Some(0.0),
-            max_tokens,
-            tools,
-            tool_choice: None,
-            chat_template_kwargs: Some(serde_json::json!({ "enable_thinking": false })),
-            response_format: None,
-        };
+        let request = streaming_request(model, messages, max_tokens, tools);
 
         tracing::info!(
             "Connecting to vLLM at {} (max_tokens: {:?})",
@@ -235,24 +274,7 @@ impl VllmClient {
             max_tokens
         );
 
-        let res = self
-            .http
-            .post(&url)
-            .json(&request)
-            .send()
-            .await
-            .with_context(|| format!("Failed to connect to vLLM instance at {}", url))?;
-
-        if !res.status().is_success() {
-            let status = res.status();
-            let err_text = res
-                .text()
-                .await
-                .unwrap_or_else(|_| "Unknown error".to_string());
-            tracing::error!("vLLM returned error {}: {}", status, err_text);
-            self.circuit_breaker.call_failed();
-            anyhow::bail!("vLLM returned error {}: {}", status, err_text);
-        }
+        let res = self.send_streaming(&url, &request).await?;
 
         self.circuit_breaker.call_succeeded();
         let mut stream = res.bytes_stream();
@@ -298,7 +320,7 @@ impl VllmClient {
                                             if let Some(name) = &func.name
                                                 && !name.is_empty()
                                             {
-                                                entry.0 = name.clone();
+                                                entry.0.clone_from(name);
                                             }
                                             if let Some(args) = &func.arguments {
                                                 entry.1.push_str(args);
@@ -353,7 +375,7 @@ impl VllmClient {
         let host = host
             .trim_start_matches("http://")
             .trim_start_matches("https://");
-        let url = format!("http://{}:{}/v1/chat/completions", host, port);
+        let url = format!("http://{host}:{port}/v1/chat/completions");
 
         let request = ChatCompletionRequest {
             model: model.to_string(),
@@ -379,7 +401,7 @@ impl VllmClient {
             .json(&request)
             .send()
             .await
-            .with_context(|| format!("Failed to connect to vLLM instance at {}", url))?;
+            .with_context(|| format!("Failed to connect to vLLM instance at {url}"))?;
 
         if !res.status().is_success() {
             let status = res.status();
@@ -388,7 +410,7 @@ impl VllmClient {
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
             self.circuit_breaker.call_failed();
-            anyhow::bail!("vLLM returned error {}: {}", status, err_text);
+            anyhow::bail!("vLLM returned error {status}: {err_text}");
         }
 
         self.circuit_breaker.call_succeeded();
@@ -420,7 +442,7 @@ impl VllmClient {
         let host = host
             .trim_start_matches("http://")
             .trim_start_matches("https://");
-        let url = format!("http://{}:{}/v1/embeddings", host, port);
+        let url = format!("http://{host}:{port}/v1/embeddings");
 
         let input_count = input.len();
         let request = EmbeddingsRequest {
@@ -434,7 +456,7 @@ impl VllmClient {
             .json(&request)
             .send()
             .await
-            .with_context(|| format!("Failed to connect to vLLM instance at {}", url))?;
+            .with_context(|| format!("Failed to connect to vLLM instance at {url}"))?;
 
         if !res.status().is_success() {
             let status = res.status();
@@ -444,7 +466,7 @@ impl VllmClient {
                 .unwrap_or_else(|_| "Unknown error".to_string());
             tracing::error!("vLLM embeddings returned error {}: {}", status, err_text);
             self.circuit_breaker.call_failed();
-            anyhow::bail!("vLLM embeddings returned error {}: {}", status, err_text);
+            anyhow::bail!("vLLM embeddings returned error {status}: {err_text}");
         }
 
         self.circuit_breaker.call_succeeded();
@@ -481,4 +503,10 @@ struct EmbeddingsResponse {
 struct EmbeddingData {
     index: usize,
     embedding: Vec<f32>,
+}
+
+impl std::fmt::Debug for VllmClient {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("VllmClient { .. }")
+    }
 }

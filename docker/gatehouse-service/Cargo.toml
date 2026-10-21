@@ -15,6 +15,9 @@ readme = "README.md"
 name = "gatehouse_service"
 path = "src/lib.rs"
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "gatehouse-service"
 path = "src/main.rs"

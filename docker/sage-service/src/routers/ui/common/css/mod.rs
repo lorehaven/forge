@@ -6,6 +6,7 @@ pub mod initializing;
 pub mod projects;
 
 /// forge-ui's stylesheet plus sage's own rules.
+#[must_use]
 pub fn sage_stylesheet() -> String {
     forge_ui::stylesheet_with(include_str!("sage.css"), &sage_css_rules())
 }

@@ -16,6 +16,7 @@ impl VerificationTokens {
     }
 
     /// An always-in-process store, for tests - no cache backend required.
+    #[must_use]
     pub fn in_memory() -> Self {
         Self {
             store: CacheStore::in_memory(),
@@ -62,3 +63,9 @@ pub const PURPOSE_RESET_PASSWORD: &str = "reset-password";
 pub const PURPOSE_INVITE: &str = "invite";
 pub const PURPOSE_EMAIL_CHANGE: &str = "email-change";
 pub const PURPOSE_UNSUBSCRIBE: &str = "unsubscribe";
+
+impl std::fmt::Debug for VerificationTokens {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("VerificationTokens { .. }")
+    }
+}

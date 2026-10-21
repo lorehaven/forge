@@ -1,7 +1,7 @@
 use http_body_util::BodyExt;
 use sage_service::clients::switchboard::VllmInstance;
 use sage_service::domain::models::{Conversation, Message, Project};
-use sage_service::routers::ui::pages::home::{conv_title_link, render_home_page};
+use sage_service::routers::ui::pages::home::{HomePage, conv_title_link, render_home_page};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -54,19 +54,19 @@ async fn render(
     active_messages: Vec<(Message, Vec<Message>)>,
     project_id: Option<String>,
 ) -> String {
-    let resp = render_home_page(
-        instances_res,
+    let resp = render_home_page(&HomePage {
+        instances: instances_res,
         projects,
         conversations,
-        "active-conv".to_string(),
+        active_id: "active-conv".to_string(),
         active_messages,
-        HashMap::new(),
-        HashMap::new(),
-        Vec::new(),
-        None,
+        sources_by_message: HashMap::new(),
+        attachments_by_message: HashMap::new(),
+        project_files: Vec::new(),
+        auto_trigger_ai: None,
         project_id,
-        sage_config(),
-    );
+        sage_config: sage_config(),
+    });
     let collected = resp.into_hyper().into_body().collect().await.unwrap();
     String::from_utf8_lossy(&collected.to_bytes()).into_owned()
 }

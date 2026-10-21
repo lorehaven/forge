@@ -38,6 +38,7 @@ pub enum State {
 }
 
 impl State {
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Synced => "synced",
@@ -50,6 +51,7 @@ impl State {
 }
 
 impl SyncState {
+    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::NotInstalled => "not_installed",
@@ -123,6 +125,7 @@ pub struct Summary {
 }
 
 impl Group {
+    #[must_use]
     pub fn summary(&self) -> Summary {
         let count = |state: State| self.rows.iter().filter(|r| r.state == state).count();
         let missing = count(State::Missing);
@@ -173,6 +176,7 @@ impl Group {
 
     /// The rows that pass a filter: an empty `kind` or `state` matches everything, and `query` is a
     /// case-insensitive piece of the name.
+    #[must_use]
     pub fn filtered(&self, kind: &str, state: &str, query: &str) -> Vec<&Row> {
         let query = query.trim().to_ascii_lowercase();
         self.rows
@@ -184,6 +188,7 @@ impl Group {
     }
 
     /// The kinds present, for a filter.
+    #[must_use]
     pub fn kinds(&self) -> Vec<String> {
         let mut kinds: Vec<String> = self.rows.iter().map(|r| r.kind.clone()).collect();
         kinds.sort_unstable();
@@ -192,6 +197,7 @@ impl Group {
     }
 }
 
+#[must_use]
 pub fn is_workload(kind: &str) -> bool {
     matches!(
         kind.to_ascii_lowercase().as_str(),
@@ -199,7 +205,8 @@ pub fn is_workload(kind: &str) -> bool {
     )
 }
 
-pub fn is_secret(kind: &str) -> bool {
+#[must_use]
+pub const fn is_secret(kind: &str) -> bool {
     kind.eq_ignore_ascii_case("secret")
 }
 
@@ -212,19 +219,22 @@ fn key(kind: &str, name: &str, namespace: Option<&str>) -> (String, String, Stri
 }
 
 /// What `kubectl` calls a resource: `deployment.apps/name`, `clusterrole.rbac.authorization.k8s.io/name`.
+///
 /// The group disambiguates kinds that exist in more than one (a CRD called `Certificate` is not core's).
+#[must_use]
 pub fn kubectl_name(api_version: Option<&str>, kind: &str, name: &str) -> String {
     let group = api_version
         .and_then(|v| v.split_once('/'))
         .map(|(group, _)| group)
         .filter(|group| !group.is_empty());
-    match group {
-        Some(group) => format!("{}.{group}/{name}", kind.to_ascii_lowercase()),
-        None => format!("{}/{name}", kind.to_ascii_lowercase()),
-    }
+    group.map_or_else(
+        || format!("{}/{name}", kind.to_ascii_lowercase()),
+        |group| format!("{}.{group}/{name}", kind.to_ascii_lowercase()),
+    )
 }
 
 /// Groups by package: what the cluster has, what the inventory says should be there, and which is which.
+#[must_use]
 pub fn group(
     targets: &[Target],
     live: &[LiveResource],
@@ -329,6 +339,7 @@ pub fn group(
 }
 
 /// The package's own record of itself, from the last `riveter-inventory:` line in a runner's log.
+#[must_use]
 pub fn inventory_from_log(log: &str) -> Option<Vec<InventoryItem>> {
     let line = log
         .lines()

@@ -53,24 +53,20 @@ pub async fn list_children(db: &Db, parent_id: Option<&str>) -> Result<Vec<Proje
     let pool = pool(db)?;
     let schema = schema();
 
-    let rows = match parent_id {
-        Some(parent_id) => {
-            let sql = format!(
-                "SELECT {COLUMNS} FROM {schema}.projects WHERE parent_id = $1 ORDER BY name"
-            );
-            sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-                .bind(parent_id)
-                .fetch_all(pool)
-                .await?
-        }
-        None => {
-            let sql = format!(
-                "SELECT {COLUMNS} FROM {schema}.projects WHERE parent_id IS NULL ORDER BY name"
-            );
-            sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-                .fetch_all(pool)
-                .await?
-        }
+    let rows = if let Some(parent_id) = parent_id {
+        let sql =
+            format!("SELECT {COLUMNS} FROM {schema}.projects WHERE parent_id = $1 ORDER BY name");
+        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+            .bind(parent_id)
+            .fetch_all(pool)
+            .await?
+    } else {
+        let sql = format!(
+            "SELECT {COLUMNS} FROM {schema}.projects WHERE parent_id IS NULL ORDER BY name"
+        );
+        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+            .fetch_all(pool)
+            .await?
     };
 
     rows.iter().map(from_row).collect()
@@ -106,6 +102,7 @@ pub async fn rename(db: &Db, id: &str, name: &str) -> Result<Option<Project>, Qu
     row.as_ref().map(from_row).transpose()
 }
 
+#[derive(Debug)]
 pub enum MoveOutcome {
     Moved(Project),
     NotFound,
@@ -141,12 +138,13 @@ pub async fn move_to(
         .fetch_optional(pool)
         .await?;
 
-    match row.as_ref().map(from_row).transpose()? {
-        Some(project) => Ok(MoveOutcome::Moved(project)),
-        None => Ok(MoveOutcome::NotFound),
-    }
+    row.as_ref().map(from_row).transpose()?.map_or_else(
+        || Ok(MoveOutcome::NotFound),
+        |project| Ok(MoveOutcome::Moved(project)),
+    )
 }
 
+#[derive(Debug)]
 pub enum DeleteOutcome {
     Deleted,
     NotFound,

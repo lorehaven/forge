@@ -1,12 +1,16 @@
 use super::SearchProvider;
 use async_trait::async_trait;
 
+const MAX_RESULTS: usize = 5;
+
+#[derive(Debug)]
 pub struct SerpapiProvider {
     client: reqwest::Client,
     api_key: String,
 }
 
 impl SerpapiProvider {
+    #[must_use]
     pub fn new(api_key: String) -> Self {
         Self {
             client: reqwest::Client::new(),
@@ -40,7 +44,7 @@ struct SerpapiResult {
 
 #[async_trait]
 impl SearchProvider for SerpapiProvider {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "serpapi"
     }
 
@@ -64,7 +68,7 @@ impl SearchProvider for SerpapiProvider {
             .send()
             .await
             .map_err(|e| {
-                let err_msg = format!("Request failed: {}", e);
+                let err_msg = format!("Request failed: {e}");
                 tracing::warn!("SerpAPI request failed: {}", e);
                 err_msg
             })?;
@@ -78,19 +82,17 @@ impl SearchProvider for SerpapiProvider {
 
         let body = response.text().await.map_err(|e| {
             tracing::warn!("Failed to read response: {}", e);
-            format!("Failed to read response: {}", e)
+            format!("Failed to read response: {e}")
         })?;
 
         tracing::info!("SerpAPI response length: {} bytes", body.len());
 
         let data: SerpapiResponse = serde_json::from_str(&body).map_err(|e| {
             tracing::warn!("Failed to parse JSON: {}", e);
-            format!("Invalid JSON: {}", e)
+            format!("Invalid JSON: {e}")
         })?;
 
         let mut results = Vec::new();
-        const MAX_RESULTS: usize = 5;
-
         // Add knowledge graph if available
         if let Some(kg) = &data.knowledge_graph
             && let Some(description) = kg.get("description").and_then(|v| v.as_str())
@@ -122,7 +124,7 @@ impl SearchProvider for SerpapiProvider {
 
         if results.is_empty() {
             tracing::warn!("SerpAPI: No results found for '{}'", query);
-            return Err(format!("Web search for '{}' found no results.", query));
+            return Err(format!("Web search for '{query}' found no results."));
         }
 
         let result_count = results.len();
