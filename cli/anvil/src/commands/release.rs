@@ -85,7 +85,10 @@ pub fn release(config: &Config, package: Option<String>, all: bool, dry_run: boo
     // A real run only ever touches what actually needs releasing.
     let mut plan: Vec<ReleasePlanItem> =
         plan.into_iter().filter(|item| item.needs_release).collect();
-    ensure_release_plan_non_empty(all, &plan)?;
+    if plan.is_empty() {
+        println!("{}", nothing_to_release_message(all));
+        return Ok(());
+    }
 
     // Sort plan by layer for execution order
     plan.sort_by_key(|item| item.layer);
@@ -629,20 +632,19 @@ pub fn collect_package_dependencies(
     Ok(result)
 }
 
-/// `plan` here is always the `needs_release`-filtered subset.
+/// What to say when the `needs_release`-filtered plan is empty. That is a
+/// normal outcome (everything is already released), not a failure.
 ///
 /// The full, unfiltered dependency graph is never empty as long as any
 /// targets resolved at all, and `--dry-run` prints that directly without
 /// calling this (see `release`).
-pub fn ensure_release_plan_non_empty(all: bool, plan: &[ReleasePlanItem]) -> Result<()> {
-    if !plan.is_empty() {
-        return Ok(());
-    }
-
+#[must_use]
+pub const fn nothing_to_release_message(all: bool) -> &'static str {
     if all {
-        anyhow::bail!("No packages require release from [release].packages");
+        "Nothing to release: every package in [release].packages is up to date."
+    } else {
+        "Nothing to release: the target package has no changes since its last tag."
     }
-    anyhow::bail!("Target package has no changes since its last tag");
 }
 
 #[must_use]

@@ -2,9 +2,9 @@ use anvil::cargo_meta;
 use anvil::commands::release::{
     DEFAULT_COMMIT_MESSAGE_TEMPLATE, ReleaseKind, ReleasePlanItem, build_release_plan, bump_patch,
     bump_patch_versions, changed_workspace_dependencies, collect_package_dependencies,
-    compute_package_layers, ensure_release_plan_non_empty, ensure_release_tags_absent,
-    get_transitive_dependencies, git_show_file_at_tag, is_docker_package, is_release_relevant_file,
-    latest_package_tag, package_changed_since_tag, package_tag_name,
+    compute_package_layers, ensure_release_tags_absent, get_transitive_dependencies,
+    git_show_file_at_tag, is_docker_package, is_release_relevant_file, latest_package_tag,
+    nothing_to_release_message, package_changed_since_tag, package_tag_name,
     print_dry_run_plan_with_layers, release_action_label, render_commit_message,
     resolve_release_targets, resolve_single_package, set_manifest_version, should_install_package,
     tag_exists, workspace_dependencies_table,
@@ -248,21 +248,13 @@ fn workspace_dependencies_table_errors_on_invalid_toml() {
 }
 
 #[test]
-fn ensure_release_plan_non_empty_is_ok_when_the_plan_has_items() {
-    let plan = vec![plan_item("a", ReleaseKind::Cargo, false, false)];
-    assert!(ensure_release_plan_non_empty(false, &plan).is_ok());
+fn nothing_to_release_message_for_all_says_everything_is_up_to_date() {
+    assert!(nothing_to_release_message(true).contains("up to date"));
 }
 
 #[test]
-fn ensure_release_plan_non_empty_errors_for_all_with_nothing_to_release() {
-    let error = ensure_release_plan_non_empty(true, &[]).unwrap_err();
-    assert!(error.to_string().contains("No packages require release"));
-}
-
-#[test]
-fn ensure_release_plan_non_empty_errors_for_a_single_target_with_no_changes() {
-    let error = ensure_release_plan_non_empty(false, &[]).unwrap_err();
-    assert!(error.to_string().contains("no changes since its last tag"));
+fn nothing_to_release_message_for_a_single_target_names_the_missing_changes() {
+    assert!(nothing_to_release_message(false).contains("no changes since its last tag"));
 }
 
 #[test]
