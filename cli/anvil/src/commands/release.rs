@@ -229,6 +229,35 @@ pub fn resolve_single_package(metadata: &Value) -> Result<String> {
     anyhow::bail!("Could not determine release target. Use --package <name> or --all")
 }
 
+/// A `publish = false` library that is not a docker package: there is nothing
+/// to release, so it never gets a release tag.
+fn is_untracked(config: &Config, pkg: &cargo_meta::WorkspacePackage) -> bool {
+    pkg.publish_disabled() && !is_docker_package(config, &pkg.name)
+}
+
+/// Whether any untracked workspace library `package` depends on (directly or
+/// not) has changed since `package`'s own last tag.
+fn untracked_dependency_changed(
+    config: &Config,
+    workspace: &[cargo_meta::WorkspacePackage],
+    workspace_root: &Path,
+    dep_graph: &HashMap<String, Vec<String>>,
+    package: &str,
+    last_tag: &str,
+) -> Result<bool> {
+    let mut visited = HashSet::new();
+    get_transitive_dependencies(package, dep_graph, &mut visited);
+    for dep in workspace
+        .iter()
+        .filter(|pkg| visited.contains(&pkg.name) && is_untracked(config, pkg))
+    {
+        if package_changed_since_tag(workspace_root, &dep.dir, last_tag)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 #[allow(clippy::too_many_lines)]
 pub fn build_release_plan(
     config: &Config,
@@ -266,8 +295,23 @@ pub fn build_release_plan(
             .find(|pkg| &pkg.name == package_name)
             .with_context(|| format!("Package '{package_name}' not found in workspace metadata"))?;
 
+        // Never tagged and never will be: nothing to publish or image to build.
+        // It still matters, but through its dependents - each is compared with
+        // its own last tag below - so it is not "changed" just for lacking one.
+        if is_untracked(config, pkg) {
+            continue;
+        }
+
         if let Some(last_tag) = latest_package_tag(package_name)? {
-            let dir_changed = package_changed_since_tag(&workspace_root, &pkg.dir, &last_tag)?;
+            let dir_changed = package_changed_since_tag(&workspace_root, &pkg.dir, &last_tag)?
+                || untracked_dependency_changed(
+                    config,
+                    &workspace,
+                    &workspace_root,
+                    &dep_graph,
+                    package_name,
+                    &last_tag,
+                )?;
 
             if !workspace_dep_changes_by_tag.contains_key(&last_tag) {
                 let changed = changed_workspace_dependencies(&workspace_root, &last_tag)?;
