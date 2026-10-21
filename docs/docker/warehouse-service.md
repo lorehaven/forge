@@ -69,7 +69,7 @@ Both sit behind `Auth` (bearer token or realm cookie, verified against gatehouse
 
 - **Writes** — publish, yank/unyank, owner changes, the owners `PUT`/`DELETE`, and every `/admin` call — need the blanket `warehouse:write` grant (or a wildcard role). A missing or invalid token is `401`, a read-only one is `403`. There is no unauthenticated write surface.
 - **Reads** — index, download, search and the owner listing — need no identity by default, so existing Cargo clients keep resolving dependencies. Set `CRATES_REQUIRE_AUTH_FOR_READS=true` to require any valid realm identity for them too; the index `config.json` then advertises `auth-required`, and Cargo sends its token on every request.
-- **Cargo clients** send the configured token verbatim, so store it with its scheme: `cargo login --registry <name>` with `Bearer <jwt>` (the realm token from a gatehouse `client_credentials` grant; `warehouse crates login --token <jwt>` adds the `Bearer ` itself).
+- **Cargo clients** send the configured token verbatim, so store it with its scheme: `cargo login --registry <name>` with `Bearer <jwt>` (the realm token from a gatehouse `client_credentials` grant). `warehouse crates login` stores a token for the `warehouse` CLI's own requests only; it does not touch Cargo's `credentials.toml`.
 - With `SERVICE_AUTH_ENABLED=false` the whole thing is bypassed, like every other realm-protected surface.
 
 ### Artifact registry
