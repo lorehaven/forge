@@ -220,7 +220,7 @@ dependencies = [
 
 [[package]]
 name = "anvil"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -880,7 +880,7 @@ dependencies = [
 
 [[package]]
 name = "conveyor-service"
-version = "0.6.12"
+version = "0.6.13"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -2078,7 +2078,7 @@ dependencies = [
 
 [[package]]
 name = "foundry-service"
-version = "0.2.19"
+version = "0.2.20"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -2227,7 +2227,7 @@ dependencies = [
 
 [[package]]
 name = "gantry-service"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2276,7 +2276,7 @@ dependencies = [
 
 [[package]]
 name = "gatehouse-service"
-version = "0.3.11"
+version = "0.3.12"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5106,7 +5106,7 @@ dependencies = [
 
 [[package]]
 name = "riveter"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "age",
  "anyhow",
@@ -5333,7 +5333,7 @@ checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
 name = "sage-service"
-version = "0.5.20"
+version = "0.5.21"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -6184,7 +6184,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "switchboard-service"
-version = "0.5.15"
+version = "0.5.16"
 dependencies = [
  "async-trait",
  "bytes",
@@ -7082,7 +7082,7 @@ dependencies = [
 
 [[package]]
 name = "warehouse-service"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "async-trait",
  "axmldecoder",
@@ -7519,7 +7519,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "workbench-service"
-version = "0.2.10"
+version = "0.2.11"
 dependencies = [
  "async-trait",
  "bytes",
