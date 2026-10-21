@@ -42,7 +42,7 @@ impl QueueError {
 
 /// The pool, or a clear refusal - an in-memory `Db` would silently lose every
 /// queued run on restart, so this refuses rather than degrading quietly.
-pub fn pool(db: &Db) -> Result<&Pool<Postgres>, QueueError> {
+pub const fn pool(db: &Db) -> Result<&Pool<Postgres>, QueueError> {
     match db {
         Db::Postgres(postgres) => Ok(postgres.pool()),
         Db::InMemory(_) => Err(QueueError::NotPostgres),

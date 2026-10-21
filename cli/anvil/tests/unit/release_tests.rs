@@ -322,6 +322,7 @@ fn resolve_release_targets_all_collects_release_and_docker_packages_without_dupl
             registry: String::new(),
             packages: vec!["pkg-a".to_string()],
             commit_message_template: None,
+            gatehouse_url: None,
         },
         docker: DockerConfig {
             modules: std::iter::once((
@@ -360,6 +361,7 @@ fn resolve_release_targets_all_errors_when_a_configured_package_is_not_a_member(
             registry: String::new(),
             packages: vec!["ghost-package".to_string()],
             commit_message_template: None,
+            gatehouse_url: None,
         },
         ..Config::default()
     };

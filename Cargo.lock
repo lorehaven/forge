@@ -4557,9 +4557,9 @@ checksum = "d68782463e408eb1e668cf6152704bd856c78c5b6417adaee3203d8f4c1fc9ec"
 
 [[package]]
 name = "quench-auth"
-version = "0.4.4"
+version = "0.4.5"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "734428d090f7f3ad9c50d7aa249af13f8813ecd087f64a1800471c1a7ca5820b"
+checksum = "78154f81660636d88f6e7a58e4533913a68c072995efe0bc43ee7aa8830c08a0"
 dependencies = [
  "anyhow",
  "argon2",
@@ -4586,9 +4586,9 @@ dependencies = [
 
 [[package]]
 name = "quench-cache"
-version = "0.1.10"
+version = "0.1.11"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "28d6cf2553a481ac18e3c370cf2941290b64f2b25e29b251d59045b33ba39aec"
+checksum = "e5254f819ec413d2e1aab6792dd78ee0b4bcc2d449b2a077d34a4624e84f81b1"
 dependencies = [
  "dashmap",
  "redis",
@@ -4599,18 +4599,18 @@ dependencies = [
 
 [[package]]
 name = "quench-cli"
-version = "0.1.5"
+version = "0.1.6"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "0d773a6ed7f16624d1f4d659a5c2e64f7963591ec08d6012fef89fab6cf9cff1"
+checksum = "396d52e42396edeb525babf8397f02291e4489f91773b69ad32fe4d209da7b61"
 dependencies = [
  "rustyline",
 ]
 
 [[package]]
 name = "quench-client"
-version = "0.2.5"
+version = "0.2.6"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "bf2904d699ece5382b12046eb03975f3975d0ee6a9e29450e99033bdaf89a80d"
+checksum = "2d67b14ea467e7e3656ccd3a0db62ca6354461b7002e68afaa7f5cc5206e6ddf"
 dependencies = [
  "anyhow",
  "bytes",
@@ -4630,9 +4630,9 @@ dependencies = [
 
 [[package]]
 name = "quench-config"
-version = "0.1.4"
+version = "0.1.5"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "bfced1d18e843a9bc9d4dc00c4540171854757f549c1f0519830618ba2e85632"
+checksum = "09ae82381151efe6ed42cccde5a53cd12b3d30e8467bc30b01f5d3771dc753b4"
 dependencies = [
  "serde",
  "serde_json",
@@ -4643,9 +4643,9 @@ dependencies = [
 
 [[package]]
 name = "quench-db"
-version = "0.2.3"
+version = "0.2.4"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "a27569707c1e012a9a1a7e0382aa20b18f6755f0f3060da62bd36ac2c5521357"
+checksum = "66b03f7d82c69e72b349119a120a362af9a71ff4fd458068cd3131164f798e40"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4662,9 +4662,9 @@ dependencies = [
 
 [[package]]
 name = "quench-http"
-version = "0.1.3"
+version = "0.1.4"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "1fe6ff4736133169cfc49886c60a3e49dd08490f7e17f2b7a1377c82c4441ec0"
+checksum = "634b1665065f82b4548893eb8a4eeb6db256642425d2cc66895a019f002a0174"
 dependencies = [
  "async-trait",
  "bytes",
@@ -4688,9 +4688,9 @@ dependencies = [
 
 [[package]]
 name = "quench-http-macros"
-version = "0.1.1"
+version = "0.1.2"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "78272c5be5a5274a7a07904f413ad199e508870b15b57b95869d4235921b0e56"
+checksum = "e6ed1f4ec714c114d00541f46af04d4600e69270783ad276b4af17faf67fb5ad"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4699,9 +4699,9 @@ dependencies = [
 
 [[package]]
 name = "quench-log"
-version = "0.1.0"
+version = "0.1.1"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "c46dbefc0737ba43e71344c6f074bc626a69b9dd805f855dbacb1354ffc3edf6"
+checksum = "5ce49c9eb4b2a3c35f23d478e1667182ef1ad2ff3474873cc01c27cb82380971"
 dependencies = [
  "thiserror 2.0.21",
  "tracing",
@@ -4711,9 +4711,9 @@ dependencies = [
 
 [[package]]
 name = "quench-mail"
-version = "0.1.1"
+version = "0.1.2"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "bb8aec04b451cf0eed6f93fd1a4cab1adf92af9e1466a58306cfd845774552b4"
+checksum = "8b7f27abe6e77be4a1dfbe25af31943d76ed7162a019625ce2e851b37af43974"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -4727,9 +4727,9 @@ dependencies = [
 
 [[package]]
 name = "quench-starter"
-version = "0.4.5"
+version = "0.4.6"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "7a36a8fcbc1a9821247f8cb64835d9aff9b779578254fe37ad6bd80531d0f425"
+checksum = "8b817787c71564e94a1028a15667df38df40d9f92bd1ddc0372738325579e2f5"
 dependencies = [
  "async-trait",
  "bytes",
@@ -4752,9 +4752,9 @@ dependencies = [
 
 [[package]]
 name = "quench-web"
-version = "0.1.14"
+version = "0.1.15"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "fb2649920cfc2f9ffebc9c0a16b4a67d57e91d5888de1a288c9fc91ca7c05507"
+checksum = "0cbbe8e44c3f427b0267cf601a8003d6677d7031f5ae321bcc72ce8b75a32187"
 dependencies = [
  "anyhow",
  "fluent-syntax",
@@ -4763,9 +4763,9 @@ dependencies = [
 
 [[package]]
 name = "quench-web-components"
-version = "0.1.9"
+version = "0.1.10"
 source = "sparse+https://ennor.ddns.net/warehouse/index/"
-checksum = "71bcd07281dee1af6d325ca181a3c1fa006b463a5c8c1b3a65ee55f7875f2030"
+checksum = "6ceb67455ffedda2576158ff9997e23680386e5dfa4f8f13d0eeb257fb3f6344"
 dependencies = [
  "quench-web",
 ]
@@ -6330,7 +6330,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",

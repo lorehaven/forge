@@ -9,7 +9,7 @@ pub enum DaybookError {
     Sql(#[from] sqlx::Error),
 }
 
-pub fn pool(db: &Db) -> Result<&Pool<Postgres>, DaybookError> {
+pub const fn pool(db: &Db) -> Result<&Pool<Postgres>, DaybookError> {
     match db {
         Db::Postgres(postgres) => Ok(postgres.pool()),
         Db::InMemory(_) => Err(DaybookError::NotPostgres),

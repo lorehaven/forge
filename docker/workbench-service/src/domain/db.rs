@@ -31,7 +31,7 @@ impl WorkbenchError {
 }
 
 /// The pool, or a clear refusal - an in-memory `Db` would silently lose data.
-pub fn pool(db: &Db) -> Result<&Pool<Postgres>, WorkbenchError> {
+pub const fn pool(db: &Db) -> Result<&Pool<Postgres>, WorkbenchError> {
     match db {
         Db::Postgres(postgres) => Ok(postgres.pool()),
         Db::InMemory(_) => Err(WorkbenchError::NotPostgres),

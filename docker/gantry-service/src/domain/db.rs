@@ -28,7 +28,7 @@ impl GantryError {
 }
 
 /// The pool, or a clear refusal - an in-memory `Db` would silently lose data.
-pub fn pool(db: &Db) -> Result<&Pool<Postgres>, GantryError> {
+pub const fn pool(db: &Db) -> Result<&Pool<Postgres>, GantryError> {
     match db {
         Db::Postgres(postgres) => Ok(postgres.pool()),
         Db::InMemory(_) => Err(GantryError::NotPostgres),

@@ -37,7 +37,7 @@ impl StorageError {
 }
 
 /// The pool, or a clear refusal - an in-memory `Db` would silently lose everything on restart.
-pub fn pool(db: &Db) -> Result<&Pool<Postgres>, StorageError> {
+pub const fn pool(db: &Db) -> Result<&Pool<Postgres>, StorageError> {
     match db {
         Db::Postgres(postgres) => Ok(postgres.pool()),
         Db::InMemory(_) => Err(StorageError::NotPostgres),
