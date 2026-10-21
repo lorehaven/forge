@@ -1,5 +1,5 @@
 use crate::cargo_meta;
-use crate::commands::{docker, install};
+use crate::commands::{docker, install, login};
 use crate::config::Config;
 use crate::util::run_command;
 use anyhow::{Context, Result};
@@ -131,6 +131,13 @@ pub fn release(config: &Config, package: Option<String>, all: bool, dry_run: boo
                         .arg(&config.release.registry)
                         .arg("--package")
                         .arg(&item.package);
+                    if let Some((var, token)) = login::registry_token_env(
+                        &config.release.registry,
+                        &std::env::current_dir()?,
+                        |name| std::env::var_os(name).is_some(),
+                    )? {
+                        cmd.env(var, token);
+                    }
                     run_command(cmd, &format!("publish ({})", item.package))?;
                     if item.install_after_publish {
                         install::install(config, Some(item.package.clone()), false)?;

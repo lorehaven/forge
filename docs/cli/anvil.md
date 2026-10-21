@@ -90,6 +90,14 @@ anvil release [--all | -p|--package <name>] [--dry-run]
 
 `anvil release --all` releases every package listed in `[release].packages` plus any package under a `[docker.modules.*]` block. `--dry-run` previews the *full* dependency-ordered plan - every target and its transitive dependencies, each marked either with the version bump/tag/publish action a real run would take or `(up to date)` when it has no changes to release - without touching files or publishing anything. A real run only ever acts on the packages actually marked for release.
 
+### Credentials
+
+```
+anvil login [--gatehouse-url <url>] [--username <name>] [--scope <service:action>]... [--days <n>]
+```
+
+Signs in to Gatehouse once (the password is asked for and never stored), mints a long-lived, revocable application token and keeps it in the git-ignored `.anvil.secret.toml`. `anvil release` then trades it for a short-lived token on every run and hands it to `cargo publish` as `CARGO_REGISTRIES_<REGISTRY>_TOKEN`, so no token is copied by hand. A `CARGO_REGISTRIES_<REGISTRY>_TOKEN` already in your environment wins. `--scope warehouse:write` limits the token to what publishing needs.
+
 ### Docker
 
 ```bash

@@ -232,6 +232,24 @@ pub enum Cmd {
         #[arg(value_name = "TARGET", help = TARGET_HELP)]
         targets: Vec<String>,
     },
+    /// Mint an application token and store it in the git-ignored `.riveter.secret.toml`
+    Login {
+        /// Gatehouse including its base path (defaults to the one already stored)
+        #[arg(long)]
+        gatehouse_url: Option<String>,
+        /// Gatehouse username (asked for when omitted)
+        #[arg(long)]
+        username: Option<String>,
+        /// Name shown next to the token in Gatehouse
+        #[arg(long)]
+        name: Option<String>,
+        /// Limit the token to a `service:action` grant, e.g. `warehouse:write` (repeatable)
+        #[arg(long = "scope")]
+        scope: Vec<String>,
+        /// Days until the token expires (default and maximum: 365)
+        #[arg(long)]
+        days: Option<i64>,
+    },
     /// Put overlays' `.env` files in the cluster as Secrets, for installs to read
     Secrets {
         #[command(subcommand)]

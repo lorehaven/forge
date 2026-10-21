@@ -21,3 +21,6 @@ plans/
 
 # quench-log's default rolling-file sink (LOG_DIR, defaults to ./logs)
 **/logs/
+
+# Per-tool application tokens (anvil login, riveter login)
+.*.secret.toml

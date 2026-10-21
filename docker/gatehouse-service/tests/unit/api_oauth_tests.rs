@@ -25,6 +25,7 @@ fn empty_token_request(grant_type: &str) -> TokenRequest {
         client_id: None,
         client_secret: None,
         refresh_token: None,
+        app_token: None,
     }
 }
 

@@ -338,6 +338,8 @@ An optional `values.yaml` (`NAME: value`) or `values.toml` (`NAME = "default"`) 
 
 ### Publishing and fetching
 
+`riveter login` stores a Gatehouse application token in the git-ignored `.riveter.secret.toml`; Warehouse commands trade it for a short-lived token on every run, so `RIVETER_WAREHOUSE_TOKEN` or client credentials are no longer needed (they still win when set).
+
 ```
 RIVETER_WAREHOUSE_URL     Warehouse, including its base path (https://host/warehouse)
 RIVETER_WAREHOUSE_TOKEN   a bearer token, or instead:

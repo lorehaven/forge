@@ -3,6 +3,7 @@ use clap::{CommandFactory, Parser};
 use riveter::against::diff_against;
 use riveter::cli::{ApplyScope, Cli, Cmd, EnvCmd};
 use riveter::env::{env_list, env_set, env_show, resolve_env, resolve_envs};
+use riveter::login_cmd::{LoginArgs, login_command};
 use riveter::multi::{apply_many, diff_many};
 use riveter::package_cmd::{
     InstallArgs, install_command, pack_command, publish_command, pull_command, remote_command,
@@ -236,6 +237,19 @@ fn main() -> Result<()> {
             }
         }
         Some(Cmd::Schemas { cmd }) => schemas_command(&cmd),
+        Some(Cmd::Login {
+            gatehouse_url,
+            username,
+            name,
+            scope,
+            days,
+        }) => login_command(&LoginArgs {
+            gatehouse_url,
+            username,
+            name,
+            scope,
+            days,
+        }),
         Some(Cmd::Secrets { cmd }) => secrets_command(&cmd),
         Some(Cmd::Remote { cmd }) => remote_command(&cmd),
         Some(Cmd::Help { command }) => print_help(command.as_deref()),

@@ -23,7 +23,9 @@ Gatehouse is the Forge estate's authentication service: one identity store, one 
 | `PUT` | `/api/v1/users/{username}/permissions` | replace a user's grants (admin) |
 | `POST` | `/api/v1/users/{username}/template` | apply a named grant template (admin) |
 | `GET` | `/api/v1/me` | what the caller may do, per service |
-| `GET` | `/api/v1/authorize`, `POST /api/v1/token` | OAuth2 authorization-code + PKCE and `client_credentials` |
+| `POST`/`GET` | `/api/v1/me/tokens` | mint (secret shown once) / list your application tokens |
+| `DELETE` | `/api/v1/me/tokens/{id}` | revoke one of your application tokens |
+| `GET` | `/api/v1/authorize`, `POST /api/v1/token` | OAuth2 authorization-code + PKCE, `client_credentials` and `app_token` |
 | `GET` | `/.well-known/jwks.json` | the realm's public signing keys |
 | `POST` | `/api/v1/admin/keys/rotate` | rotate the signing key (`gatehouse:manage-signing-keys`) |
 | `GET`/`POST` | `/ui/login`, `/ui/logout` | the estate's only login form |
@@ -81,6 +83,12 @@ Deploy order: the foundry migration Job must finish before a gatehouse that read
 Anything that makes gatehouse send an email is **rate limited**, because each one costs real mail-relay allowance and can flood someone's inbox. Fixed windows, counted in the shared Redis (so every replica agrees): registration 20/hour per client and 3/day per email address; password reset 20/hour per client and 3/hour per submitted username; resending a verification link 20/hour per client, 3/hour per username and one a minute per username; and a global cap of `MAIL_DAILY_LIMIT` emails a day (default 250, under the relay's 300) that stops sending for everyone once spent. Counting is by what was *asked*, never by whether the account exists, so a refusal (`ui_login_rate_limited` / `ui_register_error_rate_limited`) reveals nothing about accounts; the limiter counts with an atomic set-per-window, so parallel requests cannot slip extra sends through, and it fails closed if the store errors. The client address is `X-Real-IP` (else the last `X-Forwarded-For` entry) as set by the ingress - trustworthy only behind a proxy that overwrites it (ingress-nginx with `externalTrafficPolicy: Local` does) - so every per-client limit is backed by one that does not depend on it. The unverified-login error and the registration notice on the login page link to `/ui/resend-verification`; like reset, that page answers identically whether or not the account exists, needs verification, or is disabled (admin and service accounts never need it).
 
 An account with an email address on file **cannot log in until that address is verified** (`/ui/verify`): the login is refused after the password check (`email_unverified` from the API, `ui_login_email_unverified` on the page), so the refusal doesn't reveal which addresses are unconfirmed to someone without the password. Accounts with no address, and `admin` / `service` accounts, are exempt - the seeded admin needs no verification, and an admin adding an address to their profile cannot lock the realm out. A newly self-registered user starts with `registration.default_template` from the permission catalog (`viewer` by default); an admin-created user starts with nothing, since an admin is right there to grant it.
+
+### Application tokens
+
+A person's long-lived credential for their own command-line tools (`anvil login`, `riveter login`), so nothing has to be copied around by hand. `POST /api/v1/me/tokens` (`name`, optional `scope` list of `service:action`, optional `expires_in_days`, at most 365) returns a `lht_…` secret **once**; only its hash is stored (`auth.app_tokens`, foundry's `0012-app-tokens`). It can only be created from a signed-in session, never from another application token, so revoking is always possible. A scope can only list grants the person holds when minting.
+
+A tool trades the secret at `POST /api/v1/token` with `grant_type=app_token&app_token=…` for an ordinary short-lived access token (no refresh token). The token's grants are the person's **current** ones, narrowed to its scope, so demoting the person - or revoking the token (`DELETE /api/v1/me/tokens/{id}`) - takes effect at the next exchange; an access token already issued lives out its few minutes. A revoked, expired or unknown secret is a `401`.
 
 ### Sessions
 

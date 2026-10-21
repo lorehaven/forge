@@ -197,6 +197,24 @@ pub enum Commands {
         #[command(subcommand)]
         command: ConfigCommands,
     },
+    /// Mint an application token and store it in the git-ignored `.anvil.secret.toml`
+    Login {
+        /// Gatehouse including its base path (defaults to the one already stored)
+        #[arg(long)]
+        gatehouse_url: Option<String>,
+        /// Gatehouse username (asked for when omitted)
+        #[arg(long)]
+        username: Option<String>,
+        /// Name shown next to the token in Gatehouse
+        #[arg(long)]
+        name: Option<String>,
+        /// Limit the token to a `service:action` grant, e.g. `warehouse:write` (repeatable)
+        #[arg(long = "scope")]
+        scope: Vec<String>,
+        /// Days until the token expires (default and maximum: 365)
+        #[arg(long)]
+        days: Option<i64>,
+    },
 }
 
 #[derive(Subcommand, Debug)]

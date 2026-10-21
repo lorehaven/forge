@@ -20,6 +20,8 @@ mod image_digest_tests;
 mod image_updates_pure_tests;
 #[path = "unit/image_updates_tests.rs"]
 mod image_updates_tests;
+#[path = "unit/login_cmd_tests.rs"]
+mod login_cmd_tests;
 #[path = "unit/multi_tests.rs"]
 mod multi_tests;
 #[path = "unit/package_tests.rs"]

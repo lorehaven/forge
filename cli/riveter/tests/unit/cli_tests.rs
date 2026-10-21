@@ -24,8 +24,9 @@ fn conveyors_riveter_step_accepts_every_command_riveter_has() {
     use clap::CommandFactory;
     use conveyor_pipeline::steps::riveter::COMMANDS;
 
-    // Interactive: it waits for input a pipeline never sends, and conveyor refuses it by design.
-    const NOT_FOR_PIPELINES: [&str; 1] = ["repl"];
+    // Interactive: they wait for input a pipeline never sends (a REPL line, a password), and
+    // conveyor refuses them by design.
+    const NOT_FOR_PIPELINES: [&str; 2] = ["repl", "login"];
 
     let cli = riveter::cli::Cli::command();
     for sub in cli.get_subcommands() {

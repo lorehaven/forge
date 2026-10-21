@@ -26,6 +26,7 @@ workspace = true
 anyhow = { workspace = true }
 clap = { workspace = true }
 crossterm = { workspace = true }
+gatehouse-auth = { workspace = true }
 quench-cli = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

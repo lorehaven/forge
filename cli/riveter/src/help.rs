@@ -288,6 +288,46 @@ pub const COMMANDS: &[CommandHelp] = &[
         targets: true,
     },
     CommandHelp {
+        name: "login",
+        surface: Surface::Cli,
+        aliases: &[],
+        usage: "[--gatehouse-url <url>] [--username <name>] [--scope <service:action>]...",
+        summary: "Store an application token so Warehouse commands need no copied credentials",
+        detail: "Signs in to Gatehouse once (the password is asked for and never stored), mints a\n\
+                 long-lived, revocable application token and keeps it in the git-ignored\n\
+                 .riveter.secret.toml. Each Warehouse command then trades it for a short-lived\n\
+                 token itself. Limit it with --scope warehouse:write to grant no more than a\n\
+                 publish needs.",
+        subcommands: &[],
+        options: &[
+            ("--gatehouse-url <url>", "Gatehouse including its base path"),
+            ("--username <name>", "Gatehouse username (else asked)"),
+            (
+                "--name <label>",
+                "Name shown next to the token in Gatehouse",
+            ),
+            (
+                "--scope <service:action>",
+                "Limit the token to this grant (repeatable)",
+            ),
+            (
+                "--days <n>",
+                "Days until it expires (default and maximum 365)",
+            ),
+        ],
+        examples: &[
+            (
+                "login --gatehouse-url https://host/gatehouse",
+                "asks for username and password",
+            ),
+            (
+                "login --scope warehouse:write",
+                "a token that can publish, nothing more",
+            ),
+        ],
+        targets: false,
+    },
+    CommandHelp {
         name: "secrets",
         surface: Surface::Cli,
         aliases: &[],

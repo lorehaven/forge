@@ -1,3 +1,5 @@
+#[path = "unit/api_app_tokens_tests.rs"]
+mod api_app_tokens_tests;
 #[path = "unit/api_auth_tests.rs"]
 mod api_auth_tests;
 #[path = "unit/api_jwks_tests.rs"]

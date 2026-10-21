@@ -143,6 +143,8 @@ pub struct TokenRequest {
     pub client_secret: Option<String>,
     #[serde(default)]
     pub refresh_token: Option<String>,
+    #[serde(default)]
+    pub app_token: Option<String>,
 }
 
 #[post("/api/v1/token")]
@@ -159,6 +161,7 @@ pub async fn token(
         }
         "refresh_token" => refresh_token_grant(&body, &config, &users, &sessions).await,
         "client_credentials" => client_credentials_grant(&body, &config, &db).await,
+        "app_token" => crate::api::app_tokens::app_token_grant(&body, &config, &db, &users).await,
         other => bad_request(&format!("unsupported grant_type '{other}'")),
     }
 }

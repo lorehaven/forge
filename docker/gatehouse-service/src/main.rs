@@ -110,6 +110,7 @@ async fn main() -> std::io::Result<()> {
     gatehouse_service::api::test_tokens::register_routes();
     gatehouse_service::api::notify::register_routes();
     gatehouse_service::api::users::register_routes();
+    gatehouse_service::api::app_tokens::register_routes();
     gatehouse_service::ui::register_routes();
 
     let app = quench_starter::http::discover_and_mount(base_path);

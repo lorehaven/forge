@@ -17,6 +17,8 @@ mod docker_tests;
 mod install_tests;
 #[path = "unit/lint_tests.rs"]
 mod lint_tests;
+#[path = "unit/login_tests.rs"]
+mod login_tests;
 #[path = "unit/release_tests.rs"]
 mod release_tests;
 #[path = "unit/run_tests.rs"]

@@ -1,0 +1,33 @@
+[[migrations]]
+id = "0012-app-tokens"
+author = "gatehouse-service"
+since = "0.2.3"
+
+# Long-lived application tokens a person mints for their own tools (anvil,
+# riveter, ...), exchanged at POST /token for a short-lived access token.
+# `token_hash` rather than the raw token, same reasoning as refresh tokens and
+# authorization codes: the secret is shown once and only ever compared after.
+# `id` is the public handle used to list and revoke. `scope` is a space
+# separated `service:action` list; empty means "whatever the person holds".
+# `revoked_at` rather than deleting keeps a revoked token distinguishable from
+# an unknown one in logs.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.app_tokens (
+    token_hash   TEXT PRIMARY KEY,
+    id           TEXT NOT NULL UNIQUE,
+    username     TEXT NOT NULL REFERENCES ${schema}.users(username) ON DELETE CASCADE,
+    name         TEXT NOT NULL,
+    scope        TEXT NOT NULL DEFAULT '',
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at   TIMESTAMPTZ,
+    last_used_at TIMESTAMPTZ,
+    revoked_at   TIMESTAMPTZ
+);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS app_tokens_username
+    ON ${schema}.app_tokens (username);
+"""

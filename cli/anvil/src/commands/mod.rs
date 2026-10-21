@@ -3,6 +3,7 @@ pub mod config_check;
 pub mod docker;
 pub mod install;
 pub mod lint;
+pub mod login;
 pub mod release;
 pub mod run;
 pub mod workspace;

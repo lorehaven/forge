@@ -107,6 +107,13 @@ fn main() -> Result<()> {
             }
             DockerCommands::BuildAll => commands::docker::build_all(&config)?,
         },
+        Commands::Login {
+            gatehouse_url,
+            username,
+            name,
+            scope,
+            days,
+        } => commands::login::login(gatehouse_url, username, name, scope, days)?,
         Commands::Config { command } => match command {
             ConfigCommands::Check => commands::config_check::check()?,
         },

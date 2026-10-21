@@ -70,6 +70,7 @@ packages = [
     "conveyor-cli",
     "foreman",
     "forge-toolbox",
+    "gatehouse-auth",
     "pulley",
     "riveter",
     "switchboard-cli",

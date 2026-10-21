@@ -30,6 +30,7 @@ base64 = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 dotenvy = { workspace = true }
+gatehouse-auth = { workspace = true }
 hex = { workspace = true }
 jsonschema = { workspace = true }
 minijinja = { workspace = true }

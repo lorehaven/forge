@@ -67,7 +67,9 @@ impl Registry {
     /// - `RIVETER_WAREHOUSE_URL` - Warehouse including its base path.
     /// - `RIVETER_WAREHOUSE_TOKEN` - a bearer token, **or**
     /// - `RIVETER_GATEHOUSE_URL` with `RIVETER_CLIENT_ID` and `RIVETER_CLIENT_SECRET`,
-    ///   exchanged for a token with the client-credentials grant.
+    ///   exchanged for a token with the client-credentials grant, **or**
+    /// - the application token `riveter login` stores in `.riveter.secret.toml`,
+    ///   exchanged for a short-lived token on every run.
     pub fn from_env() -> Result<Self> {
         dotenvy::dotenv().ok();
 
@@ -84,13 +86,17 @@ impl Registry {
                 var("RIVETER_CLIENT_ID"),
                 var("RIVETER_CLIENT_SECRET"),
             );
-            let (Some(gatehouse), Some(id), Some(secret)) = (gatehouse, id, secret) else {
+            if let (Some(gatehouse), Some(id), Some(secret)) = (gatehouse, id, secret) {
+                client_credentials_token(&gatehouse, &id, &secret)?
+            } else if let Some(stored) = gatehouse_auth::load("riveter", &std::env::current_dir()?)?
+            {
+                gatehouse_auth::access_token(&stored)?
+            } else {
                 bail!(
-                    "no credentials: set RIVETER_WAREHOUSE_TOKEN, or RIVETER_GATEHOUSE_URL \
-                     with RIVETER_CLIENT_ID and RIVETER_CLIENT_SECRET"
+                    "no credentials: run `riveter login`, or set RIVETER_WAREHOUSE_TOKEN, or \
+                     RIVETER_GATEHOUSE_URL with RIVETER_CLIENT_ID and RIVETER_CLIENT_SECRET"
                 );
-            };
-            client_credentials_token(&gatehouse, &id, &secret)?
+            }
         };
 
         Self::new(&base, Some(token))
