@@ -6,4 +6,9 @@ ignore = [
     # is available to drop it.
     # Re-check: https://rustsec.org/advisories/RUSTSEC-2026-0192
     "RUSTSEC-2026-0192",
+    # basic-toml is unmaintained (no CVE, informational only). Pulled in via
+    # riveter -> age 0.12.1 -> i18n-embed-fl/i18n-embed-impl -> i18n-config
+    # 0.4.8, which depends on it. No safe upgrade is available.
+    # Re-check: https://rustsec.org/advisories/RUSTSEC-2026-0374
+    "RUSTSEC-2026-0374",
 ]
