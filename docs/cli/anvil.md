@@ -133,9 +133,12 @@ packages = ["service", "worker"]
 registry = "forge-registry"
 packages = ["service", "worker"]
 commit_message_template = "release: bump package versions ({summary})"
+gatehouse_url = "https://host/gatehouse"
 ```
 
 `[docker].registry` is only optional when every package sets its own `registries` override. Every Docker build always receives `PROJECT_NAME` and `RESOURCES_PATH` build args derived from the module/package name; `build_args` entries are appended after those, so a package can override `RESOURCES_PATH` if it genuinely needs a different one. This lets one parameterized Dockerfile serve many packages — prefer `build_args` over forking a Dockerfile for a one-line difference.
+
+`[release].gatehouse_url` is optional: the Gatehouse (with its base path) that `anvil login` uses when `--gatehouse-url` is not given. It is not a secret, so it belongs here rather than in `.anvil.secret.toml`.
 
 `[release].commit_message_template` is optional; the line above is what an unset one already defaults to. It supports three placeholders, substituted against whichever packages a real run actually version-bumped: `{summary}` (the default's comma-joined `pkg vX.Y.Z, pkg2 vX.Y.Z`), `{changelog}` (the same packages as one `- pkg vX.Y.Z` bullet per line, for a multi-line commit body), and `{count}` (how many packages were bumped).
 

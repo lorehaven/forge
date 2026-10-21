@@ -98,6 +98,10 @@ pub struct ReleaseConfig {
     /// for what an unset one falls back to.
     #[serde(default)]
     pub commit_message_template: Option<String>,
+    /// Gatehouse (including its base path) that `anvil login` mints application
+    /// tokens at. Not a secret, so it lives here rather than in the secret file.
+    #[serde(default)]
+    pub gatehouse_url: Option<String>,
 }
 
 /// `quiet` suppresses the fallback warnings below.

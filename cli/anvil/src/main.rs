@@ -113,7 +113,7 @@ fn main() -> Result<()> {
             name,
             scope,
             days,
-        } => commands::login::login(gatehouse_url, username, name, scope, days)?,
+        } => commands::login::login(&config, gatehouse_url, username, name, scope, days)?,
         Commands::Config { command } => match command {
             ConfigCommands::Check => commands::config_check::check()?,
         },

@@ -23,12 +23,17 @@ pub fn default_token_name(host: &str) -> String {
 
 pub fn login_command(args: &LoginArgs) -> Result<()> {
     let dir = std::env::current_dir().context("finding the working directory")?;
-    let url = match &args.gatehouse_url {
-        Some(url) => url.clone(),
-        None => gatehouse_auth::load(TOOL, &dir)?
-            .map(|stored| stored.gatehouse_url)
-            .context("pass --gatehouse-url (e.g. https://host/gatehouse)")?,
-    };
+    dotenvy::dotenv().ok();
+    let stored = gatehouse_auth::load(TOOL, &dir)?.map(|stored| stored.gatehouse_url);
+    let url = args
+        .gatehouse_url
+        .clone()
+        .or_else(|| std::env::var("RIVETER_GATEHOUSE_URL").ok())
+        .filter(|url| !url.trim().is_empty())
+        .or(stored)
+        .context(
+            "no Gatehouse URL: pass --gatehouse-url, or set RIVETER_GATEHOUSE_URL (a .env works)",
+        )?;
     let username = match &args.username {
         Some(username) => username.clone(),
         None => prompt("Gatehouse username: ")?,

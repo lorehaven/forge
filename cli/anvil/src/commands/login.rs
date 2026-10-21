@@ -1,3 +1,4 @@
+use crate::config::Config;
 use anyhow::{Context, Result, bail};
 use gatehouse_auth::{Credentials, NewToken};
 use std::io::{self, Write as _};
@@ -7,6 +8,7 @@ const TOOL: &str = "anvil";
 
 /// Mints an application token for this machine and stores it in `.anvil.secret.toml`.
 pub fn login(
+    config: &Config,
     gatehouse_url: Option<String>,
     username: Option<String>,
     name: Option<String>,
@@ -14,12 +16,13 @@ pub fn login(
     days: Option<i64>,
 ) -> Result<()> {
     let dir = std::env::current_dir().context("finding the working directory")?;
-    let url = match gatehouse_url {
-        Some(url) => url,
-        None => gatehouse_auth::load(TOOL, &dir)?
-            .map(|stored| stored.gatehouse_url)
-            .context("pass --gatehouse-url (e.g. https://host/gatehouse)")?,
-    };
+    let stored = gatehouse_auth::load(TOOL, &dir)?.map(|stored| stored.gatehouse_url);
+    let url = gatehouse_url
+        .or_else(|| config.release.gatehouse_url.clone())
+        .or(stored)
+        .context(
+            "no Gatehouse URL: pass --gatehouse-url, or set `gatehouse_url` under [release] in .anvil.toml",
+        )?;
     let username = match username {
         Some(username) => username,
         None => prompt("Gatehouse username: ")?,
