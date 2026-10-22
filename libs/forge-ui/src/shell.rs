@@ -16,6 +16,8 @@ pub fn supported_locales() -> Vec<String> {
     SUPPORTED_LOCALES.iter().map(|s| s.to_string()).collect()
 }
 
+const FAVICON: &[u8] = include_bytes!("../assets/favicon.png");
+
 const INTER_FONT: &str =
     "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap";
 
@@ -164,6 +166,8 @@ impl UiShell {
             .footer(div().attr("hidden", "true"))
             .resources_prefix(ui_path(""))
             .build();
+        // quench-web writes its own favicon while building the shell; replace it with forge's.
+        let _ = std::fs::write("dist/assets/favicon.png", FAVICON);
         Self { app, cfg, frame }
     }
 
