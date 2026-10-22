@@ -128,7 +128,7 @@ fn instance_header(instance: &VllmInstance, can_stop: bool) -> Element {
 /// Id, namespace, endpoint, status and start time.
 fn instance_meta(instance: &VllmInstance) -> Element {
     let status_class = match instance.status.as_str() {
-        "failed" => "status-failed",
+        "failed" | "Failed" | "completed" | "interrupted" => "status-failed",
         "starting" => "status-starting",
         "terminating" => "status-terminating",
         _ => "status-running",
@@ -173,7 +173,7 @@ fn instance_meta(instance: &VllmInstance) -> Element {
 /// Quantisation, dtype, multimodal limit, and the device (or its GPU utilisation).
 fn instance_fit_line(instance: &VllmInstance) -> Element {
     let fit_class = match instance.status.as_str() {
-        "failed" => "fit-no",
+        "failed" | "Failed" | "completed" | "interrupted" => "fit-no",
         "starting" | "terminating" => "fit-warn",
         _ => "fit-ok",
     };

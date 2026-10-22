@@ -59,6 +59,125 @@ pub fn hf_offline_env() -> serde_json::Value {
     json!({ "name": "HF_HUB_OFFLINE", "value": "1" })
 }
 
+const MANAGED_SELECTOR: &str = "app.kubernetes.io/managed-by=switchboard,app=vllm";
+
+/// Restarts of one model in a row before the restorer stops trying.
+const MAX_RESTORES: u32 = 5;
+/// A pod that served this long before stopping did not crash-loop; its restart count resets.
+const STABLE_RUN_SECS: i64 = 600;
+/// A pod still loading after this long no longer holds up the next restore.
+const LOADING_TIMEOUT_SECS: i64 = 1200;
+const RESTART_ANNOTATION: &str = "vllm-restarts";
+
+/// Whether a pod status is one the restorer brings back.
+#[must_use]
+pub fn is_restorable(status: &str) -> bool {
+    matches!(status, "completed" | "interrupted")
+}
+
+/// A pod that is still coming up (not yet Ready, not stuck forever).
+fn is_loading(pod: &Pod) -> bool {
+    let age = pod
+        .metadata
+        .creation_timestamp
+        .as_ref()
+        .map_or(0, |t| jiff::Timestamp::now().as_second() - t.0.as_second());
+    pod_status(pod) == "starting" && age < LOADING_TIMEOUT_SECS
+}
+
+/// The restart count the replacement pod carries: one more than the old pod's, unless it ran long
+/// enough to count as stable.
+fn next_restart_count(pod: &Pod) -> u32 {
+    let previous = pod
+        .metadata
+        .annotations
+        .as_ref()
+        .and_then(|a| a.get(RESTART_ANNOTATION))
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(0);
+    let ran_secs = pod
+        .status
+        .as_ref()
+        .and_then(|s| s.container_statuses.as_ref())
+        .and_then(|c| c.first())
+        .and_then(|c| c.state.as_ref())
+        .and_then(|s| s.terminated.as_ref())
+        .and_then(|t| {
+            Some(t.finished_at.as_ref()?.0.as_second() - t.started_at.as_ref()?.0.as_second())
+        })
+        .unwrap_or(0);
+    if ran_secs >= STABLE_RUN_SECS {
+        1
+    } else {
+        previous + 1
+    }
+}
+
+fn new_pod_port(pod: &Pod) -> u16 {
+    pod.metadata
+        .labels
+        .as_ref()
+        .and_then(|l| l.get("vllm-port"))
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(8000)
+}
+
+/// A fresh pod with the old one's spec, labels and annotations. Scheduler- and
+/// admission-injected fields are dropped so the API server can fill them in again.
+///
+/// # Errors
+/// When the old pod's spec cannot be turned back into a pod.
+pub fn restored_pod(old: &Pod, restarts: u32) -> Result<Pod, String> {
+    let mut spec = serde_json::to_value(old.spec.clone().unwrap_or_default())
+        .map_err(|e| format!("Failed to serialize pod spec: {e}"))?;
+    let injected = |name: &serde_json::Value| {
+        name.as_str()
+            .is_some_and(|n| n.starts_with("kube-api-access-"))
+    };
+    if let Some(obj) = spec.as_object_mut() {
+        obj.remove("nodeName");
+        if let Some(volumes) = obj.get_mut("volumes").and_then(|v| v.as_array_mut()) {
+            volumes.retain(|v| !injected(&v["name"]));
+        }
+        if let Some(containers) = obj.get_mut("containers").and_then(|c| c.as_array_mut()) {
+            for c in containers {
+                if let Some(mounts) = c.get_mut("volumeMounts").and_then(|m| m.as_array_mut()) {
+                    mounts.retain(|m| !injected(&m["name"]));
+                }
+            }
+        }
+    }
+    let mut annotations = old.metadata.annotations.clone().unwrap_or_default();
+    annotations.insert(RESTART_ANNOTATION.to_string(), restarts.to_string());
+    serde_json::from_value(json!({
+        "apiVersion": "v1",
+        "kind": "Pod",
+        "metadata": {
+            "name": old.metadata.name,
+            "labels": old.metadata.labels,
+            "annotations": annotations,
+        },
+        "spec": spec,
+    }))
+    .map_err(|e| format!("Failed to build restored pod: {e}"))
+}
+
+/// Polls until the pod is gone (it is already terminal, so this is quick).
+async fn wait_gone(pods: &Api<Pod>, name: &str) -> Result<(), String> {
+    for _ in 0..60 {
+        if pods
+            .get_opt(name)
+            .await
+            .map_err(|e| format!("Failed to check pod {name}: {e}"))?
+            .is_none()
+        {
+            return Ok(());
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+    Err(format!("Pod {name} did not terminate in time"))
+}
+
 pub struct KubernetesVllmEngine {
     client: Client,
     namespace: String,
@@ -85,9 +204,17 @@ impl KubernetesVllmEngine {
     }
 }
 
+/// Pod `status.reason` values that mean the pod was cut off rather than crashed.
+const INTERRUPTED_REASONS: [&str; 3] = ["Shutdown", "Terminated", "UnexpectedAdmissionError"];
+
 /// What the pod is doing, in the words the UI uses. Pod phase flips to Running before vLLM finishes
 /// loading - the Ready condition (the `/health` readiness probe) is what says it is serving.
-fn pod_status(pod: &Pod) -> &str {
+///
+/// `completed` (phase `Succeeded`) and `interrupted` (`Failed` because the node shut down or the
+/// pod could not be admitted) are what a machine reboot leaves behind; both are restorable, unlike
+/// a genuine `Failed` crash, which the reaper removes.
+#[must_use]
+pub fn pod_status(pod: &Pod) -> &str {
     let ready = pod
         .status
         .as_ref()
@@ -104,6 +231,16 @@ fn pod_status(pod: &Pod) -> &str {
     match pod.status.as_ref().and_then(|s| s.phase.as_deref()) {
         Some("Running") if ready => "running",
         Some("Running" | "Pending") => "starting",
+        Some("Succeeded") => "completed",
+        Some("Failed")
+            if pod
+                .status
+                .as_ref()
+                .and_then(|s| s.reason.as_deref())
+                .is_some_and(|r| INTERRUPTED_REASONS.contains(&r)) =>
+        {
+            "interrupted"
+        }
         Some(p) => p,
         None => "unknown",
     }
@@ -555,7 +692,7 @@ fn parse_instance_id(id: &str, default_namespace: &str) -> Result<(String, Strin
 impl VllmEngine for KubernetesVllmEngine {
     async fn list_instances(&self) -> Result<Vec<VllmInstance>, String> {
         let pods: Api<Pod> = Api::all(self.client.clone());
-        let lp = ListParams::default().labels("app.kubernetes.io/managed-by=switchboard,app=vllm");
+        let lp = ListParams::default().labels(MANAGED_SELECTOR);
         let pod_list = pods
             .list(&lp)
             .await
@@ -623,6 +760,66 @@ impl VllmEngine for KubernetesVllmEngine {
             log_path: None,
             last_error: None,
         })
+    }
+
+    async fn restore_next(&self) -> Result<Option<String>, String> {
+        let pods: Api<Pod> = Api::all(self.client.clone());
+        let lp = ListParams::default().labels(MANAGED_SELECTOR);
+        let mut list = pods
+            .list(&lp)
+            .await
+            .map_err(|e| format!("Failed to list pods: {e}"))?
+            .items;
+        list.sort_by(|a, b| a.metadata.name.cmp(&b.metadata.name));
+
+        // One at a time: the GPU cannot hold two models loading at once.
+        if list.iter().any(is_loading) {
+            return Ok(None);
+        }
+        let Some(old) = list.iter().find(|p| is_restorable(pod_status(p))) else {
+            return Ok(None);
+        };
+
+        let name = old.metadata.name.clone().unwrap_or_default();
+        let namespace = old.metadata.namespace.clone().unwrap_or_default();
+        let restarts = next_restart_count(old);
+        if restarts > MAX_RESTORES {
+            // Leave it visible as `completed` rather than looping on a model that never stays up.
+            tracing::error!(
+                "vLLM restorer: {namespace}/{name} keeps stopping; giving up after {MAX_RESTORES} restarts"
+            );
+            return Ok(None);
+        }
+
+        let new_pod = restored_pod(old, restarts)?;
+        let port = new_pod_port(old);
+
+        let pods: Api<Pod> = Api::namespaced(self.client.clone(), &namespace);
+        let services: Api<Service> = Api::namespaced(self.client.clone(), &namespace);
+        let _ = services.delete(&name, &DeleteParams::default()).await;
+        pods.delete(&name, &DeleteParams::default())
+            .await
+            .map_err(|e| format!("Failed to delete pod {name}: {e}"))?;
+        wait_gone(&pods, &name).await?;
+
+        let created = pods
+            .create(&PostParams::default(), &new_pod)
+            .await
+            .map_err(|e| format!("Failed to recreate pod {name}: {e}"))?;
+        let uid = created.metadata.uid.as_deref().unwrap_or_default();
+        let svc: Service = serde_json::from_value(service_manifest(&name, uid, port))
+            .map_err(|e| format!("Failed to deserialize service manifest: {e}"))?;
+        // The old service may still be terminating; retry briefly rather than leave the pod unreachable.
+        for _ in 0..10 {
+            match services.create(&PostParams::default(), &svc).await {
+                Ok(_) => break,
+                Err(kube::Error::Api(e)) if e.code == 409 => {
+                    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                }
+                Err(e) => return Err(format!("Failed to recreate service {name}: {e}")),
+            }
+        }
+        Ok(Some(format!("pod:{namespace}:{name}")))
     }
 
     async fn stop_instance(&self, id: String) -> Result<(), String> {

@@ -33,6 +33,7 @@ async fn main() -> std::io::Result<()> {
     let (gpu_tx, _) = tokio::sync::broadcast::channel::<String>(100);
     let vllm_engine = routers::vllm::init_engine().await;
     routers::vllm::spawn_reaper(vllm_engine.clone());
+    routers::vllm::spawn_restorer(vllm_engine.clone());
     let (vllm_tx, _) = tokio::sync::broadcast::channel::<String>(100);
 
     let health_state = HealthState::live();

@@ -37,3 +37,22 @@ pub async fn reap_failed(engine: &Arc<dyn VllmEngine>) {
         }
     }
 }
+
+/// How often the restorer looks for a stopped instance to bring back.
+const RESTORE_INTERVAL_SECS: u64 = 30;
+
+/// After a machine reboot the vLLM pods are left `Completed`/interrupted and nothing recreates
+/// them; this restarts them, one per tick and only once the previous one is up.
+pub fn spawn_restorer(engine: Arc<dyn VllmEngine>) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(RESTORE_INTERVAL_SECS));
+        loop {
+            interval.tick().await;
+            match engine.restore_next().await {
+                Ok(Some(id)) => tracing::info!("vLLM restorer: restarted {}", id),
+                Ok(None) => {}
+                Err(err) => tracing::error!("vLLM restorer: {}", err),
+            }
+        }
+    });
+}

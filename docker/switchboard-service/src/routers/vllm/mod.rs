@@ -19,7 +19,7 @@ use quench_auth::http::middleware::auth::Auth;
 use quench_http::prelude::{Endpoint, OnPathPrefix, wrap};
 use std::sync::Arc;
 
-pub use reaper::spawn_reaper;
+pub use reaper::{spawn_reaper, spawn_restorer};
 pub use sse::init_vllm_status_publisher;
 pub use types::*;
 
