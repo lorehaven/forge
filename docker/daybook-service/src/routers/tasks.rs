@@ -22,12 +22,20 @@ pub struct TaskInput {
     sort_order: i32,
     #[serde(default)]
     due_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    remind_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    label_ids: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct TaskFilter {
     #[serde(default)]
     project_id: Option<String>,
+    #[serde(default)]
+    label_id: Option<String>,
+    #[serde(default)]
+    all: bool,
     #[serde(default)]
     completed: Option<bool>,
 }
@@ -45,6 +53,10 @@ pub struct TaskUpdateInput {
     sort_order: i32,
     #[serde(default)]
     due_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    remind_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    label_ids: Vec<String>,
 }
 
 #[get("/api/v1/tasks")]
@@ -61,9 +73,16 @@ pub async fn list(
         ));
     }
     let user = actor(claims.as_ref());
-    let tasks = task::list(&db, &user, filter.project_id.as_deref(), filter.completed)
-        .await
-        .map_err(from_domain)?;
+    let tasks = task::list(
+        &db,
+        &user,
+        filter.project_id.as_deref(),
+        filter.label_id.as_deref(),
+        filter.all,
+        filter.completed,
+    )
+    .await
+    .map_err(from_domain)?;
     Ok(json(StatusCode::OK, &tasks))
 }
 
@@ -90,6 +109,8 @@ pub async fn create(
         project_id: body.project_id,
         sort_order: body.sort_order,
         due_at: body.due_at,
+        remind_at: body.remind_at,
+        label_ids: body.label_ids,
     };
     let task = task::create(&db, &user, &input)
         .await
@@ -122,6 +143,8 @@ pub async fn update(
         is_completed: body.is_completed,
         sort_order: body.sort_order,
         due_at: body.due_at,
+        remind_at: body.remind_at,
+        label_ids: body.label_ids,
     };
     task::update(&db, &user, &id, &input)
         .await

@@ -1,0 +1,57 @@
+[[migrations]]
+id = "0002-labels-and-reminders"
+author = "daybook-service"
+since = "0.2.0"
+
+# One optional reminder instant per task. Daybook only stores it; the client schedules the actual
+# notification (there is no push channel from the service).
+[[migrations.changes]]
+sql = """
+ALTER TABLE ${schema}.tasks ADD COLUMN IF NOT EXISTS remind_at TIMESTAMPTZ;
+"""
+
+# Labels belong to a user, not a project: "errand" is the same label in the inbox and in every list. Names
+# are unique per user, ignoring case.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.labels (
+    id TEXT PRIMARY KEY,
+    owner TEXT NOT NULL REFERENCES ${auth_schema}.users(username) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    color TEXT NOT NULL DEFAULT '#888888',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (id, owner)
+);
+"""
+
+[[migrations.changes]]
+sql = """
+CREATE UNIQUE INDEX IF NOT EXISTS labels_owner_name_idx
+ON ${schema}.labels(owner, lower(name));
+"""
+
+# The composite foreign key below needs (id, owner) to be unique on tasks too.
+[[migrations.changes]]
+sql = """
+CREATE UNIQUE INDEX IF NOT EXISTS tasks_id_owner_idx ON ${schema}.tasks(id, owner);
+"""
+
+# Both sides are tied to the same owner by composite keys, so a task can never carry another user's
+# label - the database enforces what the API's owner filters already do.
+[[migrations.changes]]
+sql = """
+CREATE TABLE IF NOT EXISTS ${schema}.task_labels (
+    task_id TEXT NOT NULL,
+    label_id TEXT NOT NULL,
+    owner TEXT NOT NULL,
+    PRIMARY KEY (task_id, label_id),
+    FOREIGN KEY (task_id, owner) REFERENCES ${schema}.tasks(id, owner) ON DELETE CASCADE,
+    FOREIGN KEY (label_id, owner) REFERENCES ${schema}.labels(id, owner) ON DELETE CASCADE
+);
+"""
+
+# "Every task with this label" - the label filter's own query.
+[[migrations.changes]]
+sql = """
+CREATE INDEX IF NOT EXISTS task_labels_label_idx ON ${schema}.task_labels(label_id);
+"""

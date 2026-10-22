@@ -2,6 +2,7 @@
 //! find the repo (per-repo secret), verify raw-byte signature, then act.
 
 use crate::config::ConveyorConfig;
+use crate::domain::Trigger;
 use crate::providers::{self, Providers, TriggerEvent};
 use crate::routers::api::{ApiError, json_error};
 use crate::scheduler::queue::{self, NewRun};
@@ -87,6 +88,14 @@ pub async fn receive(
             repo.slug()
         );
         return ignored("pull requests from forks are not built");
+    }
+
+    // After the signature check, so an unauthenticated sender learns nothing from the answer.
+    if !config.build_tags
+        && event.trigger == Trigger::Push
+        && event.git_ref.starts_with("refs/tags/")
+    {
+        return ignored("tag pushes are not built (CONVEYOR_BUILD_TAGS is off)");
     }
 
     let new = NewRun {

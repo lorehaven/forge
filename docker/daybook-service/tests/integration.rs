@@ -27,7 +27,7 @@ async fn database() -> Option<(Db, MutexGuard<'static, ()>)> {
     }
     let guard = lock().lock().await;
     let db = Db::connect(&url).await.expect("connect to test database");
-    db.execute("TRUNCATE daybook.tasks, daybook.projects CASCADE")
+    db.execute("TRUNCATE daybook.tasks, daybook.projects, daybook.labels CASCADE")
         .await
         .expect("clear test rows");
     db.execute(&format!(
@@ -307,5 +307,220 @@ async fn missing_records_and_invalid_payloads_have_stable_http_statuses() {
             ))
             .await;
         assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{path}");
+    }
+}
+
+async fn create_label(
+    app: &Arc<dyn Endpoint>,
+    container: &Arc<Container>,
+    user: &str,
+    name: &str,
+) -> Value {
+    let response = app
+        .call(request(
+            Method::POST,
+            "/api/v1/labels",
+            Some(json!({"name":name,"color":"#AA00FF"})),
+            user,
+            container,
+        ))
+        .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    body(response).await
+}
+
+#[tokio::test]
+#[allow(clippy::too_many_lines)]
+async fn reminders_and_labels_round_trip_and_filter_across_lists() {
+    let Some((db, _guard)) = database().await else {
+        return eprintln!("skipping labels and reminders: DAYBOOK_TEST_DATABASE_URL is not set");
+    };
+    let (app, container) = app(db).await;
+
+    let errand = create_label(&app, &container, ALICE, "errand").await;
+    assert_eq!(errand["color"], "#aa00ff", "colours are stored lowercase");
+    let urgent = create_label(&app, &container, ALICE, "Urgent").await;
+    let errand_id = errand["id"].as_str().unwrap();
+    let urgent_id = urgent["id"].as_str().unwrap();
+
+    // Labels list in name order, ignoring case.
+    let labels = get_alice(&app, &container, "/api/v1/labels").await;
+    assert_eq!(labels[0]["name"], "errand");
+    assert_eq!(labels[1]["name"], "Urgent");
+
+    let project = create_project(&app, &container, ALICE, "Home").await;
+    let project_id = project["id"].as_str().unwrap();
+    let response = send_alice(
+        &app,
+        &container,
+        Method::POST,
+        "/api/v1/tasks",
+        Some(json!({
+            "content":"Post parcel",
+            "remind_at":"2026-11-01T08:30:00Z",
+            "due_at":"2026-11-01T12:00:00Z",
+            "label_ids":[urgent_id, errand_id, errand_id]
+        })),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let task = body(response).await;
+    assert_eq!(task["remind_at"], "2026-11-01T08:30:00Z");
+    assert_eq!(
+        task["label_ids"],
+        json!([errand_id, urgent_id]),
+        "duplicates collapse; ids come back in label-name order"
+    );
+    let task_id = task["id"].as_str().unwrap();
+
+    let in_project = create_task(&app, &container, ALICE, "Buy bulbs", Some(project_id)).await;
+    assert_eq!(in_project["label_ids"], json!([]));
+    assert_eq!(in_project["remind_at"], Value::Null);
+    let response = send_alice(
+        &app,
+        &container,
+        Method::PUT,
+        &format!("/api/v1/tasks/{}", in_project["id"].as_str().unwrap()),
+        Some(json!({
+            "content":"Buy bulbs",
+            "project_id":project_id,
+            "label_ids":[errand_id]
+        })),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // A label filter spans the inbox and every project...
+    let by_label = get_alice(
+        &app,
+        &container,
+        &format!("/api/v1/tasks?label_id={errand_id}"),
+    )
+    .await;
+    assert_eq!(by_label.as_array().unwrap().len(), 2);
+    // ...and can still be narrowed to one list.
+    let narrowed = get_alice(
+        &app,
+        &container,
+        &format!("/api/v1/tasks?label_id={errand_id}&project_id={project_id}"),
+    )
+    .await;
+    assert_eq!(narrowed.as_array().unwrap().len(), 1);
+    let only_urgent = get_alice(
+        &app,
+        &container,
+        &format!("/api/v1/tasks?label_id={urgent_id}"),
+    )
+    .await;
+    assert_eq!(only_urgent.as_array().unwrap().len(), 1);
+
+    // `all=true` spans every list with no label needed.
+    let everything = get_alice(&app, &container, "/api/v1/tasks?all=true").await;
+    assert_eq!(everything.as_array().unwrap().len(), 2);
+    let open_only = get_alice(&app, &container, "/api/v1/tasks?all=true&completed=true").await;
+    assert!(open_only.as_array().unwrap().is_empty());
+
+    // PUT replaces: omitting the labels and reminder clears them.
+    let response = send_alice(
+        &app,
+        &container,
+        Method::PUT,
+        &format!("/api/v1/tasks/{task_id}"),
+        Some(json!({"content":"Post parcel"})),
+    )
+    .await;
+    let cleared = body(response).await;
+    assert_eq!(cleared["label_ids"], json!([]));
+    assert_eq!(cleared["remind_at"], Value::Null);
+
+    // Renaming a label keeps it attached; deleting one detaches it but keeps the task.
+    let response = send_alice(
+        &app,
+        &container,
+        Method::PUT,
+        &format!("/api/v1/labels/{errand_id}"),
+        Some(json!({"name":"errands"})),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(body(response).await["color"], "#888888");
+    delete_alice(&app, &container, &format!("/api/v1/labels/{errand_id}")).await;
+    let tasks = get_alice(
+        &app,
+        &container,
+        &format!("/api/v1/tasks?project_id={project_id}"),
+    )
+    .await;
+    assert_eq!(tasks.as_array().unwrap().len(), 1);
+    assert_eq!(tasks[0]["label_ids"], json!([]));
+}
+
+#[tokio::test]
+async fn labels_are_private_unique_and_validated() {
+    let Some((db, _guard)) = database().await else {
+        return eprintln!("skipping label rules: DAYBOOK_TEST_DATABASE_URL is not set");
+    };
+    let (app, container) = app(db).await;
+    let label = create_label(&app, &container, ALICE, "Private").await;
+    let label_id = label["id"].as_str().unwrap();
+
+    // Names are unique per user, ignoring case; another user may reuse one.
+    let response = send_alice(
+        &app,
+        &container,
+        Method::POST,
+        "/api/v1/labels",
+        Some(json!({"name":"private"})),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    create_label(&app, &container, BOB, "Private").await;
+
+    // Bob sees only his own, cannot edit or delete Alice's, and cannot attach it to a task.
+    let response = app
+        .call(request(
+            Method::GET,
+            "/api/v1/labels",
+            None,
+            BOB,
+            &container,
+        ))
+        .await;
+    assert_eq!(body(response).await.as_array().unwrap().len(), 1);
+    for method in [Method::PUT, Method::DELETE] {
+        let payload = (method == Method::PUT).then(|| json!({"name":"Stolen"}));
+        let response = app
+            .call(request(
+                method,
+                &format!("/api/v1/labels/{label_id}"),
+                payload,
+                BOB,
+                &container,
+            ))
+            .await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+    let response = app
+        .call(request(
+            Method::POST,
+            "/api/v1/tasks",
+            Some(json!({"content":"Cross-owner label","label_ids":[label_id]})),
+            BOB,
+            &container,
+        ))
+        .await;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    // Colours must be #rrggbb.
+    for color in ["red", "#12345", "#12345g", "123456"] {
+        let response = send_alice(
+            &app,
+            &container,
+            Method::POST,
+            "/api/v1/labels",
+            Some(json!({"name":"Colourful","color":color})),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{color}");
     }
 }

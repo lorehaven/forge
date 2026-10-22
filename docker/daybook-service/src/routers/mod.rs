@@ -7,6 +7,7 @@ use quench_http::prelude::{Endpoint, FromRequest, HttpError, OnPathPrefix, Reque
 
 pub mod api_error;
 pub mod authz;
+pub mod labels;
 pub mod projects;
 pub mod tasks;
 
@@ -39,6 +40,7 @@ pub fn wrap_auth(
 }
 
 pub fn register_routes() {
+    labels::register_routes();
     projects::register_routes();
     tasks::register_routes();
 }

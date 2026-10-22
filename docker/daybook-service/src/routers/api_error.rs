@@ -13,8 +13,13 @@ pub fn from_domain(error: DaybookError) -> ApiError {
         {
             ApiError::new(
                 StatusCode::BAD_REQUEST,
-                "the referenced project does not exist for this user",
+                "a referenced project or label does not exist for this user",
             )
+        }
+        DaybookError::Sql(sqlx::Error::Database(database))
+            if database.code().as_deref() == Some("23505") =>
+        {
+            ApiError::new(StatusCode::CONFLICT, "that name is already in use")
         }
         DaybookError::Sql(error) => {
             ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, error.to_string())

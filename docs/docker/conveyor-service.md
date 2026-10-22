@@ -95,6 +95,9 @@ secrets = ["KUBE_TOKEN"]
 steps   = [{ anvil = "docker release-all" }, { riveter = "apply k8s/" }]
 ```
 
+**Tags.** A tag push is matched only against `on.tag`, never against `on.push`, so a pipeline with no `tag` patterns is skipped for every tag. That decision needs the pipeline file, which only exists in the checkout — so by default each tag push still queues a run, clones the commit, and ends as a skipped run. A deployment whose pipelines never use `on.tag` can set `CONVEYOR_BUILD_TAGS=false`: the webhook then accepts a tag push (after verifying its signature) and drops it, with no run, no clone and no skipped row. Branch pushes and pull requests are unaffected, and manual runs of a tag still work.
+
+
 The parsing lives in a separate crate, `conveyor-pipeline`, so `conveyor validate` can link the same parser a real run uses without linking the whole service around it. A pipeline that would fail is rejected as a parse error naming the stage and job at fault, before the run starts — a misspelled key, an unknown step kind, an empty command, a stage with no jobs, a `needs` naming no stage, or a cycle.
 
 ### Keys

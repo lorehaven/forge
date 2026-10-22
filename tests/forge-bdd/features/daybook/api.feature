@@ -17,6 +17,7 @@ Feature: Daybook's personal task API
       | /api/v1/tasks/missing   |
       | /api/v1/projects        |
       | /api/v1/projects/missing |
+      | /api/v1/labels          |
 
   Scenario Outline: Every write verb requires a Gatehouse token
     When an unauthenticated <method> request is sent to "<path>"
@@ -30,6 +31,9 @@ Feature: Daybook's personal task API
       | POST   | /api/v1/projects           |
       | PUT    | /api/v1/projects/missing   |
       | DELETE | /api/v1/projects/missing   |
+      | POST   | /api/v1/labels             |
+      | PUT    | /api/v1/labels/missing     |
+      | DELETE | /api/v1/labels/missing     |
 
   Scenario: A token without the Daybook audience is rejected
     Given I have a Gatehouse token with audience "sage"
@@ -59,7 +63,7 @@ Feature: Daybook's personal task API
     Then the response status should be 503
     And response should contain "Postgres"
 
-  Scenario Outline: Blank task and project names are rejected before database access
+  Scenario Outline: Blank task, project and label names are rejected before database access
     Given I am authenticated against daybook with scope "daybook:write"
     When an authenticated Daybook POST is sent to "<path>" with body:
       """
@@ -71,6 +75,7 @@ Feature: Daybook's personal task API
       | path             | body              |
       | /api/v1/tasks    | {"content":" "}   |
       | /api/v1/projects | {"name":" "}      |
+      | /api/v1/labels   | {"name":" "}      |
 
   Scenario: Daybook does not expose a web interface
     When GET request is sent to "/ui/home"

@@ -327,6 +327,85 @@ async fn a_same_repository_pull_request_builds_its_branch() {
 }
 
 #[tokio::test]
+async fn a_tag_push_is_queued_by_default() {
+    // A pipeline may ask for tags with `on.tag`, and only the checkout can say - so by default the
+    // run is queued and the worker decides.
+    let Some((db, _guard)) = database().await else {
+        return skipped("a_tag_push_is_queued_by_default");
+    };
+    configure(Some(SECRET));
+    register_github(&db, "lorehaven", "forge").await;
+
+    let status = deliver(
+        &db,
+        ConveyorConfig::default(),
+        "push",
+        &push("lorehaven", "forge", "refs/tags/v1.2.3", &"a".repeat(40)),
+        SECRET,
+        "d-1",
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::ACCEPTED);
+    let runs = queue::list_runs(&db, None, 10).await.expect("list");
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].git_ref, "refs/tags/v1.2.3");
+}
+
+#[tokio::test]
+async fn a_tag_push_is_dropped_when_the_deployment_does_not_build_tags() {
+    let Some((db, _guard)) = database().await else {
+        return skipped("a_tag_push_is_dropped_when_the_deployment_does_not_build_tags");
+    };
+    configure(Some(SECRET));
+    register_github(&db, "lorehaven", "forge").await;
+    let config = || ConveyorConfig {
+        build_tags: false,
+        ..ConveyorConfig::default()
+    };
+
+    let status = deliver(
+        &db,
+        config(),
+        "push",
+        &push("lorehaven", "forge", "refs/tags/v1.2.3", &"a".repeat(40)),
+        SECRET,
+        "d-1",
+    )
+    .await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    assert_eq!(
+        run_count(&db).await,
+        0,
+        "no run, so no clone and no skipped row"
+    );
+
+    // Branches are unaffected.
+    deliver(
+        &db,
+        config(),
+        "push",
+        &push("lorehaven", "forge", "refs/heads/master", &"b".repeat(40)),
+        SECRET,
+        "d-2",
+    )
+    .await;
+    assert_eq!(run_count(&db).await, 1);
+
+    // And an unsigned tag push is still refused, not quietly ignored.
+    let status = deliver(
+        &db,
+        config(),
+        "push",
+        &push("lorehaven", "forge", "refs/tags/v1.2.4", &"c".repeat(40)),
+        "wrong-secret",
+        "d-3",
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
 async fn a_ping_is_accepted_and_queues_nothing() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_ping_is_accepted_and_queues_nothing");

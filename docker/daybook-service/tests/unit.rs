@@ -64,7 +64,7 @@ async fn body(response: quench_http::response::Response) -> Value {
 #[tokio::test]
 async fn list_endpoints_refuse_ephemeral_database_storage() {
     let (app, container) = app().await;
-    for path in ["/api/v1/tasks", "/api/v1/projects"] {
+    for path in ["/api/v1/tasks", "/api/v1/projects", "/api/v1/labels"] {
         let response = app.call(request(Method::GET, path, None, &container)).await;
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE, "{path}");
         assert!(
@@ -81,6 +81,13 @@ async fn empty_task_and_project_names_are_rejected_before_database_access() {
     let (app, container) = app().await;
     let cases = [
         (Method::POST, "/api/v1/projects", json!({"name":"  "})),
+        (Method::POST, "/api/v1/labels", json!({"name":"  "})),
+        (Method::PUT, "/api/v1/labels/label-id", json!({"name":""})),
+        (
+            Method::POST,
+            "/api/v1/labels",
+            json!({"name":"Errand","color":"green"}),
+        ),
         (Method::POST, "/api/v1/tasks", json!({"content":"\t"})),
         (Method::PUT, "/api/v1/tasks/task-id", json!({"content":" "})),
         (
@@ -107,6 +114,11 @@ async fn syntactically_valid_writes_reach_the_postgres_requirement() {
     let (app, container) = app().await;
     let cases = [
         (Method::POST, "/api/v1/projects", json!({"name":"Work"})),
+        (
+            Method::POST,
+            "/api/v1/labels",
+            json!({"name":"Errand","color":"#00ff88"}),
+        ),
         (
             Method::POST,
             "/api/v1/tasks",

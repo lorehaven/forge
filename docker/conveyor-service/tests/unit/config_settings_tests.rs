@@ -48,6 +48,13 @@ fn forks_are_not_buildable_by_default() {
 }
 
 #[test]
+fn tags_build_by_default() {
+    // A pipeline can ask for tags with `on.tag`; dropping them is an opt-out, so existing
+    // deployments keep working when they upgrade.
+    assert!(ConveyorConfig::default().build_tags);
+}
+
+#[test]
 fn positive_keeps_the_default_when_unset() {
     assert_eq!(positive("CONVEYOR_TEST_UNSET_KEY", 7), 7);
 }

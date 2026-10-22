@@ -15,18 +15,26 @@ Gatehouse bearer token.
 
 | Method | Route | Behavior |
 |---|---|---|
-| `GET` | `/api/v1/tasks` | List inbox tasks by default; pass `project_id` to list that project. Optional `completed=true/false`. |
-| `POST` | `/api/v1/tasks` | Create `{ "content": "...", "project_id": null }`; null project means inbox. |
-| `PUT` | `/api/v1/tasks/{id}` | Replace content, description, project, completion, sort order and due date. |
+| `GET` | `/api/v1/tasks` | List inbox tasks by default; pass `project_id` to list that project. Pass `label_id` to list every task with that label across the inbox and all projects (add `project_id` to narrow it). Pass `all=true` to list every task regardless of list. Optional `completed=true/false`. |
+| `POST` | `/api/v1/tasks` | Create `{ "content": "...", "project_id": null, "due_at": null, "remind_at": null, "label_ids": [] }`; null project means inbox. |
+| `PUT` | `/api/v1/tasks/{id}` | Replace content, description, project, completion, sort order, due date, reminder and labels. Omitting `remind_at` or `label_ids` clears them. |
 | `DELETE` | `/api/v1/tasks/{id}` | Delete an owned task. |
 | `GET` | `/api/v1/projects` | List the caller's custom lists. |
 | `POST` | `/api/v1/projects` | Create `{ "name": "...", "sort_order": 0 }`. |
 | `PUT` | `/api/v1/projects/{id}` | Rename/reorder an owned list. |
 | `DELETE` | `/api/v1/projects/{id}` | Delete an owned list and its tasks. |
+| `GET` | `/api/v1/labels` | List the caller's labels, by name. |
+| `POST` | `/api/v1/labels` | Create `{ "name": "...", "color": "#rrggbb" }`; colour defaults to `#888888`. Names are unique per user, ignoring case (`409` otherwise). |
+| `PUT` | `/api/v1/labels/{id}` | Rename/recolour an owned label. |
+| `DELETE` | `/api/v1/labels/{id}` | Delete an owned label; it is removed from every task, the tasks stay. |
 
 Task objects include `id`, `project_id`, `content`, `description`,
-`is_completed`, `sort_order`, `due_at`, `created_at` and `updated_at`. A task
-cannot be attached to another user's project. The database enforces this as
+`is_completed`, `sort_order`, `due_at`, `remind_at`, `label_ids` (ordered by
+label name), `created_at` and `updated_at`. Label objects have `id`, `name`,
+`color` and `created_at`. Labels belong to the user, not to a project, so one
+label can tag tasks in the inbox and in any list. `remind_at` is only stored:
+the service sends nothing, so clients schedule their own notification from it.
+A task cannot be attached to another user's project or label. The database enforces this as
 well as the API's owner filters.
 
 ## Requirements and configuration
