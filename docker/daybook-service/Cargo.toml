@@ -25,6 +25,7 @@ path = "src/main.rs"
 [dependencies]
 async-trait = { workspace = true }
 chrono = { workspace = true }
+chrono-tz = { workspace = true }
 envmnt = { workspace = true }
 quench-auth = { workspace = true }
 quench-db = { workspace = true }

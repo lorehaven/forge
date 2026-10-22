@@ -1,3 +1,4 @@
+use crate::domain::recurrence::Recurrence;
 use crate::domain::task::{self, NewTask, TaskUpdate};
 use crate::routers::api_error::{from_domain, json};
 use crate::routers::authz::can;
@@ -26,6 +27,8 @@ pub struct TaskInput {
     remind_at: Option<DateTime<Utc>>,
     #[serde(default)]
     label_ids: Vec<String>,
+    #[serde(default)]
+    recurrence: Option<Recurrence>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -57,6 +60,23 @@ pub struct TaskUpdateInput {
     remind_at: Option<DateTime<Utc>>,
     #[serde(default)]
     label_ids: Vec<String>,
+    #[serde(default)]
+    recurrence: Option<Recurrence>,
+}
+
+/// Validates a task's repeat rule against its due date; `Err` is the 400 message. A rule needs a due
+/// date because completing the task rolls that date forward - without one there is nothing to count from.
+fn check_recurrence(
+    recurrence: Option<Recurrence>,
+    due_at: Option<DateTime<Utc>>,
+) -> Result<Option<Recurrence>, &'static str> {
+    let Some(recurrence) = recurrence else {
+        return Ok(None);
+    };
+    if due_at.is_none() {
+        return Err("a repeating task needs a due date");
+    }
+    recurrence.validated().map(Some)
 }
 
 #[get("/api/v1/tasks")]
@@ -103,6 +123,10 @@ pub async fn create(
     if body.content.trim().is_empty() {
         return Ok(json_error(StatusCode::BAD_REQUEST, "content is required"));
     }
+    let recurrence = match check_recurrence(body.recurrence, body.due_at) {
+        Ok(recurrence) => recurrence,
+        Err(message) => return Ok(json_error(StatusCode::BAD_REQUEST, message)),
+    };
     let input = NewTask {
         content: body.content.trim().to_string(),
         description: body.description,
@@ -111,6 +135,7 @@ pub async fn create(
         due_at: body.due_at,
         remind_at: body.remind_at,
         label_ids: body.label_ids,
+        recurrence,
     };
     let task = task::create(&db, &user, &input)
         .await
@@ -136,6 +161,10 @@ pub async fn update(
     if body.content.trim().is_empty() {
         return Ok(json_error(StatusCode::BAD_REQUEST, "content is required"));
     }
+    let recurrence = match check_recurrence(body.recurrence, body.due_at) {
+        Ok(recurrence) => recurrence,
+        Err(message) => return Ok(json_error(StatusCode::BAD_REQUEST, message)),
+    };
     let input = TaskUpdate {
         content: body.content.trim().to_string(),
         description: body.description,
@@ -145,6 +174,7 @@ pub async fn update(
         due_at: body.due_at,
         remind_at: body.remind_at,
         label_ids: body.label_ids,
+        recurrence,
     };
     task::update(&db, &user, &id, &input)
         .await

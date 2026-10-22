@@ -214,3 +214,82 @@ async fn a_read_only_token_cannot_write() {
     read.extensions_mut().insert(claims_with("daybook:write"));
     assert_eq!(app.call(read).await.status(), StatusCode::FORBIDDEN);
 }
+
+#[tokio::test]
+async fn invalid_repeat_rules_are_rejected_before_database_access() {
+    let (app, container) = app().await;
+    let due = "2090-03-02T09:00:00Z";
+    let cases = [
+        (
+            "no due date",
+            json!({"content":"x","recurrence":{"unit":"day","interval":1}}),
+        ),
+        (
+            "zero interval",
+            json!({"content":"x","due_at":due,"recurrence":{"unit":"day","interval":0}}),
+        ),
+        (
+            "unknown zone",
+            json!({"content":"x","due_at":due,"recurrence":{"unit":"day","interval":1,"timezone":"Mars/Olympus"}}),
+        ),
+        (
+            "weekdays on a daily rule",
+            json!({"content":"x","due_at":due,"recurrence":{"unit":"day","interval":1,"weekdays":[1]}}),
+        ),
+        (
+            "weekday out of range",
+            json!({"content":"x","due_at":due,"recurrence":{"unit":"week","interval":1,"weekdays":[8]}}),
+        ),
+    ];
+    for (name, payload) in cases {
+        for (method, path) in [
+            (Method::POST, "/api/v1/tasks"),
+            (Method::PUT, "/api/v1/tasks/task-id"),
+        ] {
+            let response = app
+                .call(request(
+                    method.clone(),
+                    path,
+                    Some(payload.clone()),
+                    &container,
+                ))
+                .await;
+            assert_eq!(
+                response.status(),
+                StatusCode::BAD_REQUEST,
+                "{name}: {method} {path}"
+            );
+        }
+    }
+
+    // An unknown unit is not even a valid shape.
+    let response = app
+        .call(request(
+            Method::POST,
+            "/api/v1/tasks",
+            Some(
+                json!({"content":"x","due_at":due,"recurrence":{"unit":"fortnight","interval":1}}),
+            ),
+            &container,
+        ))
+        .await;
+    assert!(response.status().is_client_error());
+}
+
+#[tokio::test]
+async fn a_valid_repeat_rule_reaches_the_postgres_requirement() {
+    let (app, container) = app().await;
+    let response = app
+        .call(request(
+            Method::POST,
+            "/api/v1/tasks",
+            Some(json!({
+                "content":"Water plants",
+                "due_at":"2090-03-02T09:00:00Z",
+                "recurrence":{"unit":"week","interval":2,"weekdays":[1,4],"timezone":"Europe/Warsaw"}
+            })),
+            &container,
+        ))
+        .await;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+}

@@ -77,6 +77,20 @@ Feature: Daybook's personal task API
       | /api/v1/projects | {"name":" "}      |
       | /api/v1/labels   | {"name":" "}      |
 
+  Scenario Outline: An invalid repeat rule is rejected before database access
+    Given I am authenticated against daybook with scope "daybook:write"
+    When an authenticated Daybook POST is sent to "/api/v1/tasks" with body:
+      """
+      <body>
+      """
+    Then the response status should be 400
+
+    Examples:
+      | body                                                                                             |
+      | {"content":"x","recurrence":{"unit":"day","interval":1}}                                         |
+      | {"content":"x","due_at":"2090-03-02T09:00:00Z","recurrence":{"unit":"day","interval":0}}        |
+      | {"content":"x","due_at":"2090-03-02T09:00:00Z","recurrence":{"unit":"day","interval":1,"weekdays":[1]}} |
+
   Scenario: Daybook does not expose a web interface
     When GET request is sent to "/ui/home"
     Then the response status should be 404

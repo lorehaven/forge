@@ -1,0 +1,44 @@
+[[migrations]]
+id = "0003-recurrence"
+author = "daybook-service"
+since = "0.2.0"
+
+# A repeating task is one row whose due date the service rolls forward when it is completed, so the rule
+# lives on the task. All of it is null for a one-off task.
+#
+#   unit / interval   "every <interval> <unit>": day, week, month or year
+#   weekdays          ISO weekdays (1 = Monday ... 7 = Sunday) a weekly rule fires on; empty = same weekday
+#   mode              fixed: count from the schedule, so a Monday task stays on Mondays however late it is
+#                     done; after_completion: count from the day it is done
+#   timezone          IANA zone the rule is evaluated in, so 09:00 stays 09:00 across a clock change
+#   anchor            the due date the schedule is counted from. Set whenever a user sets the rule or moves
+#                     the due date, never by a roll, so "the 31st" survives a short month instead of
+#                     drifting to the 28th for good.
+[[migrations.changes]]
+sql = """
+ALTER TABLE ${schema}.tasks
+    ADD COLUMN IF NOT EXISTS recurrence_unit TEXT CHECK (recurrence_unit IN ('day', 'week', 'month', 'year')),
+    ADD COLUMN IF NOT EXISTS recurrence_interval INTEGER CHECK (recurrence_interval BETWEEN 1 AND 999),
+    ADD COLUMN IF NOT EXISTS recurrence_weekdays SMALLINT[] NOT NULL DEFAULT '{}',
+    ADD COLUMN IF NOT EXISTS recurrence_mode TEXT CHECK (recurrence_mode IN ('fixed', 'after_completion')),
+    ADD COLUMN IF NOT EXISTS recurrence_timezone TEXT,
+    ADD COLUMN IF NOT EXISTS recurrence_anchor TIMESTAMPTZ;
+"""
+
+# Either the whole rule is there or none of it, and a rule needs something to count from.
+[[migrations.changes]]
+sql = """
+ALTER TABLE ${schema}.tasks ADD CONSTRAINT tasks_recurrence_complete CHECK (
+    (recurrence_unit IS NULL
+        AND recurrence_interval IS NULL
+        AND recurrence_mode IS NULL
+        AND recurrence_timezone IS NULL
+        AND recurrence_anchor IS NULL)
+    OR
+    (recurrence_unit IS NOT NULL
+        AND recurrence_interval IS NOT NULL
+        AND recurrence_mode IS NOT NULL
+        AND recurrence_timezone IS NOT NULL
+        AND recurrence_anchor IS NOT NULL)
+);
+"""

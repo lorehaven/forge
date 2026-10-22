@@ -524,3 +524,248 @@ async fn labels_are_private_unique_and_validated() {
         assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{color}");
     }
 }
+
+/// Creates a repeating task and returns its JSON.
+async fn create_repeating(
+    app: &Arc<dyn Endpoint>,
+    container: &Arc<Container>,
+    content: &str,
+    due_at: &str,
+    remind_at: Option<&str>,
+    recurrence: Value,
+) -> Value {
+    let response = send_alice(
+        app,
+        container,
+        Method::POST,
+        "/api/v1/tasks",
+        Some(json!({
+            "content":content,
+            "due_at":due_at,
+            "remind_at":remind_at,
+            "recurrence":recurrence
+        })),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    body(response).await
+}
+
+/// PUTs `task` back as Alice with `is_completed` and `due_at` as given, keeping everything else -
+/// what a client does when its user ticks the checkbox.
+async fn put_task(
+    app: &Arc<dyn Endpoint>,
+    container: &Arc<Container>,
+    task: &Value,
+    is_completed: bool,
+    due_at: &Value,
+) -> Value {
+    let response = send_alice(
+        app,
+        container,
+        Method::PUT,
+        &format!("/api/v1/tasks/{}", task["id"].as_str().unwrap()),
+        Some(json!({
+            "content":task["content"],
+            "is_completed":is_completed,
+            "due_at":due_at,
+            "remind_at":task["remind_at"],
+            "recurrence":task["recurrence"]
+        })),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    body(response).await
+}
+
+// Far-future due dates, so "the first occurrence after now" is the one after the due date no matter
+// when the test runs.
+
+#[tokio::test]
+async fn completing_a_repeating_task_rolls_it_forward_and_moves_its_reminder() {
+    let Some((db, _guard)) = database().await else {
+        return eprintln!("skipping recurrence roll: DAYBOOK_TEST_DATABASE_URL is not set");
+    };
+    let (app, container) = app(db).await;
+    let task = create_repeating(
+        &app,
+        &container,
+        "Water plants",
+        "2090-03-02T09:00:00Z",
+        Some("2090-03-02T08:30:00Z"),
+        json!({"unit":"week","interval":1}),
+    )
+    .await;
+    assert_eq!(
+        task["recurrence"],
+        json!({"unit":"week","interval":1,"weekdays":[],"mode":"fixed","timezone":"UTC"})
+    );
+
+    let rolled = put_task(&app, &container, &task, true, &task["due_at"]).await;
+    assert_eq!(rolled["is_completed"], false, "it stays open");
+    assert_eq!(rolled["due_at"], "2090-03-09T09:00:00Z");
+    assert_eq!(
+        rolled["remind_at"], "2090-03-09T08:30:00Z",
+        "same lead time"
+    );
+    assert_eq!(rolled["recurrence"], task["recurrence"]);
+
+    // And again from the new due date.
+    let again = put_task(&app, &container, &rolled, true, &rolled["due_at"]).await;
+    assert_eq!(again["due_at"], "2090-03-16T09:00:00Z");
+
+    // It is still in the open list, once.
+    let open = get_alice(&app, &container, "/api/v1/tasks?completed=false").await;
+    assert_eq!(open.as_array().unwrap().len(), 1);
+    assert_eq!(open[0]["due_at"], "2090-03-16T09:00:00Z");
+}
+
+#[tokio::test]
+async fn an_ordinary_task_still_completes_normally() {
+    let Some((db, _guard)) = database().await else {
+        return eprintln!("skipping plain completion: DAYBOOK_TEST_DATABASE_URL is not set");
+    };
+    let (app, container) = app(db).await;
+    let task = create_task(&app, &container, ALICE, "One-off", None).await;
+    let done = put_task(&app, &container, &task, true, &Value::Null).await;
+    assert_eq!(done["is_completed"], true);
+    assert_eq!(done["recurrence"], Value::Null);
+}
+
+#[tokio::test]
+async fn reopening_a_repeating_task_does_not_roll_it() {
+    let Some((db, _guard)) = database().await else {
+        return eprintln!("skipping reopen: DAYBOOK_TEST_DATABASE_URL is not set");
+    };
+    let (app, container) = app(db).await;
+    let task = create_repeating(
+        &app,
+        &container,
+        "Daily",
+        "2090-03-02T09:00:00Z",
+        None,
+        json!({"unit":"day","interval":1}),
+    )
+    .await;
+    // Saving without completing leaves the date alone.
+    let saved = put_task(&app, &container, &task, false, &task["due_at"]).await;
+    assert_eq!(saved["due_at"], "2090-03-02T09:00:00Z");
+    assert_eq!(saved["is_completed"], false);
+}
+
+#[tokio::test]
+async fn a_monthly_task_on_the_31st_is_not_dragged_to_the_28th_for_good() {
+    let Some((db, _guard)) = database().await else {
+        return eprintln!("skipping month-end anchor: DAYBOOK_TEST_DATABASE_URL is not set");
+    };
+    let (app, container) = app(db).await;
+    let task = create_repeating(
+        &app,
+        &container,
+        "Pay invoices",
+        "2090-01-31T12:00:00Z",
+        None,
+        json!({"unit":"month","interval":1}),
+    )
+    .await;
+    let february = put_task(&app, &container, &task, true, &task["due_at"]).await;
+    assert_eq!(february["due_at"], "2090-02-28T12:00:00Z");
+    let march = put_task(&app, &container, &february, true, &february["due_at"]).await;
+    assert_eq!(
+        march["due_at"], "2090-03-31T12:00:00Z",
+        "counted from the 31st"
+    );
+
+    // A user moving the due date by hand restarts the schedule from there.
+    let moved = put_task(
+        &app,
+        &container,
+        &march,
+        false,
+        &json!("2090-04-15T12:00:00Z"),
+    )
+    .await;
+    let next = put_task(&app, &container, &moved, true, &moved["due_at"]).await;
+    assert_eq!(next["due_at"], "2090-05-15T12:00:00Z");
+}
+
+#[tokio::test]
+async fn the_rule_is_evaluated_in_its_own_time_zone() {
+    let Some((db, _guard)) = database().await else {
+        return eprintln!("skipping time zone: DAYBOOK_TEST_DATABASE_URL is not set");
+    };
+    let (app, container) = app(db).await;
+    // 09:00 in Warsaw on 2090-10-27 (CEST, UTC+2). Clocks go back on 2090-10-29 (CEST -> CET).
+    let task = create_repeating(
+        &app,
+        &container,
+        "Standup prep",
+        "2090-10-27T07:00:00Z",
+        None,
+        json!({"unit":"day","interval":1,"timezone":"Europe/Warsaw"}),
+    )
+    .await;
+    let mut due = task["due_at"].clone();
+    let mut current = task;
+    // Roll across the clock change; local 09:00 must hold, so UTC moves from 07:00 to 08:00.
+    for _ in 0..3 {
+        current = put_task(&app, &container, &current, true, &due).await;
+        due = current["due_at"].clone();
+    }
+    assert_eq!(due, "2090-10-30T08:00:00Z");
+}
+
+#[tokio::test]
+async fn after_completion_counts_from_the_day_it_is_done() {
+    let Some((db, _guard)) = database().await else {
+        return eprintln!("skipping after-completion: DAYBOOK_TEST_DATABASE_URL is not set");
+    };
+    let (app, container) = app(db).await;
+    let task = create_repeating(
+        &app,
+        &container,
+        "Descale kettle",
+        "2090-03-02T09:00:00Z",
+        None,
+        json!({"unit":"day","interval":3,"mode":"after_completion"}),
+    )
+    .await;
+    let done = put_task(&app, &container, &task, true, &task["due_at"]).await;
+    let next: chrono::DateTime<chrono::Utc> = done["due_at"].as_str().unwrap().parse().unwrap();
+    let now = chrono::Utc::now();
+    // Three days from today at the original 09:00 - not from the (far-future) due date.
+    assert!(next > now + chrono::Duration::days(2), "{next}");
+    assert!(next < now + chrono::Duration::days(4), "{next}");
+    assert_eq!(next.format("%H:%M").to_string(), "09:00");
+}
+
+#[tokio::test]
+async fn removing_the_rule_makes_it_an_ordinary_task_again() {
+    let Some((db, _guard)) = database().await else {
+        return eprintln!("skipping rule removal: DAYBOOK_TEST_DATABASE_URL is not set");
+    };
+    let (app, container) = app(db).await;
+    let task = create_repeating(
+        &app,
+        &container,
+        "Was weekly",
+        "2090-03-02T09:00:00Z",
+        None,
+        json!({"unit":"week","interval":1,"weekdays":[1,4]}),
+    )
+    .await;
+    assert_eq!(task["recurrence"]["weekdays"], json!([1, 4]));
+
+    let response = send_alice(
+        &app,
+        &container,
+        Method::PUT,
+        &format!("/api/v1/tasks/{}", task["id"].as_str().unwrap()),
+        Some(json!({"content":"Was weekly","due_at":"2090-03-02T09:00:00Z"})),
+    )
+    .await;
+    let cleared = body(response).await;
+    assert_eq!(cleared["recurrence"], Value::Null);
+    let done = put_task(&app, &container, &cleared, true, &cleared["due_at"]).await;
+    assert_eq!(done["is_completed"], true);
+}

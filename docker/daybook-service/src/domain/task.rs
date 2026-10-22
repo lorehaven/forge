@@ -1,4 +1,5 @@
 use crate::domain::db::{DaybookError, pool, schema};
+use crate::domain::recurrence::{Mode, Recurrence, Unit};
 use chrono::{DateTime, Utc};
 use quench_db::prelude::Db;
 use serde::Serialize;
@@ -17,6 +18,8 @@ pub struct Task {
     pub remind_at: Option<DateTime<Utc>>,
     /// The task's labels, ordered by label name.
     pub label_ids: Vec<String>,
+    /// Set for a repeating task: completing it rolls `due_at` to the next occurrence instead of closing it.
+    pub recurrence: Option<Recurrence>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -30,6 +33,7 @@ pub struct NewTask {
     pub due_at: Option<DateTime<Utc>>,
     pub remind_at: Option<DateTime<Utc>>,
     pub label_ids: Vec<String>,
+    pub recurrence: Option<Recurrence>,
 }
 
 #[derive(Clone, Debug)]
@@ -42,6 +46,7 @@ pub struct TaskUpdate {
     pub due_at: Option<DateTime<Utc>>,
     pub remind_at: Option<DateTime<Utc>>,
     pub label_ids: Vec<String>,
+    pub recurrence: Option<Recurrence>,
 }
 
 /// Lists the caller's tasks.
@@ -81,8 +86,11 @@ pub async fn create(db: &Db, owner: &str, new: &NewTask) -> Result<Task, Daybook
     let schema = schema();
     let id = Uuid::new_v4().to_string();
     let mut tx = pool(db)?.begin().await?;
+    let rule = RuleColumns::from(new.recurrence.as_ref());
     let sql = format!(
-        "INSERT INTO {schema}.tasks (id, owner, project_id, content, description, sort_order, due_at, remind_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"
+        "INSERT INTO {schema}.tasks (id, owner, project_id, content, description, sort_order, due_at, remind_at, \
+         recurrence_unit, recurrence_interval, recurrence_weekdays, recurrence_mode, recurrence_timezone, recurrence_anchor) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)"
     );
     sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(&id)
@@ -93,6 +101,13 @@ pub async fn create(db: &Db, owner: &str, new: &NewTask) -> Result<Task, Daybook
         .bind(new.sort_order)
         .bind(new.due_at)
         .bind(new.remind_at)
+        .bind(rule.unit)
+        .bind(rule.interval)
+        .bind(&rule.weekdays)
+        .bind(rule.mode)
+        .bind(&rule.timezone)
+        // A new rule is counted from the due date it was created with.
+        .bind(rule.present.then_some(new.due_at).flatten())
         .execute(&mut *tx)
         .await?;
     set_labels(&mut tx, &schema, owner, &id, &new.label_ids).await?;
@@ -107,26 +122,95 @@ pub async fn update(
     id: &str,
     changes: &TaskUpdate,
 ) -> Result<Option<Task>, DaybookError> {
+    update_at(db, owner, id, changes, Utc::now()).await
+}
+
+/// [`update`] with the clock passed in, for the roll-forward below.
+///
+/// Completing a task that repeats does not close it: its due date moves to the next occurrence (and its
+/// reminder with it, keeping the same lead time) and it stays open. That happens here, in the one write
+/// path every client uses, so a client that knows nothing about recurrence still gets a correct series,
+/// and two devices completing the same occurrence both land on the same next date.
+pub async fn update_at(
+    db: &Db,
+    owner: &str,
+    id: &str,
+    changes: &TaskUpdate,
+    now: DateTime<Utc>,
+) -> Result<Option<Task>, DaybookError> {
     let schema = schema();
     let mut tx = pool(db)?.begin().await?;
+
+    // Locked, so a concurrent completion waits and then sees the rolled row rather than racing it.
     let sql = format!(
-        "UPDATE {schema}.tasks SET project_id = $3, content = $4, description = $5, is_completed = $6, sort_order = $7, due_at = $8, remind_at = $9, updated_at = NOW() WHERE id = $1 AND owner = $2"
+        "SELECT is_completed, due_at, recurrence_anchor, {RULE_COLUMNS} FROM {schema}.tasks \
+         WHERE id = $1 AND owner = $2 FOR UPDATE"
     );
-    let result = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+    let Some(row) = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
+        .bind(id)
+        .bind(owner)
+        .fetch_optional(&mut *tx)
+        .await?
+    else {
+        return Ok(None);
+    };
+    let was_completed: bool = row.try_get("is_completed")?;
+    let stored_due: Option<DateTime<Utc>> = row.try_get("due_at")?;
+    let stored_anchor: Option<DateTime<Utc>> = row.try_get("recurrence_anchor")?;
+    let stored_rule = rule_from_row(&row)?;
+
+    let mut due_at = changes.due_at;
+    let mut remind_at = changes.remind_at;
+    let mut is_completed = changes.is_completed;
+
+    // Where the schedule is counted from. A user setting the rule or moving the due date restarts it;
+    // a roll (below) does not, or "the 31st" would drift to the 28th after the first February.
+    let anchor = if changes.recurrence.is_none() {
+        None
+    } else if stored_rule == changes.recurrence && stored_due == changes.due_at {
+        stored_anchor.or(changes.due_at)
+    } else {
+        changes.due_at
+    };
+
+    if let (true, false, Some(rule), Some(due), Some(anchor)) = (
+        changes.is_completed,
+        was_completed,
+        changes.recurrence.as_ref(),
+        changes.due_at,
+        anchor,
+    ) && let Some(next) = rule.next_due(anchor, due, now)
+    {
+        remind_at = remind_at.map(|remind| next - (due - remind));
+        due_at = Some(next);
+        is_completed = false;
+    }
+
+    let rule = RuleColumns::from(changes.recurrence.as_ref());
+    let sql = format!(
+        "UPDATE {schema}.tasks SET project_id = $3, content = $4, description = $5, is_completed = $6, sort_order = $7, \
+         due_at = $8, remind_at = $9, recurrence_unit = $10, recurrence_interval = $11, recurrence_weekdays = $12, \
+         recurrence_mode = $13, recurrence_timezone = $14, recurrence_anchor = $15, updated_at = NOW() \
+         WHERE id = $1 AND owner = $2"
+    );
+    sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
         .bind(id)
         .bind(owner)
         .bind(&changes.project_id)
         .bind(&changes.content)
         .bind(&changes.description)
-        .bind(changes.is_completed)
+        .bind(is_completed)
         .bind(changes.sort_order)
-        .bind(changes.due_at)
-        .bind(changes.remind_at)
+        .bind(due_at)
+        .bind(remind_at)
+        .bind(rule.unit)
+        .bind(rule.interval)
+        .bind(&rule.weekdays)
+        .bind(rule.mode)
+        .bind(&rule.timezone)
+        .bind(anchor)
         .execute(&mut *tx)
         .await?;
-    if result.rows_affected() == 0 {
-        return Ok(None);
-    }
     set_labels(&mut tx, &schema, owner, id, &changes.label_ids).await?;
     let task = fetch(&mut tx, &schema, owner, id).await?;
     tx.commit().await?;
@@ -204,8 +288,66 @@ fn columns(schema: &str) -> String {
         "id, project_id, content, description, is_completed, sort_order, due_at, remind_at, \
          COALESCE((SELECT array_agg(l.id ORDER BY lower(l.name), l.id) FROM {schema}.task_labels tl \
          JOIN {schema}.labels l ON l.id = tl.label_id WHERE tl.task_id = tasks.id), ARRAY[]::text[]) AS label_ids, \
-         created_at, updated_at"
+         {RULE_COLUMNS}, created_at, updated_at"
     )
+}
+
+/// The recurrence rule's columns, selected as they are stored.
+const RULE_COLUMNS: &str = "recurrence_unit, recurrence_interval, recurrence_weekdays, recurrence_mode, recurrence_timezone";
+
+/// A [`Recurrence`] flattened to the columns it is stored in.
+struct RuleColumns {
+    present: bool,
+    unit: Option<&'static str>,
+    interval: Option<i32>,
+    weekdays: Vec<i16>,
+    mode: Option<&'static str>,
+    timezone: Option<String>,
+}
+
+impl From<Option<&Recurrence>> for RuleColumns {
+    fn from(rule: Option<&Recurrence>) -> Self {
+        Self {
+            present: rule.is_some(),
+            unit: rule.map(|rule| rule.unit.as_str()),
+            interval: rule.and_then(|rule| i32::try_from(rule.interval).ok()),
+            weekdays: rule.map_or_else(Vec::new, |rule| {
+                rule.weekdays.iter().map(|day| i16::from(*day)).collect()
+            }),
+            mode: rule.map(|rule| rule.mode.as_str()),
+            timezone: rule.map(|rule| rule.timezone.clone()),
+        }
+    }
+}
+
+fn rule_from_row(row: &sqlx::postgres::PgRow) -> Result<Option<Recurrence>, DaybookError> {
+    let unit: Option<String> = row.try_get("recurrence_unit")?;
+    let interval: Option<i32> = row.try_get("recurrence_interval")?;
+    let weekdays: Vec<i16> = row.try_get("recurrence_weekdays")?;
+    let mode: Option<String> = row.try_get("recurrence_mode")?;
+    let timezone: Option<String> = row.try_get("recurrence_timezone")?;
+    let (Some(unit), Some(interval), Some(mode), Some(timezone)) = (unit, interval, mode, timezone)
+    else {
+        return Ok(None);
+    };
+    // The table's CHECKs make these unreachable; a row that somehow fails them is read as a plain task.
+    let (Some(unit), Some(mode), Ok(interval)) = (
+        Unit::parse(&unit),
+        Mode::parse(&mode),
+        u32::try_from(interval),
+    ) else {
+        return Ok(None);
+    };
+    Ok(Some(Recurrence {
+        unit,
+        interval,
+        weekdays: weekdays
+            .into_iter()
+            .filter_map(|day| u8::try_from(day).ok())
+            .collect(),
+        mode,
+        timezone,
+    }))
 }
 
 fn from_row(row: &sqlx::postgres::PgRow) -> Result<Task, DaybookError> {
@@ -219,6 +361,7 @@ fn from_row(row: &sqlx::postgres::PgRow) -> Result<Task, DaybookError> {
         due_at: row.try_get("due_at")?,
         remind_at: row.try_get("remind_at")?,
         label_ids: row.try_get("label_ids")?,
+        recurrence: rule_from_row(row)?,
         created_at: row.try_get("created_at")?,
         updated_at: row.try_get("updated_at")?,
     })
