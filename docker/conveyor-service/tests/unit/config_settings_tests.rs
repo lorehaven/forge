@@ -48,10 +48,10 @@ fn forks_are_not_buildable_by_default() {
 }
 
 #[test]
-fn tags_build_by_default() {
-    // A pipeline can ask for tags with `on.tag`; dropping them is an opt-out, so existing
-    // deployments keep working when they upgrade.
-    assert!(ConveyorConfig::default().build_tags);
+fn tags_are_not_built_by_default() {
+    // A run is for a branch. A tag push that no pipeline asked for would otherwise cost a queued run,
+    // a clone and a skipped row each time; building tags is an opt-in for a pipeline that uses `on.tag`.
+    assert!(!ConveyorConfig::default().build_tags);
 }
 
 #[test]

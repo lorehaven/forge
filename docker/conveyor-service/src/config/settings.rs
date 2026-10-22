@@ -61,10 +61,10 @@ pub struct ConveyorConfig {
     /// Off by default, and should stay off under native: a fork's `.conveyor.toml` would run with this service's privileges.
     pub allow_fork_pr: bool,
 
-    /// Whether a push of a tag queues a run. On by default, since a pipeline may ask for tags with
-    /// `on.tag`. A pipeline's `on` is only readable from a checkout, so a deployment whose pipelines
-    /// never use it still pays for a queued run, a clone and a "skipped" row per tag; turning this off
-    /// drops those pushes at the webhook instead.
+    /// Whether a push of a tag queues a run. Off by default: a run is for a branch. A pipeline's `on` is
+    /// only readable from a checkout, so a tag push that no pipeline wants still costs a queued run, a
+    /// clone and a "skipped" row; with this off the webhook drops it instead. Turn it on only if a
+    /// pipeline uses `on.tag`.
     pub build_tags: bool,
 
     /// How many runs the front page's pipeline panel shows at once.
@@ -87,7 +87,7 @@ impl Default for ConveyorConfig {
             checkout_timeout_secs: 600,
             claim_stale_after_secs: 300,
             allow_fork_pr: false,
-            build_tags: true,
+            build_tags: false,
             home_recent_runs: 5,
             home_max_runs_per_repo: 1,
             runs_page_size: 25,
