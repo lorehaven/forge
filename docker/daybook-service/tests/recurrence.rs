@@ -232,3 +232,113 @@ fn the_json_form_defaults_to_a_fixed_rule_in_utc() {
     assert!(serde_json::from_str::<Recurrence>(r#"{"unit":"fortnight","interval":1}"#).is_err());
     let _: Tz = "UTC".parse().unwrap();
 }
+
+// --- All-day tasks: the due date is a calendar date, stored as midnight UTC ------------------------
+
+/// Midnight UTC of a date, how an all-day due date is stored.
+fn day(y: i32, m: u32, d: u32) -> DateTime<Utc> {
+    Utc.with_ymd_and_hms(y, m, d, 0, 0, 0).unwrap()
+}
+
+#[test]
+fn an_all_day_task_moves_by_whole_dates() {
+    let due = day(2026, 10, 22);
+    // Done on the day itself, in the rule's own zone (Warsaw, 2026-10-22 10:00).
+    let now = warsaw(2026, 10, 22, 10, 0);
+    let next = rule(Unit::Day, 1).next_due_all_day(due, due, now).unwrap();
+    assert_eq!(next, day(2026, 10, 23));
+    let weekly = rule(Unit::Week, 2).next_due_all_day(due, due, now).unwrap();
+    assert_eq!(weekly, day(2026, 11, 5));
+}
+
+#[test]
+fn an_all_day_task_done_late_skips_dates_already_past() {
+    let due = day(2026, 10, 10);
+    let now = warsaw(2026, 10, 22, 23, 30);
+    let next = rule(Unit::Day, 1).next_due_all_day(due, due, now).unwrap();
+    assert_eq!(next, day(2026, 10, 23), "tomorrow, not the 11th");
+}
+
+#[test]
+fn an_all_day_task_done_early_moves_past_the_date_just_done() {
+    let due = day(2026, 10, 30);
+    let now = warsaw(2026, 10, 22, 9, 0);
+    let next = rule(Unit::Day, 1).next_due_all_day(due, due, now).unwrap();
+    assert_eq!(next, day(2026, 10, 31));
+}
+
+#[test]
+fn today_for_an_all_day_task_is_today_in_the_rules_zone() {
+    // 2026-10-22 23:30 UTC is already the 23rd in Warsaw: a daily task due the 23rd, done now, is
+    // done on the 23rd, so the next date is the 24th - not the 23rd again.
+    let due = day(2026, 10, 23);
+    let now = Utc.with_ymd_and_hms(2026, 10, 22, 23, 30, 0).unwrap();
+    let next = rule(Unit::Day, 1).next_due_all_day(due, due, now).unwrap();
+    assert_eq!(next, day(2026, 10, 24));
+}
+
+#[test]
+fn an_all_day_monthly_task_on_the_31st_survives_a_short_month() {
+    let anchor = day(2026, 1, 31);
+    let rule = rule(Unit::Month, 1);
+    let now = warsaw(2026, 1, 31, 8, 0);
+    let february = rule.next_due_all_day(anchor, anchor, now).unwrap();
+    assert_eq!(february, day(2026, 2, 28));
+    let march = rule
+        .next_due_all_day(anchor, february, warsaw(2026, 2, 28, 8, 0))
+        .unwrap();
+    assert_eq!(march, day(2026, 3, 31));
+}
+
+#[test]
+fn an_all_day_weekday_rule_and_after_completion() {
+    let monday = day(2026, 10, 19);
+    let mut weekdays = rule(Unit::Week, 1);
+    weekdays.weekdays = vec![1, 4];
+    let thursday = weekdays
+        .next_due_all_day(monday, monday, warsaw(2026, 10, 19, 8, 0))
+        .unwrap();
+    assert_eq!(thursday, day(2026, 10, 22));
+
+    let mut after = rule(Unit::Day, 3);
+    after.mode = Mode::AfterCompletion;
+    let next = after
+        .next_due_all_day(monday, monday, warsaw(2026, 10, 21, 15, 0))
+        .unwrap();
+    assert_eq!(
+        next,
+        day(2026, 10, 24),
+        "three days from the day it was done"
+    );
+}
+
+#[test]
+fn a_reminder_keeps_its_distance_from_the_due_moment() {
+    let rule = rule(Unit::Day, 1);
+    // Timed: 30 minutes before.
+    let due = warsaw(2026, 10, 22, 9, 0);
+    let remind = warsaw(2026, 10, 22, 8, 30);
+    let next = warsaw(2026, 10, 23, 9, 0);
+    assert_eq!(
+        local(rule.shift_reminder(remind, due, next, false)),
+        (2026, 10, 23, 8, 30)
+    );
+
+    // Timed: a day before at 09:00 stays 09:00 across the clock change on 2026-10-25.
+    let remind = warsaw(2026, 10, 23, 9, 0);
+    let due = warsaw(2026, 10, 24, 9, 0);
+    let next = warsaw(2026, 10, 25, 9, 0);
+    assert_eq!(
+        local(rule.shift_reminder(remind, due, next, false)),
+        (2026, 10, 24, 9, 0)
+    );
+
+    // All-day: the evening before, at 18:00 local - the due moment is midnight of the date.
+    let remind = warsaw(2026, 10, 22, 18, 0);
+    let due = day(2026, 10, 23);
+    let next = day(2026, 10, 24);
+    assert_eq!(
+        local(rule.shift_reminder(remind, due, next, true)),
+        (2026, 10, 23, 18, 0)
+    );
+}

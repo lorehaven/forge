@@ -24,6 +24,8 @@ pub struct TaskInput {
     #[serde(default)]
     due_at: Option<DateTime<Utc>>,
     #[serde(default)]
+    due_all_day: bool,
+    #[serde(default)]
     remind_at: Option<DateTime<Utc>>,
     #[serde(default)]
     label_ids: Vec<String>,
@@ -56,6 +58,8 @@ pub struct TaskUpdateInput {
     sort_order: i32,
     #[serde(default)]
     due_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    due_all_day: bool,
     #[serde(default)]
     remind_at: Option<DateTime<Utc>>,
     #[serde(default)]
@@ -133,6 +137,7 @@ pub async fn create(
         project_id: body.project_id,
         sort_order: body.sort_order,
         due_at: body.due_at,
+        due_all_day: body.due_all_day,
         remind_at: body.remind_at,
         label_ids: body.label_ids,
         recurrence,
@@ -172,6 +177,7 @@ pub async fn update(
         is_completed: body.is_completed,
         sort_order: body.sort_order,
         due_at: body.due_at,
+        due_all_day: body.due_all_day,
         remind_at: body.remind_at,
         label_ids: body.label_ids,
         recurrence,

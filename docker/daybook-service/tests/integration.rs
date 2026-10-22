@@ -769,3 +769,92 @@ async fn removing_the_rule_makes_it_an_ordinary_task_again() {
     let done = put_task(&app, &container, &cleared, true, &cleared["due_at"]).await;
     assert_eq!(done["is_completed"], true);
 }
+
+#[tokio::test]
+async fn an_all_day_due_date_is_stored_as_a_date_and_rolls_by_dates() {
+    let Some((db, _guard)) = database().await else {
+        return eprintln!("skipping all-day: DAYBOOK_TEST_DATABASE_URL is not set");
+    };
+    let (app, container) = app(db).await;
+
+    // Whatever time the client sent, an all-day due date is the date at midnight UTC.
+    let response = send_alice(
+        &app,
+        &container,
+        Method::POST,
+        "/api/v1/tasks",
+        Some(json!({
+            "content":"Pay rent",
+            "due_at":"2090-03-02T17:45:00Z",
+            "due_all_day":true,
+            "remind_at":"2090-03-01T08:00:00Z",
+            "recurrence":{"unit":"week","interval":1}
+        })),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let task = body(response).await;
+    assert_eq!(task["due_all_day"], true);
+    assert_eq!(task["due_at"], "2090-03-02T00:00:00Z");
+
+    // Completing rolls the date, keeps it all-day, and keeps the reminder's distance (16 hours before).
+    let put = |task: Value| {
+        let (app, container) = (app.clone(), container.clone());
+        async move {
+            let response = send_alice(
+                &app,
+                &container,
+                Method::PUT,
+                &format!("/api/v1/tasks/{}", task["id"].as_str().unwrap()),
+                Some(json!({
+                    "content":task["content"],
+                    "is_completed":true,
+                    "due_at":task["due_at"],
+                    "due_all_day":task["due_all_day"],
+                    "remind_at":task["remind_at"],
+                    "recurrence":task["recurrence"]
+                })),
+            )
+            .await;
+            assert_eq!(response.status(), StatusCode::OK);
+            body(response).await
+        }
+    };
+    let rolled = put(task).await;
+    assert_eq!(rolled["is_completed"], false);
+    assert_eq!(rolled["due_all_day"], true);
+    assert_eq!(rolled["due_at"], "2090-03-09T00:00:00Z");
+    assert_eq!(rolled["remind_at"], "2090-03-08T08:00:00Z");
+}
+
+#[tokio::test]
+async fn all_day_means_nothing_without_a_date_and_can_be_switched_off() {
+    let Some((db, _guard)) = database().await else {
+        return eprintln!("skipping all-day rules: DAYBOOK_TEST_DATABASE_URL is not set");
+    };
+    let (app, container) = app(db).await;
+    let response = send_alice(
+        &app,
+        &container,
+        Method::POST,
+        "/api/v1/tasks",
+        Some(json!({"content":"No date","due_all_day":true})),
+    )
+    .await;
+    let task = body(response).await;
+    assert_eq!(task["due_all_day"], false);
+    assert_eq!(task["due_at"], Value::Null);
+
+    // A timed due date is untouched, and the default for a task that says nothing is "has a time".
+    let response = send_alice(
+        &app,
+        &container,
+        Method::PUT,
+        &format!("/api/v1/tasks/{}", task["id"].as_str().unwrap()),
+        Some(json!({"content":"Timed","due_at":"2090-03-02T17:45:00Z"})),
+    )
+    .await;
+    let timed = body(response).await;
+    assert_eq!(timed["due_all_day"], false);
+    assert_eq!(timed["due_at"], "2090-03-02T17:45:00Z");
+}

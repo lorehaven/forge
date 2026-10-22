@@ -1,0 +1,12 @@
+[[migrations]]
+id = "0004-due-all-day"
+author = "daybook-service"
+since = "0.3.0"
+
+# A due date without a time of day. `due_at` still holds the value: for an all-day task it is midnight UTC of
+# the date, and is read back as that UTC date whatever zone the viewer is in, so "the 23rd" is the 23rd for
+# everyone. Existing tasks keep their time.
+[[migrations.changes]]
+sql = """
+ALTER TABLE ${schema}.tasks ADD COLUMN IF NOT EXISTS due_all_day BOOLEAN NOT NULL DEFAULT FALSE;
+"""

@@ -1,5 +1,5 @@
 name = "daybook"
-version = "0.2.0"
+version = "0.3.0"
 description = "Daybook - personal inbox tasks, custom lists, labels and reminders"
 default_schema = "daybook"
 requires = ["auth@^0.2", "quench-core@^0.1"]

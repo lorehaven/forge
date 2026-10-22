@@ -16,7 +16,7 @@ Gatehouse bearer token.
 | Method | Route | Behavior |
 |---|---|---|
 | `GET` | `/api/v1/tasks` | List inbox tasks by default; pass `project_id` to list that project. Pass `label_id` to list every task with that label across the inbox and all projects (add `project_id` to narrow it). Pass `all=true` to list every task regardless of list. Optional `completed=true/false`. |
-| `POST` | `/api/v1/tasks` | Create `{ "content": "...", "project_id": null, "due_at": null, "remind_at": null, "label_ids": [], "recurrence": null }`; null project means inbox. |
+| `POST` | `/api/v1/tasks` | Create `{ "content": "...", "project_id": null, "due_at": null, "due_all_day": false, "remind_at": null, "label_ids": [], "recurrence": null }`; null project means inbox. |
 | `PUT` | `/api/v1/tasks/{id}` | Replace content, description, project, completion, sort order, due date, reminder, labels and repeat rule. Omitting `remind_at`, `label_ids` or `recurrence` clears them. Completing a repeating task rolls it forward instead (see below). |
 | `DELETE` | `/api/v1/tasks/{id}` | Delete an owned task. |
 | `GET` | `/api/v1/projects` | List the caller's custom lists. |
@@ -29,13 +29,21 @@ Gatehouse bearer token.
 | `DELETE` | `/api/v1/labels/{id}` | Delete an owned label; it is removed from every task, the tasks stay. |
 
 Task objects include `id`, `project_id`, `content`, `description`,
-`is_completed`, `sort_order`, `due_at`, `remind_at`, `label_ids` (ordered by
+`is_completed`, `sort_order`, `due_at`, `due_all_day`, `remind_at`, `label_ids` (ordered by
 label name), `created_at` and `updated_at`. Label objects have `id`, `name`,
 `color` and `created_at`. Labels belong to the user, not to a project, so one
 label can tag tasks in the inbox and in any list. `remind_at` is only stored:
 the service sends nothing, so clients schedule their own notification from it.
 A task cannot be attached to another user's project or label. The database enforces this as
 well as the API's owner filters.
+
+## Due dates with and without a time
+
+`due_at` is a timestamp. With `due_all_day: true` the task is due on a *date*, with no time of day: the service
+stores midnight UTC of that date (whatever time the client sent) and clients read it back as that UTC date,
+whatever their zone, so "the 23rd" is the 23rd for everyone. `due_all_day` without a `due_at` is ignored.
+Repeating all-day tasks roll by whole dates, and their reminder keeps its wall-clock distance from the date's
+midnight in the rule's zone (for example "the evening before, 18:00").
 
 ## Repeating tasks
 

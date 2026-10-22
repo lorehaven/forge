@@ -153,16 +153,60 @@ impl Recurrence {
             }
             Mode::Fixed => {
                 let after = due.max(now);
-                if self.weekdays.is_empty() {
-                    (0..MAX_STEPS).find_map(|k| {
-                        let date = self.add_units(anchor_date, k)?;
-                        Some(local_to_utc(zone, date, time)).filter(|at| *at > after)
-                    })
-                } else {
-                    self.next_on_weekdays(zone, anchor_date, time, after)
-                }
+                self.occurrence_dates(anchor_date)
+                    .map(|date| local_to_utc(zone, date, time))
+                    .find(|at| *at > after)
             }
         }
+    }
+
+    /// [`next_due`](Self::next_due) for an all-day task, whose due date is a calendar date with no time.
+    ///
+    /// Such a date is stored as midnight UTC and read back as that UTC date, whatever the viewer's zone, so
+    /// the arithmetic is on that date. Only "today" is zone-dependent, and it is today in the rule's zone.
+    /// Returns midnight UTC of the next date.
+    #[must_use]
+    pub fn next_due_all_day(
+        &self,
+        anchor: DateTime<Utc>,
+        due: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> Option<DateTime<Utc>> {
+        let today = now.with_timezone(&self.zone()).date_naive();
+        let date = match self.mode {
+            Mode::AfterCompletion => self.add_units(today, 1)?,
+            Mode::Fixed => {
+                let threshold = due.date_naive().max(today);
+                self.occurrence_dates(anchor.date_naive())
+                    .find(|date| *date > threshold)?
+            }
+        };
+        Some(date.and_time(NaiveTime::MIN).and_utc())
+    }
+
+    /// Where the reminder goes when the due date moves from `due` to `next`: the same wall-clock distance
+    /// before it, in the rule's zone. Measured on the wall clock rather than in elapsed time so "a day
+    /// before at 09:00" stays at 09:00 across a clock change. For an all-day task the due moment is
+    /// midnight of its date.
+    #[must_use]
+    pub fn shift_reminder(
+        &self,
+        remind: DateTime<Utc>,
+        due: DateTime<Utc>,
+        next: DateTime<Utc>,
+        all_day: bool,
+    ) -> DateTime<Utc> {
+        let zone = self.zone();
+        let wall = |at: DateTime<Utc>| {
+            if all_day {
+                at.date_naive().and_time(NaiveTime::MIN)
+            } else {
+                at.with_timezone(&zone).naive_local()
+            }
+        };
+        let lead = wall(due) - remind.with_timezone(&zone).naive_local();
+        let shifted = wall(next) - lead;
+        local_to_utc(zone, shifted.date(), shifted.time())
     }
 
     /// `date` moved forward by `steps` times the rule's interval. Months and years are added to the
@@ -177,28 +221,28 @@ impl Recurrence {
         }
     }
 
-    /// Fixed weekly rule on specific weekdays: every `interval`-th week, counted from the anchor's week
-    /// (Monday-based), on each listed weekday that is not before the anchor.
-    fn next_on_weekdays(
-        &self,
-        zone: Tz,
-        anchor_date: NaiveDate,
-        time: NaiveTime,
-        after: DateTime<Utc>,
-    ) -> Option<DateTime<Utc>> {
+    /// Every date of a fixed schedule counted from `anchor_date`, in order, ending after [`MAX_STEPS`]
+    /// occurrences. With weekdays: every `interval`-th week (Monday-based, counted from the anchor's
+    /// week), on each listed weekday that is not before the anchor.
+    fn occurrence_dates(&self, anchor_date: NaiveDate) -> Box<dyn Iterator<Item = NaiveDate> + '_> {
+        if self.weekdays.is_empty() {
+            return Box::new((0..MAX_STEPS).map_while(move |k| self.add_units(anchor_date, k)));
+        }
         let monday = anchor_date.checked_sub_days(Days::new(u64::from(
             chrono::Datelike::weekday(&anchor_date).num_days_from_monday(),
-        )))?;
-        (0..MAX_STEPS / 4).find_map(|week| {
-            let start = self.add_units(monday, week)?;
-            self.weekdays.iter().find_map(|day| {
-                let date = start.checked_add_days(Days::new(u64::from(*day - 1)))?;
-                if date < anchor_date {
-                    return None;
-                }
-                Some(local_to_utc(zone, date, time)).filter(|at| *at > after)
-            })
-        })
+        )));
+        Box::new(
+            (0..MAX_STEPS / 4)
+                .map_while(move |week| self.add_units(monday?, week))
+                .flat_map(move |start| {
+                    self.weekdays
+                        .iter()
+                        .filter_map(move |day| {
+                            start.checked_add_days(Days::new(u64::from(*day - 1)))
+                        })
+                        .filter(move |date| *date >= anchor_date)
+                }),
+        )
     }
 }
 
