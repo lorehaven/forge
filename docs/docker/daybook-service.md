@@ -32,6 +32,8 @@ well as the API's owner filters.
 ## Requirements and configuration
 
 - Postgres with the `daybook` schema installed by Foundry.
+- Redis (`REDIS_URL`): the session store. Gatehouse tokens carry a session id, and every request is
+  rejected unless that session is still active there.
 - Gatehouse-issued JWTs accepted by the shared `AUTH_DB_SCHEMA` and
   `SERVICE_AUTH_ENABLED` settings.
 - `DATABASE_URL`, `BASE_PATH`, `SERVER_ADDR`, `AUTH_DB_SCHEMA`, and

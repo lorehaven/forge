@@ -1,4 +1,5 @@
 use quench_auth::domain::jwt::JwtConfig;
+use quench_auth::domain::session::SessionDb;
 use quench_http::prelude::*;
 use quench_starter::common::db::DbWrapper;
 use quench_starter::common::health::HealthState;
@@ -15,6 +16,9 @@ async fn main() -> std::io::Result<()> {
     let base_path = normalize_base_path(&envmnt::get_or("BASE_PATH", "/"));
     let db_wrapper = DbWrapper::init_env().await;
     let jwt_config = JwtConfig::init().await;
+    // `Auth` checks every token's session against this store (Redis, via REDIS_URL); without it in the
+    // container each request is rejected as an inactive session.
+    let session_db = SessionDb::from_env().await.expect("session store");
     let health_state = HealthState::live();
     let gatehouse = gatehouse_health_url();
     health_state.spawn_ready_when(async move {
@@ -25,6 +29,7 @@ async fn main() -> std::io::Result<()> {
         .provide(db_wrapper.db.clone())
         .provide(health_state)
         .provide(jwt_config.clone())
+        .provide_arc(session_db)
         .build()
         .await
         .unwrap_or_else(|e| panic!("dependency graph failed to resolve: {e}"));
