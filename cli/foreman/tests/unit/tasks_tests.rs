@@ -5,7 +5,7 @@ use foreman::tasks::*;
 use foreman::vars;
 
 fn estate_in(root: &std::path::Path, text: &str) -> Estate {
-    let config: Config = toml::from_str(text).unwrap();
+    let config: Config = quench_serde::toml::from_str(text).unwrap();
     let vars = vars::resolve(root, &config.vars).unwrap();
     Estate {
         root: root.to_path_buf(),
@@ -17,7 +17,7 @@ fn estate_in(root: &std::path::Path, text: &str) -> Estate {
 
 #[test]
 fn containers_for_role_collects_without_duplicates_across_tasks() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(
         dir.path(),
         r#"
@@ -38,14 +38,14 @@ fn containers_for_role_collects_without_duplicates_across_tasks() {
 
 #[test]
 fn containers_for_role_is_empty_when_no_task_has_that_role() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), "");
     assert!(containers_for_role(&estate, foreman::config::Role::Reset).is_empty());
 }
 
 #[test]
 fn run_named_errors_for_an_unknown_task() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), "");
     let error = run_named(&estate, "no-such-task", &[]).unwrap_err();
     assert!(error.to_string().contains("unknown task"));
@@ -53,7 +53,7 @@ fn run_named_errors_for_an_unknown_task() {
 
 #[test]
 fn run_named_runs_a_known_task() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(
         dir.path(),
         r#"
@@ -66,7 +66,7 @@ fn run_named_runs_a_known_task() {
 
 #[test]
 fn run_bails_when_the_command_exits_with_failure() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), "");
     let task = Task {
         role: Role::Manual,
@@ -88,7 +88,7 @@ fn run_bails_when_the_command_exits_with_failure() {
 
 #[test]
 fn run_bails_when_the_build_step_fails() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), "");
     let task = Task {
         role: Role::Manual,
@@ -110,7 +110,7 @@ fn run_bails_when_the_build_step_fails() {
 
 #[test]
 fn run_bails_on_an_empty_command() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), "");
     let task = Task {
         role: Role::Manual,
@@ -132,7 +132,7 @@ fn run_bails_on_an_empty_command() {
 
 #[test]
 fn run_substitutes_the_selection_placeholder_into_the_command() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(
         dir.path(),
         r#"
@@ -168,7 +168,7 @@ fn run_substitutes_the_selection_placeholder_into_the_command() {
 
 #[test]
 fn run_reports_the_warning_and_stops_services_first_when_configured() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(
         dir.path(),
         r#"
@@ -200,7 +200,7 @@ fn run_reports_the_warning_and_stops_services_first_when_configured() {
 
 #[test]
 fn run_errors_for_an_unknown_container() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let estate = estate_in(dir.path(), "");
     let task = Task {
         role: Role::Manual,

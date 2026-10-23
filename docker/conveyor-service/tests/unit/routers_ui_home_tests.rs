@@ -5,12 +5,12 @@
 //! worth pinning down is the mapping from `CheckResult` to a colour class -
 //! everything else is the same table-row plumbing `runs.rs` already covers.
 
-use chrono::Utc;
 use conveyor_service::domain::{Project, Provider, Repo};
 use conveyor_service::routers::ui::pages::home::{
     check_chips, chip, project_tree_panel, project_tree_panel_scoped, run_button,
 };
 use conveyor_service::scan::{CheckKind, CheckResult, Finding, ScanSummary};
+use quench_core::time::Time;
 use std::collections::HashMap;
 
 fn repo(enabled: bool) -> Repo {
@@ -24,8 +24,8 @@ fn repo(enabled: bool) -> Repo {
         registered_by: "admin".to_string(),
         project_id: "project-1".to_string(),
         enabled,
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
+        created_at: Time::now(),
+        updated_at: Time::now(),
     }
 }
 
@@ -34,8 +34,8 @@ fn project(id: &str, name: &str, parent_id: Option<&str>) -> Project {
         id: id.to_string(),
         name: name.to_string(),
         parent_id: parent_id.map(str::to_string),
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
+        created_at: Time::now(),
+        updated_at: Time::now(),
     }
 }
 

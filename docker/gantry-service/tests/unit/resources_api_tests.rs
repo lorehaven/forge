@@ -3,9 +3,9 @@ use gantry_service::domain::cluster::{Extra, LiveResource, Workload};
 use gantry_service::domain::operation::Inventory;
 use gantry_service::domain::resources::InventoryItem;
 use gantry_service::domain::service::Gantry;
-use http::{Method, StatusCode};
 use quench_auth::domain::jwt::Claims;
-use serde_json::json;
+use quench_http::http::{Method, StatusCode};
+use quench_serde::json;
 
 fn item(kind: &str, name: &str, ns: Option<&str>, api: &str) -> InventoryItem {
     InventoryItem {
@@ -81,8 +81,14 @@ fn with(
 }
 
 fn location(response: quench_http::response::Response) -> String {
-    let (parts, _) = response.into_hyper().into_parts();
-    parts.headers["location"].to_str().unwrap().to_string()
+    let parts = response.into_inner();
+    parts
+        .headers
+        .get("location")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string()
 }
 
 #[tokio::test]
@@ -152,7 +158,7 @@ async fn the_yaml_endpoint_returns_a_resource_and_refuses_a_secret() {
 #[tokio::test]
 async fn delete_and_apply_need_scale_and_edit_needs_deploy_each_on_that_package() {
     let rig = rig(true).await;
-    let post = |path: &str, body: serde_json::Value, scope: &str| {
+    let post = |path: &str, body: quench_serde::Value, scope: &str| {
         with(
             token(scope),
             support::req_json(Method::POST, path, &rig.container, &body.to_string()),

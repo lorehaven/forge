@@ -294,12 +294,12 @@ pub fn parse_lint(lines: &[&str]) -> Option<(String, Vec<Finding>)> {
         if trimmed.is_empty() {
             continue;
         }
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed) else {
+        let Ok(value) = quench_serde::json::from_str::<quench_serde::Value>(trimmed) else {
             continue;
         };
         if value
             .get("reason")
-            .and_then(serde_json::Value::as_str)
+            .and_then(quench_serde::Value::as_str)
             .is_none()
         {
             continue;
@@ -311,7 +311,7 @@ pub fn parse_lint(lines: &[&str]) -> Option<(String, Vec<Finding>)> {
         };
         let level = message
             .get("level")
-            .and_then(serde_json::Value::as_str)
+            .and_then(quench_serde::Value::as_str)
             .unwrap_or_default();
         if level != "warning" && level != "error" {
             continue;
@@ -319,15 +319,17 @@ pub fn parse_lint(lines: &[&str]) -> Option<(String, Vec<Finding>)> {
 
         let title = message
             .get("message")
-            .and_then(serde_json::Value::as_str)
+            .and_then(quench_serde::Value::as_str)
             .unwrap_or_default()
             .to_string();
         let location = message
             .get("spans")
-            .and_then(serde_json::Value::as_array)
+            .and_then(quench_serde::Value::as_array)
             .and_then(|spans| {
                 spans.iter().find(|span| {
-                    span.get("is_primary").and_then(serde_json::Value::as_bool) == Some(true)
+                    span.get("is_primary")
+                        .and_then(quench_serde::Value::as_bool)
+                        == Some(true)
                 })
             })
             .and_then(|span| {
@@ -373,15 +375,15 @@ pub fn parse_lint(lines: &[&str]) -> Option<(String, Vec<Finding>)> {
 /// at all" stay distinguishable.
 pub fn parse_machete(lines: &[&str]) -> Option<(String, Vec<Finding>)> {
     let joined = lines.join("\n");
-    let value: serde_json::Value = serde_json::from_str(joined.trim()).ok()?;
+    let value: quench_serde::Value = quench_serde::json::from_str(joined.trim()).ok()?;
     let entries = value.get("findings")?.as_array()?;
 
     let mut findings = Vec::new();
     for entry in entries {
-        let Some(package) = entry.get("package").and_then(serde_json::Value::as_str) else {
+        let Some(package) = entry.get("package").and_then(quench_serde::Value::as_str) else {
             continue;
         };
-        let Some(unused) = entry.get("unused").and_then(serde_json::Value::as_array) else {
+        let Some(unused) = entry.get("unused").and_then(quench_serde::Value::as_array) else {
             continue;
         };
         for dep in unused {
@@ -415,18 +417,21 @@ pub fn parse_machete(lines: &[&str]) -> Option<(String, Vec<Finding>)> {
 /// way as `parse_machete`.
 pub fn parse_audit(lines: &[&str]) -> Option<(String, Vec<Finding>)> {
     let joined = lines.join("\n");
-    let value: serde_json::Value = serde_json::from_str(joined.trim()).ok()?;
+    let value: quench_serde::Value = quench_serde::json::from_str(joined.trim()).ok()?;
 
     let mut findings = Vec::new();
     if let Some(list) = value
         .get("vulnerabilities")
         .and_then(|v| v.get("list"))
-        .and_then(serde_json::Value::as_array)
+        .and_then(quench_serde::Value::as_array)
     {
         findings.extend(list.iter().filter_map(audit_entry));
     }
-    if let Some(warnings) = value.get("warnings").and_then(serde_json::Value::as_object) {
-        for entries in warnings.values().filter_map(serde_json::Value::as_array) {
+    if let Some(warnings) = value
+        .get("warnings")
+        .and_then(quench_serde::Value::as_object)
+    {
+        for entries in warnings.values().filter_map(quench_serde::Value::as_array) {
             findings.extend(entries.iter().filter_map(audit_entry));
         }
     }
@@ -441,26 +446,26 @@ pub fn parse_audit(lines: &[&str]) -> Option<(String, Vec<Finding>)> {
 
 /// One entry of `vulnerabilities.list` or a `warnings.*` list - both shaped
 /// `{"advisory": {...}, "package": {"name", "version"}, "versions": {"patched": [...]}}`.
-fn audit_entry(entry: &serde_json::Value) -> Option<Finding> {
+fn audit_entry(entry: &quench_serde::Value) -> Option<Finding> {
     let advisory = entry.get("advisory")?;
     let title = advisory
         .get("title")
-        .and_then(serde_json::Value::as_str)?
+        .and_then(quench_serde::Value::as_str)?
         .to_string();
 
     let severity = advisory
         .get("informational")
-        .and_then(serde_json::Value::as_str)
-        .or_else(|| advisory.get("cvss").and_then(serde_json::Value::as_str))
+        .and_then(quench_serde::Value::as_str)
+        .or_else(|| advisory.get("cvss").and_then(quench_serde::Value::as_str))
         .map(str::to_string);
 
     let package = entry.get("package");
     let krate = package
         .and_then(|p| p.get("name"))
-        .and_then(serde_json::Value::as_str);
+        .and_then(quench_serde::Value::as_str);
     let version = package
         .and_then(|p| p.get("version"))
-        .and_then(serde_json::Value::as_str);
+        .and_then(quench_serde::Value::as_str);
     let location = match (krate, version) {
         (Some(krate), Some(version)) => Some(format!("{krate} {version}")),
         (Some(krate), None) => Some(krate.to_string()),
@@ -470,12 +475,12 @@ fn audit_entry(entry: &serde_json::Value) -> Option<Finding> {
     let extra = entry
         .get("versions")
         .and_then(|v| v.get("patched"))
-        .and_then(serde_json::Value::as_array)
+        .and_then(quench_serde::Value::as_array)
         .filter(|patched| !patched.is_empty())
         .map(|patched| {
             let versions = patched
                 .iter()
-                .filter_map(serde_json::Value::as_str)
+                .filter_map(quench_serde::Value::as_str)
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("Solution: Upgrade to {versions}")
@@ -485,12 +490,12 @@ fn audit_entry(entry: &serde_json::Value) -> Option<Finding> {
         title,
         id: advisory
             .get("id")
-            .and_then(serde_json::Value::as_str)
+            .and_then(quench_serde::Value::as_str)
             .map(str::to_string),
         severity,
         date: advisory
             .get("date")
-            .and_then(serde_json::Value::as_str)
+            .and_then(quench_serde::Value::as_str)
             .map(str::to_string),
         location,
         extra,

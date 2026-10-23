@@ -2,7 +2,7 @@ use crate::routers::crates::{
     crate_file_path, index_file_path, validate_crate_name, validate_version,
 };
 use quench_http::prelude::{Path, Response, delete, http::StatusCode};
-use serde::Serialize;
+use quench_serde::Serialize;
 
 #[derive(Debug, Serialize)]
 pub struct OkResponse {
@@ -10,7 +10,7 @@ pub struct OkResponse {
 }
 
 #[delete("/api/v1/crates/{name}/{version}/yank")]
-#[tracing::instrument]
+#[quench_log::instrument]
 pub async fn handle(Path((name, version)): Path<(String, String)>) -> Response {
     if !validate_crate_name(&name) || !validate_version(&version) {
         return not_found();
@@ -29,14 +29,14 @@ pub async fn handle(Path((name, version)): Path<(String, String)>) -> Response {
         Ok(false) => not_found(),
         Err(msg) => Response::json(
             StatusCode::INTERNAL_SERVER_ERROR,
-            &serde_json::json!({ "errors": [{ "detail": msg }] }),
+            &quench_serde::json!({ "errors": [{ "detail": msg }] }),
         )
         .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR)),
     }
 }
 
 /// Sets `yanked` for `version`'s index entry; also used by unyank.
-#[tracing::instrument]
+#[quench_log::instrument]
 pub async fn set_yanked(name: &str, version: &str, yanked_value: bool) -> Result<bool, String> {
     let Some(index_path) = index_file_path(name) else {
         return Err("failed to resolve index path".into());
@@ -56,16 +56,13 @@ pub async fn set_yanked(name: &str, version: &str, yanked_value: bool) -> Result
             continue;
         }
 
-        match serde_json::from_str::<serde_json::Value>(trimmed) {
+        match quench_serde::json::from_str::<quench_serde::Value>(trimmed) {
             Ok(mut record) => {
                 if record.get("vers").and_then(|v| v.as_str()) == Some(version) {
                     found = true;
-                    record["yanked"] = serde_json::Value::Bool(yanked_value);
+                    record["yanked"] = quench_serde::Value::Bool(yanked_value);
                 }
-                match serde_json::to_string(&record) {
-                    Ok(s) => new_lines.push(s),
-                    Err(e) => return Err(format!("failed to serialize index record: {e}")),
-                }
+                new_lines.push(quench_serde::json::to_string(&record));
             }
             Err(_) => new_lines.push(trimmed.to_string()), // preserve malformed lines as-is
         }
@@ -86,7 +83,7 @@ pub async fn set_yanked(name: &str, version: &str, yanked_value: bool) -> Result
 fn not_found() -> Response {
     Response::json(
         StatusCode::NOT_FOUND,
-        &serde_json::json!({ "errors": [{ "detail": "crate or version not found" }] }),
+        &quench_serde::json!({ "errors": [{ "detail": "crate or version not found" }] }),
     )
     .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
 }

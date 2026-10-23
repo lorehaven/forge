@@ -1,6 +1,6 @@
 use crate::routers::crates::crates_storage_root;
 use quench_http::prelude::{Query, Response, get, http::StatusCode};
-use serde::{Deserialize, Serialize};
+use quench_serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
 pub struct SearchQuery {
@@ -43,7 +43,7 @@ pub async fn handle(Query(query): Query<SearchQuery>) -> Response {
     if q.is_empty() {
         return Response::json(
             StatusCode::BAD_REQUEST,
-            &serde_json::json!({ "errors": [{ "detail": "search query must not be empty" }] }),
+            &quench_serde::json!({ "errors": [{ "detail": "search query must not be empty" }] }),
         )
         .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR));
     }

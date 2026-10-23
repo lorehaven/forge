@@ -272,7 +272,7 @@ fn a_highly_compressible_bomb_is_stopped_by_the_decoded_limits() {
 #[test]
 fn write_to_materialises_every_file_and_refuses_to_overwrite() {
     let package = read(&builder().build().unwrap()).unwrap();
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     package.write_to(dir.path()).unwrap();
 
     assert_eq!(

@@ -3,8 +3,11 @@ use gatehouse_service::catalog::PermissionCatalog;
 /// A fixture file per call, under a name unique enough that concurrent
 /// tests never collide - `load_from` takes an explicit path precisely so
 /// this does not have to go through a process-global environment variable.
-fn load(toml: &str) -> anyhow::Result<PermissionCatalog> {
-    let dir = std::env::temp_dir().join(format!("permcat-test-{}", uuid::Uuid::new_v4()));
+fn load(toml: &str) -> quench_core::Result<PermissionCatalog> {
+    let dir = std::env::temp_dir().join(format!(
+        "permcat-test-{}",
+        quench_core::uuid::Uuid::new_v4()
+    ));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("permissions.toml");
     std::fs::write(&path, toml).unwrap();

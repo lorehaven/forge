@@ -23,18 +23,14 @@ name = "conveyor-service"
 path = "src/main.rs"
 
 [dependencies]
-async-trait = { workspace = true }
-base64 = { workspace = true }
-bytes = { workspace = true }
-chacha20poly1305 = { workspace = true }
-chrono = { workspace = true }
+quench-pg = { workspace = true }
+quench-crypto = { workspace = true }
+quench-log = { workspace = true }
+quench-core = { workspace = true }
+quench-serde = { workspace = true }
 conveyor-pipeline = { workspace = true }
-envmnt = { workspace = true }
 futures-util = { workspace = true }
-hex = { workspace = true }
-hmac = { workspace = true }
 forge-ui = { workspace = true }
-http = { workspace = true }
 k8s-openapi = { workspace = true }
 kube = { workspace = true }
 quench-auth = { workspace = true }
@@ -44,22 +40,9 @@ quench-http = { workspace = true }
 quench-starter = { workspace = true }
 quench-web = { workspace = true }
 quench-web-components = { workspace = true }
-reqwest = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-sha2 = { workspace = true }
-sqlx = { workspace = true }
-thiserror = { workspace = true }
 tokio = { workspace = true }
-tokio-stream = { workspace = true }
-tracing = { workspace = true }
-urlencoding = { workspace = true }
-uuid = { workspace = true }
 which = { workspace = true }
 
 [dev-dependencies]
-async-trait = { workspace = true }
-http-body-util = { workspace = true }
-serde_urlencoded = { workspace = true }
-tempfile = { workspace = true }
+serde_json = { workspace = true }
 tokio = { workspace = true }

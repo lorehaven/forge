@@ -167,7 +167,7 @@ pub async fn dispatch(ctx: &Context<'_>, request: &Request) -> Result<Outcome, I
 }
 
 fn failed(message: String, transient: bool) -> Outcome {
-    tracing::error!("notification not sent: {message}");
+    quench_log::error!("notification not sent: {message}");
     Outcome::Failed { message, transient }
 }
 

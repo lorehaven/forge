@@ -15,7 +15,7 @@ pub fn service_auth_env_lock() -> &'static Mutex<()> {
 /// Pins `SERVICE_AUTH_ENABLED` to "false"; every test relying on that default must hold this too.
 pub async fn auth_disabled_guard() -> MutexGuard<'static, ()> {
     let guard = service_auth_env_lock().lock().await;
-    envmnt::set("SERVICE_AUTH_ENABLED", "false");
+    quench_core::env::set("SERVICE_AUTH_ENABLED", "false");
     guard
 }
 
@@ -54,7 +54,7 @@ impl RecordingSender {
     }
 }
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl crate::email::Sender for RecordingSender {
     async fn send(
         &self,

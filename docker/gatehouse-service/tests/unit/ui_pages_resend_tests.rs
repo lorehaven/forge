@@ -1,4 +1,3 @@
-use bytes::Bytes;
 use gatehouse_service::email::Sender;
 use gatehouse_service::ratelimit::policy;
 use gatehouse_service::realm;
@@ -6,14 +5,14 @@ use gatehouse_service::test_support::RecordingSender;
 use gatehouse_service::tokens::{PURPOSE_VERIFY_EMAIL, VerificationTokens};
 use gatehouse_service::ui::pages::resend::render_resend_page;
 use gatehouse_service::{PublicBase, RateLimiter};
-use http::{HeaderMap, Method, StatusCode, Uri};
-use http_body_util::BodyExt;
 use quench_auth::domain::auth::{Permissions, Role};
 use quench_auth::domain::session::SessionDb;
 use quench_cache::CacheStore;
+use quench_core::bytes::Bytes;
 use quench_db::prelude::Db;
 use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::prelude::Request;
 use std::sync::Arc;
 
@@ -22,7 +21,8 @@ async fn db() -> Db {
 }
 
 fn catalog() -> gatehouse_service::catalog::PermissionCatalog {
-    let dir = std::env::temp_dir().join(format!("resend-test-{}", uuid::Uuid::new_v4()));
+    let dir =
+        std::env::temp_dir().join(format!("resend-test-{}", quench_core::uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("permissions.toml");
     std::fs::write(&path, "[services.gatehouse]\nactions = [\"read-users\"]\n").unwrap();
@@ -78,11 +78,11 @@ impl Harness {
         let mut map = HeaderMap::new();
         for (name, value) in headers {
             map.insert(
-                http::HeaderName::from_bytes(name.as_bytes()).unwrap(),
+                quench_http::http::HeaderName::from_bytes(name.as_bytes()).unwrap(),
                 value.parse().unwrap(),
             );
         }
-        let encoded = serde_urlencoded::to_string([("username", username)]).unwrap();
+        let encoded = quench_serde::urlencoded::to_string(&[("username", username)]).unwrap();
         let request = Request::new(
             Method::POST,
             "/ui/resend-verification".parse::<Uri>().unwrap(),
@@ -93,8 +93,8 @@ impl Harness {
         let resp = self.app.call(request).await;
         let status = resp.status();
         let location = resp
-            .into_hyper()
-            .headers()
+            .into_inner()
+            .headers
             .get("location")
             .map(|v| v.to_str().unwrap().to_string())
             .unwrap_or_default();
@@ -270,7 +270,7 @@ async fn the_email_follows_the_saved_language_then_the_browsers() {
 #[tokio::test]
 async fn a_failing_mail_server_gets_the_same_redirect() {
     struct Failing;
-    #[async_trait::async_trait]
+    #[quench_core::async_trait]
     impl Sender for Failing {
         async fn send(
             &self,
@@ -295,7 +295,7 @@ async fn a_failing_mail_server_gets_the_same_redirect() {
         .build()
         .await
         .unwrap();
-    let encoded = serde_urlencoded::to_string([("username", "alice")]).unwrap();
+    let encoded = quench_serde::urlencoded::to_string(&[("username", "alice")]).unwrap();
     let resp = quench_starter::http::discover_and_mount("/")
         .call(Request::new(
             Method::POST,
@@ -313,12 +313,11 @@ async fn the_page_renders_a_form_that_posts_a_username() {
     let resp = render_resend_page();
     assert_eq!(resp.status(), StatusCode::OK);
     let body = resp
-        .into_hyper()
-        .into_body()
-        .collect()
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
         .await
-        .unwrap()
-        .to_bytes();
+        .unwrap();
     let html = String::from_utf8(body.to_vec()).unwrap();
     assert!(html.contains("resend-verification"), "{html}");
     assert!(html.contains("name=\"username\""));

@@ -1,8 +1,8 @@
 use crate::domain::docker_error;
 use crate::routers::docker::registry::storage::{TagListError, list_tags_for_repository};
 use quench_http::prelude::{Path, Query, Response, get, http::StatusCode};
+use quench_serde::{Deserialize, Serialize};
 use quench_starter::http::domain::error;
-use serde::{Deserialize, Serialize};
 
 #[derive(Serialize)]
 struct TagsResponse {

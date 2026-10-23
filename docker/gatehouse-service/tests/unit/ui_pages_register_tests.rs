@@ -1,4 +1,3 @@
-use bytes::Bytes;
 use gatehouse_service::PublicBase;
 use gatehouse_service::catalog::PermissionCatalog;
 use gatehouse_service::email::{LoggingSender, Sender};
@@ -8,11 +7,11 @@ use gatehouse_service::ui::pages::register::{
     Notice, VerifyQuery, known_error_key, register_page, register_page_slash, render_register_page,
     verify,
 };
-use http::{HeaderMap, Method, StatusCode, Uri};
-use http_body_util::BodyExt;
+use quench_core::bytes::Bytes;
 use quench_db::prelude::Db;
 use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::prelude::{Inject, Query, Request};
 use std::sync::Arc;
 
@@ -21,7 +20,10 @@ async fn db() -> Db {
 }
 
 fn catalog() -> PermissionCatalog {
-    let dir = std::env::temp_dir().join(format!("register-test-{}", uuid::Uuid::new_v4()));
+    let dir = std::env::temp_dir().join(format!(
+        "register-test-{}",
+        quench_core::uuid::Uuid::new_v4()
+    ));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("permissions.toml");
     std::fs::write(&path, "[services.gatehouse]\nactions = [\"read-users\"]\n").unwrap();
@@ -35,13 +37,18 @@ fn mailer() -> Arc<dyn Sender> {
 }
 
 async fn body_text(resp: quench_http::response::Response) -> String {
-    let collected = resp.into_hyper().into_body().collect().await.expect("body");
-    String::from_utf8(collected.to_bytes().to_vec()).expect("utf8")
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .expect("body");
+    String::from_utf8(collected.to_vec()).expect("utf8")
 }
 
 fn location(resp: quench_http::response::Response) -> String {
-    resp.into_hyper()
-        .headers()
+    resp.into_inner()
+        .headers
         .get("location")
         .expect("location header")
         .to_str()
@@ -134,7 +141,7 @@ fn post_form_with_headers(
     headers: HeaderMap,
     container: &Arc<quench_http::di::Container>,
 ) -> Request {
-    let encoded = serde_urlencoded::to_string(pairs).unwrap();
+    let encoded = quench_serde::urlencoded::to_string(pairs).unwrap();
     Request::new(
         Method::POST,
         path.parse::<Uri>().unwrap(),
@@ -315,7 +322,7 @@ async fn the_address_is_trimmed_before_it_is_stored_and_emailed() {
 #[tokio::test]
 async fn a_failing_mail_server_does_not_fail_the_registration() {
     struct Failing;
-    #[async_trait::async_trait]
+    #[quench_core::async_trait]
     impl Sender for Failing {
         async fn send(
             &self,

@@ -106,8 +106,8 @@ fn run_command_async_errors_on_a_nonzero_exit() {
 
 #[test]
 fn dry_run_reports_true_when_new_files_would_be_created() {
-    let src = tempfile::tempdir().unwrap();
-    let dest = tempfile::tempdir().unwrap();
+    let src = quench_core::tmp::TempDir::new().unwrap();
+    let dest = quench_core::tmp::TempDir::new().unwrap();
     std::fs::write(src.path().join("a.txt"), "hello").unwrap();
 
     let changed = dry_run(&job(src.path(), dest.path())).unwrap();
@@ -118,8 +118,8 @@ fn dry_run_reports_true_when_new_files_would_be_created() {
 
 #[test]
 fn dry_run_reports_false_when_source_and_dest_already_match() {
-    let src = tempfile::tempdir().unwrap();
-    let dest = tempfile::tempdir().unwrap();
+    let src = quench_core::tmp::TempDir::new().unwrap();
+    let dest = quench_core::tmp::TempDir::new().unwrap();
 
     let changed = dry_run(&job(src.path(), dest.path())).unwrap();
     assert!(!changed);
@@ -127,8 +127,8 @@ fn dry_run_reports_false_when_source_and_dest_already_match() {
 
 #[test]
 fn dry_run_reports_deletions_when_dest_has_extra_files_and_delete_is_set() {
-    let src = tempfile::tempdir().unwrap();
-    let dest = tempfile::tempdir().unwrap();
+    let src = quench_core::tmp::TempDir::new().unwrap();
+    let dest = quench_core::tmp::TempDir::new().unwrap();
     std::fs::write(dest.path().join("stale.txt"), "old").unwrap();
 
     let changed = dry_run(&job(src.path(), dest.path())).unwrap();
@@ -139,8 +139,8 @@ fn dry_run_reports_deletions_when_dest_has_extra_files_and_delete_is_set() {
 
 #[test]
 fn update_actually_copies_files_from_source_to_dest() {
-    let src = tempfile::tempdir().unwrap();
-    let dest = tempfile::tempdir().unwrap();
+    let src = quench_core::tmp::TempDir::new().unwrap();
+    let dest = quench_core::tmp::TempDir::new().unwrap();
     std::fs::write(src.path().join("a.txt"), "hello").unwrap();
 
     update(&job(src.path(), dest.path())).unwrap();
@@ -153,8 +153,8 @@ fn update_actually_copies_files_from_source_to_dest() {
 
 #[test]
 fn update_with_delete_removes_files_gone_from_source() {
-    let src = tempfile::tempdir().unwrap();
-    let dest = tempfile::tempdir().unwrap();
+    let src = quench_core::tmp::TempDir::new().unwrap();
+    let dest = quench_core::tmp::TempDir::new().unwrap();
     std::fs::write(dest.path().join("stale.txt"), "old").unwrap();
 
     let mut config = job(src.path(), dest.path());
@@ -166,8 +166,8 @@ fn update_with_delete_removes_files_gone_from_source() {
 
 #[test]
 fn update_with_skip_excludes_the_named_entry() {
-    let src = tempfile::tempdir().unwrap();
-    let dest = tempfile::tempdir().unwrap();
+    let src = quench_core::tmp::TempDir::new().unwrap();
+    let dest = quench_core::tmp::TempDir::new().unwrap();
     std::fs::write(src.path().join("keep.txt"), "keep").unwrap();
     std::fs::write(src.path().join("skip.txt"), "skip").unwrap();
 

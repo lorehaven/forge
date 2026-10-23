@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 struct EchoExecutor;
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl ToolExecutor for EchoExecutor {
     async fn execute(&self, tool_call: &ToolCall) -> ToolResult {
         ToolResult {
@@ -37,7 +37,7 @@ impl FlakyExecutor {
     }
 }
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl ToolExecutor for FlakyExecutor {
     async fn execute(&self, tool_call: &ToolCall) -> ToolResult {
         let attempt = self.calls.fetch_add(1, Ordering::SeqCst);
@@ -59,7 +59,7 @@ impl ToolExecutor for FlakyExecutor {
 
 struct SlowExecutor;
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl ToolExecutor for SlowExecutor {
     async fn execute(&self, tool_call: &ToolCall) -> ToolResult {
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -75,7 +75,7 @@ fn call(name: &str) -> ToolCall {
     ToolCall {
         id: "call-1".to_string(),
         name: name.to_string(),
-        arguments: serde_json::json!({}),
+        arguments: quench_serde::json!({}),
     }
 }
 

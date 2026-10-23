@@ -35,15 +35,15 @@ fn in_temp_cwd_with_no_env<T>(body: impl FnOnce() -> T) -> T {
     let _guard = cwd_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     std::fs::create_dir_all(dir.path().join("overlays")).unwrap();
     let original = std::env::current_dir().unwrap();
     std::env::set_current_dir(dir.path()).unwrap();
-    envmnt::remove(ENV_VAR);
+    quench_core::env::remove(ENV_VAR);
 
     let result = body();
 
-    envmnt::remove(ENV_VAR);
+    quench_core::env::remove(ENV_VAR);
     std::env::set_current_dir(original).unwrap();
     result
 }
@@ -140,7 +140,7 @@ fn in_temp_cwd_with_env<T>(env: &str, body: impl FnOnce() -> T) -> T {
     let _guard = cwd_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let overlay_dir = dir.path().join("overlays").join(env);
     std::fs::create_dir_all(&overlay_dir).unwrap();
     std::fs::write(
@@ -151,11 +151,11 @@ fn in_temp_cwd_with_env<T>(env: &str, body: impl FnOnce() -> T) -> T {
 
     let original = std::env::current_dir().unwrap();
     std::env::set_current_dir(dir.path()).unwrap();
-    envmnt::set(ENV_VAR, env);
+    quench_core::env::set(ENV_VAR, env);
 
     let result = body();
 
-    envmnt::remove(ENV_VAR);
+    quench_core::env::remove(ENV_VAR);
     std::env::set_current_dir(original).unwrap();
     result
 }

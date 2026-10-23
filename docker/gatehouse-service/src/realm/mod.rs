@@ -40,8 +40,8 @@ pub enum RealmError {
 
 impl RealmError {
     #[must_use]
-    pub const fn status(&self) -> http::StatusCode {
-        use http::StatusCode;
+    pub const fn status(&self) -> quench_http::http::StatusCode {
+        use quench_http::http::StatusCode;
         match self {
             Self::NotFound | Self::UnknownTemplate => StatusCode::NOT_FOUND,
             Self::UsernameEmpty
@@ -166,7 +166,7 @@ fn repo(db: &Db) -> Repository<User> {
 }
 
 fn internal(context: &str, err: impl std::fmt::Display) -> RealmError {
-    tracing::error!("{context}: {err}");
+    quench_log::error!("{context}: {err}");
     RealmError::Internal
 }
 
@@ -262,7 +262,7 @@ pub async fn create(
         .create(&user)
         .await
         .map_err(|err| internal("failed to create the user", err))?;
-    tracing::info!("created user {username}");
+    quench_log::info!("created user {username}");
     Ok(created)
 }
 
@@ -332,11 +332,11 @@ pub async fn update(
                 return Err(RealmError::LastAdmin);
             }
         }
-        user.roles = serde_json::to_value(roles).unwrap_or(user.roles);
+        user.roles = quench_serde::to_value(roles);
     }
 
     if let Some(permissions) = &changes.permissions {
-        user.permissions = serde_json::to_value(permissions).unwrap_or(user.permissions);
+        user.permissions = quench_serde::to_value(permissions);
     }
 
     if let Some(password) = &changes.password {
@@ -345,7 +345,7 @@ pub async fn update(
         }
         user.password = User::hash_password(password)
             .map_err(|err| internal("failed to hash password", err))?;
-        user.password_changed_at = Some(chrono::Utc::now());
+        user.password_changed_at = Some(quench_core::time::Time::now());
     }
 
     if let Some(display_name) = &changes.display_name {
@@ -375,7 +375,7 @@ pub async fn update(
     if revoke {
         end_sessions(sessions, username).await;
     }
-    tracing::info!("updated user {username}");
+    quench_log::info!("updated user {username}");
     Ok(updated)
 }
 
@@ -456,12 +456,12 @@ pub async fn change_email(db: &Db, username: &str, new_email: &str) -> RealmResu
         .filter(|old| !old.eq_ignore_ascii_case(new_email))
         .map(str::to_string);
     user.email = Some(new_email.to_string());
-    user.email_verified_at = Some(chrono::Utc::now());
+    user.email_verified_at = Some(quench_core::time::Time::now());
     let user = repo
         .update(&user)
         .await
         .map_err(|err| internal("failed to change the email address", err))?;
-    tracing::info!("changed the email address of {username}");
+    quench_log::info!("changed the email address of {username}");
     Ok(EmailChange {
         user,
         previous_confirmed,
@@ -535,11 +535,11 @@ pub async fn register(
 pub async fn mark_email_verified(db: &Db, username: &str) -> RealmResult<()> {
     let repo = repo(db);
     let mut user = get(db, username).await?;
-    user.email_verified_at = Some(chrono::Utc::now());
+    user.email_verified_at = Some(quench_core::time::Time::now());
     repo.update(&user)
         .await
         .map_err(|err| internal("failed to record email verification", err))?;
-    tracing::info!("verified email for {username}");
+    quench_log::info!("verified email for {username}");
     Ok(())
 }
 
@@ -558,12 +558,12 @@ pub async fn reset_password(
     let mut user = get(db, username).await?;
     user.password = User::hash_password(new_password)
         .map_err(|err| internal("failed to hash password", err))?;
-    user.password_changed_at = Some(chrono::Utc::now());
+    user.password_changed_at = Some(quench_core::time::Time::now());
     repo.update(&user)
         .await
         .map_err(|err| internal("failed to reset the password", err))?;
     end_sessions(sessions, username).await;
-    tracing::info!("reset password for {username}");
+    quench_log::info!("reset password for {username}");
     Ok(())
 }
 
@@ -590,7 +590,7 @@ pub async fn delete(
 
     // Row is gone first, so a live session now belongs to nobody.
     end_sessions(sessions, username).await;
-    tracing::info!("deleted user {username}");
+    quench_log::info!("deleted user {username}");
     Ok(())
 }
 
@@ -634,14 +634,17 @@ pub enum AuthOutcome {
 
 /// Wrong-password threshold and lockout duration, configurable via
 /// `GATEHOUSE_LOGIN_MAX_ATTEMPTS`/`GATEHOUSE_LOCKOUT_DURATION_SECS`.
-fn lockout_policy() -> (i32, chrono::Duration) {
-    let max_attempts = envmnt::get_or("GATEHOUSE_LOGIN_MAX_ATTEMPTS", "5")
+fn lockout_policy() -> (i32, quench_core::time::Duration) {
+    let max_attempts = quench_core::env::get_or("GATEHOUSE_LOGIN_MAX_ATTEMPTS", "5")
         .parse()
         .unwrap_or(5);
-    let lockout_secs = envmnt::get_or("GATEHOUSE_LOCKOUT_DURATION_SECS", "900")
+    let lockout_secs = quench_core::env::get_or("GATEHOUSE_LOCKOUT_DURATION_SECS", "900")
         .parse()
         .unwrap_or(900);
-    (max_attempts, chrono::Duration::seconds(lockout_secs))
+    (
+        max_attempts,
+        quench_core::time::Duration::seconds(lockout_secs),
+    )
 }
 
 /// Gatehouse's own login (write access) - stops short of a session when MFA is enabled.
@@ -749,7 +752,7 @@ pub async fn authenticate_mfa(db: &Db, pending: &str, code: &str) -> RealmResult
 // --- MFA enrollment ---
 
 /// Fresh secret, not yet persisted - an abandoned enrollment leaves no trace.
-pub fn begin_mfa_enrollment(username: &str) -> anyhow::Result<(String, String)> {
+pub fn begin_mfa_enrollment(username: &str) -> quench_core::Result<(String, String)> {
     let secret = crate::mfa::generate_secret()?;
     let uri = crate::mfa::provisioning_uri(&secret, username)?;
     Ok((secret, uri))
@@ -769,7 +772,7 @@ pub async fn enable_mfa(db: &Db, username: &str, secret: &str, code: &str) -> Re
     repo.update(&user)
         .await
         .map_err(|err| internal("failed to enable MFA", err))?;
-    tracing::info!("enabled MFA for {username}");
+    quench_log::info!("enabled MFA for {username}");
     Ok(())
 }
 
@@ -782,7 +785,7 @@ pub async fn disable_mfa(db: &Db, username: &str) -> RealmResult<()> {
     repo.update(&user)
         .await
         .map_err(|err| internal("failed to disable MFA", err))?;
-    tracing::info!("disabled MFA for {username}");
+    quench_log::info!("disabled MFA for {username}");
     Ok(())
 }
 
@@ -792,12 +795,12 @@ pub async fn disable_mfa(db: &Db, username: &str) -> RealmResult<()> {
 pub async fn set_disabled(db: &Db, username: &str, disabled: bool) -> RealmResult<User> {
     let repo = repo(db);
     let mut user = get(db, username).await?;
-    user.disabled_at = disabled.then(chrono::Utc::now);
+    user.disabled_at = disabled.then(quench_core::time::Time::now);
     let updated = repo
         .update(&user)
         .await
         .map_err(|err| internal("failed to change disabled state", err))?;
-    tracing::info!(
+    quench_log::info!(
         "{} {username}",
         if disabled { "disabled" } else { "enabled" }
     );
@@ -814,7 +817,7 @@ pub async fn unlock(db: &Db, username: &str) -> RealmResult<User> {
         .update(&user)
         .await
         .map_err(|err| internal("failed to unlock the user", err))?;
-    tracing::info!("unlocked {username}");
+    quench_log::info!("unlocked {username}");
     Ok(updated)
 }
 
@@ -834,7 +837,7 @@ async fn last_admin(repo: &Repository<User>, excluding: &str) -> RealmResult<boo
 async fn end_sessions(sessions: &Arc<SessionDb>, username: &str) {
     match sessions.revoke_all(username).await {
         Ok(0) => {}
-        Ok(count) => tracing::info!("ended {count} session(s) for {username} after a change"),
-        Err(err) => tracing::warn!("failed to end sessions for {username}: {err}"),
+        Ok(count) => quench_log::info!("ended {count} session(s) for {username} after a change"),
+        Err(err) => quench_log::warn!("failed to end sessions for {username}: {err}"),
     }
 }

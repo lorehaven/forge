@@ -8,8 +8,8 @@
 //! always wins.
 
 use crate::ui::common::SUPPORTED_LOCALES;
-use async_trait::async_trait;
 use quench_auth::http::domain::cookies::cookie_value;
+use quench_core::async_trait;
 use quench_http::prelude::{FromRequest, HttpError, Request};
 
 pub const LOCALE_COOKIE: &str = "qlocale";

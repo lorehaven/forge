@@ -61,7 +61,7 @@ fn positive_keeps_the_default_when_unset() {
 
 #[test]
 fn positive_reads_a_valid_value() {
-    envmnt::set("CONVEYOR_TEST_VALID", "12");
+    quench_core::env::set("CONVEYOR_TEST_VALID", "12");
     assert_eq!(positive("CONVEYOR_TEST_VALID", 7), 12);
 }
 
@@ -69,21 +69,21 @@ fn positive_reads_a_valid_value() {
 fn positive_rejects_zero() {
     // Zero workers, or a zero-second timeout, is a service that silently does
     // nothing - worse than one that reports a bad configuration.
-    envmnt::set("CONVEYOR_TEST_ZERO", "0");
+    quench_core::env::set("CONVEYOR_TEST_ZERO", "0");
     assert_eq!(positive("CONVEYOR_TEST_ZERO", 7), 7);
 }
 
 #[test]
 fn positive_rejects_garbage_and_negatives() {
-    envmnt::set("CONVEYOR_TEST_GARBAGE", "lots");
+    quench_core::env::set("CONVEYOR_TEST_GARBAGE", "lots");
     assert_eq!(positive("CONVEYOR_TEST_GARBAGE", 7), 7);
 
-    envmnt::set("CONVEYOR_TEST_NEGATIVE", "-3");
+    quench_core::env::set("CONVEYOR_TEST_NEGATIVE", "-3");
     assert_eq!(positive("CONVEYOR_TEST_NEGATIVE", 7), 7);
 }
 
 #[test]
 fn positive_tolerates_surrounding_whitespace() {
-    envmnt::set("CONVEYOR_TEST_PADDED", "  4  ");
+    quench_core::env::set("CONVEYOR_TEST_PADDED", "  4  ");
     assert_eq!(positive("CONVEYOR_TEST_PADDED", 7), 4);
 }

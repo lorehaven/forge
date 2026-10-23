@@ -36,7 +36,7 @@ static QUANT_PATTERNS: LazyLock<Vec<(Regex, Quant)>> = LazyLock::new(|| {
     .collect()
 });
 
-#[tracing::instrument(skip(name, quant, context))]
+#[quench_log::instrument(skip(name, quant, context))]
 pub async fn fetch_models(
     model_type: ModelType,
     name: &str,
@@ -75,10 +75,10 @@ fn read_hf_config(config_path: &Path) -> Option<ScannedModel> {
     let name = normalize_hf_name(model_dir);
 
     let config_json_text = std::fs::read_to_string(config_path)
-        .inspect_err(|e| tracing::warn!("Failed to read config.json at {config_path:?}: {e}"))
+        .inspect_err(|e| quench_log::warn!("Failed to read config.json at {config_path:?}: {e}"))
         .ok()?;
-    let json: serde_json::Value = serde_json::from_str(&config_json_text)
-        .inspect_err(|e| tracing::warn!("Failed to parse config.json at {config_path:?}: {e}"))
+    let json: quench_serde::Value = quench_serde::json::from_str(&config_json_text)
+        .inspect_err(|e| quench_log::warn!("Failed to parse config.json at {config_path:?}: {e}"))
         .ok()?;
 
     let hidden_size = usize::try_from(json["hidden_size"].as_u64().unwrap_or(4096)).unwrap_or(4096);
@@ -120,7 +120,7 @@ fn scan_hf_root(root: &str) -> Vec<ScannedModel> {
         .collect()
 }
 
-#[tracing::instrument]
+#[quench_log::instrument]
 pub async fn fetch_hf_models() -> Vec<Model> {
     let store = get_store();
     let mut models = store.get_all_models().await;
@@ -194,7 +194,7 @@ pub async fn fetch_hf_models() -> Vec<Model> {
     }
 
     if !discovered_models.is_empty() {
-        tracing::info!(
+        quench_log::info!(
             "Discovered or refreshed {} HF models.",
             discovered_models.len()
         );
@@ -205,7 +205,7 @@ pub async fn fetch_hf_models() -> Vec<Model> {
     models
 }
 
-#[tracing::instrument]
+#[quench_log::instrument]
 pub async fn fetch_gguf_models() -> Vec<Model> {
     let store = get_store();
     let mut models = store.get_all_models().await;
@@ -277,7 +277,7 @@ pub async fn fetch_gguf_models() -> Vec<Model> {
     }
 
     if !discovered_models.is_empty() {
-        tracing::info!("Discovered {} new GGUF models.", discovered_models.len());
+        quench_log::info!("Discovered {} new GGUF models.", discovered_models.len());
     }
 
     models.extend(discovered_models);
@@ -364,7 +364,7 @@ pub fn infer_hf_quant(dtype: &str) -> Quant {
 /// precedence over `torch_dtype` (that only describes the activation dtype, so a 4-bit
 /// build would otherwise be sized as a 2-byte-per-weight model).
 #[must_use]
-pub fn infer_hf_quant_config(config: &serde_json::Value) -> Option<Quant> {
+pub fn infer_hf_quant_config(config: &quench_serde::Value) -> Option<Quant> {
     let qc = config.get("quantization_config")?;
     match qc["quant_method"].as_str()? {
         "awq" => Some(Quant::AWQ),

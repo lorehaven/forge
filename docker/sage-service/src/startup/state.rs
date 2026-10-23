@@ -1,4 +1,3 @@
-use dashmap::DashMap;
 use quench_auth::http::domain::sso_client::SsoConfig;
 use quench_auth::prelude::{JwtConfig, SessionDb, UserDb};
 use quench_starter::prelude::DbWrapper;
@@ -53,7 +52,7 @@ impl AppState {
             switchboard,
             vllm,
             chat_state: Arc::new(ChatState {
-                pending_messages: DashMap::new(),
+                pending_messages: quench_core::map::ShardedMap::new(),
             }),
             jwt_config: JwtConfig::init().await,
             sso_config: SsoConfig::init(),
@@ -81,33 +80,33 @@ fn init_search_providers() -> Arc<tools::SearchProviderRegistry> {
 
     if let Ok(brave_provider) = tools::search_providers::BraveProvider::from_env() {
         registry.register("brave".to_string(), Box::new(brave_provider));
-        tracing::info!("Brave Search provider registered");
+        quench_log::info!("Brave Search provider registered");
     } else {
-        tracing::info!("Brave Search API key not set, provider not available");
+        quench_log::info!("Brave Search API key not set, provider not available");
     }
 
     if let Ok(searxng_provider) = tools::search_providers::SearxngProvider::from_env() {
         registry.register("searxng".to_string(), Box::new(searxng_provider));
-        tracing::info!("SearXNG provider registered");
+        quench_log::info!("SearXNG provider registered");
     } else {
-        tracing::info!("SearXNG instance URL not set or invalid, using default");
+        quench_log::info!("SearXNG instance URL not set or invalid, using default");
         registry.register(
             "searxng".to_string(),
             Box::new(tools::search_providers::SearxngProvider::new(
                 "https://searxng.be",
             )),
         );
-        tracing::info!("SearXNG provider registered with default instance");
+        quench_log::info!("SearXNG provider registered with default instance");
     }
 
     if let Ok(serpapi_provider) = tools::search_providers::SerpapiProvider::from_env() {
         registry.register("serpapi".to_string(), Box::new(serpapi_provider));
-        tracing::info!("SerpAPI provider registered");
+        quench_log::info!("SerpAPI provider registered");
     } else {
-        tracing::info!("SerpAPI API key not set, provider not available");
+        quench_log::info!("SerpAPI API key not set, provider not available");
     }
 
-    let default_provider = envmnt::get_or("SEARCH_PROVIDER", "duckduckgo");
+    let default_provider = quench_core::env::get_or("SEARCH_PROVIDER", "duckduckgo");
     registry.set_default(default_provider);
 
     Arc::new(registry)

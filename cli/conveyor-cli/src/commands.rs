@@ -2,10 +2,10 @@
 
 use crate::cli::*;
 use crate::client::Client;
-use anyhow::{Context, Result, bail};
-use futures_util::StreamExt;
 use quench_cli::prelude::{Tone, print_status};
-use serde_json::{Value, json};
+use quench_core::stream::StreamExt;
+use quench_core::{Context, Result, bail};
+use quench_serde::{Value, json};
 use std::io::{Read, Write};
 use std::time::Duration;
 
@@ -95,7 +95,10 @@ pub async fn repo(client: &Client, command: &RepoCommands) -> Result<()> {
         RepoCommands::Remove(args) => {
             let id = resolve_repo(client, &args.repo).await?;
             client
-                .send_empty(reqwest::Method::DELETE, &format!("/repos/{id}"))
+                .send_empty(
+                    quench_client::transport::Method::DELETE,
+                    &format!("/repos/{id}"),
+                )
                 .await?;
             print_status(Tone::Success, "removed", &args.repo);
             Ok(())
@@ -198,7 +201,7 @@ pub async fn project(client: &Client, command: &ProjectCommands) -> Result<()> {
         ProjectCommands::Remove(args) => {
             client
                 .send_empty(
-                    reqwest::Method::DELETE,
+                    quench_client::transport::Method::DELETE,
                     &format!("/projects/{}", args.project),
                 )
                 .await?;
@@ -336,7 +339,7 @@ pub async fn show(client: &Client, args: &ShowArgs) -> Result<()> {
 pub async fn cancel(client: &Client, args: &CancelArgs) -> Result<()> {
     client
         .send_empty(
-            reqwest::Method::POST,
+            quench_client::transport::Method::POST,
             &format!("/runs/{}/cancel", args.run_id),
         )
         .await?;
@@ -483,7 +486,9 @@ pub async fn secret(client: &Client, command: &SecretCommands) -> Result<()> {
 
         SecretCommands::Remove(args) => {
             let path = secret_path(client, args.repo.as_deref(), Some(&args.name)).await?;
-            client.send_empty(reqwest::Method::DELETE, &path).await?;
+            client
+                .send_empty(quench_client::transport::Method::DELETE, &path)
+                .await?;
             print_status(Tone::Success, "removed", &args.name);
             Ok(())
         }
@@ -562,7 +567,9 @@ pub async fn credential(client: &Client, command: &CredentialCommands) -> Result
         CredentialCommands::Remove(args) => {
             let path =
                 credential_path(client, args.repo.as_deref(), args.project.as_deref()).await?;
-            client.send_empty(reqwest::Method::DELETE, &path).await?;
+            client
+                .send_empty(quench_client::transport::Method::DELETE, &path)
+                .await?;
             print_status(Tone::Success, "removed", "the credential");
             Ok(())
         }

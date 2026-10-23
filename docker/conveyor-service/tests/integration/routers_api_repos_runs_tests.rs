@@ -10,11 +10,11 @@ use conveyor_service::routers::api;
 use conveyor_service::scheduler::projects::{self, NewProject};
 use conveyor_service::scheduler::queue::{self, NewRun};
 use conveyor_service::scheduler::repos::{self, NewRepo};
-use http::{Method, StatusCode};
 use quench_auth::domain::jwt::JwtConfig;
 use quench_db::prelude::{Database, Db};
 use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{Method, StatusCode};
 use std::sync::Arc;
 
 /// `routers::api::Actor` resolves to the synthetic `"admin"` identity
@@ -89,7 +89,7 @@ async fn register_rejects_an_unknown_provider() {
     let project_id = seed_project(&db).await;
     let (app, container) = app(db).await;
 
-    let resp = app.call(json_req(Method::POST, "/api/v1/repos", &serde_json::json!({ "provider": "not-a-provider", "owner": "tests", "name": "widget", "clone_url": "https://example.test/widget.git", "project_id": project_id }), &container)).await;
+    let resp = app.call(json_req(Method::POST, "/api/v1/repos", &quench_serde::json!({ "provider": "not-a-provider", "owner": "tests", "name": "widget", "clone_url": "https://example.test/widget.git", "project_id": project_id }), &container)).await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }
 
@@ -101,7 +101,7 @@ async fn register_creates_a_repo_when_valid() {
     let project_id = seed_project(&db).await;
     let (app, container) = app(db).await;
 
-    let resp = app.call(json_req(Method::POST, "/api/v1/repos", &serde_json::json!({ "owner": "tests", "name": "widget", "clone_url": "https://example.test/widget.git", "project_id": project_id }), &container)).await;
+    let resp = app.call(json_req(Method::POST, "/api/v1/repos", &quench_serde::json!({ "owner": "tests", "name": "widget", "clone_url": "https://example.test/widget.git", "project_id": project_id }), &container)).await;
     assert_eq!(resp.status(), StatusCode::CREATED);
 }
 
@@ -167,7 +167,7 @@ async fn update_rejects_an_empty_name() {
         .call(json_req(
             Method::PATCH,
             &format!("/api/v1/repos/{}", repo.id),
-            &serde_json::json!({ "name": "   " }),
+            &quench_serde::json!({ "name": "   " }),
             &container,
         ))
         .await;
@@ -187,7 +187,7 @@ async fn update_applies_a_valid_partial_change() {
         .call(json_req(
             Method::PATCH,
             &format!("/api/v1/repos/{}", repo.id),
-            &serde_json::json!({ "default_branch": "develop" }),
+            &quench_serde::json!({ "default_branch": "develop" }),
             &container,
         ))
         .await;
@@ -211,7 +211,7 @@ async fn set_enabled_toggles_the_flag() {
         .call(json_req(
             Method::POST,
             &format!("/api/v1/repos/{}/enabled", repo.id),
-            &serde_json::json!({ "enabled": false }),
+            &quench_serde::json!({ "enabled": false }),
             &container,
         ))
         .await;

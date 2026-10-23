@@ -1,6 +1,6 @@
-use async_trait::async_trait;
 pub use common::assets;
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::async_trait;
 use quench_http::prelude::{FromRequest, HttpError, Request, Response, get};
 use quench_starter::common::routes::with_base_path;
 
@@ -26,7 +26,8 @@ async fn root(UiRoot(authenticated): UiRoot) -> Response {
     if !authenticated {
         return common::ui_login_redirect();
     }
-    Response::new(http::StatusCode::FOUND).header("Location", with_base_path("/ui/home"))
+    Response::new(quench_http::http::StatusCode::FOUND)
+        .header("Location", with_base_path("/ui/home"))
 }
 
 #[get("/ui/")]
@@ -34,7 +35,8 @@ async fn root_slash(UiRoot(authenticated): UiRoot) -> Response {
     if !authenticated {
         return common::ui_login_redirect();
     }
-    Response::new(http::StatusCode::FOUND).header("Location", with_base_path("/ui/home"))
+    Response::new(quench_http::http::StatusCode::FOUND)
+        .header("Location", with_base_path("/ui/home"))
 }
 
 pub fn register_routes() {

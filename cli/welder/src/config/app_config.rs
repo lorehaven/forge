@@ -1,5 +1,5 @@
-use anyhow::Context;
-use serde::{Deserialize, Serialize};
+use quench_core::Context;
+use quench_serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::LazyLock;
@@ -43,7 +43,7 @@ pub fn is_verbose() -> bool {
 }
 
 impl Config {
-    fn config_file_path() -> Result<PathBuf, anyhow::Error> {
+    fn config_file_path() -> Result<PathBuf, quench_core::error::Error> {
         let cwd = std::env::current_dir().context("Cannot determine current working directory")?;
         Ok(cwd.join(".welder").join("config.toml"))
     }
@@ -59,7 +59,7 @@ impl Config {
         }
 
         match fs::read_to_string(&config_path) {
-            Ok(content) => toml::from_str(&content).unwrap_or_else(|e| {
+            Ok(content) => quench_serde::toml::from_str(&content).unwrap_or_else(|e| {
                 eprintln!("Warning: Invalid .welder.toml: {e}. Using defaults.");
                 Self::default()
             }),

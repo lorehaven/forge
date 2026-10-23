@@ -11,13 +11,13 @@
 //! (no shared `support` module), so this file builds its own minimal
 //! `discover_and_mount` + hand-built `Request` helpers.
 
-use bytes::Bytes;
 use conveyor_service::config::ConveyorConfig;
-use http::{HeaderMap, Method, StatusCode, Uri};
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::bytes::Bytes;
 use quench_db::prelude::Db;
 use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::request::Request;
 use std::sync::Arc;
 

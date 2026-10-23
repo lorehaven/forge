@@ -17,9 +17,9 @@ impl VllmBackend {
     }
 }
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl Backend for VllmBackend {
-    fn initialize(&self) -> anyhow::Result<()> {
+    fn initialize(&self) -> quench_core::Result<()> {
         // vLLM instances are managed by ModelManager based on workflow configuration
         Ok(())
     }

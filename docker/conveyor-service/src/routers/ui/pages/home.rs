@@ -9,9 +9,9 @@ use crate::scan::{CheckKind, CheckResult, ScanSummary};
 use crate::scheduler::{projects, queue, repos};
 use quench_db::prelude::Db;
 use quench_http::prelude::{Inject, Path, Query, Response, get, http::StatusCode, post};
+use quench_serde::Deserialize;
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
-use serde::Deserialize;
 use std::collections::HashMap;
 
 /// Pulled before the per-repo cap ([`ConveyorConfig::home_max_runs_per_repo`])
@@ -188,7 +188,7 @@ pub(super) async fn run_now(
     }
 
     if let Err(error) = crate::routers::api::runs::trigger_manual(&db, &repo_id, None, None).await {
-        tracing::warn!("manual run for repo {repo_id} could not start: {error}");
+        quench_log::warn!("manual run for repo {repo_id} could not start: {error}");
     }
 
     let repositories = repos::list(&db).await.unwrap_or_default();

@@ -1,6 +1,6 @@
 use crate::support;
-use http::{Method, StatusCode};
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{Method, StatusCode};
 use support::WithCratesStorageRoot as WithStorageRoot;
 use warehouse_service::routers::crates::search::{
     self, compare_versions, find_max_version, parse_semver,
@@ -63,13 +63,13 @@ fn compare_versions_falls_back_to_lexicographic_order_for_non_semver() {
 
 #[tokio::test]
 async fn find_max_version_is_none_without_any_version_directories() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     assert_eq!(find_max_version(dir.path()).await, None);
 }
 
 #[tokio::test]
 async fn find_max_version_picks_the_highest_semver_directory() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     for version in ["1.0.0", "2.0.0", "1.5.0"] {
         std::fs::create_dir(dir.path().join(version)).unwrap();
     }
@@ -81,7 +81,7 @@ async fn find_max_version_picks_the_highest_semver_directory() {
 
 #[tokio::test]
 async fn find_max_version_ignores_files_only_directories() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     std::fs::write(dir.path().join("owners.json"), b"[]").unwrap();
     std::fs::create_dir(dir.path().join("1.0.0")).unwrap();
     assert_eq!(

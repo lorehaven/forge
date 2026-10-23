@@ -1,6 +1,6 @@
 use crate::routers::crates::{crates_storage_root, validate_crate_name};
 use quench_http::prelude::{Json, Path, Response, delete, get, http::StatusCode, put};
-use serde::{Deserialize, Serialize};
+use quench_serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// On-disk path for a crate's owners file: `<root>/<n>/owners.json`.
@@ -13,7 +13,7 @@ fn owners_path(name: &str) -> PathBuf {
 async fn load_owners(name: &str) -> Option<Vec<Owner>> {
     let path = owners_path(name);
     let data = tokio::fs::read(&path).await.ok()?;
-    serde_json::from_slice(&data).ok()
+    quench_serde::json::from_slice(&data).ok()
 }
 
 async fn save_owners(name: &str, owners: &[Owner]) -> std::io::Result<()> {
@@ -21,7 +21,7 @@ async fn save_owners(name: &str, owners: &[Owner]) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
-    let data = serde_json::to_vec_pretty(owners).map_err(std::io::Error::other)?;
+    let data = quench_serde::json::to_string_pretty(owners).into_bytes();
     tokio::fs::write(&path, data).await
 }
 
@@ -84,7 +84,7 @@ pub async fn add(Path(name): Path<String>, Json(body): Json<OwnersRequest>) -> R
     if body.users.is_empty() {
         return Response::json(
             StatusCode::BAD_REQUEST,
-            &serde_json::json!({ "errors": [{ "detail": "users list must not be empty" }] }),
+            &quench_serde::json!({ "errors": [{ "detail": "users list must not be empty" }] }),
         )
         .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR));
     }
@@ -112,7 +112,7 @@ pub async fn add(Path(name): Path<String>, Json(body): Json<OwnersRequest>) -> R
     if let Err(e) = save_owners(&name, &owners).await {
         return Response::json(
             StatusCode::INTERNAL_SERVER_ERROR,
-            &serde_json::json!({ "errors": [{ "detail": format!("failed to save owners: {e}") }] }),
+            &quench_serde::json!({ "errors": [{ "detail": format!("failed to save owners: {e}") }] }),
         )
         .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR));
     }
@@ -134,7 +134,7 @@ pub async fn remove(Path(name): Path<String>, Json(body): Json<OwnersRequest>) -
     if body.users.is_empty() {
         return Response::json(
             StatusCode::BAD_REQUEST,
-            &serde_json::json!({ "errors": [{ "detail": "users list must not be empty" }] }),
+            &quench_serde::json!({ "errors": [{ "detail": "users list must not be empty" }] }),
         )
         .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR));
     }
@@ -152,7 +152,7 @@ pub async fn remove(Path(name): Path<String>, Json(body): Json<OwnersRequest>) -
     if let Err(e) = save_owners(&name, &owners).await {
         return Response::json(
             StatusCode::INTERNAL_SERVER_ERROR,
-            &serde_json::json!({ "errors": [{ "detail": format!("failed to save owners: {e}") }] }),
+            &quench_serde::json!({ "errors": [{ "detail": format!("failed to save owners: {e}") }] }),
         )
         .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR));
     }
@@ -164,7 +164,7 @@ pub async fn remove(Path(name): Path<String>, Json(body): Json<OwnersRequest>) -
 fn not_found() -> Response {
     Response::json(
         StatusCode::NOT_FOUND,
-        &serde_json::json!({ "errors": [{ "detail": "crate not found" }] }),
+        &quench_serde::json!({ "errors": [{ "detail": "crate not found" }] }),
     )
     .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
 }

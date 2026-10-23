@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use quench_serde::{Deserialize, Serialize};
 use std::fmt;
 
 pub mod calculator;
@@ -30,7 +30,7 @@ pub struct ToolDefinition {
 pub struct ToolParameters {
     #[serde(rename = "type")]
     pub param_type: String,
-    pub properties: serde_json::Value,
+    pub properties: quench_serde::Value,
     pub required: Vec<String>,
 }
 
@@ -38,7 +38,7 @@ pub struct ToolParameters {
 pub struct ToolCall {
     pub id: String,
     pub name: String,
-    pub arguments: serde_json::Value,
+    pub arguments: quench_serde::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,29 +81,19 @@ pub fn get_tool_definitions_filtered(profile: &CapabilityProfile) -> Vec<ToolDef
         .collect()
 }
 
+#[must_use]
 pub fn get_tool_definitions_for_prompt() -> String {
     let tools = get_tool_definitions();
-    match serde_json::to_string_pretty(&tools) {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::error!("Failed to serialize tool definitions: {}", e);
-            String::new()
-        }
-    }
+    quench_serde::json::to_string_pretty(&tools)
 }
 
+#[must_use]
 pub fn get_tool_definitions_for_prompt_filtered(profile: &CapabilityProfile) -> String {
     let tools = get_tool_definitions_filtered(profile);
-    match serde_json::to_string_pretty(&tools) {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::error!("Failed to serialize tool definitions: {}", e);
-            String::new()
-        }
-    }
+    quench_serde::json::to_string_pretty(&tools)
 }
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 pub trait ToolExecutor: Send + Sync {
     async fn execute(&self, tool_call: &ToolCall) -> ToolResult;
 }
@@ -211,7 +201,7 @@ impl ToolRegistry {
                 self.user_id.as_deref(),
                 self.conversation_id.as_deref(),
             ) {
-                tracing::warn!(
+                quench_log::warn!(
                     target: "audit",
                     user_id = ?self.user_id,
                     conversation_id = ?self.conversation_id,
@@ -331,7 +321,7 @@ impl ToolRegistry {
 
                 if is_transient {
                     let backoff = retry_policy.calculate_backoff(retry_count);
-                    tracing::info!(
+                    quench_log::info!(
                         tool = %tool_call.name,
                         attempt = retry_count + 1,
                         backoff_ms = backoff.as_millis(),

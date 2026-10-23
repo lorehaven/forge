@@ -1,20 +1,24 @@
 use crate::support;
 
-use chrono::Utc;
-use http::{Method, StatusCode};
-use http_body_util::BodyExt;
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::time::Time;
 use quench_db::InMemoryDb;
 use quench_db::prelude::Db;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{Method, StatusCode};
 use warehouse_service::domain::storage::DynamicStorage;
 use warehouse_service::routers::ui::pages::files::storages::{
     SelectedView, StoragesView, render_storages_page,
 };
 
 async fn body_html(resp: quench_http::response::Response) -> String {
-    let collected = resp.into_hyper().into_body().collect().await.unwrap();
-    String::from_utf8(collected.to_bytes().to_vec()).unwrap()
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .unwrap();
+    String::from_utf8(collected.to_vec()).unwrap()
 }
 
 fn jwt_config(auth_enabled: bool) -> JwtConfig {
@@ -35,7 +39,7 @@ fn dynamic(name: &str, owner: &str) -> DynamicStorage {
         quota_bytes: 500 * 1024 * 1024 * 1024,
         used_bytes: 50 * 1024 * 1024 * 1024,
         sync_enabled: true,
-        created_at: Utc::now(),
+        created_at: Time::now(),
     }
 }
 

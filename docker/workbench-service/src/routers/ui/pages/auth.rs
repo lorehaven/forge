@@ -9,11 +9,14 @@ use quench_http::prelude::{FromRequest, HttpError, Request, Response, get, post}
 
 pub(super) struct LoginRedirect(Response);
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl FromRequest for LoginRedirect {
     async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
         let sso = req.container().get::<SsoConfig>().map_err(|e| {
-            HttpError::status(http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            HttpError::status(
+                quench_http::http::StatusCode::INTERNAL_SERVER_ERROR,
+                e.to_string(),
+            )
         })?;
         Ok(Self(login_delegation(req, &sso).await))
     }
@@ -31,11 +34,14 @@ pub(super) async fn login_slash(LoginRedirect(resp): LoginRedirect) -> Response 
 
 pub(super) struct AuthCallback(Response);
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl FromRequest for AuthCallback {
     async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
         let sso = req.container().get::<SsoConfig>().map_err(|e| {
-            HttpError::status(http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            HttpError::status(
+                quench_http::http::StatusCode::INTERNAL_SERVER_ERROR,
+                e.to_string(),
+            )
         })?;
         Ok(Self(auth_callback(req, &sso).await))
     }
@@ -48,7 +54,7 @@ pub(super) async fn callback(AuthCallback(resp): AuthCallback) -> Response {
 
 pub(super) struct Logout(Response);
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl FromRequest for Logout {
     async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
         Ok(Self(logout_delegation(req)))
@@ -62,11 +68,14 @@ pub(super) async fn logout(Logout(resp): Logout) -> Response {
 
 pub(super) struct AuthStatusResponse(Response);
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl FromRequest for AuthStatusResponse {
     async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
         let config = req.container().get::<JwtConfig>().map_err(|e| {
-            HttpError::status(http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            HttpError::status(
+                quench_http::http::StatusCode::INTERNAL_SERVER_ERROR,
+                e.to_string(),
+            )
         })?;
         Ok(Self(auth_status(req, &config).await))
     }
@@ -80,7 +89,7 @@ pub(super) async fn status(AuthStatusResponse(resp): AuthStatusResponse) -> Resp
 
 pub(super) struct Refresh(Response);
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl FromRequest for Refresh {
     async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
         Ok(Self(refresh_delegation(req).await))

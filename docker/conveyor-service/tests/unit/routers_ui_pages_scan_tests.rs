@@ -1,7 +1,7 @@
-use chrono::Utc;
 use conveyor_service::domain::{Provider, Repo, Run, Status, Trigger};
 use conveyor_service::routers::ui::pages::scan::{card, detail, overview, overview_body};
 use conveyor_service::scan::{CheckKind, CheckResult, Finding, ScanSummary};
+use quench_core::time::Time;
 
 fn repo() -> Repo {
     Repo {
@@ -14,8 +14,8 @@ fn repo() -> Repo {
         registered_by: "admin".to_string(),
         project_id: "project-1".to_string(),
         enabled: true,
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
+        created_at: Time::now(),
+        updated_at: Time::now(),
     }
 }
 
@@ -29,9 +29,9 @@ fn run() -> Run {
         message: Some("a commit".to_string()),
         delivery_id: None,
         status: Status::Success,
-        queued_at: Utc::now(),
-        started_at: Some(Utc::now()),
-        finished_at: Some(Utc::now()),
+        queued_at: Time::now(),
+        started_at: Some(Time::now()),
+        finished_at: Some(Time::now()),
         claimed_by: None,
         claimed_at: None,
         attempt: 0,

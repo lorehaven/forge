@@ -1,4 +1,3 @@
-use http_body_util::BodyExt;
 use sage_service::clients::switchboard::VllmInstance;
 use sage_service::domain::models::{Conversation, Message, Project};
 use sage_service::routers::ui::pages::home::{HomePage, conv_title_link, render_home_page};
@@ -18,7 +17,7 @@ fn instance(id: &str, task: Option<&str>) -> VllmInstance {
         enable_prefix_caching: false,
         task: task.map(str::to_string),
         device: None,
-        started_at: chrono::Utc::now(),
+        started_at: quench_core::time::Time::now(),
         status: "running".to_string(),
     }
 }
@@ -48,7 +47,7 @@ fn message(id: &str, role: &str, content: &str, conversation_id: &str) -> Messag
 }
 
 async fn render(
-    instances_res: anyhow::Result<Vec<VllmInstance>>,
+    instances_res: quench_core::Result<Vec<VllmInstance>>,
     projects: Vec<Project>,
     conversations: Vec<Conversation>,
     active_messages: Vec<(Message, Vec<Message>)>,
@@ -67,8 +66,13 @@ async fn render(
         project_id,
         sage_config: sage_config(),
     });
-    let collected = resp.into_hyper().into_body().collect().await.unwrap();
-    String::from_utf8_lossy(&collected.to_bytes()).into_owned()
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .unwrap();
+    String::from_utf8_lossy(&collected).into_owned()
 }
 
 #[test]
@@ -117,7 +121,7 @@ async fn render_home_page_disables_the_composer_without_a_chat_capable_model() {
 #[tokio::test]
 async fn render_home_page_shows_a_switchboard_unavailable_message_on_error() {
     let html = render(
-        Err(anyhow::anyhow!("connection refused")),
+        Err(quench_core::err!("connection refused")),
         Vec::new(),
         Vec::new(),
         Vec::new(),

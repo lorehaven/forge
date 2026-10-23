@@ -100,7 +100,7 @@ fn get_context_for_llm_reports_the_systems_token_count() {
         role: "user".to_string(),
         content: "hello there".to_string(),
         parent_id: None,
-        created_at: chrono::Utc::now(),
+        created_at: quench_core::time::Time::now(),
     });
 
     let (messages, usage) = get_context_for_llm(&ctx, "you are a helpful assistant");

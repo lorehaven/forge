@@ -11,7 +11,7 @@ use crate::package::{
 use crate::registry::{Registry, RemotePackage};
 use crate::render::{ResourceScope, Selector};
 use crate::repl::{WaitPolicy, create_namespace_if_missing, describe, kubectl_apply, ok, warn};
-use anyhow::{Context as _, Result, bail, ensure};
+use quench_core::{Context as _, Result, bail, ensure};
 use rivet_package::{Limits, Package};
 use std::path::{Path, PathBuf};
 
@@ -52,7 +52,7 @@ pub fn parse_package_ref(value: &str) -> Result<PackageRef> {
     if let Some(version) = version
         && version != "latest"
     {
-        semver::Version::parse(version)
+        quench_core::version::Version::parse(version)
             .with_context(|| format!("`{version}` is not a semver version (or `latest`)"))?;
     }
 
@@ -103,7 +103,7 @@ fn resolve_suffix(template: Option<&str>) -> Result<Option<String>> {
         .iter()
         .find_map(|name| std::env::var(name).ok().filter(|v| !v.trim().is_empty()));
     template
-        .map(|t| crate::package::expand_suffix(t, chrono::Utc::now(), sha.as_deref()))
+        .map(|t| crate::package::expand_suffix(t, quench_core::time::Time::now(), sha.as_deref()))
         .transpose()
 }
 
@@ -252,20 +252,20 @@ pub fn inventory_line(env: &str) -> Result<String> {
     let rendered = crate::render::render_in_memory(env, ResourceScope::All, &Selector::default())?;
     let mut items = Vec::new();
     for (_, yaml) in rendered {
-        let doc: serde_norway::Value = serde_norway::from_str(&yaml)?;
-        let text = |value: Option<&serde_norway::Value>| {
+        let doc: quench_serde::Value = quench_serde::yaml::from_str(&yaml)?;
+        let text = |value: Option<&quench_serde::Value>| {
             value
-                .and_then(serde_norway::Value::as_str)
+                .and_then(quench_serde::Value::as_str)
                 .map(str::to_string)
         };
-        items.push(serde_json::json!({
+        items.push(quench_serde::json!({
             "apiVersion": text(doc.get("apiVersion")),
             "kind": text(doc.get("kind")),
             "name": text(doc.get("metadata").and_then(|m| m.get("name"))),
             "namespace": text(doc.get("metadata").and_then(|m| m.get("namespace"))),
         }));
     }
-    Ok(serde_json::to_string(&items)?)
+    Ok(quench_serde::json::to_string(&items))
 }
 
 /// `kind/name=N` entries to a map; the kind is lower-cased so `Deployment/sage=0` works.

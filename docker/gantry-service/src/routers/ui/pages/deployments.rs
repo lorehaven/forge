@@ -6,7 +6,7 @@ use crate::routers::api::authz;
 use crate::routers::ui::common::{ActorOrRedirect, redirect};
 use quench_auth::domain::jwt::JwtConfig;
 use quench_http::prelude::{Form, Inject, Path, Response, post};
-use serde::Deserialize;
+use quench_serde::Deserialize;
 
 #[derive(Deserialize)]
 pub(super) struct StartForm {

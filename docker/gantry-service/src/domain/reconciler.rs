@@ -111,7 +111,7 @@ async fn settle(
     let status = match gantry.executor.status(&launch.name).await {
         Ok(status) => status,
         Err(error) => {
-            tracing::warn!(
+            quench_log::warn!(
                 "operation {}: runner status unavailable: {error}",
                 operation.id
             );
@@ -122,7 +122,7 @@ async fn settle(
     match status {
         JobStatus::Active => report.adopted += 1,
         JobStatus::Absent => {
-            tracing::warn!(
+            quench_log::warn!(
                 "operation {}: runner missing, starting it again",
                 operation.id
             );
@@ -158,7 +158,7 @@ async fn settle(
                     state,
                     error.as_deref(),
                     Some(&tail(&log)),
-                    Some(serde_json::json!({ "runner": launch.name })),
+                    Some(quench_serde::json!({ "runner": launch.name })),
                 )
                 .await?;
             let _ = gantry.executor.cleanup(&launch.name).await;
@@ -205,10 +205,10 @@ pub async fn run(gantry: Arc<Gantry>) {
         match tick(&gantry).await {
             Ok(report) => {
                 if report != Report::default() {
-                    tracing::debug!("reconciler: {report:?}");
+                    quench_log::debug!("reconciler: {report:?}");
                 }
             }
-            Err(error) => tracing::error!("reconciler: {error}"),
+            Err(error) => quench_log::error!("reconciler: {error}"),
         }
         tokio::select! {
             () = gantry.woken() => {}

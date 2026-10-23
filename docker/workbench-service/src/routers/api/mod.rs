@@ -1,9 +1,9 @@
 //! Workbench's HTTP API; everything sits behind the realm's `Auth`.
 
 use crate::domain::WorkbenchError;
-use async_trait::async_trait;
 use quench_auth::domain::jwt::{Claims, JwtConfig};
 use quench_auth::http::middleware::auth::Auth;
+use quench_core::async_trait;
 use quench_http::prelude::{
     Endpoint, FromRequest, HttpError, OnPathPrefix, Request, http::StatusCode, wrap,
 };

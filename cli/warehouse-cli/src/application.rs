@@ -15,7 +15,7 @@ use crate::cli::{
 use crate::config::{ConfigScope, ConfigStore, RegistrySource};
 use crate::domain::{RegistryConfig, normalize_base_path, validate_registry_name};
 use crate::ui;
-use anyhow::{Result, bail};
+use quench_core::{Result, bail};
 
 macro_rules! qprintln {
     () => {{
@@ -702,7 +702,7 @@ async fn cmd_files_upload(store: &ConfigStore, args: FilesUploadArgs) -> Result<
 
     for local_file in &args.local_files {
         let bytes = std::fs::read(local_file)
-            .map_err(|err| anyhow::anyhow!("failed to read {}: {}", local_file, err))?;
+            .map_err(|err| quench_core::err!("failed to read {}: {}", local_file, err))?;
         let remote_path = remote_path_for_upload(local_file, args.remote_dir.as_deref())?;
         api.upload(&registry, &args.storage, &remote_path, bytes)
             .await?;

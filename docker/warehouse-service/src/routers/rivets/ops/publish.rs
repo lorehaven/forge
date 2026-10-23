@@ -8,14 +8,11 @@ use crate::domain::rivet::RivetPackage;
 use crate::routers::docker::RawBody;
 use crate::routers::rivets::ops::{Actor, RivetView, disabled, error};
 use crate::routers::rivets::{package_file_path, package_staging_path, valid_name, valid_version};
-use chrono::Utc;
-use futures_util::StreamExt;
-use http_body_util::BodyExt;
+use quench_core::stream::StreamExt;
+use quench_core::time::Time;
 use quench_db::prelude::{Crud, Db};
 use quench_http::prelude::{Inject, Path, Response, http::StatusCode, put};
 use rivet_package::{Limits, Package, PackageError};
-use sha2::{Digest, Sha256};
-use sqlx::types::Json;
 use tokio::io::AsyncWriteExt;
 
 /// Moves the staged archive to its final path, refusing to replace one that is already there.
@@ -42,7 +39,7 @@ async fn link_into_place(
 }
 
 #[put("/api/v1/rivets/{name}/{version}")]
-#[tracing::instrument(skip(body))]
+#[quench_log::instrument(skip(body))]
 pub async fn handle(
     Actor(actor): Actor,
     Inject(db): Inject<Db>,
@@ -127,13 +124,7 @@ pub async fn handle(
         return response;
     }
 
-    let manifest = match serde_json::to_value(&package.manifest) {
-        Ok(value) => value,
-        Err(e) => {
-            let _ = tokio::fs::remove_file(&final_path).await;
-            return error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string());
-        }
-    };
+    let manifest = quench_serde::to_value(&package.manifest);
 
     let row = RivetPackage {
         id,
@@ -144,10 +135,10 @@ pub async fn handle(
         namespace: package.manifest.package.namespace.clone(),
         size_bytes: i64::try_from(size).unwrap_or(i64::MAX),
         sha256,
-        manifest: Json(manifest),
+        manifest,
         uploaded_by: actor,
         yanked: false,
-        created_at: Utc::now(),
+        created_at: Time::now(),
     };
 
     if let Err(e) = repo.create(&row).await {
@@ -161,7 +152,9 @@ pub async fn handle(
 
 /// Largest archive accepted, compressed. Read fresh so it is testable.
 fn max_bytes() -> u64 {
-    envmnt::get_u64("RIVET_MAX_BYTES", 64 * 1024 * 1024)
+    quench_core::env::get_or("RIVET_MAX_BYTES", "")
+        .parse()
+        .unwrap_or(64 * 1024 * 1024)
 }
 
 /// Reads and validates the staged archive on a blocking thread - zstd and tar are synchronous.
@@ -204,9 +197,9 @@ async fn stream_to_disk(
     })?;
 
     let mut size: u64 = 0;
-    let mut hasher = Sha256::new();
+    let mut hasher = quench_crypto::hash::Hasher::new(quench_crypto::hash::Algorithm::Sha256);
 
-    let mut stream = body.into_data_stream();
+    let mut stream = body.into_body();
     while let Some(chunk) = stream.next().await {
         let chunk =
             chunk.map_err(|_| error(StatusCode::BAD_REQUEST, "the upload was interrupted"))?;
@@ -235,7 +228,7 @@ async fn stream_to_disk(
         )
     })?;
 
-    Ok((size, hex::encode(hasher.finalize())))
+    Ok((size, quench_core::hex::encode(hasher.finish())))
 }
 
 pub fn register_routes() {

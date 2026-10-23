@@ -10,11 +10,11 @@
 //! `discover_and_mount` + hand-built `Request` helpers rather than reaching
 //! across binaries.
 
-use bytes::Bytes;
-use http::{HeaderMap, Method, StatusCode, Uri};
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::bytes::Bytes;
 use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::request::Request;
 use std::sync::Arc;
 
@@ -51,8 +51,8 @@ async fn root_redirects_to_login_when_there_is_no_session_and_auth_is_enabled() 
     let resp = app.call(req(Method::GET, "/ui", &container)).await;
     assert_eq!(resp.status(), StatusCode::FOUND);
     let location = resp
-        .into_hyper()
-        .headers()
+        .into_inner()
+        .headers
         .get("location")
         .expect("redirect location")
         .to_str()
@@ -71,8 +71,8 @@ async fn root_slash_redirects_home_when_auth_is_disabled() {
     let resp = app.call(req(Method::GET, "/ui/", &container)).await;
     assert_eq!(resp.status(), StatusCode::FOUND);
     let location = resp
-        .into_hyper()
-        .headers()
+        .into_inner()
+        .headers
         .get("location")
         .expect("redirect location")
         .to_str()

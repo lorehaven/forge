@@ -1,12 +1,11 @@
 //! Issues, and the transactional `seq` assignment their key display depends on.
 
 use crate::domain::db::{WorkbenchError, pool, schema};
-use chrono::{DateTime, Utc};
+use quench_core::time::Time;
+use quench_core::uuid::Uuid;
 use quench_db::prelude::Db;
-use sqlx::Row;
-use uuid::Uuid;
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, quench_serde::Serialize, quench_serde::Deserialize)]
 pub struct Issue {
     pub id: String,
     pub project_id: String,
@@ -21,8 +20,8 @@ pub struct Issue {
     pub reporter: String,
     /// Story points; nullable since not every issue is sized yet.
     pub estimate: Option<i32>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: Time,
+    pub updated_at: Time,
 }
 
 /// The fixed v1 workflow (no per-project config yet). `blocked`/`rejected`
@@ -57,21 +56,22 @@ pub async fn create(db: &Db, new: &NewIssue) -> Result<Issue, WorkbenchError> {
     let schema = schema();
     let id = Uuid::new_v4().to_string();
 
-    let mut tx = pool.begin().await?;
+    let mut conn = pool.get().await?;
+    let mut tx = conn.begin().await?;
 
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
-        .bind(&new.project_id)
-        .execute(&mut *tx)
-        .await?;
+    tx.execute(
+        "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+        &[&new.project_id],
+    )
+    .await?;
 
     let seq_sql = format!(
         "SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM {schema}.issues WHERE project_id = $1"
     );
-    let seq: i32 = sqlx::query(sqlx::AssertSqlSafe(seq_sql.as_str()))
-        .bind(&new.project_id)
-        .fetch_one(&mut *tx)
+    let seq: i32 = tx
+        .query_one(&seq_sql, &[&new.project_id])
         .await?
-        .try_get("next_seq")?;
+        .get("next_seq")?;
 
     let insert_sql = format!(
         "INSERT INTO {schema}.issues \
@@ -79,23 +79,28 @@ pub async fn create(db: &Db, new: &NewIssue) -> Result<Issue, WorkbenchError> {
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) \
          RETURNING {COLUMNS}"
     );
-    let row = sqlx::query(sqlx::AssertSqlSafe(insert_sql.as_str()))
-        .bind(&id)
-        .bind(&new.project_id)
-        .bind(&new.parent_id)
-        .bind(seq)
-        .bind(&new.kind)
-        .bind(&new.title)
-        .bind(&new.description)
-        .bind(&new.priority)
-        .bind(&new.assignee)
-        .bind(&new.reporter)
-        .bind(new.estimate)
-        .fetch_one(&mut *tx)
+    let row = tx
+        .query_one(
+            &insert_sql,
+            &[
+                &id,
+                &new.project_id,
+                &new.parent_id,
+                &seq,
+                &new.kind,
+                &new.title,
+                &new.description,
+                &new.priority,
+                &new.assignee,
+                &new.reporter,
+                &new.estimate,
+            ],
+        )
         .await?;
 
     let issue = from_row(&row)?;
     tx.commit().await?;
+    drop(conn);
 
     Ok(issue)
 }
@@ -105,10 +110,7 @@ pub async fn read(db: &Db, id: &str) -> Result<Option<Issue>, WorkbenchError> {
     let schema = schema();
     let sql = format!("SELECT {COLUMNS} FROM {schema}.issues WHERE id = $1");
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(id)
-        .fetch_optional(pool)
-        .await?;
+    let row = pool.query_opt(&sql, &[&id]).await?;
 
     row.as_ref().map(from_row).transpose()
 }
@@ -122,11 +124,7 @@ pub async fn read_by_seq(
     let schema = schema();
     let sql = format!("SELECT {COLUMNS} FROM {schema}.issues WHERE project_id = $1 AND seq = $2");
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(project_id)
-        .bind(seq)
-        .fetch_optional(pool)
-        .await?;
+    let row = pool.query_opt(&sql, &[&project_id, &seq]).await?;
 
     row.as_ref().map(from_row).transpose()
 }
@@ -145,18 +143,11 @@ pub async fn list_by_project(
             "SELECT {COLUMNS} FROM {schema}.issues \
              WHERE project_id = $1 AND status = $2 ORDER BY seq"
         );
-        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-            .bind(project_id)
-            .bind(status)
-            .fetch_all(pool)
-            .await?
+        pool.query(&sql, &[&project_id, &status]).await?
     } else {
         let sql =
             format!("SELECT {COLUMNS} FROM {schema}.issues WHERE project_id = $1 ORDER BY seq");
-        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-            .bind(project_id)
-            .fetch_all(pool)
-            .await?
+        pool.query(&sql, &[&project_id]).await?
     };
 
     rows.iter().map(from_row).collect()
@@ -185,15 +176,19 @@ pub async fn update(
          WHERE id = $1 RETURNING {COLUMNS}"
     );
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(id)
-        .bind(&changes.title)
-        .bind(&changes.description)
-        .bind(&changes.kind)
-        .bind(&changes.priority)
-        .bind(&changes.assignee)
-        .bind(changes.estimate)
-        .fetch_optional(pool)
+    let row = pool
+        .query_opt(
+            &sql,
+            &[
+                &id,
+                &changes.title,
+                &changes.description,
+                &changes.kind,
+                &changes.priority,
+                &changes.assignee,
+                &changes.estimate,
+            ],
+        )
         .await?;
 
     row.as_ref().map(from_row).transpose()
@@ -213,11 +208,7 @@ pub async fn transition(db: &Db, id: &str, status: &str) -> Result<Option<Issue>
          WHERE id = $1 RETURNING {COLUMNS}"
     );
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(id)
-        .bind(status)
-        .fetch_optional(pool)
-        .await?;
+    let row = pool.query_opt(&sql, &[&id, &status]).await?;
 
     row.as_ref().map(from_row).transpose()
 }
@@ -227,32 +218,29 @@ pub async fn delete(db: &Db, id: &str) -> Result<bool, WorkbenchError> {
     let schema = schema();
     let sql = format!("DELETE FROM {schema}.issues WHERE id = $1");
 
-    let result = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(id)
-        .execute(pool)
-        .await?;
+    let result = pool.execute(&sql, &[&id]).await?;
 
-    Ok(result.rows_affected() > 0)
+    Ok(result > 0)
 }
 
 const COLUMNS: &str = "id, project_id, parent_id, seq, kind, title, description, \
                        status, priority, assignee, reporter, estimate, created_at, updated_at";
 
-fn from_row(row: &sqlx::postgres::PgRow) -> Result<Issue, WorkbenchError> {
+fn from_row(row: &quench_pg::Row) -> Result<Issue, WorkbenchError> {
     Ok(Issue {
-        id: row.try_get("id")?,
-        project_id: row.try_get("project_id")?,
-        parent_id: row.try_get("parent_id")?,
-        seq: row.try_get("seq")?,
-        kind: row.try_get("kind")?,
-        title: row.try_get("title")?,
-        description: row.try_get("description")?,
-        status: row.try_get("status")?,
-        priority: row.try_get("priority")?,
-        assignee: row.try_get("assignee")?,
-        reporter: row.try_get("reporter")?,
-        estimate: row.try_get("estimate")?,
-        created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
-        updated_at: row.try_get::<DateTime<Utc>, _>("updated_at")?,
+        id: row.get("id")?,
+        project_id: row.get("project_id")?,
+        parent_id: row.get("parent_id")?,
+        seq: row.get("seq")?,
+        kind: row.get("kind")?,
+        title: row.get("title")?,
+        description: row.get("description")?,
+        status: row.get("status")?,
+        priority: row.get("priority")?,
+        assignee: row.get("assignee")?,
+        reporter: row.get("reporter")?,
+        estimate: row.get("estimate")?,
+        created_at: row.get::<Time, _>("created_at")?,
+        updated_at: row.get::<Time, _>("updated_at")?,
     })
 }

@@ -28,7 +28,7 @@ const DYNAMIC_PAGE_SIZE: i64 = 2000;
 
 // --- Query ---
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, quench_serde::Deserialize)]
 pub struct BrowseQuery {
     pub storage: Option<String>,
     #[serde(default)]

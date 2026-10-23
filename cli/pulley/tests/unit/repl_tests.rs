@@ -134,8 +134,8 @@ fn handle_command_reload_does_not_panic_regardless_of_real_config_state() {
 
 #[test]
 fn run_jobs_with_no_confirm_syncs_without_prompting() {
-    let src = tempfile::tempdir().unwrap();
-    let dest = tempfile::tempdir().unwrap();
+    let src = quench_core::tmp::TempDir::new().unwrap();
+    let dest = quench_core::tmp::TempDir::new().unwrap();
     std::fs::write(src.path().join("a.txt"), "hello").unwrap();
 
     let job = job_with_dirs("sync-me", src.path(), dest.path());
@@ -150,8 +150,8 @@ fn run_jobs_with_no_confirm_syncs_without_prompting() {
 
 #[test]
 fn run_jobs_with_nothing_to_sync_reports_no_changes_without_erroring() {
-    let src = tempfile::tempdir().unwrap();
-    let dest = tempfile::tempdir().unwrap();
+    let src = quench_core::tmp::TempDir::new().unwrap();
+    let dest = quench_core::tmp::TempDir::new().unwrap();
     let job = job_with_dirs("nothing-to-do", src.path(), dest.path());
     let repl = repl_with(vec![job]);
 

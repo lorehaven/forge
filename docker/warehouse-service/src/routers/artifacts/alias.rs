@@ -13,13 +13,14 @@ use crate::routers::artifacts::ops::{
 };
 use crate::routers::artifacts::validate_program;
 use crate::routers::docker::RawBody;
-use async_trait::async_trait;
 use quench_auth::domain::jwt::Claims;
+use quench_core::async_trait;
 use quench_db::prelude::{Crud, Db};
 use quench_http::prelude::{
     Endpoint, Inject, Middleware, Path, Query, Request, Response, delete, get, http::StatusCode,
     put,
 };
+use std::collections::HashMap;
 
 const ANDROID: &str = "android";
 
@@ -34,7 +35,7 @@ pub fn alias_enabled() -> bool {
 /// `Wed, 31 Dec 2026 00:00:00 GMT`); `None` while no removal date is scheduled.
 #[must_use]
 pub fn alias_sunset() -> Option<String> {
-    let value = envmnt::get_or("APK_ALIAS_SUNSET", "");
+    let value = quench_core::env::get_or("APK_ALIAS_SUNSET", "");
     let value = value.trim();
     (!value.is_empty()).then(|| value.to_string())
 }
@@ -67,13 +68,13 @@ impl Middleware for Deprecation {
         let path = req.uri().path().to_string();
 
         if !alias_enabled() {
-            tracing::warn!(
+            quench_log::warn!(
                 %method, %path, %subject, %user_agent,
                 "deprecated /api/v1/apk call refused: alias is switched off"
             );
             return Response::json(
                 StatusCode::GONE,
-                &serde_json::json!({
+                &quench_serde::json!({
                     "errors": [{
                         "detail": format!("/api/v1/apk has been removed; use {}", self.successor)
                     }]
@@ -82,7 +83,7 @@ impl Middleware for Deprecation {
             .unwrap_or_else(|_| Response::new(StatusCode::GONE));
         }
 
-        tracing::warn!(
+        quench_log::warn!(
             %method, %path, %subject, %user_agent,
             "deprecated /api/v1/apk call - migrate to {}", self.successor
         );
@@ -99,7 +100,7 @@ impl Middleware for Deprecation {
 }
 
 #[put("/api/v1/apk/{package}/{version_code}")]
-#[tracing::instrument(skip(body))]
+#[quench_log::instrument(skip(body))]
 pub async fn publish(
     Actor(actor): Actor,
     Inject(db): Inject<Db>,
@@ -120,7 +121,7 @@ pub async fn publish(
 }
 
 #[get("/api/v1/apk/{package}/{version_code}")]
-#[tracing::instrument]
+#[quench_log::instrument]
 pub async fn metadata(
     Inject(db): Inject<Db>,
     Path((program, version_code_raw)): Path<(String, String)>,
@@ -148,7 +149,7 @@ pub async fn metadata(
 }
 
 #[get("/api/v1/apk/{package}/{version_code}/download")]
-#[tracing::instrument]
+#[quench_log::instrument]
 pub async fn download(
     Inject(db): Inject<Db>,
     Path((program, version_code_raw)): Path<(String, String)>,
@@ -176,7 +177,7 @@ pub async fn download(
 }
 
 #[get("/api/v1/apk/{package}")]
-#[tracing::instrument]
+#[quench_log::instrument]
 pub async fn versions(Inject(db): Inject<Db>, Path(program): Path<String>) -> Response {
     if !crate::routers::artifacts_enabled() {
         return disabled();
@@ -193,7 +194,7 @@ pub async fn versions(Inject(db): Inject<Db>, Path(program): Path<String>) -> Re
 }
 
 #[get("/api/v1/apk")]
-#[tracing::instrument]
+#[quench_log::instrument]
 pub async fn catalog(Inject(db): Inject<Db>) -> Response {
     if !crate::routers::artifacts_enabled() {
         return disabled();
@@ -203,7 +204,6 @@ pub async fn catalog(Inject(db): Inject<Db>) -> Response {
         Err(e) => return error(StatusCode::INTERNAL_SERVER_ERROR, &e.to_string()),
     };
 
-    use std::collections::HashMap;
     let mut by_program: HashMap<&str, Vec<&ArtifactVersion>> = HashMap::new();
     for version in &all {
         if version.platform != ANDROID {
@@ -228,7 +228,7 @@ pub async fn catalog(Inject(db): Inject<Db>) -> Response {
 }
 
 #[delete("/api/v1/apk/{package}/{version_code}/yank")]
-#[tracing::instrument]
+#[quench_log::instrument]
 pub async fn yank(
     Inject(db): Inject<Db>,
     Path((program, version_code)): Path<(String, i64)>,
@@ -240,7 +240,7 @@ pub async fn yank(
 }
 
 #[put("/api/v1/apk/{package}/{version_code}/unyank")]
-#[tracing::instrument]
+#[quench_log::instrument]
 pub async fn unyank(
     Inject(db): Inject<Db>,
     Path((program, version_code)): Path<(String, i64)>,

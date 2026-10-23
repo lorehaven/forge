@@ -1,7 +1,7 @@
 pub use common::assets;
 use quench_http::prelude::{Response, get, http::StatusCode};
+use quench_serde::Deserialize;
 use quench_starter::common::routes::with_base_path;
-use serde::Deserialize;
 
 pub mod authz;
 pub mod common;

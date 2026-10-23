@@ -1,6 +1,7 @@
 #![cfg_attr(test, deny(rust_2018_idioms))]
 
 pub mod against;
+pub mod bridge;
 pub mod cli;
 pub mod config;
 pub mod env;

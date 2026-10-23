@@ -5,8 +5,6 @@ use crate::api::auth::{issue_token_pair, refresh_session};
 use crate::realm::{self as gh_realm, AuthOutcome};
 use crate::ui::common::{UiPageKind, render_page, ui_path};
 use crate::ui::locale::{LocaleCookie, default_locale_cookie};
-use async_trait::async_trait;
-use http::StatusCode;
 use quench_auth::domain::jwt::JwtConfig;
 use quench_auth::domain::realm;
 use quench_auth::domain::session::SessionDb;
@@ -14,12 +12,14 @@ use quench_auth::http::domain::cookies::cookie_value;
 use quench_auth::http::routers::ui::pages::auth::{
     LoginQuery, auth_status, redirect_target, validated_redirect,
 };
+use quench_core::async_trait;
 use quench_db::prelude::Db;
+use quench_http::http::StatusCode;
 use quench_http::prelude::{
     Form, FromRequest, HttpError, Inject, Query, Request, Response, get, post,
 };
+use quench_serde::Deserialize;
 use quench_web::prelude::*;
-use serde::Deserialize;
 use std::fmt::Write as _;
 
 #[derive(Debug, Deserialize)]
@@ -134,12 +134,12 @@ pub async fn login_submit(
     Inject(db): Inject<Db>,
     Inject(session_db): Inject<SessionDb>,
 ) -> Response {
-    tracing::info!("login attempt for {}", form.username);
+    quench_log::info!("login attempt for {}", form.username);
 
     let outcome = match gh_realm::authenticate(&db, &form.username, &form.password).await {
         Ok(outcome) => outcome,
         Err(err) => {
-            tracing::error!("failed to authenticate {}: {:?}", form.username, err);
+            quench_log::error!("failed to authenticate {}: {:?}", form.username, err);
             return Response::new(StatusCode::FOUND).header("Location", ui_path("/login?err=1"));
         }
     };
@@ -153,28 +153,28 @@ pub async fn login_submit(
             );
         }
         AuthOutcome::Disabled => {
-            tracing::warn!("login attempt for disabled account {}", form.username);
+            quench_log::warn!("login attempt for disabled account {}", form.username);
             return Response::new(StatusCode::FOUND)
                 .header("Location", ui_path("/login?err=ui_login_account_disabled"));
         }
         AuthOutcome::Locked => {
-            tracing::warn!("login attempt for locked account {}", form.username);
+            quench_log::warn!("login attempt for locked account {}", form.username);
             return Response::new(StatusCode::FOUND)
                 .header("Location", ui_path("/login?err=ui_login_account_locked"));
         }
         AuthOutcome::EmailUnverified => {
-            tracing::warn!("login attempt for unverified account {}", form.username);
+            quench_log::warn!("login attempt for unverified account {}", form.username);
             return Response::new(StatusCode::FOUND)
                 .header("Location", ui_path("/login?err=ui_login_email_unverified"));
         }
         AuthOutcome::NotFound | AuthOutcome::WrongPassword => {
-            tracing::warn!("invalid credentials for {}", form.username);
+            quench_log::warn!("invalid credentials for {}", form.username);
             return Response::new(StatusCode::FOUND).header("Location", ui_path("/login?err=1"));
         }
     };
 
     let Ok(tokens) = issue_token_pair(&config, &session_db, &user).await else {
-        tracing::error!("failed to issue tokens for {}", user.username);
+        quench_log::error!("failed to issue tokens for {}", user.username);
         return Response::new(StatusCode::FOUND).header("Location", ui_path("/login?err=1"));
     };
 
@@ -239,7 +239,7 @@ pub async fn login_mfa_submit(
     let outcome = match gh_realm::authenticate_mfa(&db, &form.pending, &form.code).await {
         Ok(outcome) => outcome,
         Err(err) => {
-            tracing::error!("failed to verify an MFA code: {:?}", err);
+            quench_log::error!("failed to verify an MFA code: {:?}", err);
             return Response::new(StatusCode::FOUND).header("Location", ui_path("/login?err=1"));
         }
     };
@@ -267,7 +267,7 @@ pub async fn login_mfa_submit(
     };
 
     let Ok(tokens) = issue_token_pair(&config, &session_db, &user).await else {
-        tracing::error!("failed to issue tokens for {}", user.username);
+        quench_log::error!("failed to issue tokens for {}", user.username);
         return Response::new(StatusCode::FOUND).header("Location", ui_path("/login?err=1"));
     };
 
@@ -298,10 +298,14 @@ pub fn mfa_challenge_url(pending: &str, redirect: Option<&str>, err: bool) -> St
     let mut url = format!(
         "{}?pending={}",
         ui_path("/login/mfa"),
-        urlencoding::encode(pending)
+        quench_serde::urlencoded::percent_encode(pending)
     );
     if let Some(target) = redirect.filter(|value| !value.is_empty()) {
-        let _ = write!(url, "&redirect={}", urlencoding::encode(target));
+        let _ = write!(
+            url,
+            "&redirect={}",
+            quench_serde::urlencoded::percent_encode(target)
+        );
     }
     if err {
         url.push_str("&err=1");
@@ -341,7 +345,7 @@ impl FromRequest for RefreshResponse {
         };
         let body = Response::json(
             StatusCode::OK,
-            &serde_json::json!({ "authenticated": true }),
+            &quench_serde::json!({ "authenticated": true }),
         )
         .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR));
         Ok(Self(
@@ -383,7 +387,7 @@ impl FromRequest for LogoutContext {
 pub async fn logout(ctx: LogoutContext, Inject(session_db): Inject<SessionDb>) -> Response {
     if let Some(refresh_token) = ctx.refresh_cookie {
         let revoked = session_db.revoke_by_refresh_token(&refresh_token).await;
-        tracing::debug!("logout revoke result: {revoked:?}");
+        quench_log::debug!("logout revoke result: {revoked:?}");
     }
 
     let target = ctx.redirect.unwrap_or_else(|| ui_path("/login"));

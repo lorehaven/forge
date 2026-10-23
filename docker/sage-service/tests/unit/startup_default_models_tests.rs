@@ -42,7 +42,7 @@ fn instance(model: &str, status: &str) -> VllmInstance {
         enable_prefix_caching: false,
         task: None,
         device: None,
-        started_at: chrono::Utc::now(),
+        started_at: quench_core::time::Time::now(),
         status: status.to_string(),
     }
 }
@@ -120,8 +120,8 @@ fn nothing_to_launch_when_all_models_are_running() {
 // monitor_default_models / request_model_launch / shutdown
 // ---------------------------------------------------------------------
 
-fn instance_json(id: &str, model: &str, status: &str) -> serde_json::Value {
-    serde_json::json!({
+fn instance_json(id: &str, model: &str, status: &str) -> quench_serde::Value {
+    quench_serde::json!({
         "id": id,
         "namespace": "ns",
         "model": model,
@@ -132,7 +132,7 @@ fn instance_json(id: &str, model: &str, status: &str) -> serde_json::Value {
         "gpu_memory_utilization": null,
         "enable_prefix_caching": false,
         "task": null,
-        "started_at": chrono::Utc::now().to_rfc3339(),
+        "started_at": quench_core::time::Time::now().to_rfc3339(),
         "status": status
     })
 }
@@ -149,15 +149,20 @@ async fn switchboard() -> (
     let server: &'static MockServer = Box::leak(Box::new(MockServer::start().await));
     Mock::given(method("POST"))
         .and(path("/api/v1/token"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "access_token": "test-token",
-            "expires_in": 3600
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!({
+                    "access_token": "test-token",
+                    "expires_in": 3600
+                })),
+            ),
+            "application/json",
+        ))
         .mount(server)
         .await;
-    envmnt::set("SWITCHBOARD_URL", server.uri());
-    envmnt::set("GATEHOUSE_URL", server.uri());
-    envmnt::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
+    quench_core::env::set("SWITCHBOARD_URL", server.uri());
+    quench_core::env::set("GATEHOUSE_URL", server.uri());
+    quench_core::env::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
     (
         sage_service::clients::switchboard::SwitchboardClient::new(),
         server,
@@ -172,9 +177,9 @@ async fn monitor_default_models_returns_early_when_switchboard_is_unreachable() 
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     // Nothing is listening on this address - the request fails outright,
     // with no token mock or retry delay needed.
-    envmnt::set("SWITCHBOARD_URL", "http://127.0.0.1:1");
-    envmnt::set("GATEHOUSE_URL", "http://127.0.0.1:1");
-    envmnt::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
+    quench_core::env::set("SWITCHBOARD_URL", "http://127.0.0.1:1");
+    quench_core::env::set("GATEHOUSE_URL", "http://127.0.0.1:1");
+    quench_core::env::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
     let sb = sage_service::clients::switchboard::SwitchboardClient::new();
     let cfg = test_config(&["chat"]);
     let mut attempts = HashMap::new();
@@ -193,14 +198,18 @@ async fn monitor_default_models_launches_the_next_missing_model() {
     let (sb, server) = switchboard().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/vllm/instances"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(quench_serde::json!([]))),
+            "application/json",
+        ))
         .mount(server)
         .await;
     Mock::given(method("POST"))
         .and(path("/api/v1/vllm/instances"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(instance_json("new-inst", "chat", "starting")),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(instance_json("new-inst", "chat", "starting"))),
+            "application/json",
+        ))
         .mount(server)
         .await;
 
@@ -221,10 +230,12 @@ async fn monitor_default_models_clears_attempts_once_a_model_is_running() {
     let (sb, server) = switchboard().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/vllm/instances"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_json(serde_json::json!([instance_json("i1", "chat", "running")])),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!([instance_json("i1", "chat", "running")])),
+            ),
+            "application/json",
+        ))
         .mount(server)
         .await;
 
@@ -246,11 +257,10 @@ async fn request_model_launch_records_the_launched_instance() {
     let (sb, server) = switchboard().await;
     Mock::given(method("POST"))
         .and(path("/api/v1/vllm/instances"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(instance_json(
-            "launched-1",
-            "chat",
-            "starting",
-        )))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(instance_json("launched-1", "chat", "starting"))),
+            "application/json",
+        ))
         .mount(server)
         .await;
 
@@ -286,9 +296,9 @@ async fn shutdown_is_a_no_op_when_stop_models_on_shutdown_is_disabled() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     // No mocks registered at all - a real request here would fail the test.
-    envmnt::set("SWITCHBOARD_URL", "http://127.0.0.1:1");
-    envmnt::set("GATEHOUSE_URL", "http://127.0.0.1:1");
-    envmnt::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
+    quench_core::env::set("SWITCHBOARD_URL", "http://127.0.0.1:1");
+    quench_core::env::set("GATEHOUSE_URL", "http://127.0.0.1:1");
+    quench_core::env::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
     let sb = sage_service::clients::switchboard::SwitchboardClient::new();
     let mut cfg = test_config(&["chat"]);
     cfg.stop_models_on_shutdown = false;
@@ -303,9 +313,9 @@ async fn shutdown_returns_early_when_switchboard_is_unreachable() {
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::set("SWITCHBOARD_URL", "http://127.0.0.1:1");
-    envmnt::set("GATEHOUSE_URL", "http://127.0.0.1:1");
-    envmnt::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
+    quench_core::env::set("SWITCHBOARD_URL", "http://127.0.0.1:1");
+    quench_core::env::set("GATEHOUSE_URL", "http://127.0.0.1:1");
+    quench_core::env::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
     let sb = sage_service::clients::switchboard::SwitchboardClient::new();
     let mut cfg = test_config(&["chat"]);
     cfg.stop_models_on_shutdown = true;
@@ -323,9 +333,10 @@ async fn shutdown_stops_an_instance_this_process_launched() {
     let (sb, server) = switchboard().await;
     Mock::given(method("POST"))
         .and(path("/api/v1/vllm/instances"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(instance_json("mine-1", "chat", "starting")),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(instance_json("mine-1", "chat", "starting"))),
+            "application/json",
+        ))
         .mount(server)
         .await;
 
@@ -335,11 +346,12 @@ async fn shutdown_stops_an_instance_this_process_launched() {
 
     Mock::given(method("GET"))
         .and(path("/api/v1/vllm/instances"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(serde_json::json!([instance_json(
-                "mine-1", "chat", "running"
-            )])),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!([instance_json("mine-1", "chat", "running")])),
+            ),
+            "application/json",
+        ))
         .mount(server)
         .await;
     Mock::given(method("DELETE"))
@@ -369,11 +381,12 @@ async fn shutdown_does_not_stop_an_instance_it_never_launched() {
 
     Mock::given(method("GET"))
         .and(path("/api/v1/vllm/instances"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(serde_json::json!([instance_json(
-                "not-mine", "chat", "running"
-            )])),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!([instance_json("not-mine", "chat", "running")])),
+            ),
+            "application/json",
+        ))
         .mount(server)
         .await;
 

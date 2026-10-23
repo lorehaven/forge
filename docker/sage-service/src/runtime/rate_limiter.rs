@@ -1,7 +1,10 @@
-use dashmap::DashMap;
-use std::collections::VecDeque;
-use std::sync::Arc;
+use std::collections::{HashMap, VecDeque};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 #[derive(Debug, Clone)]
 pub struct RateLimitConfig {
@@ -24,9 +27,9 @@ pub struct RateLimiter {
     // Profile -> Config
     configs: std::collections::HashMap<String, RateLimitConfig>,
     // User ID -> VecDeque of call timestamps
-    user_calls: Arc<DashMap<String, VecDeque<Instant>>>,
+    user_calls: Mutex<HashMap<String, VecDeque<Instant>>>,
     // Conversation ID -> VecDeque of call timestamps
-    conversation_calls: Arc<DashMap<String, VecDeque<Instant>>>,
+    conversation_calls: Mutex<HashMap<String, VecDeque<Instant>>>,
 }
 
 impl RateLimiter {
@@ -50,8 +53,8 @@ impl RateLimiter {
 
         Self {
             configs,
-            user_calls: Arc::new(DashMap::new()),
-            conversation_calls: Arc::new(DashMap::new()),
+            user_calls: Mutex::new(HashMap::new()),
+            conversation_calls: Mutex::new(HashMap::new()),
         }
     }
 
@@ -72,7 +75,8 @@ impl RateLimiter {
 
         // Check user rate limit
         if let Some(user_id) = user_id {
-            let mut calls = self.user_calls.entry(user_id.to_string()).or_default();
+            let mut guard = lock(&self.user_calls);
+            let calls = guard.entry(user_id.to_string()).or_default();
 
             // Remove old calls outside the 1-minute window
             while let Some(&call_time) = calls.front() {
@@ -92,14 +96,13 @@ impl RateLimiter {
             }
 
             calls.push_back(now);
+            drop(guard);
         }
 
         // Check conversation rate limit (burst protection)
         if let Some(conversation_id) = conversation_id {
-            let mut calls = self
-                .conversation_calls
-                .entry(conversation_id.to_string())
-                .or_default();
+            let mut guard = lock(&self.conversation_calls);
+            let calls = guard.entry(conversation_id.to_string()).or_default();
 
             // Remove old calls
             while let Some(&call_time) = calls.front() {
@@ -119,6 +122,7 @@ impl RateLimiter {
             }
 
             calls.push_back(now);
+            drop(guard);
         }
 
         Ok(())
@@ -134,16 +138,16 @@ impl RateLimiter {
     }
 
     pub fn reset_user(&self, user_id: &str) {
-        self.user_calls.remove(user_id);
+        lock(&self.user_calls).remove(user_id);
     }
 
     pub fn reset_conversation(&self, conversation_id: &str) {
-        self.conversation_calls.remove(conversation_id);
+        lock(&self.conversation_calls).remove(conversation_id);
     }
 
     pub fn reset_all(&self) {
-        self.user_calls.clear();
-        self.conversation_calls.clear();
+        lock(&self.user_calls).clear();
+        lock(&self.conversation_calls).clear();
     }
 
     #[must_use]
@@ -154,7 +158,9 @@ impl RateLimiter {
             .cloned()
             .unwrap_or_else(|| RateLimitConfig::new(60, 15));
 
-        let calls = self.user_calls.get(user_id).map_or(0, |c| c.len() as u64);
+        let calls = lock(&self.user_calls)
+            .get(user_id)
+            .map_or(0, |c| c.len() as u64);
 
         config.calls_per_minute.saturating_sub(calls)
     }
@@ -167,8 +173,7 @@ impl RateLimiter {
             .cloned()
             .unwrap_or_else(|| RateLimitConfig::new(60, 15));
 
-        let calls = self
-            .conversation_calls
+        let calls = lock(&self.conversation_calls)
             .get(conversation_id)
             .map_or(0, |c| c.len() as u64);
 

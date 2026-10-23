@@ -1,5 +1,4 @@
-use base64::Engine as _;
-use reqwest::blocking::Client;
+use quench_client::blocking::Client;
 use riveter::image_updates::{
     ImageOccurrence, ImageRef, RegistryAuth, RegistryCredentials, ScanMessage, UpdateCandidate,
     apply_updates, discover_images, docker_config_credentials, encode_repository_path,
@@ -255,10 +254,10 @@ fn registry_auth_from_sources_cli_flag_overrides_env() {
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::set("DOCKER_CONFIG", "/does/not/exist");
-    envmnt::remove("RIVETER_REGISTRY_AUTH");
-    envmnt::set("RIVETER_REGISTRY_USERNAME", "env-user");
-    envmnt::set("RIVETER_REGISTRY_PASSWORD", "env-pass");
+    quench_core::env::set("DOCKER_CONFIG", "/does/not/exist");
+    quench_core::env::remove("RIVETER_REGISTRY_AUTH");
+    quench_core::env::set("RIVETER_REGISTRY_USERNAME", "env-user");
+    quench_core::env::set("RIVETER_REGISTRY_PASSWORD", "env-pass");
 
     let auth = RegistryAuth::from_sources(&["myregistry.example=cli-user:cli-pass".to_string()]);
 
@@ -285,9 +284,9 @@ fn registry_auth_from_sources_cli_flag_overrides_env() {
         )
     );
 
-    envmnt::remove("DOCKER_CONFIG");
-    envmnt::remove("RIVETER_REGISTRY_USERNAME");
-    envmnt::remove("RIVETER_REGISTRY_PASSWORD");
+    quench_core::env::remove("DOCKER_CONFIG");
+    quench_core::env::remove("RIVETER_REGISTRY_USERNAME");
+    quench_core::env::remove("RIVETER_REGISTRY_PASSWORD");
 }
 
 #[test]
@@ -295,10 +294,10 @@ fn registry_auth_from_sources_reads_the_registry_auth_env_var() {
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::set("DOCKER_CONFIG", "/does/not/exist");
-    envmnt::remove("RIVETER_REGISTRY_USERNAME");
-    envmnt::remove("RIVETER_REGISTRY_PASSWORD");
-    envmnt::set(
+    quench_core::env::set("DOCKER_CONFIG", "/does/not/exist");
+    quench_core::env::remove("RIVETER_REGISTRY_USERNAME");
+    quench_core::env::remove("RIVETER_REGISTRY_PASSWORD");
+    quench_core::env::set(
         "RIVETER_REGISTRY_AUTH",
         "registry.example=env-user:env-pass;other.example=o:p",
     );
@@ -318,8 +317,8 @@ fn registry_auth_from_sources_reads_the_registry_auth_env_var() {
     assert!(auth.basic_header("other.example").is_some());
     assert!(auth.basic_header("unrelated.example").is_none());
 
-    envmnt::remove("DOCKER_CONFIG");
-    envmnt::remove("RIVETER_REGISTRY_AUTH");
+    quench_core::env::remove("DOCKER_CONFIG");
+    quench_core::env::remove("RIVETER_REGISTRY_AUTH");
 }
 
 #[test]
@@ -344,7 +343,7 @@ fn docker_config_credentials_reads_plaintext_username_and_password() {
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     // Plain "docker.io" (not the "https://index.docker.io/v1" form) -
     // see `normalize_registry_key_maps_docker_hub_aliases_to_the_canonical_host`
     // for why the longer form doesn't actually normalize.
@@ -353,7 +352,7 @@ fn docker_config_credentials_reads_plaintext_username_and_password() {
         r#"{"auths": {"docker.io": {"username": "alice", "password": "secret"}}}"#,
     )
     .unwrap();
-    envmnt::set("DOCKER_CONFIG", dir.path().to_str().unwrap());
+    quench_core::env::set("DOCKER_CONFIG", dir.path().to_str().unwrap());
 
     let creds = docker_config_credentials();
     assert_eq!(
@@ -363,7 +362,7 @@ fn docker_config_credentials_reads_plaintext_username_and_password() {
         Some("alice")
     );
 
-    envmnt::remove("DOCKER_CONFIG");
+    quench_core::env::remove("DOCKER_CONFIG");
 }
 
 #[test]
@@ -371,14 +370,14 @@ fn docker_config_credentials_decodes_base64_auth_field() {
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let dir = tempfile::tempdir().unwrap();
-    let encoded = base64::engine::general_purpose::STANDARD.encode("bob:hunter2");
+    let dir = quench_core::tmp::TempDir::new().unwrap();
+    let encoded = quench_core::base64::STANDARD.encode("bob:hunter2");
     std::fs::write(
         dir.path().join("config.json"),
         format!(r#"{{"auths": {{"ennor.ddns.net": {{"auth": "{encoded}"}}}}}}"#),
     )
     .unwrap();
-    envmnt::set("DOCKER_CONFIG", dir.path().to_str().unwrap());
+    quench_core::env::set("DOCKER_CONFIG", dir.path().to_str().unwrap());
 
     let creds = docker_config_credentials();
     assert_eq!(
@@ -386,7 +385,7 @@ fn docker_config_credentials_decodes_base64_auth_field() {
         Some("bob")
     );
 
-    envmnt::remove("DOCKER_CONFIG");
+    quench_core::env::remove("DOCKER_CONFIG");
 }
 
 #[test]
@@ -394,9 +393,9 @@ fn docker_config_credentials_is_empty_when_the_file_is_missing() {
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::set("DOCKER_CONFIG", "/definitely/does/not/exist");
+    quench_core::env::set("DOCKER_CONFIG", "/definitely/does/not/exist");
     assert!(docker_config_credentials().is_empty());
-    envmnt::remove("DOCKER_CONFIG");
+    quench_core::env::remove("DOCKER_CONFIG");
 }
 
 #[test]
@@ -404,11 +403,11 @@ fn docker_config_credentials_is_empty_for_invalid_json() {
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     std::fs::write(dir.path().join("config.json"), "not json").unwrap();
-    envmnt::set("DOCKER_CONFIG", dir.path().to_str().unwrap());
+    quench_core::env::set("DOCKER_CONFIG", dir.path().to_str().unwrap());
     assert!(docker_config_credentials().is_empty());
-    envmnt::remove("DOCKER_CONFIG");
+    quench_core::env::remove("DOCKER_CONFIG");
 }
 
 #[test]
@@ -416,7 +415,7 @@ fn docker_config_credentials_falls_back_to_home_docker_config_when_unset() {
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::remove("DOCKER_CONFIG");
+    quench_core::env::remove("DOCKER_CONFIG");
     // Whatever this machine's real `$HOME/.docker/config.json` says (most
     // likely nothing) - just confirm the fallback path (`dirs_home`) reads
     // without panicking rather than requiring `DOCKER_CONFIG` to be set.
@@ -434,7 +433,7 @@ fn encode_repository_path_leaves_slashes_alone_but_escapes_segments() {
 
 #[test]
 fn discover_images_finds_image_lines_in_yaml_j2_templates_only() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     // `IMAGE_LINE_RE` requires the line to be only whitespace before
     // `image:` - a leading `- ` (a YAML sequence marker) would not
     // match, so this uses a bare `image:` mapping key, same as the
@@ -454,7 +453,7 @@ fn discover_images_finds_image_lines_in_yaml_j2_templates_only() {
 
 #[test]
 fn discover_images_skips_a_line_that_does_not_parse_as_an_image() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     std::fs::write(
         dir.path().join("deployment.yaml.j2"),
         "image: no-tag-here\n",
@@ -469,7 +468,7 @@ fn discover_images_skips_a_line_that_does_not_parse_as_an_image() {
 
 #[test]
 fn apply_updates_rewrites_only_the_matching_image_line() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let template_path = dir.path().join("deployment.yaml.j2");
     std::fs::write(
         &template_path,
@@ -539,7 +538,7 @@ fn print_results_handles_a_mix_of_updates_skips_and_errors() {
 // --- bearer_token / registry_v2_tags: exercised against a real local
 // HTTP server via wiremock, since `registry_v2_tags` takes the registry
 // host from `ImageRef::registry`, which a test can point at the mock
-// server's address. `reqwest::blocking::Client` cannot run inside an
+// server's address. `quench_client::blocking::Client` cannot run inside an
 // already-active tokio runtime (it spins its own), so the blocking call
 // is dispatched via `spawn_blocking` from a multi-threaded test runtime,
 // which keeps the mock server's listener polled concurrently.
@@ -552,7 +551,10 @@ async fn registry_v2_tags_follows_pagination_and_returns_every_tag() {
         .and(path("/v2/forge/conveyor/tags/list"))
         .respond_with(
             ResponseTemplate::new(200)
-                .set_body_json(serde_json::json!({"tags": ["1.0.0"]}))
+                .set_body_raw(
+                    quench_serde::json::to_string(&(quench_serde::json!({"tags": ["1.0.0"]}))),
+                    "application/json",
+                )
                 .append_header(
                     "Link",
                     format!(
@@ -567,9 +569,10 @@ async fn registry_v2_tags_follows_pagination_and_returns_every_tag() {
     Mock::given(method("GET"))
         .and(path("/v2/forge/conveyor/tags/list"))
         .and(wiremock::matchers::query_param("last", "1.0.0"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({"tags": ["1.1.0"]})),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(quench_serde::json!({"tags": ["1.1.0"]}))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -610,16 +613,18 @@ async fn registry_v2_tags_retries_with_a_bearer_token_after_a_401() {
     Mock::given(method("GET"))
         .and(path("/v2/forge/conveyor/tags/list"))
         .and(header("authorization", "Bearer test-token"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({"tags": ["2.0.0"]})),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(quench_serde::json!({"tags": ["2.0.0"]}))),
+            "application/json",
+        ))
         .mount(&registry)
         .await;
     Mock::given(method("GET"))
         .and(path("/token"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({"token": "test-token"})),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(quench_serde::json!({"token": "test-token"}))),
+            "application/json",
+        ))
         .mount(&auth_server)
         .await;
 

@@ -1,6 +1,6 @@
 use crate::support;
 
-use http::Method;
+use quench_http::http::Method;
 use support::WithDockerStorageRoot as WithStorageRoot;
 use warehouse_service::routers::docker::register_routes;
 
@@ -18,7 +18,7 @@ fn with_tags(repo: &str, tags: &[&str]) -> WithStorageRoot {
     storage
 }
 
-#[derive(serde::Deserialize)]
+#[derive(quench_serde::Deserialize)]
 struct TagsResponseForTest {
     name: String,
     tags: Vec<String>,
@@ -39,7 +39,7 @@ async fn handle_rejects_an_invalid_repository_name() {
     let (app, container) = app().await;
     let req = support::req(Method::GET, "/v2/..%2fetc/tags/list", &container);
     let resp = app.call(req).await;
-    assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
+    assert_eq!(resp.status(), quench_http::http::StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
@@ -48,7 +48,7 @@ async fn handle_reports_not_found_for_an_unknown_repository() {
     let (app, container) = app().await;
     let req = support::req(Method::GET, "/v2/no-such-repo/tags/list", &container);
     let resp = app.call(req).await;
-    assert_eq!(resp.status(), http::StatusCode::NOT_FOUND);
+    assert_eq!(resp.status(), quench_http::http::StatusCode::NOT_FOUND);
 }
 
 #[tokio::test]
@@ -57,10 +57,10 @@ async fn handle_lists_tags_for_a_known_repository() {
     let (app, container) = app().await;
     let req = support::req(Method::GET, "/v2/my-repo/tags/list", &container);
     let resp = app.call(req).await;
-    assert_eq!(resp.status(), http::StatusCode::OK);
+    assert_eq!(resp.status(), quench_http::http::StatusCode::OK);
 
     let body = support::json_body(resp).await;
-    let body: TagsResponseForTest = serde_json::from_value(body).unwrap();
+    let body: TagsResponseForTest = quench_serde::from_value(&body).unwrap();
     assert_eq!(body.name, "my-repo");
     assert_eq!(body.tags, vec!["2.0.0".to_string(), "1.0.0".to_string()]);
 }
@@ -75,6 +75,6 @@ async fn handle_paginates_with_n_and_sets_a_link_header_when_more_remain() {
     let link = headers.get("link").unwrap().to_str().unwrap();
     assert!(link.contains("my-repo/tags/list"), "{link}");
 
-    let body: TagsResponseForTest = serde_json::from_str(&body).unwrap();
+    let body: TagsResponseForTest = quench_serde::json::from_str(&body).unwrap();
     assert_eq!(body.tags.len(), 2);
 }

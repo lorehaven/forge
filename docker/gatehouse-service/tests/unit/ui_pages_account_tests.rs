@@ -1,4 +1,3 @@
-use bytes::Bytes;
 use gatehouse_service::catalog::PermissionCatalog;
 use gatehouse_service::email::{LoggingSender, Sender};
 use gatehouse_service::realm::{self, RealmError, begin_mfa_enrollment};
@@ -8,40 +7,29 @@ use gatehouse_service::ui::pages::account::{
     Notice, error_page, known_error_key, notice_banner, render_account_page, render_mfa_enroll_page,
 };
 use gatehouse_service::{PublicBase, RateLimiter};
-use http::{HeaderMap, Method, StatusCode, Uri};
-use http_body_util::BodyExt;
 use quench_auth::domain::auth::{Permissions, Role, User};
 use quench_auth::domain::jwt::JwtConfig;
 use quench_auth::domain::session::SessionDb;
 use quench_cache::CacheStore;
+use quench_core::bytes::Bytes;
 use quench_db::prelude::Db;
 use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::request::Request;
 use std::sync::Arc;
 
 fn with_key() {
-    envmnt::set("GATEHOUSE_KEY_ENCRYPTION_KEY", TEST_KEY_MATERIAL);
+    quench_core::env::set("GATEHOUSE_KEY_ENCRYPTION_KEY", TEST_KEY_MATERIAL);
 }
 
 /// `mfa::totp` is private to that module, so this rebuilds the same TOTP
 /// object here to get a code `enable_mfa` will accept - same parameters
 /// `mfa.rs` uses (SHA1, 6 digits, 30s step, "Forge" issuer).
-fn current_totp_code(secret: &str, username: &str) -> String {
-    use totp_rs::Secret;
-    let parsed = Secret::try_from_base32(secret).expect("valid base32 secret");
-    totp_rs::Builder::new()
-        .with_algorithm(totp_rs::Algorithm::SHA1)
-        .with_digits(6)
-        .with_skew(1)
-        .with_step_duration(30)
-        .with_secret(parsed)
-        .with_account_name(username.to_string())
-        .with_issuer(Some("Forge"))
-        .build()
-        .expect("build totp")
-        .generate_current()
-        .to_string()
+fn current_totp_code(secret: &str) -> String {
+    quench_crypto::totp::Totp::from_base32(secret)
+        .expect("valid base32 secret")
+        .code_now()
 }
 
 async fn db() -> Db {
@@ -49,7 +37,10 @@ async fn db() -> Db {
 }
 
 fn catalog() -> PermissionCatalog {
-    let dir = std::env::temp_dir().join(format!("account-test-{}", uuid::Uuid::new_v4()));
+    let dir = std::env::temp_dir().join(format!(
+        "account-test-{}",
+        quench_core::uuid::Uuid::new_v4()
+    ));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("permissions.toml");
     std::fs::write(&path, "[services.gatehouse]\nactions = [\"read-users\"]\n").unwrap();
@@ -78,13 +69,18 @@ async fn seed_user(db: &Db, username: &str) -> User {
 }
 
 async fn body_text(resp: quench_http::response::Response) -> String {
-    let collected = resp.into_hyper().into_body().collect().await.expect("body");
-    String::from_utf8(collected.to_bytes().to_vec()).expect("utf8")
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .expect("body");
+    String::from_utf8(collected.to_vec()).expect("utf8")
 }
 
 fn location(resp: quench_http::response::Response) -> String {
-    resp.into_hyper()
-        .headers()
+    resp.into_inner()
+        .headers
         .get("location")
         .expect("location header")
         .to_str()
@@ -209,7 +205,7 @@ fn post_form(
     pairs: &[(&str, &str)],
     container: &Arc<quench_http::di::Container>,
 ) -> Request {
-    let encoded = serde_urlencoded::to_string(pairs).unwrap();
+    let encoded = quench_serde::urlencoded::to_string(pairs).unwrap();
     Request::new(
         Method::POST,
         path.parse::<Uri>().unwrap(),
@@ -375,8 +371,8 @@ async fn an_uploaded_avatar_is_served_back_and_absent_ones_404() {
 
     let resp = app.call(get("/ui/account/avatar", &container)).await;
     assert_eq!(resp.status(), StatusCode::OK);
-    let hyper = resp.into_hyper();
-    assert_eq!(hyper.headers()["content-type"], "image/png");
+    let hyper = resp.into_inner();
+    assert_eq!(hyper.headers.get("content-type").unwrap(), "image/png");
 }
 
 #[tokio::test]
@@ -419,7 +415,7 @@ async fn mfa_enroll_submit_enables_mfa_with_the_right_code() {
     seed_user(&db, "admin").await;
     let (app, container) = account_app(JwtConfig::for_tests(), db).await;
     let (secret, _) = begin_mfa_enrollment("admin").expect("begin enrollment");
-    let code = current_totp_code(&secret, "admin");
+    let code = current_totp_code(&secret);
     let resp = app
         .call(post_form(
             "/ui/account/mfa/enroll",
@@ -643,7 +639,7 @@ async fn turning_mfa_on_and_off_tells_the_confirmed_address() {
     let (app, container) = account_app_with_mailer(JwtConfig::for_tests(), db, sender).await;
 
     let (secret, _) = begin_mfa_enrollment("admin").expect("begin enrollment");
-    let code = current_totp_code(&secret, "admin");
+    let code = current_totp_code(&secret);
     let resp = app
         .call(post_form(
             "/ui/account/mfa/enroll",
@@ -831,7 +827,7 @@ async fn a_person_can_only_ask_a_few_times_an_hour() {
 #[tokio::test]
 async fn a_failing_mail_server_is_reported_to_the_person_asking() {
     struct Failing;
-    #[async_trait::async_trait]
+    #[quench_core::async_trait]
     impl Sender for Failing {
         async fn send(
             &self,

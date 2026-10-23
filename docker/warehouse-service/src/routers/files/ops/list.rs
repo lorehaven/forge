@@ -8,7 +8,7 @@ use crate::routers::files::{ListQuery, OptionalClaims, PathError, confined, rela
 use quench_auth::domain::jwt::JwtConfig;
 use quench_db::prelude::Db;
 use quench_http::prelude::{Inject, Path, Query, Response, get, http::StatusCode};
-use serde::Serialize;
+use quench_serde::Serialize;
 
 /// Default and max page size - big enough for one round trip, small enough to bound a response.
 const DEFAULT_LIST_PAGE_SIZE: usize = 500;
@@ -21,7 +21,7 @@ pub fn list_path(storage_name: &str, prefix: &str, desc: bool) -> String {
     let mut path = format!(
         "/api/v1/files/{}?prefix={}",
         storage_name,
-        urlencoding::encode(prefix)
+        quench_serde::urlencoded::percent_encode(prefix)
     );
     if desc {
         path.push_str("&desc=true");
@@ -62,7 +62,7 @@ pub struct Entry {
 /// The storages this deployment serves - static ones by name only, dynamic
 /// ones with owner/quota/usage fields, filtered to what the caller may see.
 #[get("/api/v1/files")]
-#[tracing::instrument(skip(claims, config, db))]
+#[quench_log::instrument(skip(claims, config, db))]
 pub async fn storages(
     OptionalClaims(claims): OptionalClaims,
     Inject(config): Inject<JwtConfig>,
@@ -108,7 +108,7 @@ pub async fn storages(
 }
 
 #[get("/api/v1/files/{storage}")]
-#[tracing::instrument(skip(claims, config, db))]
+#[quench_log::instrument(skip(claims, config, db))]
 pub async fn entries(
     OptionalClaims(claims): OptionalClaims,
     Inject(config): Inject<JwtConfig>,
@@ -152,7 +152,7 @@ async fn dynamic_entries(
     {
         Ok(files) => files,
         Err(problem) => {
-            tracing::error!("dynamic list failed: {problem}");
+            quench_log::error!("dynamic list failed: {problem}");
             return error(StatusCode::INTERNAL_SERVER_ERROR, "listing failed");
         }
     };

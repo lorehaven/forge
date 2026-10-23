@@ -1,8 +1,8 @@
 use crate::support;
 use gantry_service::domain::cluster::Workload;
-use http::{Method, StatusCode};
 use quench_auth::domain::jwt::Claims;
-use serde_json::json;
+use quench_http::http::{Method, StatusCode};
+use quench_serde::json;
 
 fn workload(name: &str, desired: i32) -> Workload {
     Workload {
@@ -173,8 +173,14 @@ async fn starting_from_the_page_runs_the_swap_at_once() {
         ))
         .await;
     assert!(response.status().is_redirection());
-    let (parts, _) = response.into_hyper().into_parts();
-    let location = parts.headers["location"].to_str().unwrap().to_string();
+    let parts = response.into_inner();
+    let location = parts
+        .headers
+        .get("location")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
     assert!(location.contains("/ui/operations/"), "{location}");
 
     let page = support::body_text(
@@ -196,9 +202,12 @@ async fn starting_from_the_page_runs_the_swap_at_once() {
             &[("stop", "")],
         ))
         .await;
-    let (parts, _) = refused.into_hyper().into_parts();
+    let parts = refused.into_inner();
     assert!(
-        parts.headers["location"]
+        parts
+            .headers
+            .get("location")
+            .unwrap()
             .to_str()
             .unwrap()
             .contains("error=")

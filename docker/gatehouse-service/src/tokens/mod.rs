@@ -1,8 +1,8 @@
 //! Single-use email-verification tokens; `purpose` in the cache key stops cross-purpose redemption.
 
 use quench_cache::CacheStore;
-use serde_json::json;
-use uuid::Uuid;
+use quench_core::uuid::Uuid;
+use quench_serde::json;
 
 pub struct VerificationTokens {
     store: CacheStore,
@@ -10,7 +10,7 @@ pub struct VerificationTokens {
 
 impl VerificationTokens {
     /// Reads `REDIS_URL`/`CACHE_URL`, falling back to in-process (dev mode).
-    pub async fn from_env() -> anyhow::Result<Self> {
+    pub async fn from_env() -> quench_core::Result<Self> {
         let store = CacheStore::from_env("forge-verify").await?;
         Ok(Self { store })
     }
@@ -34,7 +34,7 @@ impl VerificationTokens {
         purpose: &str,
         username: &str,
         ttl_secs: u64,
-    ) -> anyhow::Result<String> {
+    ) -> quench_core::Result<String> {
         let token = Uuid::new_v4().to_string();
         self.store
             .set(&Self::key(purpose, &token), json!(username), Some(ttl_secs))
@@ -45,14 +45,14 @@ impl VerificationTokens {
     /// Reads a token's value without spending it - for a page that shows what a
     /// link would do and asks for a click before doing it (so a mail scanner
     /// that fetches links cannot trigger it).
-    pub async fn peek(&self, purpose: &str, token: &str) -> anyhow::Result<Option<String>> {
+    pub async fn peek(&self, purpose: &str, token: &str) -> quench_core::Result<Option<String>> {
         let value = self.store.get(&Self::key(purpose, token)).await?;
         Ok(value.and_then(|value| value.as_str().map(str::to_string)))
     }
 
     /// Redeems once, atomically (`GETDEL`) - a racing double-click or replay
     /// succeeds at most once.
-    pub async fn redeem(&self, purpose: &str, token: &str) -> anyhow::Result<Option<String>> {
+    pub async fn redeem(&self, purpose: &str, token: &str) -> quench_core::Result<Option<String>> {
         let value = self.store.take(&Self::key(purpose, token)).await?;
         Ok(value.and_then(|value| value.as_str().map(str::to_string)))
     }

@@ -91,7 +91,7 @@ pub fn render_sources(sources: &[crate::files::rag::RagSource]) -> Option<Elemen
                     .attr("data-i18n", "ui_chat_source_chunk")
                     .attr(
                         "data-i18n-args",
-                        serde_json::json!({ "index": idx }).to_string(),
+                        quench_serde::json!({ "index": idx }).to_string(),
                     )
                     .text(format!("chunk {idx}")),
             );

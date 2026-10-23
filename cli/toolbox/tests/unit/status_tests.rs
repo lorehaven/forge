@@ -2,7 +2,7 @@ use forge_toolbox::{
     ActionRequest, PlannedAction, action_request, build_status, format_toolbox_note,
     planned_action, run_selected_action, spinner_frames,
 };
-use semver::Version;
+use quench_core::version::Version;
 
 fn v(s: &str) -> Version {
     Version::parse(s).unwrap()
@@ -52,7 +52,7 @@ fn build_status_lookup_failure_surfaces_as_error_and_disables_actions() {
         "anvil",
         "anvil",
         Some(v("1.0.0")),
-        Err(anyhow::anyhow!("registry unreachable")),
+        Err(quench_core::err!("registry unreachable")),
     );
     assert!(!status.installable);
     assert!(!status.updatable);

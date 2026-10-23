@@ -1,11 +1,11 @@
-use serde_json::{Map, Value};
+use quench_serde::{Map, Value};
 
 /// A contiguous piece of a document with metadata describing where it came from (heading, page,
 /// etc.). Chunks never span two segments, so every chunk inherits exactly one segment's metadata.
 #[derive(Debug, Clone)]
 pub struct Segment {
     pub text: String,
-    pub metadata: Map<String, Value>,
+    pub metadata: Map,
 }
 
 impl Segment {

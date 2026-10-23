@@ -8,9 +8,9 @@
 //! The schema is *normalised* before use, because the API server reads a few things differently from JSON
 //! Schema: see [`normalize`]. Nothing in this module talks to a cluster; [`crate::schema_cmd`] does that.
 
-use anyhow::{Context as _, Result, bail, ensure};
-use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use quench_core::{Context as _, Result, bail, ensure};
+use quench_serde::{Deserialize, Serialize};
+use quench_serde::{Value, json};
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
 use std::path::Path;
@@ -25,7 +25,7 @@ pub enum Source {
 }
 
 /// One CRD's schemas, as stored on disk and in the binary: every served version, descriptions stripped.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CrdSchema {
     /// The API group, e.g. `cert-manager.io`.
     pub group: String,
@@ -182,7 +182,7 @@ fn normalize_node(node: &mut Value, closed_allowed: bool) {
     }
     // OpenAPI 3.0 spells these as booleans qualifying `minimum`/`maximum`; JSON Schema wants numbers.
     for key in ["exclusiveMinimum", "exclusiveMaximum"] {
-        if map.get(key).is_some_and(Value::is_boolean) {
+        if map.get(key).is_some_and(Value::is_bool) {
             map.remove(key);
         }
     }
@@ -324,7 +324,7 @@ impl SchemaSet {
         for path in paths {
             let text = std::fs::read_to_string(&path)
                 .with_context(|| format!("failed to read {}", path.display()))?;
-            let schema: CrdSchema = serde_json::from_str(&text)
+            let schema: CrdSchema = quench_serde::json::from_str(&text)
                 .with_context(|| format!("{} is not a riveter schema file", path.display()))?;
             self.insert(schema, source);
         }
@@ -364,7 +364,9 @@ impl SchemaSet {
         let built = self
             .get(group, kind)
             .and_then(|s| s.versions.get(version))
-            .and_then(|schema| jsonschema::validator_for(&normalize(schema)).ok())
+            .and_then(|schema| {
+                jsonschema::validator_for(&crate::bridge::to_json(&normalize(schema))).ok()
+            })
             .map(std::rc::Rc::new);
         self.compiled.borrow_mut().insert(key, built.clone());
         built
@@ -398,8 +400,9 @@ impl SchemaSet {
 
         let normalized = schema.versions.get(version).map_or(Value::Null, normalize);
 
+        let instance = crate::bridge::to_json(document);
         let mut issues: Vec<Issue> = validator
-            .iter_errors(document)
+            .iter_errors(&instance)
             .map(|error| issue_from(&error, &normalized))
             .collect();
         issues.sort_by(|a, b| a.path.cmp(&b.path).then_with(|| a.message.cmp(&b.message)));
@@ -534,7 +537,7 @@ pub fn bundled() -> Result<SchemaSet> {
     let mut set = SchemaSet::empty();
     for text in BUNDLED {
         let schema: CrdSchema =
-            serde_json::from_str(text).context("a bundled schema is corrupt")?;
+            quench_serde::json::from_str(text).context("a bundled schema is corrupt")?;
         set.insert(schema, Source::Bundled);
     }
     Ok(set)

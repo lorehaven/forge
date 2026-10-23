@@ -1,7 +1,7 @@
 use crate::support;
-use http::{Method, StatusCode};
 use quench_auth::domain::jwt::JwtConfig;
 use quench_auth::http::domain::sso_client::SsoConfig;
+use quench_http::http::{Method, StatusCode};
 
 // `#[get(...)]`/`#[post(...)]` turn `login`/`login_slash`/`logout`/etc.
 // into discoverable route registrations, not callable functions - so

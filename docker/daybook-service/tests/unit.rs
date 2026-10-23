@@ -1,10 +1,9 @@
-use bytes::Bytes;
-use http::{HeaderMap, Method, StatusCode, Uri};
-use http_body_util::BodyExt;
 use quench_auth::domain::jwt::{Claims, JwtConfig};
+use quench_core::bytes::Bytes;
 use quench_db::{Db, InMemoryDb};
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::prelude::{Container, ContainerBuilder, Endpoint, Request};
-use serde_json::{Value, json};
+use quench_serde::{Value, json};
 use std::sync::Arc;
 
 async fn enforcing_app() -> (Arc<dyn Endpoint>, Arc<Container>) {
@@ -39,7 +38,7 @@ fn request(method: Method, path: &str, body: Option<Value>, container: &Arc<Cont
     let mut headers = HeaderMap::new();
     let bytes = body.map_or_else(Bytes::new, |value| {
         headers.insert("content-type", "application/json".parse().unwrap());
-        Bytes::from(serde_json::to_vec(&value).expect("serialize request"))
+        Bytes::from(quench_serde::json::to_vec(&value))
     });
     Request::new(
         method,
@@ -52,13 +51,12 @@ fn request(method: Method, path: &str, body: Option<Value>, container: &Arc<Cont
 
 async fn body(response: quench_http::response::Response) -> Value {
     let bytes = response
-        .into_hyper()
-        .into_body()
-        .collect()
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
         .await
-        .expect("response body")
-        .to_bytes();
-    serde_json::from_slice(&bytes).expect("JSON response")
+        .expect("response body");
+    quench_serde::json::from_slice(&bytes).expect("JSON response")
 }
 
 #[tokio::test]

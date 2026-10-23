@@ -8,8 +8,8 @@ use crate::executors::engine::{
 use crate::secrets::Redactor;
 use crate::steps;
 use crate::workspace::Workspace;
-use async_trait::async_trait;
-use chrono::Utc;
+use quench_core::async_trait;
+use quench_core::time::Time;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -69,7 +69,7 @@ impl JobExecutor for NativeExecutor {
 
         if spec.image.is_some() {
             // Not an error - refusing it would make the repo unbuildable on a single-node deployment.
-            tracing::warn!(
+            quench_log::warn!(
                 "job {} names image {:?}, which the native executor ignores; \
                  steps run with the toolchain conveyor itself has",
                 spec.name,
@@ -204,7 +204,7 @@ async fn run_job(mut context: JobContext) {
     {
         let mut state = context.running.state.lock().expect("job state poisoned");
         state.status = Status::Running;
-        state.started_at = Some(Utc::now());
+        state.started_at = Some(Time::now());
     }
 
     let mut job_status = Status::Success;
@@ -291,9 +291,9 @@ async fn run_job(mut context: JobContext) {
     state.status = job_status;
     state.exit_code = job_exit_code;
     state.error = job_error;
-    state.finished_at = Some(Utc::now());
+    state.finished_at = Some(Time::now());
 
-    tracing::info!("job {} finished: {}", context.name, state.status);
+    quench_log::info!("job {} finished: {}", context.name, state.status);
     drop(state);
 }
 
@@ -386,7 +386,7 @@ fn kill_group(child: &tokio::process::Child) {
         .stderr(Stdio::null())
         .status();
     if let Err(error) = killed {
-        tracing::warn!("could not kill process group {pid}: {error}");
+        quench_log::warn!("could not kill process group {pid}: {error}");
     }
 }
 
@@ -416,7 +416,7 @@ impl Emitter {
             seq: self.seq,
             stream,
             line: self.redactor.apply(line),
-            at: Utc::now(),
+            at: Time::now(),
         };
         self.seq += 1;
 
@@ -435,7 +435,7 @@ fn begin_step(running: &Running, ordinal: usize) {
     let mut state = running.state.lock().expect("job state poisoned");
     if let Some(step) = state.steps.get_mut(ordinal) {
         step.status = Status::Running;
-        step.started_at = Some(Utc::now());
+        step.started_at = Some(Time::now());
     }
 }
 
@@ -444,7 +444,7 @@ fn finish_step(running: &Running, ordinal: usize, status: Status, exit_code: Opt
     if let Some(step) = state.steps.get_mut(ordinal) {
         step.status = status;
         step.exit_code = exit_code;
-        step.finished_at = Some(Utc::now());
+        step.finished_at = Some(Time::now());
     }
 }
 

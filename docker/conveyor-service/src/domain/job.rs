@@ -2,8 +2,8 @@
 //! looked up later - re-reading a two-month-old commit's `.conveyor.toml` would mean re-checking it out.
 
 use crate::domain::Status;
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use quench_core::time::Time;
+use quench_serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Job {
@@ -16,8 +16,8 @@ pub struct Job {
     pub status: Status,
     /// First failing step's exit code, or the last step's if all passed. `None` while running/unstarted.
     pub exit_code: Option<i32>,
-    pub started_at: Option<DateTime<Utc>>,
-    pub finished_at: Option<DateTime<Utc>>,
+    pub started_at: Option<Time>,
+    pub finished_at: Option<Time>,
     /// Why the job ended, when there's more to say than the exit code (timeout, cancellation, ...).
     pub error: Option<String>,
     /// The run this result was carried over from on a restart. `None` for a job that actually ran here.

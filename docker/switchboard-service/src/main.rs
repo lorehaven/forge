@@ -17,10 +17,10 @@ use switchboard_service::routers::vllm::sse::VllmBroadcaster;
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     quench_starter::logging::init();
-    tracing::info!("Switchboard service starting");
+    quench_log::info!("Switchboard service starting");
 
-    let base_path = normalize_base_path(&envmnt::get_or("BASE_PATH", "/"));
-    tracing::info!("Server initialized with BASE_PATH: {base_path}");
+    let base_path = normalize_base_path(&quench_core::env::get_or("BASE_PATH", "/"));
+    quench_log::info!("Server initialized with BASE_PATH: {base_path}");
 
     let db_wrapper = DbWrapper::init_env().await;
     let jwt_config = JwtConfig::init().await;

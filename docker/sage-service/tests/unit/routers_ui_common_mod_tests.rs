@@ -1,6 +1,6 @@
-use bytes::Bytes;
-use http::{HeaderMap, Method, StatusCode, Uri};
+use quench_core::bytes::Bytes;
 use quench_http::di::ContainerBuilder;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::request::Request;
 use quench_web::prelude::*;
 use sage_service::routers::ui::common::supported_locales;

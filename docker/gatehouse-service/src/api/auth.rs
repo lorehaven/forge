@@ -2,15 +2,15 @@
 //! gatehouse issues tokens; relying parties only verify them.
 
 use crate::realm::{self as gh_realm, AuthOutcome};
-use async_trait::async_trait;
-use http::StatusCode;
 use quench_auth::domain::auth::{Permissions, User, UserDb};
 use quench_auth::domain::jwt::{Claims, JwtConfig};
 use quench_auth::domain::realm;
 use quench_auth::domain::session::{Session, SessionDb};
+use quench_core::async_trait;
 use quench_db::prelude::Db;
+use quench_http::http::StatusCode;
 use quench_http::prelude::{FromRequest, HttpError, Inject, Json, Request, Response, get, post};
-use serde::{Deserialize, Serialize};
+use quench_serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
 pub struct LoginRequest {
@@ -55,7 +55,7 @@ async fn login(
     let outcome = match gh_realm::authenticate(&db, &request.username, &request.password).await {
         Ok(outcome) => outcome,
         Err(err) => {
-            tracing::error!("Failed to authenticate {}: {:?}", request.username, err);
+            quench_log::error!("Failed to authenticate {}: {:?}", request.username, err);
             return Response::new(StatusCode::INTERNAL_SERVER_ERROR);
         }
     };
@@ -72,7 +72,7 @@ async fn login(
     match issue_token_pair(&config, &sessions, &user).await {
         Ok(tokens) => json_ok(&tokens),
         Err(err) => {
-            tracing::error!("Failed to create authentication session: {}", err);
+            quench_log::error!("Failed to create authentication session: {}", err);
             Response::new(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -103,7 +103,7 @@ async fn refresh(
     let body: Option<RefreshRequest> = if raw.is_empty() {
         None
     } else {
-        serde_json::from_slice(&raw).ok()
+        quench_serde::json::from_slice(&raw).ok()
     };
     let cookie_flow = body.is_none() && cookie_refresh_token.is_some();
     let Some(refresh_token) = body
@@ -117,7 +117,7 @@ async fn refresh(
             Ok(Some(rotated)) => rotated,
             Ok(None) => return Response::new(StatusCode::UNAUTHORIZED),
             Err(err) => {
-                tracing::error!("Failed to rotate refresh token: {}", err);
+                quench_log::error!("Failed to rotate refresh token: {}", err);
                 return Response::new(StatusCode::INTERNAL_SERVER_ERROR);
             }
         };
@@ -137,7 +137,7 @@ async fn refresh(
             ),
         Ok(tokens) => json_ok(&tokens),
         Err(err) => {
-            tracing::error!("Failed to issue access token: {}", err);
+            quench_log::error!("Failed to issue access token: {}", err);
             Response::new(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -154,7 +154,7 @@ async fn logout(
     {
         Ok(_) => Response::new(StatusCode::NO_CONTENT),
         Err(err) => {
-            tracing::error!("Failed to revoke session: {}", err);
+            quench_log::error!("Failed to revoke session: {}", err);
             Response::new(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -241,7 +241,7 @@ async fn rotate_serialized(
     sessions: &SessionDb,
     refresh_token: &str,
     ttl_secs: i64,
-) -> anyhow::Result<Option<(Session, String)>> {
+) -> quench_core::Result<Option<(Session, String)>> {
     let _one_at_a_time = ROTATION.lock().await;
     sessions.rotate(refresh_token, ttl_secs).await
 }
@@ -263,7 +263,7 @@ pub async fn refresh_session(
             Ok(Some(rotated)) => rotated,
             Ok(None) => return None,
             Err(err) => {
-                tracing::error!("Failed to rotate refresh token: {}", err);
+                quench_log::error!("Failed to rotate refresh token: {}", err);
                 return None;
             }
         };
@@ -271,7 +271,7 @@ pub async fn refresh_session(
     match token_response(config, &user, &session, refresh_token).await {
         Ok(tokens) => Some(tokens),
         Err(err) => {
-            tracing::error!("Failed to issue access token: {}", err);
+            quench_log::error!("Failed to issue access token: {}", err);
             None
         }
     }
@@ -281,7 +281,7 @@ pub async fn issue_token_pair(
     config: &JwtConfig,
     sessions: &SessionDb,
     user: &User,
-) -> anyhow::Result<TokenResponse> {
+) -> quench_core::Result<TokenResponse> {
     let (session, refresh_token) = sessions
         .create(&user.username, config.refresh_token_ttl_secs)
         .await?;
@@ -295,7 +295,7 @@ pub(crate) async fn issue_token_pair_for_client(
     sessions: &SessionDb,
     user: &User,
     client_audiences: &[String],
-) -> anyhow::Result<TokenResponse> {
+) -> quench_core::Result<TokenResponse> {
     let (session, refresh_token) = sessions
         .create(&user.username, config.refresh_token_ttl_secs)
         .await?;
@@ -321,7 +321,7 @@ pub(crate) async fn issue_client_credentials_token(
     config: &JwtConfig,
     client_id: &str,
     audiences: &[String],
-) -> anyhow::Result<TokenResponse> {
+) -> quench_core::Result<TokenResponse> {
     let access_token = config
         .issue_access_token_for(
             client_id.to_string(),
@@ -343,7 +343,7 @@ pub async fn token_response(
     user: &User,
     session: &Session,
     refresh_token: String,
-) -> Result<TokenResponse, jsonwebtoken::errors::Error> {
+) -> Result<TokenResponse, quench_crypto::jwt::Error> {
     let access_token = config
         .issue_access_token_for(
             user.username.clone(),

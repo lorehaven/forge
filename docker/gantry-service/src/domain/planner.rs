@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 /// How long a runner may spend waiting on a rollout before the install is called failed.
 const INSTALL_TIMEOUT_SECS: u64 = 600;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, quench_core::Error)]
 pub enum PlanError {
     #[error("no package named '{0}' is published")]
     UnknownTarget(String),

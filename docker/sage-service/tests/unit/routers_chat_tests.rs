@@ -4,11 +4,10 @@
 //! error/not-found branches here; everything else is fully reachable
 //! in-process with fake or empty backing services.
 
-use bytes::Bytes;
-use http::{HeaderMap, Method, StatusCode, Uri};
-use http_body_util::BodyExt;
+use quench_core::bytes::Bytes;
 use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::request::Request;
 use sage_service::clients::switchboard::SwitchboardClient;
 use sage_service::clients::vllm::VllmClient;
@@ -34,7 +33,7 @@ fn config() -> SageConfig {
 /// `SwitchboardClient::new()` panics unless `GATEHOUSE_URL` and
 /// `CLIENT_SECRET_SAGE_SWITCHBOARD` are set - it never actually needs to
 /// reach either service in these tests (switchboard isn't running), so any
-/// non-empty value works. `envmnt::set` with a fixed value is idempotent
+/// non-empty value works. `quench_core::env::set` with a fixed value is idempotent
 /// under this crate's parallel test binary - concurrent identical writes
 /// race harmlessly, unlike a var different tests need different values for.
 fn ensure_switchboard_env() {
@@ -43,9 +42,9 @@ fn ensure_switchboard_env() {
     // fixture) can take the better part of a minute to fail via resolver
     // timeout instead. Both `GATEHOUSE_URL` (the OAuth token endpoint
     // `ClientCredentialsClient` hits first) and `SWITCHBOARD_URL` need this.
-    envmnt::set("GATEHOUSE_URL", "http://127.0.0.1:1");
-    envmnt::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
-    envmnt::set("SWITCHBOARD_URL", "http://127.0.0.1:1");
+    quench_core::env::set("GATEHOUSE_URL", "http://127.0.0.1:1");
+    quench_core::env::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
+    quench_core::env::set("SWITCHBOARD_URL", "http://127.0.0.1:1");
 }
 
 async fn app() -> (Arc<dyn Endpoint>, Arc<quench_http::di::Container>) {
@@ -79,7 +78,7 @@ fn req(method: Method, path: &str, container: &Arc<quench_http::di::Container>) 
 fn json_req(
     method: Method,
     path: &str,
-    body: &serde_json::Value,
+    body: &quench_serde::Value,
     container: &Arc<quench_http::di::Container>,
 ) -> Request {
     let mut headers = HeaderMap::new();
@@ -88,14 +87,19 @@ fn json_req(
         method,
         path.parse::<Uri>().unwrap(),
         headers,
-        quench_http::body::InboundBody::from_bytes(Bytes::from(serde_json::to_vec(body).unwrap())),
+        quench_http::body::InboundBody::from_bytes(Bytes::from(quench_serde::json::to_vec(body))),
         container.clone(),
     )
 }
 
-async fn json_body(resp: quench_http::response::Response) -> serde_json::Value {
-    let collected = resp.into_hyper().into_body().collect().await.expect("body");
-    serde_json::from_slice(&collected.to_bytes()).expect("valid json body")
+async fn json_body(resp: quench_http::response::Response) -> quench_serde::Value {
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .expect("body");
+    quench_serde::json::from_slice(&collected).expect("valid json body")
 }
 
 #[tokio::test]
@@ -106,7 +110,7 @@ async fn chat_returns_not_found_for_an_unknown_instance() {
         .call(json_req(
             Method::POST,
             "/api/v1/chat",
-            &serde_json::json!({"instance_id": "does-not-exist", "message": "hello"}),
+            &quench_serde::json!({"instance_id": "does-not-exist", "message": "hello"}),
             &container,
         ))
         .await;
@@ -211,14 +215,15 @@ async fn get_context_status_reports_zero_usage_for_a_fresh_profile() {
 #[test]
 fn chat_request_distinguishes_no_evidence_field_from_an_empty_evidence_list() {
     use sage_service::routers::chat::ChatRequest;
-    let absent: ChatRequest = serde_json::from_str(r#"{"instance_id":"i","message":"q"}"#).unwrap();
+    let absent: ChatRequest =
+        quench_serde::json::from_str(r#"{"instance_id":"i","message":"q"}"#).unwrap();
     assert!(absent.evidence.is_none());
 
     let empty: ChatRequest =
-        serde_json::from_str(r#"{"instance_id":"i","message":"q","evidence":[]}"#).unwrap();
+        quench_serde::json::from_str(r#"{"instance_id":"i","message":"q","evidence":[]}"#).unwrap();
     assert_eq!(empty.evidence.as_deref().map(<[_]>::len), Some(0));
 
-    let two: ChatRequest = serde_json::from_str(
+    let two: ChatRequest = quench_serde::json::from_str(
         r#"{"instance_id":"i","message":"q","evidence":[{"url":"https://a","text":"x"},{"url":"https://b","text":"y"}]}"#,
     )
     .unwrap();

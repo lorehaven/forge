@@ -1,5 +1,5 @@
-use anyhow::{Context, Result};
-use serde_json::Value;
+use quench_core::{Context, Result};
+use quench_serde::Value;
 use std::collections::{BTreeMap, HashSet};
 use std::fmt::Write as _;
 use std::io::{BufRead, BufReader};
@@ -69,7 +69,7 @@ pub fn tally_diagnostic<S: std::hash::BuildHasher>(
     counts: &mut BTreeMap<String, usize>,
     seen: &mut HashSet<(String, String), S>,
 ) -> Option<String> {
-    let v: Value = serde_json::from_str(line).ok()?;
+    let v: Value = quench_serde::json::from_str(line).ok()?;
     if v["reason"] != "compiler-message" {
         return None;
     }
@@ -151,7 +151,7 @@ pub fn lint(all_targets: bool, all_features: bool, deny_warnings: bool, json: bo
         eprintln!("\nLint issues per module:\n{}", format_summary(&counts));
     }
     if !status.success() {
-        anyhow::bail!("lint failed with status: {status}");
+        quench_core::bail!("lint failed with status: {status}");
     }
     Ok(())
 }

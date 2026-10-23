@@ -8,7 +8,7 @@ use quench_db::prelude::Db;
 use quench_http::prelude::{
     Inject, Json, Path, Query, Response, delete, get, http::StatusCode, patch, post,
 };
-use serde::{Deserialize, Serialize};
+use quench_serde::{Deserialize, Serialize};
 
 /// A write on a root node needs the unscoped grant - there's no ancestor to scope one against.
 async fn can_write_under(

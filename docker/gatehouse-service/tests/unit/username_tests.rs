@@ -4,11 +4,11 @@ use gatehouse_service::email::Sender;
 use gatehouse_service::realm::{self, RealmError, valid_username};
 use gatehouse_service::test_support::RecordingSender;
 use gatehouse_service::tokens::VerificationTokens;
-use http::{HeaderMap, Method, StatusCode, Uri};
 use quench_auth::domain::auth::{Permissions, Role, User};
 use quench_db::prelude::{Crud, Db};
 use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::prelude::Request;
 use std::sync::Arc;
 
@@ -17,7 +17,10 @@ async fn db() -> Db {
 }
 
 fn catalog() -> gatehouse_service::catalog::PermissionCatalog {
-    let dir = std::env::temp_dir().join(format!("username-test-{}", uuid::Uuid::new_v4()));
+    let dir = std::env::temp_dir().join(format!(
+        "username-test-{}",
+        quench_core::uuid::Uuid::new_v4()
+    ));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("permissions.toml");
     std::fs::write(&path, "[services.gatehouse]\nactions = [\"read-users\"]\n").unwrap();
@@ -171,7 +174,7 @@ async fn register_app() -> (Arc<dyn Endpoint>, Arc<quench_http::di::Container>, 
 async fn public_registration_refuses_a_markup_username() {
     let (app, container, db) = register_app().await;
     for name in ["<img src=x onerror=alert(1)>", "a b", "zoë"] {
-        let encoded = serde_urlencoded::to_string([
+        let encoded = quench_serde::urlencoded::to_string(&[
             ("username", name),
             ("password", "correct-horse"),
             ("email", "alice@example.com"),
@@ -182,14 +185,16 @@ async fn public_registration_refuses_a_markup_username() {
                 Method::POST,
                 "/ui/register".parse::<Uri>().unwrap(),
                 HeaderMap::new(),
-                quench_http::body::InboundBody::from_bytes(bytes::Bytes::from(encoded)),
+                quench_http::body::InboundBody::from_bytes(quench_core::bytes::Bytes::from(
+                    encoded,
+                )),
                 container.clone(),
             ))
             .await;
         assert_eq!(resp.status(), StatusCode::FOUND);
         let target = resp
-            .into_hyper()
-            .headers()
+            .into_inner()
+            .headers
             .get("location")
             .unwrap()
             .to_str()
@@ -218,7 +223,6 @@ fn the_register_page_can_show_the_username_error() {
 #[tokio::test]
 async fn a_hostile_legacy_username_is_shown_as_text_on_the_admin_list() {
     use gatehouse_service::test_support::auth_disabled_guard;
-    use http_body_util::BodyExt;
     use quench_auth::domain::jwt::JwtConfig;
     let _guard = auth_disabled_guard().await;
     gatehouse_service::ui::pages::admin::register_routes();
@@ -264,18 +268,17 @@ async fn a_hostile_legacy_username_is_shown_as_text_on_the_admin_list() {
             Method::GET,
             "/ui/admin/users".parse::<Uri>().unwrap(),
             HeaderMap::new(),
-            quench_http::body::InboundBody::from_bytes(bytes::Bytes::new()),
+            quench_http::body::InboundBody::from_bytes(quench_core::bytes::Bytes::new()),
             Arc::new(container),
         ))
         .await;
     assert_eq!(resp.status(), StatusCode::OK);
     let bytes = resp
-        .into_hyper()
-        .into_body()
-        .collect()
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
         .await
-        .unwrap()
-        .to_bytes();
+        .unwrap();
     let html = String::from_utf8(bytes.to_vec()).unwrap();
     assert!(!html.contains("<img src=x"), "raw markup reached the page");
     assert!(html.contains("&lt;img src=x onerror=alert(document.cookie)&gt;"));

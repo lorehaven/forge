@@ -2,7 +2,7 @@ use anvil::commands::workspace::{
     MacheteFinding, deny, empty_api_baseline, ensure_tool_installed, format_metadata, list,
     machete, parse_machete_output, pick_baseline_tag, previous_version_rev,
 };
-use serde_json::json;
+use quench_serde::json;
 
 use crate::support;
 use support::stable_cwd_lock;
@@ -79,7 +79,7 @@ fn previous_version_rev_finds_the_commit_before_the_last_change_to_a_tracked_fil
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let git = |args: &[&str]| {
         assert!(
             std::process::Command::new("git")
@@ -123,7 +123,7 @@ fn previous_version_rev_is_none_for_a_manifest_with_only_one_commit() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let git = |args: &[&str]| {
         assert!(
             std::process::Command::new("git")

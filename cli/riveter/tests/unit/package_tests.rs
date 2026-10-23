@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow};
+use quench_core::{Result, err};
 use rivet_package::{Limits, Manifest, Package};
 use riveter::env::{self, Workspace, overlay_dir, with_workspace};
 use riveter::image_updates::ImageRef;
@@ -45,8 +45,8 @@ const DEPLOYMENT: &str = "\
 const MANIFEST: &str = "[package]\nname = \"demo\"\nversion = \"0.4.0\"\n";
 
 /// An overlay directory under a fresh `overlays/`, returning the temp dir that holds it.
-fn overlay() -> tempfile::TempDir {
-    let dir = tempfile::tempdir().unwrap();
+fn overlay() -> quench_core::tmp::TempDir {
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let root = dir.path().join("overlays");
     write(&root, "demo/overlay.yaml", OVERLAY);
     write(&root, "demo/base.yaml.j2", BASE);
@@ -85,7 +85,7 @@ struct Failing;
 
 impl DigestResolver for Failing {
     fn digest(&self, _: &ImageRef) -> Result<String> {
-        Err(anyhow!("registry unreachable"))
+        Err(err!("registry unreachable"))
     }
 }
 
@@ -291,7 +291,7 @@ fn refuses_a_missing_or_mismatched_manifest() {
 
 #[test]
 fn refuses_an_overlay_directory_that_cannot_be_a_package_name() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let root = dir.path().join("overlays");
     write(&root, "Bad_Name/overlay.yaml", "resources: []\n");
 
@@ -310,7 +310,7 @@ fn refuses_an_overlay_directory_that_cannot_be_a_package_name() {
 
 #[test]
 fn refuses_an_overlay_without_overlay_yaml() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let root = dir.path().join("overlays");
     fs::create_dir_all(root.join("demo")).unwrap();
 
@@ -541,7 +541,7 @@ fn package_with_values(values: &str) -> Package {
 #[test]
 fn values_layer_defaults_then_env_file_then_set() {
     let package = package_with_values("A = \"default\"\nB = \"default\"\nC = \"default\"\n");
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let env_file = dir.path().join("env");
     fs::write(
         &env_file,
@@ -673,7 +673,7 @@ fn parses_package_references() {
 
 // --- install --------------------------------------------------------
 
-fn installed(vars: &[(&str, &str)]) -> (riveter::package::Installation, tempfile::TempDir) {
+fn installed(vars: &[(&str, &str)]) -> (riveter::package::Installation, quench_core::tmp::TempDir) {
     let dir = overlay();
     let root = dir.path().join("overlays");
     let packed = pack(&opts(&root, &dir.path().join("out")), None).unwrap();
@@ -712,9 +712,7 @@ fn an_installed_package_renders_from_its_scratch_tree() {
     assert!(manifest.contains("eu"));
     // Provenance on every resource, whatever its template does with `labels`: the namespace
     // template, for one, writes its own metadata and ignores both.
-    let docs: Vec<serde_norway::Value> = serde_norway::Deserializer::from_str(&manifest)
-        .map(|doc| serde::Deserialize::deserialize(doc).unwrap())
-        .collect();
+    let docs: Vec<quench_serde::Value> = quench_serde::yaml::from_str_all(&manifest).unwrap();
     assert_eq!(docs.len(), 2, "{manifest}");
     for doc in &docs {
         let kind = doc["kind"].as_str().unwrap();
@@ -808,7 +806,7 @@ fn workspaces_nest() {
 
 #[test]
 fn a_package_file_that_is_not_valid_is_refused_with_its_path() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let path = dir.path().join("bad.rivet");
     fs::write(&path, b"not a package").unwrap();
 
@@ -829,10 +827,8 @@ fn a_package_built_here_passes_the_registry_limits() {
 
 // --- version suffix tokens ------------------------------------------
 
-fn at(timestamp: &str) -> chrono::DateTime<chrono::Utc> {
-    chrono::DateTime::parse_from_rfc3339(timestamp)
-        .unwrap()
-        .with_timezone(&chrono::Utc)
+fn at(timestamp: &str) -> quench_core::time::Time {
+    quench_core::time::Time::parse_rfc3339(timestamp).unwrap()
 }
 
 #[test]
@@ -893,7 +889,10 @@ fn an_expanded_suffix_is_valid_build_metadata_and_sorts_by_time() {
     let b = with_build_suffix("0.4.0", &late).unwrap();
 
     // Whatever the commit hashes happen to be, the later build is the newer version.
-    assert!(semver::Version::parse(&a).unwrap() < semver::Version::parse(&b).unwrap());
+    assert!(
+        quench_core::version::Version::parse(&a).unwrap()
+            < quench_core::version::Version::parse(&b).unwrap()
+    );
 }
 
 // --- secrets in the package -----------------------------------------
@@ -1026,7 +1025,7 @@ fn unparseable_overlays_fall_back_to_scanning_the_text() {
     assert_eq!(riveter::render::overlay_vars("a: [unclosed ${X}"), ["X"]);
 }
 
-fn render_with_replicas(replicas: &[(&str, u32)]) -> anyhow::Result<String> {
+fn render_with_replicas(replicas: &[(&str, u32)]) -> quench_core::Result<String> {
     let (mut installation, _keep) = installed(&[("API_TOKEN", "x"), ("REGION", "eu")]);
     installation.workspace.replicas = replicas
         .iter()
@@ -1041,9 +1040,7 @@ fn render_with_replicas(replicas: &[(&str, u32)]) -> anyhow::Result<String> {
 #[test]
 fn replicas_given_at_install_win_over_the_package() {
     let stopped = render_with_replicas(&[("deployment/api", 0)]).unwrap();
-    let docs: Vec<serde_norway::Value> = serde_norway::Deserializer::from_str(&stopped)
-        .map(|doc| serde::Deserialize::deserialize(doc).unwrap())
-        .collect();
+    let docs: Vec<quench_serde::Value> = quench_serde::yaml::from_str_all(&stopped).unwrap();
     let deployment = docs
         .iter()
         .find(|d| d["kind"] == "Deployment")
@@ -1159,7 +1156,7 @@ fn the_inventory_lists_everything_the_package_declares_with_its_real_kinds_and_n
     })
     .unwrap();
 
-    let items: Vec<serde_json::Value> = serde_json::from_str(&line).unwrap();
+    let items: Vec<quench_serde::Value> = quench_serde::json::from_str(&line).unwrap();
     let find = |kind: &str| {
         items
             .iter()

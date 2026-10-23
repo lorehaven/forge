@@ -115,7 +115,7 @@ pub const OCI_IMAGE_INDEX_V1: &str = "application/vnd.oci.image.index.v1+json";
 
 #[must_use]
 pub fn detect_manifest_media_type(data: &[u8]) -> Option<&'static str> {
-    let v: serde_json::Value = serde_json::from_slice(data).ok()?;
+    let v: quench_serde::Value = quench_serde::json::from_slice(data).ok()?;
 
     if let Some(media_type) = v.get("mediaType").and_then(|m| m.as_str()) {
         return match media_type {
@@ -127,7 +127,7 @@ pub fn detect_manifest_media_type(data: &[u8]) -> Option<&'static str> {
         };
     }
 
-    if v.get("schemaVersion").and_then(serde_json::Value::as_u64) != Some(2) {
+    if v.get("schemaVersion").and_then(quench_serde::Value::as_u64) != Some(2) {
         return None;
     }
 

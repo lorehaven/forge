@@ -80,8 +80,8 @@ fn pods_run_hugging_face_offline_so_gated_local_models_do_not_hit_the_hub() {
     assert_eq!(env["value"], "1");
 }
 
-fn pod(status: &serde_json::Value) -> Pod {
-    serde_json::from_value(serde_json::json!({
+fn pod(status: &quench_serde::Value) -> Pod {
+    let manifest = quench_serde::json!({
         "metadata": {
             "name": "vllm-m-8000",
             "labels": { "app": "vllm", "vllm-port": "8000" },
@@ -102,17 +102,18 @@ fn pod(status: &serde_json::Value) -> Pod {
             ]
         },
         "status": status
-    }))
-    .expect("valid pod")
+    });
+    // kube's `Pod` is a serde type: the JSON text is the bridge from quench's `Value`.
+    serde_json::from_str(&manifest.to_string()).expect("valid pod")
 }
 
 #[test]
 fn reboot_leftovers_are_restorable_but_crashes_are_not() {
-    let completed = pod(&serde_json::json!({ "phase": "Succeeded" }));
+    let completed = pod(&quench_serde::json!({ "phase": "Succeeded" }));
     assert_eq!(pod_status(&completed), "completed");
-    let shutdown = pod(&serde_json::json!({ "phase": "Failed", "reason": "Shutdown" }));
+    let shutdown = pod(&quench_serde::json!({ "phase": "Failed", "reason": "Shutdown" }));
     assert_eq!(pod_status(&shutdown), "interrupted");
-    let crashed = pod(&serde_json::json!({ "phase": "Failed", "reason": "Error" }));
+    let crashed = pod(&quench_serde::json!({ "phase": "Failed", "reason": "Error" }));
     assert_eq!(pod_status(&crashed), "Failed");
 
     assert!(is_restorable("completed") && is_restorable("interrupted"));
@@ -121,7 +122,7 @@ fn reboot_leftovers_are_restorable_but_crashes_are_not() {
 
 #[test]
 fn restored_pod_keeps_spec_but_drops_scheduler_and_token_state() {
-    let old = pod(&serde_json::json!({ "phase": "Succeeded" }));
+    let old = pod(&quench_serde::json!({ "phase": "Succeeded" }));
     let new = restored_pod(&old, 3).expect("restorable");
 
     assert_eq!(new.metadata.name.as_deref(), Some("vllm-m-8000"));

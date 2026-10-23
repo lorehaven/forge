@@ -1,6 +1,6 @@
-use dashmap::DashMap;
-use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use quench_serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolMetrics {
@@ -116,15 +116,19 @@ impl ProfileMetrics {
 #[derive(Debug)]
 pub struct MetricsCollector {
     // Profile -> (Tool -> Metrics)
-    data: Arc<DashMap<String, Arc<DashMap<String, ToolMetrics>>>>,
+    data: Mutex<HashMap<String, HashMap<String, ToolMetrics>>>,
 }
 
 impl MetricsCollector {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            data: Arc::new(DashMap::new()),
+            data: Mutex::new(HashMap::new()),
         }
+    }
+
+    fn data(&self) -> MutexGuard<'_, HashMap<String, HashMap<String, ToolMetrics>>> {
+        self.data.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     pub fn record_tool_execution(
@@ -135,12 +139,9 @@ impl MetricsCollector {
         success: bool,
         timeout: bool,
     ) {
-        let profile_map = self
-            .data
+        self.data()
             .entry(profile.to_string())
-            .or_insert_with(|| Arc::new(DashMap::new()));
-
-        profile_map
+            .or_default()
             .entry(tool_name.to_string())
             .or_default()
             .record_execution(duration_ms, success, timeout);
@@ -148,13 +149,11 @@ impl MetricsCollector {
 
     #[must_use]
     pub fn get_profile_metrics(&self, profile: &str) -> Option<ProfileMetrics> {
-        self.data.get(profile).map(|profile_map| {
+        self.data().get(profile).map(|profile_map| {
             let mut metrics = ProfileMetrics::new(profile.to_string());
 
-            for entry in profile_map.iter() {
-                metrics
-                    .tools
-                    .insert(entry.key().clone(), entry.value().clone());
+            for (name, tool) in profile_map {
+                metrics.tools.insert(name.clone(), tool.clone());
             }
 
             metrics.update_from_tools();
@@ -164,15 +163,13 @@ impl MetricsCollector {
 
     #[must_use]
     pub fn get_all_profiles_metrics(&self) -> Vec<ProfileMetrics> {
-        self.data
+        self.data()
             .iter()
-            .map(|entry| {
-                let mut metrics = ProfileMetrics::new(entry.key().clone());
+            .map(|(profile, tools)| {
+                let mut metrics = ProfileMetrics::new(profile.clone());
 
-                for tool_entry in entry.value().iter() {
-                    metrics
-                        .tools
-                        .insert(tool_entry.key().clone(), tool_entry.value().clone());
+                for (name, tool) in tools {
+                    metrics.tools.insert(name.clone(), tool.clone());
                 }
 
                 metrics.update_from_tools();
@@ -182,11 +179,11 @@ impl MetricsCollector {
     }
 
     pub fn reset(&self) {
-        self.data.clear();
+        self.data().clear();
     }
 
     pub fn reset_profile(&self, profile: &str) {
-        self.data.remove(profile);
+        self.data().remove(profile);
     }
 }
 

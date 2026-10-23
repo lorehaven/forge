@@ -2,8 +2,8 @@
 //! any HTTP request or database - see
 //! `docker/warehouse-service/src/routers/files/authz.rs`.
 
-use chrono::Utc;
 use quench_auth::prelude::Claims;
+use quench_core::time::Time;
 use warehouse_service::domain::storage::DynamicStorage;
 use warehouse_service::routers::files::authz::can_on_storage_claims;
 
@@ -25,7 +25,7 @@ fn storage_owned_by(owner: &str) -> DynamicStorage {
         quota_bytes: 1024,
         used_bytes: 0,
         sync_enabled: false,
-        created_at: Utc::now(),
+        created_at: Time::now(),
     }
 }
 

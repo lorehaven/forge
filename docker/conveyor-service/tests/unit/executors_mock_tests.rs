@@ -25,8 +25,8 @@ fn spec(name: &str) -> JobSpec {
     }
 }
 
-fn workspace() -> (tempfile::TempDir, Workspace) {
-    let dir = tempfile::tempdir().expect("temp dir");
+fn workspace() -> (quench_core::tmp::TempDir, Workspace) {
+    let dir = quench_core::tmp::TempDir::new().expect("temp dir");
     let workspace = Workspace::new(dir.path().to_path_buf());
     (dir, workspace)
 }

@@ -10,11 +10,11 @@ use crate::notify::prefs::Preferences;
 use crate::notify::unsubscribe::Unsubscribe;
 use crate::tokens::{PURPOSE_UNSUBSCRIBE, VerificationTokens};
 use crate::ui::common::{FormFields, ui_path};
-use http::StatusCode;
 use quench_db::prelude::Db;
+use quench_http::http::StatusCode;
 use quench_http::prelude::{Form, Inject, Query, Response, get, post};
+use quench_serde::Deserialize;
 use quench_web::prelude::*;
-use serde::Deserialize;
 
 #[derive(Debug, Deserialize, Default)]
 pub struct TokenQuery {
@@ -64,7 +64,7 @@ pub async fn unsubscribe_submit(
     match Preferences::new(&db).set(&username, template, false).await {
         Ok(()) => render_message_page(StatusCode::OK, "ui_unsubscribe_done"),
         Err(err) => {
-            tracing::error!(
+            quench_log::error!(
                 "could not unsubscribe {username} from {}: {err}",
                 template.id
             );
@@ -82,7 +82,7 @@ pub fn render_unsubscribe_page(token: &str, template: &Template) -> Response {
             format!(
                 "{}?token={}",
                 ui_path("/unsubscribe"),
-                urlencoding::encode(token)
+                quench_serde::urlencoded::percent_encode(token)
             ),
         )
         .child(

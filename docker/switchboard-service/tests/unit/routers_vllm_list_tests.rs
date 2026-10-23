@@ -1,7 +1,7 @@
 //! `render_instances_grid` - the vLLM instance dashboard's HTML, and the
 //! status/fit-class branching it does per instance.
 
-use chrono::Utc;
+use quench_core::time::Time;
 use switchboard_service::routers::vllm::list::render_instances_grid;
 use switchboard_service::routers::vllm::types::VllmInstance;
 
@@ -21,7 +21,7 @@ fn instance(status: &str) -> VllmInstance {
         enable_tool_calling: false,
         task: None,
         device: None,
-        started_at: Utc::now(),
+        started_at: Time::now(),
         status: status.to_string(),
         log_path: None,
         last_error: None,

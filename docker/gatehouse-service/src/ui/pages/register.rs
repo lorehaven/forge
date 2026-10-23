@@ -8,11 +8,11 @@ use crate::realm::{self, RealmError};
 use crate::tokens::{PURPOSE_VERIFY_EMAIL, VerificationTokens};
 use crate::ui::common::{UiPageKind, render_page, supported_locales, ui_path};
 use crate::ui::locale::BrowserLocale;
-use http::StatusCode;
 use quench_db::prelude::Db;
+use quench_http::http::StatusCode;
 use quench_http::prelude::{Form, Inject, Query, Response, get, post};
+use quench_serde::Deserialize;
 use quench_web::prelude::*;
-use serde::Deserialize;
 use std::sync::Arc;
 
 /// A verification link is good for a day.
@@ -96,7 +96,7 @@ pub async fn register_submit(
             };
             if let Err(err) = mailer.send_verification(&recipient, &link).await {
                 // The account exists either way; the user can ask for another link.
-                tracing::error!(
+                quench_log::error!(
                     "failed to send the verification email to {email} for {}: {err}",
                     user.username
                 );
@@ -104,7 +104,7 @@ pub async fn register_submit(
         }
         Err(err) => {
             // Account exists either way - don't make this look like registration failed.
-            tracing::error!(
+            quench_log::error!(
                 "failed to issue a verification token for {}: {err}",
                 user.username
             );
@@ -131,7 +131,7 @@ pub async fn verify(
     match realm::mark_email_verified(&db, &username).await {
         Ok(()) => redirect(&ui_path("/login?verified=1")),
         Err(err) => {
-            tracing::error!("failed to record email verification for {username}: {err:?}");
+            quench_log::error!("failed to record email verification for {username}: {err:?}");
             redirect(&ui_path("/login?err=ui_login_verify_invalid"))
         }
     }

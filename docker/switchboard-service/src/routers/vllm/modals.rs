@@ -4,7 +4,7 @@ use quench_http::prelude::{Query, Response, get};
 use quench_starter::common::routes::with_base_path;
 use quench_web::prelude::*;
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, quench_serde::Deserialize)]
 pub struct LaunchModalQuery {
     pub model: Option<String>,
     pub host: Option<String>,
@@ -22,7 +22,7 @@ pub struct LaunchModalQuery {
     pub recalculate_gpu_util: Option<bool>,
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, quench_serde::Deserialize)]
 pub struct StopModalQuery {
     pub id: String,
     pub model: Option<String>,
@@ -36,13 +36,13 @@ pub async fn handle_launch_modal(Query(query): Query<LaunchModalQuery>) -> Respo
         "<!-- launch-instance-modal -->{}",
         render_launch_modal(&models, &query, &gpu)
     );
-    Response::html(http::StatusCode::OK, html)
+    Response::html(quench_http::http::StatusCode::OK, html)
 }
 
 #[get("/api/v1/vllm/launch-modal/empty")]
 pub async fn empty_launch_modal() -> Response {
     Response::html(
-        http::StatusCode::OK,
+        quench_http::http::StatusCode::OK,
         format!(
             "<!-- launch-instance-modal -->{}",
             div()
@@ -60,13 +60,13 @@ pub async fn handle_stop_modal(Query(query): Query<StopModalQuery>) -> Response 
         "<!-- stop-instance-modal -->{}",
         render_stop_modal(&query.id, query.model.as_deref())
     );
-    Response::html(http::StatusCode::OK, html)
+    Response::html(quench_http::http::StatusCode::OK, html)
 }
 
 #[get("/api/v1/vllm/stop-modal/empty")]
 pub async fn empty_stop_modal() -> Response {
     Response::html(
-        http::StatusCode::OK,
+        quench_http::http::StatusCode::OK,
         format!(
             "<!-- stop-instance-modal -->{}",
             div()
@@ -690,7 +690,7 @@ pub fn launch_fit_note(
 
     // The `data-i18n-args` values feed the `{$name}` placeholders in the
     // localized fit-note messages.
-    let args = serde_json::json!({
+    let args = quench_serde::json!({
         "model": format!("{estimated_model_gb:.2}"),
         "budget": format!("{total_budget_gb:.2}"),
         "required": format!("{required_gb:.2}"),

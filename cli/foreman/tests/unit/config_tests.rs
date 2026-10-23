@@ -1,8 +1,8 @@
-use anyhow::Result;
 use foreman::config::*;
+use quench_core::Result;
 
 fn parse(text: &str) -> Result<Config> {
-    toml::from_str::<Config>(text).map_err(anyhow::Error::from)
+    quench_serde::toml::from_str::<Config>(text).map_err(quench_core::error::Error::from)
 }
 
 const VALID: &str = r#"

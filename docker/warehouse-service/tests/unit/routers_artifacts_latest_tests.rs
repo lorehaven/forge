@@ -8,8 +8,8 @@
 //! still a valid path segment on the same routes.
 
 use crate::support;
-use http::{Method, StatusCode};
 use quench_db::{Db, InMemoryDb};
+use quench_http::http::{Method, StatusCode};
 use warehouse_service::routers::artifacts;
 
 #[tokio::test]

@@ -5,15 +5,15 @@ use crate::executors::{Executor, Handle, LogChunk, Stream as LogStream};
 use crate::routers::api::authz::can_on_project;
 use crate::routers::api::{ApiError, OptionalClaims, json_error};
 use crate::scheduler::queue;
-use bytes::Bytes;
-use futures_util::StreamExt;
-use futures_util::stream::iter as stream_iter;
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::bytes::Bytes;
+use quench_core::stream::{Stream, StreamExt, iter as stream_iter, unfold};
 use quench_db::prelude::Db;
 use quench_http::prelude::{Inject, Path, Query, Response, get, http::StatusCode};
+use quench_serde::Deserialize;
 use quench_web::prelude::*;
-use serde::Deserialize;
-use tokio_stream::wrappers::BroadcastStream;
+use std::sync::Arc;
+use tokio::sync::broadcast::{Receiver, error::RecvError};
 
 /// What a frame's `data:` carries - a query param since `EventSource`
 /// (htmx's SSE extension) sends a fixed `Accept` header, no room to negotiate.
@@ -60,6 +60,27 @@ async fn authorize_job_read(
     }
 }
 
+/// A running job's broadcast channel as a body stream: each chunk rendered, a gap in the channel (the
+/// subscriber fell behind) replaced by `lagged`, the end of the job ending the stream.
+fn live_stream(
+    receiver: Receiver<LogChunk>,
+    render: impl Fn(&LogChunk) -> Bytes + Send + Sync + 'static,
+    lagged: &'static str,
+) -> impl Stream<Item = Result<Bytes, std::io::Error>> + Send + Unpin + 'static {
+    let render = Arc::new(render);
+    unfold(receiver, move |mut receiver| {
+        let render = Arc::clone(&render);
+        async move {
+            let item = match receiver.recv().await {
+                Ok(chunk) => render(&chunk),
+                Err(RecvError::Lagged(_)) => Bytes::from(lagged),
+                Err(RecvError::Closed) => return None,
+            };
+            Some((Ok::<_, std::io::Error>(item), receiver))
+        }
+    })
+}
+
 /// SSE, one event per log line; `id:` carries the sequence number so a
 /// reconnect can send `Last-Event-ID` instead of replaying the whole log.
 #[get("/api/v1/jobs/{id}/stream")]
@@ -86,17 +107,12 @@ pub async fn stream_logs(
                 .map(move |chunk| Ok(frame(&chunk, format))),
         );
 
-        let live = BroadcastStream::new(tail.live).map(move |message| {
-            message.map_or_else(
-                // Subscriber fell behind the channel; say so rather than pretend.
-                |_| {
-                    Ok::<_, std::io::Error>(Bytes::from(
-                        "event: lagged\ndata: some lines were skipped; reload to see them\n\n",
-                    ))
-                },
-                |chunk| Ok(frame(&chunk, format)),
-            )
-        });
+        // A subscriber that fell behind the channel is told so rather than left to pretend.
+        let live = live_stream(
+            tail.live,
+            move |chunk| frame(chunk, format),
+            "event: lagged\ndata: some lines were skipped; reload to see them\n\n",
+        );
 
         // Say the log is done, or a browser reads a plain close as a drop and refetches everything.
         let ended = stream_iter([Ok::<_, std::io::Error>(done())]);
@@ -145,16 +161,11 @@ pub async fn raw_logs(
     if let Ok(tail) = executor.0.logs(&handle).await {
         let history = stream_iter(tail.history.into_iter().map(|chunk| Ok(raw_line(&chunk))));
 
-        let live = BroadcastStream::new(tail.live).map(|message| {
-            message.map_or_else(
-                |_| {
-                    Ok::<_, std::io::Error>(Bytes::from(
-                        "\n[some lines were skipped; reload to see them]\n",
-                    ))
-                },
-                |chunk| Ok(raw_line(&chunk)),
-            )
-        });
+        let live = live_stream(
+            tail.live,
+            raw_line,
+            "\n[some lines were skipped; reload to see them]\n",
+        );
 
         return Response::streaming(StatusCode::OK, history.chain(live))
             .header("content-type", "text/plain; charset=utf-8")

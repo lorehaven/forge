@@ -4,7 +4,6 @@
 use crate::domain::db::{WorkbenchError, pool};
 use quench_auth::prelude::realm;
 use quench_db::prelude::Db;
-use sqlx::Row;
 
 /// Just enough of `auth.users` for the assignee picker.
 #[derive(Debug)]
@@ -29,15 +28,13 @@ pub async fn list_users(db: &Db) -> Result<Vec<RealmUser>, WorkbenchError> {
     let auth_schema = realm::auth_schema();
     let sql = format!("SELECT username, display_name FROM {auth_schema}.users ORDER BY username");
 
-    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .fetch_all(pool)
-        .await?;
+    let rows = pool.query(&sql, &[]).await?;
 
     rows.iter()
         .map(|row| {
             Ok(RealmUser {
-                username: row.try_get::<String, _>("username")?,
-                display_name: row.try_get::<Option<String>, _>("display_name")?,
+                username: row.get::<String, _>("username")?,
+                display_name: row.get::<Option<String>, _>("display_name")?,
             })
         })
         .collect()

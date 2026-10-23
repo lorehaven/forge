@@ -11,10 +11,8 @@
 //! without reading them.
 
 use crate::render::parse_dotenv;
-use anyhow::{Context as _, Result, bail, ensure};
-use base64::Engine as _;
-use serde_json::json;
-use sha2::{Digest, Sha256};
+use quench_core::{Context as _, Result, bail, ensure};
+use quench_serde::json;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -80,7 +78,7 @@ pub fn overlays_with_values(overlays_dir: &Path) -> Result<Vec<String>> {
 
 /// The Secret for `package`, as the manifest sent to `kubectl apply`.
 #[must_use]
-pub fn manifest(package: &str, namespace: &str, contents: &[u8]) -> serde_json::Value {
+pub fn manifest(package: &str, namespace: &str, contents: &[u8]) -> quench_serde::Value {
     json!({
         "apiVersion": "v1",
         "kind": "Secret",
@@ -91,14 +89,14 @@ pub fn manifest(package: &str, namespace: &str, contents: &[u8]) -> serde_json::
             // Not `app.kubernetes.io/managed-by: riveter`: `prune` selects on that label, and a Secret
             // in another environment's namespace must never look like something it owns.
             "labels": { LABEL: package },
-            "annotations": { HASH_ANNOTATION: hex::encode(Sha256::digest(contents)) },
+            "annotations": { HASH_ANNOTATION: quench_core::hex::encode(quench_crypto::hash::sha256(contents)) },
         },
-        "data": { KEY: base64::engine::general_purpose::STANDARD.encode(contents) },
+        "data": { KEY: quench_core::base64::STANDARD.encode(contents) },
     })
 }
 
 /// Sends a manifest to `kubectl apply -f -` over standard input.
-fn apply(manifest: &serde_json::Value, context: Option<&str>) -> Result<()> {
+fn apply(manifest: &quench_serde::Value, context: Option<&str>) -> Result<()> {
     let mut command = Command::new("kubectl");
     if let Some(context) = context {
         command.args(["--context", context]);

@@ -1,6 +1,6 @@
 //! Unit tests for `routers/ui/pages/initializing.rs`.
 
-use chrono::Utc;
+use quench_core::time::Time;
 use sage_service::clients::switchboard::VllmInstance;
 use sage_service::config::DefaultModel;
 use sage_service::routers::ui::pages::initializing::*;
@@ -33,7 +33,7 @@ fn instance(model: &str, status: &str) -> VllmInstance {
         enable_prefix_caching: false,
         task: None,
         device: None,
-        started_at: Utc::now(),
+        started_at: Time::now(),
         status: status.to_string(),
     }
 }

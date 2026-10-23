@@ -1,8 +1,8 @@
 use crate::support::{self, WithRivets};
-use http::{Method, StatusCode};
 use quench_db::{Db, InMemoryDb};
 use quench_http::di::Container;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{Method, StatusCode};
 use rivet_package::{Manifest, PackageBuilder};
 use std::sync::Arc;
 use warehouse_service::routers::rivets;
@@ -112,19 +112,21 @@ async fn publish_then_read_back() {
     )
     .await;
     assert_eq!(resp.status(), StatusCode::OK);
-    let (parts, body) = resp.into_hyper().into_parts();
+    let parts = resp.into_inner();
     let headers = parts.headers;
-    assert_eq!(headers["x-rivet-sha256"], rivet_package::sha256_hex(&bytes));
+    assert_eq!(
+        headers.get("x-rivet-sha256").unwrap().to_str().unwrap(),
+        rivet_package::sha256_hex(&bytes)
+    );
     assert!(
-        headers["content-disposition"]
+        headers
+            .get("content-disposition")
+            .unwrap()
             .to_str()
             .unwrap()
             .contains("forge-0.4.0.rivet")
     );
-    let downloaded = http_body_util::BodyExt::collect(body)
-        .await
-        .unwrap()
-        .to_bytes();
+    let downloaded = parts.body.collect_limited(usize::MAX).await.unwrap();
     assert_eq!(downloaded.as_ref(), bytes.as_slice());
     drop(rivets);
 }
@@ -199,7 +201,7 @@ async fn rejects_an_archive_that_disagrees_with_the_url() {
     assert!(leftovers.is_empty(), "{leftovers:?}");
 
     let resp = call(&app, &container, Method::GET, "/api/v1/rivets").await;
-    assert_eq!(support::json_body(resp).await, serde_json::json!([]));
+    assert_eq!(support::json_body(resp).await, quench_serde::json!([]));
     drop(rivets);
 }
 
@@ -266,7 +268,7 @@ async fn rejects_an_invalid_name_or_version_in_the_url() {
 #[tokio::test]
 async fn rejects_an_upload_over_the_size_limit() {
     let rivets = WithRivets::new();
-    envmnt::set("RIVET_MAX_BYTES", "16");
+    quench_core::env::set("RIVET_MAX_BYTES", "16");
     let (app, container) = setup().await;
 
     let resp = publish(&app, &container, "forge", "0.4.0", &rivet("forge", "0.4.0")).await;
@@ -425,5 +427,5 @@ async fn an_invalid_name_lists_nothing() {
     let (app, container) = setup().await;
     let resp = call(&app, &container, Method::GET, "/api/v1/rivets/Bad_Name").await;
     assert_eq!(resp.status(), StatusCode::OK);
-    assert_eq!(support::json_body(resp).await, serde_json::json!([]));
+    assert_eq!(support::json_body(resp).await, quench_serde::json!([]));
 }

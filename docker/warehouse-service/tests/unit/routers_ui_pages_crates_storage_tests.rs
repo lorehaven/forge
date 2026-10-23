@@ -11,7 +11,7 @@ fn write_index_line(name: &str, record: &IndexRecord) {
     let path = index_file_path(name).expect("valid name");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     let mut content = std::fs::read_to_string(&path).unwrap_or_default();
-    content.push_str(&serde_json::to_string(record).unwrap());
+    content.push_str(&quench_serde::json::to_string(record));
     content.push('\n');
     std::fs::write(&path, content).unwrap();
 }

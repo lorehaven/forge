@@ -8,8 +8,8 @@
 
 use crate::render::{ResourceScope, Selector, generate_manifests_selected};
 use crate::repl::{WaitPolicy, describe, kubectl_apply, kubectl_diff, ok, warn};
-use anyhow::Result;
 use quench_cli::prelude::{Tone, print_status};
+use quench_core::Result;
 
 /// What happened to one environment.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -102,7 +102,7 @@ pub fn preflight(
         contexts.push(context.unwrap_or_default());
     }
 
-    anyhow::ensure!(
+    quench_core::ensure!(
         problems.is_empty(),
         "nothing was applied; fix these first:\n  {}",
         problems.join("\n  ")
@@ -183,7 +183,9 @@ pub fn finish(reports: &[EnvReport]) -> Result<()> {
             _ => None,
         })
         .unwrap_or_default();
-    anyhow::bail!("stopped after a failure ({skipped} environment(s) not attempted)\n\n{detail}")
+    quench_core::bail!(
+        "stopped after a failure ({skipped} environment(s) not attempted)\n\n{detail}"
+    )
 }
 
 /// `apply` across `envs`.

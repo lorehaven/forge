@@ -11,7 +11,7 @@ pub mod pages;
 
 pub(crate) struct UiAuthenticated(pub bool);
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl FromRequest for UiAuthenticated {
     async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
         let Ok(config) = req.container().get::<JwtConfig>() else {
@@ -26,7 +26,8 @@ async fn root(UiAuthenticated(authenticated): UiAuthenticated) -> Response {
     if !authenticated {
         return common::ui_login_redirect();
     }
-    Response::new(http::StatusCode::FOUND).header("Location", with_base_path("/ui/home"))
+    Response::new(quench_http::http::StatusCode::FOUND)
+        .header("Location", with_base_path("/ui/home"))
 }
 
 #[get("/ui/")]
@@ -34,7 +35,8 @@ async fn root_slash(UiAuthenticated(authenticated): UiAuthenticated) -> Response
     if !authenticated {
         return common::ui_login_redirect();
     }
-    Response::new(http::StatusCode::FOUND).header("Location", with_base_path("/ui/home"))
+    Response::new(quench_http::http::StatusCode::FOUND)
+        .header("Location", with_base_path("/ui/home"))
 }
 
 pub fn register_routes() {

@@ -69,24 +69,24 @@ fn can_is_false_without_claims() {
 #[test]
 fn load_paths_splits_the_env_value_on_colons_and_trims_entries() {
     let key = "SWITCHBOARD_TEST_LOAD_PATHS_A";
-    envmnt::set(key, " /a/one : /a/two ::");
+    quench_core::env::set(key, " /a/one : /a/two ::");
     assert_eq!(
         load_paths(key, &["/default"]),
         vec!["/a/one".to_string(), "/a/two".to_string()]
     );
-    envmnt::remove(key);
+    quench_core::env::remove(key);
 }
 
 #[test]
 fn load_paths_falls_back_to_defaults_when_env_is_unset_or_blank() {
     let key = "SWITCHBOARD_TEST_LOAD_PATHS_B";
-    envmnt::remove(key);
+    quench_core::env::remove(key);
     assert_eq!(
         load_paths(key, &["/default/a", "/default/b"]),
         vec!["/default/a", "/default/b"]
     );
 
-    envmnt::set(key, "   ");
+    quench_core::env::set(key, "   ");
     assert_eq!(load_paths(key, &["/default/a"]), vec!["/default/a"]);
-    envmnt::remove(key);
+    quench_core::env::remove(key);
 }

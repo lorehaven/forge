@@ -7,8 +7,8 @@ use quench_db::prelude::Db;
 use quench_http::prelude::{
     Inject, Json, Path, Response, delete, get, http::StatusCode, post, put,
 };
+use quench_serde::Deserialize;
 use quench_starter::http::domain::api_error::{ApiError, json_error};
-use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct ProjectInput {

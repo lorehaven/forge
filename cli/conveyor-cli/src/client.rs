@@ -5,16 +5,16 @@
 //! Every call to conveyor after that carries the bearer token gatehouse
 //! handed back, never the password itself.
 
-use anyhow::{Context, Result, bail};
-use serde::Deserialize;
-use serde::de::DeserializeOwned;
-use serde_json::Value;
+use quench_core::{Context, Result, bail};
+use quench_serde::Deserialize;
+use quench_serde::DeserializeOwned;
+use quench_serde::Value;
 
 #[derive(Debug)]
 pub struct Client {
     base_url: String,
     token: Option<String>,
-    http: reqwest::Client,
+    http: quench_client::transport::Client,
 }
 
 #[derive(Deserialize)]
@@ -52,9 +52,9 @@ impl Client {
             .or_else(|| non_empty("CONVEYOR_PASSWORD"))
             .or_else(|| file.password.clone());
 
-        let http = reqwest::Client::builder()
+        let http = quench_client::transport::Client::builder()
             .danger_accept_invalid_certs(
-                insecure || envmnt::is_or("CONVEYOR_INSECURE", false) || file.insecure,
+                insecure || quench_core::env::is_or("CONVEYOR_INSECURE", false) || file.insecure,
             )
             .build()
             .context("could not build an HTTP client")?;
@@ -108,7 +108,7 @@ impl Client {
         Self {
             base_url,
             token,
-            http: reqwest::Client::new(),
+            http: quench_client::transport::Client::new(),
         }
     }
 
@@ -127,7 +127,10 @@ impl Client {
         format!("{}/api/v1{path}", self.base_url)
     }
 
-    fn authenticated(&self, request: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+    fn authenticated(
+        &self,
+        request: quench_client::transport::RequestBuilder,
+    ) -> quench_client::transport::RequestBuilder {
         match &self.token {
             Some(token) => request.bearer_auth(token),
             None => request,
@@ -171,7 +174,11 @@ impl Client {
     }
 
     /// For endpoints that answer with no body.
-    pub async fn send_empty(&self, method: reqwest::Method, path: &str) -> Result<()> {
+    pub async fn send_empty(
+        &self,
+        method: quench_client::transport::Method,
+        path: &str,
+    ) -> Result<()> {
         let response = self
             .authenticated(self.http.request(method, self.url(path)))
             .send()
@@ -188,7 +195,7 @@ impl Client {
     }
 
     /// The raw response, for streaming.
-    pub async fn stream(&self, path: &str) -> Result<reqwest::Response> {
+    pub async fn stream(&self, path: &str) -> Result<quench_client::transport::Response> {
         let response = self
             .authenticated(self.http.get(self.url(path)))
             .send()
@@ -209,14 +216,14 @@ impl Client {
 /// cached to disk - a CLI invocation is short-lived enough that logging in
 /// once per run is the simplest thing that works.
 async fn login(
-    http: &reqwest::Client,
+    http: &quench_client::transport::Client,
     gatehouse_url: &str,
     username: &str,
     password: &str,
 ) -> Result<String> {
     let response = http
         .post(format!("{gatehouse_url}/api/v1/auth/login"))
-        .json(&serde_json::json!({ "username": username, "password": password }))
+        .json(&quench_serde::json!({ "username": username, "password": password }))
         .send()
         .await
         .context("failed to reach gatehouse to log in")?;
@@ -234,7 +241,10 @@ async fn login(
     Ok(tokens.access_token)
 }
 
-async fn decode<T: DeserializeOwned>(response: reqwest::Response, path: &str) -> Result<T> {
+async fn decode<T: DeserializeOwned>(
+    response: quench_client::transport::Response,
+    path: &str,
+) -> Result<T> {
     let status = response.status();
     let body = response.text().await.unwrap_or_default();
 
@@ -242,7 +252,7 @@ async fn decode<T: DeserializeOwned>(response: reqwest::Response, path: &str) ->
         bail!(explain(status, &body));
     }
 
-    serde_json::from_str(&body)
+    quench_serde::json::from_str(&body)
         .with_context(|| format!("{path} answered with something unexpected: {body}"))
 }
 
@@ -250,8 +260,8 @@ async fn decode<T: DeserializeOwned>(response: reqwest::Response, path: &str) ->
 ///
 /// Conveyor answers errors as `{"error": "..."}`, so the message it went to the
 /// trouble of writing is what gets shown rather than the status code alone.
-pub fn explain(status: reqwest::StatusCode, body: &str) -> String {
-    let detail = serde_json::from_str::<Value>(body)
+pub fn explain(status: quench_client::transport::StatusCode, body: &str) -> String {
+    let detail = quench_serde::json::from_str::<Value>(body)
         .ok()
         .and_then(|value| value.get("error")?.as_str().map(str::to_string))
         .unwrap_or_else(|| body.trim().to_string());
@@ -267,6 +277,6 @@ pub fn explain(status: reqwest::StatusCode, body: &str) -> String {
 }
 
 pub fn non_empty(key: &str) -> Option<String> {
-    let value = envmnt::get_or(key, "");
+    let value = quench_core::env::get_or(key, "");
     (!value.trim().is_empty()).then(|| value.trim().to_string())
 }

@@ -1,8 +1,8 @@
 //! The Warehouse rivet registry, as a client.
 
-use anyhow::{Context as _, Result, bail, ensure};
-use reqwest::blocking::Client;
-use serde::Deserialize;
+use quench_client::blocking::Client;
+use quench_core::{Context as _, Result, bail, ensure};
+use quench_serde::Deserialize;
 
 /// Where the registry is, and who to be.
 #[derive(Debug)]
@@ -108,8 +108,8 @@ impl Registry {
 
     fn authorize(
         &self,
-        request: reqwest::blocking::RequestBuilder,
-    ) -> reqwest::blocking::RequestBuilder {
+        request: quench_client::blocking::RequestBuilder,
+    ) -> quench_client::blocking::RequestBuilder {
         match &self.token {
             Some(token) => request.bearer_auth(token),
             None => request,
@@ -118,8 +118,8 @@ impl Registry {
 
     fn send(
         &self,
-        request: reqwest::blocking::RequestBuilder,
-    ) -> Result<reqwest::blocking::Response> {
+        request: quench_client::blocking::RequestBuilder,
+    ) -> Result<quench_client::blocking::Response> {
         let response = self
             .authorize(request)
             .send()
@@ -130,7 +130,7 @@ impl Registry {
         }
 
         let detail = response
-            .json::<serde_json::Value>()
+            .json::<quench_serde::Value>()
             .ok()
             .and_then(|body| {
                 body.get("error")
@@ -242,11 +242,11 @@ fn client_credentials_token(gatehouse: &str, id: &str, secret: &str) -> Result<S
         "Gatehouse refused the client credentials (HTTP {})",
         response.status()
     );
-    let body: serde_json::Value = response
+    let body: quench_serde::Value = response
         .json()
         .context("unexpected response from Gatehouse")?;
     body.get("access_token")
-        .and_then(serde_json::Value::as_str)
+        .and_then(quench_serde::Value::as_str)
         .map(str::to_string)
         .context("Gatehouse's response had no access_token")
 }

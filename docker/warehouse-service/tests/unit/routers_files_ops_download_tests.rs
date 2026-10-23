@@ -1,7 +1,7 @@
 use crate::support;
-use http::{Method, StatusCode};
 use quench_auth::domain::jwt::JwtConfig;
 use quench_db::{Db, InMemoryDb};
+use quench_http::http::{Method, StatusCode};
 use warehouse_service::routers::files;
 use warehouse_service::routers::files::ops::download::{download_name, is_file};
 
@@ -29,7 +29,7 @@ fn download_name_falls_back_to_download_when_nothing_usable_remains() {
 
 #[tokio::test]
 async fn is_file_is_true_only_for_a_real_file_not_a_directory_or_missing_path() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let file = dir.path().join("f.txt");
     tokio::fs::write(&file, b"hi").await.unwrap();
 

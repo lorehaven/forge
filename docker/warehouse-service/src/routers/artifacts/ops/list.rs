@@ -8,7 +8,7 @@ use crate::routers::artifacts::ops::{
 use crate::routers::artifacts::validate_program;
 use quench_db::prelude::{Crud, Db};
 use quench_http::prelude::{Inject, Path, Query, Response, get, http::StatusCode};
-use serde::Deserialize;
+use quench_serde::Deserialize;
 use std::collections::HashMap;
 
 #[derive(Debug, Default, Deserialize)]
@@ -18,7 +18,7 @@ pub struct CatalogQuery {
 }
 
 #[get("/api/v1/artifacts/{program}/{platform}")]
-#[tracing::instrument]
+#[quench_log::instrument]
 pub async fn platform_versions(
     Inject(db): Inject<Db>,
     Path((program, platform_raw)): Path<(String, String)>,
@@ -44,7 +44,7 @@ pub async fn platform_versions(
 }
 
 #[get("/api/v1/artifacts/{program}")]
-#[tracing::instrument]
+#[quench_log::instrument]
 pub async fn program_versions(Inject(db): Inject<Db>, Path(program): Path<String>) -> Response {
     if !crate::routers::artifacts_enabled() {
         return disabled();
@@ -73,7 +73,7 @@ pub async fn program_versions(Inject(db): Inject<Db>, Path(program): Path<String
 }
 
 #[get("/api/v1/artifacts")]
-#[tracing::instrument]
+#[quench_log::instrument]
 pub async fn catalog(Inject(db): Inject<Db>, Query(query): Query<CatalogQuery>) -> Response {
     if !crate::routers::artifacts_enabled() {
         return disabled();

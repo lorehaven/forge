@@ -1,10 +1,9 @@
 //! `stop_instance` - the DELETE handler, its permission check and its
 //! not-found/error mapping.
 
-use async_trait::async_trait;
-use http::StatusCode;
-use http_body_util::BodyExt;
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::async_trait;
+use quench_http::http::StatusCode;
 use quench_http::prelude::{Inject, Path};
 use std::sync::Arc;
 use switchboard_service::routers::models::mod_impl::OptionalClaims;
@@ -36,12 +35,12 @@ fn engine(stop_result: Result<(), String>) -> Inject<Arc<dyn VllmEngine>> {
 
 async fn body_text(resp: quench_http::response::Response) -> String {
     let collected = resp
-        .into_hyper()
-        .into_body()
-        .collect()
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
         .await
         .expect("body collects");
-    String::from_utf8(collected.to_bytes().to_vec()).expect("utf8")
+    String::from_utf8(collected.to_vec()).expect("utf8")
 }
 
 #[tokio::test]

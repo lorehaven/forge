@@ -2,26 +2,26 @@
 //! kubectl calls an apply makes to keep it.
 
 use crate::env_support::cwd_lock;
+use quench_serde::Value as YamlValue;
 use riveter::env::{Workspace, with_workspace};
 use riveter::order::{WaitFor, gate_of, gates_of, order_by_dependencies};
 use riveter::render::{
     ResourceRef, ResourceScope, Selector, generate_manifests_selected, render_to_string,
 };
 use riveter::repl::{JobState, WaitPolicy, kubectl_apply, parse_job_state};
-use serde_norway::Value as YamlValue;
 use std::collections::HashMap;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 fn yaml(text: &str) -> YamlValue {
-    serde_norway::from_str(text).unwrap()
+    quench_serde::yaml::from_str(text).unwrap()
 }
 
 /// `kind/name` of each resource, in order.
 fn order_of(data: &YamlValue) -> Vec<String> {
     data["resources"]
-        .as_sequence()
+        .as_array()
         .unwrap()
         .iter()
         .map(|r| {
@@ -32,7 +32,7 @@ fn order_of(data: &YamlValue) -> Vec<String> {
         .collect()
 }
 
-fn ordered(text: &str) -> anyhow::Result<Vec<String>> {
+fn ordered(text: &str) -> quench_core::Result<Vec<String>> {
     let mut data = yaml(text);
     order_by_dependencies(&mut data)?;
     Ok(order_of(&data))
@@ -195,7 +195,7 @@ resources:
 
 // --- wait ------------------------------------------------------------------
 
-fn gate(text: &str, kind: &str) -> anyhow::Result<Option<(WaitFor, Option<u64>)>> {
+fn gate(text: &str, kind: &str) -> quench_core::Result<Option<(WaitFor, Option<u64>)>> {
     gate_of(&yaml(text), &refs(kind, "x"))
 }
 
@@ -332,8 +332,8 @@ resources:
     name: api
 ";
 
-fn workspace(overlay: &str) -> (tempfile::TempDir, Workspace) {
-    let dir = tempfile::tempdir().unwrap();
+fn workspace(overlay: &str) -> (quench_core::tmp::TempDir, Workspace) {
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let overlays = dir.path().join("overlays");
     fs::create_dir_all(overlays.join("demo")).unwrap();
     fs::write(overlays.join("demo/overlay.yaml"), overlay).unwrap();
@@ -416,7 +416,7 @@ fn only_the_gates_of_selected_resources_split_a_render() {
 /// succeed unless told otherwise, and `get job` answers with a fixed state.
 struct Cluster {
     log: std::path::PathBuf,
-    _dir: tempfile::TempDir,
+    _dir: quench_core::tmp::TempDir,
 }
 
 fn with_cluster<T>(
@@ -437,7 +437,7 @@ fn with_cluster_and_namespace<T>(
     let _guard = cwd_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let log = dir.path().join("calls.log");
     let script = format!(
         "#!/bin/sh
@@ -459,9 +459,9 @@ exit 0
     fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
 
     let original = std::env::var("PATH").unwrap_or_default();
-    envmnt::set("PATH", format!("{}:{original}", dir.path().display()));
+    quench_core::env::set("PATH", format!("{}:{original}", dir.path().display()));
     let result = body(&Cluster { log, _dir: dir });
-    envmnt::set("PATH", &original);
+    quench_core::env::set("PATH", &original);
     result
 }
 
@@ -492,7 +492,7 @@ fn apply(
     ws: Workspace,
     dry: bool,
     wait: WaitPolicy,
-) -> anyhow::Result<riveter::render::RenderedManifest> {
+) -> quench_core::Result<riveter::render::RenderedManifest> {
     with_workspace(ws, || {
         kubectl_apply("demo", dry, ResourceScope::All, &Selector::default(), wait)
     })

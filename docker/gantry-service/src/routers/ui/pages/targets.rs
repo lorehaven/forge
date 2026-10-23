@@ -11,8 +11,8 @@ use crate::routers::ui::common::{
 };
 use quench_auth::domain::jwt::JwtConfig;
 use quench_http::prelude::{Form, Inject, Path, Query, Response, get, http::StatusCode, post};
+use quench_serde::Deserialize;
 use quench_web::prelude::*;
-use serde::Deserialize;
 
 fn forbidden(name: &str) -> Response {
     redirect(&format!("/targets/{name}"), Some(("error", "not allowed")))
@@ -96,9 +96,9 @@ pub(super) async fn show(
     };
     let versions = gantry.registry.versions(&name).await.unwrap_or_default();
 
-    let status = serde_json::to_value(target.status)
-        .ok()
-        .and_then(|v| v.as_str().map(str::to_string))
+    let status = quench_serde::to_value(&target.status)
+        .as_str()
+        .map(str::to_string)
         .unwrap_or_default();
 
     let units = units_table(&target);

@@ -4,17 +4,15 @@ use crate::config::SageConfig;
 use crate::routers::ui::common::RequiredClaims;
 use crate::routers::ui::common::format::format_message;
 use crate::tools::ToolExecutor;
-use bytes::Bytes;
-use dashmap::DashMap;
-use futures_util::StreamExt;
+use quench_core::bytes::Bytes;
+use quench_core::stream::StreamExt;
+use quench_core::uuid::Uuid;
 use quench_db::prelude::{Crud, Db};
 use quench_http::prelude::{Form, Inject, Path, Query, Response, get, http::StatusCode, post};
+use quench_serde::Deserialize;
 use quench_starter::common::routes::with_base_path;
 use quench_web::prelude::*;
-use serde::Deserialize;
 use std::sync::Arc;
-use tokio_stream::wrappers::ReceiverStream;
-use uuid::Uuid;
 
 fn estimate_tokens(msg: &ChatMessage) -> usize {
     let image_tokens = msg.images.as_ref().map_or(0, |imgs| {
@@ -25,7 +23,7 @@ fn estimate_tokens(msg: &ChatMessage) -> usize {
 
 #[derive(Debug)]
 pub struct ChatState {
-    pub pending_messages: DashMap<String, ChatRequest>,
+    pub pending_messages: quench_core::map::ShardedMap<String, ChatRequest>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -249,13 +247,14 @@ pub fn encode_sse(event: &str, data: &str) -> Bytes {
 }
 
 /// Embed tool results into the response by replacing tool call markers
+#[must_use]
 pub fn embed_tool_results_into_response(
     response: &str,
     tool_results_with_markers: Vec<(String, String)>, // (marker_text, result_html)
 ) -> String {
     let mut result = response.to_string();
 
-    tracing::info!(
+    quench_log::info!(
         "[EMBED] Starting embedding: {} markers, response_len={}",
         tool_results_with_markers.len(),
         response.len()
@@ -269,7 +268,7 @@ pub fn embed_tool_results_into_response(
         };
 
         let found = response.contains(&marker);
-        tracing::info!(
+        quench_log::info!(
             "[EMBED] Looking for marker: found={}, marker_preview: {}",
             found,
             marker_preview
@@ -279,13 +278,13 @@ pub fn embed_tool_results_into_response(
         result = result.replace(&marker, &format!("\n\n{html}\n\n"));
         let after_len = result.len();
 
-        tracing::info!(
+        quench_log::info!(
             "[EMBED] After replace: content_len_change={}",
             i64::try_from(after_len).unwrap_or(i64::MAX) - i64::try_from(before_len).unwrap_or(0)
         );
     }
 
-    tracing::info!(
+    quench_log::info!(
         "[EMBED] Embedding complete: final_response_len={}",
         result.len()
     );
@@ -302,7 +301,7 @@ fn resolve_profile(
         |requested_profile| {
             crate::tools::capabilities::get_profile(requested_profile).map_or_else(
                 || {
-                    tracing::warn!(
+                    quench_log::warn!(
                         "Requested profile '{}' not found, using default '{}'",
                         requested_profile,
                         config.capability_profile.name
@@ -310,7 +309,7 @@ fn resolve_profile(
                     config.capability_profile.clone()
                 },
                 |profile| {
-                    tracing::info!("Using requested capability profile: {}", requested_profile);
+                    quench_log::info!("Using requested capability profile: {}", requested_profile);
                     profile
                 },
             )
@@ -499,16 +498,16 @@ fn error_event(err: &dyn std::fmt::Display) -> Bytes {
 }
 
 /// The `OpenAI` tool-call definitions of the tools the request may use.
-fn openai_tools(tool_registry: &crate::tools::ToolRegistry) -> Option<Vec<serde_json::Value>> {
+fn openai_tools(tool_registry: &crate::tools::ToolRegistry) -> Option<Vec<quench_serde::Value>> {
     let tool_definitions = tool_registry.get_definitions();
     if tool_definitions.is_empty() {
         return None;
     }
     // OpenAI tool-call format: {"type": "function", "function": {name, description, parameters}}
-    let openai_tools: Vec<serde_json::Value> = tool_definitions
+    let openai_tools: Vec<quench_serde::Value> = tool_definitions
         .into_iter()
         .map(|tool_def| {
-            serde_json::json!({
+            quench_serde::json!({
                 "type": "function",
                 "function": {
                     "name": tool_def.name,
@@ -518,7 +517,7 @@ fn openai_tools(tool_registry: &crate::tools::ToolRegistry) -> Option<Vec<serde_
             })
         })
         .collect();
-    tracing::info!(
+    quench_log::info!(
         "[VLLM_REQUEST] Sending {} tools to vLLM in OpenAI format",
         openai_tools.len()
     );
@@ -558,7 +557,7 @@ fn marker_for_call(
                 || tool_call.arguments.as_object().is_some_and(|arguments| {
                     arguments
                         .values()
-                        .filter_map(serde_json::Value::as_str)
+                        .filter_map(quench_serde::Value::as_str)
                         .any(|s| marker_text.contains(s))
                 })
         })
@@ -620,21 +619,21 @@ impl Turn {
         let tool_results_with_markers = self.execute_tools(&tool_calls, &full_content).await;
 
         // PHASE 4: embed tool results into response.
-        tracing::info!("[STREAM_REFACTOR] Phase 4: Embedding results into response");
+        quench_log::info!("[STREAM_REFACTOR] Phase 4: Embedding results into response");
         let has_tool_results = !tool_results_with_markers.is_empty();
         let response_for_display = if has_tool_results {
             embed_tool_results_into_response(&full_content, tool_results_with_markers)
         } else {
             full_content.clone()
         };
-        tracing::info!("[STREAM_REFACTOR] Phase 4 complete: Response ready for database");
+        quench_log::info!("[STREAM_REFACTOR] Phase 4 complete: Response ready for database");
 
         let persisted = self
             .persist(&response_for_display, &grounding.web_sources)
             .await;
 
         // PHASE 6: prepare final response with tool results embedded.
-        tracing::info!("[STREAM_REFACTOR] Phase 6: Finalizing response with tools");
+        quench_log::info!("[STREAM_REFACTOR] Phase 6: Finalizing response with tools");
         let final_payload = self
             .final_payload(
                 &persisted,
@@ -643,7 +642,7 @@ impl Turn {
                 &grounding.web_sources,
             )
             .await;
-        tracing::info!(
+        quench_log::info!(
             "[STREAM_REFACTOR] Phase 6 complete: Sending final response with {} tool results",
             if has_tool_results { "some" } else { "no" }
         );
@@ -682,7 +681,7 @@ impl Turn {
             .search_provider
             .as_deref()
             .unwrap_or(&self.config.default_search_provider);
-        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        let today = quench_core::time::Time::now().format("%Y-%m-%d").clone();
         let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel();
         let gathering = crate::grounding::gather(
             grounding_cfg,
@@ -755,7 +754,7 @@ impl Turn {
     async fn stream_answer(
         &self,
         messages: Vec<ChatMessage>,
-        tools_json: Option<Vec<serde_json::Value>>,
+        tools_json: Option<Vec<quench_serde::Value>>,
         tx: &Tx,
     ) -> Result<String, Aborted> {
         let max_tokens = u32::try_from(self.limits.reserved_for_generation).unwrap_or(u32::MAX);
@@ -773,13 +772,13 @@ impl Turn {
         {
             Ok(s) => s,
             Err(err) => {
-                tracing::error!("Failed to start chat stream: {}", err);
+                quench_log::error!("Failed to start chat stream: {}", err);
                 let _ = tx.send(error_event(&err)).await;
                 return Err(Aborted);
             }
         };
 
-        tracing::info!("[STREAM_REFACTOR] Phase 1: Streaming response");
+        quench_log::info!("[STREAM_REFACTOR] Phase 1: Streaming response");
         let mut full_content = String::new();
         while let Some(res) = stream.next().await {
             match res {
@@ -798,7 +797,7 @@ impl Turn {
             }
         }
 
-        tracing::info!(
+        quench_log::info!(
             "[STREAM_REFACTOR] Phase 1 complete: {} chars collected",
             full_content.len()
         );
@@ -843,23 +842,23 @@ impl Turn {
 
     /// PHASE 2: the tool calls in the answer, none for a meta-question about the tools.
     fn parse_tool_calls(&self, full_content: &str) -> Vec<crate::tools::ToolCall> {
-        tracing::info!(
+        quench_log::info!(
             "[STREAM_REFACTOR] Phase 2: Parsing tool calls from {} chars",
             full_content.len()
         );
 
         let has_toolcall_tags =
             full_content.contains("<toolcall>") || full_content.contains("<tool_call>");
-        tracing::debug!(
+        quench_log::debug!(
             "[PARSER] Response contains tool call tags: {}",
             has_toolcall_tags
         );
 
         let mut tool_calls = crate::tools::parser::parse_tool_calls(full_content);
-        tracing::info!("[STREAM_REFACTOR] Found {} tool calls", tool_calls.len());
+        quench_log::info!("[STREAM_REFACTOR] Found {} tool calls", tool_calls.len());
 
         if tool_calls.is_empty() && has_toolcall_tags {
-            tracing::warn!(
+            quench_log::warn!(
                 "[PARSER] Tool call tags found but failed to parse them. Response preview: {}",
                 &full_content[..full_content.len().min(500)]
             );
@@ -867,7 +866,7 @@ impl Turn {
 
         // Meta-questions about tools shouldn't trigger the tools themselves.
         if is_meta_question(&self.req.message) && !tool_calls.is_empty() {
-            tracing::warn!(
+            quench_log::warn!(
                 "[STREAM_REFACTOR] Suppressing {} tool calls for meta-question",
                 tool_calls.len()
             );
@@ -924,7 +923,7 @@ impl Turn {
         tool_calls: &[crate::tools::ToolCall],
         full_content: &str,
     ) -> Vec<(String, String)> {
-        tracing::info!(
+        quench_log::info!(
             "[STREAM_REFACTOR] Phase 3: Executing {} tools",
             tool_calls.len()
         );
@@ -950,7 +949,7 @@ impl Turn {
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown");
 
-            tracing::info!("[STREAM_REFACTOR] Executing tool: {}", tool_call.name);
+            quench_log::info!("[STREAM_REFACTOR] Executing tool: {}", tool_call.name);
 
             let result = if tool_call.name == "web_search" {
                 let executor = crate::tools::web_search::WebSearchExecutor::new(
@@ -973,7 +972,7 @@ impl Turn {
             if let Some(re) = &tool_result_re
                 && let Some(marker_text) = marker_for_call(tool_call, query, full_content, re)
             {
-                tracing::info!(
+                quench_log::info!(
                     "[STREAM_REFACTOR] Registered result for marker: {}",
                     &marker_text[..marker_text.len().min(50)]
                 );
@@ -981,7 +980,7 @@ impl Turn {
             }
         }
 
-        tracing::info!(
+        quench_log::info!(
             "[STREAM_REFACTOR] Phase 3 complete: {} tool results collected",
             tool_results_with_markers.len()
         );
@@ -1008,7 +1007,7 @@ impl Turn {
                 .project_id
                 .clone()
                 .or_else(|| self.stored.project_id.clone()),
-            updated_at: chrono::Utc::now().to_rfc3339(),
+            updated_at: quench_core::time::Time::now().to_rfc3339(),
         };
 
         let exists = conv_repo
@@ -1017,10 +1016,10 @@ impl Turn {
             .is_ok_and(|o| o.is_some());
         if exists {
             if let Err(err) = conv_repo.update(&conv).await {
-                tracing::error!("Failed to update conversation: {}", err);
+                quench_log::error!("Failed to update conversation: {}", err);
             }
         } else if let Err(err) = conv_repo.create(&conv).await {
-            tracing::error!("Failed to create conversation: {}", err);
+            quench_log::error!("Failed to create conversation: {}", err);
         }
         conv
     }
@@ -1033,17 +1032,17 @@ impl Turn {
             return req.parent_id.clone();
         }
         let msg_repo = self.db.repository::<crate::domain::models::Message>();
-        let user_msg_id = uuid::Uuid::new_v4().to_string();
+        let user_msg_id = quench_core::uuid::Uuid::new_v4().to_string();
         let user_msg = crate::domain::models::Message {
             id: user_msg_id.clone(),
             conversation_id: req.conversation_id.clone(),
             parent_id: self.stored.active_message_id.clone(),
             role: "user".to_string(),
             content: req.message.trim().to_string(),
-            created_at: chrono::Utc::now().to_rfc3339(),
+            created_at: quench_core::time::Time::now().to_rfc3339(),
         };
         if let Err(err) = msg_repo.create(&user_msg).await {
-            tracing::error!("Failed to create user message: {}", err);
+            quench_log::error!("Failed to create user message: {}", err);
         }
         // Link any files staged in the composer to this user message.
         let staged_ids = req.file_id_list();
@@ -1057,7 +1056,7 @@ impl Turn {
             )
             .await
         {
-            tracing::error!("Failed to link attachments to message: {}", err);
+            quench_log::error!("Failed to link attachments to message: {}", err);
         }
         Some(user_msg_id)
     }
@@ -1074,17 +1073,17 @@ impl Turn {
 
         // Stores the display copy, so embedded tool results persist too.
         let msg_repo = self.db.repository::<crate::domain::models::Message>();
-        let ai_msg_id = uuid::Uuid::new_v4().to_string();
+        let ai_msg_id = quench_core::uuid::Uuid::new_v4().to_string();
         let ai_msg = crate::domain::models::Message {
             id: ai_msg_id.clone(),
             conversation_id: self.req.conversation_id.clone(),
             parent_id: ai_parent_id.clone(),
             role: "assistant".to_string(),
             content: response_for_display.trim().to_string(),
-            created_at: chrono::Utc::now().to_rfc3339(),
+            created_at: quench_core::time::Time::now().to_rfc3339(),
         };
         if let Err(err) = msg_repo.create(&ai_msg).await {
-            tracing::error!("Failed to create AI message: {}", err);
+            quench_log::error!("Failed to create AI message: {}", err);
         }
 
         // Record auto-injected RAG sources against this message for attribution.
@@ -1097,21 +1096,21 @@ impl Turn {
             )
             .await
         {
-            tracing::error!("Failed to record RAG sources: {}", err);
+            quench_log::error!("Failed to record RAG sources: {}", err);
         }
 
         // Record the web pages the answer was grounded on, so they still show after a reload.
         if let Err(err) =
             crate::files::rag::record_web_sources(&self.db, &ai_msg_id, web_sources).await
         {
-            tracing::error!("Failed to record web sources: {}", err);
+            quench_log::error!("Failed to record web sources: {}", err);
         }
 
         conv.active_message_id = Some(ai_msg_id.clone());
-        conv.updated_at = chrono::Utc::now().to_rfc3339();
+        conv.updated_at = quench_core::time::Time::now().to_rfc3339();
         let conv_repo = self.db.repository::<crate::domain::models::Conversation>();
         if let Err(err) = conv_repo.update(&conv).await {
-            tracing::error!("Failed to update conversation tip: {}", err);
+            quench_log::error!("Failed to update conversation tip: {}", err);
         }
 
         Persisted {
@@ -1491,7 +1490,7 @@ async fn find_chat_instance(
     req: &ChatRequest,
 ) -> Result<crate::clients::switchboard::VllmInstance, Response> {
     let instances = switchboard.get_vllm_instances().await.map_err(|err| {
-        tracing::error!("Failed to get vLLM instances: {}", err);
+        quench_log::error!("Failed to get vLLM instances: {}", err);
         Response::text(
             StatusCode::INTERNAL_SERVER_ERROR,
             "api_error_switchboard_unavailable",
@@ -1506,7 +1505,7 @@ async fn find_chat_instance(
     };
 
     if !instance.is_chat_capable() {
-        tracing::warn!(
+        quench_log::warn!(
             "Chat request routed to non-chat instance '{}' (task={:?}); embedding instances do not serve chat completions",
             instance.id,
             instance.task
@@ -1531,10 +1530,10 @@ async fn precreate_conversation(db: &Db, req: &ChatRequest, username: &str) {
             active_message_id: None,
             owner: username.to_string(),
             project_id: req.project_id.clone(),
-            updated_at: chrono::Utc::now().to_rfc3339(),
+            updated_at: quench_core::time::Time::now().to_rfc3339(),
         };
         if let Err(e) = conv_repo.create(&conv).await {
-            tracing::error!(
+            quench_log::error!(
                 "Failed to pre-create conversation {}: {}",
                 req.conversation_id,
                 e
@@ -1545,7 +1544,7 @@ async fn precreate_conversation(db: &Db, req: &ChatRequest, username: &str) {
 
 /// Logs whether the system prompt advertises the tools.
 fn log_system_prompt(system_message: &ChatMessage) {
-    tracing::info!(
+    quench_log::info!(
         "System prompt length: {} chars, contains AVAILABLE TOOLS: {}",
         system_message.content.len(),
         system_message.content.contains("AVAILABLE TOOLS")
@@ -1555,13 +1554,13 @@ fn log_system_prompt(system_message: &ChatMessage) {
     let has_tools_section = system_message.content.contains("AVAILABLE TOOLS");
 
     if has_tools_section && has_web_search {
-        tracing::info!("✓ System prompt includes web_search tool definition");
+        quench_log::info!("✓ System prompt includes web_search tool definition");
     } else if has_tools_section && !has_web_search {
-        tracing::warn!(
+        quench_log::warn!(
             "✗ System prompt has AVAILABLE TOOLS section but missing web_search definition"
         );
     } else {
-        tracing::warn!("✗ System prompt does NOT include AVAILABLE TOOLS section");
+        quench_log::warn!("✗ System prompt does NOT include AVAILABLE TOOLS section");
     }
 }
 
@@ -1583,7 +1582,7 @@ async fn build_user_message(db: &Db, req: &ChatRequest, username: &str) -> ChatM
         }
     }
 
-    tracing::info!("User message: {}", current_user_message.content);
+    quench_log::info!("User message: {}", current_user_message.content);
     current_user_message
 }
 
@@ -1642,12 +1641,11 @@ pub async fn stream_message(
 
     let message_id = id;
 
-    let req = match chat_state.pending_messages.get(&message_id) {
-        Some(r) => r.clone(),
-        None => return Response::new(StatusCode::NOT_FOUND),
+    let Some(req) = chat_state.pending_messages.get(&message_id) else {
+        return Response::new(StatusCode::NOT_FOUND);
     };
 
-    tracing::info!(
+    quench_log::info!(
         "Chat request: search_provider={:?}, instance_id={}",
         req.search_provider,
         req.instance_id
@@ -1728,24 +1726,27 @@ pub async fn stream_message(
         history,
         injected_rag_hits,
         stored,
-        today: chrono::Utc::now().format("%Y-%m-%d").to_string(),
+        today: quench_core::time::Time::now().format("%Y-%m-%d"),
     };
 
     // Channel-backed, not `async_stream::stream!`: DB work inside makes an
-    // inline generator `!Sync`, but `ReceiverStream` is `Sync` regardless.
+    // inline generator `!Sync`, but the receiver stream is `Sync` regardless.
     let (tx, rx) = tokio::sync::mpsc::channel::<Bytes>(16);
     tokio::spawn(turn.run(tx));
 
-    let sse_stream = ReceiverStream::new(rx).map(Ok::<_, std::io::Error>);
+    let sse_stream = quench_core::stream::StreamExt::map(
+        quench_http::stream::receiver_stream(rx),
+        Ok::<_, std::io::Error>,
+    );
     Response::streaming(StatusCode::OK, sse_stream).header("content-type", "text/event-stream")
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, quench_serde::Deserialize)]
 pub struct DeleteQuery {
     pub active_id: Option<String>,
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, quench_serde::Deserialize)]
 pub struct DeleteModalQuery {
     pub active_id: Option<String>,
 }
@@ -1904,7 +1905,7 @@ pub async fn delete_conversation(
     Response::html(StatusCode::OK, format!("{close_modal}{oob_delete}"))
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, quench_serde::Deserialize)]
 pub struct SwitchBranchRequest {
     pub conversation_id: String,
     pub target_message_id: String,
@@ -1918,7 +1919,7 @@ pub async fn switch_branch(
     if let Err(err) =
         switch_active_message(&db, &form.conversation_id, &form.target_message_id).await
     {
-        tracing::error!("Failed to switch active branch: {}", err);
+        quench_log::error!("Failed to switch active branch: {}", err);
         return Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal");
     }
 
@@ -1934,7 +1935,7 @@ pub async fn switch_branch(
 pub async fn get_conversation_messages(
     db: &quench_db::prelude::Db,
     active_message_id: Option<&str>,
-) -> Result<Vec<ChatMessage>, anyhow::Error> {
+) -> Result<Vec<ChatMessage>, quench_core::error::Error> {
     let mut chat_messages = Vec::new();
     let Some(mut current_id) = active_message_id.map(std::string::ToString::to_string) else {
         return Ok(chat_messages);
@@ -1942,7 +1943,7 @@ pub async fn get_conversation_messages(
 
     match db {
         quench_db::prelude::Db::Postgres(pg_db) => {
-            let schema = envmnt::get_or("DB_SCHEMA", "sage");
+            let schema = quench_core::env::get_or("DB_SCHEMA", "sage");
             let table = format!("{schema}.messages");
             let query = format!(
                 "WITH RECURSIVE thread AS (
@@ -1957,11 +1958,12 @@ pub async fn get_conversation_messages(
                 SELECT id, role, content FROM thread ORDER BY depth DESC"
             );
 
-            let rows =
-                sqlx::query_as::<_, (String, String, String)>(sqlx::AssertSqlSafe(query.as_str()))
-                    .bind(current_id)
-                    .fetch_all(pg_db.pool())
-                    .await?;
+            let rows = crate::domain::rows::fetch_all_tuples::<(String, String, String)>(
+                pg_db.pool(),
+                &query,
+                &[&current_id],
+            )
+            .await?;
 
             // So vision models keep seeing them in follow-up turns.
             let message_ids: Vec<String> = rows.iter().map(|(id, _, _)| id.clone()).collect();
@@ -2012,7 +2014,7 @@ pub async fn get_conversation_messages(
 pub async fn get_conversation_message_nodes(
     db: &quench_db::prelude::Db,
     active_message_id: Option<&str>,
-) -> Result<Vec<crate::domain::models::Message>, anyhow::Error> {
+) -> Result<Vec<crate::domain::models::Message>, quench_core::error::Error> {
     let mut message_nodes = Vec::new();
     let Some(mut current_id) = active_message_id.map(std::string::ToString::to_string) else {
         return Ok(message_nodes);
@@ -2020,7 +2022,7 @@ pub async fn get_conversation_message_nodes(
 
     match db {
         quench_db::prelude::Db::Postgres(pg_db) => {
-            let schema = envmnt::get_or("DB_SCHEMA", "sage");
+            let schema = quench_core::env::get_or("DB_SCHEMA", "sage");
             let table = format!("{schema}.messages");
             let query = format!(
                 "WITH RECURSIVE thread AS (
@@ -2035,13 +2037,15 @@ pub async fn get_conversation_message_nodes(
                 SELECT id, conversation_id, parent_id, role, content, created_at FROM thread ORDER BY depth DESC"
             );
 
-            let rows =
-                sqlx::query_as::<_, (String, String, Option<String>, String, String, String)>(
-                    sqlx::AssertSqlSafe(query.as_str()),
-                )
-                .bind(current_id)
-                .fetch_all(pg_db.pool())
-                .await?;
+            let rows = crate::domain::rows::fetch_all_tuples::<(
+                String,
+                String,
+                Option<String>,
+                String,
+                String,
+                String,
+            )>(pg_db.pool(), &query, &[&current_id])
+            .await?;
 
             for (id, conversation_id, parent_id, role, content, created_at) in rows {
                 message_nodes.push(crate::domain::models::Message {
@@ -2083,10 +2087,10 @@ pub async fn get_siblings(
     db: &quench_db::prelude::Db,
     conversation_id: &str,
     parent_id: Option<&str>,
-) -> Result<Vec<crate::domain::models::Message>, anyhow::Error> {
+) -> Result<Vec<crate::domain::models::Message>, quench_core::error::Error> {
     match db {
         quench_db::prelude::Db::Postgres(pg_db) => {
-            let schema = envmnt::get_or("DB_SCHEMA", "sage");
+            let schema = quench_core::env::get_or("DB_SCHEMA", "sage");
             let table = format!("{schema}.messages");
             let parent_filter = parent_id.map_or("parent_id IS NULL", |_| "parent_id = $2");
             let query = format!(
@@ -2096,15 +2100,19 @@ pub async fn get_siblings(
                      ORDER BY created_at ASC"
             );
 
-            let mut q =
-                sqlx::query_as::<_, (String, String, Option<String>, String, String, String)>(
-                    sqlx::AssertSqlSafe(query.as_str()),
-                )
-                .bind(conversation_id);
-            if let Some(pid) = parent_id {
-                q = q.bind(pid);
+            let mut params: Vec<&dyn quench_pg::ToSql> = vec![&conversation_id];
+            if let Some(pid) = &parent_id {
+                params.push(pid);
             }
-            let rows = q.fetch_all(pg_db.pool()).await?;
+            let rows = crate::domain::rows::fetch_all_tuples::<(
+                String,
+                String,
+                Option<String>,
+                String,
+                String,
+                String,
+            )>(pg_db.pool(), &query, &params)
+            .await?;
             let mut siblings = Vec::new();
             for (id, conversation_id, parent_id, role, content, created_at) in rows {
                 siblings.push(crate::domain::models::Message {
@@ -2138,24 +2146,24 @@ pub async fn switch_active_message(
     db: &quench_db::prelude::Db,
     conversation_id: &str,
     target_message_id: &str,
-) -> Result<(), anyhow::Error> {
+) -> Result<(), quench_core::error::Error> {
     let mut current_id = target_message_id.to_string();
 
     match db {
         quench_db::prelude::Db::Postgres(pg_db) => {
-            let schema = envmnt::get_or("DB_SCHEMA", "sage");
+            let schema = quench_core::env::get_or("DB_SCHEMA", "sage");
             let table = format!("{schema}.messages");
 
             loop {
                 let query = format!(
                     "SELECT id FROM {table} WHERE conversation_id = $1 AND parent_id = $2 ORDER BY created_at DESC LIMIT 1"
                 );
-                let child_opt: Option<(String,)> =
-                    sqlx::query_as(sqlx::AssertSqlSafe(query.as_str()))
-                        .bind(conversation_id)
-                        .bind(&current_id)
-                        .fetch_optional(pg_db.pool())
-                        .await?;
+                let child_opt: Option<(String,)> = crate::domain::rows::fetch_optional_tuple(
+                    pg_db.pool(),
+                    &query,
+                    &[&conversation_id, &current_id],
+                )
+                .await?;
 
                 if let Some((child_id,)) = child_opt {
                     current_id = child_id;
@@ -2189,14 +2197,14 @@ pub async fn switch_active_message(
     let conv_repo = db.repository::<crate::domain::models::Conversation>();
     if let Some(mut conv) = conv_repo.read(conversation_id).await? {
         conv.active_message_id = Some(current_id);
-        conv.updated_at = chrono::Utc::now().to_rfc3339();
+        conv.updated_at = quench_core::time::Time::now().to_rfc3339();
         conv_repo.update(&conv).await?;
     }
 
     Ok(())
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, quench_serde::Deserialize)]
 pub struct RegenerateRequest {
     pub message_id: String,
 }
@@ -2327,7 +2335,7 @@ pub async fn edit_form(Path(id): Path<String>, Inject(db): Inject<Db>) -> Respon
     Response::html(StatusCode::OK, form.render())
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, quench_serde::Deserialize)]
 pub struct HandleEditRequest {
     pub message_id: String,
     pub new_content: String,
@@ -2348,18 +2356,18 @@ pub async fn handle_edit(Form(form): Form<HandleEditRequest>, Inject(db): Inject
         parent_id: msg.parent_id, // Branch from the same parent
         role: "user".to_string(),
         content: form.new_content.trim().to_string(),
-        created_at: chrono::Utc::now().to_rfc3339(),
+        created_at: quench_core::time::Time::now().to_rfc3339(),
     };
 
     if let Err(err) = repo.create(&user_msg).await {
-        tracing::error!("Failed to create edited user message: {}", err);
+        quench_log::error!("Failed to create edited user message: {}", err);
         return Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal");
     }
 
     let conv_repo = db.repository::<crate::domain::models::Conversation>();
     if let Ok(Some(mut conv)) = conv_repo.read(&msg.conversation_id).await {
         conv.active_message_id = Some(user_msg_id);
-        conv.updated_at = chrono::Utc::now().to_rfc3339();
+        conv.updated_at = quench_core::time::Time::now().to_rfc3339();
         let _ = conv_repo.update(&conv).await;
     }
 
@@ -2368,7 +2376,7 @@ pub async fn handle_edit(Form(form): Form<HandleEditRequest>, Inject(db): Inject
     Response::new(StatusCode::OK).header("HX-Redirect", target_url)
 }
 
-fn json_response(status: StatusCode, value: &serde_json::Value) -> Response {
+fn json_response(status: StatusCode, value: &quench_serde::Value) -> Response {
     Response::json(status, value)
         .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
 }
@@ -2399,7 +2407,7 @@ pub async fn token_stats(
 
             json_response(
                 StatusCode::OK,
-                &serde_json::json!({
+                &quench_serde::json!({
                     "success": true,
                     "stats": usage.to_json(),
                     "display": usage.format_display(),
@@ -2409,7 +2417,7 @@ pub async fn token_stats(
         }
         Err(err) => json_response(
             StatusCode::INTERNAL_SERVER_ERROR,
-            &serde_json::json!({
+            &quench_serde::json!({
                 "success": false,
                 "error": err,
             }),

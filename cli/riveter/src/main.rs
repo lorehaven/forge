@@ -1,5 +1,5 @@
-use anyhow::Result;
 use clap::{CommandFactory, Parser};
+use quench_core::Result;
 use riveter::against::diff_against;
 use riveter::cli::{ApplyScope, Cli, Cmd, EnvCmd};
 use riveter::env::{env_list, env_set, env_show, resolve_env, resolve_envs};
@@ -96,7 +96,7 @@ fn main() -> Result<()> {
             if let Some(git_ref) = against {
                 // No cluster is involved, so there is no list of clusters to walk: one overlay, two
                 // revisions of it.
-                anyhow::ensure!(
+                quench_core::ensure!(
                     !cli.env.as_deref().is_some_and(|e| e.contains(',')),
                     "--against compares one environment with its own history; name one `--env`"
                 );
@@ -229,7 +229,7 @@ fn main() -> Result<()> {
                 let env = resolve_env(cli.env.as_deref())?;
                 validate_env(&env, map_apply_scope(scope), &Selector::parse(&targets)?)
             } else {
-                anyhow::ensure!(
+                quench_core::ensure!(
                     targets.is_empty(),
                     "targets select resources of an environment; with --file there is none"
                 );
@@ -277,7 +277,7 @@ fn print_help(topic: Option<&str>) -> Result<()> {
         riveter::help::find_on(topic, riveter::help::Surface::Cli).map_or(topic, |c| c.name);
     match cmd.find_subcommand_mut(canonical) {
         Some(sub) => sub.print_help()?,
-        None => anyhow::bail!(
+        None => quench_core::bail!(
             "{}",
             riveter::help::unknown_topic(topic, riveter::help::Surface::Cli)
         ),

@@ -68,12 +68,12 @@ fn machete_json_runs_through_the_full_binary_with_a_banner_free_stdout() {
         !String::from_utf8_lossy(&output.stdout).contains("Anvil CLI"),
         "--json stdout must not carry anvil's own banner"
     );
-    let report: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("stdout is a single JSON document");
+    let report: quench_serde::Value =
+        quench_serde::json::from_slice(&output.stdout).expect("stdout is a single JSON document");
     assert!(
         report
             .get("findings")
-            .is_some_and(serde_json::Value::is_array),
+            .is_some_and(quench_serde::Value::is_array),
         "report has a `findings` array: {report}"
     );
 }
@@ -91,8 +91,8 @@ fn deny_json_runs_through_the_full_binary_with_a_banner_free_stdout() {
         "--json stdout must not carry anvil's own banner"
     );
     for line in stdout.lines().filter(|line| !line.trim().is_empty()) {
-        let _: serde_json::Value =
-            serde_json::from_str(line).expect("each stdout line is its own JSON document");
+        let _: quench_serde::Value =
+            quench_serde::json::from_str(line).expect("each stdout line is its own JSON document");
     }
 }
 
@@ -108,7 +108,7 @@ fn config_check_accepts_the_estates_own_anvil_toml() {
 
 #[test]
 fn config_check_rejects_a_malformed_anvil_toml_and_lists_every_problem() {
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     std::fs::write(
         dir.path().join(".anvil.toml"),
         "bogus_top_level = 1\n\n[docker.modules.core]\npackages = []\n",

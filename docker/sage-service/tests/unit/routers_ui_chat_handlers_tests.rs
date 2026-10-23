@@ -10,13 +10,12 @@
 //! Everything else in this file that doesn't need those two clients is
 //! covered.
 
-use bytes::Bytes;
-use http::{HeaderMap, Method, StatusCode, Uri};
-use http_body_util::BodyExt;
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::bytes::Bytes;
 use quench_db::prelude::{Crud, Db};
 use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::request::Request;
 use sage_service::domain::models::{Conversation, Message};
 use sage_service::routers::ui::chat::*;
@@ -28,7 +27,7 @@ fn db() -> Db {
 
 fn state() -> ChatState {
     ChatState {
-        pending_messages: dashmap::DashMap::new(),
+        pending_messages: quench_core::map::ShardedMap::new(),
     }
 }
 
@@ -80,7 +79,7 @@ fn form_req(
     pairs: &[(&str, &str)],
     container: &Arc<quench_http::di::Container>,
 ) -> Request {
-    let encoded = serde_urlencoded::to_string(pairs).unwrap();
+    let encoded = quench_serde::urlencoded::to_string(pairs).unwrap();
     let mut headers = HeaderMap::new();
     headers.insert(
         "content-type",
@@ -96,25 +95,35 @@ fn form_req(
 }
 
 async fn body_text(resp: quench_http::response::Response) -> String {
-    let collected = resp.into_hyper().into_body().collect().await.expect("body");
-    String::from_utf8_lossy(&collected.to_bytes()).into_owned()
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .expect("body");
+    String::from_utf8_lossy(&collected).into_owned()
 }
 
-async fn json_body(resp: quench_http::response::Response) -> serde_json::Value {
-    let collected = resp.into_hyper().into_body().collect().await.expect("body");
-    serde_json::from_slice(&collected.to_bytes()).expect("valid json body")
+async fn json_body(resp: quench_http::response::Response) -> quench_serde::Value {
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .expect("body");
+    quench_serde::json::from_slice(&collected).expect("valid json body")
 }
 
 /// Splits a response into its headers and text body, since `Response` only
-/// exposes headers via the consuming `into_hyper()` - a test that needs both
+/// exposes headers via the consuming `into_inner()` - a test that needs both
 /// takes ownership once here instead of trying to inspect headers on a
 /// borrow and then separately consume the body.
-async fn parts(resp: quench_http::response::Response) -> (http::HeaderMap, String) {
-    let (parts, body) = resp.into_hyper().into_parts();
-    let collected = body.collect().await.expect("body");
+async fn parts(resp: quench_http::response::Response) -> (quench_http::http::HeaderMap, String) {
+    let parts = resp.into_inner();
+    let collected = parts.body.collect_limited(usize::MAX).await.expect("body");
     (
         parts.headers,
-        String::from_utf8_lossy(&collected.to_bytes()).into_owned(),
+        String::from_utf8_lossy(&collected).into_owned(),
     )
 }
 

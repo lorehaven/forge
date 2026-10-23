@@ -3,6 +3,7 @@
 use chrono::{DateTime, TimeZone, Utc};
 use chrono_tz::{Europe::Warsaw, Tz};
 use daybook_service::domain::recurrence::{Mode, Recurrence, Unit};
+use quench_core::time::Time;
 
 fn rule(unit: Unit, interval: u32) -> Recurrence {
     Recurrence {
@@ -15,22 +16,36 @@ fn rule(unit: Unit, interval: u32) -> Recurrence {
 }
 
 /// A Warsaw wall-clock time as a UTC instant.
-fn warsaw(y: i32, m: u32, d: u32, h: u32, min: u32) -> DateTime<Utc> {
-    Warsaw
-        .with_ymd_and_hms(y, m, d, h, min, 0)
-        .unwrap()
-        .with_timezone(&Utc)
+fn warsaw(y: i32, m: u32, d: u32, h: u32, min: u32) -> Time {
+    from_chrono(
+        Warsaw
+            .with_ymd_and_hms(y, m, d, h, min, 0)
+            .unwrap()
+            .with_timezone(&Utc),
+    )
+}
+
+const fn from_chrono(at: DateTime<Utc>) -> Time {
+    Time::from_unix_nanos(at.timestamp(), at.timestamp_subsec_nanos())
+}
+
+fn to_chrono(at: Time) -> DateTime<Utc> {
+    DateTime::from_timestamp(at.timestamp(), at.subsec_nanos()).unwrap()
+}
+
+fn utc(y: i32, m: u32, d: u32, h: u32, min: u32) -> Time {
+    Time::from_ymd_hms(y, m, d, h, min, 0).unwrap()
 }
 
 /// What a UTC instant reads as in Warsaw, as `(y, m, d, h, min)`.
-fn local(at: DateTime<Utc>) -> (i32, u32, u32, u32, u32) {
+fn local(at: Time) -> (i32, u32, u32, u32, u32) {
     use chrono::{Datelike, Timelike};
-    let at = at.with_timezone(&Warsaw);
+    let at = to_chrono(at).with_timezone(&Warsaw);
     (at.year(), at.month(), at.day(), at.hour(), at.minute())
 }
 
 /// Completing on the due date, with the schedule anchored there.
-fn next(rule: &Recurrence, due: DateTime<Utc>, now: DateTime<Utc>) -> (i32, u32, u32, u32, u32) {
+fn next(rule: &Recurrence, due: Time, now: Time) -> (i32, u32, u32, u32, u32) {
     local(rule.next_due(due, due, now).expect("a next occurrence"))
 }
 
@@ -138,7 +153,7 @@ fn the_time_of_day_survives_the_clocks_going_back() {
     let due = warsaw(2026, 10, 24, 9, 0);
     let next = rule(Unit::Day, 1).next_due(due, due, due).unwrap();
     assert_eq!(local(next), (2026, 10, 25, 9, 0));
-    assert_eq!(next, Utc.with_ymd_and_hms(2026, 10, 25, 8, 0, 0).unwrap());
+    assert_eq!(next, utc(2026, 10, 25, 8, 0));
 }
 
 #[test]
@@ -170,9 +185,9 @@ fn after_completion_counts_from_the_day_it_is_done_at_the_original_time() {
 fn a_rule_is_evaluated_in_its_own_zone() {
     let mut rule = rule(Unit::Day, 1);
     rule.timezone = "America/New_York".to_string();
-    let due = Utc.with_ymd_and_hms(2026, 10, 22, 13, 0, 0).unwrap(); // 09:00 in New York (EDT)
+    let due = utc(2026, 10, 22, 13, 0); // 09:00 in New York (EDT)
     let next = rule.next_due(due, due, due).unwrap();
-    assert_eq!(next, Utc.with_ymd_and_hms(2026, 10, 23, 13, 0, 0).unwrap());
+    assert_eq!(next, utc(2026, 10, 23, 13, 0));
 }
 
 #[test]
@@ -221,23 +236,25 @@ fn validation_normalises_and_refuses() {
 
 #[test]
 fn the_json_form_defaults_to_a_fixed_rule_in_utc() {
-    let rule: Recurrence = serde_json::from_str(r#"{"unit":"week","interval":2}"#).unwrap();
+    let rule: Recurrence = quench_serde::json::from_str(r#"{"unit":"week","interval":2}"#).unwrap();
     assert_eq!(rule.mode, Mode::Fixed);
     assert_eq!(rule.timezone, "UTC");
     assert!(rule.weekdays.is_empty());
 
-    let json = serde_json::to_value(&rule).unwrap();
+    let json = quench_serde::to_value(&rule);
     assert_eq!(json["unit"], "week");
     assert_eq!(json["mode"], "fixed");
-    assert!(serde_json::from_str::<Recurrence>(r#"{"unit":"fortnight","interval":1}"#).is_err());
+    assert!(
+        quench_serde::json::from_str::<Recurrence>(r#"{"unit":"fortnight","interval":1}"#).is_err()
+    );
     let _: Tz = "UTC".parse().unwrap();
 }
 
 // --- All-day tasks: the due date is a calendar date, stored as midnight UTC ------------------------
 
 /// Midnight UTC of a date, how an all-day due date is stored.
-fn day(y: i32, m: u32, d: u32) -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(y, m, d, 0, 0, 0).unwrap()
+fn day(y: i32, m: u32, d: u32) -> Time {
+    utc(y, m, d, 0, 0)
 }
 
 #[test]
@@ -272,7 +289,7 @@ fn today_for_an_all_day_task_is_today_in_the_rules_zone() {
     // 2026-10-22 23:30 UTC is already the 23rd in Warsaw: a daily task due the 23rd, done now, is
     // done on the 23rd, so the next date is the 24th - not the 23rd again.
     let due = day(2026, 10, 23);
-    let now = Utc.with_ymd_and_hms(2026, 10, 22, 23, 30, 0).unwrap();
+    let now = utc(2026, 10, 22, 23, 30);
     let next = rule(Unit::Day, 1).next_due_all_day(due, due, now).unwrap();
     assert_eq!(next, day(2026, 10, 24));
 }

@@ -13,7 +13,7 @@ fn test_parse_config() {
         [env]
         current = "prod"
     "#;
-    let config: RiveterConfig = toml::from_str(toml_str).unwrap();
+    let config: RiveterConfig = quench_serde::toml::from_str(toml_str).unwrap();
     assert_eq!(config.env.current, Some("prod".to_string()));
 }
 
@@ -24,7 +24,7 @@ fn in_temp_cwd<T>(body: impl FnOnce() -> T) -> T {
     let _guard = cwd_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let original = std::env::current_dir().unwrap();
     std::env::set_current_dir(dir.path()).unwrap();
     let result = body();

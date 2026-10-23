@@ -1,8 +1,9 @@
 use crate::domain::{RegistryConfig, service_url};
-use anyhow::{Context, Result, anyhow, bail};
-use base64::{Engine as _, engine::general_purpose::STANDARD};
-use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
-use serde::Deserialize;
+use quench_client::transport::header::AUTHORIZATION;
+use quench_client::transport::{HeaderMap, HeaderValue};
+use quench_core::base64::STANDARD;
+use quench_core::{Context, Result, bail, err};
+use quench_serde::Deserialize;
 
 // ---------------------------------------------------------------------------
 // Response types
@@ -49,12 +50,12 @@ pub fn admin_base_url(registry: &RegistryConfig) -> &str {
 }
 
 pub struct AdminApi {
-    client: reqwest::Client,
+    client: quench_client::transport::Client,
 }
 
 impl AdminApi {
     pub fn new(reg: &RegistryConfig) -> Result<Self> {
-        let client = reqwest::Client::builder()
+        let client = quench_client::transport::Client::builder()
             .danger_accept_invalid_certs(reg.crates.insecure_tls || reg.docker.insecure_tls)
             .build()
             .context("failed to build HTTP client")?;
@@ -113,7 +114,7 @@ impl AdminApi {
                 .docker
                 .password
                 .as_deref()
-                .ok_or_else(|| anyhow!("missing password for docker auth"))?;
+                .ok_or_else(|| err!("missing password for docker auth"))?;
             let auth = format!("{}:{}", token, password);
             let encoded = STANDARD.encode(auth);
             let value = HeaderValue::from_str(&format!("Basic {}", encoded))

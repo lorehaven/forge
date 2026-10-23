@@ -16,7 +16,7 @@ fn chunk(seq: u64, stream: Stream, line: &str) -> LogChunk {
         seq,
         stream,
         line: line.to_string(),
-        at: chrono::Utc::now(),
+        at: quench_core::time::Time::now(),
     }
 }
 

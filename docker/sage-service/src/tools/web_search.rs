@@ -1,7 +1,7 @@
 use super::{
     SearchProviderRegistry, ToolCall, ToolDefinition, ToolExecutor, ToolParameters, ToolResult,
 };
-use serde_json::json;
+use quench_serde::json;
 use std::sync::Arc;
 
 #[must_use]
@@ -45,11 +45,11 @@ impl WebSearchExecutor {
     }
 }
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl ToolExecutor for WebSearchExecutor {
     async fn execute(&self, tool_call: &ToolCall) -> ToolResult {
         let query = match tool_call.arguments.get("query") {
-            Some(serde_json::Value::String(q)) => q.clone(),
+            Some(quench_serde::Value::String(q)) => q.clone(),
             _ => {
                 return ToolResult {
                     tool_use_id: tool_call.id.clone(),

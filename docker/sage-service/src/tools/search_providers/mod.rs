@@ -1,4 +1,4 @@
-use async_trait::async_trait;
+use quench_core::async_trait;
 
 pub mod providers_brave;
 pub mod providers_duckduckgo;

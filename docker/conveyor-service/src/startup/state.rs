@@ -31,7 +31,7 @@ impl AppState {
         let db_wrapper = DbWrapper::init_env().await;
         let config = ConveyorConfig::load();
 
-        tracing::info!(
+        quench_log::info!(
             "conveyor configured: executor {}, work dir {}, {} concurrent run(s)",
             config.executor,
             config.work_dir.display(),

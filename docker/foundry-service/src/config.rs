@@ -4,10 +4,10 @@
 //! defaults - so a Job manifest can override the baked-in `config/install.toml`
 //! with plain env vars.
 
-use anyhow::{Context, Result, bail};
+use quench_core::version::Version;
+use quench_core::{Context, Result, bail};
 use quench_db::prelude::InstallRequest;
-use semver::Version;
-use serde::Deserialize;
+use quench_serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -51,7 +51,8 @@ impl FileConfig {
     pub fn load(path: &Path) -> Result<Self> {
         let raw = std::fs::read_to_string(path)
             .with_context(|| format!("failed to read config {}", path.display()))?;
-        toml::from_str(&raw).with_context(|| format!("invalid config {}", path.display()))
+        quench_serde::toml::from_str(&raw)
+            .with_context(|| format!("invalid config {}", path.display()))
     }
 }
 
@@ -138,7 +139,7 @@ impl RunConfig {
         } else {
             specs
                 .iter()
-                .map(|spec| InstallRequest::parse(spec).map_err(anyhow::Error::from))
+                .map(|spec| InstallRequest::parse(spec).map_err(quench_core::error::Error::new))
                 .collect::<Result<Vec<_>>>()?
         };
 

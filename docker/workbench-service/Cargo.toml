@@ -23,25 +23,16 @@ name = "workbench-service"
 path = "src/main.rs"
 
 [dependencies]
-async-trait = { workspace = true }
-bytes = { workspace = true }
-chrono = { workspace = true }
-envmnt = { workspace = true }
+quench-pg = { workspace = true }
+quench-log = { workspace = true }
+quench-serde = { workspace = true }
+quench-core = { workspace = true }
 forge-ui = { workspace = true }
-http = { workspace = true }
 quench-auth = { workspace = true }
 quench-db = { workspace = true }
 quench-http = { workspace = true }
 quench-starter = { workspace = true }
 quench-web = { workspace = true }
-serde = { workspace = true }
-sqlx = { workspace = true }
-thiserror = { workspace = true }
 tokio = { workspace = true }
-tracing = { workspace = true }
-uuid = { workspace = true }
 
 [dev-dependencies]
-http-body-util = { workspace = true }
-serde_json = { workspace = true }
-serde_urlencoded = { workspace = true }

@@ -2,11 +2,10 @@
 //! `Issue::parent_id`'s subtask hierarchy.
 
 use crate::domain::db::{WorkbenchError, pool, schema};
-use chrono::{DateTime, Utc};
+use quench_core::time::Time;
+use quench_core::uuid::Uuid;
 use quench_db::prelude::Db;
-use serde::{Deserialize, Serialize};
-use sqlx::Row;
-use uuid::Uuid;
+use quench_serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IssueLink {
@@ -14,7 +13,7 @@ pub struct IssueLink {
     pub issue_id: String,
     pub linked_issue_id: String,
     pub kind: String,
-    pub created_at: DateTime<Utc>,
+    pub created_at: Time,
 }
 
 pub const KINDS: [&str; 2] = ["blocks", "relates_to"];
@@ -41,12 +40,8 @@ pub async fn create(db: &Db, new: &NewIssueLink) -> Result<IssueLink, WorkbenchE
          VALUES ($1, $2, $3, $4) RETURNING {COLUMNS}"
     );
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(&id)
-        .bind(&new.issue_id)
-        .bind(&new.linked_issue_id)
-        .bind(&new.kind)
-        .fetch_one(pool)
+    let row = pool
+        .query_one(&sql, &[&id, &new.issue_id, &new.linked_issue_id, &new.kind])
         .await?;
 
     from_row(&row)
@@ -58,10 +53,7 @@ pub async fn read(db: &Db, id: &str) -> Result<Option<IssueLink>, WorkbenchError
     let schema = schema();
     let sql = format!("SELECT {COLUMNS} FROM {schema}.issue_links WHERE id = $1");
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(id)
-        .fetch_optional(pool)
-        .await?;
+    let row = pool.query_opt(&sql, &[&id]).await?;
 
     row.as_ref().map(from_row).transpose()
 }
@@ -71,12 +63,9 @@ pub async fn delete(db: &Db, id: &str) -> Result<bool, WorkbenchError> {
     let schema = schema();
     let sql = format!("DELETE FROM {schema}.issue_links WHERE id = $1");
 
-    let result = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(id)
-        .execute(pool)
-        .await?;
+    let result = pool.execute(&sql, &[&id]).await?;
 
-    Ok(result.rows_affected() > 0)
+    Ok(result > 0)
 }
 
 /// One side of a resolved link: enough of the linked issue to render it.
@@ -116,10 +105,7 @@ pub async fn related(db: &Db, issue_id: &str) -> Result<RelatedIssues, Workbench
         .replace("__schema__", &schema)
         .replace("__other__", "il.linked_issue_id")
         .replace("__filter__", "il.issue_id = $1 AND il.kind = 'blocks'");
-    let blocks = sqlx::query(sqlx::AssertSqlSafe(blocks_sql.as_str()))
-        .bind(issue_id)
-        .fetch_all(pool)
-        .await?;
+    let blocks = pool.query(&blocks_sql, &[&issue_id]).await?;
 
     let blocked_by_sql = LINKED_ISSUE_SELECT
         .replace("__schema__", &schema)
@@ -128,10 +114,7 @@ pub async fn related(db: &Db, issue_id: &str) -> Result<RelatedIssues, Workbench
             "__filter__",
             "il.linked_issue_id = $1 AND il.kind = 'blocks'",
         );
-    let blocked_by = sqlx::query(sqlx::AssertSqlSafe(blocked_by_sql.as_str()))
-        .bind(issue_id)
-        .fetch_all(pool)
-        .await?;
+    let blocked_by = pool.query(&blocked_by_sql, &[&issue_id]).await?;
 
     let relates_forward_sql = LINKED_ISSUE_SELECT
         .replace("__schema__", &schema)
@@ -144,16 +127,8 @@ pub async fn related(db: &Db, issue_id: &str) -> Result<RelatedIssues, Workbench
             "__filter__",
             "il.linked_issue_id = $1 AND il.kind = 'relates_to'",
         );
-    let mut relates_to = sqlx::query(sqlx::AssertSqlSafe(relates_forward_sql.as_str()))
-        .bind(issue_id)
-        .fetch_all(pool)
-        .await?;
-    relates_to.extend(
-        sqlx::query(sqlx::AssertSqlSafe(relates_backward_sql.as_str()))
-            .bind(issue_id)
-            .fetch_all(pool)
-            .await?,
-    );
+    let mut relates_to = pool.query(&relates_forward_sql, &[&issue_id]).await?;
+    relates_to.extend(pool.query(&relates_backward_sql, &[&issue_id]).await?);
 
     Ok(RelatedIssues {
         blocks: blocks
@@ -173,23 +148,23 @@ pub async fn related(db: &Db, issue_id: &str) -> Result<RelatedIssues, Workbench
 
 const COLUMNS: &str = "id, issue_id, linked_issue_id, kind, created_at";
 
-fn from_row(row: &sqlx::postgres::PgRow) -> Result<IssueLink, WorkbenchError> {
+fn from_row(row: &quench_pg::Row) -> Result<IssueLink, WorkbenchError> {
     Ok(IssueLink {
-        id: row.try_get("id")?,
-        issue_id: row.try_get("issue_id")?,
-        linked_issue_id: row.try_get("linked_issue_id")?,
-        kind: row.try_get("kind")?,
-        created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
+        id: row.get("id")?,
+        issue_id: row.get("issue_id")?,
+        linked_issue_id: row.get("linked_issue_id")?,
+        kind: row.get("kind")?,
+        created_at: row.get::<Time, _>("created_at")?,
     })
 }
 
-fn linked_issue_from_row(row: &sqlx::postgres::PgRow) -> Result<LinkedIssue, WorkbenchError> {
+fn linked_issue_from_row(row: &quench_pg::Row) -> Result<LinkedIssue, WorkbenchError> {
     Ok(LinkedIssue {
-        link_id: row.try_get("link_id")?,
-        issue_id: row.try_get("issue_id")?,
-        project_key: row.try_get("project_key")?,
-        seq: row.try_get("seq")?,
-        title: row.try_get("title")?,
-        status: row.try_get("status")?,
+        link_id: row.get("link_id")?,
+        issue_id: row.get("issue_id")?,
+        project_key: row.get("project_key")?,
+        seq: row.get("seq")?,
+        title: row.get("title")?,
+        status: row.get("status")?,
     })
 }

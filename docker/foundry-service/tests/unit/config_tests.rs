@@ -1,6 +1,6 @@
 use foundry_service::config::{ConfigInputs, FileConfig, FileInstall, RunConfig, env_value, pick};
+use quench_core::version::Version;
 use quench_db::prelude::InstallRequest;
-use semver::Version;
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Mutex;
@@ -38,13 +38,13 @@ impl<'a> EnvGuard<'a> {
             .map(|&key| (key, std::env::var(key).ok()))
             .collect();
         for &key in ENV_KEYS {
-            envmnt::remove(key);
+            quench_core::env::remove(key);
         }
         Self { _held: held, saved }
     }
 
     fn set(key: &str, value: &str) {
-        envmnt::set(key, value);
+        quench_core::env::set(key, value);
     }
 }
 
@@ -52,8 +52,8 @@ impl Drop for EnvGuard<'_> {
     fn drop(&mut self) {
         for (key, value) in &self.saved {
             match value {
-                Some(value) => envmnt::set(key, value),
-                None => envmnt::remove(key),
+                Some(value) => quench_core::env::set(key, value),
+                None => quench_core::env::remove(key),
             }
         }
     }
@@ -82,7 +82,7 @@ const fn empty_inputs(installs: &[String]) -> ConfigInputs<'_> {
 
 #[test]
 fn file_config_load_parses_installs() {
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let path = dir.path().join("install.toml");
     std::fs::write(
         &path,
@@ -120,7 +120,7 @@ fn file_config_load_missing_file_errors() {
 
 #[test]
 fn file_config_load_rejects_unknown_fields() {
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let path = dir.path().join("install.toml");
     std::fs::write(&path, "unexpected_field = true").expect("write config");
 
@@ -173,7 +173,7 @@ fn resolve_allows_missing_database_url_when_optional() {
 #[test]
 fn resolve_rejects_empty_install_list() {
     let _guard = clean_env();
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let path = dir.path().join("empty.toml");
     std::fs::write(&path, "").expect("write config");
 
@@ -235,7 +235,7 @@ fn resolve_reads_installs_from_env_when_none_passed() {
 #[test]
 fn resolve_uses_config_file_installs_when_nothing_else_given() {
     let _guard = clean_env();
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let path = dir.path().join("install.toml");
     std::fs::write(
         &path,
@@ -318,7 +318,7 @@ fn pick_prefers_flag_then_env_then_file_then_default() {
         "env"
     );
 
-    envmnt::remove("FOUNDRY_LEDGER_SCHEMA");
+    quench_core::env::remove("FOUNDRY_LEDGER_SCHEMA");
     assert_eq!(
         pick(
             None,

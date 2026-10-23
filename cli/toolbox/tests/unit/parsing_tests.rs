@@ -1,5 +1,5 @@
 use forge_toolbox::{parse_installed_list, parse_search_line};
-use semver::Version;
+use quench_core::version::Version;
 
 #[test]
 fn parse_search_line_matches_exact_package_line() {

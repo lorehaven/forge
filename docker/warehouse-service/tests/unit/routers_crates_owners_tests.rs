@@ -1,6 +1,6 @@
 use crate::support;
-use http::{Method, StatusCode};
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{Method, StatusCode};
 use support::WithCratesStorageRoot as WithStorageRoot;
 use warehouse_service::routers::crates::owners::{self, Owner};
 
@@ -8,9 +8,9 @@ fn publish_crate(storage: &WithStorageRoot, name: &str) {
     std::fs::create_dir_all(storage.dir.path().join(name)).unwrap();
 }
 
-fn owners_json(storage: &WithStorageRoot, name: &str) -> serde_json::Value {
+fn owners_json(storage: &WithStorageRoot, name: &str) -> quench_serde::Value {
     let data = std::fs::read(storage.dir.path().join(name).join("owners.json")).unwrap();
-    serde_json::from_slice(&data).unwrap()
+    quench_serde::json::from_slice(&data).unwrap()
 }
 
 async fn app() -> (
@@ -52,7 +52,7 @@ async fn list_is_empty_for_a_published_crate_with_no_owners_file() {
         .await;
     assert_eq!(resp.status(), StatusCode::OK);
     let body = support::json_body(resp).await;
-    assert_eq!(body["users"], serde_json::json!([]));
+    assert_eq!(body["users"], quench_serde::json!([]));
 }
 
 #[tokio::test]
@@ -65,7 +65,7 @@ async fn add_rejects_an_empty_user_list() {
         .call(support::json_req(
             Method::PUT,
             "/api/v1/crates/my-crate/owners",
-            &serde_json::json!({ "users": [] }),
+            &quench_serde::json!({ "users": [] }),
             &container,
         ))
         .await;
@@ -82,7 +82,7 @@ async fn add_assigns_sequential_ids_and_skips_case_insensitive_duplicates() {
         .call(support::json_req(
             Method::PUT,
             "/api/v1/crates/my-crate/owners",
-            &serde_json::json!({ "users": ["alice", "bob"] }),
+            &quench_serde::json!({ "users": ["alice", "bob"] }),
             &container,
         ))
         .await;
@@ -93,7 +93,7 @@ async fn add_assigns_sequential_ids_and_skips_case_insensitive_duplicates() {
         .call(support::json_req(
             Method::PUT,
             "/api/v1/crates/my-crate/owners",
-            &serde_json::json!({ "users": ["ALICE", "carol"] }),
+            &quench_serde::json!({ "users": ["ALICE", "carol"] }),
             &container,
         ))
         .await;
@@ -117,7 +117,7 @@ async fn remove_deletes_owners_case_insensitively() {
     publish_crate(&storage, "my-crate");
     std::fs::write(
         storage.dir.path().join("my-crate").join("owners.json"),
-        serde_json::to_vec(&[
+        quench_serde::json::to_vec(&[
             Owner {
                 id: 1,
                 login: "alice".to_string(),
@@ -128,8 +128,7 @@ async fn remove_deletes_owners_case_insensitively() {
                 login: "bob".to_string(),
                 name: None,
             },
-        ])
-        .unwrap(),
+        ]),
     )
     .unwrap();
     let (app, container) = app().await;
@@ -138,7 +137,7 @@ async fn remove_deletes_owners_case_insensitively() {
         .call(support::json_req(
             Method::DELETE,
             "/api/v1/crates/my-crate/owners",
-            &serde_json::json!({ "users": ["ALICE"] }),
+            &quench_serde::json!({ "users": ["ALICE"] }),
             &container,
         ))
         .await;
@@ -161,7 +160,7 @@ async fn remove_rejects_an_empty_user_list() {
         .call(support::json_req(
             Method::DELETE,
             "/api/v1/crates/my-crate/owners",
-            &serde_json::json!({ "users": [] }),
+            &quench_serde::json!({ "users": [] }),
             &container,
         ))
         .await;
@@ -177,7 +176,7 @@ async fn add_rejects_an_invalid_crate_name() {
         .call(support::json_req(
             Method::PUT,
             "/api/v1/crates/..%2fetc/owners",
-            &serde_json::json!({ "users": ["alice"] }),
+            &quench_serde::json!({ "users": ["alice"] }),
             &container,
         ))
         .await;

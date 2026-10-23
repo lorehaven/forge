@@ -11,12 +11,12 @@ use conveyor_service::domain::{Status, Trigger};
 use conveyor_service::providers::{Providers, sign_sha256};
 use conveyor_service::routers::api;
 use conveyor_service::scheduler::queue;
-use http::{Method, StatusCode};
 use quench_auth::domain::jwt::JwtConfig;
 use quench_db::prelude::Db;
 use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
-use serde_json::json;
+use quench_http::http::{Method, StatusCode};
+use quench_serde::json;
 use std::sync::Arc;
 
 const SECRET: &str = "conveyor-webhook-tests";
@@ -24,10 +24,10 @@ const SECRET: &str = "conveyor-webhook-tests";
 /// Sets the environment the endpoint reads. Called under the database guard,
 /// so the tests do not race over it.
 fn configure(secret: Option<&str>) {
-    envmnt::set("SERVICE_AUTH_ENABLED", "false");
+    quench_core::env::set("SERVICE_AUTH_ENABLED", "false");
     match secret {
-        Some(secret) => envmnt::set("CONVEYOR_WEBHOOK_SECRET", secret),
-        None => envmnt::remove("CONVEYOR_WEBHOOK_SECRET"),
+        Some(secret) => quench_core::env::set("CONVEYOR_WEBHOOK_SECRET", secret),
+        None => quench_core::env::remove("CONVEYOR_WEBHOOK_SECRET"),
     }
 }
 
@@ -36,7 +36,7 @@ async fn deliver(
     db: &Db,
     config: ConveyorConfig,
     event: &str,
-    body: &serde_json::Value,
+    body: &quench_serde::Value,
     signing_secret: &str,
     delivery_id: &str,
 ) -> StatusCode {
@@ -71,7 +71,7 @@ async fn deliver(
     app.call(request).await.status()
 }
 
-fn push(owner: &str, name: &str, git_ref: &str, sha: &str) -> serde_json::Value {
+fn push(owner: &str, name: &str, git_ref: &str, sha: &str) -> quench_serde::Value {
     json!({
         "ref": git_ref,
         "after": sha,
@@ -85,7 +85,7 @@ fn push(owner: &str, name: &str, git_ref: &str, sha: &str) -> serde_json::Value 
     })
 }
 
-fn pull_request(owner: &str, name: &str, head_repo: &str) -> serde_json::Value {
+fn pull_request(owner: &str, name: &str, head_repo: &str) -> quench_serde::Value {
     json!({
         "action": "opened",
         "number": 7,

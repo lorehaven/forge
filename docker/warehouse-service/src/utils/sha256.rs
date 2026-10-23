@@ -1,19 +1,18 @@
-use sha2::{Digest, Sha256};
 use std::fmt::Write;
 use std::path::Path;
 use tokio::io::AsyncReadExt;
 
 pub fn sha256_hex(data: impl AsRef<[u8]>) -> String {
-    let mut hasher = Sha256::new();
+    let mut hasher = quench_crypto::hash::Hasher::new(quench_crypto::hash::Algorithm::Sha256);
     hasher.update(data);
 
-    hex_of(hasher.finalize())
+    hex_of(hasher.finish())
 }
 
 /// Hex SHA-256 of a file, read in 64 KiB chunks so a multi-GB blob costs one small buffer.
 pub async fn sha256_file(path: impl AsRef<Path>) -> std::io::Result<String> {
     let mut file = tokio::fs::File::open(path).await?;
-    let mut hasher = Sha256::new();
+    let mut hasher = quench_crypto::hash::Hasher::new(quench_crypto::hash::Algorithm::Sha256);
     let mut buf = vec![0u8; 64 * 1024];
 
     loop {
@@ -24,7 +23,7 @@ pub async fn sha256_file(path: impl AsRef<Path>) -> std::io::Result<String> {
         hasher.update(&buf[..read]);
     }
 
-    Ok(hex_of(hasher.finalize()))
+    Ok(hex_of(hasher.finish()))
 }
 
 fn hex_of(digest: impl AsRef<[u8]>) -> String {

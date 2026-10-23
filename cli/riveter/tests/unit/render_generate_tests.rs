@@ -37,7 +37,7 @@ fn in_temp_cwd_with_overlay<T>(env: &str, body: impl FnOnce() -> T) -> T {
     let _guard = cwd_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let overlay_dir = dir.path().join("overlays").join(env);
     fs::create_dir_all(&overlay_dir).unwrap();
     fs::write(overlay_dir.join("overlay.yaml"), OVERLAY).unwrap();

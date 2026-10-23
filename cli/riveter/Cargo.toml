@@ -24,32 +24,23 @@ path = "src/lib.rs"
 workspace = true
 
 [dependencies]
+quench-crypto = { workspace = true }
+quench-core = { workspace = true }
+quench-serde = { workspace = true, features = ["yaml"] }
 age = { workspace = true }
-anyhow = { workspace = true }
-base64 = { workspace = true }
-chrono = { workspace = true }
 clap = { workspace = true }
 dotenvy = { workspace = true }
 gatehouse-auth = { workspace = true }
-hex = { workspace = true }
 jsonschema = { workspace = true }
 minijinja = { workspace = true }
 quench-cli = { workspace = true }
 rivet-package = { workspace = true }
 regex = { workspace = true }
-reqwest = { workspace = true, features = ["blocking", "query"] }
-semver = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
-serde_norway = { workspace = true }
-sha2 = { workspace = true }
-tempfile = { workspace = true }
-toml = { workspace = true }
-urlencoding = { workspace = true }
+quench-client = { workspace = true, features = ["blocking"] }
 walkdir = { workspace = true }
 
 [dev-dependencies]
 conveyor-pipeline = { workspace = true }
-envmnt = { workspace = true }
 tokio = { workspace = true }
 wiremock = { workspace = true }

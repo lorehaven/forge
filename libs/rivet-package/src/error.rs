@@ -1,7 +1,7 @@
 //! What can be wrong with a package.
 
 /// Everything that makes a manifest or an archive unacceptable.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, quench_core::Error)]
 pub enum PackageError {
     /// `rivet.toml` is malformed or breaks a rule.
     #[error("invalid manifest: {0}")]

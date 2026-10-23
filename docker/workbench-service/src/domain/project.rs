@@ -2,11 +2,10 @@
 //! conveyor's tree) keeps the permission check a single lookup, not a walk.
 
 use crate::domain::db::{WorkbenchError, pool, schema};
-use chrono::{DateTime, Utc};
+use quench_core::time::Time;
+use quench_core::uuid::Uuid;
 use quench_db::prelude::Db;
-use serde::{Deserialize, Serialize};
-use sqlx::Row;
-use uuid::Uuid;
+use quench_serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Project {
@@ -15,8 +14,8 @@ pub struct Project {
     pub key: String,
     pub name: String,
     pub description: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: Time,
+    pub updated_at: Time,
 }
 
 #[derive(Clone, Debug)]
@@ -36,12 +35,8 @@ pub async fn create(db: &Db, new: &NewProject) -> Result<Project, WorkbenchError
          VALUES ($1, $2, $3, $4) RETURNING {COLUMNS}"
     );
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(&id)
-        .bind(&new.key)
-        .bind(&new.name)
-        .bind(&new.description)
-        .fetch_one(pool)
+    let row = pool
+        .query_one(&sql, &[&id, &new.key, &new.name, &new.description])
         .await?;
 
     from_row(&row)
@@ -52,10 +47,7 @@ pub async fn read(db: &Db, id: &str) -> Result<Option<Project>, WorkbenchError> 
     let schema = schema();
     let sql = format!("SELECT {COLUMNS} FROM {schema}.projects WHERE id = $1");
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(id)
-        .fetch_optional(pool)
-        .await?;
+    let row = pool.query_opt(&sql, &[&id]).await?;
 
     row.as_ref().map(from_row).transpose()
 }
@@ -65,10 +57,7 @@ pub async fn read_by_key(db: &Db, key: &str) -> Result<Option<Project>, Workbenc
     let schema = schema();
     let sql = format!("SELECT {COLUMNS} FROM {schema}.projects WHERE key = $1");
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(key)
-        .fetch_optional(pool)
-        .await?;
+    let row = pool.query_opt(&sql, &[&key]).await?;
 
     row.as_ref().map(from_row).transpose()
 }
@@ -78,9 +67,7 @@ pub async fn list(db: &Db) -> Result<Vec<Project>, WorkbenchError> {
     let schema = schema();
     let sql = format!("SELECT {COLUMNS} FROM {schema}.projects ORDER BY key");
 
-    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .fetch_all(pool)
-        .await?;
+    let rows = pool.query(&sql, &[]).await?;
 
     rows.iter().map(from_row).collect()
 }
@@ -103,11 +90,8 @@ pub async fn update(
          WHERE id = $1 RETURNING {COLUMNS}"
     );
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(id)
-        .bind(&changes.name)
-        .bind(&changes.description)
-        .fetch_optional(pool)
+    let row = pool
+        .query_opt(&sql, &[&id, &changes.name, &changes.description])
         .await?;
 
     row.as_ref().map(from_row).transpose()
@@ -118,23 +102,20 @@ pub async fn delete(db: &Db, id: &str) -> Result<bool, WorkbenchError> {
     let schema = schema();
     let sql = format!("DELETE FROM {schema}.projects WHERE id = $1");
 
-    let result = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(id)
-        .execute(pool)
-        .await?;
+    let result = pool.execute(&sql, &[&id]).await?;
 
-    Ok(result.rows_affected() > 0)
+    Ok(result > 0)
 }
 
 const COLUMNS: &str = "id, key, name, description, created_at, updated_at";
 
-fn from_row(row: &sqlx::postgres::PgRow) -> Result<Project, WorkbenchError> {
+fn from_row(row: &quench_pg::Row) -> Result<Project, WorkbenchError> {
     Ok(Project {
-        id: row.try_get("id")?,
-        key: row.try_get("key")?,
-        name: row.try_get("name")?,
-        description: row.try_get("description")?,
-        created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
-        updated_at: row.try_get::<DateTime<Utc>, _>("updated_at")?,
+        id: row.get("id")?,
+        key: row.get("key")?,
+        name: row.get("name")?,
+        description: row.get("description")?,
+        created_at: row.get::<Time, _>("created_at")?,
+        updated_at: row.get::<Time, _>("updated_at")?,
     })
 }

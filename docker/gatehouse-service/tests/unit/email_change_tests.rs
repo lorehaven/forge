@@ -8,10 +8,9 @@ use gatehouse_service::ui::locale::BrowserLocale;
 use gatehouse_service::ui::pages::confirm_email::{
     ConfirmForm, ConfirmQuery, confirm_email_page, confirm_email_submit, render_confirm_email_page,
 };
-use http::StatusCode;
-use http_body_util::BodyExt;
 use quench_auth::domain::auth::{Permissions, Role, User};
 use quench_db::prelude::Db;
+use quench_http::http::StatusCode;
 use quench_http::prelude::{Form, Inject, Query};
 use std::sync::Arc;
 
@@ -20,7 +19,10 @@ async fn db() -> Db {
 }
 
 fn catalog() -> gatehouse_service::catalog::PermissionCatalog {
-    let dir = std::env::temp_dir().join(format!("email-change-test-{}", uuid::Uuid::new_v4()));
+    let dir = std::env::temp_dir().join(format!(
+        "email-change-test-{}",
+        quench_core::uuid::Uuid::new_v4()
+    ));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("permissions.toml");
     std::fs::write(&path, "[services.gatehouse]\nactions = [\"read-users\"]\n").unwrap();
@@ -31,8 +33,8 @@ fn catalog() -> gatehouse_service::catalog::PermissionCatalog {
 }
 
 fn location(resp: quench_http::response::Response) -> String {
-    resp.into_hyper()
-        .headers()
+    resp.into_inner()
+        .headers
         .get("location")
         .expect("location header")
         .to_str()
@@ -42,12 +44,11 @@ fn location(resp: quench_http::response::Response) -> String {
 
 async fn body(resp: quench_http::response::Response) -> String {
     let bytes = resp
-        .into_hyper()
-        .into_body()
-        .collect()
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
         .await
-        .unwrap()
-        .to_bytes();
+        .unwrap();
     String::from_utf8(bytes.to_vec()).unwrap()
 }
 
@@ -403,7 +404,7 @@ async fn nobody_is_warned_when_the_old_address_was_never_confirmed_or_did_not_ex
 #[tokio::test]
 async fn a_failed_warning_email_does_not_undo_the_change() {
     struct Failing;
-    #[async_trait::async_trait]
+    #[quench_core::async_trait]
     impl Sender for Failing {
         async fn send(&self, _: &Recipient<'_>, _: &Mail<'_>) -> Result<(), SendError> {
             Err(SendError::transient("smtp down"))

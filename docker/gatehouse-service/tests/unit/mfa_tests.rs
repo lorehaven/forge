@@ -3,52 +3,33 @@ use gatehouse_service::mfa::{
     verify_pending,
 };
 use gatehouse_service::test_support::TEST_KEY_MATERIAL;
-use hmac::{Hmac, KeyInit, Mac};
-use sha2::{Digest, Sha256};
-use totp_rs::{Algorithm, Builder, Secret, Totp};
-
-type HmacSha256 = Hmac<Sha256>;
-
-fn totp(secret: Secret, username: &str) -> Totp {
-    Builder::new()
-        .with_algorithm(Algorithm::SHA1)
-        .with_digits(6)
-        .with_skew(1)
-        .with_step_duration(30)
-        .with_secret(secret)
-        .with_account_name(username.to_string())
-        .with_issuer(Some("Forge"))
-        .build()
-        .expect("build totp")
-}
+use quench_crypto::totp::Totp;
 
 /// `realm_cipher`/`encrypt_secret`/`decrypt_secret`/`sign_pending`/
 /// `verify_pending` all read `GATEHOUSE_KEY_ENCRYPTION_KEY` via
-/// `envmnt::get_or_panic`, so every test that touches them needs it set -
+/// `quench_core::env::get_or_panic`, so every test that touches them needs it set -
 /// cargo test runs a crate's tests in one process, so this has to be
 /// idempotent across tests rather than set-once.
 fn with_key<T>(run: impl FnOnce() -> T) -> T {
-    envmnt::set("GATEHOUSE_KEY_ENCRYPTION_KEY", TEST_KEY_MATERIAL);
+    quench_core::env::set("GATEHOUSE_KEY_ENCRYPTION_KEY", TEST_KEY_MATERIAL);
     run()
 }
 
 #[test]
 fn a_generated_secret_verifies_its_own_current_code() {
     let secret = generate_secret().unwrap();
-    let parsed = Secret::try_from_base32(&secret).unwrap();
-    let code = totp(parsed, "someone").generate_current();
+    let code = Totp::from_base32(&secret).unwrap().code_now();
 
-    assert!(verify_code(&secret, &code.to_string()));
+    assert!(verify_code(&secret, &code));
 }
 
 #[test]
 fn a_code_for_a_different_secret_does_not_verify() {
     let secret = generate_secret().unwrap();
     let other_secret = generate_secret().unwrap();
-    let other_parsed = Secret::try_from_base32(&other_secret).unwrap();
-    let code = totp(other_parsed, "someone").generate_current();
+    let code = Totp::from_base32(&other_secret).unwrap().code_now();
 
-    assert!(!verify_code(&secret, &code.to_string()));
+    assert!(!verify_code(&secret, &code));
 }
 
 #[test]
@@ -91,14 +72,16 @@ fn a_tampered_pending_token_does_not_verify() {
 #[test]
 fn an_expired_pending_token_does_not_verify() {
     with_key(|| {
-        let expired_at = chrono::Utc::now().timestamp() - 1;
+        let expired_at = quench_core::time::Time::now().timestamp() - 1;
         let payload = format!("someone:{expired_at}");
         // `pending_key()` is private, so this mirrors it exactly: SHA-256 of
         // the shared key-encryption material, same as `mfa::pending_key`.
-        let key = Sha256::digest(TEST_KEY_MATERIAL.as_bytes()).to_vec();
-        let mut mac = HmacSha256::new_from_slice(&key).unwrap();
-        mac.update(payload.as_bytes());
-        let signature = hex::encode(mac.finalize().into_bytes());
+        let key = quench_crypto::hash::sha256(TEST_KEY_MATERIAL.as_bytes()).to_vec();
+        let signature = quench_core::hex::encode(quench_crypto::hmac::sign(
+            quench_crypto::hmac::Algorithm::Sha256,
+            &key,
+            payload.as_bytes(),
+        ));
         let token = format!("{payload}:{signature}");
 
         assert_eq!(verify_pending(&token), None);

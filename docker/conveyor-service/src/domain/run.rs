@@ -2,8 +2,8 @@
 //! `claimed_at`), so a run can't be queued twice and a restart loses nothing.
 
 use crate::domain::Status;
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use quench_core::time::Time;
+use quench_serde::{Deserialize, Serialize};
 use std::fmt;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -58,13 +58,13 @@ pub struct Run {
     pub delivery_id: Option<String>,
     pub status: Status,
 
-    pub queued_at: DateTime<Utc>,
-    pub started_at: Option<DateTime<Utc>>,
-    pub finished_at: Option<DateTime<Utc>>,
+    pub queued_at: Time,
+    pub started_at: Option<Time>,
+    pub finished_at: Option<Time>,
 
     /// Worker holding this run, and when it last said so - a stale claim means a dead worker.
     pub claimed_by: Option<String>,
-    pub claimed_at: Option<DateTime<Utc>>,
+    pub claimed_at: Option<Time>,
     pub attempt: i32,
 
     /// Why the run ended, when not obvious from the jobs (missing `.conveyor.toml`, failed checkout, `needs` cycle).

@@ -8,9 +8,9 @@ use crate::routers::ui::common::{
 use crate::scheduler::{queue, repos};
 use quench_db::prelude::Db;
 use quench_http::prelude::{Inject, Path, Query, Response, get, http::StatusCode, post};
+use quench_serde::Deserialize;
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
-use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 
 /// Polling stops entirely once the run rests, so an overnight-open page costs nothing.
@@ -30,7 +30,7 @@ pub(super) async fn run_page(
         Ok(Some(run)) => run,
         Ok(None) => return not_found(),
         Err(error) => {
-            tracing::error!("could not read run {}: {error}", id);
+            quench_log::error!("could not read run {}: {error}", id);
             return Response::text(StatusCode::SERVICE_UNAVAILABLE, error.to_string());
         }
     };
@@ -73,7 +73,7 @@ pub(super) async fn run_state(
         Ok(Some(run)) => run,
         Ok(None) => return Response::new(StatusCode::NOT_FOUND),
         Err(error) => {
-            tracing::error!("could not read run {}: {error}", id);
+            quench_log::error!("could not read run {}: {error}", id);
             return Response::new(StatusCode::SERVICE_UNAVAILABLE);
         }
     };
@@ -112,7 +112,7 @@ pub(super) async fn run_restart(
     let destination = match crate::routers::api::runs::restart_run(&db, &id).await {
         Ok(run) => run.id,
         Err(error) => {
-            tracing::warn!("restart of run {} could not start: {error}", id);
+            quench_log::warn!("restart of run {} could not start: {error}", id);
             id.clone()
         }
     };

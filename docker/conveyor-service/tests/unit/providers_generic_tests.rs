@@ -1,13 +1,13 @@
 //! Unit tests for `providers/generic.rs`, and for the parts of
 //! `providers/mod.rs` that are not GitHub's.
 
-use chrono::Utc;
 use conveyor_service::domain::{Provider, Repo, Status, Trigger};
 use conveyor_service::providers::{
     CommitState, CommitStatusReport, GenericProvider, GitProvider, Providers, sign_sha256,
 };
-use http::{HeaderMap, HeaderName, HeaderValue};
-use serde_json::json;
+use quench_core::time::Time;
+use quench_http::http::{HeaderMap, HeaderName, HeaderValue};
+use quench_serde::json;
 
 const SECRET: &[u8] = b"shared with the sender";
 
@@ -20,7 +20,7 @@ fn signed(body: &[u8]) -> HeaderMap {
     map
 }
 
-fn body(extra: &serde_json::Value) -> Vec<u8> {
+fn body(extra: &quench_serde::Value) -> Vec<u8> {
     let mut payload = json!({
         "delivery_id": "d-1",
         "owner": "me",
@@ -127,8 +127,8 @@ async fn reporting_a_status_is_a_no_op_rather_than_a_failure() {
         registered_by: "someone".to_string(),
         project_id: "project-1".to_string(),
         enabled: true,
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
+        created_at: Time::now(),
+        updated_at: Time::now(),
     };
 
     let report = CommitStatusReport::new(Status::Failed, "a stage failed");

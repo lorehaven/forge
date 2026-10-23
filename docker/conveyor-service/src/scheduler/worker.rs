@@ -14,11 +14,11 @@ use crate::secrets::{Redactor, SecretKey, store as secret_store};
 use crate::workspace::{self, CheckoutRequest, HttpCredential, Workspace};
 use futures_util::StreamExt;
 use futures_util::stream::FuturesUnordered;
+use quench_core::uuid::Uuid;
 use quench_db::prelude::Db;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
-use uuid::Uuid;
 
 /// Poll interval when idle - short enough to feel immediate, long enough not to hammer the DB.
 const IDLE_POLL: Duration = Duration::from_secs(2);
@@ -65,13 +65,13 @@ pub fn spawn_pool_notifying(
     notifications: Option<Arc<Notifications>>,
 ) {
     if let Err(error) = queue::pool(&db) {
-        tracing::error!("scheduler not started: {error}");
+        quench_log::error!("scheduler not started: {error}");
         return;
     }
 
     let artifacts = Arc::new(WarehouseStore::from_env());
     if artifacts.is_none() {
-        tracing::info!(
+        quench_log::info!(
             "WAREHOUSE_URL is not set: conveyor will build, but a job's declared \
              artifacts will not be kept anywhere"
         );
@@ -81,7 +81,7 @@ pub fn spawn_pool_notifying(
         Ok(key) => key,
         Err(error) => {
             // Not fatal: pipelines with no secrets build fine either way.
-            tracing::error!("secrets are unavailable: {error}");
+            quench_log::error!("secrets are unavailable: {error}");
             None
         }
     });
@@ -90,12 +90,12 @@ pub fn spawn_pool_notifying(
         Ok(key) => key,
         Err(error) => {
             // Not fatal: a public repo builds fine with no credential key.
-            tracing::error!("git credentials are unavailable: {error}");
+            quench_log::error!("git credentials are unavailable: {error}");
             None
         }
     });
 
-    let host = envmnt::get_or("HOSTNAME", "conveyor");
+    let host = quench_core::env::get_or("HOSTNAME", "conveyor");
     let worker_count = config.max_concurrent_runs;
     let executor_kind = config.executor;
     // Every worker is this one, with an id of its own.
@@ -120,7 +120,7 @@ pub fn spawn_pool_notifying(
 
     tokio::spawn(janitor(db, config));
 
-    tracing::info!("scheduler started: {worker_count} worker(s), {executor_kind} executor");
+    quench_log::info!("scheduler started: {worker_count} worker(s), {executor_kind} executor");
 }
 
 /// Requeues runs whose worker stopped heartbeating - else a dead worker locks its repo forever.
@@ -130,8 +130,8 @@ async fn janitor(db: Db, config: ConveyorConfig) {
         tokio::time::sleep(interval).await;
         match queue::requeue_stale(&db, config.claim_stale_after_secs).await {
             Ok(0) => {}
-            Ok(count) => tracing::warn!("requeued {count} run(s) abandoned by a dead worker"),
-            Err(error) => tracing::error!("could not requeue stale runs: {error}"),
+            Ok(count) => quench_log::warn!("requeued {count} run(s) abandoned by a dead worker"),
+            Err(error) => quench_log::error!("could not requeue stale runs: {error}"),
         }
     }
 }
@@ -209,7 +209,7 @@ impl Worker {
                     if let Err(error) = self.execute(run).await {
                         // The run is already finished as failed by `execute`
                         // wherever it could be; this is the last resort.
-                        tracing::error!("run {id} ended badly: {error}");
+                        quench_log::error!("run {id} ended badly: {error}");
                         let _ = queue::finish_run(
                             &self.db,
                             &id,
@@ -221,7 +221,7 @@ impl Worker {
                 }
                 Ok(None) => tokio::time::sleep(IDLE_POLL).await,
                 Err(error) => {
-                    tracing::error!("could not claim a run: {error}");
+                    quench_log::error!("could not claim a run: {error}");
                     tokio::time::sleep(IDLE_POLL).await;
                 }
             }
@@ -229,7 +229,7 @@ impl Worker {
     }
 
     async fn execute(&self, run: Run) -> Result<(), WorkerError> {
-        tracing::info!(
+        quench_log::info!(
             "run {} claimed: {} at {}",
             run.id,
             run.git_ref,
@@ -255,7 +255,7 @@ impl Worker {
         let (status, detail) = match outcome {
             Ok((status, detail)) => (status, detail),
             Err(error) => {
-                tracing::warn!("run {} failed: {error}", run.id);
+                quench_log::warn!("run {} failed: {error}", run.id);
                 (Status::Failed, Some(error.to_string()))
             }
         };
@@ -271,7 +271,7 @@ impl Worker {
 
         self.queue_notifications(&repo, &run, status).await;
 
-        tracing::info!("run {} finished: {status}", run.id);
+        quench_log::info!("run {} finished: {status}", run.id);
         Ok(())
     }
 
@@ -282,9 +282,9 @@ impl Worker {
         };
         match notifications::on_run_finished(&self.db, notifications, repo, run, status).await {
             Ok(0) => {}
-            Ok(queued) => tracing::info!("run {}: queued {queued} notification(s)", run.id),
+            Ok(queued) => quench_log::info!("run {}: queued {queued} notification(s)", run.id),
             Err(error) => {
-                tracing::warn!("could not queue notifications for run {}: {error}", run.id);
+                quench_log::warn!("could not queue notifications for run {}: {error}", run.id);
             }
         }
     }
@@ -302,7 +302,7 @@ impl Worker {
             // Expected whenever no token is configured, which is a perfectly
             // reasonable way to run conveyor.
             Ok(()) | Err(crate::providers::ProviderError::NotConfigured(_)) => {}
-            Err(error) => tracing::warn!(
+            Err(error) => quench_log::warn!(
                 "could not report {} for {}@{}: {error}",
                 status,
                 repo.slug(),
@@ -321,7 +321,7 @@ impl Worker {
             loop {
                 tokio::time::sleep(interval).await;
                 if let Err(error) = queue::heartbeat(&db, &run_id, &worker).await {
-                    tracing::warn!("heartbeat for run {run_id} failed: {error}");
+                    quench_log::warn!("heartbeat for run {run_id} failed: {error}");
                 }
             }
         })
@@ -366,7 +366,7 @@ impl Worker {
             Some(source_run_id) => match queue::list_jobs(&self.db, source_run_id).await {
                 Ok(jobs) => Some(jobs),
                 Err(error) => {
-                    tracing::warn!(
+                    quench_log::warn!(
                         "run {} could not read the run it is restarting ({source_run_id}): \
                          {error}; nothing will be carried over",
                         run.id
@@ -418,7 +418,7 @@ impl Worker {
         // The checkout goes whatever happened; leaving it would fill the disk
         // one abandoned run at a time.
         if let Err(error) = workspace.remove().await {
-            tracing::warn!("could not remove the workspace for run {}: {error}", run.id);
+            quench_log::warn!("could not remove the workspace for run {}: {error}", run.id);
         }
 
         result
@@ -576,7 +576,7 @@ impl Worker {
                 .iter()
                 .find(|job| job.stage == row.stage && job.name == row.name)
             else {
-                tracing::warn!(
+                quench_log::warn!(
                     "run {} reused stage '{}', but its source job for '{}' is gone; \
                      {} will show no log",
                     run.id,
@@ -590,7 +590,7 @@ impl Worker {
             match queue::list_steps(&self.db, &source_job.id).await {
                 Ok(steps) => {
                     if let Err(error) = queue::record_steps(&self.db, &row.id, &steps).await {
-                        tracing::warn!(
+                        quench_log::warn!(
                             "could not copy steps from job {} to {}: {error}",
                             source_job.id,
                             row.id
@@ -598,14 +598,14 @@ impl Worker {
                     }
                 }
                 Err(error) => {
-                    tracing::warn!("could not read steps for job {}: {error}", source_job.id);
+                    quench_log::warn!("could not read steps for job {}: {error}", source_job.id);
                 }
             }
 
             match queue::read_logs(&self.db, &source_job.id, -1).await {
                 Ok(chunks) => {
                     if let Err(error) = queue::append_logs(&self.db, &row.id, &chunks).await {
-                        tracing::warn!(
+                        quench_log::warn!(
                             "could not copy the log from job {} to {}: {error}",
                             source_job.id,
                             row.id
@@ -613,7 +613,7 @@ impl Worker {
                     }
                 }
                 Err(error) => {
-                    tracing::warn!("could not read the log for job {}: {error}", source_job.id);
+                    quench_log::warn!("could not read the log for job {}: {error}", source_job.id);
                 }
             }
 
@@ -632,7 +632,7 @@ impl Worker {
                             created_at: artifact.created_at,
                         };
                         if let Err(error) = queue::record_artifact(&self.db, &copy).await {
-                            tracing::warn!(
+                            quench_log::warn!(
                                 "could not copy an artifact from job {} to {}: {error}",
                                 source_job.id,
                                 row.id
@@ -640,7 +640,7 @@ impl Worker {
                         }
                     }
                 }
-                Err(error) => tracing::warn!(
+                Err(error) => quench_log::warn!(
                     "could not read artifacts for job {}: {error}",
                     source_job.id
                 ),
@@ -655,7 +655,7 @@ impl Worker {
             )
             .await
             {
-                tracing::warn!("could not close out reused job {}: {error}", row.id);
+                quench_log::warn!("could not close out reused job {}: {error}", row.id);
             }
         }
     }
@@ -687,7 +687,7 @@ impl Worker {
                 // Beats running a deploy step with a blank token that fails confusingly later.
                 let reason = error.to_string();
                 queue::finish_job(&self.db, &row.id, Status::Failed, None, Some(&reason)).await?;
-                tracing::warn!("job {} could not get its secrets: {reason}", row.id);
+                quench_log::warn!("job {} could not get its secrets: {reason}", row.id);
                 return Ok(Status::Failed);
             }
         };
@@ -697,7 +697,7 @@ impl Worker {
             credential_store::resolve(&self.db, self.credential_key.as_ref().as_ref(), repo)
                 .await
                 .unwrap_or_else(|error| {
-                    tracing::warn!("could not resolve a credential for {}: {error}", repo.id);
+                    quench_log::warn!("could not resolve a credential for {}: {error}", repo.id);
                     None
                 });
 
@@ -758,7 +758,7 @@ impl Worker {
             if polls.is_multiple_of(CANCEL_CHECK_EVERY)
                 && queue::is_cancel_requested(&self.db, &run.id).await?
             {
-                tracing::info!("run {} cancelled; stopping {}", run.id, spec.name);
+                quench_log::info!("run {} cancelled; stopping {}", run.id, spec.name);
                 let _ = self.executor.cancel(&handle).await;
             }
 
@@ -810,11 +810,11 @@ impl Worker {
         .await;
 
         for problem in problems {
-            tracing::warn!("{}: {problem}", row.qualified_name());
+            quench_log::warn!("{}: {problem}", row.qualified_name());
         }
 
         if self.artifacts.is_none() {
-            tracing::warn!(
+            quench_log::warn!(
                 "{} produced {} but no warehouse is configured, so {} not kept",
                 row.qualified_name(),
                 job.artifacts.join(", "),
@@ -829,7 +829,7 @@ impl Worker {
 
         for collected in kept {
             if let Err(error) = queue::record_artifact(&self.db, &collected.artifact).await {
-                tracing::error!("could not record an artifact for run {}: {error}", run.id);
+                quench_log::error!("could not record an artifact for run {}: {error}", run.id);
             }
         }
     }
@@ -868,7 +868,7 @@ impl Worker {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, quench_core::Error)]
 pub enum WorkerError {
     #[error("repository {0} no longer exists")]
     UnknownRepo(String),
@@ -926,7 +926,7 @@ fn describe(status: Status) -> String {
 
 /// `None` unless the deployment says where it's reachable - a `localhost` link is worse than none.
 pub(crate) fn run_url(run_id: &str) -> Option<String> {
-    let base = envmnt::get_or("CONVEYOR_PUBLIC_URL", "");
+    let base = quench_core::env::get_or("CONVEYOR_PUBLIC_URL", "");
     let base = base.trim().trim_end_matches('/');
     (!base.is_empty()).then(|| format!("{base}/ui/runs/{run_id}"))
 }

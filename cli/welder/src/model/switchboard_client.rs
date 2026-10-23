@@ -1,6 +1,6 @@
-use anyhow::{Context, Result, anyhow, bail};
 use quench_client::BearerAuthClient;
-use serde::{Deserialize, Serialize};
+use quench_core::{Context, Result, bail, err};
+use quench_serde::{Deserialize, Serialize};
 
 /// A vLLM instance as reported by switchboard's `/api/v1/vllm/instances`.
 ///
@@ -90,7 +90,7 @@ impl SwitchboardClient {
              exchanges WELDER_SWITCHBOARD_USERNAME/PASSWORD for a token now",
         )?;
 
-        let http = reqwest::Client::builder()
+        let http = quench_client::transport::Client::builder()
             .danger_accept_invalid_certs(!tls_verify)
             .build()
             .context("failed to build the gatehouse login client")?;
@@ -99,7 +99,7 @@ impl SwitchboardClient {
                 "{}/api/v1/auth/login",
                 gatehouse_url.trim_end_matches('/')
             ))
-            .json(&serde_json::json!({ "username": username, "password": password }))
+            .json(&quench_serde::json!({ "username": username, "password": password }))
             .send()
             .await
             .context("failed to reach gatehouse to log in")?;
@@ -121,7 +121,7 @@ impl SwitchboardClient {
         self.client
             .get("/api/v1/vllm/instances")
             .await
-            .map_err(|e| anyhow!("failed to list switchboard vLLM instances: {e}"))
+            .map_err(|e| err!("failed to list switchboard vLLM instances: {e}"))
     }
 
     pub async fn launch_instance(&self, req: LaunchInstanceRequest) -> Result<VllmInstance> {
@@ -129,7 +129,7 @@ impl SwitchboardClient {
         self.client
             .post("/api/v1/vllm/instances", &req)
             .await
-            .map_err(|e| anyhow!("failed to launch switchboard vLLM instance for '{model}': {e}"))
+            .map_err(|e| err!("failed to launch switchboard vLLM instance for '{model}': {e}"))
     }
 
     /// Bypasses the real `gatehouse` login flow `new` performs, for tests

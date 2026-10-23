@@ -1,8 +1,10 @@
 //! Docker Registry v2 bearer tokens: Basic-auth at `/token`, bearer at `/v2/*` - a fixed protocol.
 //! Minted/verified by warehouse alone with its own secret, independent of the realm's JWKS tokens.
 
-use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode, errors::Error};
-use serde::{Deserialize, Serialize};
+use quench_crypto::jwt::{
+    Algorithm, DecodingKey, EncodingKey, Error, Header, Validation, decode, encode,
+};
+use quench_serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
 pub struct DockerTokenConfig {
@@ -15,7 +17,9 @@ pub struct DockerTokenConfig {
 impl DockerTokenConfig {
     #[must_use]
     pub fn init(service_name: String, realm: String, auth_enabled: bool) -> Self {
-        let secret = envmnt::get_or_panic("DOCKER_TOKEN_SECRET").into_bytes();
+        let secret = std::env::var("DOCKER_TOKEN_SECRET")
+            .expect("DOCKER_TOKEN_SECRET must be set")
+            .into_bytes();
         Self {
             secret,
             service_name,
@@ -26,7 +30,7 @@ impl DockerTokenConfig {
 
     pub fn encode(&self, claims: &DockerClaims) -> Result<String, Error> {
         encode(
-            &Header::default(),
+            &Header::new(Algorithm::HS256),
             claims,
             &EncodingKey::from_secret(&self.secret),
         )
@@ -35,7 +39,7 @@ impl DockerTokenConfig {
     pub fn decode(&self, token: &str) -> Result<DockerClaims, Error> {
         let validation = Validation {
             validate_aud: false,
-            ..Validation::default()
+            ..Validation::new(Algorithm::HS256)
         };
         Ok(
             decode::<DockerClaims>(token, &DecodingKey::from_secret(&self.secret), &validation)?

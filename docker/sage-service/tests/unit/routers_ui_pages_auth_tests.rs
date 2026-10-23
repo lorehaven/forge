@@ -1,11 +1,10 @@
 use crate::env_support::env_lock;
-use bytes::Bytes;
-use http::{HeaderMap, Method, StatusCode, Uri};
-use http_body_util::BodyExt;
 use quench_auth::domain::jwt::JwtConfig;
 use quench_auth::http::domain::sso_client::SsoConfig;
+use quench_core::bytes::Bytes;
 use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::request::Request;
 use std::sync::Arc;
 
@@ -54,9 +53,14 @@ fn req_with_cookie(
     )
 }
 
-async fn json_body(resp: quench_http::response::Response) -> serde_json::Value {
-    let collected = resp.into_hyper().into_body().collect().await.expect("body");
-    serde_json::from_slice(&collected.to_bytes()).expect("valid json body")
+async fn json_body(resp: quench_http::response::Response) -> quench_serde::Value {
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .expect("body");
+    quench_serde::json::from_slice(&collected).expect("valid json body")
 }
 
 #[tokio::test]
@@ -151,7 +155,7 @@ async fn logout_redirects_when_gatehouse_is_configured() {
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::set("GATEHOUSE_URL", "http://127.0.0.1:1");
+    quench_core::env::set("GATEHOUSE_URL", "http://127.0.0.1:1");
 
     let (app, container) = app(JwtConfig::for_tests()).await;
     let resp = app.call(req(Method::GET, "/ui/logout", &container)).await;

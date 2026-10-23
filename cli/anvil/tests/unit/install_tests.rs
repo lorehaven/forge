@@ -3,7 +3,7 @@ use anvil::commands::install::{
     resolve_workspace_install_targets,
 };
 use anvil::config::{Config, InstallConfig};
-use serde_json::{Value, json};
+use quench_serde::{Value, json};
 use std::path::PathBuf;
 
 fn config_with_packages(packages: &[&str]) -> Config {

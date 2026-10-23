@@ -9,19 +9,19 @@ use crate::notices;
 use crate::realm::{self, RealmError, UserChanges};
 use crate::tokens::VerificationTokens;
 use crate::ui::common::{FormFields, UiPageKind, render_page, ui_path};
-use async_trait::async_trait;
-use http::StatusCode;
 use quench_auth::domain::auth::{Actions, Permissions, Role, User};
 use quench_auth::domain::jwt::{Claims, JwtConfig};
 use quench_auth::domain::session::SessionDb;
 use quench_auth::http::routers::ui::get_user_from_req;
+use quench_core::async_trait;
 use quench_db::prelude::Db;
+use quench_http::http::StatusCode;
 use quench_http::prelude::{
     Form, FromRequest, HttpError, Inject, Path, Query, Request, Response, get, post,
 };
+use quench_serde::Deserialize;
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
-use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -73,7 +73,7 @@ macro_rules! admin_actor {
                     None => Ok(Self::NotSignedIn),
                     Some(claims) if claims.can("gatehouse", $action) => Ok(Self::Yes(claims)),
                     Some(claims) => {
-                        tracing::warn!(
+                        quench_log::warn!(
                             "{} opened an admin page without gatehouse:{}",
                             claims.sub,
                             $action
@@ -233,7 +233,7 @@ pub async fn create_user(
             };
             redirect(&format!(
                 "/admin/users/{}?ok={outcome}",
-                urlencoding::encode(&user.username)
+                quench_serde::urlencoded::percent_encode(&user.username)
             ))
         }
         Err(err) => back_to_list(&err),
@@ -250,7 +250,7 @@ async fn invite_outcome(
     match invites::send_invite(tokens, mailer, base, user, None).await {
         Ok(()) => "invited",
         Err(err) => {
-            tracing::error!("could not send the invitation to {}: {err}", user.username);
+            quench_log::error!("could not send the invitation to {}: {err}", user.username);
             "invite_failed"
         }
     }
@@ -283,7 +283,7 @@ pub async fn resend_invite(
     let outcome = invite_outcome(&tokens, &**mailer, &base, &user).await;
     redirect(&format!(
         "/admin/users/{}?ok={outcome}",
-        urlencoding::encode(&username)
+        quench_serde::urlencoded::percent_encode(&username)
     ))
 }
 
@@ -351,12 +351,12 @@ pub async fn save_user(
             }
             redirect(&format!(
                 "/admin/users/{}?ok=saved",
-                urlencoding::encode(&username)
+                quench_serde::urlencoded::percent_encode(&username)
             ))
         }
         Err(err) => redirect(&format!(
             "/admin/users/{}?err={}",
-            urlencoding::encode(&username),
+            quench_serde::urlencoded::percent_encode(&username),
             err.i18n_key()
         )),
     }
@@ -393,11 +393,11 @@ pub async fn apply_template(
     {
         Ok(_) => redirect(&format!(
             "/admin/users/{}?ok=saved",
-            urlencoding::encode(&username)
+            quench_serde::urlencoded::percent_encode(&username)
         )),
         Err(err) => redirect(&format!(
             "/admin/users/{}?err={}",
-            urlencoding::encode(&username),
+            quench_serde::urlencoded::percent_encode(&username),
             err.i18n_key()
         )),
     }
@@ -419,7 +419,7 @@ pub async fn delete_user(
         Ok(()) => redirect("/admin/users?ok=deleted"),
         Err(err) => redirect(&format!(
             "/admin/users/{}?err={}",
-            urlencoding::encode(&username),
+            quench_serde::urlencoded::percent_encode(&username),
             err.i18n_key()
         )),
     }
@@ -444,7 +444,7 @@ pub async fn disable_user(
     match realm::set_disabled(&db, &username, true).await {
         Ok(_) => redirect(&format!(
             "/admin/users/{}?ok=saved",
-            urlencoding::encode(&username)
+            quench_serde::urlencoded::percent_encode(&username)
         )),
         Err(err) => back_to_edit(&username, &err),
     }
@@ -463,7 +463,7 @@ pub async fn enable_user(
     match realm::set_disabled(&db, &username, false).await {
         Ok(_) => redirect(&format!(
             "/admin/users/{}?ok=saved",
-            urlencoding::encode(&username)
+            quench_serde::urlencoded::percent_encode(&username)
         )),
         Err(err) => back_to_edit(&username, &err),
     }
@@ -482,7 +482,7 @@ pub async fn unlock_user(
     match realm::unlock(&db, &username).await {
         Ok(_) => redirect(&format!(
             "/admin/users/{}?ok=saved",
-            urlencoding::encode(&username)
+            quench_serde::urlencoded::percent_encode(&username)
         )),
         Err(err) => back_to_edit(&username, &err),
     }
@@ -511,7 +511,7 @@ pub async fn disable_user_mfa(
             }
             redirect(&format!(
                 "/admin/users/{}?ok=saved",
-                urlencoding::encode(&username)
+                quench_serde::urlencoded::percent_encode(&username)
             ))
         }
         Err(err) => back_to_edit(&username, &err),
@@ -657,7 +657,7 @@ pub fn user_row(user: &User, actor: &str) -> Element {
                     "href",
                     ui_path(&format!(
                         "/admin/users/{}",
-                        urlencoding::encode(&user.username)
+                        quench_serde::urlencoded::percent_encode(&user.username)
                     )),
                 )
                 .attr("data-i18n", "ui_admin_edit"),
@@ -784,7 +784,7 @@ fn details_panel(
                 "action",
                 ui_path(&format!(
                     "/admin/users/{}",
-                    urlencoding::encode(&user.username)
+                    quench_serde::urlencoded::percent_encode(&user.username)
                 )),
             )
             .child(role_row)
@@ -867,7 +867,7 @@ fn delete_panel(user: &User) -> Element {
                         "action",
                         ui_path(&format!(
                             "/admin/users/{}/delete",
-                            urlencoding::encode(&user.username)
+                            quench_serde::urlencoded::percent_encode(&user.username)
                         )),
                     )
                     .child(
@@ -1106,7 +1106,7 @@ fn mfa_action_form(username: &str, path_suffix: &str, button_key: &'static str) 
             "action",
             ui_path(&format!(
                 "/admin/users/{}/{path_suffix}",
-                urlencoding::encode(username)
+                quench_serde::urlencoded::percent_encode(username)
             )),
         )
         .child(
@@ -1117,10 +1117,8 @@ fn mfa_action_form(username: &str, path_suffix: &str, button_key: &'static str) 
         )
 }
 
-fn format_timestamp(value: Option<chrono::DateTime<chrono::Utc>>) -> String {
-    value.map_or_else(String::new, |ts| {
-        ts.format("%Y-%m-%d %H:%M UTC").to_string()
-    })
+fn format_timestamp(value: Option<quench_core::time::Time>) -> String {
+    value.map_or_else(String::new, |ts| ts.format("%Y-%m-%d %H:%M UTC"))
 }
 
 /// One checkbox per catalog action, flat (no inherent order between them).
@@ -1180,7 +1178,7 @@ fn template_picker(catalog: &PermissionCatalog, user: &User) -> Option<Element> 
             "action",
             ui_path(&format!(
                 "/admin/users/{}/template",
-                urlencoding::encode(&user.username)
+                quench_serde::urlencoded::percent_encode(&user.username)
             )),
         )
         .child(
@@ -1288,7 +1286,7 @@ fn back_to_list(err: &RealmError) -> Response {
 fn back_to_edit(username: &str, err: &RealmError) -> Response {
     redirect(&format!(
         "/admin/users/{}?err={}",
-        urlencoding::encode(username),
+        quench_serde::urlencoded::percent_encode(username),
         err.i18n_key()
     ))
 }

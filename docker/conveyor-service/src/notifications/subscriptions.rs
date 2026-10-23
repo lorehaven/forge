@@ -2,11 +2,10 @@
 
 use crate::scheduler::projects;
 use crate::scheduler::queue::{QueueError, pool, schema};
-use chrono::{DateTime, Utc};
+use quench_core::time::Time;
+use quench_core::uuid::Uuid;
 use quench_db::prelude::Db;
-use serde::Serialize;
-use sqlx::Row;
-use uuid::Uuid;
+use quench_serde::Serialize;
 
 /// What a subscription follows. A project covers every repository nested beneath it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -35,7 +34,7 @@ pub struct Subscription {
     pub id: String,
     pub repo_id: Option<String>,
     pub project_id: Option<String>,
-    pub created_at: DateTime<Utc>,
+    pub created_at: Time,
 }
 
 /// Idempotent: `true` when this made the subscription, `false` when it already existed.
@@ -48,13 +47,17 @@ pub async fn subscribe(db: &Db, username: &str, scope: Scope<'_>) -> Result<bool
          VALUES ($1, $2, $3) ON CONFLICT DO NOTHING"
     );
 
-    let done = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(Uuid::new_v4().to_string())
-        .bind(username)
-        .bind(scope.id())
-        .execute(pool)
+    let done = pool
+        .execute(
+            &sql,
+            &[
+                &Uuid::new_v4().to_string() as &dyn quench_pg::ToSql,
+                &username,
+                &scope.id(),
+            ],
+        )
         .await?;
-    Ok(done.rows_affected() > 0)
+    Ok(done > 0)
 }
 
 /// `true` when there was a subscription to remove.
@@ -64,12 +67,10 @@ pub async fn unsubscribe(db: &Db, username: &str, scope: Scope<'_>) -> Result<bo
     let column = scope.column();
     let sql = format!("DELETE FROM {schema}.subscriptions WHERE username = $1 AND {column} = $2");
 
-    let done = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(username)
-        .bind(scope.id())
-        .execute(pool)
+    let done = pool
+        .execute(&sql, &[&username as &dyn quench_pg::ToSql, &scope.id()])
         .await?;
-    Ok(done.rows_affected() > 0)
+    Ok(done > 0)
 }
 
 pub async fn list_for_user(db: &Db, username: &str) -> Result<Vec<Subscription>, QueueError> {
@@ -80,18 +81,17 @@ pub async fn list_for_user(db: &Db, username: &str) -> Result<Vec<Subscription>,
          WHERE username = $1 ORDER BY created_at, id"
     );
 
-    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(username)
-        .fetch_all(pool)
+    let rows = pool
+        .query(&sql, &[&username as &dyn quench_pg::ToSql])
         .await?;
 
     rows.iter()
         .map(|row| {
             Ok(Subscription {
-                id: row.try_get("id")?,
-                repo_id: row.try_get("repo_id")?,
-                project_id: row.try_get("project_id")?,
-                created_at: row.try_get("created_at")?,
+                id: row.get("id")?,
+                repo_id: row.get("repo_id")?,
+                project_id: row.get("project_id")?,
+                created_at: row.get("created_at")?,
             })
         })
         .collect()
@@ -111,16 +111,17 @@ pub async fn subscribers(
          WHERE repo_id = $1 OR project_id = ANY($2) ORDER BY username"
     );
 
-    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(repo_id)
-        .bind(&chain)
-        .fetch_all(pool)
+    let rows = pool
+        .query(
+            &sql,
+            &[
+                &repo_id as &dyn quench_pg::ToSql,
+                &quench_pg::PgArray(chain.clone()),
+            ],
+        )
         .await?;
 
     rows.iter()
-        .map(|row| {
-            row.try_get::<String, _>("username")
-                .map_err(QueueError::from)
-        })
+        .map(|row| row.get::<String, _>("username").map_err(QueueError::from))
         .collect()
 }

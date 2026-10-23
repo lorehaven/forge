@@ -3,10 +3,10 @@ use crate::clients::vllm::{ChatMessage, VllmClient};
 use crate::config::SageConfig;
 use crate::observability::cost_tracking::CostTracker;
 use crate::observability::metrics::MetricsCollector;
-use bytes::Bytes;
-use futures_util::StreamExt;
+use quench_core::bytes::Bytes;
+use quench_core::stream::StreamExt;
 use quench_http::prelude::{HttpError, Inject, Json, Path, Response, get, http::StatusCode, post};
-use serde::{Deserialize, Serialize};
+use quench_serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
 pub struct HistoryMessage {
@@ -81,7 +81,7 @@ async fn grounded_reply(
     ctx: &GroundedContext<'_>,
     g: &crate::grounding::Grounding,
     mut stream: std::pin::Pin<
-        Box<dyn futures_util::Stream<Item = anyhow::Result<String>> + Send + Sync>,
+        Box<dyn quench_core::stream::Stream<Item = quench_core::Result<String>> + Send + Sync>,
     >,
     retrieve_s: f64,
 ) -> Response {
@@ -91,7 +91,7 @@ async fn grounded_reply(
         match res {
             Ok(chunk) => answer.push_str(&chunk),
             Err(err) => {
-                tracing::error!("Grounded chat stream failed: {}", err);
+                quench_log::error!("Grounded chat stream failed: {}", err);
                 return Response::text(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "api_error_stream_failed",
@@ -118,11 +118,11 @@ async fn grounded_reply(
     let sources: Vec<_> = g
         .sources
         .iter()
-        .map(|s| serde_json::json!({ "index": s.index, "url": s.url, "domain": s.domain }))
+        .map(|s| quench_serde::json!({ "index": s.index, "url": s.url, "domain": s.domain }))
         .collect();
     let events = vec![
-        serde_json::json!({ "content": answer }),
-        serde_json::json!({
+        quench_serde::json!({ "content": answer }),
+        quench_serde::json!({
             "grounded": true,
             "sources": sources,
             "search_failed": g.unavailable,
@@ -134,7 +134,7 @@ async fn grounded_reply(
             },
         }),
     ];
-    let body = futures_util::stream::iter(
+    let body = quench_core::stream::iter(
         events
             .into_iter()
             .map(|data| Ok::<_, std::io::Error>(Bytes::from(format!("data: {data}\n\n")))),
@@ -167,17 +167,17 @@ fn build_messages(
 /// The answer streamed as it is generated, one `data:` event per piece.
 fn plain_reply(
     stream: std::pin::Pin<
-        Box<dyn futures_util::Stream<Item = anyhow::Result<String>> + Send + Sync>,
+        Box<dyn quench_core::stream::Stream<Item = quench_core::Result<String>> + Send + Sync>,
     >,
 ) -> Response {
     let sse_stream = stream.map(|res| match res {
         Ok(content) => {
-            let data = serde_json::json!({ "content": content });
+            let data = quench_serde::json!({ "content": content });
             Ok::<_, std::io::Error>(Bytes::from(format!("data: {data}\n\n")))
         }
         Err(err) => {
             // Localization code plus the raw detail for diagnostics.
-            let data = serde_json::json!({ "error": "api_error_stream_failed", "detail": err.to_string() });
+            let data = quench_serde::json!({ "error": "api_error_stream_failed", "detail": err.to_string() });
             Ok::<_, std::io::Error>(Bytes::from(format!("data: {data}\n\n")))
         }
     });
@@ -196,7 +196,7 @@ pub async fn chat(
     let instances = match switchboard.get_vllm_instances().await {
         Ok(i) => i,
         Err(err) => {
-            tracing::error!("Failed to get vLLM instances from Switchboard: {}", err);
+            quench_log::error!("Failed to get vLLM instances from Switchboard: {}", err);
             return Response::text(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "api_error_switchboard_unavailable",
@@ -210,7 +210,7 @@ pub async fn chat(
 
     // Grounded mode retrieves in code (see `grounding`), same as the web UI.
     let grounding_cfg = crate::grounding::GroundingConfig::from_env();
-    let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+    let today = quench_core::time::Time::now().format("%Y-%m-%d").clone();
     let mut system_prompt = config.system_prompt_with_date();
     let history = history_messages(&req);
     let mut grounding = None;
@@ -263,7 +263,7 @@ pub async fn chat(
     {
         Ok(s) => s,
         Err(err) => {
-            tracing::error!("Failed to create vLLM chat stream: {}", err);
+            quench_log::error!("Failed to create vLLM chat stream: {}", err);
             return Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_stream_failed");
         }
     };

@@ -21,19 +21,19 @@ pub async fn reap_failed(engine: &Arc<dyn VllmEngine>) {
     let instances = match engine.list_instances().await {
         Ok(instances) => instances,
         Err(err) => {
-            tracing::error!("vLLM reaper: failed to list instances: {}", err);
+            quench_log::error!("vLLM reaper: failed to list instances: {}", err);
             return;
         }
     };
 
     for instance in instances.iter().filter(|i| i.status == "Failed") {
-        tracing::warn!(
+        quench_log::warn!(
             "vLLM reaper: removing failed instance {} ({})",
             instance.id,
             instance.model
         );
         if let Err(err) = engine.stop_instance(instance.id.clone()).await {
-            tracing::error!("vLLM reaper: failed to remove {}: {}", instance.id, err);
+            quench_log::error!("vLLM reaper: failed to remove {}: {}", instance.id, err);
         }
     }
 }
@@ -49,9 +49,9 @@ pub fn spawn_restorer(engine: Arc<dyn VllmEngine>) {
         loop {
             interval.tick().await;
             match engine.restore_next().await {
-                Ok(Some(id)) => tracing::info!("vLLM restorer: restarted {}", id),
+                Ok(Some(id)) => quench_log::info!("vLLM restorer: restarted {}", id),
                 Ok(None) => {}
-                Err(err) => tracing::error!("vLLM restorer: {}", err),
+                Err(err) => quench_log::error!("vLLM restorer: {}", err),
             }
         }
     });

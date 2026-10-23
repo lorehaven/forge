@@ -3,7 +3,7 @@ use super::store::{get_store, warm_model_cache};
 use std::time::Duration;
 use tokio::time::sleep;
 
-#[tracing::instrument]
+#[quench_log::instrument]
 pub async fn sync_models() {
     let store = get_store();
 
@@ -17,7 +17,7 @@ pub async fn sync_models() {
         .collect();
 
     if !stale_models.is_empty() {
-        tracing::info!("Removing {} stale models from cache.", stale_models.len());
+        quench_log::info!("Removing {} stale models from cache.", stale_models.len());
         for path in stale_models {
             store.remove_model(path).await;
         }
@@ -31,7 +31,7 @@ pub fn start_sync_job() {
     tokio::spawn(async move {
         loop {
             sleep(Duration::from_secs(60)).await;
-            tracing::debug!("Running background model sync...");
+            quench_log::debug!("Running background model sync...");
             sync_models().await;
         }
     });

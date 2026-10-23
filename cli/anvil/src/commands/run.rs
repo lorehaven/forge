@@ -1,7 +1,7 @@
-use anyhow::{Context, Result};
 use crossterm::event::{self, Event, KeyCode, KeyEventKind};
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use quench_cli::prelude::{Tone, print_status};
+use quench_core::{Context, Result};
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
@@ -147,7 +147,7 @@ pub fn resolve_package_dir(package_name: &str) -> Option<std::path::PathBuf> {
         return None;
     }
 
-    let metadata: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+    let metadata: quench_serde::Value = quench_serde::json::from_slice(&output.stdout).ok()?;
     let packages = metadata["packages"].as_array()?;
 
     for pkg in packages {

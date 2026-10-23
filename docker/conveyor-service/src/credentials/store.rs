@@ -5,11 +5,10 @@ use crate::domain::Repo;
 use crate::scheduler::projects;
 use crate::scheduler::queue::{QueueError, pool, schema};
 use crate::secrets::crypto::{CryptoError, SecretKey};
-use chrono::{DateTime, Utc};
+use quench_core::time::Time;
+use quench_core::uuid::Uuid;
 use quench_db::prelude::Db;
-use serde::Serialize;
-use sqlx::Row;
-use uuid::Uuid;
+use quench_serde::Serialize;
 
 /// Deliberately its own name, not `CONVEYOR_SECRET_KEY` - see the module doc comment.
 pub const KEY_VAR: &str = "CONVEYOR_CREDENTIAL_KEY";
@@ -17,7 +16,7 @@ pub const KEY_VAR: &str = "CONVEYOR_CREDENTIAL_KEY";
 /// Below this, a masked preview reveals as much as it hides - same reasoning as `secrets::redact::MIN_REDACTABLE`.
 const MIN_TOKEN_LEN: usize = 4;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, quench_core::Error)]
 pub enum CredentialError {
     #[error(transparent)]
     Crypto(#[from] CryptoError),
@@ -78,8 +77,8 @@ pub struct CredentialRef {
     /// A masked fragment, e.g. `"••••…9f2a"` - recognisable, not reconstructible.
     pub preview: String,
     pub created_by: String,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: Time,
+    pub updated_at: Time,
 }
 
 /// A decrypted credential, held only for the duration of a checkout.
@@ -186,17 +185,21 @@ pub async fn put(
         Scope::Project(id) | Scope::Repo(id) => id,
     };
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(Uuid::new_v4().to_string())
-        .bind(scope_id)
-        .bind(name)
-        .bind(kind)
-        .bind(username)
-        .bind(&preview)
-        .bind(&nonce)
-        .bind(&ciphertext)
-        .bind(created_by)
-        .fetch_one(pool)
+    let row = pool
+        .query_one(
+            &sql,
+            &[
+                &Uuid::new_v4().to_string() as &dyn quench_pg::ToSql,
+                &scope_id,
+                &name,
+                &kind,
+                &username,
+                &preview,
+                &nonce,
+                &ciphertext,
+                &created_by,
+            ],
+        )
         .await
         .map_err(QueueError::from)?;
 
@@ -213,10 +216,14 @@ pub async fn show(db: &Db, scope: &Scope) -> Result<Option<CredentialRef>, Crede
          WHERE project_id IS NOT DISTINCT FROM $1 AND repo_id IS NOT DISTINCT FROM $2"
     );
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(scope.project_id())
-        .bind(scope.repo_id())
-        .fetch_optional(pool)
+    let row = pool
+        .query_opt(
+            &sql,
+            &[
+                &scope.project_id() as &dyn quench_pg::ToSql,
+                &scope.repo_id(),
+            ],
+        )
         .await
         .map_err(QueueError::from)?;
 
@@ -230,10 +237,7 @@ pub async fn list_all(db: &Db) -> Result<Vec<CredentialRef>, CredentialError> {
 
     let sql = format!("SELECT {COLUMNS} FROM {schema}.credentials ORDER BY name");
 
-    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .fetch_all(pool)
-        .await
-        .map_err(QueueError::from)?;
+    let rows = pool.query(&sql, &[]).await.map_err(QueueError::from)?;
 
     rows.iter().map(|row| Ok(from_row(row)?)).collect()
 }
@@ -247,14 +251,18 @@ pub async fn delete(db: &Db, scope: &Scope) -> Result<bool, CredentialError> {
          WHERE project_id IS NOT DISTINCT FROM $1 AND repo_id IS NOT DISTINCT FROM $2"
     );
 
-    let result = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(scope.project_id())
-        .bind(scope.repo_id())
-        .execute(pool)
+    let result = pool
+        .execute(
+            &sql,
+            &[
+                &scope.project_id() as &dyn quench_pg::ToSql,
+                &scope.repo_id(),
+            ],
+        )
         .await
         .map_err(QueueError::from)?;
 
-    Ok(result.rows_affected() > 0)
+    Ok(result > 0)
 }
 
 /// The token in `scope`, decrypted. Used by `resolve` only - no API path reaches this.
@@ -271,10 +279,14 @@ async fn material(
          WHERE project_id IS NOT DISTINCT FROM $1 AND repo_id IS NOT DISTINCT FROM $2"
     );
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(scope.project_id())
-        .bind(scope.repo_id())
-        .fetch_optional(pool)
+    let row = pool
+        .query_opt(
+            &sql,
+            &[
+                &scope.project_id() as &dyn quench_pg::ToSql,
+                &scope.repo_id(),
+            ],
+        )
         .await
         .map_err(QueueError::from)?;
 
@@ -282,9 +294,9 @@ async fn material(
         return Ok(None);
     };
 
-    let username: String = row.try_get("username").map_err(QueueError::from)?;
-    let nonce: Vec<u8> = row.try_get("nonce").map_err(QueueError::from)?;
-    let ciphertext: Vec<u8> = row.try_get("ciphertext").map_err(QueueError::from)?;
+    let username: String = row.get("username").map_err(QueueError::from)?;
+    let nonce: Vec<u8> = row.get("nonce").map_err(QueueError::from)?;
+    let ciphertext: Vec<u8> = row.get("ciphertext").map_err(QueueError::from)?;
     let token = key.open(&scope.context(), &nonce, &ciphertext)?;
 
     Ok(Some(ResolvedCredential { username, token }))
@@ -325,17 +337,17 @@ pub async fn resolve(
 const COLUMNS: &str =
     "id, project_id, repo_id, name, kind, username, preview, created_by, created_at, updated_at";
 
-fn from_row(row: &sqlx::postgres::PgRow) -> Result<CredentialRef, QueueError> {
+fn from_row(row: &quench_pg::Row) -> Result<CredentialRef, QueueError> {
     Ok(CredentialRef {
-        id: row.try_get("id")?,
-        project_id: row.try_get("project_id")?,
-        repo_id: row.try_get("repo_id")?,
-        name: row.try_get("name")?,
-        kind: row.try_get("kind")?,
-        username: row.try_get("username")?,
-        preview: row.try_get("preview")?,
-        created_by: row.try_get("created_by")?,
-        created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
-        updated_at: row.try_get::<DateTime<Utc>, _>("updated_at")?,
+        id: row.get("id")?,
+        project_id: row.get("project_id")?,
+        repo_id: row.get("repo_id")?,
+        name: row.get("name")?,
+        kind: row.get("kind")?,
+        username: row.get("username")?,
+        preview: row.get("preview")?,
+        created_by: row.get("created_by")?,
+        created_at: row.get::<Time, _>("created_at")?,
+        updated_at: row.get::<Time, _>("updated_at")?,
     })
 }

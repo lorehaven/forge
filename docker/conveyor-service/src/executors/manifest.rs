@@ -272,13 +272,13 @@ impl Settings {
     #[must_use]
     pub fn from_env() -> Self {
         Self {
-            git_image: envmnt::get_or("CONVEYOR_K8S_GIT_IMAGE", DEFAULT_GIT_IMAGE),
-            default_image: envmnt::get_or("CONVEYOR_K8S_DEFAULT_IMAGE", DEFAULT_IMAGE),
+            git_image: quench_core::env::get_or("CONVEYOR_K8S_GIT_IMAGE", DEFAULT_GIT_IMAGE),
+            default_image: quench_core::env::get_or("CONVEYOR_K8S_DEFAULT_IMAGE", DEFAULT_IMAGE),
             service_account: {
-                let name = envmnt::get_or("CONVEYOR_K8S_SERVICE_ACCOUNT", "");
+                let name = quench_core::env::get_or("CONVEYOR_K8S_SERVICE_ACCOUNT", "");
                 (!name.trim().is_empty()).then(|| name.trim().to_string())
             },
-            ttl_seconds: envmnt::get_or("CONVEYOR_K8S_TTL_SECONDS", "3600")
+            ttl_seconds: quench_core::env::get_or("CONVEYOR_K8S_TTL_SECONDS", "3600")
                 .parse()
                 .unwrap_or(3600),
         }

@@ -3,7 +3,7 @@
 //! Foreman does not manage their data or their lifecycle beyond up and down: a
 //! development database is meant to be disposable, and `--rm` says so.
 
-use anyhow::{Result, bail};
+use quench_core::{Result, bail};
 use std::time::Duration;
 
 use crate::config::Container;

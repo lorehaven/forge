@@ -10,7 +10,7 @@ use quench_db::prelude::Db;
 use quench_http::prelude::{Inject, Path, Query, Response, delete, http::StatusCode};
 
 #[delete("/api/v1/files/{storage}/file")]
-#[tracing::instrument(skip(claims, config, db))]
+#[quench_log::instrument(skip(claims, config, db))]
 pub async fn handle(
     OptionalClaims(claims): OptionalClaims,
     Inject(config): Inject<JwtConfig>,
@@ -46,7 +46,7 @@ pub async fn handle(
                 );
             }
 
-            tracing::info!("deleted `{}` from storage `{}`", query.path, storage.name);
+            quench_log::info!("deleted `{}` from storage `{}`", query.path, storage.name);
 
             Response::new(StatusCode::NO_CONTENT)
         }
@@ -69,12 +69,12 @@ pub async fn handle(
 
             match deleted {
                 Ok(true) => {
-                    tracing::info!("deleted `{path}` from dynamic storage `{}`", storage.name);
+                    quench_log::info!("deleted `{path}` from dynamic storage `{}`", storage.name);
                     Response::new(StatusCode::NO_CONTENT)
                 }
                 Ok(false) => not_found("no such file"),
                 Err(problem) => {
-                    tracing::error!("dynamic delete failed: {problem}");
+                    quench_log::error!("dynamic delete failed: {problem}");
                     error(
                         StatusCode::INTERNAL_SERVER_ERROR,
                         "could not delete the file",

@@ -1,13 +1,12 @@
 //! Unit tests for `routers/ui/pages/files.rs`.
 
-use bytes::Bytes;
-use http::{HeaderMap, Method, StatusCode, Uri};
-use http_body_util::BodyExt;
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::bytes::Bytes;
 use quench_db::InMemoryDb;
 use quench_db::prelude::{Crud, Db};
 use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::request::Request;
 use sage_service::clients::switchboard::SwitchboardClient;
 use sage_service::clients::vllm::VllmClient;
@@ -26,9 +25,9 @@ fn db() -> Db {
 /// `TEST_KEY_MATERIAL` convention for why concurrent identical writes are
 /// safe here). Matches `routers_files_tests.rs`'s `ensure_switchboard_env`.
 fn ensure_switchboard_env() {
-    envmnt::set("GATEHOUSE_URL", "http://127.0.0.1:1");
-    envmnt::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
-    envmnt::set("SWITCHBOARD_URL", "http://127.0.0.1:1");
+    quench_core::env::set("GATEHOUSE_URL", "http://127.0.0.1:1");
+    quench_core::env::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
+    quench_core::env::set("SWITCHBOARD_URL", "http://127.0.0.1:1");
 }
 
 async fn app(db: Db) -> (Arc<dyn Endpoint>, Arc<quench_http::di::Container>) {
@@ -59,8 +58,13 @@ fn req(method: Method, path: &str, container: &Arc<quench_http::di::Container>) 
 }
 
 async fn body_text(resp: quench_http::response::Response) -> String {
-    let collected = resp.into_hyper().into_body().collect().await.expect("body");
-    String::from_utf8_lossy(&collected.to_bytes()).into_owned()
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .expect("body");
+    String::from_utf8_lossy(&collected).into_owned()
 }
 
 fn file(id: &str, owner: &str, status: &str) -> File {

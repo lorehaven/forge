@@ -39,7 +39,7 @@ pub async fn notify(
         locale: user.preferred_locale.as_deref().or(fallback_locale),
     };
     if let Err(err) = mailer.send(&recipient, mail).await {
-        tracing::error!(
+        quench_log::error!(
             "failed to send the {} notice for {}: {err}",
             mail.kind().label(),
             user.username
@@ -57,7 +57,7 @@ pub async fn notify_username(
 ) {
     match realm::get(db, username).await {
         Ok(user) => notify(mailer, &user, mail, fallback_locale).await,
-        Err(err) => tracing::warn!(
+        Err(err) => quench_log::warn!(
             "no {} notice for {username}: could not read the account ({err:?})",
             mail.kind().label()
         ),

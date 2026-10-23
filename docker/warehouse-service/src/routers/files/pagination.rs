@@ -37,6 +37,6 @@ pub fn resume_after<T>(items: &[T], last: Option<&str>, key: impl Fn(&T) -> &str
 pub fn next_link(path_and_query: &str, n: usize, last: &str) -> String {
     format!(
         "<{path_and_query}&n={n}&last={}>; rel=\"next\"",
-        urlencoding::encode(last)
+        quench_serde::urlencoded::percent_encode(last)
     )
 }

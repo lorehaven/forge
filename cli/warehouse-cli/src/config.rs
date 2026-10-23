@@ -2,7 +2,7 @@ use crate::domain::{
     RegistryConfig, RootConfig, merge_root_config, normalize_base_path, normalize_path,
     validate_registry_name,
 };
-use anyhow::{Context, Result, anyhow, bail};
+use quench_core::{Context, Result, bail, err};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -72,7 +72,8 @@ impl ConfigStore {
     pub fn save_root_config(&self, scope: ConfigScope, cfg: &RootConfig) -> Result<()> {
         self.ensure_layout(scope)?;
         let path = self.root_config_path(scope)?;
-        let content = toml::to_string_pretty(cfg).context("failed to serialize root config")?;
+        let content =
+            quench_serde::toml::to_string_pretty(cfg).context("failed to serialize root config")?;
         fs::write(&path, content).with_context(|| format!("failed to write {}", path.display()))
     }
 
@@ -88,7 +89,7 @@ impl ConfigStore {
 
         let cfg = self.load_effective_root_config()?;
         let name = cfg.docker.current_registry.ok_or_else(|| {
-            anyhow!(
+            err!(
                 "no active docker registry; use `warehouse docker registry add ... --use` or `warehouse docker registry use ...`"
             )
         })?;
@@ -113,7 +114,7 @@ impl ConfigStore {
 
         let cfg = self.load_effective_root_config()?;
         let name = cfg.crates.current_registry.ok_or_else(|| {
-            anyhow!(
+            err!(
                 "no active crates registry; use `warehouse crates registry add ... --use` or `warehouse crates registry use ...`"
             )
         })?;
@@ -138,7 +139,7 @@ impl ConfigStore {
 
         let cfg = self.load_effective_root_config()?;
         let name = cfg.files.current_registry.ok_or_else(|| {
-            anyhow!(
+            err!(
                 "no active files registry; use `warehouse files registry add ... --use` or `warehouse files registry use ...`"
             )
         })?;
@@ -215,8 +216,8 @@ impl ConfigStore {
         normalized.base_path = normalize_base_path(&normalized.base_path);
         normalized.docker.path = normalize_path(&normalized.docker.path);
 
-        let content =
-            toml::to_string_pretty(&normalized).context("failed to serialize registry config")?;
+        let content = quench_serde::toml::to_string_pretty(&normalized)
+            .context("failed to serialize registry config")?;
         fs::write(&path, content).with_context(|| format!("failed to write {}", path.display()))
     }
 
@@ -268,7 +269,8 @@ impl ConfigStore {
 
         let content = fs::read_to_string(&path)
             .with_context(|| format!("failed to read {}", path.display()))?;
-        toml::from_str(&content).with_context(|| format!("failed to parse {}", path.display()))
+        quench_serde::toml::from_str(&content)
+            .with_context(|| format!("failed to parse {}", path.display()))
     }
 
     fn load_root_config_from_path_option(&self, path: Option<PathBuf>) -> Result<RootConfig> {
@@ -335,7 +337,7 @@ impl ConfigStore {
             ConfigScope::Local => Ok(self.local_root_config_path()),
             ConfigScope::Global => self
                 .global_root_config_path()
-                .ok_or_else(|| anyhow!("HOME is not set; cannot use global config")),
+                .ok_or_else(|| err!("HOME is not set; cannot use global config")),
         }
     }
 
@@ -344,7 +346,7 @@ impl ConfigStore {
             ConfigScope::Local => Ok(self.local_registries_dir()),
             ConfigScope::Global => self
                 .global_registries_dir()
-                .ok_or_else(|| anyhow!("HOME is not set; cannot use global config")),
+                .ok_or_else(|| err!("HOME is not set; cannot use global config")),
         }
     }
 
@@ -362,5 +364,6 @@ fn default_global_root() -> Option<PathBuf> {
 fn load_registry_from_path(path: &Path) -> Result<RegistryConfig> {
     let content =
         fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?;
-    toml::from_str(&content).with_context(|| format!("failed to parse {}", path.display()))
+    quench_serde::toml::from_str(&content)
+        .with_context(|| format!("failed to parse {}", path.display()))
 }

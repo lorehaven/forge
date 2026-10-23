@@ -6,19 +6,19 @@
 //! to someone without a write grant, and the error-key allowlist that keeps
 //! a crafted `?err=` query from injecting an arbitrary translation key.
 
-use chrono::Utc;
 use conveyor_service::domain::{Project, Provider, Repo};
 use conveyor_service::routers::ui::pages::repos::{
     Notice, create_panel, edit_fields, known_error_key, notice_banner, project_path, repo_row,
 };
+use quench_core::time::Time;
 
 fn project(id: &str, name: &str, parent_id: Option<&str>) -> Project {
     Project {
         id: id.to_string(),
         name: name.to_string(),
         parent_id: parent_id.map(str::to_string),
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
+        created_at: Time::now(),
+        updated_at: Time::now(),
     }
 }
 
@@ -33,8 +33,8 @@ fn repo() -> Repo {
         registered_by: "admin".to_string(),
         project_id: "child-1".to_string(),
         enabled: true,
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
+        created_at: Time::now(),
+        updated_at: Time::now(),
     }
 }
 

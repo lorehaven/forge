@@ -3,14 +3,13 @@
 
 use crate::domain::steps::Plan;
 use crate::domain::{GantryError, pool, schema};
-use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use quench_core::async_trait;
+use quench_core::time::Time;
+use quench_core::uuid::Uuid;
 use quench_db::prelude::Db;
-use serde::{Deserialize, Serialize};
-use sqlx::Row;
+use quench_serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::Mutex;
-use uuid::Uuid;
 
 /// Operations default to one scope: everything serialises, which is what stops two upgrades racing.
 pub const CLUSTER_SCOPE: &str = "cluster";
@@ -66,15 +65,15 @@ pub struct Operation {
     pub scope: String,
     pub state: State,
     pub plan: Plan,
-    pub result: Option<serde_json::Value>,
+    pub result: Option<quench_serde::Value>,
     pub runner_job: Option<String>,
     pub requested_by: String,
     pub cancel_requested: bool,
     pub error: Option<String>,
     pub log: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub started_at: Option<DateTime<Utc>>,
-    pub finished_at: Option<DateTime<Utc>>,
+    pub created_at: Time,
+    pub started_at: Option<Time>,
+    pub finished_at: Option<Time>,
 }
 
 #[derive(Clone, Debug)]
@@ -96,7 +95,7 @@ pub struct StoredPlan {
     pub basis: Option<String>,
     pub plan: Plan,
     pub created_by: String,
-    pub created_at: DateTime<Utc>,
+    pub created_at: Time,
     /// Set once confirmed: a plan runs at most once.
     pub operation_id: Option<String>,
 }
@@ -148,7 +147,7 @@ pub trait Store: Send + Sync {
         state: State,
         error: Option<&str>,
         log: Option<&str>,
-        result: Option<serde_json::Value>,
+        result: Option<quench_serde::Value>,
     ) -> Result<(), GantryError>;
 
     async fn all_inventories(&self) -> Result<BTreeMap<String, Inventory>, GantryError>;
@@ -213,7 +212,7 @@ impl Store for MemoryStore {
             cancel_requested: false,
             error: None,
             log: None,
-            created_at: Utc::now(),
+            created_at: Time::now(),
             started_at: None,
             finished_at: None,
         };
@@ -254,7 +253,7 @@ impl Store for MemoryStore {
             .min_by_key(|row| row.created_at);
         let claimed = next.map(|row| {
             row.state = State::Running;
-            row.started_at = Some(Utc::now());
+            row.started_at = Some(Time::now());
             row.runner_job = Some(job_name(&row.id));
             row.clone()
         });
@@ -270,7 +269,7 @@ impl Store for MemoryStore {
         match row.state {
             State::Queued => {
                 row.state = State::Cancelled;
-                row.finished_at = Some(Utc::now());
+                row.finished_at = Some(Time::now());
             }
             State::Running => row.cancel_requested = true,
             _ => {}
@@ -286,14 +285,14 @@ impl Store for MemoryStore {
         state: State,
         error: Option<&str>,
         log: Option<&str>,
-        result: Option<serde_json::Value>,
+        result: Option<quench_serde::Value>,
     ) -> Result<(), GantryError> {
         if let Some(row) = self.rows().iter_mut().find(|row| row.id == id) {
             row.state = state;
             row.error = error.map(str::to_string);
             row.log = log.map(str::to_string);
             row.result = result;
-            row.finished_at = Some(Utc::now());
+            row.finished_at = Some(Time::now());
         }
         Ok(())
     }
@@ -344,7 +343,7 @@ impl Store for MemoryStore {
             basis: new.basis.clone(),
             plan: new.plan.clone(),
             created_by: new.created_by.clone(),
-            created_at: Utc::now(),
+            created_at: Time::now(),
             operation_id: None,
         };
         self.plans
@@ -409,26 +408,27 @@ impl PgStore {
     }
 }
 
-fn from_row(row: &sqlx::postgres::PgRow) -> Result<Operation, GantryError> {
-    let state: String = row.try_get("state")?;
-    let plan: serde_json::Value = row.try_get("plan")?;
+fn from_row(row: &quench_pg::Row) -> Result<Operation, GantryError> {
+    let state: String = row.get("state")?;
+    let plan: quench_serde::Value = row.get("plan")?;
     Ok(Operation {
-        id: row.try_get("id")?,
-        kind: row.try_get("kind")?,
-        title: row.try_get("title")?,
-        scope: row.try_get("scope")?,
+        id: row.get("id")?,
+        kind: row.get("kind")?,
+        title: row.get("title")?,
+        scope: row.get("scope")?,
         // The CHECK constraint keeps this to the six known values.
         state: State::parse(&state).unwrap_or(State::Failed),
-        plan: serde_json::from_value(plan)?,
-        result: row.try_get("result")?,
-        runner_job: row.try_get("runner_job")?,
-        requested_by: row.try_get("requested_by")?,
-        cancel_requested: row.try_get("cancel_requested")?,
-        error: row.try_get("error")?,
-        log: row.try_get("log")?,
-        created_at: row.try_get("created_at")?,
-        started_at: row.try_get("started_at")?,
-        finished_at: row.try_get("finished_at")?,
+        plan: quench_serde::from_value(&plan)
+            .map_err(|e| quench_pg::Error::Decode(e.to_string()))?,
+        result: row.get("result")?,
+        runner_job: row.get("runner_job")?,
+        requested_by: row.get("requested_by")?,
+        cancel_requested: row.get("cancel_requested")?,
+        error: row.get("error")?,
+        log: row.get("log")?,
+        created_at: row.get("created_at")?,
+        started_at: row.get("started_at")?,
+        finished_at: row.get("finished_at")?,
     })
 }
 
@@ -441,14 +441,18 @@ impl Store for PgStore {
             "INSERT INTO {schema}.operations (id, kind, title, scope, plan, requested_by) \
              VALUES ($1, $2, $3, $4, $5, $6) RETURNING {COLUMNS}"
         );
-        let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-            .bind(Uuid::new_v4().to_string())
-            .bind(&new.kind)
-            .bind(&new.title)
-            .bind(&new.scope)
-            .bind(serde_json::to_value(&new.plan)?)
-            .bind(&new.requested_by)
-            .fetch_one(pool)
+        let row = pool
+            .query_one(
+                &sql,
+                &[
+                    &Uuid::new_v4().to_string(),
+                    &new.kind,
+                    &new.title,
+                    &new.scope,
+                    &quench_serde::to_value(&new.plan),
+                    &new.requested_by,
+                ],
+            )
             .await?;
         from_row(&row)
     }
@@ -457,10 +461,7 @@ impl Store for PgStore {
         let pool = pool(&self.db)?;
         let schema = schema();
         let sql = format!("SELECT {COLUMNS} FROM {schema}.operations WHERE id = $1");
-        let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-            .bind(id)
-            .fetch_optional(pool)
-            .await?;
+        let row = pool.query_opt(&sql, &[&id]).await?;
         row.as_ref().map(from_row).transpose()
     }
 
@@ -469,10 +470,7 @@ impl Store for PgStore {
         let schema = schema();
         let sql =
             format!("SELECT {COLUMNS} FROM {schema}.operations ORDER BY created_at DESC LIMIT $1");
-        let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-            .bind(limit)
-            .fetch_all(pool)
-            .await?;
+        let rows = pool.query(&sql, &[&limit]).await?;
         rows.iter().map(from_row).collect()
     }
 
@@ -482,9 +480,7 @@ impl Store for PgStore {
         let sql = format!(
             "SELECT {COLUMNS} FROM {schema}.operations WHERE state = 'running' ORDER BY created_at"
         );
-        let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-            .fetch_all(pool)
-            .await?;
+        let rows = pool.query(&sql, &[]).await?;
         rows.iter().map(from_row).collect()
     }
 
@@ -499,22 +495,16 @@ impl Store for PgStore {
              (SELECT 1 FROM {schema}.operations r WHERE r.scope = q.scope AND r.state = 'running') \
              ORDER BY q.created_at LIMIT 1"
         );
-        let Some(id): Option<String> = sqlx::query_scalar(sqlx::AssertSqlSafe(pick.as_str()))
-            .fetch_optional(pool)
-            .await?
-        else {
+        let Some(row) = pool.query_opt(&pick, &[]).await? else {
             return Ok(None);
         };
+        let id: String = row.get(&0usize)?;
 
         let claim = format!(
             "UPDATE {schema}.operations SET state = 'running', started_at = NOW(), runner_job = $2 \
              WHERE id = $1 AND state = 'queued' RETURNING {COLUMNS}"
         );
-        let claimed = sqlx::query(sqlx::AssertSqlSafe(claim.as_str()))
-            .bind(&id)
-            .bind(job_name(&id))
-            .fetch_optional(pool)
-            .await;
+        let claimed = pool.query_opt(&claim, &[&id, &job_name(&id)]).await;
         match claimed {
             Ok(row) => row.as_ref().map(from_row).transpose(),
             Err(error) => {
@@ -538,10 +528,7 @@ impl Store for PgStore {
                cancel_requested = cancel_requested OR state = 'running' \
              WHERE id = $1 RETURNING {COLUMNS}"
         );
-        let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-            .bind(id)
-            .fetch_optional(pool)
-            .await?;
+        let row = pool.query_opt(&sql, &[&id]).await?;
         row.as_ref().map(from_row).transpose()
     }
 
@@ -551,7 +538,7 @@ impl Store for PgStore {
         state: State,
         error: Option<&str>,
         log: Option<&str>,
-        result: Option<serde_json::Value>,
+        result: Option<quench_serde::Value>,
     ) -> Result<(), GantryError> {
         let pool = pool(&self.db)?;
         let schema = schema();
@@ -559,13 +546,7 @@ impl Store for PgStore {
             "UPDATE {schema}.operations SET state = $2, error = $3, log = $4, result = $5, \
              finished_at = NOW() WHERE id = $1"
         );
-        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-            .bind(id)
-            .bind(state.as_str())
-            .bind(error)
-            .bind(log)
-            .bind(result)
-            .execute(pool)
+        pool.execute(&sql, &[&id, &state.as_str(), &error, &log, &result])
             .await?;
         Ok(())
     }
@@ -574,17 +555,16 @@ impl Store for PgStore {
         let pool = pool(&self.db)?;
         let schema = schema();
         let sql = format!("SELECT package, version, resources FROM {schema}.inventory");
-        let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-            .fetch_all(pool)
-            .await?;
+        let rows = pool.query(&sql, &[]).await?;
         let mut all = BTreeMap::new();
         for row in &rows {
-            let resources: serde_json::Value = row.try_get("resources")?;
+            let resources: quench_serde::Value = row.get("resources")?;
             all.insert(
-                row.try_get::<String, _>("package")?,
+                row.get::<String, _>("package")?,
                 Inventory {
-                    version: row.try_get("version")?,
-                    resources: serde_json::from_value(resources)?,
+                    version: row.get("version")?,
+                    resources: quench_serde::from_value(&resources)
+                        .map_err(|e| quench_pg::Error::Decode(e.to_string()))?,
                 },
             );
         }
@@ -598,12 +578,15 @@ impl Store for PgStore {
             "INSERT INTO {schema}.inventory (package, version, resources) VALUES ($1, $2, $3) \
              ON CONFLICT (package) DO UPDATE SET version = $2, resources = $3, updated_at = NOW()"
         );
-        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-            .bind(package)
-            .bind(&inventory.version)
-            .bind(serde_json::to_value(&inventory.resources)?)
-            .execute(pool)
-            .await?;
+        pool.execute(
+            &sql,
+            &[
+                &package,
+                &inventory.version,
+                &quench_serde::to_value(&inventory.resources),
+            ],
+        )
+        .await?;
         Ok(())
     }
 
@@ -611,11 +594,9 @@ impl Store for PgStore {
         let pool = pool(&self.db)?;
         let schema = schema();
         let sql = format!("SELECT deployment, desired FROM {schema}.deployment_states");
-        let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-            .fetch_all(pool)
-            .await?;
+        let rows = pool.query(&sql, &[]).await?;
         rows.iter()
-            .map(|row| Ok((row.try_get("deployment")?, row.try_get("desired")?)))
+            .map(|row| Ok((row.get("deployment")?, row.get("desired")?)))
             .collect()
     }
 
@@ -632,12 +613,7 @@ impl Store for PgStore {
              VALUES ($1, $2, $3) \
              ON CONFLICT (deployment) DO UPDATE SET desired = $2, updated_by = $3, updated_at = NOW()"
         );
-        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-            .bind(deployment)
-            .bind(desired)
-            .bind(by)
-            .execute(pool)
-            .await?;
+        pool.execute(&sql, &[&deployment, &desired, &by]).await?;
         Ok(())
     }
 
@@ -648,15 +624,19 @@ impl Store for PgStore {
             "INSERT INTO {schema}.plans (id, target, action, version, basis, plan, created_by) \
              VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING {PLAN_COLUMNS}"
         );
-        let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-            .bind(Uuid::new_v4().to_string())
-            .bind(&new.target)
-            .bind(&new.action)
-            .bind(&new.version)
-            .bind(&new.basis)
-            .bind(serde_json::to_value(&new.plan)?)
-            .bind(&new.created_by)
-            .fetch_one(pool)
+        let row = pool
+            .query_one(
+                &sql,
+                &[
+                    &Uuid::new_v4().to_string(),
+                    &new.target,
+                    &new.action,
+                    &new.version,
+                    &new.basis,
+                    &quench_serde::to_value(&new.plan),
+                    &new.created_by,
+                ],
+            )
             .await?;
         plan_from_row(&row)
     }
@@ -665,10 +645,7 @@ impl Store for PgStore {
         let pool = pool(&self.db)?;
         let schema = schema();
         let sql = format!("SELECT {PLAN_COLUMNS} FROM {schema}.plans WHERE id = $1");
-        let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-            .bind(id)
-            .fetch_optional(pool)
-            .await?;
+        let row = pool.query_opt(&sql, &[&id]).await?;
         row.as_ref().map(plan_from_row).transpose()
     }
 
@@ -678,23 +655,15 @@ impl Store for PgStore {
         let sql = format!(
             "UPDATE {schema}.plans SET operation_id = $2 WHERE id = $1 AND operation_id IS NULL"
         );
-        let done = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-            .bind(id)
-            .bind(CLAIMING)
-            .execute(pool)
-            .await?;
-        Ok(done.rows_affected() == 1)
+        let done = pool.execute(&sql, &[&id, &CLAIMING]).await?;
+        Ok(done == 1)
     }
 
     async fn settle_plan(&self, id: &str, operation_id: Option<&str>) -> Result<(), GantryError> {
         let pool = pool(&self.db)?;
         let schema = schema();
         let sql = format!("UPDATE {schema}.plans SET operation_id = $2 WHERE id = $1");
-        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-            .bind(id)
-            .bind(operation_id)
-            .execute(pool)
-            .await?;
+        pool.execute(&sql, &[&id, &operation_id]).await?;
         Ok(())
     }
 }
@@ -702,17 +671,18 @@ impl Store for PgStore {
 const PLAN_COLUMNS: &str =
     "id, target, action, version, basis, plan, created_by, created_at, operation_id";
 
-fn plan_from_row(row: &sqlx::postgres::PgRow) -> Result<StoredPlan, GantryError> {
-    let plan: serde_json::Value = row.try_get("plan")?;
+fn plan_from_row(row: &quench_pg::Row) -> Result<StoredPlan, GantryError> {
+    let plan: quench_serde::Value = row.get("plan")?;
     Ok(StoredPlan {
-        id: row.try_get("id")?,
-        target: row.try_get("target")?,
-        action: row.try_get("action")?,
-        version: row.try_get("version")?,
-        basis: row.try_get("basis")?,
-        plan: serde_json::from_value(plan)?,
-        created_by: row.try_get("created_by")?,
-        created_at: row.try_get("created_at")?,
-        operation_id: row.try_get("operation_id")?,
+        id: row.get("id")?,
+        target: row.get("target")?,
+        action: row.get("action")?,
+        version: row.get("version")?,
+        basis: row.get("basis")?,
+        plan: quench_serde::from_value(&plan)
+            .map_err(|e| quench_pg::Error::Decode(e.to_string()))?,
+        created_by: row.get("created_by")?,
+        created_at: row.get("created_at")?,
+        operation_id: row.get("operation_id")?,
     })
 }

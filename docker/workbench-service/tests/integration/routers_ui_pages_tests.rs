@@ -5,13 +5,12 @@
 //! so every `can_on_project_claims` write check here passes).
 
 use crate::support::{TEST_USER, database};
-use bytes::Bytes;
-use http::{HeaderMap, Method, StatusCode, Uri};
-use http_body_util::BodyExt;
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::bytes::Bytes;
 use quench_db::prelude::Db;
 use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::request::Request;
 use std::sync::Arc;
 use workbench_service::domain::issue::{self, NewIssue};
@@ -47,7 +46,7 @@ fn form_req(
     pairs: &[(&str, &str)],
     container: &Arc<quench_http::di::Container>,
 ) -> Request {
-    let encoded = serde_urlencoded::to_string(pairs).unwrap();
+    let encoded = quench_serde::urlencoded::to_string(pairs).unwrap();
     Request::new(
         Method::POST,
         path.parse::<Uri>().unwrap(),
@@ -58,8 +57,13 @@ fn form_req(
 }
 
 async fn body_text(resp: quench_http::response::Response) -> String {
-    let collected = resp.into_hyper().into_body().collect().await.expect("body");
-    String::from_utf8_lossy(&collected.to_bytes()).into_owned()
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .expect("body");
+    String::from_utf8_lossy(&collected).into_owned()
 }
 
 async fn seed_project(db: &Db, key: &str) -> project::Project {
@@ -95,8 +99,8 @@ async fn seed_issue(db: &Db, project_id: &str, title: &str) -> issue::Issue {
 }
 
 fn location(resp: quench_http::response::Response) -> String {
-    resp.into_hyper()
-        .headers()
+    resp.into_inner()
+        .headers
         .get("location")
         .expect("a Location header")
         .to_str()

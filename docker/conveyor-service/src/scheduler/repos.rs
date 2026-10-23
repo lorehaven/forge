@@ -3,10 +3,9 @@
 
 use crate::domain::{Provider, Repo};
 use crate::scheduler::queue::{QueueError, pool, schema};
-use chrono::{DateTime, Utc};
+use quench_core::time::Time;
+use quench_core::uuid::Uuid;
 use quench_db::prelude::Db;
-use sqlx::Row;
-use uuid::Uuid;
 
 /// What a caller supplies to register a repository. The id, timestamps and
 /// enabled flag are conveyor's to decide.
@@ -34,16 +33,20 @@ pub async fn create(db: &Db, new: &NewRepo) -> Result<Repo, QueueError> {
          RETURNING {COLUMNS}"
     );
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(&id)
-        .bind(new.provider.as_str())
-        .bind(&new.owner)
-        .bind(&new.name)
-        .bind(&new.clone_url)
-        .bind(&new.default_branch)
-        .bind(&new.registered_by)
-        .bind(&new.project_id)
-        .fetch_one(pool)
+    let row = pool
+        .query_one(
+            &sql,
+            &[
+                &id as &dyn quench_pg::ToSql,
+                &new.provider.as_str(),
+                &new.owner,
+                &new.name,
+                &new.clone_url,
+                &new.default_branch,
+                &new.registered_by,
+                &new.project_id,
+            ],
+        )
         .await?;
 
     from_row(&row)
@@ -54,9 +57,8 @@ pub async fn read(db: &Db, id: &str) -> Result<Option<Repo>, QueueError> {
     let schema = schema();
     let sql = format!("SELECT {COLUMNS} FROM {schema}.repos WHERE id = $1");
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(id)
-        .fetch_optional(pool)
+    let row = pool
+        .query_opt(&sql, &[&id as &dyn quench_pg::ToSql])
         .await?;
 
     row.as_ref().map(from_row).transpose()
@@ -76,11 +78,11 @@ pub async fn find_by_slug(
          WHERE provider = $1 AND owner = $2 AND name = $3"
     );
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(provider.as_str())
-        .bind(owner)
-        .bind(name)
-        .fetch_optional(pool)
+    let row = pool
+        .query_opt(
+            &sql,
+            &[&provider.as_str() as &dyn quench_pg::ToSql, &owner, &name],
+        )
         .await?;
 
     row.as_ref().map(from_row).transpose()
@@ -96,10 +98,8 @@ pub async fn find_by_owner_name(
     let schema = schema();
     let sql = format!("SELECT {COLUMNS} FROM {schema}.repos WHERE owner = $1 AND name = $2");
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(owner)
-        .bind(name)
-        .fetch_optional(pool)
+    let row = pool
+        .query_opt(&sql, &[&owner as &dyn quench_pg::ToSql, &name])
         .await?;
 
     row.as_ref().map(from_row).transpose()
@@ -110,9 +110,7 @@ pub async fn list(db: &Db) -> Result<Vec<Repo>, QueueError> {
     let schema = schema();
     let sql = format!("SELECT {COLUMNS} FROM {schema}.repos ORDER BY owner, name");
 
-    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .fetch_all(pool)
-        .await?;
+    let rows = pool.query(&sql, &[]).await?;
 
     rows.iter().map(from_row).collect()
 }
@@ -137,15 +135,19 @@ pub async fn update(db: &Db, id: &str, changes: &RepoUpdate) -> Result<Option<Re
          WHERE id = $1 RETURNING {COLUMNS}"
     );
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(id)
-        .bind(&changes.owner)
-        .bind(&changes.name)
-        .bind(&changes.clone_url)
-        .bind(&changes.default_branch)
-        .bind(&changes.project_id)
-        .bind(changes.enabled)
-        .fetch_optional(pool)
+    let row = pool
+        .query_opt(
+            &sql,
+            &[
+                &id as &dyn quench_pg::ToSql,
+                &changes.owner,
+                &changes.name,
+                &changes.clone_url,
+                &changes.default_branch,
+                &changes.project_id,
+                &changes.enabled,
+            ],
+        )
         .await?;
 
     row.as_ref().map(from_row).transpose()
@@ -160,10 +162,8 @@ pub async fn set_enabled(db: &Db, id: &str, enabled: bool) -> Result<Option<Repo
          WHERE id = $1 RETURNING {COLUMNS}"
     );
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(id)
-        .bind(enabled)
-        .fetch_optional(pool)
+    let row = pool
+        .query_opt(&sql, &[&id as &dyn quench_pg::ToSql, &enabled])
         .await?;
 
     row.as_ref().map(from_row).transpose()
@@ -174,32 +174,29 @@ pub async fn delete(db: &Db, id: &str) -> Result<bool, QueueError> {
     let schema = schema();
     let sql = format!("DELETE FROM {schema}.repos WHERE id = $1");
 
-    let result = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(id)
-        .execute(pool)
-        .await?;
+    let result = pool.execute(&sql, &[&id as &dyn quench_pg::ToSql]).await?;
 
-    Ok(result.rows_affected() > 0)
+    Ok(result > 0)
 }
 
 const COLUMNS: &str = "id, provider, owner, name, clone_url, default_branch, \
                        registered_by, project_id, enabled, created_at, updated_at";
 
-fn from_row(row: &sqlx::postgres::PgRow) -> Result<Repo, QueueError> {
-    let provider: String = row.try_get("provider")?;
+fn from_row(row: &quench_pg::Row) -> Result<Repo, QueueError> {
+    let provider: String = row.get("provider")?;
 
     Ok(Repo {
-        id: row.try_get("id")?,
+        id: row.get("id")?,
         provider: Provider::parse(&provider)
             .ok_or_else(|| QueueError::BadRow(format!("unknown provider '{provider}'")))?,
-        owner: row.try_get("owner")?,
-        name: row.try_get("name")?,
-        clone_url: row.try_get("clone_url")?,
-        default_branch: row.try_get("default_branch")?,
-        registered_by: row.try_get("registered_by")?,
-        project_id: row.try_get("project_id")?,
-        enabled: row.try_get("enabled")?,
-        created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
-        updated_at: row.try_get::<DateTime<Utc>, _>("updated_at")?,
+        owner: row.get("owner")?,
+        name: row.get("name")?,
+        clone_url: row.get("clone_url")?,
+        default_branch: row.get("default_branch")?,
+        registered_by: row.get("registered_by")?,
+        project_id: row.get("project_id")?,
+        enabled: row.get("enabled")?,
+        created_at: row.get::<Time, _>("created_at")?,
+        updated_at: row.get::<Time, _>("updated_at")?,
     })
 }

@@ -20,8 +20,7 @@ name = "forge_toolbox"
 path = "src/lib.rs"
 
 [dependencies]
-anyhow = { workspace = true }
+quench-core = { workspace = true }
 clap = { workspace = true }
 crossterm = { workspace = true }
 quench-cli = { workspace = true }
-semver = { workspace = true }

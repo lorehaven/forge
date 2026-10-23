@@ -1,4 +1,4 @@
-use serde::Serialize;
+use quench_serde::Serialize;
 use std::process::Command;
 
 #[derive(Debug, Default, Serialize)]
@@ -14,7 +14,8 @@ pub fn get_gpu_info() -> std::io::Result<GpuInfo> {
         .args(["--showmeminfo", "vram", "--json"])
         .output()?;
 
-    let json: serde_json::Value = serde_json::from_slice(&output.stdout)?;
+    let json: quench_serde::Value =
+        quench_serde::json::from_slice(&output.stdout).map_err(std::io::Error::other)?;
 
     let card = json.as_object().unwrap().values().next().unwrap();
 

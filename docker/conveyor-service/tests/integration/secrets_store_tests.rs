@@ -22,7 +22,7 @@ fn key() -> SecretKey {
 /// The key the worker reads from the environment. Set under the database
 /// guard, so the tests do not race over it.
 fn configure_key() {
-    envmnt::set("CONVEYOR_SECRET_KEY", HEX_KEY);
+    quench_core::env::set("CONVEYOR_SECRET_KEY", HEX_KEY);
 }
 
 // ---------------------------------------------------------------------------
@@ -67,15 +67,14 @@ async fn the_value_is_not_readable_from_the_table() {
 
     let schema = queue::schema();
     let pool = queue::pool(&db).expect("pool");
-    let rows: Vec<(Vec<u8>,)> = sqlx::query_as(sqlx::AssertSqlSafe(
-        format!("SELECT ciphertext FROM {schema}.secrets").as_str(),
-    ))
-    .fetch_all(pool)
-    .await
-    .expect("read the raw column");
+    let rows = pool
+        .query(&format!("SELECT ciphertext FROM {schema}.secrets"), &[])
+        .await
+        .expect("read the raw column");
 
     assert_eq!(rows.len(), 1);
-    let stored = String::from_utf8_lossy(&rows[0].0);
+    let stored =
+        String::from_utf8_lossy(&rows[0].get::<Vec<u8>, _>("ciphertext").unwrap()).into_owned();
     assert!(
         !stored.contains("a-recognisable-token"),
         "the plaintext is in the table"
@@ -305,7 +304,7 @@ async fn listing_returns_names_and_never_values() {
 
     // `SecretRef` has no value field at all; this asserts the serialised form
     // an API response is built from carries none either.
-    let rendered = serde_json::to_string(&listed[0]).expect("serialise");
+    let rendered = quench_serde::json::to_string(&listed[0]);
     assert!(!rendered.contains("a-secret-value"), "{rendered}");
 }
 
@@ -382,8 +381,8 @@ async fn deleting_a_repository_takes_its_secrets_with_it() {
 // Secrets reaching a job
 // ---------------------------------------------------------------------------
 
-fn start_scheduler(db: &Db) -> tempfile::TempDir {
-    let work = tempfile::tempdir().expect("temp dir");
+fn start_scheduler(db: &Db) -> quench_core::tmp::TempDir {
+    let work = quench_core::tmp::TempDir::new().expect("temp dir");
     spawn_pool(
         db.clone(),
         ConveyorConfig {

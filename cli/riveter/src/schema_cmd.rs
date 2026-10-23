@@ -7,9 +7,9 @@ use crate::repl::{error, ok, warn};
 use crate::schema::{
     CrdSchema, Issue, Outcome, SchemaSet, Source, TEMPLATED_CRDS, cache_dir, load,
 };
-use anyhow::{Context as _, Result, bail, ensure};
 use quench_cli::prelude::{Tone, print_status};
-use serde_json::Value;
+use quench_core::{Context as _, Result, bail, ensure};
+use quench_serde::Value;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -92,9 +92,10 @@ pub fn check_documents(set: &SchemaSet, documents: &[Value]) -> Report {
 /// `kubectl get -o yaml` prints for several objects) flattened into its items.
 pub fn parse_documents(text: &str) -> Result<Vec<Value>> {
     let mut documents = Vec::new();
-    for (index, doc) in serde_norway::Deserializer::from_str(text).enumerate() {
-        let value: Value = serde::Deserialize::deserialize(doc)
-            .with_context(|| format!("document {} is not valid YAML", index + 1))?;
+    let parsed: Vec<Value> = quench_serde::yaml::from_str_all(text).map_err(|error| {
+        quench_core::err!("{}: {error}", describe_failure(text, &error.to_string()))
+    })?;
+    for value in parsed {
         match value {
             Value::Null => {}
             Value::Object(ref map)
@@ -206,7 +207,7 @@ pub fn crds_from_kubectl(json: &str) -> Result<Vec<Value>> {
     if json.trim().is_empty() {
         return Ok(Vec::new());
     }
-    let value: Value = serde_json::from_str(json).context("kubectl did not print JSON")?;
+    let value: Value = quench_serde::json::from_str(json).context("kubectl did not print JSON")?;
     Ok(match value["items"].as_array() {
         Some(items) => items.clone(),
         None if value["kind"] == "CustomResourceDefinition" => vec![value],
@@ -283,7 +284,7 @@ pub fn fetch(request: &FetchRequest) -> Result<Vec<CrdSchema>> {
     std::fs::create_dir_all(&dir).with_context(|| format!("failed to create {}", dir.display()))?;
     for schema in &schemas {
         let path = dir.join(schema.file_name());
-        let mut text = serde_json::to_string(schema)?;
+        let mut text = quench_serde::json::to_string(schema);
         text.push('\n');
         std::fs::write(&path, text)
             .with_context(|| format!("failed to write {}", path.display()))?;
@@ -350,4 +351,25 @@ pub fn schemas_command(cmd: &SchemasCmd) -> Result<()> {
             Ok(())
         }
     }
+}
+
+/// "document N is not valid YAML", N being the document the error's line falls in (documents are
+/// separated by `---` lines); just "the text is not valid YAML" when the error carries no line.
+fn describe_failure(text: &str, error: &str) -> String {
+    let line = error
+        .split("line ")
+        .nth(1)
+        .and_then(|rest| rest.split(|c: char| !c.is_ascii_digit()).next())
+        .and_then(|digits| digits.parse::<usize>().ok());
+    line.map_or_else(
+        || "the text is not valid YAML".to_string(),
+        |line| {
+            let separators = text
+                .lines()
+                .take(line.saturating_sub(1))
+                .filter(|l| l.trim_end() == "---")
+                .count();
+            format!("document {} is not valid YAML", separators + 1)
+        },
+    )
 }

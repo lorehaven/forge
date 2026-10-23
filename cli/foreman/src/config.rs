@@ -9,8 +9,8 @@
 //! config file is a setting that silently does nothing, which is the kind of
 //! bug that costs an afternoon.
 
-use anyhow::{Context, Result, bail};
-use serde::Deserialize;
+use quench_core::{Context, Result, bail};
+use quench_serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -356,8 +356,8 @@ impl Config {
     pub fn parse(path: &Path) -> Result<Self> {
         let text =
             std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-        let config: Config =
-            toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
+        let config: Config = quench_serde::toml::from_str(&text)
+            .with_context(|| format!("parsing {}", path.display()))?;
         config.validate()?;
         Ok(config)
     }

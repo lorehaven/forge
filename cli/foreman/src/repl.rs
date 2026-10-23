@@ -4,8 +4,8 @@
 //! what is already up, then starting it. `foreman start conveyor` is the same
 //! thing in one line once you know what you want.
 
-use anyhow::Result;
 use quench_cli::prelude::{DIM, GREEN, RESET, ReplControl, print_box_banner, repl_run};
+use quench_core::Result;
 
 use crate::commands;
 use crate::estate::Estate;

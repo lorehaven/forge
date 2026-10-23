@@ -3,7 +3,7 @@
 
 use crate::domain::cluster::Workload;
 use crate::domain::registry::{PackageVersion, compare};
-use serde::Serialize;
+use quench_serde::Serialize;
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
 

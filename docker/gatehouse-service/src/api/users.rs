@@ -7,18 +7,18 @@ use crate::invites;
 use crate::notices;
 use crate::realm::{self, RealmError, UserChanges};
 use crate::tokens::VerificationTokens;
-use async_trait::async_trait;
-use http::StatusCode;
 use quench_auth::domain::auth::{Permissions, Role, User, UserDb};
 use quench_auth::domain::jwt::{Claims, JwtConfig};
 use quench_auth::domain::realm as auth_realm;
 use quench_auth::domain::session::SessionDb;
 use quench_auth::http::domain::cookies::cookie_value;
+use quench_core::async_trait;
 use quench_db::prelude::Db;
+use quench_http::http::StatusCode;
 use quench_http::prelude::{
     FromRequest, HttpError, Inject, Json, Path, Response, delete, get, patch, post, put,
 };
-use serde::{Deserialize, Serialize};
+use quench_serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 // --- Wire types ---
@@ -119,7 +119,7 @@ impl FromRequest for SubjectClaims {
 
         // Auth off is the estate-wide dev switch - no token to read.
         if !config.auth_enabled {
-            tracing::warn!(
+            quench_log::warn!(
                 "SERVICE_AUTH_ENABLED is off: serving {} unauthenticated",
                 req.uri().path()
             );
@@ -179,7 +179,7 @@ macro_rules! action_claims {
             ) -> Result<Self, HttpError> {
                 let SubjectClaims(claims) = SubjectClaims::from_request(req).await?;
                 if !claims.can("gatehouse", $action) {
-                    tracing::warn!(
+                    quench_log::warn!(
                         "{} lacks gatehouse:{}; refusing user administration",
                         claims.sub,
                         $action
@@ -278,7 +278,7 @@ async fn create_user(
             if request.invite {
                 let sent = invites::send_invite(&tokens, &**mailer, &base, &user, None).await;
                 if let Err(err) = &sent {
-                    tracing::error!("could not send the invitation to {}: {err}", user.username);
+                    quench_log::error!("could not send the invitation to {}: {err}", user.username);
                 }
                 view.invite_sent = Some(sent.is_ok());
             }

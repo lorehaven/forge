@@ -1,11 +1,10 @@
 //! The rivet package catalog: one row per published `.rivet`, keyed by `<name>@<version>`.
 //! Immutable once published (yanking just flips a flag), so plain `Crud` suffices.
 
-use chrono::{DateTime, Utc};
+use quench_core::time::Time;
 use quench_db::prelude::Model;
-use sqlx::types::Json;
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, PartialEq, quench_serde::Serialize, quench_serde::Deserialize)]
 pub struct RivetPackage {
     pub id: String,
     pub name: String,
@@ -18,10 +17,10 @@ pub struct RivetPackage {
     pub size_bytes: i64,
     pub sha256: String,
     /// The parsed `rivet.toml`, as the archive declared it.
-    pub manifest: Json<serde_json::Value>,
+    pub manifest: quench_serde::Value,
     pub uploaded_by: String,
     pub yanked: bool,
-    pub created_at: DateTime<Utc>,
+    pub created_at: Time,
 }
 
 impl RivetPackage {
@@ -33,8 +32,8 @@ impl RivetPackage {
 
     /// The version as semver, or `None` for a row whose version somehow is not.
     #[must_use]
-    pub fn semver(&self) -> Option<semver::Version> {
-        semver::Version::parse(&self.version).ok()
+    pub fn semver(&self) -> Option<quench_core::version::Version> {
+        quench_core::version::Version::parse(&self.version).ok()
     }
 }
 

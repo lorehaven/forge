@@ -10,7 +10,7 @@ use crate::scheduler::{projects, repos};
 use quench_auth::domain::jwt::JwtConfig;
 use quench_db::prelude::Db;
 use quench_http::prelude::{Inject, Path, Response, delete, get, http::StatusCode, put};
-use serde::Serialize;
+use quench_serde::Serialize;
 
 #[derive(Serialize)]
 struct State {

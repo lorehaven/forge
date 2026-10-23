@@ -23,24 +23,22 @@ name = "daybook-service"
 path = "src/main.rs"
 
 [dependencies]
-async-trait = { workspace = true }
+quench-serde = { workspace = true }
+quench-core = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
-envmnt = { workspace = true }
 quench-auth = { workspace = true }
 quench-db = { workspace = true }
 quench-http = { workspace = true }
+quench-log = { workspace = true }
+quench-pg = { workspace = true }
 quench-starter = { workspace = true }
-serde = { workspace = true }
-sqlx = { workspace = true }
-thiserror = { workspace = true }
 tokio = { workspace = true }
-tracing = { workspace = true }
-uuid = { workspace = true }
 
 [dev-dependencies]
+quench-serde = { workspace = true }
+quench-core = { workspace = true }
 bytes = { workspace = true }
 http = { workspace = true }
 http-body-util = { workspace = true }
-serde_json = { workspace = true }
 

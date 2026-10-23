@@ -19,9 +19,9 @@ impl SwitchboardBackend {
     }
 }
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl Backend for SwitchboardBackend {
-    fn initialize(&self) -> anyhow::Result<()> {
+    fn initialize(&self) -> quench_core::Result<()> {
         Ok(())
     }
 
@@ -30,13 +30,18 @@ impl Backend for SwitchboardBackend {
     }
 
     fn is_running(&self) -> bool {
-        let Ok(url) = reqwest::Url::parse(&self.base_url) else {
+        let Ok(url) = quench_proto::Uri::parse(&self.base_url) else {
             return false;
         };
-        let Some(host) = url.host_str() else {
+        let Some(host) = url.host() else {
             return false;
         };
-        let port = url.port_or_known_default().unwrap_or(443);
+        let default_port = if url.scheme() == Some("http") {
+            80
+        } else {
+            443
+        };
+        let port = url.port_u16().unwrap_or(default_port);
         std::net::TcpStream::connect((host, port)).is_ok()
     }
 }

@@ -1,10 +1,10 @@
 //! Page shell shared with the rest of the estate - same builder, theme, header, stylesheet layout.
 
-use async_trait::async_trait;
 use forge_ui::{NavItem, NavSection, ShellConfig, UiShell};
 pub use quench_auth::domain::jwt::Claims;
 use quench_auth::domain::jwt::JwtConfig;
 use quench_auth::http::routers::ui::get_user_from_req;
+use quench_core::async_trait;
 use quench_http::prelude::{FromRequest, HttpError, Path, Request, Response, get};
 pub use quench_starter::http::routers::ui::{
     is_ui_authenticated, ui_asset_path, ui_login_redirect, ui_login_redirect_for, ui_path,
@@ -58,7 +58,7 @@ pub fn status_pill(status: crate::domain::Status) -> Element {
         .attr("data-i18n", format!("ui_status_{status}"))
 }
 
-pub fn render_page(status: http::StatusCode, content: Element) -> Response {
+pub fn render_page(status: quench_http::http::StatusCode, content: Element) -> Response {
     Response::html(status, UI_SHELL.page(content))
 }
 

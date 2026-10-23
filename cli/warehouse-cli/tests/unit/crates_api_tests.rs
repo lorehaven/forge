@@ -31,10 +31,15 @@ async fn search_parses_crates_and_total_and_sends_the_query() {
         .and(query_param("q", "foo bar"))
         .and(query_param("per_page", "5"))
         .and(header("authorization", "Bearer tok"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "crates": [{ "name": "foo", "max_version": "1.0.0", "description": null }],
-            "meta": { "total": 1 }
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!({
+                    "crates": [{ "name": "foo", "max_version": "1.0.0", "description": null }],
+                    "meta": { "total": 1 }
+                })),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -65,11 +70,11 @@ async fn versions_parses_every_index_line() {
     let server = MockServer::start().await;
     let body = format!(
         "{}\n{}\n",
-        serde_json::json!({
+        quench_serde::json!({
             "name": "foo", "vers": "1.0.0", "cksum": "abc", "yanked": false,
             "deps": [], "features": {}
         }),
-        serde_json::json!({
+        quench_serde::json!({
             "name": "foo", "vers": "1.1.0", "cksum": "def", "yanked": true,
             "deps": [], "features": {}
         }),
@@ -123,7 +128,10 @@ async fn yank_succeeds_when_the_server_reports_ok() {
     let server = MockServer::start().await;
     Mock::given(method("DELETE"))
         .and(path("/api/v1/crates/foo/1.0.0/yank"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "ok": true })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(quench_serde::json!({ "ok": true }))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -137,7 +145,10 @@ async fn yank_errors_when_the_server_reports_ok_false() {
     let server = MockServer::start().await;
     Mock::given(method("DELETE"))
         .and(path("/api/v1/crates/foo/1.0.0/yank"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "ok": false })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(quench_serde::json!({ "ok": false }))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -152,7 +163,10 @@ async fn unyank_succeeds_when_the_server_reports_ok() {
     let server = MockServer::start().await;
     Mock::given(method("PUT"))
         .and(path("/api/v1/crates/foo/1.0.0/unyank"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "ok": true })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(quench_serde::json!({ "ok": true }))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 

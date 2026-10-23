@@ -1,6 +1,6 @@
 use crate::routers::docker::repository_path;
 use crate::routers::docker_storage_root;
-use serde_json::Value;
+use quench_serde::Value;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -131,7 +131,7 @@ fn collect_repositories(dir: &Path, prefix: &str, repos: &mut Vec<String>) {
 }
 
 pub fn detect_media_type(bytes: &[u8]) -> Option<String> {
-    let value: Value = serde_json::from_slice(bytes).ok()?;
+    let value: Value = quench_serde::json::from_slice(bytes).ok()?;
     value
         .get("mediaType")
         .and_then(|m| m.as_str())

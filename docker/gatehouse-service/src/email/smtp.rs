@@ -3,7 +3,7 @@
 
 use super::templates::render_with;
 use super::{Mail, Recipient, SendError, Sender};
-use async_trait::async_trait;
+use quench_core::async_trait;
 use quench_mail::{Address, Mailbox, Mailer, Message, Security};
 use std::fmt;
 use std::time::Duration;
@@ -160,8 +160,8 @@ impl SmtpSender {
         let mailer = self.mailer.clone();
         tokio::spawn(async move {
             match mailer.test_connection().await {
-                Ok(()) => tracing::info!("mail: SMTP server reachable and login accepted"),
-                Err(err) => tracing::warn!(
+                Ok(()) => quench_log::info!("mail: SMTP server reachable and login accepted"),
+                Err(err) => quench_log::warn!(
                     "mail: SMTP check failed ({err}); verification and reset emails will fail until it works"
                 ),
             }
@@ -205,7 +205,7 @@ impl SmtpSender {
 
         match tokio::time::timeout(self.overall, self.mailer.send(&message)).await {
             Ok(Ok(response)) => {
-                tracing::info!(
+                quench_log::info!(
                     "email({}) accepted for {}: {}",
                     kind.label(),
                     to.address,

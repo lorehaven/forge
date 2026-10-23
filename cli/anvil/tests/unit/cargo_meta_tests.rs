@@ -1,7 +1,7 @@
 use anvil::cargo_meta::{
     WorkspacePackage, cargo_metadata, resolve_package, workspace_packages, workspace_root,
 };
-use serde_json::json;
+use quench_serde::json;
 use std::path::{Path, PathBuf};
 
 use crate::support;
@@ -87,7 +87,7 @@ fn workspace_root_errors_when_the_field_is_missing() {
     assert!(workspace_root(&metadata).is_err());
 }
 
-fn fixture_metadata() -> serde_json::Value {
+fn fixture_metadata() -> quench_serde::Value {
     json!({
         "workspace_root": "/workspace",
         "workspace_members": ["pkg-a-id", "pkg-b-id"],

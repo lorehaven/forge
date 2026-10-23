@@ -8,7 +8,7 @@ use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 use std::fmt::Write as _;
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, quench_serde::Deserialize)]
 pub struct CrateActionForm {
     name: String,
     version: String,
@@ -67,7 +67,7 @@ async fn set_yank_state(authenticated: bool, form: CrateActionForm, yanked: bool
         ),
         Ok(false) => Response::text(StatusCode::NOT_FOUND, "api_error_crate_version_not_found"),
         Err(msg) => {
-            tracing::error!("Failed to change yank state: {}", msg);
+            quench_log::error!("Failed to change yank state: {}", msg);
             Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal")
         }
     }

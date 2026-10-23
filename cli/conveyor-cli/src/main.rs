@@ -4,9 +4,9 @@
 //! exception: `validate` links conveyor's own parser in and needs no running
 //! service, so a pipeline can be checked before it is ever pushed.
 
-use anyhow::Result;
 use clap::Parser;
 use quench_cli::prelude::{Tone, print_status};
+use quench_core::Result;
 
 use conveyor_cli::{cli, client, commands};
 

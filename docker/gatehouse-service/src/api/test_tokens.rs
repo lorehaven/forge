@@ -3,7 +3,7 @@
 
 use quench_auth::domain::jwt::{Claims, JwtConfig};
 use quench_http::prelude::{Inject, Json, Response, post};
-use serde::Deserialize;
+use quench_serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct TestTokenRequest {
@@ -23,11 +23,11 @@ pub async fn mint(
     Inject(config): Inject<JwtConfig>,
     Json(body): Json<TestTokenRequest>,
 ) -> Response {
-    if !envmnt::is_or("GATEHOUSE_TEST_MODE", false) {
-        return Response::new(http::StatusCode::NOT_FOUND);
+    if !quench_core::env::is_or("GATEHOUSE_TEST_MODE", false) {
+        return Response::new(quench_http::http::StatusCode::NOT_FOUND);
     }
 
-    let now = chrono::Utc::now().timestamp();
+    let now = quench_core::time::Time::now().timestamp();
     let claims = Claims {
         sub: body.sub.clone(),
         aud: body.aud.clone(),
@@ -40,13 +40,13 @@ pub async fn mint(
 
     match config.encode_claims(&claims).await {
         Ok(access_token) => Response::json(
-            http::StatusCode::OK,
-            &serde_json::json!({ "access_token": access_token }),
+            quench_http::http::StatusCode::OK,
+            &quench_serde::json!({ "access_token": access_token }),
         )
-        .unwrap_or_else(|_| Response::new(http::StatusCode::INTERNAL_SERVER_ERROR)),
+        .unwrap_or_else(|_| Response::new(quench_http::http::StatusCode::INTERNAL_SERVER_ERROR)),
         Err(err) => {
-            tracing::error!("test token mint failed: {err}");
-            Response::new(http::StatusCode::INTERNAL_SERVER_ERROR)
+            quench_log::error!("test token mint failed: {err}");
+            Response::new(quench_http::http::StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
 }

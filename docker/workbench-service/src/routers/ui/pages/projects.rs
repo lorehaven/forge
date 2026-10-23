@@ -12,8 +12,8 @@ use forge_ui::{
 };
 use quench_db::prelude::Db;
 use quench_http::prelude::{Form, Inject, Path, Query, Response, get, http::StatusCode, post};
+use quench_serde::Deserialize;
 use quench_web::prelude::*;
-use serde::Deserialize;
 
 #[get("/ui/projects/{id}/board")]
 pub(super) async fn board(

@@ -10,10 +10,10 @@ fn text_only_message_serializes_content_as_string() {
         tool_calls: None,
         images: None,
     };
-    let json = serde_json::to_value(&msg).unwrap();
+    let json = quench_serde::to_value(&msg);
     assert_eq!(
         json,
-        serde_json::json!({"role": "user", "content": "hello"})
+        quench_serde::json!({"role": "user", "content": "hello"})
     );
 }
 
@@ -25,10 +25,10 @@ fn message_with_images_serializes_content_parts() {
         tool_calls: None,
         images: Some(vec!["data:image/png;base64,AAAA".to_string()]),
     };
-    let json = serde_json::to_value(&msg).unwrap();
+    let json = quench_serde::to_value(&msg);
     assert_eq!(
         json,
-        serde_json::json!({
+        quench_serde::json!({
             "role": "user",
             "content": [
                 {"type": "text", "text": "what is this?"},
@@ -46,8 +46,8 @@ fn message_with_empty_images_serializes_as_text() {
         tool_calls: None,
         images: Some(vec![]),
     };
-    let json = serde_json::to_value(&msg).unwrap();
-    assert_eq!(json["content"], serde_json::json!("hello"));
+    let json = quench_serde::to_value(&msg);
+    assert_eq!(json["content"], quench_serde::json!("hello"));
 }
 
 /// The exact streamed chunks from a Qwen tool call (name in one chunk,
@@ -63,7 +63,7 @@ fn streamed_tool_call_chunks_deserialize() {
 
     for data in [name_chunk, args_chunk] {
         let chunk: ChatCompletionChunk =
-            serde_json::from_str(data).expect("chunk should deserialize");
+            quench_serde::json::from_str(data).expect("chunk should deserialize");
         let choice = &chunk.choices[0];
         assert!(choice.delta.content.is_none());
         for tc in choice.delta.tool_calls.iter().flatten() {

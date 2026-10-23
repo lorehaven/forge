@@ -1,7 +1,7 @@
 //! `riveter login` - mint an application token and keep it in `.riveter.secret.toml`.
 
-use anyhow::{Context, Result, bail};
 use gatehouse_auth::NewToken;
+use quench_core::{Context, Result, bail};
 use std::io::{self, Write as _};
 
 const TOOL: &str = "riveter";

@@ -4,19 +4,19 @@
 //! so changing a default later reaches everyone who never touched it.
 
 use super::catalog::{self, Template};
-use chrono::{DateTime, Utc};
+use quench_core::time::Time;
 use quench_db::prelude::{Crud, Db, DbError, Model};
-use serde::{Deserialize, Serialize};
+use quench_serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrefRow {
     /// `username|template` - the repository wants one key column.
     pub key: String,
     pub username: String,
     pub template: String,
     pub enabled: bool,
-    pub updated_at: DateTime<Utc>,
+    pub updated_at: Time,
 }
 
 impl Model for PrefRow {
@@ -121,7 +121,7 @@ impl<'a> Preferences<'a> {
             username: username.to_string(),
             template: template.id.to_string(),
             enabled,
-            updated_at: Utc::now(),
+            updated_at: Time::now(),
         };
         if existing.is_some() {
             repo.update(&row).await?;

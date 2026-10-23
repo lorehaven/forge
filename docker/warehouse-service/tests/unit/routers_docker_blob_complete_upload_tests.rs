@@ -1,6 +1,6 @@
 use crate::support;
 
-use http::{Method, StatusCode};
+use quench_http::http::{Method, StatusCode};
 use warehouse_service::utils::sha256::sha256_hex;
 
 fn start_upload(storage: &support::WithDockerStorageRoot, uuid: &str, content: &[u8]) {

@@ -3,13 +3,12 @@
 //! touching unrelated vars don't serialize against each other.
 #![allow(dead_code)]
 
-use bytes::Bytes;
-use http::{HeaderMap, Method, Uri};
-use http_body_util::BodyExt;
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::bytes::Bytes;
 use quench_db::prelude::Db;
 use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, Uri};
 use quench_http::request::Request;
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -66,7 +65,7 @@ pub fn req(method: Method, path: &str, container: &Arc<quench_http::di::Containe
 pub fn json_req(
     method: Method,
     path: &str,
-    body: &serde_json::Value,
+    body: &quench_serde::Value,
     container: &Arc<quench_http::di::Container>,
 ) -> Request {
     let mut headers = HeaderMap::new();
@@ -75,7 +74,7 @@ pub fn json_req(
         method,
         path.parse::<Uri>().unwrap(),
         headers,
-        quench_http::body::InboundBody::from_bytes(Bytes::from(serde_json::to_vec(body).unwrap())),
+        quench_http::body::InboundBody::from_bytes(Bytes::from(quench_serde::json::to_vec(body))),
         container.clone(),
     )
 }
@@ -87,7 +86,7 @@ pub fn form_req(
     pairs: &[(&str, &str)],
     container: &Arc<quench_http::di::Container>,
 ) -> Request {
-    let encoded = serde_urlencoded::to_string(pairs).unwrap();
+    let encoded = quench_serde::urlencoded::to_string(pairs).unwrap();
     let mut headers = HeaderMap::new();
     headers.insert(
         "content-type",
@@ -116,7 +115,7 @@ pub fn raw_req(
     let mut header_map = HeaderMap::new();
     for (name, value) in headers {
         header_map.insert(
-            http::HeaderName::from_bytes(name.as_bytes()).unwrap(),
+            quench_http::http::HeaderName::from_bytes(name.as_bytes()).unwrap(),
             value.parse().unwrap(),
         );
     }
@@ -130,33 +129,48 @@ pub fn raw_req(
 }
 
 pub async fn body_text(resp: quench_http::response::Response) -> String {
-    let collected = resp.into_hyper().into_body().collect().await.expect("body");
-    String::from_utf8_lossy(&collected.to_bytes()).into_owned()
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .expect("body");
+    String::from_utf8_lossy(&collected).into_owned()
 }
 
 pub async fn body_bytes(resp: quench_http::response::Response) -> Bytes {
-    let collected = resp.into_hyper().into_body().collect().await.expect("body");
-    collected.to_bytes()
+    resp.into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .expect("body")
 }
 
-pub async fn json_body(resp: quench_http::response::Response) -> serde_json::Value {
-    let collected = resp.into_hyper().into_body().collect().await.expect("body");
-    serde_json::from_slice(&collected.to_bytes()).expect("valid json body")
+pub async fn json_body(resp: quench_http::response::Response) -> quench_serde::Value {
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .expect("body");
+    quench_serde::json::from_slice(&collected).expect("valid json body")
 }
 
 /// Splits a response into its headers and text body, since `Response` only
 /// exposes headers via the consuming `into_hyper()`.
-pub async fn parts(resp: quench_http::response::Response) -> (http::HeaderMap, String) {
-    let (parts, body) = resp.into_hyper().into_parts();
-    let collected = body.collect().await.expect("body");
+pub async fn parts(
+    resp: quench_http::response::Response,
+) -> (quench_http::http::HeaderMap, String) {
+    let parts = resp.into_inner();
+    let collected = parts.body.collect_limited(usize::MAX).await.expect("body");
     (
         parts.headers,
-        String::from_utf8_lossy(&collected.to_bytes()).into_owned(),
+        String::from_utf8_lossy(&collected).into_owned(),
     )
 }
 
 #[must_use]
-pub fn location(headers: &http::HeaderMap) -> String {
+pub fn location(headers: &quench_http::http::HeaderMap) -> String {
     headers
         .get("location")
         .expect("a Location header")
@@ -194,7 +208,7 @@ pub fn redirect_env_lock() -> &'static Mutex<()> {
 #[derive(Debug)]
 pub struct WithDockerStorageRoot {
     _guard: std::sync::MutexGuard<'static, ()>,
-    pub dir: tempfile::TempDir,
+    pub dir: quench_core::tmp::TempDir,
 }
 
 impl Default for WithDockerStorageRoot {
@@ -208,15 +222,15 @@ impl WithDockerStorageRoot {
         let guard = storage_env_lock()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let dir = tempfile::tempdir().expect("tempdir");
-        envmnt::set("STORAGE_PATH", dir.path().to_str().unwrap());
+        let dir = quench_core::tmp::TempDir::new().expect("tempdir");
+        quench_core::env::set("STORAGE_PATH", dir.path().to_str().unwrap());
         Self { _guard: guard, dir }
     }
 }
 
 impl Drop for WithDockerStorageRoot {
     fn drop(&mut self) {
-        envmnt::remove("STORAGE_PATH");
+        quench_core::env::remove("STORAGE_PATH");
     }
 }
 
@@ -226,7 +240,7 @@ impl Drop for WithDockerStorageRoot {
 #[derive(Debug)]
 pub struct WithCratesStorageRoot {
     _guard: std::sync::MutexGuard<'static, ()>,
-    pub dir: tempfile::TempDir,
+    pub dir: quench_core::tmp::TempDir,
 }
 
 impl Default for WithCratesStorageRoot {
@@ -240,15 +254,15 @@ impl WithCratesStorageRoot {
         let guard = storage_env_lock()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let dir = tempfile::tempdir().expect("tempdir");
-        envmnt::set("CRATES_STORAGE_PATH", dir.path().to_str().unwrap());
+        let dir = quench_core::tmp::TempDir::new().expect("tempdir");
+        quench_core::env::set("CRATES_STORAGE_PATH", dir.path().to_str().unwrap());
         Self { _guard: guard, dir }
     }
 }
 
 impl Drop for WithCratesStorageRoot {
     fn drop(&mut self) {
-        envmnt::remove("CRATES_STORAGE_PATH");
+        quench_core::env::remove("CRATES_STORAGE_PATH");
     }
 }
 
@@ -258,7 +272,7 @@ impl Drop for WithCratesStorageRoot {
 #[derive(Debug)]
 pub struct WithArtifactStorageRoot {
     _guard: std::sync::MutexGuard<'static, ()>,
-    pub dir: tempfile::TempDir,
+    pub dir: quench_core::tmp::TempDir,
 }
 
 impl Default for WithArtifactStorageRoot {
@@ -272,15 +286,15 @@ impl WithArtifactStorageRoot {
         let guard = storage_env_lock()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let dir = tempfile::tempdir().expect("tempdir");
-        envmnt::set("ARTIFACT_STORAGE_PATH", dir.path().to_str().unwrap());
+        let dir = quench_core::tmp::TempDir::new().expect("tempdir");
+        quench_core::env::set("ARTIFACT_STORAGE_PATH", dir.path().to_str().unwrap());
         Self { _guard: guard, dir }
     }
 }
 
 impl Drop for WithArtifactStorageRoot {
     fn drop(&mut self) {
-        envmnt::remove("ARTIFACT_STORAGE_PATH");
+        quench_core::env::remove("ARTIFACT_STORAGE_PATH");
     }
 }
 
@@ -290,7 +304,7 @@ impl Drop for WithArtifactStorageRoot {
 #[derive(Debug)]
 pub struct WithRivets {
     _guard: std::sync::MutexGuard<'static, ()>,
-    pub dir: tempfile::TempDir,
+    pub dir: quench_core::tmp::TempDir,
 }
 
 impl Default for WithRivets {
@@ -304,9 +318,9 @@ impl WithRivets {
         let guard = storage_env_lock()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let dir = tempfile::tempdir().expect("tempdir");
-        envmnt::set("RIVET_STORAGE_PATH", dir.path().to_str().unwrap());
-        envmnt::set("FEATURE_RIVETS_ENABLED", "true");
+        let dir = quench_core::tmp::TempDir::new().expect("tempdir");
+        quench_core::env::set("RIVET_STORAGE_PATH", dir.path().to_str().unwrap());
+        quench_core::env::set("FEATURE_RIVETS_ENABLED", "true");
         Self { _guard: guard, dir }
     }
 
@@ -314,15 +328,15 @@ impl WithRivets {
     #[must_use]
     pub fn disabled() -> Self {
         let this = Self::new();
-        envmnt::remove("FEATURE_RIVETS_ENABLED");
+        quench_core::env::remove("FEATURE_RIVETS_ENABLED");
         this
     }
 }
 
 impl Drop for WithRivets {
     fn drop(&mut self) {
-        envmnt::remove("RIVET_STORAGE_PATH");
-        envmnt::remove("FEATURE_RIVETS_ENABLED");
-        envmnt::remove("RIVET_MAX_BYTES");
+        quench_core::env::remove("RIVET_STORAGE_PATH");
+        quench_core::env::remove("FEATURE_RIVETS_ENABLED");
+        quench_core::env::remove("RIVET_MAX_BYTES");
     }
 }

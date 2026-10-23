@@ -1,13 +1,12 @@
-use chrono::{Duration, Utc};
 use gatehouse_service::api::app_tokens::*;
 use gatehouse_service::api::oauth::TokenRequest;
 use gatehouse_service::app_tokens::{AppTokenRow, TOKEN_PREFIX};
 use gatehouse_service::clients::hash_secret;
-use http::StatusCode;
-use http_body_util::BodyExt;
 use quench_auth::domain::auth::{Permissions, Role, User, UserDb};
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::time::{Duration, Time};
 use quench_db::prelude::{Crud, Db};
+use quench_http::http::StatusCode;
 
 fn request(secret: Option<&str>) -> TokenRequest {
     TokenRequest {
@@ -51,7 +50,7 @@ fn body(name: &str, scope: &[&str]) -> CreateAppToken {
 }
 
 async fn store(db: &Db, user: &str, scope: &[&str]) -> (AppTokenRow, String) {
-    let (row, secret) = new_row(user, &body("anvil", scope), Utc::now());
+    let (row, secret) = new_row(user, &body("anvil", scope), Time::now());
     db.repository::<AppTokenRow>()
         .create(&row)
         .await
@@ -63,15 +62,24 @@ async fn claims_of(
     resp: quench_http::response::Response,
     config: &JwtConfig,
 ) -> quench_auth::domain::jwt::Claims {
-    let collected = resp.into_hyper().into_body().collect().await.expect("body");
-    let value: serde_json::Value = serde_json::from_slice(&collected.to_bytes()).expect("json");
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .expect("body");
+    let value: quench_serde::Value = quench_serde::json::from_slice(&collected).expect("json");
     let token = value["access_token"].as_str().expect("access_token");
     config.decode_claims(token).await.expect("decodes")
 }
 
 #[test]
 fn new_row_stores_only_the_hash_of_a_prefixed_secret() {
-    let (row, secret) = new_row("alice", &body("  anvil ", &["warehouse:write"]), Utc::now());
+    let (row, secret) = new_row(
+        "alice",
+        &body("  anvil ", &["warehouse:write"]),
+        Time::now(),
+    );
     assert!(secret.starts_with(TOKEN_PREFIX));
     assert_eq!(row.token_hash, hash_secret(&secret));
     assert_ne!(row.token_hash, secret);
@@ -82,7 +90,7 @@ fn new_row_stores_only_the_hash_of_a_prefixed_secret() {
 
 #[test]
 fn new_row_caps_the_lifetime() {
-    let now = Utc::now();
+    let now = Time::now();
     let mut request = body("anvil", &[]);
     request.expires_in_days = Some(10_000);
     let (row, _) = new_row("alice", &request, now);
@@ -133,10 +141,10 @@ async fn grant_rejects_revoked_and_expired_tokens() {
     let tokens = db.repository::<AppTokenRow>();
 
     let (mut revoked, revoked_secret) = store(&db, "alice", &[]).await;
-    revoked.revoked_at = Some(Utc::now());
+    revoked.revoked_at = Some(Time::now());
     tokens.update(&revoked).await.unwrap();
     let (mut expired, expired_secret) = store(&db, "alice", &[]).await;
-    expired.expires_at = Some(Utc::now() - Duration::days(1));
+    expired.expires_at = Some(Time::now() - Duration::days(1));
     tokens.update(&expired).await.unwrap();
 
     for secret in [revoked_secret, expired_secret] {

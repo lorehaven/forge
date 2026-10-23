@@ -9,13 +9,13 @@ use crate::executors::manifest::{self, STEP_MARKER, Settings};
 use crate::secrets::Redactor;
 use crate::steps;
 use crate::workspace::Workspace;
-use async_trait::async_trait;
-use chrono::Utc;
 use futures_util::{AsyncBufReadExt, StreamExt};
 use k8s_openapi::api::batch::v1::Job;
 use k8s_openapi::api::core::v1::{Pod, Secret};
 use kube::api::{Api, DeleteParams, ListParams, LogParams, PostParams};
 use kube::{Client, ResourceExt};
+use quench_core::async_trait;
+use quench_core::time::Time;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
@@ -49,7 +49,7 @@ impl KubernetesExecutor {
             .await
             .map_err(|error| format!("could not reach the cluster: {error}"))?;
 
-        let namespace = envmnt::get_or("CONVEYOR_K8S_NAMESPACE", "")
+        let namespace = quench_core::env::get_or("CONVEYOR_K8S_NAMESPACE", "")
             .trim()
             .to_string();
         let namespace = if namespace.is_empty() {
@@ -60,7 +60,7 @@ impl KubernetesExecutor {
             namespace
         };
 
-        tracing::info!("kubernetes executor: namespace {namespace}");
+        quench_log::info!("kubernetes executor: namespace {namespace}");
 
         Ok(Self {
             client,
@@ -144,7 +144,7 @@ impl JobExecutor for KubernetesExecutor {
             status: Status::Running,
             exit_code: None,
             error: None,
-            started_at: Some(Utc::now()),
+            started_at: Some(Time::now()),
             finished_at: None,
             steps: spec
                 .steps
@@ -212,14 +212,14 @@ impl JobExecutor for KubernetesExecutor {
         // Background propagation, so the pod goes with the Job instead of being orphaned.
         let params = DeleteParams::background();
         if let Err(error) = self.jobs_api().delete(&running.object_name, &params).await {
-            tracing::warn!("could not delete job {}: {error}", running.object_name);
+            quench_log::warn!("could not delete job {}: {error}", running.object_name);
         }
 
         let mut state = running.state.lock().expect("job state poisoned");
         if !state.status.is_terminal() {
             state.status = Status::Cancelled;
             state.error = Some("cancelled".to_string());
-            state.finished_at = Some(Utc::now());
+            state.finished_at = Some(Time::now());
             for step in &mut state.steps {
                 if step.status == Status::Queued {
                     step.status = Status::Skipped;
@@ -240,7 +240,7 @@ impl JobExecutor for KubernetesExecutor {
         if let Err(error) = self.jobs_api().delete(&running.object_name, &params).await
             && !is_gone(&error)
         {
-            tracing::warn!("could not delete job {}: {error}", running.object_name);
+            quench_log::warn!("could not delete job {}: {error}", running.object_name);
         }
 
         if running.has_secret
@@ -251,7 +251,7 @@ impl JobExecutor for KubernetesExecutor {
             && !is_gone(&error)
         {
             // Error, not warning: a secret left behind is a credential left behind.
-            tracing::error!(
+            quench_log::error!(
                 "could not delete the secret for job {}: {error}",
                 running.object_name
             );
@@ -305,7 +305,7 @@ async fn watch(
         ),
     }
 
-    tracing::info!(
+    quench_log::info!(
         "job {job_name} finished: {}",
         running.state.lock().expect("job state poisoned").status
     );
@@ -346,7 +346,7 @@ async fn follow_logs(pods: &Api<Pod>, pod_name: &str, redactor: &Redactor, runni
     let stream = match pods.log_stream(pod_name, &params).await {
         Ok(stream) => stream,
         Err(error) => {
-            tracing::warn!("could not follow logs for {pod_name}: {error}");
+            quench_log::warn!("could not follow logs for {pod_name}: {error}");
             return;
         }
     };
@@ -367,7 +367,7 @@ async fn follow_logs(pods: &Api<Pod>, pod_name: &str, redactor: &Redactor, runni
             seq,
             stream: Stream::Stdout,
             line: redactor.apply(&line),
-            at: Utc::now(),
+            at: Time::now(),
         };
         seq += 1;
 
@@ -383,7 +383,7 @@ async fn follow_logs(pods: &Api<Pod>, pod_name: &str, redactor: &Redactor, runni
 /// Marks the previous step done and this one running.
 fn advance(running: &Running, ordinal: usize) {
     let mut state = running.state.lock().expect("job state poisoned");
-    let now = Utc::now();
+    let now = Time::now();
 
     if ordinal > 0
         && let Some(previous) = state.steps.get_mut(ordinal - 1)
@@ -427,7 +427,7 @@ async fn await_completion(jobs: &Api<Job>, object_name: &str) -> Outcome {
             // Deleted underneath us - what a cancel looks like from here.
             Err(error) if is_gone(&error) => return Outcome::Vanished,
             Err(error) => {
-                tracing::warn!("could not read job {object_name}: {error}");
+                quench_log::warn!("could not read job {object_name}: {error}");
             }
         }
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
@@ -446,12 +446,12 @@ fn finish(running: &Running, status: Status, exit_code: Option<i32>, error: Opti
             Status::Running if status == Status::Success => {
                 step.status = Status::Success;
                 step.exit_code = Some(0);
-                step.finished_at = Some(Utc::now());
+                step.finished_at = Some(Time::now());
             }
             // The step running when the job failed is the one that failed.
             Status::Running => {
                 step.status = Status::Failed;
-                step.finished_at = Some(Utc::now());
+                step.finished_at = Some(Time::now());
             }
             Status::Queued => step.status = Status::Skipped,
             _ => {}
@@ -461,7 +461,7 @@ fn finish(running: &Running, status: Status, exit_code: Option<i32>, error: Opti
     state.status = status;
     state.exit_code = exit_code;
     state.error = error;
-    state.finished_at = Some(Utc::now());
+    state.finished_at = Some(Time::now());
 }
 
 impl std::fmt::Debug for KubernetesExecutor {

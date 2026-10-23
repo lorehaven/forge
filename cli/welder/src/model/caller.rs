@@ -7,7 +7,7 @@ pub async fn call_model(
     prompt: String,
     temperature: f32,
     max_tokens: usize,
-) -> anyhow::Result<String> {
+) -> quench_core::Result<String> {
     let request = LlmRequest {
         model: model.name().to_string(),
         contents: vec![Content::new("user").with_text(prompt)],

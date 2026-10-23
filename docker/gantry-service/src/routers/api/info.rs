@@ -3,7 +3,7 @@
 use crate::routers::api::{OptionalClaims, authz};
 use quench_auth::domain::jwt::JwtConfig;
 use quench_http::prelude::{Inject, Response, get, http::StatusCode};
-use serde_json::json;
+use quench_serde::json;
 
 #[get("/api/v1/info")]
 pub async fn info(

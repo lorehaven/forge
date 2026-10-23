@@ -8,7 +8,7 @@ use quench_http::prelude::{Inject, Path, Response, get, http::StatusCode};
 use std::collections::BTreeMap;
 
 #[get("/api/v1/rivets/{name}")]
-#[tracing::instrument]
+#[quench_log::instrument]
 pub async fn versions(Inject(db): Inject<Db>, Path(name): Path<String>) -> Response {
     if !crate::routers::rivets_enabled() {
         return disabled();
@@ -27,7 +27,7 @@ pub async fn versions(Inject(db): Inject<Db>, Path(name): Path<String>) -> Respo
 }
 
 #[get("/api/v1/rivets")]
-#[tracing::instrument]
+#[quench_log::instrument]
 pub async fn catalog(Inject(db): Inject<Db>) -> Response {
     if !crate::routers::rivets_enabled() {
         return disabled();

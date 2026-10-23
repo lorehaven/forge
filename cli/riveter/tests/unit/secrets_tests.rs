@@ -1,10 +1,8 @@
 use crate::env_support::cwd_lock;
-use base64::Engine as _;
+use quench_serde::Value;
 use riveter::secrets::{
     HASH_ANNOTATION, KEY, LABEL, SyncRequest, manifest, overlays_with_values, secret_name, sync,
 };
-use serde_json::Value;
-use sha2::{Digest, Sha256};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -12,8 +10,8 @@ use std::path::{Path, PathBuf};
 const SECRET_VALUE: &str = "hunter2-do-not-leak";
 
 /// An `overlays/` directory with the named overlays; `Some(text)` gives one a `.env`.
-fn overlays(layout: &[(&str, Option<&str>)]) -> (tempfile::TempDir, PathBuf) {
-    let dir = tempfile::tempdir().unwrap();
+fn overlays(layout: &[(&str, Option<&str>)]) -> (quench_core::tmp::TempDir, PathBuf) {
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let root = dir.path().join("overlays");
     for (name, env) in layout {
         fs::create_dir_all(root.join(name)).unwrap();
@@ -37,18 +35,18 @@ fn request(overlays: &[&str]) -> SyncRequest {
 struct Recorder {
     args: PathBuf,
     stdin: PathBuf,
-    _dir: tempfile::TempDir,
+    _dir: quench_core::tmp::TempDir,
 }
 
 fn with_kubectl<T>(exit_code: i32, body: impl FnOnce(&Recorder) -> T) -> T {
     let _guard = cwd_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let recorder = Recorder {
         args: dir.path().join("args.log"),
         stdin: dir.path().join("stdin.log"),
-        _dir: tempfile::tempdir().unwrap(),
+        _dir: quench_core::tmp::TempDir::new().unwrap(),
     };
     let script = format!(
         "#!/bin/sh\necho \"$@\" >> '{}'\ncat >> '{}'\nprintf '\\n---\\n' >> '{}'\n[ {exit_code} -ne 0 ] && echo 'the connection to the server was refused' >&2\nexit {exit_code}\n",
@@ -61,9 +59,9 @@ fn with_kubectl<T>(exit_code: i32, body: impl FnOnce(&Recorder) -> T) -> T {
     fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
 
     let original = std::env::var("PATH").unwrap_or_default();
-    envmnt::set("PATH", format!("{}:{original}", dir.path().display()));
+    quench_core::env::set("PATH", format!("{}:{original}", dir.path().display()));
     let result = body(&recorder);
-    envmnt::set("PATH", &original);
+    quench_core::env::set("PATH", &original);
     drop(dir);
     result
 }
@@ -81,19 +79,14 @@ impl Recorder {
             .unwrap_or_default()
             .split("\n---\n")
             .filter(|chunk| !chunk.trim().is_empty())
-            .map(|chunk| serde_json::from_str(chunk.trim()).unwrap())
+            .map(|chunk| quench_serde::json::from_str(chunk.trim()).unwrap())
             .collect()
     }
 }
 
 fn stored(manifest: &Value) -> String {
     let encoded = manifest["data"][KEY].as_str().unwrap();
-    String::from_utf8(
-        base64::engine::general_purpose::STANDARD
-            .decode(encoded)
-            .unwrap(),
-    )
-    .unwrap()
+    String::from_utf8(quench_core::base64::STANDARD.decode(encoded).unwrap()).unwrap()
 }
 
 // --- the Secret ---------------------------------------------------------------
@@ -115,7 +108,7 @@ fn the_manifest_holds_the_file_verbatim_and_a_hash_of_it() {
     assert_eq!(stored(&m), "A=1\nB=\"two words\"\n");
     assert_eq!(
         m["metadata"]["annotations"][HASH_ANNOTATION],
-        hex::encode(Sha256::digest(contents))
+        quench_core::hex::encode(quench_crypto::hash::sha256(contents))
     );
     assert_eq!(m["metadata"]["labels"][LABEL], "media");
 }

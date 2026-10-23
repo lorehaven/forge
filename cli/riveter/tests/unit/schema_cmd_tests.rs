@@ -1,4 +1,5 @@
 use crate::env_support::cwd_lock;
+use quench_serde::{Value, json};
 use riveter::cli::SchemasCmd;
 use riveter::env::{Workspace, with_workspace};
 use riveter::render::{ResourceScope, Selector, render_to_string};
@@ -7,7 +8,6 @@ use riveter::schema_cmd::{
     FetchRequest, check_documents, crds_from_kubectl, fetch, is_built_in, label, parse_documents,
     schemas_command, validate_env, validate_files,
 };
-use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -153,7 +153,7 @@ fn with_fake_kubectl<T>(
     let _guard = cwd_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let script = dir.path().join("kubectl");
     fs::write(
         &script,
@@ -168,15 +168,15 @@ fn with_fake_kubectl<T>(
     fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
 
     let original = std::env::var("PATH").unwrap_or_default();
-    envmnt::set("PATH", format!("{}:{original}", dir.path().display()));
+    quench_core::env::set("PATH", format!("{}:{original}", dir.path().display()));
     let result = body();
-    envmnt::set("PATH", &original);
+    quench_core::env::set("PATH", &original);
     result
 }
 
 #[test]
 fn fetch_asks_for_the_templated_crds_by_default_and_writes_one_file_each() {
-    let out = tempfile::tempdir().unwrap();
+    let out = quench_core::tmp::TempDir::new().unwrap();
     let args = out.path().join("args");
     let list = json!({"kind": "List", "items": [
         crd_json("cert-manager.io", "Certificate", "certificates"),
@@ -226,7 +226,7 @@ fn fetch_asks_for_the_templated_crds_by_default_and_writes_one_file_each() {
 
 #[test]
 fn fetch_can_name_crds_take_everything_and_choose_a_context() {
-    let out = tempfile::tempdir().unwrap();
+    let out = quench_core::tmp::TempDir::new().unwrap();
     let args = out.path().join("args");
     let one = crd_json("a.io", "A", "as").to_string();
 
@@ -268,7 +268,7 @@ fn fetch_can_name_crds_take_everything_and_choose_a_context() {
 
 #[test]
 fn fetch_fails_clearly_when_kubectl_does_or_nothing_comes_back() {
-    let out = tempfile::tempdir().unwrap();
+    let out = quench_core::tmp::TempDir::new().unwrap();
     let args = out.path().join("args");
     let request = || FetchRequest {
         output: Some(out.path().join("s")),
@@ -311,19 +311,19 @@ fn with_empty_cache<T>(body: impl FnOnce() -> T) -> T {
     let _guard = cwd_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let saved = std::env::var_os("RIVETER_SCHEMA_DIR");
-    envmnt::set("RIVETER_SCHEMA_DIR", dir.path());
+    quench_core::env::set("RIVETER_SCHEMA_DIR", dir.path());
     let result = body();
     match saved {
-        Some(v) => envmnt::set("RIVETER_SCHEMA_DIR", v),
-        None => envmnt::remove("RIVETER_SCHEMA_DIR"),
+        Some(v) => quench_core::env::set("RIVETER_SCHEMA_DIR", v),
+        None => quench_core::env::remove("RIVETER_SCHEMA_DIR"),
     }
     result
 }
 
-fn workspace_with_overlay(overlay: &str) -> (tempfile::TempDir, Workspace) {
-    let dir = tempfile::tempdir().unwrap();
+fn workspace_with_overlay(overlay: &str) -> (quench_core::tmp::TempDir, Workspace) {
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let overlays = dir.path().join("overlays");
     fs::create_dir_all(overlays.join("demo")).unwrap();
     fs::write(overlays.join("demo/overlay.yaml"), overlay).unwrap();
@@ -434,7 +434,7 @@ fn targets_narrow_what_is_validated() {
 
 #[test]
 fn files_are_validated_and_a_failure_in_any_fails_the_run() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let good = dir.path().join("good.yaml");
     let bad = dir.path().join("bad.yaml");
     fs::write(&good, "apiVersion: cert-manager.io/v1\nkind: Certificate\nmetadata: {name: a}\nspec: {secretName: s, issuerRef: {name: i}}\n").unwrap();
@@ -447,11 +447,11 @@ fn files_are_validated_and_a_failure_in_any_fails_the_run() {
 
 #[test]
 fn a_fetched_schema_in_the_cache_is_what_validate_uses() {
-    let cache = tempfile::tempdir().unwrap();
+    let cache = quench_core::tmp::TempDir::new().unwrap();
     let widget = schema::CrdSchema::from_crd(&crd_json("example.io", "Widget", "widgets")).unwrap();
     fs::write(
         cache.path().join(widget.file_name()),
-        serde_json::to_string(&widget).unwrap(),
+        quench_serde::json::to_string(&widget),
     )
     .unwrap();
 
@@ -462,13 +462,13 @@ fn a_fetched_schema_in_the_cache_is_what_validate_uses() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let saved = std::env::var_os("RIVETER_SCHEMA_DIR");
-    envmnt::set("RIVETER_SCHEMA_DIR", cache.path());
+    quench_core::env::set("RIVETER_SCHEMA_DIR", cache.path());
     let with_cache = validate_files(std::slice::from_ref(&doc.1));
-    envmnt::set("RIVETER_SCHEMA_DIR", doc.0.path());
+    quench_core::env::set("RIVETER_SCHEMA_DIR", doc.0.path());
     let without = validate_files(std::slice::from_ref(&doc.1));
     match saved {
-        Some(v) => envmnt::set("RIVETER_SCHEMA_DIR", v),
-        None => envmnt::remove("RIVETER_SCHEMA_DIR"),
+        Some(v) => quench_core::env::set("RIVETER_SCHEMA_DIR", v),
+        None => quench_core::env::remove("RIVETER_SCHEMA_DIR"),
     }
 
     assert!(with_cache.is_err(), "the cached schema rejects it");
@@ -478,8 +478,8 @@ fn a_fetched_schema_in_the_cache_is_what_validate_uses() {
     );
 }
 
-fn dir_file(text: &str) -> (tempfile::TempDir, std::path::PathBuf) {
-    let dir = tempfile::tempdir().unwrap();
+fn dir_file(text: &str) -> (quench_core::tmp::TempDir, std::path::PathBuf) {
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let path = dir.path().join("doc.yaml");
     fs::write(&path, text).unwrap();
     (dir, path)

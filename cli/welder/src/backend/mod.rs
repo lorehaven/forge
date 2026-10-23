@@ -5,9 +5,9 @@ pub mod ollama;
 pub mod switchboard;
 pub mod vllm;
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 pub trait Backend: Send + Sync {
-    fn initialize(&self) -> anyhow::Result<()>;
+    fn initialize(&self) -> quench_core::Result<()>;
     fn initialized(&self);
     fn is_running(&self) -> bool;
 }
@@ -17,12 +17,12 @@ static BACKEND: OnceLock<Arc<dyn Backend>> = OnceLock::new();
 /// Builds and initializes the configured backend. A bad or incomplete
 /// `[backend]` config is a startup error to report cleanly, not a panic - the
 /// caller runs this once, early, and propagates the result.
-pub fn init() -> anyhow::Result<()> {
+pub fn init() -> quench_core::Result<()> {
     let backend: Arc<dyn Backend> = match CONFIG.backend.kind.as_str() {
         "ollama" => {
             let url =
                 CONFIG.backend.ollama_url.clone().ok_or_else(|| {
-                    anyhow::anyhow!("config error: backend.ollama_url must be set")
+                    quench_core::err!("config error: backend.ollama_url must be set")
                 })?;
             let back = ollama::OllamaBackend::new(url);
             back.initialize()?;
@@ -35,13 +35,13 @@ pub fn init() -> anyhow::Result<()> {
         }
         "switchboard" => {
             let url = CONFIG.backend.switchboard_url.clone().ok_or_else(|| {
-                anyhow::anyhow!("config error: backend.switchboard_url must be set")
+                quench_core::err!("config error: backend.switchboard_url must be set")
             })?;
             let back = switchboard::SwitchboardBackend::new(url);
             back.initialize()?;
             Arc::new(back)
         }
-        other => anyhow::bail!("unsupported backend: {other}"),
+        other => quench_core::bail!("unsupported backend: {other}"),
     };
 
     // `init` runs exactly once from `init_runtime`, before anything else in
@@ -49,7 +49,7 @@ pub fn init() -> anyhow::Result<()> {
     // runtime condition to recover from.
     BACKEND
         .set(backend)
-        .map_err(|_| anyhow::anyhow!("backend::init called more than once"))
+        .map_err(|_| quench_core::err!("backend::init called more than once"))
 }
 
 /// Panics if called before [`init`] has succeeded - the same contract

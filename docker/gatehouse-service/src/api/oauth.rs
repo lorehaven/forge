@@ -5,19 +5,17 @@ use crate::api::auth::{issue_client_credentials_token, issue_token_pair_for_clie
 use crate::clients::{ClientRow, hash_secret};
 use crate::codes::AuthorizationCodeRow;
 use crate::ui::common::ui_path;
-use async_trait::async_trait;
-use base64::Engine as _;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use chrono::Utc;
-use http::StatusCode;
 use quench_auth::domain::auth::UserDb;
 use quench_auth::domain::jwt::{Claims, JwtConfig};
 use quench_auth::domain::realm;
 use quench_auth::domain::session::SessionDb;
+use quench_core::async_trait;
+use quench_core::base64::URL_SAFE_NO_PAD;
+use quench_core::time::Time;
 use quench_db::prelude::{Crud, Db};
+use quench_http::http::StatusCode;
 use quench_http::prelude::{FromRequest, HttpError, Inject, Query, Request, Response, get, post};
-use serde::Deserialize;
-use sha2::{Digest, Sha256};
+use quench_serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct AuthorizeQuery {
@@ -89,7 +87,7 @@ pub async fn authorize(
         let login_url = format!(
             "{}?redirect={}",
             ui_path("/login"),
-            urlencoding::encode(&original)
+            quench_serde::urlencoded::percent_encode(&original)
         );
         return Response::new(StatusCode::FOUND).header("Location", login_url);
     };
@@ -98,7 +96,7 @@ pub async fn authorize(
     };
 
     let code = random_code();
-    let now = Utc::now();
+    let now = Time::now();
     let row = AuthorizationCodeRow {
         code_hash: hash_secret(&code),
         client_id: client.client_id.clone(),
@@ -107,7 +105,7 @@ pub async fn authorize(
         scope: query.scope.clone().unwrap_or_default(),
         pkce_challenge: query.code_challenge.clone(),
         created_at: now,
-        expires_at: now + chrono::Duration::seconds(60),
+        expires_at: now + quench_core::time::Duration::seconds(60),
         consumed_at: None,
     };
     if db
@@ -122,8 +120,8 @@ pub async fn authorize(
     let redirect = format!(
         "{}?code={}&state={}",
         query.redirect_uri,
-        urlencoding::encode(&code),
-        urlencoding::encode(&query.state)
+        quench_serde::urlencoded::percent_encode(&code),
+        quench_serde::urlencoded::percent_encode(&query.state)
     );
     Response::new(StatusCode::FOUND).header("Location", redirect)
 }
@@ -196,7 +194,7 @@ pub async fn authorization_code_grant(
     let Ok(Some(mut row)) = codes.read(&hash_secret(code)).await else {
         return bad_request("invalid code");
     };
-    let now = Utc::now();
+    let now = Time::now();
     if !row.is_usable(now) || row.client_id != *client_id || row.redirect_uri != *redirect_uri {
         return bad_request("invalid, expired or already-used code");
     }
@@ -204,7 +202,7 @@ pub async fn authorization_code_grant(
     let Some(verifier) = &body.code_verifier else {
         return bad_request("missing code_verifier");
     };
-    let computed = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
+    let computed = URL_SAFE_NO_PAD.encode(quench_crypto::hash::sha256(verifier.as_bytes()));
     if computed != row.pkce_challenge {
         return bad_request("PKCE verification failed");
     }
@@ -221,7 +219,7 @@ pub async fn authorization_code_grant(
     match issue_token_pair_for_client(config, sessions, &user, &client.allowed_scopes).await {
         Ok(tokens) => json_ok(&tokens),
         Err(err) => {
-            tracing::error!("failed to issue tokens for {}: {err}", user.username);
+            quench_log::error!("failed to issue tokens for {}: {err}", user.username);
             internal_error()
         }
     }
@@ -243,7 +241,7 @@ pub async fn refresh_token_grant(
         Ok(Some(rotated)) => rotated,
         Ok(None) => return Response::new(StatusCode::UNAUTHORIZED),
         Err(err) => {
-            tracing::error!("failed to rotate refresh token: {err}");
+            quench_log::error!("failed to rotate refresh token: {err}");
             return internal_error();
         }
     };
@@ -254,7 +252,7 @@ pub async fn refresh_token_grant(
     match crate::api::auth::token_response(config, &user, &session, new_refresh_token).await {
         Ok(tokens) => json_ok(&tokens),
         Err(err) => {
-            tracing::error!("failed to issue tokens for {}: {err}", user.username);
+            quench_log::error!("failed to issue tokens for {}: {err}", user.username);
             internal_error()
         }
     }
@@ -279,7 +277,7 @@ pub async fn client_credentials_grant(
     match issue_client_credentials_token(config, &client.client_id, &client.allowed_scopes).await {
         Ok(tokens) => json_ok(&tokens),
         Err(err) => {
-            tracing::error!("failed to issue a client_credentials token for {client_id}: {err}");
+            quench_log::error!("failed to issue a client_credentials token for {client_id}: {err}");
             internal_error()
         }
     }
@@ -303,8 +301,7 @@ pub async fn subject_from_cookie(
 
 #[must_use]
 pub fn random_code() -> String {
-    let mut buf = [0u8; 32];
-    getrandom::fill(&mut buf).expect("the OS random source is available");
+    let buf = quench_core::random::bytes::<32>();
     URL_SAFE_NO_PAD.encode(buf)
 }
 
@@ -316,7 +313,7 @@ fn internal_error() -> Response {
     Response::new(StatusCode::INTERNAL_SERVER_ERROR)
 }
 
-fn json_ok<T: serde::Serialize>(value: &T) -> Response {
+fn json_ok<T: quench_serde::Serialize>(value: &T) -> Response {
     Response::json(StatusCode::OK, value)
         .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
 }

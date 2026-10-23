@@ -12,7 +12,7 @@ use quench_db::prelude::Db;
 use quench_http::prelude::{
     Inject, Json, Path, Query, Response, delete, get, http::StatusCode, patch, post,
 };
-use serde::Deserialize;
+use quench_serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateStorage {
@@ -27,7 +27,7 @@ pub struct CreateStorage {
 }
 
 #[post("/api/v1/files")]
-#[tracing::instrument(skip(claims, config, db, body))]
+#[quench_log::instrument(skip(claims, config, db, body))]
 pub async fn create(
     OptionalClaims(claims): OptionalClaims,
     Inject(config): Inject<JwtConfig>,
@@ -77,7 +77,7 @@ pub async fn create(
             error(StatusCode::BAD_REQUEST, "no such user to own this storage")
         }
         Err(problem) => {
-            tracing::error!("creating dynamic storage failed: {problem}");
+            quench_log::error!("creating dynamic storage failed: {problem}");
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "could not create the storage",
@@ -100,7 +100,7 @@ pub struct PatchStorage {
 }
 
 #[patch("/api/v1/files/{storage}")]
-#[tracing::instrument(skip(claims, config, db, body))]
+#[quench_log::instrument(skip(claims, config, db, body))]
 pub async fn patch(
     OptionalClaims(claims): OptionalClaims,
     Inject(config): Inject<JwtConfig>,
@@ -129,7 +129,7 @@ pub async fn patch(
             .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR)),
         Ok(None) => not_found("no such dynamic storage"),
         Err(problem) => {
-            tracing::error!("updating dynamic storage failed: {problem}");
+            quench_log::error!("updating dynamic storage failed: {problem}");
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "could not update the storage",
@@ -139,7 +139,7 @@ pub async fn patch(
 }
 
 #[delete("/api/v1/files/{storage}")]
-#[tracing::instrument(skip(claims, config, db))]
+#[quench_log::instrument(skip(claims, config, db))]
 pub async fn remove(
     OptionalClaims(claims): OptionalClaims,
     Inject(config): Inject<JwtConfig>,
@@ -164,7 +164,7 @@ pub async fn remove(
     let files = match storage_file::list_files(&db, &storage.name, "").await {
         Ok(files) => files,
         Err(problem) => {
-            tracing::error!("listing dynamic storage before delete failed: {problem}");
+            quench_log::error!("listing dynamic storage before delete failed: {problem}");
             return error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "could not delete the storage",
@@ -183,7 +183,7 @@ pub async fn remove(
         Ok(true) => Response::new(StatusCode::NO_CONTENT),
         Ok(false) => not_found("no such dynamic storage"),
         Err(problem) => {
-            tracing::error!("deleting dynamic storage failed: {problem}");
+            quench_log::error!("deleting dynamic storage failed: {problem}");
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "could not delete the storage",
@@ -200,7 +200,7 @@ pub struct SyncQuery {
 
 /// `GET /api/v1/files/{storage}/sync?since=<id>` - change feed since a checkpoint.
 #[get("/api/v1/files/{storage}/sync")]
-#[tracing::instrument(skip(claims, config, db))]
+#[quench_log::instrument(skip(claims, config, db))]
 pub async fn sync_log(
     OptionalClaims(claims): OptionalClaims,
     Inject(config): Inject<JwtConfig>,
@@ -229,7 +229,7 @@ pub async fn sync_log(
         Ok(entries) => Response::json(StatusCode::OK, &entries)
             .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR)),
         Err(problem) => {
-            tracing::error!("reading sync log failed: {problem}");
+            quench_log::error!("reading sync log failed: {problem}");
             error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "could not read the sync log",

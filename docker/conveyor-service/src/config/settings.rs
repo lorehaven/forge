@@ -16,13 +16,14 @@ pub enum ExecutorKind {
 }
 
 impl ExecutorKind {
+    #[must_use]
     pub fn parse(raw: &str) -> Self {
         match raw.trim().to_ascii_lowercase().as_str() {
             "kubernetes" | "k8s" => Self::Kubernetes,
             "mock" => Self::Mock,
             "native" | "" => Self::Native,
             other => {
-                tracing::warn!("unknown CONVEYOR_EXECUTOR {other:?}, falling back to native");
+                quench_log::warn!("unknown CONVEYOR_EXECUTOR {other:?}, falling back to native");
                 Self::Native
             }
         }
@@ -96,12 +97,13 @@ impl Default for ConveyorConfig {
 }
 
 impl ConveyorConfig {
+    #[must_use]
     pub fn load() -> Self {
         let defaults = Self::default();
 
         let config = Self {
-            executor: ExecutorKind::parse(&envmnt::get_or("CONVEYOR_EXECUTOR", "native")),
-            work_dir: PathBuf::from(envmnt::get_or(
+            executor: ExecutorKind::parse(&quench_core::env::get_or("CONVEYOR_EXECUTOR", "native")),
+            work_dir: PathBuf::from(quench_core::env::get_or(
                 "CONVEYOR_WORK_DIR",
                 &defaults.work_dir.to_string_lossy(),
             )),
@@ -121,8 +123,8 @@ impl ConveyorConfig {
                 "CONVEYOR_CLAIM_STALE_AFTER_SECS",
                 defaults.claim_stale_after_secs,
             ),
-            allow_fork_pr: envmnt::is_or("CONVEYOR_ALLOW_FORK_PR", false),
-            build_tags: envmnt::is_or("CONVEYOR_BUILD_TAGS", defaults.build_tags),
+            allow_fork_pr: quench_core::env::is_or("CONVEYOR_ALLOW_FORK_PR", false),
+            build_tags: quench_core::env::is_or("CONVEYOR_BUILD_TAGS", defaults.build_tags),
             home_recent_runs: positive("CONVEYOR_HOME_RECENT_RUNS", defaults.home_recent_runs),
             home_max_runs_per_repo: positive(
                 "CONVEYOR_HOME_MAX_RUNS_PER_REPO",
@@ -132,7 +134,7 @@ impl ConveyorConfig {
         };
 
         if config.allow_fork_pr && config.executor == ExecutorKind::Native {
-            tracing::warn!(
+            quench_log::warn!(
                 "CONVEYOR_ALLOW_FORK_PR is on under the native executor: a pipeline \
                  defined in someone else's fork will run with this service's \
                  privileges, including its database and secret key"
@@ -144,8 +146,9 @@ impl ConveyorConfig {
 }
 
 /// Reads a positive integer, defaulting on missing/unparseable/zero (zero silently does nothing, so it's treated as garbage too).
+#[must_use]
 pub fn positive(key: &str, default: usize) -> usize {
-    let raw = envmnt::get_or(key, "");
+    let raw = quench_core::env::get_or(key, "");
     if raw.trim().is_empty() {
         return default;
     }
@@ -153,7 +156,7 @@ pub fn positive(key: &str, default: usize) -> usize {
     match raw.trim().parse::<usize>() {
         Ok(value) if value > 0 => value,
         _ => {
-            tracing::warn!("{key}={raw:?} is not a positive integer, using {default}");
+            quench_log::warn!("{key}={raw:?} is not a positive integer, using {default}");
             default
         }
     }
@@ -161,7 +164,7 @@ pub fn positive(key: &str, default: usize) -> usize {
 
 /// Reads a positive 64-bit integer, defaulting on missing, unparseable, or zero values.
 fn positive_u64(key: &str, default: u64) -> u64 {
-    let raw = envmnt::get_or(key, "");
+    let raw = quench_core::env::get_or(key, "");
     if raw.trim().is_empty() {
         return default;
     }
@@ -169,7 +172,7 @@ fn positive_u64(key: &str, default: u64) -> u64 {
     match raw.trim().parse::<u64>() {
         Ok(value) if value > 0 => value,
         _ => {
-            tracing::warn!("{key}={raw:?} is not a positive integer, using {default}");
+            quench_log::warn!("{key}={raw:?} is not a positive integer, using {default}");
             default
         }
     }

@@ -7,7 +7,7 @@
 use crate::PublicBase;
 use crate::tokens::{PURPOSE_UNSUBSCRIBE, VerificationTokens};
 use crate::ui::common::ui_path;
-use serde::{Deserialize, Serialize};
+use quench_serde::{Deserialize, Serialize};
 
 /// Long enough to outlast a mailbox's memory of the message.
 pub const UNSUBSCRIBE_TTL_SECS: u64 = 90 * 24 * 60 * 60;
@@ -22,12 +22,12 @@ pub struct Unsubscribe {
 impl Unsubscribe {
     #[must_use]
     pub fn encode(&self) -> String {
-        serde_json::to_string(self).expect("serialises")
+        quench_serde::json::to_string(self)
     }
 
     #[must_use]
     pub fn decode(raw: &str) -> Option<Self> {
-        serde_json::from_str(raw).ok()
+        quench_serde::json::from_str(raw).ok()
     }
 }
 
@@ -37,7 +37,7 @@ pub async fn issue_link(
     base: &PublicBase,
     username: &str,
     template: &str,
-) -> anyhow::Result<String> {
+) -> quench_core::Result<String> {
     let ticket = Unsubscribe {
         username: username.to_string(),
         template: template.to_string(),

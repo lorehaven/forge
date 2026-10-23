@@ -86,7 +86,7 @@ async fn the_newest_version_skips_the_yanked_one() {
 
 #[tokio::test]
 async fn a_directory_of_rivet_files_is_a_registry() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     for version in ["0.1.0", "0.2.0"] {
         let manifest = rivet_package::Manifest::new("demo", version);
         let mut builder = rivet_package::PackageBuilder::new(manifest);

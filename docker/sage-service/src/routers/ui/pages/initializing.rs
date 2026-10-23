@@ -106,7 +106,7 @@ pub const fn state_presentation(
 #[must_use]
 pub fn render_model_rows(
     defaults: &[DefaultModel],
-    instances_res: &anyhow::Result<Vec<VllmInstance>>,
+    instances_res: &quench_core::Result<Vec<VllmInstance>>,
 ) -> Element {
     let mut rows = div().class("model-rows");
 
@@ -142,7 +142,7 @@ pub fn render_model_rows(
 #[must_use]
 pub fn render_initializing_page(
     defaults: &[DefaultModel],
-    instances_res: &anyhow::Result<Vec<VllmInstance>>,
+    instances_res: &quench_core::Result<Vec<VllmInstance>>,
 ) -> Response {
     let switchboard_down = instances_res.is_err();
 

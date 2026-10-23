@@ -1,4 +1,4 @@
-use async_trait::async_trait;
+use quench_core::async_trait;
 use quench_http::prelude::http::{Method, StatusCode};
 use quench_http::prelude::{Endpoint, Middleware, Request, Response};
 use quench_starter::http::domain::error;
@@ -41,6 +41,7 @@ impl Middleware for WarehouseLimits {
     }
 }
 
+#[must_use]
 pub fn is_upload_mutation(req: &Request) -> bool {
     let is_write = matches!(*req.method(), Method::POST | Method::PATCH | Method::PUT);
 

@@ -84,9 +84,14 @@ async fn storages_parses_the_response_list() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path_matcher("/api/v1/files/storages"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "storages": [{ "name": "default", "root": "/data" }]
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!({
+                    "storages": [{ "name": "default", "root": "/data" }]
+                })),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -101,11 +106,16 @@ async fn list_parses_directory_entries() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path_regex(r"^/api/v1/files/default/entries$"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "storage": "default",
-            "path": "/",
-            "entries": [{ "path": "/a.txt", "is_dir": false, "size_bytes": 10 }]
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!({
+                    "storage": "default",
+                    "path": "/",
+                    "entries": [{ "path": "/a.txt", "is_dir": false, "size_bytes": 10 }]
+                })),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -137,13 +147,18 @@ async fn preview_parses_the_response() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path_regex(r"^/api/v1/files/default/preview$"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "storage": "default",
-            "path": "/a.txt",
-            "kind": "text",
-            "content": "hi",
-            "truncated": false
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!({
+                    "storage": "default",
+                    "path": "/a.txt",
+                    "kind": "text",
+                    "content": "hi",
+                    "truncated": false
+                })),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 

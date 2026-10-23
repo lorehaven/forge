@@ -10,9 +10,9 @@ use crate::scheduler::{projects, repos};
 use quench_auth::domain::jwt::Claims;
 use quench_db::prelude::Db;
 use quench_http::prelude::{Form, Inject, Path, Query, Response, get, http::StatusCode, post};
+use quench_serde::Deserialize;
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
-use serde::Deserialize;
 use std::collections::HashSet;
 
 /// `Element` has no conditional attribute setter - see gatehouse's `admin.rs`.
@@ -226,8 +226,8 @@ pub(super) async fn save_repo(
     match repos::update(&db, &repo.id, &changes).await {
         Ok(Some(updated)) => redirect(&format!(
             "/repos/{}/{}/edit?ok=saved",
-            urlencoding::encode(&updated.owner),
-            urlencoding::encode(&updated.name)
+            quench_serde::urlencoded::percent_encode(&updated.owner),
+            quench_serde::urlencoded::percent_encode(&updated.name)
         )),
         Ok(None) => redirect("/repos?err=not_found"),
         Err(_) => redirect_to_edit(&owner, &name, Some("save_failed")),
@@ -379,8 +379,8 @@ async fn render_list(db: &Db, claims: &Claims, notice: &Notice) -> Response {
             .child(follow_form(
                 &format!(
                     "/repos/{}/{}",
-                    urlencoding::encode(&repo.owner),
-                    urlencoding::encode(&repo.name)
+                    quench_serde::urlencoded::percent_encode(&repo.owner),
+                    quench_serde::urlencoded::percent_encode(&repo.name)
                 ),
                 followed_repos.contains(repo.id.as_str()),
             )),
@@ -462,8 +462,8 @@ pub fn repo_row(repo: &Repo, project_path: &str, can_edit: bool) -> Element {
                     "href",
                     ui_path(&format!(
                         "/repos/{}/{}/edit",
-                        urlencoding::encode(&repo.owner),
-                        urlencoding::encode(&repo.name)
+                        quench_serde::urlencoded::percent_encode(&repo.owner),
+                        quench_serde::urlencoded::percent_encode(&repo.name)
                     )),
                 )
                 .attr("data-i18n", "ui_repos_edit"),
@@ -522,7 +522,10 @@ pub fn follow_projects_panel<S: std::hash::BuildHasher>(
                     ),
                 )
                 .child(follow_form(
-                    &format!("/projects/{}", urlencoding::encode(&project.id)),
+                    &format!(
+                        "/projects/{}",
+                        quench_serde::urlencoded::percent_encode(&project.id)
+                    ),
                     followed.contains(project.id.as_str()),
                 )),
         );
@@ -664,8 +667,8 @@ fn delete_panel(repo: &Repo) -> Element {
                         "action",
                         ui_path(&format!(
                             "/repos/{}/{}/delete",
-                            urlencoding::encode(&repo.owner),
-                            urlencoding::encode(&repo.name)
+                            quench_serde::urlencoded::percent_encode(&repo.owner),
+                            quench_serde::urlencoded::percent_encode(&repo.name)
                         )),
                     )
                     .child(
@@ -691,8 +694,8 @@ fn edit_panel(repo: &Repo, fields: Element, can_edit: bool) -> Element {
                 "action",
                 ui_path(&format!(
                     "/repos/{}/{}/edit",
-                    urlencoding::encode(&repo.owner),
-                    urlencoding::encode(&repo.name)
+                    quench_serde::urlencoded::percent_encode(&repo.owner),
+                    quench_serde::urlencoded::percent_encode(&repo.name)
                 )),
             )
             .child(fields)
@@ -895,8 +898,8 @@ fn redirect_to_list(err: Option<&str>) -> Response {
 fn redirect_to_edit(owner: &str, name: &str, err: Option<&str>) -> Response {
     let base = format!(
         "/repos/{}/{}/edit",
-        urlencoding::encode(owner),
-        urlencoding::encode(name)
+        quench_serde::urlencoded::percent_encode(owner),
+        quench_serde::urlencoded::percent_encode(name)
     );
     err.map_or_else(
         || redirect(&base),

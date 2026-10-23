@@ -6,7 +6,7 @@
 use conveyor_service::domain::Repo;
 use conveyor_service::providers::mock::MockProvider;
 use conveyor_service::providers::{CommitState, CommitStatusReport, GitProvider};
-use http::HeaderMap;
+use quench_http::http::HeaderMap;
 
 fn sample_repo() -> Repo {
     Repo {
@@ -19,8 +19,8 @@ fn sample_repo() -> Repo {
         enabled: true,
         registered_by: "tests".to_string(),
         project_id: "project-1".to_string(),
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
+        created_at: quench_core::time::Time::now(),
+        updated_at: quench_core::time::Time::now(),
     }
 }
 

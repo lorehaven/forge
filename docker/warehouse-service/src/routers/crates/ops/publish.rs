@@ -3,11 +3,9 @@ use crate::routers::crates::{
 };
 use crate::routers::docker::RawBody;
 use crate::routers::docker::token::AuthorizationHeader;
-use futures_util::StreamExt;
-use http_body_util::BodyExt;
+use quench_core::stream::StreamExt;
 use quench_http::prelude::{Response, http::StatusCode, put};
-use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
+use quench_serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Write;
 use tokio::io::AsyncWriteExt;
@@ -87,7 +85,7 @@ pub struct PublishResponse {
 
 /// Reads from `body` into `buffer` until it holds `needed` bytes; `short` says what ran out.
 async fn fill<B, E>(
-    body: &mut (impl futures_util::Stream<Item = Result<B, E>> + Unpin),
+    body: &mut (impl quench_core::stream::Stream<Item = Result<B, E>> + Unpin),
     buffer: &mut Vec<u8>,
     needed: usize,
     short: &str,
@@ -160,7 +158,7 @@ async fn append_index(index_path: &std::path::Path, line: &str) -> Result<(), Re
         .open(index_path)
         .await
         .map_err(|e| {
-            tracing::error!("Failed to open index file {:?}: {}", index_path, e);
+            quench_log::error!("Failed to open index file {:?}: {}", index_path, e);
             error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to open index file",
@@ -168,7 +166,7 @@ async fn append_index(index_path: &std::path::Path, line: &str) -> Result<(), Re
         })?;
 
     index_file.write_all(line.as_bytes()).await.map_err(|e| {
-        tracing::error!("Failed to write to index file {:?}: {}", index_path, e);
+        quench_log::error!("Failed to write to index file {:?}: {}", index_path, e);
         error_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             "failed to write index entry",
@@ -181,7 +179,7 @@ async fn append_index(index_path: &std::path::Path, line: &str) -> Result<(), Re
 async fn write_crate<B, E>(
     crate_path: &std::path::Path,
     initial_crate_data: &[u8],
-    body: &mut (impl futures_util::Stream<Item = Result<B, E>> + Unpin),
+    body: &mut (impl quench_core::stream::Stream<Item = Result<B, E>> + Unpin),
     crate_len: usize,
 ) -> Result<String, Response>
 where
@@ -200,7 +198,7 @@ where
     let mut file = match tokio::fs::File::create(crate_path).await {
         Ok(f) => f,
         Err(e) => {
-            tracing::error!("Failed to create crate file {:?}: {}", crate_path, e);
+            quench_log::error!("Failed to create crate file {:?}: {}", crate_path, e);
             return Err(error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to create crate file",
@@ -208,13 +206,13 @@ where
         }
     };
 
-    let mut hasher = Sha256::new();
+    let mut hasher = quench_crypto::hash::Hasher::new(quench_crypto::hash::Algorithm::Sha256);
     let mut written_len = 0;
 
     if !initial_crate_data.is_empty() {
         hasher.update(initial_crate_data);
         if let Err(e) = file.write_all(initial_crate_data).await {
-            tracing::error!("Failed to write initial crate data: {}", e);
+            quench_log::error!("Failed to write initial crate data: {}", e);
             return Err(error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to write crate data",
@@ -241,7 +239,7 @@ where
         if !to_write.is_empty() {
             hasher.update(to_write);
             if let Err(e) = file.write_all(to_write).await {
-                tracing::error!("Failed to write crate chunk: {}", e);
+                quench_log::error!("Failed to write crate chunk: {}", e);
                 return Err(error_response(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "failed to write crate chunk",
@@ -263,10 +261,10 @@ where
     }
 
     if let Err(e) = file.flush().await {
-        tracing::error!("Failed to flush crate file: {}", e);
+        quench_log::error!("Failed to flush crate file: {}", e);
     }
 
-    let digest = hasher.finalize();
+    let digest = hasher.finish();
     let mut cksum = String::with_capacity(digest.len() * 2);
     for byte in digest {
         write!(&mut cksum, "{byte:02x}").unwrap();
@@ -276,12 +274,12 @@ where
 }
 
 #[put("/api/v1/crates/new")]
-#[tracing::instrument(skip(body))]
+#[quench_log::instrument(skip(body))]
 pub async fn handle(
     AuthorizationHeader(authorization): AuthorizationHeader,
     RawBody(body): RawBody,
 ) -> Response {
-    let mut body = body.into_data_stream();
+    let mut body = body.into_body();
 
     if authorization.is_none() {
         while body.next().await.is_some() {}
@@ -306,7 +304,7 @@ pub async fn handle(
     }
 
     let json_bytes = &buffer[4..4 + json_len];
-    let meta: PublishMetadata = match serde_json::from_slice(json_bytes) {
+    let meta: PublishMetadata = match quench_serde::json::from_slice(json_bytes) {
         Ok(m) => m,
         Err(e) => {
             return error_response(
@@ -353,15 +351,7 @@ pub async fn handle(
     let index_name = meta.name.clone();
     let record = IndexRecord::new(meta, cksum);
 
-    let record_line = match serde_json::to_string(&record) {
-        Ok(s) => format!("{s}\n"),
-        Err(_) => {
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to serialize index record",
-            );
-        }
-    };
+    let record_line = format!("{}\n", quench_serde::json::to_string(&record));
 
     let Some(index_path) = index_file_path(&index_name) else {
         return error_response(
@@ -388,10 +378,10 @@ pub async fn handle(
 }
 
 fn error_response(status: StatusCode, detail: &str) -> Response {
-    tracing::warn!("Crate publish error ({}): {}", status, detail);
+    quench_log::warn!("Crate publish error ({}): {}", status, detail);
     Response::json(
         status,
-        &serde_json::json!({ "errors": [{ "detail": detail }] }),
+        &quench_serde::json!({ "errors": [{ "detail": detail }] }),
     )
     .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
 }

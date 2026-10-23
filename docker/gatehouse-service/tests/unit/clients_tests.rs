@@ -1,5 +1,5 @@
-use chrono::Utc;
 use gatehouse_service::clients::{ClientRow, hash_secret, redirect_base_url, seed_clients, upsert};
+use quench_core::time::Time;
 use quench_db::prelude::{Crud, Db};
 
 fn env_lock() -> &'static tokio::sync::Mutex<()> {
@@ -13,7 +13,7 @@ fn row(client_id: &str, secret: &str, redirect_uris: Vec<String>) -> ClientRow {
         secret_hash: hash_secret(secret),
         redirect_uris,
         allowed_scopes: vec!["openid".to_string()],
-        created_at: Utc::now(),
+        created_at: Time::now(),
     }
 }
 
@@ -51,43 +51,43 @@ fn redirect_uri_matches_only_a_registered_uri() {
 #[tokio::test]
 async fn redirect_base_url_reads_ui_url_and_trims_the_home_suffix() {
     let _guard = env_lock().lock().await;
-    envmnt::set("CONVEYOR_UI_URL", "https://conveyor.example.test/ui/home");
+    quench_core::env::set("CONVEYOR_UI_URL", "https://conveyor.example.test/ui/home");
     assert_eq!(
         redirect_base_url("conveyor"),
         Some("https://conveyor.example.test".to_string())
     );
-    envmnt::remove("CONVEYOR_UI_URL");
+    quench_core::env::remove("CONVEYOR_UI_URL");
 }
 
 #[tokio::test]
 async fn redirect_base_url_falls_back_to_the_plain_url_var() {
     let _guard = env_lock().lock().await;
-    envmnt::remove("WORKBENCH_UI_URL");
-    envmnt::set("WORKBENCH_URL", "https://workbench.example.test/");
+    quench_core::env::remove("WORKBENCH_UI_URL");
+    quench_core::env::set("WORKBENCH_URL", "https://workbench.example.test/");
     assert_eq!(
         redirect_base_url("workbench"),
         Some("https://workbench.example.test".to_string())
     );
-    envmnt::remove("WORKBENCH_URL");
+    quench_core::env::remove("WORKBENCH_URL");
 }
 
 #[tokio::test]
 async fn redirect_base_url_is_none_when_neither_var_is_set() {
     let _guard = env_lock().lock().await;
-    envmnt::remove("NOTHING_HERE_UI_URL");
-    envmnt::remove("NOTHING_HERE_URL");
+    quench_core::env::remove("NOTHING_HERE_UI_URL");
+    quench_core::env::remove("NOTHING_HERE_URL");
     assert_eq!(redirect_base_url("nothing-here"), None);
 }
 
 #[tokio::test]
 async fn redirect_base_url_uppercases_and_converts_dashes_to_underscores() {
     let _guard = env_lock().lock().await;
-    envmnt::set("MY_SERVICE_NAME_UI_URL", "https://my-service.example.test");
+    quench_core::env::set("MY_SERVICE_NAME_UI_URL", "https://my-service.example.test");
     assert_eq!(
         redirect_base_url("my-service-name"),
         Some("https://my-service.example.test".to_string())
     );
-    envmnt::remove("MY_SERVICE_NAME_UI_URL");
+    quench_core::env::remove("MY_SERVICE_NAME_UI_URL");
 }
 
 #[tokio::test]
@@ -111,7 +111,7 @@ async fn upsert_creates_then_updates_the_same_client() {
 #[tokio::test]
 async fn seed_clients_skips_entries_whose_secret_env_is_unset() {
     let _guard = env_lock().lock().await;
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let config_path = dir.path().join("clients.toml");
     std::fs::write(
         &config_path,
@@ -123,8 +123,8 @@ async fn seed_clients_skips_entries_whose_secret_env_is_unset() {
     )
     .expect("write config");
 
-    envmnt::set("CLIENTS_CONFIG", config_path.to_str().expect("utf8"));
-    envmnt::remove("GATEHOUSE_TEST_UNSET_CLIENT_SECRET");
+    quench_core::env::set("CLIENTS_CONFIG", config_path.to_str().expect("utf8"));
+    quench_core::env::remove("GATEHOUSE_TEST_UNSET_CLIENT_SECRET");
 
     let db = Db::connect("").await.expect("in-memory db");
     seed_clients(&db).await.expect("seed");
@@ -132,13 +132,13 @@ async fn seed_clients_skips_entries_whose_secret_env_is_unset() {
     let repo = db.repository::<ClientRow>();
     assert!(repo.read("no-secret-client").await.expect("read").is_none());
 
-    envmnt::remove("CLIENTS_CONFIG");
+    quench_core::env::remove("CLIENTS_CONFIG");
 }
 
 #[tokio::test]
 async fn seed_clients_seeds_an_entry_with_a_configured_secret() {
     let _guard = env_lock().lock().await;
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let config_path = dir.path().join("clients.toml");
     std::fs::write(
         &config_path,
@@ -151,8 +151,8 @@ async fn seed_clients_seeds_an_entry_with_a_configured_secret() {
     )
     .expect("write config");
 
-    envmnt::set("CLIENTS_CONFIG", config_path.to_str().expect("utf8"));
-    envmnt::set("GATEHOUSE_TEST_SEEDED_CLIENT_SECRET", "the-secret");
+    quench_core::env::set("CLIENTS_CONFIG", config_path.to_str().expect("utf8"));
+    quench_core::env::set("GATEHOUSE_TEST_SEEDED_CLIENT_SECRET", "the-secret");
 
     let db = Db::connect("").await.expect("in-memory db");
     seed_clients(&db).await.expect("seed");
@@ -166,6 +166,6 @@ async fn seed_clients_seeds_an_entry_with_a_configured_secret() {
     assert!(seeded.secret_matches("the-secret"));
     assert_eq!(seeded.allowed_scopes, vec!["openid", "profile"]);
 
-    envmnt::remove("CLIENTS_CONFIG");
-    envmnt::remove("GATEHOUSE_TEST_SEEDED_CLIENT_SECRET");
+    quench_core::env::remove("CLIENTS_CONFIG");
+    quench_core::env::remove("GATEHOUSE_TEST_SEEDED_CLIENT_SECRET");
 }

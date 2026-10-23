@@ -135,7 +135,7 @@ fn resolve_propagates_a_relative_path_rejection() {
 
 #[tokio::test]
 async fn confined_is_true_for_a_path_that_stays_inside_the_root() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let target = dir.path().join("a").join("b.txt");
     tokio::fs::create_dir_all(target.parent().unwrap())
         .await
@@ -147,15 +147,15 @@ async fn confined_is_true_for_a_path_that_stays_inside_the_root() {
 
 #[tokio::test]
 async fn confined_is_true_for_a_not_yet_existing_target_whose_parent_exists() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let target = dir.path().join("does-not-exist-yet.txt");
     assert!(confined(dir.path(), &target).await);
 }
 
 #[tokio::test]
 async fn confined_is_false_when_a_symlink_escapes_the_root() {
-    let dir = tempfile::tempdir().unwrap();
-    let outside = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
+    let outside = quench_core::tmp::TempDir::new().unwrap();
     let link = dir.path().join("escape");
     #[cfg(unix)]
     std::os::unix::fs::symlink(outside.path(), &link).unwrap();

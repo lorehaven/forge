@@ -8,8 +8,12 @@
 use warehouse_service::routers::files::confined;
 
 /// A storage root and somewhere outside it, both real directories.
-fn estate() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
-    let temp = tempfile::tempdir().expect("temp dir");
+fn estate() -> (
+    quench_core::tmp::TempDir,
+    std::path::PathBuf,
+    std::path::PathBuf,
+) {
+    let temp = quench_core::tmp::TempDir::new().expect("temp dir");
     let root = temp.path().join("storage");
     let outside = temp.path().join("outside");
     std::fs::create_dir_all(&root).expect("storage root");

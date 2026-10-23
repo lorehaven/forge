@@ -1,14 +1,14 @@
-use chrono::Utc;
 use conveyor_service::domain::Project;
 use conveyor_service::routers::ui::pages::pipelines::{page_count, pager};
+use quench_core::time::Time;
 
 fn project(id: &str) -> Project {
     Project {
         id: id.to_string(),
         name: id.to_string(),
         parent_id: None,
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
+        created_at: Time::now(),
+        updated_at: Time::now(),
     }
 }
 

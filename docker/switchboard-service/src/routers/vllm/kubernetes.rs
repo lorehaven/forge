@@ -3,13 +3,13 @@ use crate::routers::vllm::{
     LaunchRequest, VllmInstance, cpu_image, cpu_kvcache_space_gib, device_launch_args,
     is_cpu_device, task_launch_args,
 };
-use async_trait::async_trait;
-use chrono::Utc;
 use k8s_openapi::api::core::v1::{Pod, Service};
 use k8s_openapi::jiff;
 use kube::Client;
 use kube::api::{Api, DeleteParams, ListParams, PostParams};
-use serde_json::json;
+use quench_core::async_trait;
+use quench_core::time::Time;
+use quench_serde::json;
 use std::hash::{Hash, Hasher};
 
 /// Creates valid Kubernetes names for vLLM model instances.
@@ -55,7 +55,7 @@ pub fn vllm_pod_name(model: &str, port: u16) -> String {
 /// model.safetensors.index.json, ...) exist. For a gated repo that unauthenticated request
 /// is a 401 rather than a 404, which aborts the launch. Offline mode skips those lookups.
 #[must_use]
-pub fn hf_offline_env() -> serde_json::Value {
+pub fn hf_offline_env() -> quench_serde::Value {
     json!({ "name": "HF_HUB_OFFLINE", "value": "1" })
 }
 
@@ -122,15 +122,27 @@ fn new_pod_port(pod: &Pod) -> u16 {
         .unwrap_or(8000)
 }
 
+/// kube's objects are serde types and quench's `Value` is not: the JSON text is the bridge.
+fn to_kube<T: k8s_openapi::serde::de::DeserializeOwned>(
+    value: &quench_serde::Value,
+) -> Result<T, serde_json::Error> {
+    serde_json::from_str(&value.to_string())
+}
+
+fn from_kube<T: k8s_openapi::serde::Serialize>(object: &T) -> Result<quench_serde::Value, String> {
+    let text = serde_json::to_string(object).map_err(|e| e.to_string())?;
+    quench_serde::json::from_str(&text).map_err(|e| e.to_string())
+}
+
 /// A fresh pod with the old one's spec, labels and annotations. Scheduler- and
 /// admission-injected fields are dropped so the API server can fill them in again.
 ///
 /// # Errors
 /// When the old pod's spec cannot be turned back into a pod.
 pub fn restored_pod(old: &Pod, restarts: u32) -> Result<Pod, String> {
-    let mut spec = serde_json::to_value(old.spec.clone().unwrap_or_default())
+    let mut spec = from_kube(&old.spec.clone().unwrap_or_default())
         .map_err(|e| format!("Failed to serialize pod spec: {e}"))?;
-    let injected = |name: &serde_json::Value| {
+    let injected = |name: &quench_serde::Value| {
         name.as_str()
             .is_some_and(|n| n.starts_with("kube-api-access-"))
     };
@@ -149,7 +161,7 @@ pub fn restored_pod(old: &Pod, restarts: u32) -> Result<Pod, String> {
     }
     let mut annotations = old.metadata.annotations.clone().unwrap_or_default();
     annotations.insert(RESTART_ANNOTATION.to_string(), restarts.to_string());
-    serde_json::from_value(json!({
+    to_kube(&json!({
         "apiVersion": "v1",
         "kind": "Pod",
         "metadata": {
@@ -304,11 +316,10 @@ fn instance_from_pod(pod: &Pod) -> VllmInstance {
             .is_some_and(|v| v == "true"),
         task: annotation(&annotations, "vllm-task"),
         device: annotation(&annotations, "vllm-device"),
-        started_at: chrono::DateTime::<Utc>::from_timestamp(
+        started_at: Time::from_unix_nanos(
             started_at.as_second(),
             started_at.subsec_nanosecond().cast_unsigned(),
-        )
-        .expect("timestamp out of range for chrono"),
+        ),
         status: pod_status(pod).to_string(),
         log_path: None, // K8s logs are accessed differently
         last_error: None,
@@ -374,7 +385,7 @@ fn launch_args(req: &LaunchRequest, cpu: bool) -> Vec<String> {
         args.push("--enable-auto-tool-choice".to_string());
         args.push("--tool-call-parser".to_string());
         args.push("hermes".to_string());
-        tracing::info!(
+        quench_log::info!(
             "Enabled native tool calling for model {} (--enable-auto-tool-choice --tool-call-parser hermes)",
             req.model
         );
@@ -382,7 +393,7 @@ fn launch_args(req: &LaunchRequest, cpu: bool) -> Vec<String> {
 
     if let Some(ref task) = req.task {
         let task_args = task_launch_args(task);
-        tracing::info!(
+        quench_log::info!(
             "Launching model {} for task {} ({})",
             req.model,
             task,
@@ -395,8 +406,8 @@ fn launch_args(req: &LaunchRequest, cpu: bool) -> Vec<String> {
 
 /// The volume mounts and the volumes behind them, as `(volumeMounts, volumes)`.
 struct Mounts {
-    volume_mounts: Vec<serde_json::Value>,
-    volumes: Vec<serde_json::Value>,
+    volume_mounts: Vec<quench_serde::Value>,
+    volumes: Vec<quench_serde::Value>,
 }
 
 impl Mounts {
@@ -481,7 +492,7 @@ fn launch_mounts(cpu: bool, is_amd: bool) -> Mounts {
 }
 
 /// The container's env: offline HF, plus the CPU or `ROCm` settings.
-fn launch_env(cpu: bool, is_amd: bool) -> Vec<serde_json::Value> {
+fn launch_env(cpu: bool, is_amd: bool) -> Vec<quench_serde::Value> {
     let mut env_vars = vec![hf_offline_env()];
 
     if cpu {
@@ -539,8 +550,8 @@ fn container_manifest(
     cpu: bool,
     is_amd: bool,
     gpu_resource_key: &str,
-    volume_mounts: &[serde_json::Value],
-) -> serde_json::Value {
+    volume_mounts: &[quench_serde::Value],
+) -> quench_serde::Value {
     // A CPU launch must not request a GPU device plugin resource, or the
     // pod stays Pending on hosts with no allocatable GPUs.
     let key = gpu_resource_key.trim();
@@ -599,9 +610,9 @@ fn container_manifest(
 fn pod_manifest(
     req: &LaunchRequest,
     pod_name: &str,
-    container: &serde_json::Value,
-    volumes: &[serde_json::Value],
-) -> serde_json::Value {
+    container: &quench_serde::Value,
+    volumes: &[quench_serde::Value],
+) -> quench_serde::Value {
     json!({
         "apiVersion": "v1",
         "kind": "Pod",
@@ -637,7 +648,7 @@ fn pod_manifest(
 }
 
 /// A `ClusterIP` service for internal access, owned by the pod so it goes when the pod does.
-fn service_manifest(pod_name: &str, pod_uid: &str, port: u16) -> serde_json::Value {
+fn service_manifest(pod_name: &str, pod_uid: &str, port: u16) -> quench_serde::Value {
     json!({
         "apiVersion": "v1",
         "kind": "Service",
@@ -720,7 +731,7 @@ impl VllmEngine for KubernetesVllmEngine {
         } = launch_mounts(cpu, is_amd);
         let container = container_manifest(&req, cpu, is_amd, &gpu_resource_key, &volume_mounts);
 
-        let p: Pod = serde_json::from_value(pod_manifest(&req, &pod_name, &container, &volumes))
+        let p: Pod = to_kube(&pod_manifest(&req, &pod_name, &container, &volumes))
             .map_err(|e| format!("Failed to deserialize pod manifest: {e}"))?;
 
         let pp = PostParams::default();
@@ -730,7 +741,7 @@ impl VllmEngine for KubernetesVllmEngine {
             .map_err(|e| format!("Failed to create pod in namespace {namespace}: {e}"))?;
 
         let pod_uid = pod.metadata.uid.as_deref().unwrap_or_default();
-        let s: Service = serde_json::from_value(service_manifest(&pod_name, pod_uid, req.port))
+        let s: Service = to_kube(&service_manifest(&pod_name, pod_uid, req.port))
             .map_err(|e| format!("Failed to deserialize service manifest: {e}"))?;
 
         let services: Api<Service> = Api::namespaced(self.client.clone(), namespace);
@@ -755,7 +766,7 @@ impl VllmEngine for KubernetesVllmEngine {
             enable_tool_calling: req.enable_tool_calling,
             task: req.task.clone(),
             device: req.device.clone(),
-            started_at: Utc::now(),
+            started_at: Time::now(),
             status: "starting".to_string(),
             log_path: None,
             last_error: None,
@@ -785,7 +796,7 @@ impl VllmEngine for KubernetesVllmEngine {
         let restarts = next_restart_count(old);
         if restarts > MAX_RESTORES {
             // Leave it visible as `completed` rather than looping on a model that never stays up.
-            tracing::error!(
+            quench_log::error!(
                 "vLLM restorer: {namespace}/{name} keeps stopping; giving up after {MAX_RESTORES} restarts"
             );
             return Ok(None);
@@ -807,7 +818,7 @@ impl VllmEngine for KubernetesVllmEngine {
             .await
             .map_err(|e| format!("Failed to recreate pod {name}: {e}"))?;
         let uid = created.metadata.uid.as_deref().unwrap_or_default();
-        let svc: Service = serde_json::from_value(service_manifest(&name, uid, port))
+        let svc: Service = to_kube(&service_manifest(&name, uid, port))
             .map_err(|e| format!("Failed to deserialize service manifest: {e}"))?;
         // The old service may still be terminating; retry briefly rather than leave the pod unreachable.
         for _ in 0..10 {

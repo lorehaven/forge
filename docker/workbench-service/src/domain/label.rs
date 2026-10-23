@@ -1,11 +1,10 @@
 //! Labels, scoped to a project, and the issue↔label join.
 
 use crate::domain::db::{WorkbenchError, pool, schema};
-use chrono::{DateTime, Utc};
+use quench_core::time::Time;
+use quench_core::uuid::Uuid;
 use quench_db::prelude::Db;
-use serde::{Deserialize, Serialize};
-use sqlx::Row;
-use uuid::Uuid;
+use quench_serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Label {
@@ -13,7 +12,7 @@ pub struct Label {
     pub project_id: String,
     pub name: String,
     pub color: String,
-    pub created_at: DateTime<Utc>,
+    pub created_at: Time,
 }
 
 #[derive(Clone, Debug)]
@@ -33,12 +32,8 @@ pub async fn create(db: &Db, new: &NewLabel) -> Result<Label, WorkbenchError> {
          VALUES ($1, $2, $3, $4) RETURNING {COLUMNS}"
     );
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(&id)
-        .bind(&new.project_id)
-        .bind(&new.name)
-        .bind(&new.color)
-        .fetch_one(pool)
+    let row = pool
+        .query_one(&sql, &[&id, &new.project_id, &new.name, &new.color])
         .await?;
 
     from_row(&row)
@@ -50,10 +45,7 @@ pub async fn read(db: &Db, id: &str) -> Result<Option<Label>, WorkbenchError> {
     let schema = schema();
     let sql = format!("SELECT {COLUMNS} FROM {schema}.labels WHERE id = $1");
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(id)
-        .fetch_optional(pool)
-        .await?;
+    let row = pool.query_opt(&sql, &[&id]).await?;
 
     row.as_ref().map(from_row).transpose()
 }
@@ -63,10 +55,7 @@ pub async fn list_by_project(db: &Db, project_id: &str) -> Result<Vec<Label>, Wo
     let schema = schema();
     let sql = format!("SELECT {COLUMNS} FROM {schema}.labels WHERE project_id = $1 ORDER BY name");
 
-    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(project_id)
-        .fetch_all(pool)
-        .await?;
+    let rows = pool.query(&sql, &[&project_id]).await?;
 
     rows.iter().map(from_row).collect()
 }
@@ -76,12 +65,9 @@ pub async fn delete(db: &Db, id: &str) -> Result<bool, WorkbenchError> {
     let schema = schema();
     let sql = format!("DELETE FROM {schema}.labels WHERE id = $1");
 
-    let result = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(id)
-        .execute(pool)
-        .await?;
+    let result = pool.execute(&sql, &[&id]).await?;
 
-    Ok(result.rows_affected() > 0)
+    Ok(result > 0)
 }
 
 /// Attaches `label_id` to `issue_id`; idempotent, not a duplicate-key error.
@@ -93,11 +79,7 @@ pub async fn attach(db: &Db, issue_id: &str, label_id: &str) -> Result<(), Workb
          VALUES ($1, $2) ON CONFLICT DO NOTHING"
     );
 
-    sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(issue_id)
-        .bind(label_id)
-        .execute(pool)
-        .await?;
+    pool.execute(&sql, &[&issue_id, &label_id]).await?;
 
     Ok(())
 }
@@ -107,11 +89,7 @@ pub async fn detach(db: &Db, issue_id: &str, label_id: &str) -> Result<(), Workb
     let schema = schema();
     let sql = format!("DELETE FROM {schema}.issue_labels WHERE issue_id = $1 AND label_id = $2");
 
-    sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(issue_id)
-        .bind(label_id)
-        .execute(pool)
-        .await?;
+    pool.execute(&sql, &[&issue_id, &label_id]).await?;
 
     Ok(())
 }
@@ -127,22 +105,19 @@ pub async fn list_for_issue(db: &Db, issue_id: &str) -> Result<Vec<Label>, Workb
          WHERE il.issue_id = $1 ORDER BY l.name"
     );
 
-    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(issue_id)
-        .fetch_all(pool)
-        .await?;
+    let rows = pool.query(&sql, &[&issue_id]).await?;
 
     rows.iter().map(from_row).collect()
 }
 
 const COLUMNS: &str = "id, project_id, name, color, created_at";
 
-fn from_row(row: &sqlx::postgres::PgRow) -> Result<Label, WorkbenchError> {
+fn from_row(row: &quench_pg::Row) -> Result<Label, WorkbenchError> {
     Ok(Label {
-        id: row.try_get("id")?,
-        project_id: row.try_get("project_id")?,
-        name: row.try_get("name")?,
-        color: row.try_get("color")?,
-        created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
+        id: row.get("id")?,
+        project_id: row.get("project_id")?,
+        name: row.get("name")?,
+        color: row.get("color")?,
+        created_at: row.get::<Time, _>("created_at")?,
     })
 }

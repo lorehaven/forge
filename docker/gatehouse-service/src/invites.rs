@@ -24,8 +24,8 @@ pub const INVITE_TTL_SECS: u64 = 7 * 24 * 60 * 60;
 pub fn unusable_password() -> String {
     format!(
         "{}{}",
-        uuid::Uuid::new_v4().simple(),
-        uuid::Uuid::new_v4().simple()
+        quench_core::uuid::Uuid::new_v4().simple(),
+        quench_core::uuid::Uuid::new_v4().simple()
     )
 }
 

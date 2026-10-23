@@ -1,12 +1,11 @@
 use crate::docker_token::{DockerClaims, DockerTokenConfig};
-use async_trait::async_trait;
-use base64::{Engine as _, engine::general_purpose::STANDARD};
-use chrono::{Duration, Utc};
 use quench_auth::domain::auth::UserDb;
+use quench_core::async_trait;
+use quench_core::time::{Duration, Time};
 use quench_http::prelude::{
     FromRequest, HttpError, Inject, Query, Request, Response, get, http::StatusCode,
 };
-use serde::{Deserialize, Serialize};
+use quench_serde::{Deserialize, Serialize};
 
 /// The raw `Authorization` header, read via a local extractor (quench-http has none built in).
 #[derive(Debug)]
@@ -53,7 +52,7 @@ pub async fn handle(
         return Response::new(StatusCode::BAD_REQUEST);
     }
 
-    let now = Utc::now();
+    let now = Time::now();
     let exp = now + Duration::minutes(10);
 
     // Single-audience: this endpoint only, no realm-wide `aud` list.
@@ -93,7 +92,7 @@ async fn validate_basic(
 }
 
 pub async fn validate_basic_encoded(encoded: &str, user_db: &UserDb) -> Option<String> {
-    let decoded = STANDARD.decode(encoded).ok()?;
+    let decoded = quench_core::base64::STANDARD.decode(encoded).ok()?;
     let creds = String::from_utf8(decoded).ok()?;
     let (username, password) = creds.split_once(':')?;
 

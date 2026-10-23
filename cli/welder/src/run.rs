@@ -33,16 +33,20 @@ pub fn handle_version_flag() -> bool {
     handle_version_flag_from(std::env::args().skip(1))
 }
 
-pub fn get_workflow_path_from(mut args: impl Iterator<Item = String>) -> anyhow::Result<String> {
-    args.next()
-        .map_or_else(|| Err(anyhow::anyhow!("Usage: welder <workflow.toml>")), Ok)
+pub fn get_workflow_path_from(
+    mut args: impl Iterator<Item = String>,
+) -> quench_core::Result<String> {
+    args.next().map_or_else(
+        || Err(quench_core::err!("Usage: welder <workflow.toml>")),
+        Ok,
+    )
 }
 
-pub fn get_workflow_path() -> anyhow::Result<String> {
+pub fn get_workflow_path() -> quench_core::Result<String> {
     get_workflow_path_from(std::env::args().skip(1))
 }
 
-pub async fn init_runtime() -> anyhow::Result<()> {
+pub async fn init_runtime() -> quench_core::Result<()> {
     std::sync::LazyLock::force(&config::CONFIG);
     backend::init()?;
 
@@ -50,7 +54,7 @@ pub async fn init_runtime() -> anyhow::Result<()> {
     let mut attempts = 0u64;
     while !backend::get().is_running() {
         if attempts >= max_attempts {
-            return Err(anyhow::anyhow!(
+            return Err(quench_core::err!(
                 "backend '{}' did not become reachable within {BACKEND_READY_TIMEOUT_SECS}s; check [backend] in .welder/config.toml",
                 config::CONFIG.backend.kind
             ));
@@ -65,9 +69,9 @@ pub async fn init_runtime() -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn load_workflow(path: &str) -> anyhow::Result<Workflow> {
+pub fn load_workflow(path: &str) -> quench_core::Result<Workflow> {
     let toml = fs::read_to_string(path)?;
-    let workflow: Workflow = toml::from_str(&toml)?;
+    let workflow: Workflow = quench_serde::toml::from_str(&toml)?;
     Ok(workflow)
 }
 
@@ -80,19 +84,19 @@ use crate::backend;
 /// instances off the same workflow schema.
 pub fn resolve_model_configs(
     workflow: &Workflow,
-) -> anyhow::Result<Vec<(&AgentConfig, &config::workflow::AgentVllmConfig)>> {
+) -> quench_core::Result<Vec<(&AgentConfig, &config::workflow::AgentVllmConfig)>> {
     let mut resolved = Vec::new();
     for agent_cfg in &workflow.agent {
         let vllm_cfg = if let Some(ref model_ref) = agent_cfg.vllm_model {
             let model_defs = workflow.models.as_ref().ok_or_else(|| {
-                anyhow::anyhow!(
+                quench_core::err!(
                     "Agent '{}' references model '{}' but no [models] table is defined",
                     agent_cfg.name,
                     model_ref
                 )
             })?;
             model_defs.get(model_ref).ok_or_else(|| {
-                anyhow::anyhow!(
+                quench_core::err!(
                     "Agent '{}' references model '{}' which is not defined in [models]",
                     agent_cfg.name,
                     model_ref
@@ -112,12 +116,12 @@ pub fn resolve_model_configs(
 
 pub fn extract_vllm_instances(
     workflow: &Workflow,
-) -> anyhow::Result<Vec<model::ModelInstanceConfig>> {
+) -> quench_core::Result<Vec<model::ModelInstanceConfig>> {
     let mut instances = std::collections::HashMap::new();
 
     for (agent_cfg, vllm_cfg) in resolve_model_configs(workflow)? {
         let url = vllm_cfg.url.clone().ok_or_else(|| {
-            anyhow::anyhow!(
+            quench_core::err!(
                 "Agent '{}' vllm config is missing 'url' (required for the local vllm backend)",
                 agent_cfg.name
             )
@@ -143,7 +147,7 @@ pub fn extract_vllm_instances(
 
 pub fn extract_switchboard_instances(
     workflow: &Workflow,
-) -> anyhow::Result<Vec<SwitchboardModelConfig>> {
+) -> quench_core::Result<Vec<SwitchboardModelConfig>> {
     let mut instances = std::collections::HashMap::new();
 
     for (agent_cfg, vllm_cfg) in resolve_model_configs(workflow)? {
@@ -169,9 +173,9 @@ pub fn extract_switchboard_instances(
 pub fn build_agents<F>(
     workflow: &Workflow,
     mut make_model: F,
-) -> anyhow::Result<HashMap<String, AgentNode>>
+) -> quench_core::Result<HashMap<String, AgentNode>>
 where
-    F: FnMut(&AgentConfig) -> anyhow::Result<Arc<dyn Llm>>,
+    F: FnMut(&AgentConfig) -> quench_core::Result<Arc<dyn Llm>>,
 {
     let mut agents = HashMap::new();
 
@@ -198,12 +202,14 @@ where
 
 /// Local backend: welder spawns and owns a `vllm serve` process per model,
 /// on the fixed `host:port` from each `[models.NAME]` entry.
-pub async fn build_vllm_agents(workflow: &Workflow) -> anyhow::Result<HashMap<String, AgentNode>> {
+pub async fn build_vllm_agents(
+    workflow: &Workflow,
+) -> quench_core::Result<HashMap<String, AgentNode>> {
     let vllm_instances = extract_vllm_instances(workflow)?;
     if vllm_instances.is_empty() {
         println!("[welder] ⚠ No vLLM configuration found in workflow agents");
         println!("[welder] Agents must have [agent.vllm] configuration");
-        return Err(anyhow::anyhow!(
+        return Err(quench_core::err!(
             "vLLM not configured for any agents in workflow"
         ));
     }
@@ -230,7 +236,7 @@ pub async fn build_vllm_agents(workflow: &Workflow) -> anyhow::Result<HashMap<St
 
     build_agents(workflow, |cfg| {
         let model_url = model_manager.get_url(&cfg.model).ok_or_else(|| {
-            anyhow::anyhow!(
+            quench_core::err!(
                 "Agent '{}' references model '{}' but no vLLM config found for it",
                 cfg.name,
                 cfg.model
@@ -244,7 +250,7 @@ pub async fn build_vllm_agents(workflow: &Workflow) -> anyhow::Result<HashMap<St
 }
 
 /// Ollama backend: no instance management at all, just a shared local daemon.
-pub fn build_ollama_agents(workflow: &Workflow) -> anyhow::Result<HashMap<String, AgentNode>> {
+pub fn build_ollama_agents(workflow: &Workflow) -> quench_core::Result<HashMap<String, AgentNode>> {
     let ollama_url = config::CONFIG
         .backend
         .ollama_url
@@ -267,12 +273,12 @@ pub fn build_ollama_agents(workflow: &Workflow) -> anyhow::Result<HashMap<String
 /// same OpenAI-compatible chat endpoint the local vllm backend uses.
 pub async fn build_switchboard_agents(
     workflow: &Workflow,
-) -> anyhow::Result<HashMap<String, AgentNode>> {
+) -> quench_core::Result<HashMap<String, AgentNode>> {
     let switchboard_models = extract_switchboard_instances(workflow)?;
     if switchboard_models.is_empty() {
         println!("[welder] ⚠ No model configuration found in workflow agents");
         println!("[welder] Agents must reference a [models.NAME] entry");
-        return Err(anyhow::anyhow!(
+        return Err(quench_core::err!(
             "switchboard backend requires at least one model reference in the workflow"
         ));
     }
@@ -286,7 +292,7 @@ pub async fn build_switchboard_agents(
         .backend
         .switchboard_url
         .clone()
-        .ok_or_else(|| anyhow::anyhow!("config error: backend.switchboard_url must be set"))?;
+        .ok_or_else(|| quench_core::err!("config error: backend.switchboard_url must be set"))?;
     let client =
         SwitchboardClient::new(&base_url, config::CONFIG.backend.switchboard_tls_verify).await?;
 
@@ -305,7 +311,7 @@ pub async fn build_switchboard_agents(
 
     build_agents(workflow, |cfg| {
         let model_url = switchboard_manager.get_url(&cfg.model).ok_or_else(|| {
-            anyhow::anyhow!(
+            quench_core::err!(
                 "Agent '{}' references model '{}' but switchboard has no instance for it",
                 cfg.name,
                 cfg.model
@@ -326,7 +332,7 @@ pub async fn run_repl(
     workflow: &Workflow,
     workflow_path: &str,
     agents: &HashMap<String, AgentNode>,
-) -> anyhow::Result<()> {
+) -> quench_core::Result<()> {
     ui::print_workflow_header(workflow_path, &workflow.root.name, agents);
 
     loop {
@@ -348,7 +354,7 @@ pub async fn run_repl(
     Ok(())
 }
 
-pub async fn run() -> anyhow::Result<()> {
+pub async fn run() -> quench_core::Result<()> {
     if handle_version_flag() {
         return Ok(());
     }
@@ -365,7 +371,7 @@ pub async fn run() -> anyhow::Result<()> {
         "vllm" => build_vllm_agents(&workflow).await?,
         "ollama" => build_ollama_agents(&workflow)?,
         "switchboard" => build_switchboard_agents(&workflow).await?,
-        other => return Err(anyhow::anyhow!("Unsupported backend: {other}")),
+        other => return Err(quench_core::err!("Unsupported backend: {other}")),
     };
     println!("[welder] ✓ {} agent(s) ready", agents.len());
     for agent_name in agents.keys() {

@@ -18,8 +18,8 @@ impl PublicBase {
     /// base path, e.g. `https://host/gatehouse`), else the dev default.
     #[must_use]
     pub fn from_env() -> Self {
-        let explicit = envmnt::get_or("PUBLIC_BASE_URL", "");
-        let gatehouse = envmnt::get_or("GATEHOUSE_URL", "");
+        let explicit = quench_core::env::get_or("PUBLIC_BASE_URL", "");
+        let gatehouse = quench_core::env::get_or("GATEHOUSE_URL", "");
         Self::resolve(&explicit, &gatehouse)
     }
 

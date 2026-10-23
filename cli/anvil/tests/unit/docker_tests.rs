@@ -19,7 +19,7 @@ use support::{EnvGuard, stable_cwd_lock};
 // the very same lock those tests hold.
 
 fn config_from_toml(toml_str: &str) -> Config {
-    toml::from_str(toml_str).expect("valid config toml")
+    quench_serde::toml::from_str(toml_str).expect("valid config toml")
 }
 
 fn sample_config() -> Config {
@@ -349,7 +349,7 @@ fn process_all_packages_collects_every_failure_and_still_runs_the_rest() {
         |package| {
             attempted.push(package.to_string());
             if package == "service-a" {
-                anyhow::bail!("boom");
+                quench_core::bail!("boom");
             }
             Ok(())
         },

@@ -23,18 +23,14 @@ name = "foundry-service"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = { workspace = true }
 clap = { workspace = true }
 quench-cli = { workspace = true }
+quench-core = { workspace = true }
 quench-db = { workspace = true }
 quench-log = { workspace = true }
-semver = { workspace = true }
-serde = { workspace = true }
+quench-serde = { workspace = true }
 tokio = { workspace = true }
-toml = { workspace = true }
 
 [dev-dependencies]
 assert_cmd = { workspace = true }
-envmnt = { workspace = true }
 predicates = { workspace = true }
-tempfile = { workspace = true }

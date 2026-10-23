@@ -1,5 +1,5 @@
 use quench_config::ConfigLoader;
-use serde::{Deserialize, Serialize};
+use quench_serde::{Deserialize, Serialize};
 use std::fs;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -35,6 +35,7 @@ pub struct DefaultModel {
 }
 
 impl DefaultModel {
+    #[must_use]
     pub fn parse_list(input: &str) -> Vec<Self> {
         let trimmed = input.trim();
         if trimmed.is_empty() {
@@ -42,12 +43,12 @@ impl DefaultModel {
         }
 
         // Try parsing as a JSON array of DefaultModel objects
-        if let Ok(list) = serde_json::from_str::<Vec<Self>>(trimmed) {
+        if let Ok(list) = quench_serde::json::from_str::<Vec<Self>>(trimmed) {
             return list;
         }
 
         // Try parsing as a single JSON DefaultModel object
-        if let Ok(single) = serde_json::from_str::<Self>(trimmed) {
+        if let Ok(single) = quench_serde::json::from_str::<Self>(trimmed) {
             return vec![single];
         }
 
@@ -67,7 +68,7 @@ impl DefaultModel {
             }];
         }
 
-        tracing::error!("Failed to parse SAGE_DEFAULT_MODELS as JSON: {}", trimmed);
+        quench_log::error!("Failed to parse SAGE_DEFAULT_MODELS as JSON: {}", trimmed);
         Vec::new()
     }
 }
@@ -86,6 +87,7 @@ pub struct SageConfig {
 }
 
 impl SageConfig {
+    #[must_use]
     pub fn load() -> Self {
         let loader = ConfigLoader::new("SAGE");
         let prompt_path = loader.env_string("SYSTEM_PROMPT_PATH", "config/system_prompt.txt");
@@ -94,14 +96,14 @@ impl SageConfig {
         let profile_name = loader.env_string("CAPABILITY_PROFILE", "web_assistant");
         let capability_profile = crate::tools::capabilities::get_profile(&profile_name)
             .unwrap_or_else(|| {
-                tracing::warn!(
+                quench_log::warn!(
                     "Unknown capability profile '{}', falling back to 'web_assistant'",
                     profile_name
                 );
                 crate::tools::capabilities::get_profile("web_assistant").unwrap()
             });
 
-        tracing::info!(
+        quench_log::info!(
             "Loaded capability profile '{}': {}",
             capability_profile.name,
             capability_profile.description
@@ -110,7 +112,7 @@ impl SageConfig {
         let mut system_prompt = match fs::read_to_string(&prompt_path) {
             Ok(content) => content.trim().to_string(),
             Err(err) => {
-                tracing::warn!(
+                quench_log::warn!(
                     "Failed to read system prompt from {}: {}. Using default.",
                     prompt_path,
                     err
@@ -125,7 +127,7 @@ impl SageConfig {
             crate::tools::get_tool_definitions_filtered(&capability_profile).len();
 
         if tools_def.is_empty() {
-            tracing::warn!(
+            quench_log::warn!(
                 "[CONFIG] No tool definitions loaded! Profile has {} enabled tools but JSON serialization returned empty",
                 capability_profile.enabled_tool_names().len()
             );
@@ -139,12 +141,12 @@ impl SageConfig {
             system_prompt.push_str("<toolcall>{\"type\": \"search\", \"name\": \"calculator\", \"arguments\": {\"expression\": \"2 + 2\"}}</toolcall>\n");
             system_prompt
                 .push_str("\nAlways use the exact tool names from the definitions above.\n");
-            tracing::info!(
+            quench_log::info!(
                 "[CONFIG] Loaded {} tool definitions into system prompt ({} enabled tools)",
                 tool_defs_count,
                 capability_profile.enabled_tool_names().len()
             );
-            tracing::debug!("[CONFIG] Tool definitions:\n{}", tools_def);
+            quench_log::debug!("[CONFIG] Tool definitions:\n{}", tools_def);
         }
 
         // Model definitions come from SAGE_DEFAULT_MODELS (see docker/sage-service/.env).
@@ -192,7 +194,7 @@ impl SageConfig {
         format!(
             "{}\n\nCurrent date: {} (UTC).",
             self.system_prompt,
-            chrono::Utc::now().format("%Y-%m-%d")
+            quench_core::time::Time::now().format("%Y-%m-%d")
         )
     }
 

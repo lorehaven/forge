@@ -11,8 +11,8 @@ use crate::routers::ui::common::{
 use forge_ui::empty_state;
 use quench_auth::domain::jwt::JwtConfig;
 use quench_http::prelude::{Inject, Query, Response, get, http::StatusCode};
+use quench_serde::Deserialize;
 use quench_web::prelude::*;
-use serde::Deserialize;
 
 #[derive(Deserialize, Default)]
 pub(super) struct Filter {

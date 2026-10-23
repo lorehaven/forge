@@ -4,10 +4,10 @@
 //! what's worth pinning down here is what decides whether a row is even
 //! placeable, and what a row actually renders.
 
-use chrono::Utc;
 use conveyor_service::credentials::store::CredentialRef;
 use conveyor_service::domain::{Project, Provider, Repo};
 use conveyor_service::routers::ui::pages::credentials::{credential_row, credential_scope};
+use quench_core::time::Time;
 use std::collections::HashMap;
 
 fn project(id: &str, name: &str, parent_id: Option<&str>) -> Project {
@@ -15,8 +15,8 @@ fn project(id: &str, name: &str, parent_id: Option<&str>) -> Project {
         id: id.to_string(),
         name: name.to_string(),
         parent_id: parent_id.map(str::to_string),
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
+        created_at: Time::now(),
+        updated_at: Time::now(),
     }
 }
 
@@ -31,8 +31,8 @@ fn repo(id: &str, project_id: &str) -> Repo {
         registered_by: "admin".to_string(),
         project_id: project_id.to_string(),
         enabled: true,
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
+        created_at: Time::now(),
+        updated_at: Time::now(),
     }
 }
 
@@ -46,8 +46,8 @@ fn credential(project_id: Option<&str>, repo_id: Option<&str>) -> CredentialRef 
         username: "x-access-token".to_string(),
         preview: "\u{2022}\u{2022}\u{2022}\u{2022}\u{2026}9f2a".to_string(),
         created_by: "admin".to_string(),
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
+        created_at: Time::now(),
+        updated_at: Time::now(),
     }
 }
 

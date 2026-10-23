@@ -1,7 +1,7 @@
 use crate::routers::vllm::engine::VllmEngine;
 use crate::routers::vllm::{LaunchRequest, VllmInstance};
-use async_trait::async_trait;
-use chrono::Utc;
+use quench_core::async_trait;
+use quench_core::time::Time;
 use std::collections::HashMap;
 use std::sync::{LazyLock, RwLock};
 
@@ -18,7 +18,7 @@ impl VllmEngine for MockVllmEngine {
     }
 
     async fn launch_instance(&self, req: LaunchRequest) -> Result<VllmInstance, String> {
-        let id = format!("mock-{}", Utc::now().timestamp_millis());
+        let id = format!("mock-{}", Time::now().timestamp_millis());
         let instance = VllmInstance {
             id: id.clone(),
             namespace: req.namespace.unwrap_or_else(|| "default".to_string()),
@@ -34,7 +34,7 @@ impl VllmEngine for MockVllmEngine {
             enable_tool_calling: req.enable_tool_calling,
             task: req.task,
             device: req.device,
-            started_at: Utc::now(),
+            started_at: Time::now(),
             status: "running".to_string(),
             log_path: None,
             last_error: None,

@@ -5,14 +5,14 @@ use quench_db::prelude::{Crud, Db};
 use std::collections::HashMap;
 
 fn db_schema() -> String {
-    envmnt::get_or("DB_SCHEMA", "sage")
+    quench_core::env::get_or("DB_SCHEMA", "sage")
 }
 
 /// Master switch for image handling (`SAGE_IMAGES_ENABLED`, default true). When false, no
 /// image uploads are accepted and none are ever sent to a model, regardless of history.
 #[must_use]
 pub fn images_enabled() -> bool {
-    envmnt::get_or("SAGE_IMAGES_ENABLED", "true")
+    quench_core::env::get_or("SAGE_IMAGES_ENABLED", "true")
         .parse::<bool>()
         .unwrap_or(true)
 }
@@ -27,22 +27,29 @@ pub fn max_images_per_request() -> usize {
     if !images_enabled() {
         return 0;
     }
-    usize::try_from(envmnt::get_u64("SAGE_MAX_IMAGES_PER_REQUEST", 2)).unwrap_or(2)
+    usize::try_from(quench_core::env::get_parsed::<u64>(
+        "SAGE_MAX_IMAGES_PER_REQUEST",
+        2,
+    ))
+    .unwrap_or(2)
 }
 
 /// Rough prompt-budget cost of one image; deliberately conservative since actual vision token counts depend on model and resolution.
 #[must_use]
 pub fn image_token_estimate() -> usize {
-    usize::try_from(envmnt::get_u64("SAGE_IMAGE_TOKEN_ESTIMATE", 1024)).unwrap_or(1024)
+    usize::try_from(quench_core::env::get_parsed::<u64>(
+        "SAGE_IMAGE_TOKEN_ESTIMATE",
+        1024,
+    ))
+    .unwrap_or(1024)
 }
 
 #[must_use]
 pub fn to_data_uri(mime: &str, data: &[u8]) -> String {
-    use base64::Engine;
     format!(
         "data:{};base64,{}",
         mime,
-        base64::engine::general_purpose::STANDARD.encode(data)
+        quench_core::base64::STANDARD.encode(data)
     )
 }
 
@@ -51,13 +58,15 @@ async fn load_blob(db: &Db, file_id: &str) -> Option<Vec<u8>> {
         Db::Postgres(pg_db) => {
             let schema = db_schema();
             let query = format!("SELECT data FROM {schema}.file_blobs WHERE file_id = $1");
-            sqlx::query_as::<_, (Vec<u8>,)>(sqlx::AssertSqlSafe(query.as_str()))
-                .bind(file_id)
-                .fetch_optional(pg_db.pool())
-                .await
-                .ok()
-                .flatten()
-                .map(|(data,)| data)
+            crate::domain::rows::fetch_optional_tuple::<(Vec<u8>,)>(
+                pg_db.pool(),
+                &query,
+                &[&file_id],
+            )
+            .await
+            .ok()
+            .flatten()
+            .map(|(data,)| data)
         }
         Db::InMemory(_) => None,
     }
@@ -99,10 +108,12 @@ pub async fn load_images_for_messages(
          WHERE f.message_id = ANY($1) AND f.mime_type LIKE 'image/%' \
          ORDER BY f.created_at"
     );
-    match sqlx::query_as::<_, (String, String, Vec<u8>)>(sqlx::AssertSqlSafe(query.as_str()))
-        .bind(message_ids)
-        .fetch_all(pg_db.pool())
-        .await
+    match crate::domain::rows::fetch_all_tuples::<(String, String, Vec<u8>)>(
+        pg_db.pool(),
+        &query,
+        &[&quench_pg::PgArray(message_ids.to_vec()) as &dyn quench_pg::ToSql],
+    )
+    .await
     {
         Ok(rows) => {
             for (message_id, mime, data) in rows {
@@ -112,7 +123,7 @@ pub async fn load_images_for_messages(
             }
         }
         Err(e) => {
-            tracing::error!("Failed to load message image attachments: {}", e);
+            quench_log::error!("Failed to load message image attachments: {}", e);
         }
     }
     map

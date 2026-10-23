@@ -44,7 +44,7 @@ fn decode_rejects_an_expired_token() {
     let error = config.decode(&token).unwrap_err();
     assert_eq!(
         error.kind(),
-        &jsonwebtoken::errors::ErrorKind::ExpiredSignature
+        &quench_crypto::jwt::ErrorKind::ExpiredSignature
     );
 }
 
@@ -71,7 +71,7 @@ fn init_builds_a_working_config_from_the_docker_token_secret_env_var() {
     let _guard = support::secret_env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::set("DOCKER_TOKEN_SECRET", "unit-test-secret-value");
+    quench_core::env::set("DOCKER_TOKEN_SECRET", "unit-test-secret-value");
 
     let config = DockerTokenConfig::init("warehouse".to_string(), "r".to_string(), false);
     assert!(!config.auth_enabled);
@@ -81,5 +81,5 @@ fn init_builds_a_working_config_from_the_docker_token_secret_env_var() {
     let decoded = config.decode(&token).expect("decode");
     assert_eq!(decoded.sub, "alice");
 
-    envmnt::remove("DOCKER_TOKEN_SECRET");
+    quench_core::env::remove("DOCKER_TOKEN_SECRET");
 }

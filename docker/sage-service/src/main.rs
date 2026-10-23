@@ -9,10 +9,10 @@ use std::sync::Arc;
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     startup::init_tracing();
-    envmnt::set("DB_SCHEMA", envmnt::get_or("DB_SCHEMA", "sage"));
+    quench_core::env::set("DB_SCHEMA", quench_core::env::get_or("DB_SCHEMA", "sage"));
 
-    let base_path = normalize_base_path(&envmnt::get_or("BASE_PATH", "/"));
-    tracing::info!("Server initialized with BASE_PATH: {base_path}");
+    let base_path = normalize_base_path(&quench_core::env::get_or("BASE_PATH", "/"));
+    quench_log::info!("Server initialized with BASE_PATH: {base_path}");
 
     let switchboard_health_url = startup::health_check_url();
     let (state, db_wrapper) = startup::AppState::init().await;
@@ -47,8 +47,8 @@ async fn main() -> std::io::Result<()> {
         );
 
         if let Err(e) = startup::validate_startup(&init_switchboard, &init_config).await {
-            tracing::error!("Startup validation failed: {}", e);
-            tracing::error!(
+            quench_log::error!("Startup validation failed: {}", e);
+            quench_log::error!(
                 "The service may not function correctly. Please check your configuration."
             );
         }

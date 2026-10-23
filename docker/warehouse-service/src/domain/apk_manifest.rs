@@ -30,7 +30,7 @@ pub struct ApkMetadata {
     pub permissions: Vec<String>,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, quench_core::Error)]
 pub enum ApkManifestError {
     #[error("not a valid zip archive")]
     NotAZip,

@@ -1,8 +1,7 @@
 use crate::support;
 
-use http::{Method, StatusCode};
-use http_body_util::BodyExt;
 use quench_auth::domain::jwt::JwtConfig;
+use quench_http::http::{Method, StatusCode};
 use support::WithDockerStorageRoot as WithStorageRoot;
 use warehouse_service::routers::ui::pages::docker::catalog::{
     DeleteImageModalQuery, empty_delete_image_modal_html, render_catalog_page,
@@ -30,8 +29,13 @@ fn write_tag(
 const DIGEST: &str = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
 async fn body_html(resp: quench_http::response::Response) -> String {
-    let collected = resp.into_hyper().into_body().collect().await.unwrap();
-    String::from_utf8(collected.to_bytes().to_vec()).unwrap()
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .unwrap();
+    String::from_utf8(collected.to_vec()).unwrap()
 }
 
 // -----------------------------------------------------------------

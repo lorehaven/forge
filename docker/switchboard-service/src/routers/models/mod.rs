@@ -1,7 +1,7 @@
 use quench_auth::domain::jwt::JwtConfig;
 use quench_auth::http::middleware::auth::Auth;
 use quench_http::prelude::{Endpoint, OnPathPrefix, wrap};
-use serde::Deserialize;
+use quench_serde::Deserialize;
 use std::sync::Arc;
 
 pub mod delete;

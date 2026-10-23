@@ -1,7 +1,7 @@
 //! `rivet.toml`.
 
 use crate::error::PackageError;
-use serde::{Deserialize, Serialize};
+use quench_serde::{Deserialize, Serialize};
 
 /// What a package says about itself.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -12,8 +12,8 @@ pub struct Manifest {
     #[serde(default, skip_serializing_if = "Requires::is_empty")]
     pub requires: Requires,
     /// Free-form, surfaced in UIs and never interpreted here.
-    #[serde(default, skip_serializing_if = "toml::Table::is_empty")]
-    pub meta: toml::Table,
+    #[serde(default, skip_serializing_if = "quench_serde::Map::is_empty")]
+    pub meta: quench_serde::Map,
     /// The things in this package that can be stopped and started on their own: `[[deployment]]`.
     /// A package that declares none is one deployment, named after the package, covering all of it.
     #[serde(default, rename = "deployment", skip_serializing_if = "Vec::is_empty")]
@@ -133,15 +133,15 @@ impl Manifest {
                 namespace: None,
             },
             requires: Requires::default(),
-            meta: toml::Table::new(),
+            meta: quench_serde::Map::new(),
             deployments: Vec::new(),
         }
     }
 
     /// Parses and validates a `rivet.toml`.
     pub fn parse(source: &str) -> Result<Self, PackageError> {
-        let manifest: Self =
-            toml::from_str(source).map_err(|e| PackageError::Manifest(e.to_string()))?;
+        let manifest: Self = quench_serde::toml::from_str(source)
+            .map_err(|e| PackageError::Manifest(e.to_string()))?;
         manifest.validate()?;
         Ok(manifest)
     }
@@ -149,12 +149,12 @@ impl Manifest {
     /// Renders back to TOML (after validating, so nothing invalid is written).
     pub fn to_toml(&self) -> Result<String, PackageError> {
         self.validate()?;
-        toml::to_string(self).map_err(|e| PackageError::Manifest(e.to_string()))
+        quench_serde::toml::to_string(self).map_err(|e| PackageError::Manifest(e.to_string()))
     }
 
     /// The parsed version.
-    pub fn version(&self) -> Result<semver::Version, PackageError> {
-        semver::Version::parse(&self.package.version).map_err(|e| {
+    pub fn version(&self) -> Result<quench_core::version::Version, PackageError> {
+        quench_core::version::Version::parse(&self.package.version).map_err(|e| {
             PackageError::Manifest(format!(
                 "version `{}` is not semver: {e}",
                 self.package.version
@@ -187,7 +187,7 @@ impl Manifest {
             ));
         }
         if let Some(requirement) = &self.requires.riveter {
-            semver::VersionReq::parse(requirement).map_err(|e| {
+            quench_core::version::VersionReq::parse(requirement).map_err(|e| {
                 PackageError::Manifest(format!("requires.riveter `{requirement}`: {e}"))
             })?;
         }
@@ -257,7 +257,7 @@ impl Manifest {
 /// Splits `name` or `name <requirement>` into its parts.
 pub fn parse_package_requirement(
     entry: &str,
-) -> Result<(String, semver::VersionReq), PackageError> {
+) -> Result<(String, quench_core::version::VersionReq), PackageError> {
     let entry = entry.trim();
     let (name, requirement) = entry
         .split_once(char::is_whitespace)
@@ -269,9 +269,9 @@ pub fn parse_package_requirement(
         )));
     }
     let requirement = if requirement.is_empty() {
-        semver::VersionReq::STAR
+        quench_core::version::VersionReq::STAR
     } else {
-        semver::VersionReq::parse(requirement).map_err(|e| {
+        quench_core::version::VersionReq::parse(requirement).map_err(|e| {
             PackageError::Manifest(format!("requires.packages entry `{entry}`: {e}"))
         })?
     };

@@ -20,7 +20,7 @@ struct EnvGuard(#[allow(dead_code)] std::sync::MutexGuard<'static, ()>);
 impl Drop for EnvGuard {
     fn drop(&mut self) {
         for key in KEYS {
-            envmnt::remove(key);
+            quench_core::env::remove(key);
         }
     }
 }
@@ -30,7 +30,7 @@ fn clean_env() -> EnvGuard {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     for key in KEYS {
-        envmnt::remove(key);
+        quench_core::env::remove(key);
     }
     EnvGuard(guard)
 }
@@ -49,32 +49,32 @@ async fn seed_users_does_nothing_when_bootstrap_is_off() {
 #[tokio::test]
 async fn seed_users_creates_the_admin_account_when_enabled() {
     let _guard = clean_env();
-    envmnt::set("AUTH_BOOTSTRAP", "true");
-    envmnt::set("SERVICE_USERNAME", "admin");
-    envmnt::set("SERVICE_PASSWORD", "admin-password");
+    quench_core::env::set("AUTH_BOOTSTRAP", "true");
+    quench_core::env::set("SERVICE_USERNAME", "admin");
+    quench_core::env::set("SERVICE_PASSWORD", "admin-password");
 
     let db = Db::connect("").await.expect("in-memory db");
     seed_users(&db).await;
 
     let repo = db.repository::<User>();
     let admin = repo.read("admin").await.expect("read").expect("present");
-    let roles: Vec<Role> = serde_json::from_value(admin.roles).expect("roles");
+    let roles: Vec<Role> = quench_serde::from_value(&admin.roles).expect("roles");
     assert!(roles.contains(&Role::Admin));
 }
 
 #[tokio::test]
 async fn seed_users_does_not_overwrite_an_existing_admin() {
     let _guard = clean_env();
-    envmnt::set("AUTH_BOOTSTRAP", "true");
-    envmnt::set("SERVICE_USERNAME", "admin");
-    envmnt::set("SERVICE_PASSWORD", "first-password");
+    quench_core::env::set("AUTH_BOOTSTRAP", "true");
+    quench_core::env::set("SERVICE_USERNAME", "admin");
+    quench_core::env::set("SERVICE_PASSWORD", "first-password");
 
     let db = Db::connect("").await.expect("in-memory db");
     seed_users(&db).await;
 
     // A second boot with a different SERVICE_PASSWORD must not touch the
     // already-seeded account.
-    envmnt::set("SERVICE_PASSWORD", "second-password");
+    quench_core::env::set("SERVICE_PASSWORD", "second-password");
     seed_users(&db).await;
 
     let repo = db.repository::<User>();
@@ -86,9 +86,9 @@ async fn seed_users_does_not_overwrite_an_existing_admin() {
 #[tokio::test]
 async fn seed_users_skips_the_tech_account_when_unset() {
     let _guard = clean_env();
-    envmnt::set("AUTH_BOOTSTRAP", "true");
-    envmnt::set("SERVICE_USERNAME", "admin");
-    envmnt::set("SERVICE_PASSWORD", "admin-password");
+    quench_core::env::set("AUTH_BOOTSTRAP", "true");
+    quench_core::env::set("SERVICE_USERNAME", "admin");
+    quench_core::env::set("SERVICE_PASSWORD", "admin-password");
 
     let db = Db::connect("").await.expect("in-memory db");
     seed_users(&db).await;
@@ -100,17 +100,17 @@ async fn seed_users_skips_the_tech_account_when_unset() {
 #[tokio::test]
 async fn seed_users_creates_the_tech_account_when_configured() {
     let _guard = clean_env();
-    envmnt::set("AUTH_BOOTSTRAP", "true");
-    envmnt::set("SERVICE_USERNAME", "admin");
-    envmnt::set("SERVICE_PASSWORD", "admin-password");
-    envmnt::set("SERVICE_TECH_USERNAME", "tech");
-    envmnt::set("SERVICE_TECH_PASSWORD", "tech-password");
+    quench_core::env::set("AUTH_BOOTSTRAP", "true");
+    quench_core::env::set("SERVICE_USERNAME", "admin");
+    quench_core::env::set("SERVICE_PASSWORD", "admin-password");
+    quench_core::env::set("SERVICE_TECH_USERNAME", "tech");
+    quench_core::env::set("SERVICE_TECH_PASSWORD", "tech-password");
 
     let db = Db::connect("").await.expect("in-memory db");
     seed_users(&db).await;
 
     let repo = db.repository::<User>();
     let tech = repo.read("tech").await.expect("read").expect("present");
-    let roles: Vec<Role> = serde_json::from_value(tech.roles).expect("roles");
+    let roles: Vec<Role> = quench_serde::from_value(&tech.roles).expect("roles");
     assert!(roles.contains(&Role::Service));
 }

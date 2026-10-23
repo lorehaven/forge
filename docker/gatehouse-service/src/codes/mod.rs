@@ -1,11 +1,11 @@
 //! Authorization codes: the short-lived, single-use handoff between
 //! `GET /authorize` and `POST /token` in the PKCE flow. See `api/oauth.rs`.
 
-use chrono::{DateTime, Utc};
+use quench_core::time::Time;
 use quench_db::prelude::Model;
-use serde::{Deserialize, Serialize};
+use quench_serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthorizationCodeRow {
     pub code_hash: String,
     pub client_id: String,
@@ -13,9 +13,9 @@ pub struct AuthorizationCodeRow {
     pub redirect_uri: String,
     pub scope: String,
     pub pkce_challenge: String,
-    pub created_at: DateTime<Utc>,
-    pub expires_at: DateTime<Utc>,
-    pub consumed_at: Option<DateTime<Utc>>,
+    pub created_at: Time,
+    pub expires_at: Time,
+    pub consumed_at: Option<Time>,
 }
 
 impl Model for AuthorizationCodeRow {
@@ -47,7 +47,7 @@ impl Model for AuthorizationCodeRow {
 
 impl AuthorizationCodeRow {
     #[must_use]
-    pub fn is_usable(&self, now: DateTime<Utc>) -> bool {
+    pub fn is_usable(&self, now: Time) -> bool {
         self.consumed_at.is_none() && self.expires_at > now
     }
 }

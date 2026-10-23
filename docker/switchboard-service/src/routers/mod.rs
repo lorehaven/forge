@@ -15,7 +15,7 @@ static FEATURE_FLAGS: std::sync::LazyLock<FeatureFlags> =
     });
 
 fn feature_enabled(name: &str, default: bool) -> bool {
-    match envmnt::get_or(name, if default { "true" } else { "false" })
+    match quench_core::env::get_or(name, if default { "true" } else { "false" })
         .trim()
         .to_ascii_lowercase()
         .as_str()

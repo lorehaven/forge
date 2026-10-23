@@ -4,11 +4,11 @@
 //! the part worth pinning down: which elements the poll may replace, and which
 //! it must leave alone because a log stream is attached to them.
 
-use chrono::{Duration, Utc};
 use conveyor_service::domain::{Artifact, Job, Run, Status, Trigger};
 use conveyor_service::routers::ui::pages::runs::{
     artifacts_block, job_block, job_state, jobs_block, state_block,
 };
+use quench_core::time::{Duration, Time};
 
 fn run(status: Status) -> Run {
     Run {
@@ -20,9 +20,9 @@ fn run(status: Status) -> Run {
         message: None,
         delivery_id: None,
         status,
-        queued_at: Utc::now() - Duration::minutes(2),
-        started_at: Some(Utc::now() - Duration::minutes(1)),
-        finished_at: status.is_terminal().then(Utc::now),
+        queued_at: Time::now() - Duration::minutes(2),
+        started_at: Some(Time::now() - Duration::minutes(1)),
+        finished_at: status.is_terminal().then(Time::now),
         claimed_by: None,
         claimed_at: None,
         attempt: 1,
@@ -44,7 +44,7 @@ fn job_in(id: &str, stage: &str, name: &str, needs: &[&str], status: Status) -> 
         needs: needs.iter().map(std::string::ToString::to_string).collect(),
         status,
         exit_code: None,
-        started_at: Some(Utc::now() - Duration::seconds(30)),
+        started_at: Some(Time::now() - Duration::seconds(30)),
         finished_at: None,
         error: None,
         reused_from_run: None,
@@ -233,7 +233,7 @@ fn artifact(name: &str) -> Artifact {
         version: Some("1.2.3".to_string()),
         uri: "https://warehouse.example/crates/thing/1.2.3".to_string(),
         digest: None,
-        created_at: Utc::now(),
+        created_at: Time::now(),
     }
 }
 

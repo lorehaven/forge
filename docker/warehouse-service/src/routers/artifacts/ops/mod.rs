@@ -1,14 +1,14 @@
 //! The handlers, and what they all share.
 
 use crate::domain::artifact::{ArtifactVersion, Platform};
-use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use quench_auth::domain::jwt::{Claims, JwtConfig};
 use quench_auth::http::routers::ui::get_user_from_req;
+use quench_core::async_trait;
+use quench_core::time::Time;
 use quench_db::prelude::{Crud, Db};
 use quench_http::prelude::{FromRequest, HttpError, Request, Response, http::StatusCode};
-use serde::Serialize;
-use serde_json::json;
+use quench_serde::Serialize;
+use quench_serde::json;
 
 pub mod download;
 pub mod latest;
@@ -37,7 +37,7 @@ pub struct ArtifactView {
     pub permissions: Vec<String>,
     pub uploaded_by: String,
     pub yanked: bool,
-    pub created_at: DateTime<Utc>,
+    pub created_at: Time,
 }
 
 impl From<&ArtifactVersion> for ArtifactView {
@@ -53,9 +53,9 @@ impl From<&ArtifactVersion> for ArtifactView {
             size_bytes: version.size_bytes,
             sha256: version.sha256.clone(),
             label: version.label.clone(),
-            min_sdk_version: version.metadata.0.min_sdk_version,
-            target_sdk_version: version.metadata.0.target_sdk_version,
-            permissions: version.metadata.0.permissions.clone(),
+            min_sdk_version: version.metadata.min_sdk_version,
+            target_sdk_version: version.metadata.target_sdk_version,
+            permissions: version.metadata.permissions.clone(),
             uploaded_by: version.uploaded_by.clone(),
             yanked: version.yanked,
             created_at: version.created_at,

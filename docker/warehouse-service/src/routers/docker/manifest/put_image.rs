@@ -3,12 +3,12 @@ use crate::routers::docker::{
     blob_path, manifest_path, repository_path, validate_digest, validate_tag_reference,
 };
 use crate::utils::sha256::sha256_hex;
-use async_trait::async_trait;
+use quench_core::async_trait;
 use quench_http::prelude::{
     Bytes, FromRequest, HttpError, Path, Request, Response, http::StatusCode, put,
 };
+use quench_serde::Value;
 use quench_starter::http::domain::error;
-use serde_json::{Number, Value};
 
 pub const DOCKER_MANIFEST_V2: &str = "application/vnd.docker.distribution.manifest.v2+json";
 pub const DOCKER_MANIFEST_LIST_V2: &str =
@@ -115,7 +115,8 @@ pub async fn handle(
 }
 
 pub async fn normalize_manifest_body(body: &[u8]) -> Result<Vec<u8>, &'static str> {
-    let mut value: Value = serde_json::from_slice(body).map_err(|_| "invalid manifest payload")?;
+    let mut value: Value =
+        quench_serde::json::from_slice(body).map_err(|_| "invalid manifest payload")?;
 
     if value.get("schemaVersion").and_then(Value::as_u64) != Some(2) {
         return Err("unsupported manifest schema");
@@ -137,7 +138,7 @@ pub async fn normalize_manifest_body(body: &[u8]) -> Result<Vec<u8>, &'static st
         }
     }
 
-    serde_json::to_vec(&value).map_err(|_| "invalid manifest payload")
+    Ok(quench_serde::json::to_vec(&value))
 }
 
 #[derive(Debug)]
@@ -177,10 +178,7 @@ pub async fn populate_descriptor_size(
         .await
         .map_err(|_| "manifest references missing content")?;
 
-    object.insert(
-        "size".to_string(),
-        Value::Number(Number::from(metadata.len())),
-    );
+    object.insert("size".to_string(), Value::UInt(metadata.len()));
     Ok(())
 }
 

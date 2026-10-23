@@ -46,9 +46,12 @@ fn the_plan_round_trips_through_the_json_a_job_carries() {
         },
         install("forge"),
     ]);
-    let json = serde_json::to_string(&original).unwrap();
+    let json = quench_serde::json::to_string(&original);
     assert!(json.contains(r#""step":"pull""#), "{json}");
-    assert_eq!(serde_json::from_str::<Plan>(&json).unwrap(), original);
+    assert_eq!(
+        quench_serde::json::from_str::<Plan>(&json).unwrap(),
+        original
+    );
 }
 
 #[test]

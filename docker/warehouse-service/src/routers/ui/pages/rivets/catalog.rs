@@ -10,7 +10,7 @@ use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 use std::collections::BTreeMap;
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, quench_serde::Deserialize)]
 pub struct RivetActionForm {
     pub name: String,
     pub version: String,
@@ -112,8 +112,8 @@ async fn set_yank_state(
         "HX-Redirect",
         with_base_path(&format!(
             "/ui/rivets/catalog?repo={}&tag={}",
-            urlencoding::encode(&form.name),
-            urlencoding::encode(&form.version)
+            quench_serde::urlencoded::percent_encode(&form.name),
+            quench_serde::urlencoded::percent_encode(&form.version)
         )),
     )
 }
@@ -202,7 +202,10 @@ fn render_package_node(
     selected: Option<&RivetPackage>,
 ) -> Element {
     let item = li();
-    let href = catalog_href(&format!("repo={}", urlencoding::encode(name)));
+    let href = catalog_href(&format!(
+        "repo={}",
+        quench_serde::urlencoded::percent_encode(name)
+    ));
 
     if Some(name) != selected_name {
         return item.child(
@@ -238,8 +241,8 @@ fn render_package_node(
                     "href",
                     catalog_href(&format!(
                         "repo={}&tag={}",
-                        urlencoding::encode(name),
-                        urlencoding::encode(&package.version)
+                        quench_serde::urlencoded::percent_encode(name),
+                        quench_serde::urlencoded::percent_encode(&package.version)
                     )),
                 )
                 .class(link_class)
@@ -279,10 +282,10 @@ fn package_details(p: &RivetPackage, can_manage: bool) -> Element {
     if let Some(namespace) = &p.namespace {
         list = list.child(meta_row("ui_rivet_meta_namespace", namespace));
     }
-    if let Some(riveter) = p.manifest.0["requires"]["riveter"].as_str() {
+    if let Some(riveter) = p.manifest["requires"]["riveter"].as_str() {
         list = list.child(meta_row("ui_rivet_meta_requires_riveter", riveter));
     }
-    if let Some(required) = p.manifest.0["requires"]["packages"].as_array() {
+    if let Some(required) = p.manifest["requires"]["packages"].as_array() {
         let joined: Vec<&str> = required.iter().filter_map(|v| v.as_str()).collect();
         if !joined.is_empty() {
             list = list.child(meta_row(
@@ -291,7 +294,7 @@ fn package_details(p: &RivetPackage, can_manage: bool) -> Element {
             ));
         }
     }
-    if let Some(meta) = p.manifest.0["meta"].as_object() {
+    if let Some(meta) = p.manifest["meta"].as_object() {
         for (key, value) in meta {
             let text = value
                 .as_str()
@@ -309,7 +312,7 @@ fn package_details(p: &RivetPackage, can_manage: bool) -> Element {
         .child(meta_row("ui_rivet_meta_uploaded_by", &p.uploaded_by))
         .child(meta_row(
             "ui_rivet_meta_published",
-            &p.created_at.format("%Y-%m-%d %H:%M UTC").to_string(),
+            &p.created_at.format("%Y-%m-%d %H:%M UTC"),
         ))
         .child(meta_row(
             "ui_rivet_meta_install",

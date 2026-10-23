@@ -165,7 +165,7 @@ fn agent_node(run_cmd_allowlist: Vec<String>) -> AgentNode {
 #[derive(Debug)]
 struct NoopLlm;
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl Llm for NoopLlm {
     fn name(&self) -> &'static str {
         "noop"
@@ -174,7 +174,7 @@ impl Llm for NoopLlm {
     async fn generate_content(
         &self,
         _request: welder::llm::LlmRequest,
-    ) -> anyhow::Result<welder::llm::LlmResponse> {
+    ) -> quench_core::Result<welder::llm::LlmResponse> {
         unreachable!("not exercised by these tests")
     }
 }
@@ -221,13 +221,13 @@ impl ScriptedLlm {
     }
 }
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl Llm for ScriptedLlm {
     fn name(&self) -> &'static str {
         "scripted"
     }
 
-    async fn generate_content(&self, _request: LlmRequest) -> anyhow::Result<LlmResponse> {
+    async fn generate_content(&self, _request: LlmRequest) -> quench_core::Result<LlmResponse> {
         let reply = self
             .replies
             .lock()
@@ -316,10 +316,10 @@ async fn execute_falls_back_to_self_when_no_delegate_name_matches() {
 fn with_temp_cwd() -> (
     std::sync::MutexGuard<'static, ()>,
     std::path::PathBuf,
-    tempfile::TempDir,
+    quench_core::tmp::TempDir,
 ) {
     let guard = support::cwd_lock().lock().unwrap();
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let original = std::env::current_dir().unwrap();
     std::env::set_current_dir(dir.path()).unwrap();
     (guard, original, dir)

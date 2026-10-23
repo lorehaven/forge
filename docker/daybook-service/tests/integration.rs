@@ -2,13 +2,12 @@
 //! database with the daybook and auth modules installed to run these tests.
 #![allow(dead_code)]
 
-use bytes::Bytes;
-use http::{HeaderMap, Method, StatusCode, Uri};
-use http_body_util::BodyExt;
 use quench_auth::domain::jwt::{Claims, JwtConfig};
+use quench_core::bytes::Bytes;
 use quench_db::prelude::{Database, Db};
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::prelude::{Container, ContainerBuilder, Endpoint, Request};
-use serde_json::{Value, json};
+use quench_serde::{Value, json};
 use std::sync::{Arc, OnceLock};
 use tokio::sync::{Mutex, MutexGuard};
 
@@ -64,7 +63,7 @@ fn request(
     let mut headers = HeaderMap::new();
     let bytes = payload.map_or_else(Bytes::new, |value| {
         headers.insert("content-type", "application/json".parse().unwrap());
-        Bytes::from(serde_json::to_vec(&value).expect("serialize payload"))
+        Bytes::from(quench_serde::json::to_vec(&value))
     });
     let mut request = Request::new(
         method,
@@ -85,13 +84,12 @@ fn request(
 
 async fn body(response: quench_http::response::Response) -> Value {
     let bytes = response
-        .into_hyper()
-        .into_body()
-        .collect()
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
         .await
-        .expect("response body")
-        .to_bytes();
-    serde_json::from_slice(&bytes).expect("JSON response")
+        .expect("response body");
+    quench_serde::json::from_slice(&bytes).expect("JSON response")
 }
 
 async fn create_project(
@@ -731,12 +729,13 @@ async fn after_completion_counts_from_the_day_it_is_done() {
     )
     .await;
     let done = put_task(&app, &container, &task, true, &task["due_at"]).await;
-    let next: chrono::DateTime<chrono::Utc> = done["due_at"].as_str().unwrap().parse().unwrap();
-    let now = chrono::Utc::now();
+    let next = quench_core::time::Time::parse_rfc3339(done["due_at"].as_str().unwrap()).unwrap();
+    let now = quench_core::time::Time::now();
     // Three days from today at the original 09:00 - not from the (far-future) due date.
-    assert!(next > now + chrono::Duration::days(2), "{next}");
-    assert!(next < now + chrono::Duration::days(4), "{next}");
-    assert_eq!(next.format("%H:%M").to_string(), "09:00");
+    assert!(next > now + quench_core::time::Duration::days(2), "{next}");
+    assert!(next < now + quench_core::time::Duration::days(4), "{next}");
+    let civil = next.civil();
+    assert_eq!((civil.hour, civil.minute), (9, 0));
 }
 
 #[tokio::test]

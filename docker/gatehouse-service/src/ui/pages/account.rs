@@ -13,18 +13,18 @@ use crate::realm::{self, RealmError, UserChanges};
 use crate::tokens::VerificationTokens;
 use crate::ui::common::{FormFields, SUPPORTED_LOCALES, UiPageKind, render_page, ui_path};
 use crate::ui::locale::BrowserLocale;
-use async_trait::async_trait;
-use http::StatusCode;
 use quench_auth::domain::auth::{Role, User};
 use quench_auth::domain::jwt::{Claims, JwtConfig};
 use quench_auth::domain::session::SessionDb;
 use quench_auth::http::routers::ui::get_user_from_req;
+use quench_core::async_trait;
 use quench_db::prelude::Db;
+use quench_http::http::StatusCode;
 use quench_http::prelude::{
     Form, FromRequest, HttpError, Inject, Multipart, Query, Request, Response, get, post,
 };
+use quench_serde::Deserialize;
 use quench_web::prelude::*;
-use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -86,7 +86,7 @@ pub async fn account_page(
     let subscriptions = match Preferences::new(&db).effective(&actor.sub).await {
         Ok(subscriptions) => subscriptions,
         Err(err) => {
-            tracing::error!(
+            quench_log::error!(
                 "could not read notification preferences for {}: {err}",
                 actor.sub
             );
@@ -122,7 +122,7 @@ pub async fn save_notifications(
     for template in notification_catalog::all() {
         let wanted = form.contains_key(&format!("sub_{}", template.id));
         if let Err(err) = preferences.set(&actor.sub, template, wanted).await {
-            tracing::error!(
+            quench_log::error!(
                 "could not save the {} preference for {}: {err}",
                 template.id,
                 actor.sub
@@ -384,7 +384,7 @@ pub async fn request_email_change(
     let link = match email_change::issue_link(&tokens, &base, &ticket).await {
         Ok(link) => link,
         Err(err) => {
-            tracing::error!(
+            quench_log::error!(
                 "could not issue an email-change token for {}: {err}",
                 user.username
             );
@@ -403,7 +403,7 @@ pub async fn request_email_change(
         .send(&recipient, &Mail::EmailChange { link: &link })
         .await
     {
-        tracing::error!(
+        quench_log::error!(
             "failed to send the email-change confirmation for {}: {err}",
             user.username
         );
@@ -424,7 +424,7 @@ pub async fn mfa_enroll_page(actor: Actor) -> Response {
     match realm::begin_mfa_enrollment(&actor.sub) {
         Ok((secret, uri)) => render_mfa_enroll_page(&secret, &uri, false),
         Err(err) => {
-            tracing::error!("failed to begin MFA enrollment for {}: {err}", actor.sub);
+            quench_log::error!("failed to begin MFA enrollment for {}: {err}", actor.sub);
             redirect("/account?err=ui_admin_error_internal")
         }
     }
@@ -467,7 +467,7 @@ pub async fn mfa_enroll_submit(
             render_mfa_enroll_page(&form.secret, &uri, true)
         }
         Err(err) => {
-            tracing::error!("failed to enable MFA for {}: {err:?}", actor.sub);
+            quench_log::error!("failed to enable MFA for {}: {err:?}", actor.sub);
             redirect("/account?err=ui_admin_error_internal")
         }
     }

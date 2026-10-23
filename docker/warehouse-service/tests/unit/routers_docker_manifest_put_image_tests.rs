@@ -1,7 +1,7 @@
 use crate::support;
 
-use http::{Method, StatusCode};
-use serde_json::Value;
+use quench_http::http::{Method, StatusCode};
+use quench_serde::Value;
 use support::WithDockerStorageRoot as WithStorageRoot;
 use warehouse_service::routers::docker::manifest::put_image::{
     DOCKER_MANIFEST_LIST_V2, DOCKER_MANIFEST_V2, DescriptorKind, OCI_IMAGE_INDEX_V1,
@@ -63,7 +63,7 @@ async fn normalize_manifest_body_leaves_a_manifest_with_no_descriptors_untouched
     let body = normalize_manifest_body(br#"{"schemaVersion": 2}"#)
         .await
         .unwrap();
-    let value: Value = serde_json::from_slice(&body).unwrap();
+    let value: Value = quench_serde::json::from_slice(&body).unwrap();
     assert_eq!(value["schemaVersion"], 2);
 }
 
@@ -71,7 +71,7 @@ async fn normalize_manifest_body_leaves_a_manifest_with_no_descriptors_untouched
 async fn normalize_manifest_body_keeps_an_explicit_nonzero_size_as_is() {
     let json = r#"{"schemaVersion": 2, "config": {"digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "size": 42}}"#;
     let body = normalize_manifest_body(json.as_bytes()).await.unwrap();
-    let value: Value = serde_json::from_slice(&body).unwrap();
+    let value: Value = quench_serde::json::from_slice(&body).unwrap();
     assert_eq!(value["config"]["size"], 42);
 }
 
@@ -86,7 +86,7 @@ async fn populate_descriptor_size_rejects_a_descriptor_that_is_not_an_object() {
 
 #[tokio::test]
 async fn populate_descriptor_size_requires_a_digest_field() {
-    let mut descriptor = serde_json::json!({});
+    let mut descriptor = quench_serde::json!({});
     let err = populate_descriptor_size(&mut descriptor, DescriptorKind::Blob)
         .await
         .unwrap_err();
@@ -95,7 +95,7 @@ async fn populate_descriptor_size_requires_a_digest_field() {
 
 #[tokio::test]
 async fn populate_descriptor_size_rejects_a_malformed_digest() {
-    let mut descriptor = serde_json::json!({"digest": "not-a-digest"});
+    let mut descriptor = quench_serde::json!({"digest": "not-a-digest"});
     let err = populate_descriptor_size(&mut descriptor, DescriptorKind::Blob)
         .await
         .unwrap_err();
@@ -262,7 +262,7 @@ async fn handle_fills_in_descriptor_sizes_from_blobs_already_on_disk() {
             .join(hex),
     )
     .unwrap();
-    let value: Value = serde_json::from_slice(&stored).unwrap();
+    let value: Value = quench_serde::json::from_slice(&stored).unwrap();
     assert_eq!(value["config"]["size"], "layer content".len());
     drop(storage);
 }

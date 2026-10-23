@@ -30,9 +30,14 @@ async fn generate_content_parses_the_first_choice() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/chat/completions"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "choices": [{ "message": { "content": "hi there" } }]
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!({
+                    "choices": [{ "message": { "content": "hi there" } }]
+                })),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -58,9 +63,10 @@ async fn generate_content_defaults_when_choices_is_empty() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/chat/completions"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({ "choices": [] })),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(quench_serde::json!({ "choices": [] }))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 

@@ -8,7 +8,7 @@
 //! exercised end to end without a real gatehouse or switchboard.
 
 use crate::env_support::env_lock;
-use chrono::Utc;
+use quench_core::time::Time;
 use sage_service::clients::switchboard::{SwitchboardClient, VllmInstance};
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -24,16 +24,21 @@ async fn mock_switchboard() -> MockServer {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/api/v1/token"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "access_token": "test-token",
-            "expires_in": 3600
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!({
+                    "access_token": "test-token",
+                    "expires_in": 3600
+                })),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
-    envmnt::set("SWITCHBOARD_URL", server.uri());
-    envmnt::set("GATEHOUSE_URL", server.uri());
-    envmnt::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
+    quench_core::env::set("SWITCHBOARD_URL", server.uri());
+    quench_core::env::set("GATEHOUSE_URL", server.uri());
+    quench_core::env::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
     server
 }
 
@@ -46,22 +51,27 @@ async fn get_vllm_instances_parses_a_successful_response() {
     let server = mock_switchboard().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/vllm/instances"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
-            {
-                "id": "inst-1",
-                "namespace": "ns",
-                "model": "test-model",
-                "host": "127.0.0.1",
-                "port": 8000,
-                "quantization": null,
-                "max_model_len": null,
-                "gpu_memory_utilization": null,
-                "enable_prefix_caching": false,
-                "task": null,
-                "started_at": Utc::now().to_rfc3339(),
-                "status": "running"
-            }
-        ])))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!([
+                    {
+                        "id": "inst-1",
+                        "namespace": "ns",
+                        "model": "test-model",
+                        "host": "127.0.0.1",
+                        "port": 8000,
+                        "quantization": null,
+                        "max_model_len": null,
+                        "gpu_memory_utilization": null,
+                        "enable_prefix_caching": false,
+                        "task": null,
+                        "started_at": Time::now().to_rfc3339(),
+                        "status": "running"
+                    }
+                ])),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -85,9 +95,9 @@ async fn get_vllm_instances_errors_when_the_token_exchange_is_refused() {
         .mount(&server)
         .await;
 
-    envmnt::set("SWITCHBOARD_URL", server.uri());
-    envmnt::set("GATEHOUSE_URL", server.uri());
-    envmnt::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
+    quench_core::env::set("SWITCHBOARD_URL", server.uri());
+    quench_core::env::set("GATEHOUSE_URL", server.uri());
+    quench_core::env::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
     let client = SwitchboardClient::new();
     assert!(client.get_vllm_instances().await.is_err());
 }
@@ -118,20 +128,25 @@ async fn launch_instance_parses_the_created_instance() {
     let server = mock_switchboard().await;
     Mock::given(method("POST"))
         .and(path("/api/v1/vllm/instances"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "id": "inst-2",
-            "namespace": "ns",
-            "model": "test-model",
-            "host": "0.0.0.0",
-            "port": 8000,
-            "quantization": null,
-            "max_model_len": null,
-            "gpu_memory_utilization": null,
-            "enable_prefix_caching": false,
-            "task": null,
-            "started_at": Utc::now().to_rfc3339(),
-            "status": "starting"
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!({
+                    "id": "inst-2",
+                    "namespace": "ns",
+                    "model": "test-model",
+                    "host": "0.0.0.0",
+                    "port": 8000,
+                    "quantization": null,
+                    "max_model_len": null,
+                    "gpu_memory_utilization": null,
+                    "enable_prefix_caching": false,
+                    "task": null,
+                    "started_at": Time::now().to_rfc3339(),
+                    "status": "starting"
+                })),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -167,7 +182,7 @@ fn instance(task: Option<&str>) -> VllmInstance {
         enable_prefix_caching: false,
         task: task.map(str::to_string),
         device: None,
-        started_at: Utc::now(),
+        started_at: Time::now(),
         status: "running".to_string(),
     }
 }

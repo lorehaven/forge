@@ -5,7 +5,8 @@
 
 use chrono::{DateTime, Days, Duration, LocalResult, Months, NaiveDate, NaiveTime, TimeZone, Utc};
 use chrono_tz::Tz;
-use serde::{Deserialize, Serialize};
+use quench_core::time::Time;
+use quench_serde::{Deserialize, Serialize};
 
 /// The most `interval` a rule may have. Far beyond any real use; it keeps the arithmetic in range.
 pub const MAX_INTERVAL: u32 = 999;
@@ -135,7 +136,12 @@ impl Recurrence {
     ///   one rather than the one you just did; finishing late skips occurrences that are already past.
     /// * **After completion** - `interval` units after today (in the rule's zone), at the anchor's time.
     #[must_use]
-    pub fn next_due(
+    pub fn next_due(&self, anchor: Time, due: Time, now: Time) -> Option<Time> {
+        let (anchor, due, now) = (to_chrono(anchor), to_chrono(due), to_chrono(now));
+        self.next_due_chrono(anchor, due, now).map(from_chrono)
+    }
+
+    fn next_due_chrono(
         &self,
         anchor: DateTime<Utc>,
         due: DateTime<Utc>,
@@ -166,7 +172,13 @@ impl Recurrence {
     /// the arithmetic is on that date. Only "today" is zone-dependent, and it is today in the rule's zone.
     /// Returns midnight UTC of the next date.
     #[must_use]
-    pub fn next_due_all_day(
+    pub fn next_due_all_day(&self, anchor: Time, due: Time, now: Time) -> Option<Time> {
+        let (anchor, due, now) = (to_chrono(anchor), to_chrono(due), to_chrono(now));
+        self.next_due_all_day_chrono(anchor, due, now)
+            .map(from_chrono)
+    }
+
+    fn next_due_all_day_chrono(
         &self,
         anchor: DateTime<Utc>,
         due: DateTime<Utc>,
@@ -189,7 +201,12 @@ impl Recurrence {
     /// before at 09:00" stays at 09:00 across a clock change. For an all-day task the due moment is
     /// midnight of its date.
     #[must_use]
-    pub fn shift_reminder(
+    pub fn shift_reminder(&self, remind: Time, due: Time, next: Time, all_day: bool) -> Time {
+        let (remind, due, next) = (to_chrono(remind), to_chrono(due), to_chrono(next));
+        from_chrono(self.shift_reminder_chrono(remind, due, next, all_day))
+    }
+
+    fn shift_reminder_chrono(
         &self,
         remind: DateTime<Utc>,
         due: DateTime<Utc>,
@@ -244,6 +261,16 @@ impl Recurrence {
                 }),
         )
     }
+}
+
+// The rest of the service speaks `Time`; chrono (with chrono-tz for the IANA zones, which quench has no
+// replacement for) is confined to this module's calendar arithmetic.
+fn to_chrono(at: Time) -> DateTime<Utc> {
+    DateTime::from_timestamp(at.timestamp(), at.subsec_nanos()).unwrap_or(DateTime::UNIX_EPOCH)
+}
+
+const fn from_chrono(at: DateTime<Utc>) -> Time {
+    Time::from_unix_nanos(at.timestamp(), at.timestamp_subsec_nanos())
 }
 
 /// A local wall-clock time as a UTC instant. A time that happens twice (clocks going back) is the

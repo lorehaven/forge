@@ -1,4 +1,5 @@
-use reqwest::header::{HeaderMap, HeaderValue, WWW_AUTHENTICATE};
+use quench_client::transport::header::WWW_AUTHENTICATE;
+use quench_client::transport::{HeaderMap, HeaderValue};
 use warehouse_cli::api::docker_api::{DockerApi, parse_bearer_challenge, to_https_url};
 use warehouse_cli::domain::{RegistryConfig, RegistryDockerConfig};
 use wiremock::matchers::{basic_auth, header, method, path, query_param};
@@ -65,9 +66,14 @@ async fn catalog_returns_repositories_when_unauthenticated_access_is_allowed() {
     Mock::given(method("GET"))
         .and(path("/v2/_catalog"))
         .and(query_param("n", "50"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "repositories": ["a/b", "c/d"]
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!({
+                    "repositories": ["a/b", "c/d"]
+                })),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -132,9 +138,14 @@ async fn catalog_fetches_a_token_and_retries_on_401() {
     Mock::given(method("GET"))
         .and(path("/v2/_catalog"))
         .and(header("authorization", "Bearer the-token"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "repositories": ["a/b"]
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!({
+                    "repositories": ["a/b"]
+                })),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
     Mock::given(method("GET"))
@@ -148,9 +159,10 @@ async fn catalog_fetches_a_token_and_retries_on_401() {
         .and(path("/token"))
         .and(query_param("service", "reg"))
         .and(basic_auth("user", "pass"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({ "token": "the-token" })),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(quench_serde::json!({ "token": "the-token" }))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -167,10 +179,15 @@ async fn tags_scopes_the_token_request_to_the_repository() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/v2/my/repo/tags/list"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "name": "my/repo",
-            "tags": ["latest", "v1"]
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!({
+                    "name": "my/repo",
+                    "tags": ["latest", "v1"]
+                })),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 

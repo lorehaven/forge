@@ -3,26 +3,26 @@ use conveyor_cli::test_support::{ENV_LOCK, EnvGuard};
 
 #[test]
 fn explain_prefers_the_error_field_from_a_json_body() {
-    let status = reqwest::StatusCode::BAD_REQUEST;
+    let status = quench_client::transport::StatusCode::BAD_REQUEST;
     let body = r#"{"error": "missing field `owner`"}"#;
     assert_eq!(explain(status, body), "missing field `owner`");
 }
 
 #[test]
 fn explain_falls_back_to_the_raw_body_when_not_json() {
-    let status = reqwest::StatusCode::INTERNAL_SERVER_ERROR;
+    let status = quench_client::transport::StatusCode::INTERNAL_SERVER_ERROR;
     assert_eq!(explain(status, "  boom  \n"), "boom");
 }
 
 #[test]
 fn explain_falls_back_to_the_status_when_the_body_is_empty() {
-    let status = reqwest::StatusCode::NOT_FOUND;
+    let status = quench_client::transport::StatusCode::NOT_FOUND;
     assert_eq!(explain(status, ""), "conveyor answered 404 Not Found");
 }
 
 #[test]
 fn explain_adds_a_credentials_hint_on_401() {
-    let status = reqwest::StatusCode::UNAUTHORIZED;
+    let status = quench_client::transport::StatusCode::UNAUTHORIZED;
     let body = r#"{"error": "invalid token"}"#;
     assert_eq!(
         explain(status, body),
@@ -32,7 +32,7 @@ fn explain_adds_a_credentials_hint_on_401() {
 
 #[test]
 fn explain_ignores_json_without_an_error_field() {
-    let status = reqwest::StatusCode::BAD_REQUEST;
+    let status = quench_client::transport::StatusCode::BAD_REQUEST;
     let body = r#"{"detail": "nope"}"#;
     assert_eq!(explain(status, body), r#"{"detail": "nope"}"#);
 }
@@ -59,12 +59,15 @@ async fn get_decodes_a_successful_json_response() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/runs/1"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"id": 1})))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(quench_serde::json!({"id": 1}))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
     let client = client_for(&server, None);
-    let value: serde_json::Value = client.get("/runs/1").await.expect("get");
+    let value: quench_serde::Value = client.get("/runs/1").await.expect("get");
     assert_eq!(value["id"], 1);
 }
 
@@ -77,12 +80,15 @@ async fn get_sends_the_bearer_token_when_present() {
     Mock::given(method("GET"))
         .and(path("/api/v1/runs"))
         .and(header("authorization", "Bearer secret-token"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(quench_serde::json!([]))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
     let client = client_for(&server, Some("secret-token"));
-    let value: serde_json::Value = client.get("/runs").await.expect("get");
+    let value: quench_serde::Value = client.get("/runs").await.expect("get");
     assert!(value.as_array().unwrap().is_empty());
 }
 
@@ -94,15 +100,16 @@ async fn get_surfaces_the_servers_error_message_on_failure() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/runs/missing"))
-        .respond_with(
-            ResponseTemplate::new(404).set_body_json(serde_json::json!({"error": "no such run"})),
-        )
+        .respond_with(ResponseTemplate::new(404).set_body_raw(
+            quench_serde::json::to_string(&(quench_serde::json!({"error": "no such run"}))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
     let client = client_for(&server, None);
     let err = client
-        .get::<serde_json::Value>("/runs/missing")
+        .get::<quench_serde::Value>("/runs/missing")
         .await
         .unwrap_err();
     assert!(err.to_string().contains("no such run"), "{err}");
@@ -113,7 +120,7 @@ async fn get_errors_when_the_body_does_not_match_the_expected_shape() {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    #[derive(Debug, serde::Deserialize)]
+    #[derive(Debug, quench_serde::Deserialize)]
     struct Expected {
         #[allow(dead_code)]
         required_field: String,
@@ -122,7 +129,10 @@ async fn get_errors_when_the_body_does_not_match_the_expected_shape() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/runs/1"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"nope": true})))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(quench_serde::json!({"nope": true}))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -137,20 +147,25 @@ async fn get_errors_when_the_body_does_not_match_the_expected_shape() {
 
 #[tokio::test]
 async fn post_sends_the_json_body_and_decodes_the_response() {
-    use wiremock::matchers::{body_json, method, path};
+    use wiremock::matchers::{body_json_string, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/api/v1/runs"))
-        .and(body_json(serde_json::json!({"repo": "forge"})))
-        .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({"id": 7})))
+        .and(body_json_string(quench_serde::json::to_string(
+            &(quench_serde::json!({"repo": "forge"})),
+        )))
+        .respond_with(ResponseTemplate::new(201).set_body_raw(
+            quench_serde::json::to_string(&(quench_serde::json!({"id": 7}))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
     let client = client_for(&server, None);
-    let value: serde_json::Value = client
-        .post("/runs", &serde_json::json!({"repo": "forge"}))
+    let value: quench_serde::Value = client
+        .post("/runs", &quench_serde::json!({"repo": "forge"}))
         .await
         .expect("post");
     assert_eq!(value["id"], 7);
@@ -164,22 +179,28 @@ async fn put_and_patch_decode_successful_responses() {
     let server = MockServer::start().await;
     Mock::given(method("PUT"))
         .and(path("/api/v1/runs/1"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"ok": true})))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(quench_serde::json!({"ok": true}))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
     Mock::given(method("PATCH"))
         .and(path("/api/v1/runs/1"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"ok": true})))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(quench_serde::json!({"ok": true}))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
     let client = client_for(&server, None);
-    let put: serde_json::Value = client
-        .put("/runs/1", &serde_json::json!({}))
+    let put: quench_serde::Value = client
+        .put("/runs/1", &quench_serde::json!({}))
         .await
         .expect("put");
-    let patch: serde_json::Value = client
-        .patch("/runs/1", &serde_json::json!({}))
+    let patch: quench_serde::Value = client
+        .patch("/runs/1", &quench_serde::json!({}))
         .await
         .expect("patch");
     assert_eq!(put["ok"], true);
@@ -200,7 +221,7 @@ async fn send_empty_succeeds_on_a_bodyless_success_response() {
 
     let client = client_for(&server, None);
     client
-        .send_empty(reqwest::Method::DELETE, "/runs/1")
+        .send_empty(quench_client::transport::Method::DELETE, "/runs/1")
         .await
         .expect("send_empty");
 }
@@ -213,15 +234,16 @@ async fn send_empty_errors_with_the_servers_message_on_failure() {
     let server = MockServer::start().await;
     Mock::given(method("DELETE"))
         .and(path("/api/v1/runs/1"))
-        .respond_with(
-            ResponseTemplate::new(403).set_body_json(serde_json::json!({"error": "forbidden"})),
-        )
+        .respond_with(ResponseTemplate::new(403).set_body_raw(
+            quench_serde::json::to_string(&(quench_serde::json!({"error": "forbidden"}))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
     let client = client_for(&server, None);
     let err = client
-        .send_empty(reqwest::Method::DELETE, "/runs/1")
+        .send_empty(quench_client::transport::Method::DELETE, "/runs/1")
         .await
         .unwrap_err();
     assert!(err.to_string().contains("forbidden"), "{err}");
@@ -275,7 +297,7 @@ where
     Fut: std::future::Future<Output = T>,
 {
     let _lock = ENV_LOCK.lock().await;
-    let empty_dir = tempfile::tempdir().expect("tempdir");
+    let empty_dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let _xdg = EnvGuard::set("XDG_CONFIG_HOME", empty_dir.path().to_str().unwrap());
     let _url = EnvGuard::unset("CONVEYOR_URL");
     let _user = EnvGuard::unset("CONVEYOR_USERNAME");
@@ -341,19 +363,19 @@ async fn new_requires_a_gatehouse_url_when_a_username_is_given() {
 
 #[tokio::test]
 async fn new_logs_in_and_carries_the_token_from_gatehouse() {
-    use wiremock::matchers::{body_json, method, path};
+    use wiremock::matchers::{body_json_string, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     let gatehouse = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/api/v1/auth/login"))
-        .and(body_json(
-            serde_json::json!({"username": "alice", "password": "pw"}),
+        .and(body_json_string(quench_serde::json::to_string(
+            &(quench_serde::json!({"username": "alice", "password": "pw"})),
+        )))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(quench_serde::json!({"access_token": "minted-token"}))),
+            "application/json",
         ))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_json(serde_json::json!({"access_token": "minted-token"})),
-        )
         .mount(&gatehouse)
         .await;
 

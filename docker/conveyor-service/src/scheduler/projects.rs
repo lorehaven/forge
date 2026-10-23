@@ -3,10 +3,9 @@
 
 use crate::domain::Project;
 use crate::scheduler::queue::{QueueError, pool, schema};
-use chrono::{DateTime, Utc};
+use quench_core::time::Time;
+use quench_core::uuid::Uuid;
 use quench_db::prelude::Db;
-use sqlx::Row;
-use uuid::Uuid;
 
 #[derive(Clone, Debug)]
 pub struct NewProject {
@@ -25,11 +24,11 @@ pub async fn create(db: &Db, new: &NewProject) -> Result<Project, QueueError> {
          VALUES ($1, $2, $3) RETURNING {COLUMNS}"
     );
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(&id)
-        .bind(&new.name)
-        .bind(&new.parent_id)
-        .fetch_one(pool)
+    let row = pool
+        .query_one(
+            &sql,
+            &[&id as &dyn quench_pg::ToSql, &new.name, &new.parent_id],
+        )
         .await?;
 
     from_row(&row)
@@ -40,9 +39,8 @@ pub async fn read(db: &Db, id: &str) -> Result<Option<Project>, QueueError> {
     let schema = schema();
     let sql = format!("SELECT {COLUMNS} FROM {schema}.projects WHERE id = $1");
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(id)
-        .fetch_optional(pool)
+    let row = pool
+        .query_opt(&sql, &[&id as &dyn quench_pg::ToSql])
         .await?;
 
     row.as_ref().map(from_row).transpose()
@@ -56,17 +54,13 @@ pub async fn list_children(db: &Db, parent_id: Option<&str>) -> Result<Vec<Proje
     let rows = if let Some(parent_id) = parent_id {
         let sql =
             format!("SELECT {COLUMNS} FROM {schema}.projects WHERE parent_id = $1 ORDER BY name");
-        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-            .bind(parent_id)
-            .fetch_all(pool)
+        pool.query(&sql, &[&parent_id as &dyn quench_pg::ToSql])
             .await?
     } else {
         let sql = format!(
             "SELECT {COLUMNS} FROM {schema}.projects WHERE parent_id IS NULL ORDER BY name"
         );
-        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-            .fetch_all(pool)
-            .await?
+        pool.query(&sql, &[]).await?
     };
 
     rows.iter().map(from_row).collect()
@@ -78,9 +72,7 @@ pub async fn list_all(db: &Db) -> Result<Vec<Project>, QueueError> {
     let schema = schema();
     let sql = format!("SELECT {COLUMNS} FROM {schema}.projects ORDER BY name");
 
-    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .fetch_all(pool)
-        .await?;
+    let rows = pool.query(&sql, &[]).await?;
 
     rows.iter().map(from_row).collect()
 }
@@ -93,10 +85,8 @@ pub async fn rename(db: &Db, id: &str, name: &str) -> Result<Option<Project>, Qu
          WHERE id = $1 RETURNING {COLUMNS}"
     );
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(id)
-        .bind(name)
-        .fetch_optional(pool)
+    let row = pool
+        .query_opt(&sql, &[&id as &dyn quench_pg::ToSql, &name])
         .await?;
 
     row.as_ref().map(from_row).transpose()
@@ -132,10 +122,8 @@ pub async fn move_to(
          WHERE id = $1 RETURNING {COLUMNS}"
     );
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(id)
-        .bind(parent_id)
-        .fetch_optional(pool)
+    let row = pool
+        .query_opt(&sql, &[&id as &dyn quench_pg::ToSql, &parent_id])
         .await?;
 
     row.as_ref().map(from_row).transpose()?.map_or_else(
@@ -159,9 +147,8 @@ pub async fn delete(db: &Db, id: &str) -> Result<DeleteOutcome, QueueError> {
     let schema = schema();
 
     let exists_sql = format!("SELECT 1 FROM {schema}.projects WHERE id = $1");
-    let exists = sqlx::query(sqlx::AssertSqlSafe(exists_sql.as_str()))
-        .bind(id)
-        .fetch_optional(pool)
+    let exists = pool
+        .query_opt(&exists_sql, &[&id as &dyn quench_pg::ToSql])
         .await?
         .is_some();
     if !exists {
@@ -169,9 +156,8 @@ pub async fn delete(db: &Db, id: &str) -> Result<DeleteOutcome, QueueError> {
     }
 
     let has_children_sql = format!("SELECT 1 FROM {schema}.projects WHERE parent_id = $1 LIMIT 1");
-    let has_children = sqlx::query(sqlx::AssertSqlSafe(has_children_sql.as_str()))
-        .bind(id)
-        .fetch_optional(pool)
+    let has_children = pool
+        .query_opt(&has_children_sql, &[&id as &dyn quench_pg::ToSql])
         .await?
         .is_some();
     if has_children {
@@ -179,9 +165,8 @@ pub async fn delete(db: &Db, id: &str) -> Result<DeleteOutcome, QueueError> {
     }
 
     let has_repo_sql = format!("SELECT 1 FROM {schema}.repos WHERE project_id = $1 LIMIT 1");
-    let has_repo = sqlx::query(sqlx::AssertSqlSafe(has_repo_sql.as_str()))
-        .bind(id)
-        .fetch_optional(pool)
+    let has_repo = pool
+        .query_opt(&has_repo_sql, &[&id as &dyn quench_pg::ToSql])
         .await?
         .is_some();
     if has_repo {
@@ -189,9 +174,7 @@ pub async fn delete(db: &Db, id: &str) -> Result<DeleteOutcome, QueueError> {
     }
 
     let delete_sql = format!("DELETE FROM {schema}.projects WHERE id = $1");
-    sqlx::query(sqlx::AssertSqlSafe(delete_sql.as_str()))
-        .bind(id)
-        .execute(pool)
+    pool.execute(&delete_sql, &[&id as &dyn quench_pg::ToSql])
         .await?;
 
     Ok(DeleteOutcome::Deleted)
@@ -209,13 +192,10 @@ pub async fn ancestor_chain(db: &Db, id: &str) -> Result<Vec<String>, QueueError
          ) SELECT id FROM chain"
     );
 
-    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(id)
-        .fetch_all(pool)
-        .await?;
+    let rows = pool.query(&sql, &[&id as &dyn quench_pg::ToSql]).await?;
 
     rows.iter()
-        .map(|row| row.try_get::<String, _>("id").map_err(QueueError::from))
+        .map(|row| row.get::<String, _>("id").map_err(QueueError::from))
         .collect()
 }
 
@@ -235,13 +215,15 @@ pub async fn descendant_ids(db: &Db, root_ids: &[String]) -> Result<Vec<String>,
          ) SELECT id FROM tree"
     );
 
-    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(root_ids)
-        .fetch_all(pool)
+    let rows = pool
+        .query(
+            &sql,
+            &[&quench_pg::PgArray(root_ids.to_vec()) as &dyn quench_pg::ToSql],
+        )
         .await?;
 
     rows.iter()
-        .map(|row| row.try_get::<String, _>("id").map_err(QueueError::from))
+        .map(|row| row.get::<String, _>("id").map_err(QueueError::from))
         .collect()
 }
 
@@ -259,10 +241,7 @@ pub async fn full_path(db: &Db, id: &str) -> Result<Option<String>, QueueError> 
          ) SELECT name FROM chain ORDER BY depth DESC"
     );
 
-    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(id)
-        .fetch_all(pool)
-        .await?;
+    let rows = pool.query(&sql, &[&id as &dyn quench_pg::ToSql]).await?;
 
     if rows.is_empty() {
         return Ok(None);
@@ -270,7 +249,7 @@ pub async fn full_path(db: &Db, id: &str) -> Result<Option<String>, QueueError> 
 
     let names = rows
         .iter()
-        .map(|row| row.try_get::<String, _>("name"))
+        .map(|row| row.get::<String, _>("name"))
         .collect::<Result<Vec<_>, _>>()?;
 
     Ok(Some(names.join("/")))
@@ -278,12 +257,12 @@ pub async fn full_path(db: &Db, id: &str) -> Result<Option<String>, QueueError> 
 
 const COLUMNS: &str = "id, name, parent_id, created_at, updated_at";
 
-fn from_row(row: &sqlx::postgres::PgRow) -> Result<Project, QueueError> {
+fn from_row(row: &quench_pg::Row) -> Result<Project, QueueError> {
     Ok(Project {
-        id: row.try_get("id")?,
-        name: row.try_get("name")?,
-        parent_id: row.try_get("parent_id")?,
-        created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
-        updated_at: row.try_get::<DateTime<Utc>, _>("updated_at")?,
+        id: row.get("id")?,
+        name: row.get("name")?,
+        parent_id: row.get("parent_id")?,
+        created_at: row.get::<Time, _>("created_at")?,
+        updated_at: row.get::<Time, _>("updated_at")?,
     })
 }

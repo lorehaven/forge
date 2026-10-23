@@ -8,7 +8,7 @@
 //! which is why every per-IP limit here is backed by one that does not depend on
 //! the address (per account, per email, and the daily mail budget).
 
-use async_trait::async_trait;
+use quench_core::async_trait;
 use quench_http::prelude::{FromRequest, HttpError, Request};
 use std::net::IpAddr;
 

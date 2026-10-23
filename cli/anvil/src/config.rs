@@ -1,6 +1,6 @@
-use anyhow::Result;
 use quench_cli::prelude::{Tone, print_status};
-use serde::Deserialize;
+use quench_core::Result;
+use quench_serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 
@@ -122,7 +122,7 @@ pub fn load_config(quiet: bool) -> Result<Config> {
             Config::default()
         },
         |content| {
-            toml::from_str(&content).unwrap_or_else(|err| {
+            quench_serde::toml::from_str(&content).unwrap_or_else(|err| {
                 warn(&format!(
                     "failed to parse .anvil.toml ({err}), defaulting to empty config"
                 ));

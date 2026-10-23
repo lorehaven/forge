@@ -1,19 +1,19 @@
 use super::SearchProvider;
-use async_trait::async_trait;
+use quench_core::async_trait;
 use scraper::{Html, Selector};
 
 const MAX_RESULTS: usize = 5;
 
 #[derive(Debug)]
 pub struct DuckDuckGoProvider {
-    client: reqwest::Client,
+    client: quench_client::transport::Client,
 }
 
 impl DuckDuckGoProvider {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: quench_client::transport::Client::new(),
         }
     }
 }
@@ -37,10 +37,10 @@ impl SearchProvider for DuckDuckGoProvider {
     async fn search(&self, query: &str) -> Result<String, String> {
         let url = format!(
             "https://html.duckduckgo.com/html/?q={}",
-            urlencoding::encode(query)
+            quench_serde::urlencoded::percent_encode(query)
         );
 
-        tracing::info!("DuckDuckGo: searching for '{}' at {}", query, url);
+        quench_log::info!("DuckDuckGo: searching for '{}' at {}", query, url);
 
         let response = self
             .client
@@ -51,19 +51,19 @@ impl SearchProvider for DuckDuckGoProvider {
             .await
             .map_err(|e| {
                 let err_msg = format!("Request failed: {e}");
-                tracing::warn!("DuckDuckGo request failed: {}", e);
+                quench_log::warn!("DuckDuckGo request failed: {}", e);
                 err_msg
             })?;
 
         let status = response.status();
-        tracing::info!("DuckDuckGo response status: {}", status);
+        quench_log::info!("DuckDuckGo response status: {}", status);
 
         let body = response.text().await.map_err(|e| {
-            tracing::warn!("Failed to read response: {}", e);
+            quench_log::warn!("Failed to read response: {}", e);
             format!("Failed to read response: {e}")
         })?;
 
-        tracing::info!("DuckDuckGo response length: {} bytes", body.len());
+        quench_log::info!("DuckDuckGo response length: {} bytes", body.len());
 
         let document = Html::parse_document(&body);
         let mut results = Vec::new();
@@ -100,7 +100,7 @@ impl SearchProvider for DuckDuckGoProvider {
         }
 
         if results.is_empty() {
-            tracing::warn!(
+            quench_log::warn!(
                 "DuckDuckGo: No results found for '{}' - may need to adjust selectors",
                 query
             );
@@ -111,7 +111,7 @@ impl SearchProvider for DuckDuckGoProvider {
         }
 
         let result_count = results.len();
-        tracing::info!("DuckDuckGo: Found {} results for '{}'", result_count, query);
+        quench_log::info!("DuckDuckGo: Found {} results for '{}'", result_count, query);
         Ok(format!(
             "Search results for '{}' (via DuckDuckGo)\n\n{}",
             query,

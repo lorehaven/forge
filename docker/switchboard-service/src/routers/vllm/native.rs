@@ -3,8 +3,8 @@ use crate::routers::vllm::{
     LaunchRequest, VllmInstance, cpu_kvcache_space_gib, device_from_args, device_launch_args,
     is_cpu_device, task_from_args, task_launch_args,
 };
-use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use quench_core::async_trait;
+use quench_core::time::Time;
 use std::collections::HashMap;
 use std::fs;
 use std::fs::OpenOptions;
@@ -30,8 +30,8 @@ struct LaunchRecord {
     enable_tool_calling: bool,
     task: Option<String>,
     device: Option<String>,
-    started_at: DateTime<Utc>,
-    terminating_at: Option<DateTime<Utc>>,
+    started_at: Time,
+    terminating_at: Option<Time>,
     log_path: Option<String>,
     last_error: Option<String>,
 }
@@ -94,7 +94,7 @@ fn instance_from_process(
         enable_tool_calling: parts.iter().any(|p| p == "--enable-auto-tool-choice"),
         task: task_from_args(parts),
         device: device_from_args(parts),
-        started_at: process_started_at(pid).unwrap_or_else(Utc::now),
+        started_at: process_started_at(pid).unwrap_or_else(Time::now),
         status: status.to_string(),
         log_path: record.and_then(|r| r.log_path.clone()),
         last_error: record.and_then(|r| {
@@ -143,7 +143,7 @@ struct Launched<'a> {
     req: &'a LaunchRequest,
     pid: u32,
     port: u16,
-    started_at: DateTime<Utc>,
+    started_at: Time,
     log_path: &'a str,
 }
 
@@ -253,7 +253,7 @@ fn serve_args(req: &LaunchRequest, port: u16, cpu: bool) -> Vec<String> {
         args.push("--enable-auto-tool-choice".to_string());
         args.push("--tool-call-parser".to_string());
         args.push("hermes".to_string());
-        tracing::info!(
+        quench_log::info!(
             "Enabled native tool calling for model {} (--enable-auto-tool-choice --tool-call-parser hermes)",
             req.model
         );
@@ -261,7 +261,7 @@ fn serve_args(req: &LaunchRequest, port: u16, cpu: bool) -> Vec<String> {
 
     if let Some(ref task) = req.task {
         let task_args = task_launch_args(task);
-        tracing::info!(
+        quench_log::info!(
             "Launching model {} for task {} ({})",
             req.model,
             task,
@@ -298,7 +298,7 @@ fn serve_command(
     if cpu {
         let kvcache = cpu_kvcache_space_gib();
         command.env("VLLM_CPU_KVCACHE_SPACE", &kvcache);
-        tracing::info!(
+        quench_log::info!(
             "Launching model {} on CPU (--device cpu, VLLM_CPU_KVCACHE_SPACE={} GiB). \
              Requires a CPU-capable vLLM build; FP8 checkpoints won't load on CPU.",
             req.model,
@@ -348,9 +348,9 @@ impl VllmEngine for NativeVllmEngine {
                 .filter(|record| {
                     record.is_terminating()
                         && !seen_pids.contains(&record.pid)
-                        && record.terminating_at.is_some_and(|at| {
-                            Utc::now().signed_duration_since(at).num_seconds() < 15
-                        })
+                        && record
+                            .terminating_at
+                            .is_some_and(|at| (Time::now() - at).num_seconds() < 15)
                 })
                 .map(LaunchRecord::as_terminating_instance),
         );
@@ -359,7 +359,7 @@ impl VllmEngine for NativeVllmEngine {
             !record.is_terminating()
                 || record
                     .terminating_at
-                    .is_none_or(|at| Utc::now().signed_duration_since(at).num_seconds() < 15)
+                    .is_none_or(|at| (Time::now() - at).num_seconds() < 15)
         });
 
         Ok(instances)
@@ -386,7 +386,7 @@ impl VllmEngine for NativeVllmEngine {
             req: &req,
             pid,
             port,
-            started_at: Utc::now(),
+            started_at: Time::now(),
             log_path: &log_path,
         };
         LAUNCH_RECORDS
@@ -432,7 +432,7 @@ impl VllmEngine for NativeVllmEngine {
             for record in records.values_mut() {
                 if record.pid == pid.cast_unsigned() {
                     record.last_error = Some("terminating".to_string());
-                    record.terminating_at = Some(Utc::now());
+                    record.terminating_at = Some(Time::now());
                 }
             }
         }
@@ -459,7 +459,7 @@ pub fn extract_arg(parts: &[String], key: &str) -> Option<String> {
         .map(|window| window[1].clone())
 }
 
-fn process_started_at(pid: u32) -> Option<DateTime<Utc>> {
+fn process_started_at(pid: u32) -> Option<Time> {
     let metadata = fs::metadata(format!("/proc/{pid}")).ok()?;
     let created = metadata.modified().ok()?;
 
@@ -508,7 +508,7 @@ pub fn create_launch_log_path(model: &str, port: u16) -> String {
     format!(
         "{}/{}-{}-{}.log",
         log_dir,
-        Utc::now().format("%Y%m%dT%H%M%S"),
+        Time::now().format("%Y%m%dT%H%M%S"),
         safe_model,
         port
     )

@@ -1,13 +1,13 @@
 //! Unit tests for `providers/github.rs` and the signature scheme in
 //! `providers/mod.rs`.
 
-use chrono::Utc;
 use conveyor_service::domain::{Provider, Repo, Status, Trigger};
 use conveyor_service::providers::{
     CommitStatusReport, GitHubProvider, GitProvider, ProviderError, sign_sha256,
 };
-use http::{HeaderMap, HeaderName, HeaderValue};
-use serde_json::json;
+use quench_core::time::Time;
+use quench_http::http::{HeaderMap, HeaderName, HeaderValue};
+use quench_serde::json;
 
 const SECRET: &[u8] = b"it's a secret to everybody";
 
@@ -350,7 +350,7 @@ fn a_push_body_that_is_not_a_push_is_an_error() {
 async fn reporting_a_status_without_a_token_says_so() {
     // Not a failed run: building without reporting is a reasonable way to run
     // conveyor, and the worker treats this case as a no-op.
-    envmnt::remove("CONVEYOR_GITHUB_TOKEN");
+    quench_core::env::remove("CONVEYOR_GITHUB_TOKEN");
     let github = GitHubProvider::from_env();
 
     let repo = Repo {
@@ -363,8 +363,8 @@ async fn reporting_a_status_without_a_token_says_so() {
         registered_by: "someone".to_string(),
         project_id: "project-1".to_string(),
         enabled: true,
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
+        created_at: Time::now(),
+        updated_at: Time::now(),
     };
     let report = CommitStatusReport::new(Status::Success, "all stages passed");
 

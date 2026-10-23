@@ -12,7 +12,7 @@ pub async fn list_running_models(
     Inject(engine): Inject<Arc<dyn VllmEngine>>,
 ) -> Result<Response, HttpError> {
     if !is_admin(claims.as_ref(), &config) {
-        return Ok(Response::new(http::StatusCode::FORBIDDEN));
+        return Ok(Response::new(quench_http::http::StatusCode::FORBIDDEN));
     }
 
     match engine.list_instances().await {
@@ -29,9 +29,9 @@ pub async fn list_running_models(
             Ok(Json(running).into_response())
         }
         Err(err) => {
-            tracing::error!("Failed to list running models: {}", err);
+            quench_log::error!("Failed to list running models: {}", err);
             Ok(Response::text(
-                http::StatusCode::INTERNAL_SERVER_ERROR,
+                quench_http::http::StatusCode::INTERNAL_SERVER_ERROR,
                 "api_error_vllm_list_failed",
             ))
         }

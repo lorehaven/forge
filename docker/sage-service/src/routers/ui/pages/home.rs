@@ -10,7 +10,7 @@ use quench_starter::common::routes::with_base_path;
 use quench_web::prelude::*;
 use std::sync::Arc;
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, quench_serde::Deserialize)]
 pub struct HomeQuery {
     pub conversation_id: Option<String>,
     pub project_id: Option<String>,
@@ -49,7 +49,7 @@ async fn handle_home_page(
     let active_id = query
         .conversation_id
         .clone()
-        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        .unwrap_or_else(|| quench_core::uuid::Uuid::new_v4().to_string());
 
     let mut active_messages = Vec::new();
     let active_message_id: Option<String> = if let Some(ref cid) = query.conversation_id
@@ -78,7 +78,7 @@ async fn handle_home_page(
         && let Ok(ref insts) = instances
         && let Some(instance) = insts.first()
     {
-        let pending_id = uuid::Uuid::new_v4().to_string();
+        let pending_id = quench_core::uuid::Uuid::new_v4().to_string();
         let chat_req = ChatRequest {
             instance_id: instance.id.clone(),
             message: last_msg.content.clone(),
@@ -187,7 +187,7 @@ pub fn conv_title_link(link: Element, title: &str) -> Element {
 /// Everything the home page shows.
 #[derive(Debug)]
 pub struct HomePage {
-    pub instances: anyhow::Result<Vec<VllmInstance>>,
+    pub instances: quench_core::Result<Vec<VllmInstance>>,
     pub projects: Vec<crate::domain::models::Project>,
     pub conversations: Vec<Conversation>,
     pub active_id: String,
@@ -205,7 +205,7 @@ pub struct HomePage {
 
 /// The model picker: chat-capable instances, or why there are none.
 fn model_selector(
-    instances: &anyhow::Result<Vec<VllmInstance>>,
+    instances: &quench_core::Result<Vec<VllmInstance>>,
     chat_instances: &[&VllmInstance],
 ) -> Element {
     let mut model_select = select().class("model-selector").attr("id", "model-select");
@@ -229,7 +229,7 @@ fn model_selector(
             }
         }
         Err(err) => {
-            tracing::error!("Failed to fetch models from switchboard: {}", err);
+            quench_log::error!("Failed to fetch models from switchboard: {}", err);
             model_select = model_select.child(
                 option()
                     .attr("value", "")

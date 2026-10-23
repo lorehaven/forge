@@ -1,9 +1,9 @@
-use anyhow::{Context, Result, anyhow, bail};
 use grep::regex::RegexMatcher;
 use grep::searcher::Searcher;
 use grep::searcher::sinks::UTF8;
 use ignore::WalkBuilder;
-use serde_json::Value;
+use quench_core::{Context, Result, bail, err};
+use quench_serde::Value;
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Component, Path};
@@ -206,8 +206,7 @@ fn index_project(args: &Value) -> Result<String> {
 fn run_cmd(args: &Value, run_cmd_allowlist: &[String]) -> Result<String> {
     let cmd = required_str(args, "cmd")?;
 
-    let cmd_parts =
-        shlex::split(cmd).ok_or_else(|| anyhow!("invalid shell-like command syntax"))?;
+    let cmd_parts = shlex::split(cmd).ok_or_else(|| err!("invalid shell-like command syntax"))?;
     if cmd_parts.is_empty() {
         bail!("command is empty");
     }
@@ -259,7 +258,7 @@ pub fn is_command_allowed(cmd_parts: &[String], run_cmd_allowlist: &[String]) ->
 fn required_str<'a>(args: &'a Value, key: &str) -> Result<&'a str> {
     args.get(key)
         .and_then(Value::as_str)
-        .ok_or_else(|| anyhow!("missing or invalid '{key}'"))
+        .ok_or_else(|| err!("missing or invalid '{key}'"))
 }
 
 pub fn safe_rel_path(path: &str) -> Result<&Path> {

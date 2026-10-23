@@ -2,9 +2,9 @@ use crate::clients::switchboard::SwitchboardClient;
 use crate::clients::vllm::VllmClient;
 use crate::domain::models::Conversation;
 use crate::files::{STATUS_READY, embedder};
+use quench_core::uuid::Uuid;
 use quench_db::prelude::{Crud, Db};
 use std::fmt::Write as _;
-use uuid::Uuid;
 
 #[derive(Debug)]
 pub struct RagConfig {
@@ -18,13 +18,17 @@ impl RagConfig {
     #[must_use]
     pub fn from_env() -> Self {
         Self {
-            auto_inject: envmnt::is_or("SAGE_RAG_AUTO_INJECT", true),
-            top_k: i64::try_from(envmnt::get_u64("SAGE_RAG_TOP_K", 4)).unwrap_or(4),
-            similarity_threshold: envmnt::get_or("SAGE_RAG_SIMILARITY_THRESHOLD", "0.35")
+            auto_inject: quench_core::env::is_or("SAGE_RAG_AUTO_INJECT", true),
+            top_k: i64::try_from(quench_core::env::get_parsed::<u64>("SAGE_RAG_TOP_K", 4))
+                .unwrap_or(4),
+            similarity_threshold: quench_core::env::get_or("SAGE_RAG_SIMILARITY_THRESHOLD", "0.35")
                 .parse()
                 .unwrap_or(0.35),
-            max_context_chars: usize::try_from(envmnt::get_u64("SAGE_RAG_MAX_CONTEXT_CHARS", 2000))
-                .unwrap_or(2000),
+            max_context_chars: usize::try_from(quench_core::env::get_parsed::<u64>(
+                "SAGE_RAG_MAX_CONTEXT_CHARS",
+                2000,
+            ))
+            .unwrap_or(2000),
         }
     }
 }
@@ -35,7 +39,7 @@ const DEFAULT_QUERY_INSTRUCTION: &str =
     "Given a search query, retrieve relevant passages from the uploaded documents";
 
 fn query_input(query: &str) -> String {
-    let instruction = envmnt::get_or(
+    let instruction = quench_core::env::get_or(
         "SAGE_EMBEDDING_QUERY_INSTRUCTION",
         DEFAULT_QUERY_INSTRUCTION,
     );
@@ -64,23 +68,23 @@ type SearchChunkRow = (
     String,
     i32,
     String,
-    Option<serde_json::Value>,
+    Option<quench_serde::Value>,
     f64,
 );
 
 type RagContextRow = (String, String, Option<i32>, Option<String>, Option<f64>);
 
 fn db_schema() -> String {
-    envmnt::get_or("DB_SCHEMA", "sage")
+    quench_core::env::get_or("DB_SCHEMA", "sage")
 }
 
 /// Derive a short location label from a chunk's metadata JSON.
-fn detail_from_metadata(metadata: Option<&serde_json::Value>) -> Option<String> {
+fn detail_from_metadata(metadata: Option<&quench_serde::Value>) -> Option<String> {
     let obj = metadata?.as_object()?;
     if let Some(heading) = obj.get("heading").and_then(|v| v.as_str()) {
         return Some(heading.to_string());
     }
-    if let Some(page) = obj.get("page").and_then(serde_json::Value::as_i64) {
+    if let Some(page) = obj.get("page").and_then(quench_serde::Value::as_i64) {
         return Some(format!("p.{page}"));
     }
     None
@@ -133,14 +137,18 @@ pub async fn search_chunks(
          LIMIT $4"
     );
 
-    let rows: Vec<SearchChunkRow> = sqlx::query_as(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(embedder::vector_literal(&query_vector))
-        .bind(conversation_id)
-        .bind(&project_id)
-        .bind(top_k.max(1))
-        .fetch_all(pg_db.pool())
-        .await
-        .map_err(|e| e.to_string())?;
+    let rows: Vec<SearchChunkRow> = crate::domain::rows::fetch_all_tuples::<SearchChunkRow>(
+        pg_db.pool(),
+        &sql,
+        &[
+            &embedder::vector_literal(&query_vector),
+            &conversation_id,
+            &project_id,
+            &top_k.max(1),
+        ],
+    )
+    .await
+    .map_err(|e| e.to_string())?;
 
     Ok(rows
         .into_iter()
@@ -189,19 +197,24 @@ pub async fn record_rag_contexts(
          (id, message_id, file_id, file_name, chunk_index, detail, similarity, source, created_at) \
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"
     );
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = quench_core::time::Time::now().to_rfc3339();
     for hit in hits {
-        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-            .bind(Uuid::new_v4().to_string())
-            .bind(message_id)
-            .bind(&hit.file_id)
-            .bind(&hit.file_name)
-            .bind(hit.chunk_index)
-            .bind(&hit.detail)
-            .bind(hit.similarity)
-            .bind(source)
-            .bind(&now)
-            .execute(pg_db.pool())
+        pg_db
+            .pool()
+            .execute(
+                &sql,
+                &[
+                    &Uuid::new_v4().to_string() as &dyn quench_pg::ToSql,
+                    &message_id,
+                    &hit.file_id,
+                    &hit.file_name,
+                    &hit.chunk_index,
+                    &hit.detail,
+                    &hit.similarity,
+                    &source,
+                    &now,
+                ],
+            )
             .await
             .map_err(|e| e.to_string())?;
     }
@@ -236,16 +249,21 @@ pub async fn record_web_sources(
          (id, message_id, file_id, file_name, chunk_index, detail, similarity, source, created_at) \
          VALUES ($1, $2, NULL, $3, NULL, $4, NULL, 'web', $5)"
     );
-    let now = chrono::Utc::now().to_rfc3339();
+    let now = quench_core::time::Time::now().to_rfc3339();
     for source in sources {
         let (label, url) = web_source_label(source);
-        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-            .bind(Uuid::new_v4().to_string())
-            .bind(message_id)
-            .bind(label)
-            .bind(url)
-            .bind(&now)
-            .execute(pg_db.pool())
+        pg_db
+            .pool()
+            .execute(
+                &sql,
+                &[
+                    &Uuid::new_v4().to_string() as &dyn quench_pg::ToSql,
+                    &message_id,
+                    &label,
+                    &url,
+                    &now,
+                ],
+            )
             .await
             .map_err(|e| e.to_string())?;
     }
@@ -272,14 +290,16 @@ pub async fn load_sources_for_messages(
          WHERE message_id = ANY($1) \
          ORDER BY similarity DESC NULLS LAST, file_name ASC"
     );
-    let rows: Vec<RagContextRow> = match sqlx::query_as(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(message_ids)
-        .fetch_all(pg_db.pool())
-        .await
+    let rows: Vec<RagContextRow> = match crate::domain::rows::fetch_all(
+        pg_db.pool(),
+        &sql,
+        &[&quench_pg::PgArray(message_ids.to_vec()) as &dyn quench_pg::ToSql],
+    )
+    .await
     {
         Ok(rows) => rows,
         Err(e) => {
-            tracing::error!("Failed to load rag_contexts: {}", e);
+            quench_log::error!("Failed to load rag_contexts: {}", e);
             return map;
         }
     };
@@ -388,7 +408,7 @@ pub async fn augment_system_prompt(
         }
         Err(reason) => {
             // Search is best-effort here; the file list alone is still useful.
-            tracing::debug!(
+            quench_log::debug!(
                 "RAG auto-inject skipped for conversation {}: {}",
                 conversation_id,
                 reason

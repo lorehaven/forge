@@ -12,8 +12,8 @@
 //!   schema start.
 
 use crate::render::{ResourceRef, kinds_match, resource_refs};
-use anyhow::{Context as _, Result, bail, ensure};
-use serde_norway::Value as YamlValue;
+use quench_core::{Context as _, Result, bail, ensure};
+use quench_serde::Value as YamlValue;
 
 /// What an apply waits for after applying a resource.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,7 +64,7 @@ fn dependency_entries(res: &YamlValue, who: &ResourceRef) -> Result<Vec<(String,
         return Ok(Vec::new());
     }
     let list = value
-        .as_sequence()
+        .as_array()
         .with_context(|| format!("{who}: depends_on must be a list of `kind/name`"))?;
 
     list.iter()
@@ -91,7 +91,7 @@ fn dependency_entries(res: &YamlValue, who: &ResourceRef) -> Result<Vec<(String,
 /// nothing keeps its order, and one that declares a little moves only what it must. An unknown reference
 /// or a cycle is an error naming the resources involved.
 pub fn order_by_dependencies(data: &mut YamlValue) -> Result<()> {
-    let Some(resources) = data["resources"].as_sequence() else {
+    let Some(resources) = data["resources"].as_array() else {
         return Ok(());
     };
     if resources.iter().all(|res| res["depends_on"].is_null()) {
@@ -150,7 +150,7 @@ pub fn order_by_dependencies(data: &mut YamlValue) -> Result<()> {
     }
 
     let reordered: Vec<YamlValue> = order.iter().map(|&i| resources[i].clone()).collect();
-    data["resources"] = YamlValue::Sequence(reordered);
+    data["resources"] = YamlValue::Array(reordered);
     Ok(())
 }
 
@@ -206,7 +206,7 @@ pub fn gate_of(res: &YamlValue, who: &ResourceRef) -> Result<Option<(WaitFor, Op
 /// Every gate an overlay declares, as `(resource, wait, timeout)`, in the overlay's order.
 pub fn gates_of(data: &YamlValue) -> Result<Vec<(ResourceRef, WaitFor, Option<u64>)>> {
     let refs = resource_refs(data)?;
-    let Some(resources) = data["resources"].as_sequence() else {
+    let Some(resources) = data["resources"].as_array() else {
         return Ok(Vec::new());
     };
     let mut gates = Vec::new();

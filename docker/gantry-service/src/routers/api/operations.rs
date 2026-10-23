@@ -6,7 +6,7 @@ use crate::domain::steps::Plan;
 use crate::routers::api::{ApiError, OptionalClaims, actor, authz, json_error};
 use quench_auth::domain::jwt::JwtConfig;
 use quench_http::prelude::{Inject, Json, Path, Query, Response, get, http::StatusCode, post};
-use serde::{Deserialize, Serialize};
+use quench_serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
 pub struct Submit {

@@ -2,26 +2,28 @@ use crate::clients::switchboard::SwitchboardClient;
 use crate::clients::vllm::VllmClient;
 use crate::domain::models::{Conversation, File, FileChunk, Project};
 use crate::files::{STATUS_UPLOADED, pipeline};
-use async_trait::async_trait;
-use bytes::Bytes;
-use chrono::Utc;
 use quench_auth::domain::jwt::JwtConfig;
 use quench_auth::http::routers::ui::get_user_from_req;
+use quench_core::async_trait;
+use quench_core::bytes::Bytes;
+use quench_core::time::Time;
+use quench_core::uuid::Uuid;
 use quench_db::prelude::{Crud, Db};
 use quench_http::prelude::{
     FromRequest, HttpError, Inject, Multipart, Path, Query, Request, Response, delete, get,
     http::StatusCode, post,
 };
-use uuid::Uuid;
 
 const DEFAULT_MAX_FILE_SIZE_MB: u64 = 25;
 
 fn max_file_size_bytes() -> u64 {
-    envmnt::get_u64("SAGE_FILE_MAX_SIZE_MB", DEFAULT_MAX_FILE_SIZE_MB) * 1024 * 1024
+    quench_core::env::get_parsed::<u64>("SAGE_FILE_MAX_SIZE_MB", DEFAULT_MAX_FILE_SIZE_MB)
+        * 1024
+        * 1024
 }
 
 fn db_schema() -> String {
-    envmnt::get_or("DB_SCHEMA", "sage")
+    quench_core::env::get_or("DB_SCHEMA", "sage")
 }
 
 /// Single source of truth for accepted extensions - both upload validation
@@ -147,7 +149,7 @@ pub(crate) async fn parse_upload_form(mut form: Multipart) -> Result<FileUploadF
 
 /// Log the underlying error and return the generic `api_error_*` code the UI resolves via i18n.
 fn internal_error<E: std::fmt::Display>(e: E) -> Response {
-    tracing::error!("Internal error: {}", e);
+    quench_log::error!("Internal error: {}", e);
     Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal")
 }
 
@@ -193,18 +195,19 @@ async fn check_file_limit(
     conversation_id: Option<&String>,
     project_id: Option<&String>,
 ) -> Result<(), Response> {
-    let max_files = envmnt::get_u64("SAGE_MAX_FILES_PER_SCOPE", 50);
+    let max_files = quench_core::env::get_parsed::<u64>("SAGE_MAX_FILES_PER_SCOPE", 50);
     if let Db::Postgres(pg_db) = db {
         let schema = db_schema();
         let count_sql = format!(
             "SELECT count(*) FROM {schema}.files WHERE conversation_id = $1 OR project_id = $2"
         );
-        let (count,): (i64,) = sqlx::query_as(sqlx::AssertSqlSafe(count_sql.as_str()))
-            .bind(conversation_id)
-            .bind(project_id)
-            .fetch_one(pg_db.pool())
-            .await
-            .map_err(internal_error)?;
+        let (count,): (i64,) = crate::domain::rows::fetch_one_tuple(
+            pg_db.pool(),
+            &count_sql,
+            &[&conversation_id, &project_id],
+        )
+        .await
+        .map_err(internal_error)?;
         if u64::try_from(count).unwrap_or(0) >= max_files {
             return Err(Response::text(
                 StatusCode::UNPROCESSABLE_ENTITY,
@@ -220,7 +223,7 @@ async fn insert_file_with_blob(
     pg_db: &quench_db::prelude::PostgresDb,
     file: &File,
     data: &[u8],
-) -> Result<(), sqlx::Error> {
+) -> Result<(), quench_pg::Error> {
     let schema = db_schema();
     let insert_file = format!(
         "INSERT INTO {schema}.files (id, owner, file_name, mime_type, file_size, conversation_id, project_id, status, error_message, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"
@@ -228,27 +231,29 @@ async fn insert_file_with_blob(
     let insert_blob = format!("INSERT INTO {schema}.file_blobs (file_id, data) VALUES ($1, $2)");
 
     async {
-        let mut tx = pg_db.pool().begin().await?;
-        sqlx::query(sqlx::AssertSqlSafe(insert_file.as_str()))
-            .bind(&file.id)
-            .bind(&file.owner)
-            .bind(&file.file_name)
-            .bind(&file.mime_type)
-            .bind(file.file_size)
-            .bind(&file.conversation_id)
-            .bind(&file.project_id)
-            .bind(&file.status)
-            .bind(&file.error_message)
-            .bind(&file.created_at)
-            .bind(&file.updated_at)
-            .execute(&mut *tx)
-            .await?;
-        sqlx::query(sqlx::AssertSqlSafe(insert_blob.as_str()))
-            .bind(&file.id)
-            .bind(data)
-            .execute(&mut *tx)
+        let mut conn = pg_db.pool().get().await?;
+        let mut tx = conn.begin().await?;
+        tx.execute(
+            &insert_file,
+            &[
+                &file.id as &dyn quench_pg::ToSql,
+                &file.owner,
+                &file.file_name,
+                &file.mime_type,
+                &file.file_size,
+                &file.conversation_id,
+                &file.project_id,
+                &file.status,
+                &file.error_message,
+                &file.created_at,
+                &file.updated_at,
+            ],
+        )
+        .await?;
+        tx.execute(&insert_blob, &[&file.id as &dyn quench_pg::ToSql, &data])
             .await?;
         tx.commit().await?;
+        drop(conn);
         Ok(())
     }
     .await
@@ -314,7 +319,7 @@ pub async fn create_uploaded_file(
 
     // Images are not text-extracted: ready as soon as the blob is stored, never enter the chunk/embed pipeline.
     let is_image = crate::files::is_image_mime(mime_type);
-    let now = Utc::now().to_rfc3339();
+    let now = Time::now().to_rfc3339();
     let file = File {
         id: Uuid::new_v4().to_string(),
         owner: username.to_string(),
@@ -339,7 +344,7 @@ pub async fn create_uploaded_file(
             let result = insert_file_with_blob(pg_db, &file, form.file_data.as_ref()).await;
 
             if let Err(e) = result {
-                tracing::error!("Failed to store uploaded file: {}", e);
+                quench_log::error!("Failed to store uploaded file: {}", e);
                 return Err(Response::text(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "api_error_internal",
@@ -417,7 +422,7 @@ pub async fn upload_file(
     )
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, quench_serde::Deserialize)]
 pub struct ListFilesQuery {
     pub conversation_id: Option<String>,
     pub project_id: Option<String>,
@@ -484,12 +489,13 @@ pub async fn visible_files_for_conversation(
             let query = format!(
                 "SELECT f.* FROM {schema}.files f LEFT JOIN {schema}.conversations c ON f.conversation_id = c.id WHERE f.conversation_id = $1 OR ($2::text IS NOT NULL AND (f.project_id = $2 OR c.project_id = $2)) ORDER BY f.created_at"
             );
-            sqlx::query_as::<_, File>(sqlx::AssertSqlSafe(query.as_str()))
-                .bind(&conversation.id)
-                .bind(&conversation.project_id)
-                .fetch_all(pg_db.pool())
-                .await
-                .map_err(|e| e.to_string())
+            crate::domain::rows::fetch_all::<File>(
+                pg_db.pool(),
+                &query,
+                &[&conversation.id, &conversation.project_id],
+            )
+            .await
+            .map_err(|e| e.to_string())
         }
         Db::InMemory(_) => {
             let files = db
@@ -532,9 +538,7 @@ pub async fn visible_files_for_project(db: &Db, project_id: &str) -> Result<Vec<
             let query = format!(
                 "SELECT f.* FROM {schema}.files f LEFT JOIN {schema}.conversations c ON f.conversation_id = c.id WHERE f.project_id = $1 OR c.project_id = $1 ORDER BY f.created_at"
             );
-            sqlx::query_as::<_, File>(sqlx::AssertSqlSafe(query.as_str()))
-                .bind(project_id)
-                .fetch_all(pg_db.pool())
+            crate::domain::rows::fetch_all::<File>(pg_db.pool(), &query, &[&project_id])
                 .await
                 .map_err(|e| e.to_string())
         }
@@ -584,13 +588,18 @@ pub async fn link_files_to_message(
     let sql = format!(
         "UPDATE {schema}.files SET message_id = $1, updated_at = $2 WHERE id = ANY($3) AND owner = $4 AND conversation_id = $5 AND message_id IS NULL"
     );
-    sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(message_id)
-        .bind(chrono::Utc::now().to_rfc3339())
-        .bind(file_ids)
-        .bind(username)
-        .bind(conversation_id)
-        .execute(pg_db.pool())
+    pg_db
+        .pool()
+        .execute(
+            &sql,
+            &[
+                &message_id as &dyn quench_pg::ToSql,
+                &quench_core::time::Time::now().to_rfc3339(),
+                &quench_pg::PgArray(file_ids.to_vec()),
+                &username,
+                &conversation_id,
+            ],
+        )
         .await
         .map_err(|e| e.to_string())?;
     Ok(())
@@ -611,14 +620,16 @@ pub async fn files_by_message(
     let schema = db_schema();
     let query =
         format!("SELECT * FROM {schema}.files WHERE message_id = ANY($1) ORDER BY created_at");
-    let files = match sqlx::query_as::<_, File>(sqlx::AssertSqlSafe(query.as_str()))
-        .bind(message_ids)
-        .fetch_all(pg_db.pool())
-        .await
+    let files = match crate::domain::rows::fetch_all::<File>(
+        pg_db.pool(),
+        &query,
+        &[&quench_pg::PgArray(message_ids.to_vec()) as &dyn quench_pg::ToSql],
+    )
+    .await
     {
         Ok(files) => files,
         Err(e) => {
-            tracing::error!("Failed to load message attachments: {}", e);
+            quench_log::error!("Failed to load message attachments: {}", e);
             return map;
         }
     };
@@ -679,10 +690,12 @@ pub async fn download_file(
         Db::Postgres(pg_db) => {
             let schema = db_schema();
             let query = format!("SELECT data FROM {schema}.file_blobs WHERE file_id = $1");
-            match sqlx::query_as::<_, (Vec<u8>,)>(sqlx::AssertSqlSafe(query.as_str()))
-                .bind(&file.id)
-                .fetch_optional(pg_db.pool())
-                .await
+            match crate::domain::rows::fetch_optional_tuple::<(Vec<u8>,)>(
+                pg_db.pool(),
+                &query,
+                &[&file.id],
+            )
+            .await
             {
                 Ok(Some((data,))) => {
                     // Strip characters that would corrupt the header value.
@@ -777,9 +790,7 @@ pub async fn list_chunks(
             let query = format!(
                 "SELECT id, file_id, chunk_index, content, embedding_model, metadata, created_at FROM {schema}.file_chunks WHERE file_id = $1 ORDER BY chunk_index"
             );
-            match sqlx::query_as::<_, FileChunk>(sqlx::AssertSqlSafe(query.as_str()))
-                .bind(&file.id)
-                .fetch_all(pg_db.pool())
+            match crate::domain::rows::fetch_all::<FileChunk>(pg_db.pool(), &query, &[&file.id])
                 .await
             {
                 Ok(chunks) => json_ok(&chunks),
@@ -823,7 +834,7 @@ pub async fn delete_file(
     }
 }
 
-fn json_ok<T: serde::Serialize>(value: &T) -> Response {
+fn json_ok<T: quench_serde::Serialize>(value: &T) -> Response {
     Response::json(StatusCode::OK, value)
         .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
 }

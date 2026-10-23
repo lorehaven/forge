@@ -1,7 +1,7 @@
 //! What each verb does.
 
-use anyhow::{Context, Result, bail};
 use quench_cli::prelude::{DIM, RESET};
+use quench_core::{Context, Result, bail};
 
 use crate::config::Role;
 use crate::docker;

@@ -1,6 +1,6 @@
 use crate::support;
 
-use http::Method;
+use quench_http::http::Method;
 use warehouse_service::routers::docker::register_routes;
 
 async fn app() -> (
@@ -17,7 +17,7 @@ async fn get_reports_ok_with_the_distribution_api_version_header() {
     let (app, container) = app().await;
     let req = support::req(Method::GET, "/v2/", &container);
     let resp = app.call(req).await;
-    assert_eq!(resp.status(), http::StatusCode::OK);
+    assert_eq!(resp.status(), quench_http::http::StatusCode::OK);
     let (headers, _) = support::parts(resp).await;
     assert_eq!(
         headers.get("docker-distribution-api-version").unwrap(),
@@ -30,7 +30,7 @@ async fn head_reports_the_same_as_get() {
     let (app, container) = app().await;
     let req = support::req(Method::HEAD, "/v2/", &container);
     let resp = app.call(req).await;
-    assert_eq!(resp.status(), http::StatusCode::OK);
+    assert_eq!(resp.status(), quench_http::http::StatusCode::OK);
     let (headers, _) = support::parts(resp).await;
     assert!(headers.contains_key("docker-distribution-api-version"));
 }

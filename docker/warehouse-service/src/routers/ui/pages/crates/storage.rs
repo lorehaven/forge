@@ -1,6 +1,6 @@
 use crate::routers::crates::validate_crate_name;
 use crate::routers::crates_storage_root;
-use serde::{Deserialize, Serialize};
+use quench_serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 // --- Public data types ---
@@ -85,6 +85,6 @@ pub fn list_versions(crate_name: &str) -> Vec<IndexRecord> {
     content
         .lines()
         .filter(|l| !l.trim().is_empty())
-        .filter_map(|l| serde_json::from_str(l).ok())
+        .filter_map(|l| quench_serde::json::from_str(l).ok())
         .collect()
 }

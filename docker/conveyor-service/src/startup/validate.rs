@@ -15,7 +15,7 @@ const OPTIONAL_TOOLS: [(&str, &str); 5] = [
 
 pub fn report_toolchain(config: &ConveyorConfig) {
     if config.executor != ExecutorKind::Native {
-        tracing::info!(
+        quench_log::info!(
             "executor is {}, so the local toolchain is not used",
             config.executor
         );
@@ -23,9 +23,9 @@ pub fn report_toolchain(config: &ConveyorConfig) {
     }
 
     if which::which("git").is_ok() {
-        tracing::info!("git found; checkouts will work");
+        quench_log::info!("git found; checkouts will work");
     } else {
-        tracing::error!(
+        quench_log::error!(
             "git is not on PATH: every run will fail at the checkout. Install it, \
              or move to CONVEYOR_EXECUTOR=kubernetes where each job brings its own."
         );
@@ -35,13 +35,13 @@ pub fn report_toolchain(config: &ConveyorConfig) {
         .iter()
         .filter(|(tool, _)| which::which(tool).is_err())
         .map(|(tool, needed_for)| {
-            tracing::debug!("{tool} not found; {needed_for} will fail");
+            quench_log::debug!("{tool} not found; {needed_for} will fail");
             *tool
         })
         .collect();
 
     if !missing.is_empty() {
-        tracing::warn!(
+        quench_log::warn!(
             "not on PATH: {}. Pipelines using them will fail; a pipeline of plain \
              `run` steps is unaffected.",
             missing.join(", ")

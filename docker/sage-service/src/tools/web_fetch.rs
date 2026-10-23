@@ -1,7 +1,7 @@
 use super::{ToolCall, ToolDefinition, ToolExecutor, ToolParameters, ToolResult};
-use async_trait::async_trait;
 use quench_cache::DataCache;
-use serde_json::json;
+use quench_core::async_trait;
+use quench_serde::json;
 use std::fmt::Write as _;
 use std::sync::Arc;
 
@@ -25,7 +25,7 @@ pub fn get_definition() -> ToolDefinition {
 }
 
 pub struct WebFetchExecutor {
-    client: reqwest::Client,
+    client: quench_client::transport::Client,
     cache: Arc<DataCache>,
 }
 
@@ -33,7 +33,7 @@ impl WebFetchExecutor {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: quench_client::transport::Client::new(),
             cache: Arc::new(DataCache::new()),
         }
     }
@@ -118,7 +118,7 @@ impl ToolExecutor for WebFetchExecutor {
 /// Fetch a page and return its extracted text (title, headings, paragraphs) capped at
 /// `max_chars`; for the grounding pipeline, which wants far more than the tool's 2000 chars.
 pub async fn fetch_page_text(
-    client: &reqwest::Client,
+    client: &quench_client::transport::Client,
     url: &str,
     max_chars: usize,
 ) -> Result<String, String> {
@@ -147,12 +147,12 @@ fn collapse_ws(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-fn collect_json_ld(value: &serde_json::Value, out: &mut Vec<String>) {
+fn collect_json_ld(value: &quench_serde::Value, out: &mut Vec<String>) {
     match value {
-        serde_json::Value::Object(map) => {
+        quench_serde::Value::Object(map) => {
             for (key, val) in map {
                 match val {
-                    serde_json::Value::String(text) if JSON_LD_KEYS.contains(&key.as_str()) => {
+                    quench_serde::Value::String(text) if JSON_LD_KEYS.contains(&key.as_str()) => {
                         let text = collapse_ws(text);
                         if !text.is_empty() && out.len() < 12 {
                             out.push(format!(
@@ -165,7 +165,7 @@ fn collect_json_ld(value: &serde_json::Value, out: &mut Vec<String>) {
                 }
             }
         }
-        serde_json::Value::Array(items) => items.iter().for_each(|v| collect_json_ld(v, out)),
+        quench_serde::Value::Array(items) => items.iter().for_each(|v| collect_json_ld(v, out)),
         _ => {}
     }
 }
@@ -205,7 +205,7 @@ pub fn extract_rich_text(html: &str, max_chars: usize) -> Result<String, String>
     let mut ld = Vec::new();
     for script in document.select(&sel(r#"script[type="application/ld+json"]"#)?) {
         if let Ok(value) =
-            serde_json::from_str::<serde_json::Value>(&script.text().collect::<String>())
+            quench_serde::json::from_str::<quench_serde::Value>(&script.text().collect::<String>())
         {
             collect_json_ld(&value, &mut ld);
         }
@@ -273,12 +273,18 @@ pub fn extract_rich_text(html: &str, max_chars: usize) -> Result<String, String>
     Ok(text)
 }
 
-async fn fetch_and_extract(client: &reqwest::Client, url: &str) -> Result<String, String> {
+async fn fetch_and_extract(
+    client: &quench_client::transport::Client,
+    url: &str,
+) -> Result<String, String> {
     let html = fetch_html(client, url).await?;
     extract_text(&html)
 }
 
-async fn fetch_html(client: &reqwest::Client, url: &str) -> Result<String, String> {
+async fn fetch_html(
+    client: &quench_client::transport::Client,
+    url: &str,
+) -> Result<String, String> {
     let response = client
         .get(url)
         .header(

@@ -5,7 +5,7 @@ use crate::env::overlay_dir;
 use crate::repl::{ok, warn};
 use crate::secrets::{SyncRequest, sync};
 use crate::vault::{self, Vault};
-use anyhow::{Context as _, Result, bail, ensure};
+use quench_core::{Context as _, Result, bail, ensure};
 use std::io::Read as _;
 use std::path::Path;
 
@@ -135,7 +135,7 @@ fn keygen(out: Option<&Path>) -> Result<()> {
     let (secret, public) = vault::keygen();
     let text = format!(
         "# created: {}\n# public key: {public}\n{secret}\n",
-        chrono::Utc::now().to_rfc3339()
+        quench_core::time::Time::now().to_rfc3339()
     );
     match out {
         Some(path) => {

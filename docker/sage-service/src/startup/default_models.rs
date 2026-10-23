@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
+use quench_core::time::Time;
 use tokio::sync::Mutex;
 
 use crate::clients::switchboard::{SwitchboardClient, VllmInstance};
@@ -15,25 +15,25 @@ pub const MAX_LAUNCH_ATTEMPTS: u32 = 3;
 /// rolling update's new pod can't have the old pod tear its launch down.
 #[derive(Debug, Clone)]
 pub struct LaunchedInstances {
-    launches: Arc<Mutex<HashMap<String, DateTime<Utc>>>>,
-    process_started_at: DateTime<Utc>,
+    launches: Arc<Mutex<HashMap<String, Time>>>,
+    process_started_at: Time,
 }
 
 impl Default for LaunchedInstances {
     fn default() -> Self {
         Self {
             launches: Arc::new(Mutex::new(HashMap::new())),
-            process_started_at: Utc::now(),
+            process_started_at: Time::now(),
         }
     }
 }
 
 impl LaunchedInstances {
-    async fn record(&self, id: String, started_at: DateTime<Utc>) {
+    async fn record(&self, id: String, started_at: Time) {
         self.launches.lock().await.insert(id, started_at);
     }
 
-    async fn owns(&self, id: &str, started_at: DateTime<Utc>) -> bool {
+    async fn owns(&self, id: &str, started_at: Time) -> bool {
         started_at < self.process_started_at
             || self.launches.lock().await.get(id) == Some(&started_at)
     }
@@ -74,7 +74,7 @@ pub fn next_model_to_launch<'a, S: std::hash::BuildHasher>(
     attempts: &HashMap<String, u32, S>,
 ) -> Option<&'a DefaultModel> {
     if let Some(inst) = instances.iter().find(|inst| is_starting(&inst.status)) {
-        tracing::debug!(
+        quench_log::debug!(
             "Instance '{}' is still starting; holding off on launching the next default model.",
             inst.model
         );
@@ -103,12 +103,12 @@ pub async fn monitor_default_models<S: std::hash::BuildHasher>(
     attempts: &mut HashMap<String, u32, S>,
     launched: &LaunchedInstances,
 ) {
-    tracing::debug!("Checking active instances for default models...");
+    quench_log::debug!("Checking active instances for default models...");
 
     let instances = match switchboard.get_vllm_instances().await {
         Ok(inst) => inst,
         Err(err) => {
-            tracing::error!(
+            quench_log::error!(
                 "Failed to check running instances for default models: {}",
                 err
             );
@@ -118,7 +118,7 @@ pub async fn monitor_default_models<S: std::hash::BuildHasher>(
 
     for model in &config.default_models {
         if !config.is_model_supported(&model.name) {
-            tracing::warn!(
+            quench_log::warn!(
                 "Model '{}' is in default_models but does not match any pattern in supported_models.",
                 model.name
             );
@@ -144,7 +144,7 @@ pub async fn monitor_default_models<S: std::hash::BuildHasher>(
     request_model_launch(switchboard, model, launched).await;
 
     if attempt >= MAX_LAUNCH_ATTEMPTS {
-        tracing::error!(
+        quench_log::error!(
             "This was attempt {} of {} for default model '{}'. If it does not reach \
              'running' it will be skipped so the remaining default models can start.",
             attempt,
@@ -159,7 +159,7 @@ pub async fn request_model_launch(
     model: &DefaultModel,
     launched: &LaunchedInstances,
 ) {
-    tracing::info!(
+    quench_log::info!(
         "Default model '{}' is not available. Requesting switchboard to launch it.",
         model.name
     );
@@ -181,14 +181,14 @@ pub async fn request_model_launch(
     {
         Ok(inst) => {
             launched.record(inst.id.clone(), inst.started_at).await;
-            tracing::info!(
+            quench_log::info!(
                 "Successfully requested launch of model '{}'. Instance ID: {}",
                 model.name,
                 inst.id
             );
         }
         Err(err) => {
-            tracing::error!(
+            quench_log::error!(
                 "Failed to request launch of model '{}': {}",
                 model.name,
                 err
@@ -205,16 +205,18 @@ pub async fn shutdown(
     launched: &LaunchedInstances,
 ) {
     if !config.stop_models_on_shutdown {
-        tracing::debug!("SAGE_STOP_MODELS_ON_SHUTDOWN is disabled; leaving default models running");
+        quench_log::debug!(
+            "SAGE_STOP_MODELS_ON_SHUTDOWN is disabled; leaving default models running"
+        );
         return;
     }
 
-    tracing::info!("Stopping default models on shutdown...");
+    quench_log::info!("Stopping default models on shutdown...");
 
     let instances = match switchboard.get_vllm_instances().await {
         Ok(inst) => inst,
         Err(err) => {
-            tracing::error!(
+            quench_log::error!(
                 "Failed to list instances while stopping default models: {}",
                 err
             );
@@ -228,7 +230,7 @@ pub async fn shutdown(
                 && matches!(inst.status.as_str(), "running" | "starting" | "pending")
         }) {
             if !launched.owns(&inst.id, inst.started_at).await {
-                tracing::debug!(
+                quench_log::debug!(
                     "Not stopping '{}' (instance {}): launched by a different sage instance",
                     model.name,
                     inst.id
@@ -237,12 +239,12 @@ pub async fn shutdown(
             }
 
             match switchboard.stop_instance(&inst.id).await {
-                Ok(()) => tracing::info!(
+                Ok(()) => quench_log::info!(
                     "Requested graceful stop of default model '{}' (instance {})",
                     model.name,
                     inst.id
                 ),
-                Err(err) => tracing::error!(
+                Err(err) => quench_log::error!(
                     "Failed to stop default model '{}' (instance {}): {}",
                     model.name,
                     inst.id,

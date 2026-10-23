@@ -5,13 +5,11 @@ use super::{ResolvedStorage, authorize, dynamic_path, error, forbidden, resolve_
 use crate::domain::storage_file;
 use crate::routers::docker::RawBody;
 use crate::routers::files::{FileQuery, OptionalClaims, dynamic, max_file_bytes};
-use futures_util::StreamExt;
-use http_body_util::BodyExt;
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::stream::StreamExt;
 use quench_db::prelude::Db;
 use quench_http::prelude::{Inject, Path, Query, Response, http::StatusCode, put};
-use serde::Serialize;
-use sha2::{Digest, Sha256};
+use quench_serde::Serialize;
 use std::path::{Path as FsPath, PathBuf};
 use tokio::io::AsyncWriteExt;
 
@@ -23,7 +21,7 @@ pub struct Stored {
 }
 
 #[put("/api/v1/files/{storage}/file")]
-#[tracing::instrument(skip(body, claims, config, db))]
+#[quench_log::instrument(skip(body, claims, config, db))]
 pub async fn handle(
     OptionalClaims(claims): OptionalClaims,
     Inject(config): Inject<JwtConfig>,
@@ -104,7 +102,7 @@ async fn handle_static(
         digest: format!("sha256:{digest}"),
     };
 
-    tracing::info!(
+    quench_log::info!(
         "stored {} bytes at `{}` in storage `{}`",
         size,
         stored.path,
@@ -183,7 +181,7 @@ async fn handle_dynamic(
                 digest: format!("sha256:{digest}"),
             };
 
-            tracing::info!(
+            quench_log::info!(
                 "stored {} bytes at `{}` in dynamic storage `{}`",
                 size,
                 stored.path,
@@ -208,7 +206,7 @@ async fn handle_dynamic(
                     error(StatusCode::NOT_FOUND, "no such storage")
                 }
                 other => {
-                    tracing::error!("dynamic upload failed: {other}");
+                    quench_log::error!("dynamic upload failed: {other}");
                     error(
                         StatusCode::INTERNAL_SERVER_ERROR,
                         "could not store the file",
@@ -253,9 +251,9 @@ async fn stream_to_disk(
         .map_err(|_| StreamError::Write)?;
 
     let mut size: u64 = 0;
-    let mut hasher = Sha256::new();
+    let mut hasher = quench_crypto::hash::Hasher::new(quench_crypto::hash::Algorithm::Sha256);
 
-    let mut stream = body.0.into_data_stream();
+    let mut stream = body.0.into_body();
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|_| StreamError::Read)?;
 
@@ -274,7 +272,7 @@ async fn stream_to_disk(
     // against a file whose last bytes are still in the buffer.
     file.flush().await.map_err(|_| StreamError::Write)?;
 
-    Ok((size, hex::encode(hasher.finalize())))
+    Ok((size, quench_core::hex::encode(hasher.finish())))
 }
 
 /// A sibling of the target (same filesystem); pid+counter keep concurrent uploads from colliding.

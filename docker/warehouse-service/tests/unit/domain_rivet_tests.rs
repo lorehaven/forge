@@ -1,6 +1,5 @@
-use chrono::Utc;
+use quench_core::time::Time;
 use quench_db::prelude::Model;
-use sqlx::types::Json;
 use warehouse_service::domain::rivet::{RivetPackage, latest_of, sort_newest_first};
 
 fn package(name: &str, version: &str, yanked: bool) -> RivetPackage {
@@ -13,10 +12,10 @@ fn package(name: &str, version: &str, yanked: bool) -> RivetPackage {
         filename: format!("{name}-{version}.rivet"),
         size_bytes: 1,
         sha256: "0".repeat(64),
-        manifest: Json(serde_json::json!({})),
+        manifest: quench_serde::json!({}),
         uploaded_by: "dev".to_string(),
         yanked,
-        created_at: Utc::now(),
+        created_at: Time::now(),
     }
 }
 

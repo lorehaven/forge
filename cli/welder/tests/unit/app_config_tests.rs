@@ -45,10 +45,10 @@ fn is_verbose_true_when_welder_debug_env_is_set() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     for value in ["true", "TRUE", "1"] {
-        envmnt::set("WELDER_DEBUG", value);
+        quench_core::env::set("WELDER_DEBUG", value);
         assert!(is_verbose(), "WELDER_DEBUG={value}");
     }
-    envmnt::remove("WELDER_DEBUG");
+    quench_core::env::remove("WELDER_DEBUG");
 }
 
 #[test]
@@ -56,15 +56,15 @@ fn load_defaults_when_no_config_file_is_present() {
     let _guard = welder_debug_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::remove("WELDER_DEBUG");
-    let dir = tempfile::tempdir().expect("tempdir");
+    quench_core::env::remove("WELDER_DEBUG");
+    let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let config = in_dir(dir.path(), Config::load);
     assert_eq!(config.backend.kind, "ollama");
 }
 
 #[test]
 fn load_parses_an_existing_config_file() {
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let welder_dir = dir.path().join(".welder");
     std::fs::create_dir_all(&welder_dir).expect("mkdir");
     std::fs::write(
@@ -83,7 +83,7 @@ fn load_parses_an_existing_config_file() {
 
 #[test]
 fn load_falls_back_to_defaults_on_invalid_toml() {
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let welder_dir = dir.path().join(".welder");
     std::fs::create_dir_all(&welder_dir).expect("mkdir");
     std::fs::write(welder_dir.join("config.toml"), "not valid toml {{{").expect("write config");

@@ -27,7 +27,7 @@ pub use types::*;
 
 pub async fn init_engine() -> Arc<dyn VllmEngine> {
     let mode = VllmManagementMode::from_env();
-    tracing::info!("Initializing vLLM management in {:?} mode", mode);
+    quench_log::info!("Initializing vLLM management in {:?} mode", mode);
 
     match mode {
         VllmManagementMode::Native => Arc::new(NativeVllmEngine),
@@ -35,7 +35,7 @@ pub async fn init_engine() -> Arc<dyn VllmEngine> {
         VllmManagementMode::Kubernetes => match KubernetesVllmEngine::new().await {
             Ok(e) => Arc::new(e),
             Err(err) => {
-                tracing::error!(
+                quench_log::error!(
                     "Failed to initialize Kubernetes vLLM engine: {}. Falling back to Native.",
                     err
                 );

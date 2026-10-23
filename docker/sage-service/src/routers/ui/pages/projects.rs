@@ -1,10 +1,10 @@
 use crate::routers::ui::common::RequiredClaims;
-use chrono::Utc;
+use quench_core::time::Time;
+use quench_core::uuid::Uuid;
 use quench_db::prelude::{Crud, Db};
 use quench_http::prelude::{Form, HttpError, Inject, Response, get, http::StatusCode, post};
 use quench_starter::common::routes::with_base_path;
 use quench_web::prelude::*;
-use uuid::Uuid;
 
 #[get("/ui/projects/new-modal")]
 pub async fn new_modal() -> Response {
@@ -69,7 +69,7 @@ pub async fn new_modal() -> Response {
     Response::html(StatusCode::OK, modal.render())
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, quench_serde::Deserialize)]
 pub struct CreateProjectRequest {
     pub name: String,
 }
@@ -89,13 +89,13 @@ pub async fn create_project(
         id: Uuid::new_v4().to_string(),
         name: form.name.clone(),
         owner: username,
-        created_at: Utc::now().to_rfc3339(),
-        updated_at: Utc::now().to_rfc3339(),
+        created_at: Time::now().to_rfc3339(),
+        updated_at: Time::now().to_rfc3339(),
     };
 
     let repo = db.repository::<crate::domain::models::Project>();
     if let Err(e) = repo.create(&project).await {
-        tracing::error!("Failed to create project: {}", e);
+        quench_log::error!("Failed to create project: {}", e);
         return Ok(Response::text(
             StatusCode::INTERNAL_SERVER_ERROR,
             "api_error_internal",

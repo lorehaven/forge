@@ -1,11 +1,11 @@
 //! Plain file storage, addressed by path within a named, operator-configured
 //! storage (`FILE_STORAGES=`) - `path` is the only caller-controlled part; see [`resolve`].
 
-use async_trait::async_trait;
 use quench_auth::domain::jwt::{Claims, JwtConfig};
 use quench_auth::http::middleware::auth::Auth;
+use quench_core::async_trait;
 use quench_http::prelude::{Endpoint, FromRequest, HttpError, OnPathPrefix, Request, wrap};
-use serde::Deserialize;
+use quench_serde::Deserialize;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
@@ -34,7 +34,7 @@ pub struct Storage {
 
 /// The configured storages, parsed once.
 static STORAGES: std::sync::LazyLock<Vec<Storage>> =
-    std::sync::LazyLock::new(|| parse_storages(&envmnt::get_or("FILE_STORAGES", "")));
+    std::sync::LazyLock::new(|| parse_storages(&quench_core::env::get_or("FILE_STORAGES", "")));
 
 /// The most a single file may be. Defaults to `MAX_REQUEST_BODY_BYTES` - here the body *is* the file.
 static MAX_FILE_BYTES: std::sync::LazyLock<u64> = std::sync::LazyLock::new(|| {
@@ -66,7 +66,7 @@ pub fn parse_storages(raw: &str) -> Vec<Storage> {
 
     for entry in raw.split(';').map(str::trim).filter(|e| !e.is_empty()) {
         let Some((name, root)) = entry.split_once('=') else {
-            tracing::warn!("ignoring file storage `{entry}`: expected `name=path`");
+            quench_log::warn!("ignoring file storage `{entry}`: expected `name=path`");
             continue;
         };
 
@@ -74,19 +74,19 @@ pub fn parse_storages(raw: &str) -> Vec<Storage> {
         let root = root.trim();
 
         if name.is_empty() || root.is_empty() {
-            tracing::warn!("ignoring file storage `{entry}`: empty name or path");
+            quench_log::warn!("ignoring file storage `{entry}`: empty name or path");
             continue;
         }
 
         if !valid_storage_name(name) {
-            tracing::warn!(
+            quench_log::warn!(
                 "ignoring file storage `{name}`: names may use letters, digits, `-` and `_` only"
             );
             continue;
         }
 
         if storages.iter().any(|existing| existing.name == name) {
-            tracing::warn!("ignoring duplicate file storage `{name}`");
+            quench_log::warn!("ignoring duplicate file storage `{name}`");
             continue;
         }
 
@@ -114,19 +114,19 @@ pub fn storage(name: &str) -> Option<&'static Storage> {
 /// visible in the log rather than only in a caller's 404.
 pub fn report_storages() {
     if !crate::routers::files_enabled() {
-        tracing::info!("file storage is disabled (FEATURE_FILES_ENABLED)");
+        quench_log::info!("file storage is disabled (FEATURE_FILES_ENABLED)");
         return;
     }
 
     if STORAGES.is_empty() {
-        tracing::warn!(
+        quench_log::warn!(
             "file storage is enabled but FILE_STORAGES is empty: every request will be a 404"
         );
         return;
     }
 
     for storage in STORAGES.iter() {
-        tracing::info!(
+        quench_log::info!(
             "file storage `{}` -> {}",
             storage.name,
             storage.root.display()

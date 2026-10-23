@@ -7,12 +7,12 @@ use riveter::repl::{
 use std::os::unix::fs::PermissionsExt;
 
 /// `parse_args` skips element 0, the way the REPL hands it the command word.
-fn apply(line: &str) -> anyhow::Result<riveter::repl::ParsedArgs> {
+fn apply(line: &str) -> quench_core::Result<riveter::repl::ParsedArgs> {
     let args = line.split_whitespace().collect::<Vec<_>>();
     parse_args(&args, ResourceScope::Mutable, true)
 }
 
-fn list(line: &str) -> anyhow::Result<riveter::repl::ParsedArgs> {
+fn list(line: &str) -> quench_core::Result<riveter::repl::ParsedArgs> {
     let args = line.split_whitespace().collect::<Vec<_>>();
     parse_args(&args, ResourceScope::All, false)
 }
@@ -208,7 +208,7 @@ fn with_fake_kubectl<T>(output: &str, body: impl FnOnce() -> T) -> T {
     let _guard = cwd_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let script_path = dir.path().join("kubectl");
     std::fs::write(
         &script_path,
@@ -219,11 +219,11 @@ fn with_fake_kubectl<T>(output: &str, body: impl FnOnce() -> T) -> T {
 
     let original_path = std::env::var("PATH").unwrap_or_default();
     let new_path = format!("{}:{original_path}", dir.path().display());
-    envmnt::set("PATH", &new_path);
+    quench_core::env::set("PATH", &new_path);
 
     let result = body();
 
-    envmnt::set("PATH", &original_path);
+    quench_core::env::set("PATH", &original_path);
     result
 }
 

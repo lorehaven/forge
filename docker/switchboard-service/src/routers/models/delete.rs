@@ -12,7 +12,7 @@ pub async fn delete_model(
     Json(body): Json<DeleteModelRequest>,
 ) -> Response {
     if !can(claims.as_ref(), &config, "delete-model") {
-        return Response::new(http::StatusCode::FORBIDDEN);
+        return Response::new(quench_http::http::StatusCode::FORBIDDEN);
     }
 
     delete_model_path(&body.path).await
@@ -25,13 +25,13 @@ pub async fn delete_model_form(
     Form(form): Form<DeleteModelRequest>,
 ) -> Response {
     if !can(claims.as_ref(), &config, "delete-model") {
-        return Response::new(http::StatusCode::FORBIDDEN);
+        return Response::new(quench_http::http::StatusCode::FORBIDDEN);
     }
 
     let response = delete_model_path(&form.path).await;
     if response.status().is_success() {
         Response::html(
-            http::StatusCode::OK,
+            quench_http::http::StatusCode::OK,
             r#"<div id="confirm-delete-modal" class="estimates-modal"></div>"#,
         )
         .header("HX-Trigger", "models-refresh")
@@ -47,11 +47,17 @@ async fn delete_model_path(model_path: &str) -> Response {
     let is_valid_gguf = GGUF_ROOTS.iter().any(|root| path.starts_with(root));
 
     if !is_valid_hf && !is_valid_gguf {
-        return Response::text(http::StatusCode::FORBIDDEN, "api_error_invalid_model_path");
+        return Response::text(
+            quench_http::http::StatusCode::FORBIDDEN,
+            "api_error_invalid_model_path",
+        );
     }
 
     if !path.exists() {
-        return Response::text(http::StatusCode::NOT_FOUND, "api_error_model_not_found");
+        return Response::text(
+            quench_http::http::StatusCode::NOT_FOUND,
+            "api_error_model_not_found",
+        );
     }
 
     let res = if path.is_dir() {
@@ -63,12 +69,12 @@ async fn delete_model_path(model_path: &str) -> Response {
     match res {
         Ok(()) => {
             get_store().remove_model(model_path).await;
-            Response::new(http::StatusCode::OK)
+            Response::new(quench_http::http::StatusCode::OK)
         }
         Err(e) => {
-            tracing::error!("Failed to delete model {}: {}", model_path, e);
+            quench_log::error!("Failed to delete model {}: {}", model_path, e);
             Response::text(
-                http::StatusCode::INTERNAL_SERVER_ERROR,
+                quench_http::http::StatusCode::INTERNAL_SERVER_ERROR,
                 "api_error_model_delete_failed",
             )
         }

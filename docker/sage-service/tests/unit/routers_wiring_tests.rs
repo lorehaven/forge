@@ -4,11 +4,11 @@
 //! exercises every line without needing to send any request; the redirect
 //! tests below then check the two root handlers' auth branches directly.
 
-use bytes::Bytes;
-use http::{HeaderMap, Method, StatusCode, Uri};
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::bytes::Bytes;
 use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::request::Request;
 use sage_service::routers;
 use std::sync::Arc;
@@ -64,8 +64,8 @@ async fn root_redirects_to_login_when_unauthenticated_and_auth_required() {
         let resp = app.call(req(path, &container)).await;
         assert!(resp.status().is_redirection());
         let location = resp
-            .into_hyper()
-            .headers()
+            .into_inner()
+            .headers
             .get("location")
             .expect("redirect has a Location header")
             .to_str()
@@ -87,8 +87,8 @@ async fn root_redirects_to_home_when_auth_is_disabled() {
     let resp = app.call(req("/ui", &container)).await;
     assert_eq!(resp.status(), StatusCode::FOUND);
     let location = resp
-        .into_hyper()
-        .headers()
+        .into_inner()
+        .headers
         .get("location")
         .expect("redirect has a Location header")
         .to_str()

@@ -20,7 +20,7 @@ pub mod warehouse;
 
 /// Why a step's command couldn't be turned into an argument vector, or failed
 /// validation.
-#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[derive(Debug, quench_core::Error, PartialEq, Eq)]
 pub enum StepError {
     /// The command text has unbalanced quotes and `shlex` couldn't split it.
     #[error("`{kind}` arguments are not quoted correctly: {command}")]

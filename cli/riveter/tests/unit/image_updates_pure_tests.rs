@@ -14,7 +14,7 @@ use std::fs;
 
 #[test]
 fn discover_images_finds_image_lines_across_nested_templates_and_skips_bad_refs() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let nested = dir.path().join("prod");
     fs::create_dir_all(&nested).unwrap();
 
@@ -47,7 +47,7 @@ fn discover_images_finds_image_lines_across_nested_templates_and_skips_bad_refs(
 
 #[test]
 fn discover_images_is_empty_for_a_directory_with_no_templates() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let occurrences = discover_images(dir.path()).unwrap();
     assert!(occurrences.is_empty());
 }
@@ -67,7 +67,7 @@ fn occurrence(path: &std::path::Path, original: &str, tag: &str) -> ImageOccurre
 
 #[test]
 fn apply_updates_rewrites_only_the_matching_image_line() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let template = dir.path().join("app.yaml.j2");
     fs::write(
         &template,
@@ -103,7 +103,7 @@ fn find_updates_with_no_occurrences_returns_nothing() {
 
 #[test]
 fn find_updates_skips_a_floating_tag_without_any_network_call() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let occ = occurrence(&dir.path().join("app.yaml.j2"), "nginx:latest", "latest");
 
     let (updates, messages) = find_updates(vec![occ], &RegistryAuth::default());

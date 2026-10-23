@@ -7,8 +7,8 @@ use quench_http::prelude::{Inject, Response, get, post};
 
 #[get("/.well-known/jwks.json")]
 pub async fn jwks(Inject(keys): Inject<SigningKeys>) -> Response {
-    Response::json(http::StatusCode::OK, &keys.jwks())
-        .unwrap_or_else(|_| Response::new(http::StatusCode::INTERNAL_SERVER_ERROR))
+    Response::json(quench_http::http::StatusCode::OK, &keys.jwks())
+        .unwrap_or_else(|_| Response::new(quench_http::http::StatusCode::INTERNAL_SERVER_ERROR))
 }
 
 /// Generates a new signing key, retires the old one. Gated on
@@ -19,10 +19,10 @@ pub async fn rotate(
     _claims: ManageSigningKeysClaims,
 ) -> Response {
     match keys.rotate().await {
-        Ok(()) => Response::new(http::StatusCode::NO_CONTENT),
+        Ok(()) => Response::new(quench_http::http::StatusCode::NO_CONTENT),
         Err(err) => {
-            tracing::error!("key rotation failed: {err}");
-            Response::new(http::StatusCode::INTERNAL_SERVER_ERROR)
+            quench_log::error!("key rotation failed: {err}");
+            Response::new(quench_http::http::StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
 }

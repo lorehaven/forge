@@ -7,9 +7,9 @@ use crate::routers::ui::common::{PageAuth, render_page, ui_login_redirect, ui_pa
 use crate::scheduler::{projects, queue, repos};
 use quench_db::prelude::Db;
 use quench_http::prelude::{Inject, Query, Response, get, http::StatusCode};
+use quench_serde::Deserialize;
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
-use serde::Deserialize;
 
 #[derive(Deserialize)]
 pub(super) struct RunsListQuery {

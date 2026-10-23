@@ -1,18 +1,18 @@
-use bytes::Bytes;
 use gatehouse_service::api::jwks::{jwks, rotate};
 use gatehouse_service::api::users::ManageSigningKeysClaims;
 use gatehouse_service::keys::SigningKeys;
 use gatehouse_service::test_support::TEST_KEY_MATERIAL;
-use http::{HeaderMap, Method, StatusCode};
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::bytes::Bytes;
 use quench_db::prelude::Db;
 use quench_http::body::InboundBody;
 use quench_http::di::ContainerBuilder;
+use quench_http::http::{HeaderMap, Method, StatusCode};
 use quench_http::prelude::{FromRequest, Inject, Request};
 use std::sync::Arc;
 
 async fn signing_keys() -> Arc<SigningKeys> {
-    envmnt::set("GATEHOUSE_KEY_ENCRYPTION_KEY", TEST_KEY_MATERIAL);
+    quench_core::env::set("GATEHOUSE_KEY_ENCRYPTION_KEY", TEST_KEY_MATERIAL);
     let db = Db::connect("").await.expect("in-memory db");
     SigningKeys::init(db, 3600).await.expect("init keys")
 }

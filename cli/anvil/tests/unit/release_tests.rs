@@ -10,7 +10,7 @@ use anvil::commands::release::{
     tag_exists, workspace_dependencies_table,
 };
 use anvil::config::{Config, DockerConfig, DockerModuleConfig, InstallConfig};
-use serde_json::json;
+use quench_serde::json;
 use std::collections::{HashMap, HashSet};
 
 use crate::support;

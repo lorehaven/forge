@@ -7,7 +7,7 @@ use welder::ui::{print_answer, print_backend_banner, print_prompt, print_workflo
 #[derive(Debug)]
 struct StubLlm;
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl Llm for StubLlm {
     fn name(&self) -> &'static str {
         "stub-model"
@@ -16,7 +16,7 @@ impl Llm for StubLlm {
     async fn generate_content(
         &self,
         _request: welder::llm::LlmRequest,
-    ) -> anyhow::Result<welder::llm::LlmResponse> {
+    ) -> quench_core::Result<welder::llm::LlmResponse> {
         unreachable!("ui tests never call the model")
     }
 }

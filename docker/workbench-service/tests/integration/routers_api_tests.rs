@@ -6,15 +6,14 @@
 //! are about validation, not-found handling and the success path shape.
 
 use crate::support::database;
-use bytes::Bytes;
-use http::{HeaderMap, Method, StatusCode, Uri};
-use http_body_util::BodyExt;
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::bytes::Bytes;
 use quench_db::prelude::Db;
 use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::request::Request;
-use serde_json::json;
+use quench_serde::json;
 use std::sync::Arc;
 use workbench_service::domain::project::{self, NewProject};
 use workbench_service::routers::api;
@@ -46,7 +45,7 @@ fn req(method: Method, path: &str, container: &Arc<quench_http::di::Container>) 
 fn json_req(
     method: Method,
     path: &str,
-    body: &serde_json::Value,
+    body: &quench_serde::Value,
     container: &Arc<quench_http::di::Container>,
 ) -> Request {
     let mut headers = HeaderMap::new();
@@ -55,14 +54,19 @@ fn json_req(
         method,
         path.parse::<Uri>().unwrap(),
         headers,
-        quench_http::body::InboundBody::from_bytes(Bytes::from(serde_json::to_vec(body).unwrap())),
+        quench_http::body::InboundBody::from_bytes(Bytes::from(quench_serde::json::to_vec(body))),
         container.clone(),
     )
 }
 
-async fn json_body(resp: quench_http::response::Response) -> serde_json::Value {
-    let collected = resp.into_hyper().into_body().collect().await.expect("body");
-    serde_json::from_slice(&collected.to_bytes()).expect("valid json body")
+async fn json_body(resp: quench_http::response::Response) -> quench_serde::Value {
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .expect("body");
+    quench_serde::json::from_slice(&collected).expect("valid json body")
 }
 
 async fn seed_project(db: &Db, key: &str) -> project::Project {

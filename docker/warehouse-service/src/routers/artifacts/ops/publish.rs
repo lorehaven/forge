@@ -9,14 +9,11 @@ use crate::routers::artifacts::{
     validate_program,
 };
 use crate::routers::docker::RawBody;
-use chrono::Utc;
-use futures_util::StreamExt;
-use http_body_util::BodyExt;
+use quench_core::stream::StreamExt;
+use quench_core::time::Time;
 use quench_db::prelude::{Crud, Db};
 use quench_http::prelude::{Inject, Path, Query, Response, http::StatusCode, put};
-use serde::Deserialize;
-use sha2::{Digest, Sha256};
-use sqlx::types::Json;
+use quench_serde::Deserialize;
 use tokio::io::AsyncWriteExt;
 
 /// `format` is required for non-android platforms; enforced in [`publish`].
@@ -30,7 +27,7 @@ pub struct PublishParams {
 }
 
 #[put("/api/v1/artifacts/{program}/{platform}/{version_code}")]
-#[tracing::instrument(skip(body))]
+#[quench_log::instrument(skip(body))]
 pub async fn handle(
     Actor(actor): Actor,
     Inject(db): Inject<Db>,
@@ -229,10 +226,10 @@ pub async fn publish(
         size_bytes: size.cast_signed(),
         sha256,
         label,
-        metadata: Json(metadata),
+        metadata,
         uploaded_by: actor,
         yanked: false,
-        created_at: Utc::now(),
+        created_at: Time::now(),
     };
 
     if let Err(e) = repo.create(&version).await {
@@ -293,9 +290,9 @@ async fn stream_to_disk(
     })?;
 
     let mut size: u64 = 0;
-    let mut hasher = Sha256::new();
+    let mut hasher = quench_crypto::hash::Hasher::new(quench_crypto::hash::Algorithm::Sha256);
 
-    let mut stream = body.into_data_stream();
+    let mut stream = body.into_body();
     while let Some(chunk) = stream.next().await {
         let chunk =
             chunk.map_err(|_| error(StatusCode::BAD_REQUEST, "the upload was interrupted"))?;
@@ -324,7 +321,7 @@ async fn stream_to_disk(
         )
     })?;
 
-    Ok((size, hex::encode(hasher.finalize())))
+    Ok((size, quench_core::hex::encode(hasher.finish())))
 }
 
 /// Decodes the manifest on a blocking thread - `zip`/`axmldecoder` are both synchronous.

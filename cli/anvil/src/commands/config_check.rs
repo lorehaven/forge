@@ -2,22 +2,22 @@
 //! (see `crate::config::Config` and its nested structs).
 //!
 //! Reports every problem found in one pass, rather than the
-//! one-typo-at-a-time story a plain `toml::from_str::<Config>()` gives -
+//! one-typo-at-a-time story a plain `quench_serde::toml::from_str::<Config>()` gives -
 //! unknown fields are silently dropped by serde's default
 //! (non-`deny_unknown_fields`) deserialization, so a malformed
 //! `[docker.modules.*]` block otherwise only surfaces later, when the
 //! affected subcommand runs and something is quietly missing.
 //!
-//! Works on a raw [`toml::Value`], not `Config` itself: serde's typed
+//! Works on a raw [`quench_serde::Value`], not `Config` itself: serde's typed
 //! deserialization stops at the first error, which is exactly what this
 //! command exists to not do.
 
-use anyhow::{Context, Result};
 use quench_cli::prelude::{Tone, print_status};
+use quench_core::{Context, Result};
+use quench_serde::Value;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::fs;
-use toml::Value;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigIssue {
@@ -67,7 +67,7 @@ fn join(path: &str, key: &str) -> String {
 /// Every key in `table` that isn't in `known` - the "malformed block" case
 /// this command exists for: serde silently drops these instead of erroring.
 fn unknown_fields(
-    table: &toml::value::Table,
+    table: &quench_serde::Map,
     known: &[&str],
     path: &str,
     issues: &mut Vec<ConfigIssue>,
@@ -91,7 +91,7 @@ fn unknown_fields(
 // rejects - this shape is the one that actually compiles.
 #[allow(clippy::single_match_else, clippy::option_if_let_else)]
 fn require<'a>(
-    table: &'a toml::value::Table,
+    table: &'a quench_serde::Map,
     field: &str,
     path: &str,
     issues: &mut Vec<ConfigIssue>,
@@ -112,11 +112,11 @@ fn expect_table<'a>(
     value: &'a Value,
     path: &str,
     issues: &mut Vec<ConfigIssue>,
-) -> Option<&'a toml::value::Table> {
-    value.as_table().or_else(|| {
+) -> Option<&'a quench_serde::Map> {
+    value.as_object().or_else(|| {
         issues.push(ConfigIssue {
             path: path.to_string(),
-            message: format!("expected a table, found {}", value.type_str()),
+            message: format!("expected a table, found {}", value.type_name()),
         });
         None
     })
@@ -133,7 +133,7 @@ fn expect_string(value: &Value, path: &str, issues: &mut Vec<ConfigIssue>) {
     } else {
         issues.push(ConfigIssue {
             path: path.to_string(),
-            message: format!("expected a string, found {}", value.type_str()),
+            message: format!("expected a string, found {}", value.type_name()),
         });
     }
 }
@@ -144,7 +144,7 @@ fn expect_string_array(value: &Value, path: &str, issues: &mut Vec<ConfigIssue>)
     let Some(array) = value.as_array() else {
         issues.push(ConfigIssue {
             path: path.to_string(),
-            message: format!("expected an array of strings, found {}", value.type_str()),
+            message: format!("expected an array of strings, found {}", value.type_name()),
         });
         return Vec::new();
     };
@@ -156,7 +156,7 @@ fn expect_string_array(value: &Value, path: &str, issues: &mut Vec<ConfigIssue>)
             entry.as_str().map(str::to_string).or_else(|| {
                 issues.push(ConfigIssue {
                     path: format!("{path}[{i}]"),
-                    message: format!("expected a string, found {}", entry.type_str()),
+                    message: format!("expected a string, found {}", entry.type_name()),
                 });
                 None
             })
@@ -168,8 +168,8 @@ fn expect_string_array(value: &Value, path: &str, issues: &mut Vec<ConfigIssue>)
 ///
 /// Rather than stopping at the first, `Err` only for TOML that doesn't parse
 /// at all - nothing else can be checked without a value tree to walk.
-pub fn validate(content: &str) -> Result<Vec<ConfigIssue>, toml::de::Error> {
-    let root: Value = toml::from_str(content)?;
+pub fn validate(content: &str) -> Result<Vec<ConfigIssue>, quench_serde::Error> {
+    let root: Value = quench_serde::toml::from_str(content)?;
     let mut issues = Vec::new();
 
     let Some(table) = expect_table(&root, "", &mut issues) else {
@@ -357,7 +357,7 @@ pub fn check() -> Result<()> {
                 "anvil",
                 &format!(".anvil.toml is not valid TOML: {err}"),
             );
-            anyhow::bail!("config check failed");
+            quench_core::bail!("config check failed");
         }
     };
 
@@ -378,5 +378,5 @@ pub fn check() -> Result<()> {
     for issue in &issues {
         println!("  {issue}");
     }
-    anyhow::bail!("{} error(s) in .anvil.toml", issues.len());
+    quench_core::bail!("{} error(s) in .anvil.toml", issues.len());
 }

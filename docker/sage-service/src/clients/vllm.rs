@@ -1,9 +1,9 @@
-use anyhow::{Context, Result};
-use futures_util::Stream;
-use futures_util::StreamExt;
+use quench_core::stream::Stream;
+use quench_core::stream::StreamExt;
+use quench_core::{Context, Result};
+use quench_serde::{Deserialize, Serialize};
 use quench_starter::metrics::RequestMetrics;
 use quench_starter::resilience::CircuitBreaker;
-use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -11,7 +11,7 @@ use std::sync::Arc;
 pub struct ToolCall {
     pub id: String,
     pub name: String,
-    pub arguments: serde_json::Value,
+    pub arguments: quench_serde::Value,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -28,30 +28,26 @@ pub struct ChatMessage {
 
 /// Serialize to `OpenAI` chat format: plain string `content` for text-only messages, an array of `text`/`image_url` parts when images are attached.
 impl Serialize for ChatMessage {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        use serde::ser::SerializeStruct;
-
+    fn serialize(&self) -> quench_serde::Value {
         let has_images = self.images.as_ref().is_some_and(|v| !v.is_empty());
-        // Images fold into `content`, so the field count never includes them.
-        let fields = 2 + usize::from(self.tool_calls.is_some());
-        let mut state = serializer.serialize_struct("ChatMessage", fields)?;
-        state.serialize_field("role", &self.role)?;
+        let mut message = quench_serde::Map::new();
+        message.insert("role", quench_serde::to_value(&self.role));
         if has_images {
-            let mut parts: Vec<serde_json::Value> = Vec::new();
+            let mut parts: Vec<quench_serde::Value> = Vec::new();
             if !self.content.is_empty() {
-                parts.push(serde_json::json!({"type": "text", "text": self.content}));
+                parts.push(quench_serde::json!({"type": "text", "text": self.content}));
             }
             for url in self.images.iter().flatten() {
-                parts.push(serde_json::json!({"type": "image_url", "image_url": {"url": url}}));
+                parts.push(quench_serde::json!({"type": "image_url", "image_url": {"url": url}}));
             }
-            state.serialize_field("content", &parts)?;
+            message.insert("content", quench_serde::Value::Array(parts));
         } else {
-            state.serialize_field("content", &self.content)?;
+            message.insert("content", quench_serde::to_value(&self.content));
         }
         if let Some(tool_calls) = &self.tool_calls {
-            state.serialize_field("tool_calls", tool_calls)?;
+            message.insert("tool_calls", quench_serde::to_value(tool_calls));
         }
-        state.end()
+        quench_serde::Value::Object(message)
     }
 }
 
@@ -71,16 +67,16 @@ pub struct ChatCompletionRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tools: Option<Vec<serde_json::Value>>,
+    pub tools: Option<Vec<quench_serde::Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_choice: Option<String>,
     /// Forwarded to the model's chat template; used to switch off the thinking phase of
     /// Qwen3.5/Gemma 4 (no reasoning parser is configured, so it would leak into replies).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub chat_template_kwargs: Option<serde_json::Value>,
+    pub chat_template_kwargs: Option<quench_serde::Value>,
     /// `OpenAI` `response_format`; used with a JSON schema for constrained (guided) decoding.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub response_format: Option<serde_json::Value>,
+    pub response_format: Option<quench_serde::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -137,7 +133,7 @@ pub fn flush_streamed_tool_calls(
         } else {
             args
         };
-        let name_json = serde_json::to_string(&name).unwrap_or_else(|_| format!("\"{name}\""));
+        let name_json = quench_serde::json::to_string(&name);
         out.push(format!(
             "<tool_call>{{\"name\": {name_json}, \"arguments\": {args}}}</tool_call>"
         ));
@@ -147,7 +143,7 @@ pub fn flush_streamed_tool_calls(
 
 #[derive(Clone)]
 pub struct VllmClient {
-    http: reqwest::Client,
+    http: quench_client::transport::Client,
     metrics: Arc<RequestMetrics>,
     circuit_breaker: Arc<CircuitBreaker>,
 }
@@ -163,7 +159,7 @@ fn streaming_request(
     model: &str,
     messages: Vec<ChatMessage>,
     max_tokens: Option<u32>,
-    tools: Option<Vec<serde_json::Value>>,
+    tools: Option<Vec<quench_serde::Value>>,
 ) -> ChatCompletionRequest {
     ChatCompletionRequest {
         model: model.to_string(),
@@ -176,7 +172,7 @@ fn streaming_request(
         max_tokens,
         tools,
         tool_choice: None,
-        chat_template_kwargs: Some(serde_json::json!({ "enable_thinking": false })),
+        chat_template_kwargs: Some(quench_serde::json!({ "enable_thinking": false })),
         response_format: None,
     }
 }
@@ -184,11 +180,11 @@ fn streaming_request(
 impl VllmClient {
     #[must_use]
     pub fn new() -> Self {
-        let tls_verify = envmnt::get_or("VLLM_TLS_VERIFY", "true")
+        let tls_verify = quench_core::env::get_or("VLLM_TLS_VERIFY", "true")
             .parse::<bool>()
             .unwrap_or(true);
 
-        let http = reqwest::Client::builder()
+        let http = quench_client::transport::Client::builder()
             .danger_accept_invalid_certs(!tls_verify)
             .build()
             .expect("Failed to build HTTP client");
@@ -222,12 +218,12 @@ impl VllmClient {
         &self,
         url: &str,
         request: &ChatCompletionRequest,
-    ) -> Result<reqwest::Response> {
+    ) -> Result<quench_client::transport::Response> {
         let res = self
             .http
             .post(url)
             .json(request)
-            .send()
+            .send_streaming()
             .await
             .with_context(|| format!("Failed to connect to vLLM instance at {url}"))?;
 
@@ -237,9 +233,9 @@ impl VllmClient {
                 .text()
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
-            tracing::error!("vLLM returned error {}: {}", status, err_text);
+            quench_log::error!("vLLM returned error {}: {}", status, err_text);
             self.circuit_breaker.call_failed();
-            anyhow::bail!("vLLM returned error {status}: {err_text}");
+            quench_core::bail!("vLLM returned error {status}: {err_text}");
         }
 
         Ok(res)
@@ -252,11 +248,11 @@ impl VllmClient {
         model: &str,
         messages: Vec<ChatMessage>,
         max_tokens: Option<u32>,
-        tools: Option<Vec<serde_json::Value>>,
+        tools: Option<Vec<quench_serde::Value>>,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<String>> + Send + Sync>>> {
         if !self.circuit_breaker.is_available() {
-            tracing::warn!("vLLM circuit breaker is open");
-            return Err(anyhow::anyhow!(
+            quench_log::warn!("vLLM circuit breaker is open");
+            return Err(quench_core::err!(
                 "Circuit breaker open: vLLM temporarily unavailable"
             ));
         }
@@ -268,25 +264,34 @@ impl VllmClient {
 
         let request = streaming_request(model, messages, max_tokens, tools);
 
-        tracing::info!(
-            "Connecting to vLLM at {} (max_tokens: {:?})",
-            url,
-            max_tokens
-        );
+        quench_log::info!("Connecting to vLLM at {url} (max_tokens: {max_tokens:?})");
 
         let res = self.send_streaming(&url, &request).await?;
 
         self.circuit_breaker.call_succeeded();
         let mut stream = res.bytes_stream();
+        let (tx, rx) = tokio::sync::mpsc::channel::<Result<String>>(32);
 
-        let output_stream = async_stream::try_stream! {
+        // The reader runs as a task and feeds a channel: a generator would hold the response and the parser
+        // state across every await, which a plain stream of the receiver does not.
+        tokio::spawn(async move {
             let mut buffer = Vec::new();
             // Accumulates native (OpenAI) streamed tool calls by index until the model signals completion, then re-emits them as <tool_call> text.
             let mut tool_accum: std::collections::BTreeMap<usize, (String, String)> =
                 std::collections::BTreeMap::new();
 
             while let Some(chunk_res) = stream.next().await {
-                let chunk = chunk_res.context("Error reading from vLLM stream")?;
+                let chunk = match chunk_res {
+                    Ok(chunk) => chunk,
+                    Err(e) => {
+                        let _ = tx
+                            .send(Err(quench_core::err!(
+                                "Error reading from vLLM stream: {e}"
+                            )))
+                            .await;
+                        return;
+                    }
+                };
                 buffer.extend_from_slice(&chunk);
 
                 while let Some(pos) = buffer.iter().position(|&b| b == b'\n') {
@@ -294,23 +299,30 @@ impl VllmClient {
                     let line_str = String::from_utf8_lossy(&line_bytes);
                     let line = line_str.trim();
 
-                    if line.is_empty() { continue; }
+                    if line.is_empty() {
+                        continue;
+                    }
                     if line == "data: [DONE]" {
                         for synth in flush_streamed_tool_calls(&mut tool_accum) {
-                            yield synth;
+                            if tx.send(Ok(synth)).await.is_err() {
+                                return;
+                            }
                         }
                         return;
                     }
 
                     if let Some(data) = line.strip_prefix("data: ") {
-                        match serde_json::from_str::<ChatCompletionChunk>(data) {
+                        match quench_serde::json::from_str::<ChatCompletionChunk>(data) {
                             Ok(chunk) => {
-                                let Some(choice) = chunk.choices.first() else { continue; };
+                                let Some(choice) = chunk.choices.first() else {
+                                    continue;
+                                };
 
                                 if let Some(content) = &choice.delta.content
                                     && !content.is_empty()
+                                    && tx.send(Ok(content.clone())).await.is_err()
                                 {
-                                    yield content.clone();
+                                    return;
                                 }
 
                                 if let Some(tool_calls) = &choice.delta.tool_calls {
@@ -332,12 +344,14 @@ impl VllmClient {
                                 // A non-null finish_reason ends this turn; emit any accumulated tool calls.
                                 if choice.finish_reason.is_some() {
                                     for synth in flush_streamed_tool_calls(&mut tool_accum) {
-                                        yield synth;
+                                        if tx.send(Ok(synth)).await.is_err() {
+                                            return;
+                                        }
                                     }
                                 }
                             }
                             Err(e) => {
-                                tracing::warn!("Failed to parse SSE data: {} ({})", data, e);
+                                quench_log::warn!("Failed to parse SSE data: {} ({})", data, e);
                             }
                         }
                     }
@@ -346,9 +360,13 @@ impl VllmClient {
 
             // Stream closed without an explicit [DONE]: flush anything pending.
             for synth in flush_streamed_tool_calls(&mut tool_accum) {
-                yield synth;
+                if tx.send(Ok(synth)).await.is_err() {
+                    return;
+                }
             }
-        };
+        });
+
+        let output_stream = quench_http::stream::receiver_stream(rx);
 
         Ok(Box::pin(output_stream))
     }
@@ -363,11 +381,11 @@ impl VllmClient {
         model: &str,
         messages: Vec<ChatMessage>,
         schema_name: &str,
-        schema: serde_json::Value,
+        schema: quench_serde::Value,
         max_tokens: u32,
     ) -> Result<String> {
         if !self.circuit_breaker.is_available() {
-            return Err(anyhow::anyhow!(
+            return Err(quench_core::err!(
                 "Circuit breaker open: vLLM temporarily unavailable"
             ));
         }
@@ -388,8 +406,8 @@ impl VllmClient {
             max_tokens: Some(max_tokens),
             tools: None,
             tool_choice: None,
-            chat_template_kwargs: Some(serde_json::json!({ "enable_thinking": false })),
-            response_format: Some(serde_json::json!({
+            chat_template_kwargs: Some(quench_serde::json!({ "enable_thinking": false })),
+            response_format: Some(quench_serde::json!({
                 "type": "json_schema",
                 "json_schema": { "name": schema_name, "schema": schema, "strict": true }
             })),
@@ -410,11 +428,11 @@ impl VllmClient {
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
             self.circuit_breaker.call_failed();
-            anyhow::bail!("vLLM returned error {status}: {err_text}");
+            quench_core::bail!("vLLM returned error {status}: {err_text}");
         }
 
         self.circuit_breaker.call_succeeded();
-        let body: serde_json::Value = res
+        let body: quench_serde::Value = res
             .json()
             .await
             .context("Failed to parse vLLM completion response")?;
@@ -433,8 +451,8 @@ impl VllmClient {
         input: Vec<String>,
     ) -> Result<Vec<Vec<f32>>> {
         if !self.circuit_breaker.is_available() {
-            tracing::warn!("vLLM circuit breaker is open");
-            return Err(anyhow::anyhow!(
+            quench_log::warn!("vLLM circuit breaker is open");
+            return Err(quench_core::err!(
                 "Circuit breaker open: vLLM temporarily unavailable"
             ));
         }
@@ -464,9 +482,9 @@ impl VllmClient {
                 .text()
                 .await
                 .unwrap_or_else(|_| "Unknown error".to_string());
-            tracing::error!("vLLM embeddings returned error {}: {}", status, err_text);
+            quench_log::error!("vLLM embeddings returned error {}: {}", status, err_text);
             self.circuit_breaker.call_failed();
-            anyhow::bail!("vLLM embeddings returned error {status}: {err_text}");
+            quench_core::bail!("vLLM embeddings returned error {status}: {err_text}");
         }
 
         self.circuit_breaker.call_succeeded();
@@ -476,7 +494,7 @@ impl VllmClient {
             .context("Failed to parse vLLM embeddings response")?;
 
         if response.data.len() != input_count {
-            anyhow::bail!(
+            quench_core::bail!(
                 "vLLM returned {} embeddings for {} inputs",
                 response.data.len(),
                 input_count

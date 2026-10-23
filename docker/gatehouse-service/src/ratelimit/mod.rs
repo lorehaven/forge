@@ -16,10 +16,9 @@ mod client_ip;
 pub use client_ip::ClientIp;
 
 use quench_cache::CacheStore;
-use sha2::{Digest, Sha256};
+use quench_core::uuid::Uuid;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use uuid::Uuid;
 
 /// At most `max` hits per `window_secs`-long window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -117,7 +116,7 @@ impl RateLimiter {
 
     /// `REDIS_URL`/`CACHE_URL`, else in-process (dev mode) - same as the token
     /// and session stores, so limits are shared by every replica in a cluster.
-    pub async fn from_env() -> anyhow::Result<Self> {
+    pub async fn from_env() -> quench_core::Result<Self> {
         Ok(Self::new(CacheStore::from_env("forge-ratelimit").await?))
     }
 
@@ -143,7 +142,7 @@ impl RateLimiter {
         match self.try_check(scope, subject, limit).await {
             Ok(verdict) => verdict,
             Err(err) => {
-                tracing::error!("rate limit store failed for {scope}, refusing: {err}");
+                quench_log::error!("rate limit store failed for {scope}, refusing: {err}");
                 Verdict::Limited {
                     retry_after_secs: limit.window_secs,
                 }
@@ -206,8 +205,8 @@ impl RateLimiter {
 /// (length, characters) cannot bloat or inject into the cache key space.
 fn fingerprint(subject: &str) -> String {
     let normalized = subject.trim().to_lowercase();
-    let digest = Sha256::digest(normalized.as_bytes());
-    hex::encode(&digest[..16])
+    let digest = quench_crypto::hash::sha256(normalized.as_bytes());
+    quench_core::hex::encode(&digest[..16])
 }
 
 fn unix_now() -> u64 {

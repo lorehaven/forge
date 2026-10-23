@@ -11,7 +11,7 @@ use crate::secrets::SecretKey;
 use crate::workspace::checkout;
 use quench_db::prelude::Db;
 use quench_http::prelude::{Bytes, Inject, Path, Request, Response, http::StatusCode, post};
-use serde_json::json;
+use quench_serde::json;
 
 #[post("/api/v1/webhooks/{provider}")]
 pub async fn receive(
@@ -38,7 +38,7 @@ pub async fn receive(
     };
 
     if let Err(error) = validate(&event) {
-        tracing::warn!("rejected a {} delivery: {error}", provider.name());
+        quench_log::warn!("rejected a {} delivery: {error}", provider.name());
         return json_error(StatusCode::BAD_REQUEST, &error);
     }
 
@@ -60,7 +60,7 @@ pub async fn receive(
     // The repo's own secret if it has one, otherwise the estate's - without either, deliveries go unverified.
     let key = SecretKey::from_env().ok().flatten();
     let Some(secret) = providers::webhook_secret_for(&db, key.as_ref(), &repo).await else {
-        tracing::error!(
+        quench_log::error!(
             "a {} delivery arrived for {} but no webhook secret is configured; refusing to accept unverified deliveries",
             provider.name(),
             repo.slug()
@@ -73,7 +73,7 @@ pub async fn receive(
 
     if !provider.verify(&request.0, &body, secret.as_bytes()) {
         // Deliberately terse - specifics would help an attacker guess the secret.
-        tracing::warn!("rejected a {} delivery: bad signature", provider.name());
+        quench_log::warn!("rejected a {} delivery: bad signature", provider.name());
         return json_error(StatusCode::UNAUTHORIZED, "bad signature");
     }
 
@@ -83,7 +83,7 @@ pub async fn receive(
 
     if event.from_fork && !config.allow_fork_pr {
         // A fork's pipeline is outsider-written and would run with this service's own privileges.
-        tracing::info!(
+        quench_log::info!(
             "not building a fork's pull request for {}; set CONVEYOR_ALLOW_FORK_PR to allow it, and only under an isolating executor",
             repo.slug()
         );
@@ -135,16 +135,16 @@ fn validate(event: &TriggerEvent) -> Result<(), String> {
 
 /// Accepted but not acted on - 202, since a 4xx/5xx would just get retried for nothing.
 fn ignored(reason: &str) -> Response {
-    tracing::debug!("delivery ignored: {reason}");
+    quench_log::debug!("delivery ignored: {reason}");
     Response::json(StatusCode::ACCEPTED, &json!({ "ignored": reason }))
         .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
 }
 
-/// Raw headers as `http::HeaderMap` - see `Actor` in `routers/api/mod.rs` for why not `Request`.
+/// Raw headers as `quench_http::http::HeaderMap` - see `Actor` in `routers/api/mod.rs` for why not `Request`.
 #[derive(Debug)]
-pub struct RawHeaders(pub http::HeaderMap);
+pub struct RawHeaders(pub quench_http::http::HeaderMap);
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl quench_http::prelude::FromRequest for RawHeaders {
     async fn from_request(req: &mut Request) -> Result<Self, quench_http::prelude::HttpError> {
         Ok(Self(req.headers().clone()))

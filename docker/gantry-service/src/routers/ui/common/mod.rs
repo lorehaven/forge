@@ -1,8 +1,8 @@
-use async_trait::async_trait;
 use forge_ui::{NavItem, NavSection, ShellConfig, UiShell};
 pub use quench_auth::domain::jwt::Claims;
 use quench_auth::domain::jwt::JwtConfig;
 use quench_auth::http::routers::ui::get_user_from_req;
+use quench_core::async_trait;
 use quench_http::prelude::{
     FromRequest, HttpError, Path, Request, Response, get, http::StatusCode,
 };
@@ -39,7 +39,7 @@ pub async fn assets(Path(path): Path<String>) -> Response {
     quench_starter::http::routers::ui::serve_assets(&path, "dist/assets").await
 }
 
-pub fn render_page(status: http::StatusCode, content: Element) -> Response {
+pub fn render_page(status: quench_http::http::StatusCode, content: Element) -> Response {
     Response::html(status, UI_SHELL.page(content))
 }
 
@@ -99,7 +99,7 @@ impl FromRequest for ActorOrRedirect {
 }
 
 /// A post-mutation redirect's outcome, shown as an untranslated banner: operational, not chrome.
-#[derive(Debug, serde::Deserialize, Default)]
+#[derive(Debug, quench_serde::Deserialize, Default)]
 pub struct Notice {
     #[serde(default)]
     pub ok: Option<String>,

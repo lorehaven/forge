@@ -7,7 +7,7 @@ use quench_db::prelude::{Crud, Db};
 use quench_http::prelude::{Inject, Path, Response, get, http::StatusCode};
 
 #[get("/api/v1/artifacts/{program}/{platform}/{version_code}/download")]
-#[tracing::instrument]
+#[quench_log::instrument]
 pub async fn handle(
     Inject(db): Inject<Db>,
     Path((program, platform_raw, version_code_raw)): Path<(String, String, String)>,

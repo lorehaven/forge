@@ -26,14 +26,14 @@ pub fn stable_cwd_lock() -> &'static Mutex<()> {
 /// RAII guard that restores an env var to its exact prior state when dropped.
 ///
 /// Restores on drop - including on a mid-test panic, unlike a manual
-/// `envmnt::remove(...)` at the end of a test function. Blindly removing a
+/// `quench_core::env::remove(...)` at the end of a test function. Blindly removing a
 /// var a test didn't itself set (rather than restoring whatever was there
 /// before) silently assumes the pre-test state was "unset", which is true on
 /// a bare dev machine but false in CI, where `CARGO_HOME` and
 /// `CARGO_REGISTRIES_ENNOR_*` are legitimately set for the whole process -
 /// removing them permanently breaks every `cargo metadata` shell-out later
 /// in this same test binary, not just the one test that meant to touch them.
-/// Goes through `envmnt` rather than `std::env::set_var` directly since this
+/// Goes through `quench_core::env` rather than `std::env::set_var` directly since this
 /// crate forbids `unsafe_code`.
 #[derive(Debug)]
 pub struct EnvGuard {
@@ -44,13 +44,15 @@ pub struct EnvGuard {
 impl EnvGuard {
     #[must_use]
     pub fn set(key: &'static str, value: &str) -> Self {
-        let previous = envmnt::get_set(key, value);
+        let previous = std::env::var(key).ok();
+        quench_core::env::set(key, value);
         Self { key, previous }
     }
 
     #[must_use]
     pub fn unset(key: &'static str) -> Self {
-        let previous = envmnt::get_remove(key);
+        let previous = std::env::var(key).ok();
+        quench_core::env::remove(key);
         Self { key, previous }
     }
 }
@@ -58,8 +60,8 @@ impl EnvGuard {
 impl Drop for EnvGuard {
     fn drop(&mut self) {
         match &self.previous {
-            Some(value) => envmnt::set(self.key, value),
-            None => envmnt::remove(self.key),
+            Some(value) => quench_core::env::set(self.key, value),
+            None => quench_core::env::remove(self.key),
         }
     }
 }

@@ -6,5 +6,5 @@ pub use validate::report_toolchain;
 
 pub fn init_tracing() {
     quench_starter::logging::init();
-    tracing::info!("Conveyor service starting");
+    quench_log::info!("Conveyor service starting");
 }

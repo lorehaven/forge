@@ -48,7 +48,7 @@ pub async fn assets(Path(path): Path<String>) -> Response {
     quench_starter::http::routers::ui::serve_assets(&path, "dist/assets").await
 }
 
-pub(super) fn render_page(status: http::StatusCode, content: Element) -> Response {
+pub(super) fn render_page(status: quench_http::http::StatusCode, content: Element) -> Response {
     Response::html(status, UI_SHELL.page_wide(content))
 }
 

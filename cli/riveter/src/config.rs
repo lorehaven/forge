@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use quench_serde::{Deserialize, Serialize};
 
 #[derive(Debug, Default, Deserialize, Serialize)]
 pub struct RiveterConfig {
@@ -11,7 +11,7 @@ pub struct EnvConfig {
     pub current: Option<String>,
 }
 
-use anyhow::{Context, Result};
+use quench_core::{Context, Result};
 use std::fs;
 
 const CONFIG_FILE: &str = ".riveter.toml";
@@ -21,10 +21,10 @@ pub fn load_config() -> Result<RiveterConfig> {
         return Ok(RiveterConfig::default());
     };
 
-    toml::from_str(&content).context("Failed to parse .riveter.toml")
+    quench_serde::toml::from_str(&content).context("Failed to parse .riveter.toml")
 }
 
 pub fn save_config(config: &RiveterConfig) -> Result<()> {
-    let content = toml::to_string_pretty(config)?;
+    let content = quench_serde::toml::to_string_pretty(config)?;
     fs::write(CONFIG_FILE, content).context("Failed to write .riveter.toml")
 }

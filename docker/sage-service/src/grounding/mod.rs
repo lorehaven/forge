@@ -11,7 +11,7 @@ use crate::clients::vllm::{ChatMessage, VllmClient};
 use crate::files::{chunker, embedder};
 use crate::tools::SearchProviderRegistry;
 use futures_util::future::join_all;
-use serde::Deserialize;
+use quench_serde::Deserialize;
 use std::collections::HashSet;
 use std::fmt::Write as _;
 use std::time::Duration;
@@ -49,26 +49,41 @@ impl GroundingConfig {
     #[must_use]
     pub fn from_env() -> Self {
         Self {
-            enabled: envmnt::is_or("SAGE_GROUNDED", false),
-            max_queries: usize::try_from(envmnt::get_u64("SAGE_GROUNDED_MAX_QUERIES", 3))
-                .unwrap_or(3)
-                .clamp(1, 5),
-            fetch_pages: usize::try_from(envmnt::get_u64("SAGE_GROUNDED_FETCH_PAGES", 3))
-                .unwrap_or(3),
-            passages: usize::try_from(envmnt::get_u64("SAGE_GROUNDED_PASSAGES", 6))
-                .unwrap_or(6)
-                .max(1),
-            max_chars: usize::try_from(envmnt::get_u64("SAGE_GROUNDED_MAX_CHARS", 6000))
-                .unwrap_or(6000),
-            timeout: Duration::from_secs(envmnt::get_u64("SAGE_GROUNDED_TIMEOUT_SECS", 25)),
-            verify: envmnt::is_or("SAGE_GROUNDED_VERIFY", true),
-            verifier_model: Some(envmnt::get_or("SAGE_GROUNDED_VERIFIER_MODEL", ""))
+            enabled: quench_core::env::is_or("SAGE_GROUNDED", false),
+            max_queries: usize::try_from(quench_core::env::get_parsed::<u64>(
+                "SAGE_GROUNDED_MAX_QUERIES",
+                3,
+            ))
+            .unwrap_or(3)
+            .clamp(1, 5),
+            fetch_pages: usize::try_from(quench_core::env::get_parsed::<u64>(
+                "SAGE_GROUNDED_FETCH_PAGES",
+                3,
+            ))
+            .unwrap_or(3),
+            passages: usize::try_from(quench_core::env::get_parsed::<u64>(
+                "SAGE_GROUNDED_PASSAGES",
+                6,
+            ))
+            .unwrap_or(6)
+            .max(1),
+            max_chars: usize::try_from(quench_core::env::get_parsed::<u64>(
+                "SAGE_GROUNDED_MAX_CHARS",
+                6000,
+            ))
+            .unwrap_or(6000),
+            timeout: Duration::from_secs(quench_core::env::get_parsed::<u64>(
+                "SAGE_GROUNDED_TIMEOUT_SECS",
+                25,
+            )),
+            verify: quench_core::env::is_or("SAGE_GROUNDED_VERIFY", true),
+            verifier_model: Some(quench_core::env::get_or("SAGE_GROUNDED_VERIFIER_MODEL", ""))
                 .filter(|m| !m.trim().is_empty()),
-            verify_timeout: Duration::from_secs(envmnt::get_u64(
+            verify_timeout: Duration::from_secs(quench_core::env::get_parsed::<u64>(
                 "SAGE_GROUNDED_VERIFY_TIMEOUT_SECS",
                 20,
             )),
-            cite_repair: envmnt::is_or("SAGE_GROUNDED_CITE_REPAIR", true),
+            cite_repair: quench_core::env::is_or("SAGE_GROUNDED_CITE_REPAIR", true),
         }
     }
 }
@@ -97,7 +112,7 @@ pub async fn search_with_fallback(
     primary: &str,
     query: &str,
 ) -> Vec<Hit> {
-    let spec = envmnt::get_or("SAGE_SEARCH_FALLBACK", DEFAULT_FALLBACKS);
+    let spec = quench_core::env::get_or("SAGE_SEARCH_FALLBACK", DEFAULT_FALLBACKS);
     search_with_fallback_in(registry, primary, query, &fallback_names(&spec)).await
 }
 
@@ -125,15 +140,15 @@ pub async fn search_with_fallback_in(
                 let hits = parse_search_output(&text);
                 if !hits.is_empty() {
                     if name != primary {
-                        tracing::info!(
+                        quench_log::info!(
                             "[GROUNDING] '{query}': {name} answered after {primary} did not"
                         );
                     }
                     return hits;
                 }
-                tracing::warn!("[GROUNDING] {name} returned no usable results for '{query}'");
+                quench_log::warn!("[GROUNDING] {name} returned no usable results for '{query}'");
             }
-            Err(err) => tracing::warn!("[GROUNDING] {name} failed for '{query}': {err}"),
+            Err(err) => quench_log::warn!("[GROUNDING] {name} failed for '{query}': {err}"),
         }
     }
     Vec::new()
@@ -230,10 +245,10 @@ pub async fn gather(
         report(progress, Stage::Planning);
         let plan = plan(cfg, vllm, instance, history, question, today).await;
         if !plan.needs_search {
-            tracing::info!("[GROUNDING] planner: no search needed");
+            quench_log::info!("[GROUNDING] planner: no search needed");
             return None;
         }
-        tracing::info!("[GROUNDING] queries: {:?}", plan.queries);
+        quench_log::info!("[GROUNDING] queries: {:?}", plan.queries);
         report(progress, Stage::Searching(plan.queries.clone()));
         Some(
             retrieve(
@@ -253,7 +268,7 @@ pub async fn gather(
     tokio::time::timeout(cfg.timeout, run)
         .await
         .unwrap_or_else(|_| {
-            tracing::warn!("[GROUNDING] timed out after {:?}", cfg.timeout);
+            quench_log::warn!("[GROUNDING] timed out after {:?}", cfg.timeout);
             Some(unavailable(today, "the search timed out"))
         })
 }
@@ -290,8 +305,8 @@ angles, not repeat each other. For chitchat, transform, code and math return an 
 /// Message kinds that never need a web search.
 const NO_SEARCH_KINDS: &[&str] = &["chitchat", "transform", "code", "math"];
 
-fn plan_schema(max_queries: usize) -> serde_json::Value {
-    serde_json::json!({
+fn plan_schema(max_queries: usize) -> quench_serde::Value {
+    quench_serde::json!({
         "type": "object",
         "properties": {
             "kind": {
@@ -378,7 +393,7 @@ async fn plan(
     match raw {
         Ok(text) => parse_plan(&text, question, cfg.max_queries),
         Err(err) => {
-            tracing::warn!("[GROUNDING] planner failed, searching the raw message: {err}");
+            quench_log::warn!("[GROUNDING] planner failed, searching the raw message: {err}");
             fallback_plan(question)
         }
     }
@@ -393,9 +408,10 @@ fn fallback_plan(question: &str) -> Plan {
 
 /// Parses the planner's JSON. Anything unparseable searches the raw message: a needless
 /// search is cheap, a missed one produces an ungrounded answer.
+#[must_use]
 pub fn parse_plan(text: &str, question: &str, max_queries: usize) -> Plan {
-    let Ok(raw) = serde_json::from_str::<RawPlan>(text.trim()) else {
-        tracing::warn!("[GROUNDING] unparseable plan: {text}");
+    let Ok(raw) = quench_serde::json::from_str::<RawPlan>(text.trim()) else {
+        quench_log::warn!("[GROUNDING] unparseable plan: {text}");
         return fallback_plan(question);
     };
     let needs_search = match (&raw.kind, raw.needs_search) {
@@ -452,7 +468,7 @@ async fn retrieve(
 
     // Fetch the top pages in parallel; a failed fetch falls back to the search snippet.
     report(progress, Stage::Reading(hits.len().min(cfg.fetch_pages)));
-    let client = reqwest::Client::new();
+    let client = quench_client::transport::Client::new();
     let fetched = join_all(hits.iter().take(cfg.fetch_pages).map(|hit| {
         let client = client.clone();
         let url = hit.url.clone();
@@ -533,7 +549,7 @@ async fn rank_passages(
         }
         Ok(_) => natural,
         Err(err) => {
-            tracing::warn!("[GROUNDING] embedding rank unavailable, using natural order: {err}");
+            quench_log::warn!("[GROUNDING] embedding rank unavailable, using natural order: {err}");
             natural
         }
     }
@@ -747,9 +763,8 @@ pub fn decode_redirect(href: &str) -> String {
     if href.contains("duckduckgo.com/l/")
         && let Some((_, query)) = href.split_once('?')
         && let Some(value) = query.split('&').find_map(|kv| kv.strip_prefix("uddg="))
-        && let Ok(decoded) = urlencoding::decode(value)
     {
-        return decoded.into_owned();
+        return quench_serde::urlencoded::percent_decode(value);
     }
     href
 }
@@ -828,8 +843,8 @@ Write `claim` (quote or closely paraphrase the answer), `reason` and `notice` in
 language as the ANSWER. `notice` is one short sentence warning that the listed parts could not \
 be verified against the sources.";
 
-fn verdict_schema() -> serde_json::Value {
-    serde_json::json!({
+fn verdict_schema() -> quench_serde::Value {
+    quench_serde::json!({
         "type": "object",
         "properties": {
             "notice": { "type": "string" },
@@ -886,7 +901,7 @@ impl RawClaim {
 /// flagged (or the JSON is unusable, in which case the answer is left as is).
 #[must_use]
 pub fn format_verdict(json: &str) -> Option<String> {
-    let verdict: RawVerdict = serde_json::from_str(json.trim()).ok()?;
+    let verdict: RawVerdict = quench_serde::json::from_str(json.trim()).ok()?;
     let claims: Vec<&RawClaim> = verdict
         .unsupported
         .iter()
@@ -934,7 +949,7 @@ pub async fn verify(
                         .find(|i| i.model == *model && i.status == "running" && i.is_chat_capable())
                 })
                 .unwrap_or_else(|| {
-                    tracing::warn!(
+                    quench_log::warn!(
                         "[GROUNDING] verifier model {model} not running, using the answerer"
                     );
                     answerer.clone()
@@ -974,11 +989,11 @@ pub async fn verify(
             .await
         {
             Ok(text) => {
-                tracing::info!("[GROUNDING] verifier ({}): {}", instance.model, text.trim());
+                quench_log::info!("[GROUNDING] verifier ({}): {}", instance.model, text.trim());
                 format_verdict(&text)
             }
             Err(err) => {
-                tracing::warn!("[GROUNDING] verifier failed: {err}");
+                quench_log::warn!("[GROUNDING] verifier failed: {err}");
                 None
             }
         }
@@ -987,7 +1002,7 @@ pub async fn verify(
     tokio::time::timeout(cfg.verify_timeout, run)
         .await
         .unwrap_or_else(|_| {
-            tracing::warn!("[GROUNDING] verifier timed out");
+            quench_log::warn!("[GROUNDING] verifier timed out");
             None
         })
 }
@@ -1118,7 +1133,7 @@ async fn repair_citations(
             images: None,
         },
     ];
-    let schema = serde_json::json!({
+    let schema = quench_serde::json!({
         "type": "object",
         "properties": { "answer": { "type": "string" } },
         "required": ["answer"],
@@ -1136,15 +1151,15 @@ async fn repair_citations(
     let text = match tokio::time::timeout(cfg.verify_timeout, call).await {
         Ok(Ok(text)) => text,
         Ok(Err(err)) => {
-            tracing::warn!("[GROUNDING] citation repair failed: {err}");
+            quench_log::warn!("[GROUNDING] citation repair failed: {err}");
             return None;
         }
         Err(_) => {
-            tracing::warn!("[GROUNDING] citation repair timed out");
+            quench_log::warn!("[GROUNDING] citation repair timed out");
             return None;
         }
     };
-    let fixed = serde_json::from_str::<serde_json::Value>(text.trim())
+    let fixed = quench_serde::json::from_str::<quench_serde::Value>(text.trim())
         .ok()?
         .get("answer")?
         .as_str()?
@@ -1152,7 +1167,7 @@ async fn repair_citations(
         .to_string();
     let usable = has_valid_citation(&fixed, source_count);
     if !usable {
-        tracing::info!(
+        quench_log::info!(
             "[GROUNDING] citation repair produced no usable citation; keeping the original"
         );
     }
@@ -1342,7 +1357,7 @@ pub async fn finalize_answer(
         && let Some(fixed) =
             repair_citations(cfg, vllm, answerer, question, evidence, &text, source_count).await
     {
-        tracing::info!("[GROUNDING] added missing citations");
+        quench_log::info!("[GROUNDING] added missing citations");
         text = strip_invalid_citations(&fixed, source_count);
     }
     text = strip_untrusted_urls(&text, &format!("{evidence}\n{question}"));

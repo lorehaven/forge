@@ -1,7 +1,7 @@
 use crate::domain::{RegistryConfig, service_url};
-use anyhow::{Context, Result, bail};
-use reqwest::header::{CONTENT_DISPOSITION, CONTENT_TYPE};
-use serde::Deserialize;
+use quench_client::transport::header::{CONTENT_DISPOSITION, CONTENT_TYPE};
+use quench_core::{Context, Result, bail};
+use quench_serde::Deserialize;
 use std::path::Path;
 
 #[derive(Debug, Deserialize)]
@@ -39,13 +39,13 @@ pub struct PreviewResponse {
 }
 
 pub struct FilesApi {
-    client: reqwest::Client,
+    client: quench_client::transport::Client,
 }
 
 impl FilesApi {
     pub fn new(registry: &RegistryConfig) -> Result<Self> {
         let insecure = registry.docker.insecure_tls || registry.crates.insecure_tls;
-        let client = reqwest::Client::builder()
+        let client = quench_client::transport::Client::builder()
             .danger_accept_invalid_certs(insecure)
             .build()
             .context("failed to build HTTP client")?;
@@ -171,7 +171,7 @@ impl FilesApi {
         let response = self
             .client
             .delete(&url)
-            .json(&serde_json::json!({ "paths": paths }))
+            .json(&quench_serde::json!({ "paths": paths }))
             .send()
             .await?;
         ensure_success(&response, &url)
@@ -195,7 +195,7 @@ impl FilesApi {
         let filename = filename_from_content_disposition(
             response
                 .headers()
-                .get(CONTENT_DISPOSITION)
+                .get(&CONTENT_DISPOSITION)
                 .and_then(|value| value.to_str().ok()),
         );
         let data = response.bytes().await?.to_vec();
@@ -212,7 +212,7 @@ impl FilesApi {
         let response = self
             .client
             .post(&url)
-            .json(&serde_json::json!({ "paths": paths }))
+            .json(&quench_serde::json!({ "paths": paths }))
             .send()
             .await?;
         ensure_success(&response, &url)?;
@@ -231,7 +231,7 @@ pub fn filename_from_content_disposition(value: Option<&str>) -> Option<String> 
     None
 }
 
-fn ensure_success(response: &reqwest::Response, url: &str) -> Result<()> {
+fn ensure_success(response: &quench_client::transport::Response, url: &str) -> Result<()> {
     if response.status().is_success() {
         return Ok(());
     }
@@ -273,7 +273,7 @@ pub fn remote_path_for_upload(local_path: &str, remote_dir: Option<&str>) -> Res
     let filename = Path::new(local_path)
         .file_name()
         .and_then(|value| value.to_str())
-        .ok_or_else(|| anyhow::anyhow!("cannot determine filename for {}", local_path))?;
+        .ok_or_else(|| quench_core::err!("cannot determine filename for {}", local_path))?;
 
     let path = if let Some(dir) = remote_dir {
         let dir = dir.trim().trim_matches('/');

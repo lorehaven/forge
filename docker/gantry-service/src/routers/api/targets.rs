@@ -6,7 +6,7 @@ use crate::domain::service::Gantry;
 use crate::routers::api::{ApiError, OptionalClaims, actor, authz, json_error};
 use quench_auth::domain::jwt::JwtConfig;
 use quench_http::prelude::{Inject, Json, Path, Response, get, http::StatusCode, post};
-use serde::{Deserialize, Serialize};
+use quench_serde::{Deserialize, Serialize};
 
 fn json_ok<T: Serialize>(value: &T) -> Response {
     Response::json(StatusCode::OK, value)

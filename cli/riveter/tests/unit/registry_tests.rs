@@ -20,12 +20,12 @@ const VARS: [&str; 5] = [
 fn clear_env() {
     for var in VARS {
         // SAFETY-free: `envmnt` wraps the call; the lock above serialises these tests.
-        envmnt::remove(var);
+        quench_core::env::remove(var);
     }
 }
 
-fn record(name: &str, version: &str, bytes: &[u8]) -> serde_json::Value {
-    serde_json::json!({
+fn record(name: &str, version: &str, bytes: &[u8]) -> quench_serde::Value {
+    quench_serde::json!({
         "name": name,
         "version": version,
         "description": "demo",
@@ -54,7 +54,10 @@ async fn publishes_the_bytes_with_the_bearer_token() {
         .and(path("/warehouse/api/v1/rivets/forge/0.4.0+b1"))
         .and(header("authorization", "Bearer tok"))
         .and(body_bytes(bytes.clone()))
-        .respond_with(ResponseTemplate::new(201).set_body_json(record("forge", "0.4.0+b1", &bytes)))
+        .respond_with(ResponseTemplate::new(201).set_body_raw(
+            quench_serde::json::to_string(&(record("forge", "0.4.0+b1", &bytes))),
+            "application/json",
+        ))
         .expect(1)
         .mount(&server)
         .await;
@@ -86,12 +89,15 @@ async fn explains_each_way_a_publish_can_be_refused() {
     ] {
         let server = MockServer::start().await;
         Mock::given(method("PUT"))
-            .respond_with(ResponseTemplate::new(status).set_body_json(
-                serde_json::json!({"error": match status {
-                    409 => "this package version has already been published",
-                    422 => "the archive declares `x`",
-                    _ => "",
-                }}),
+            .respond_with(ResponseTemplate::new(status).set_body_raw(
+                quench_serde::json::to_string(
+                    &(quench_serde::json!({"error": match status {
+                        409 => "this package version has already been published",
+                        422 => "the archive declares `x`",
+                        _ => "",
+                    }})),
+                ),
+                "application/json",
             ))
             .mount(&server)
             .await;
@@ -115,7 +121,10 @@ async fn fetch_resolves_latest_then_downloads_that_exact_version() {
 
     Mock::given(method("GET"))
         .and(path("/api/v1/rivets/forge/latest"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(record("forge", "0.10.0", &bytes)))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(record("forge", "0.10.0", &bytes))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
     Mock::given(method("GET"))
@@ -145,9 +154,10 @@ async fn fetch_refuses_bytes_that_do_not_match_the_recorded_digest() {
 
     Mock::given(method("GET"))
         .and(path("/api/v1/rivets/forge/1.0.0"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(record("forge", "1.0.0", b"genuine")),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(record("forge", "1.0.0", b"genuine"))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
     Mock::given(method("GET"))
@@ -175,10 +185,12 @@ async fn fetch_refuses_bytes_that_do_not_match_the_recorded_digest() {
 async fn fetching_an_unknown_package_says_not_found() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
-        .respond_with(
-            ResponseTemplate::new(404)
-                .set_body_json(serde_json::json!({"error": "package or version not found"})),
-        )
+        .respond_with(ResponseTemplate::new(404).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!({"error": "package or version not found"})),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -201,18 +213,25 @@ async fn lists_versions_and_the_catalog() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/rivets/forge"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
-            record("forge", "0.10.0", b"a"),
-            record("forge", "0.9.0", b"b"),
-        ])))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!([
+                    record("forge", "0.10.0", b"a"),
+                    record("forge", "0.9.0", b"b"),
+                ])),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
     Mock::given(method("GET"))
         .and(path("/api/v1/rivets"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_json(serde_json::json!([record("forge", "0.10.0", b"a")])),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!([record("forge", "0.10.0", b"a")])),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -261,11 +280,11 @@ fn from_env_needs_a_url_and_credentials() {
     let err = Registry::from_env().unwrap_err();
     assert!(err.to_string().contains("RIVETER_WAREHOUSE_URL"), "{err:#}");
 
-    envmnt::set("RIVETER_WAREHOUSE_URL", "http://warehouse.test/warehouse");
+    quench_core::env::set("RIVETER_WAREHOUSE_URL", "http://warehouse.test/warehouse");
     let err = Registry::from_env().unwrap_err();
     assert!(err.to_string().contains("no credentials"), "{err:#}");
 
-    envmnt::set("RIVETER_WAREHOUSE_TOKEN", "tok");
+    quench_core::env::set("RIVETER_WAREHOUSE_TOKEN", "tok");
     assert!(Registry::from_env().is_ok());
 
     clear_env();
@@ -279,9 +298,9 @@ async fn from_env_exchanges_client_credentials_for_a_token() {
         .and(body_string_contains("grant_type=client_credentials"))
         .and(body_string_contains("client_id=ci"))
         .and(body_string_contains("client_secret=shh"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+        .respond_with(ResponseTemplate::new(200).set_body_raw(quench_serde::json::to_string(&(quench_serde::json!({
             "access_token": "minted", "refresh_token": "", "token_type": "Bearer", "expires_in": 60
-        })))
+        }))), "application/json"))
         .expect(1)
         .mount(&gatehouse)
         .await;
@@ -290,7 +309,10 @@ async fn from_env_exchanges_client_credentials_for_a_token() {
     Mock::given(method("GET"))
         .and(path("/api/v1/rivets"))
         .and(header("authorization", "Bearer minted"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(quench_serde::json!([]))),
+            "application/json",
+        ))
         .expect(1)
         .mount(&warehouse)
         .await;
@@ -302,10 +324,10 @@ async fn from_env_exchanges_client_credentials_for_a_token() {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         clear_env();
-        envmnt::set("RIVETER_WAREHOUSE_URL", &warehouse_url);
-        envmnt::set("RIVETER_GATEHOUSE_URL", &gatehouse_url);
-        envmnt::set("RIVETER_CLIENT_ID", "ci");
-        envmnt::set("RIVETER_CLIENT_SECRET", "shh");
+        quench_core::env::set("RIVETER_WAREHOUSE_URL", &warehouse_url);
+        quench_core::env::set("RIVETER_GATEHOUSE_URL", &gatehouse_url);
+        quench_core::env::set("RIVETER_CLIENT_ID", "ci");
+        quench_core::env::set("RIVETER_CLIENT_SECRET", "shh");
         let registry = Registry::from_env();
         clear_env();
         registry.unwrap().catalog().unwrap()
@@ -329,10 +351,10 @@ async fn from_env_reports_refused_client_credentials() {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         clear_env();
-        envmnt::set("RIVETER_WAREHOUSE_URL", "http://warehouse.test");
-        envmnt::set("RIVETER_GATEHOUSE_URL", &gatehouse_url);
-        envmnt::set("RIVETER_CLIENT_ID", "ci");
-        envmnt::set("RIVETER_CLIENT_SECRET", "wrong");
+        quench_core::env::set("RIVETER_WAREHOUSE_URL", "http://warehouse.test");
+        quench_core::env::set("RIVETER_GATEHOUSE_URL", &gatehouse_url);
+        quench_core::env::set("RIVETER_CLIENT_ID", "ci");
+        quench_core::env::set("RIVETER_CLIENT_SECRET", "wrong");
         let err = Registry::from_env().unwrap_err();
         clear_env();
         err

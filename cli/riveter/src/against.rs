@@ -7,8 +7,8 @@
 
 use crate::env::{Workspace, overlay_dir, with_workspace};
 use crate::render::{ResourceScope, Selector, generate_manifests_selected};
-use anyhow::{Context, Result};
 use quench_cli::prelude::require_binary;
+use quench_core::{Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -33,7 +33,7 @@ fn git_text(args: &[&str]) -> Result<String> {
     let out = git(args)
         .output()
         .with_context(|| format!("failed to run git {}", args.join(" ")))?;
-    anyhow::ensure!(
+    quench_core::ensure!(
         out.status.success(),
         "git {} failed: {}",
         args.join(" "),
@@ -84,7 +84,7 @@ fn export_overlays(git_ref: &str, dest: &Path) -> Result<()> {
     ])?;
     // `-z` separates with NUL, which `trim` above leaves alone.
     let files: Vec<&str> = listing.split('\0').filter(|f| !f.is_empty()).collect();
-    anyhow::ensure!(
+    quench_core::ensure!(
         !files.is_empty(),
         "`{}` does not exist at {git_ref}",
         overlays.display()
@@ -102,7 +102,7 @@ fn export_overlays(git_ref: &str, dest: &Path) -> Result<()> {
         let out = git(&["show", &format!("{git_ref}:{file}")])
             .output()
             .with_context(|| format!("failed to read {file} at {git_ref}"))?;
-        anyhow::ensure!(
+        quench_core::ensure!(
             out.status.success(),
             "git show {git_ref}:{file} failed: {}",
             String::from_utf8_lossy(&out.stderr).trim()
@@ -140,7 +140,7 @@ pub fn diff_against(
     selector: &Selector,
 ) -> Result<Comparison> {
     require_binary("git", "`--against` reads the overlay's history from it")?;
-    anyhow::ensure!(!git_ref.trim().is_empty(), "--against needs a git ref");
+    quench_core::ensure!(!git_ref.trim().is_empty(), "--against needs a git ref");
 
     // `^{commit}` so a tag or branch resolves, and a blob or tree name does not slip through.
     git_text(&[
@@ -150,13 +150,14 @@ pub fn diff_against(
         &format!("{git_ref}^{{commit}}"),
     ])
     .map_err(|_| {
-        anyhow::anyhow!("`{git_ref}` is not a commit, branch or tag in this repository")
+        quench_core::err!("`{git_ref}` is not a commit, branch or tag in this repository")
     })?;
 
-    let scratch = tempfile::tempdir().context("failed to create a scratch directory")?;
+    let scratch =
+        quench_core::tmp::TempDir::new().context("failed to create a scratch directory")?;
     let old_overlays = scratch.path().join("old-overlays");
     export_overlays(git_ref, &old_overlays)?;
-    anyhow::ensure!(
+    quench_core::ensure!(
         old_overlays.join(env).join("overlay.yaml").is_file(),
         "environment `{env}` has no overlay at {git_ref}, so there is nothing to compare against"
     );
@@ -214,6 +215,6 @@ pub fn diff_against(
             resource_count,
             differs: true,
         }),
-        _ => anyhow::bail!("git diff failed"),
+        _ => quench_core::bail!("git diff failed"),
     }
 }

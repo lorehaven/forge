@@ -1,9 +1,9 @@
 use crate::domain::docker_error;
 use crate::routers::docker::{blob_exists, repository_path, validate_digest};
+use quench_core::uuid::Uuid;
 use quench_http::prelude::{Path, Query, Response, http::StatusCode, post};
+use quench_serde::Deserialize;
 use quench_starter::http::domain::error;
-use serde::Deserialize;
-use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
 pub struct MountQuery {

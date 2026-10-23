@@ -1,9 +1,8 @@
 use crate::domain::db::{DaybookError, pool, schema};
-use chrono::{DateTime, Utc};
+use quench_core::time::Time;
+use quench_core::uuid::Uuid;
 use quench_db::prelude::Db;
-use serde::Serialize;
-use sqlx::Row;
-use uuid::Uuid;
+use quench_serde::Serialize;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Label {
@@ -11,7 +10,7 @@ pub struct Label {
     pub name: String,
     /// `#rrggbb`.
     pub color: String,
-    pub created_at: DateTime<Utc>,
+    pub created_at: Time,
 }
 
 #[derive(Clone, Debug)]
@@ -24,10 +23,7 @@ pub async fn list(db: &Db, owner: &str) -> Result<Vec<Label>, DaybookError> {
     let schema = schema();
     let sql =
         format!("SELECT {COLUMNS} FROM {schema}.labels WHERE owner = $1 ORDER BY lower(name), id");
-    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(owner)
-        .fetch_all(pool(db)?)
-        .await?;
+    let rows = pool(db)?.query(&sql, &[&owner]).await?;
     rows.iter().map(from_row).collect()
 }
 
@@ -36,12 +32,11 @@ pub async fn create(db: &Db, owner: &str, new: &NewLabel) -> Result<Label, Daybo
     let sql = format!(
         "INSERT INTO {schema}.labels (id, owner, name, color) VALUES ($1, $2, $3, $4) RETURNING {COLUMNS}"
     );
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(Uuid::new_v4().to_string())
-        .bind(owner)
-        .bind(&new.name)
-        .bind(&new.color)
-        .fetch_one(pool(db)?)
+    let row = pool(db)?
+        .query_one(
+            &sql,
+            &[&Uuid::new_v4().to_string(), &owner, &new.name, &new.color],
+        )
         .await?;
     from_row(&row)
 }
@@ -56,12 +51,8 @@ pub async fn update(
     let sql = format!(
         "UPDATE {schema}.labels SET name = $3, color = $4 WHERE id = $1 AND owner = $2 RETURNING {COLUMNS}"
     );
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(id)
-        .bind(owner)
-        .bind(&new.name)
-        .bind(&new.color)
-        .fetch_optional(pool(db)?)
+    let row = pool(db)?
+        .query_opt(&sql, &[&id, &owner, &new.name, &new.color])
         .await?;
     row.as_ref().map(from_row).transpose()
 }
@@ -70,21 +61,17 @@ pub async fn update(
 pub async fn delete(db: &Db, owner: &str, id: &str) -> Result<bool, DaybookError> {
     let schema = schema();
     let sql = format!("DELETE FROM {schema}.labels WHERE id = $1 AND owner = $2");
-    let result = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(id)
-        .bind(owner)
-        .execute(pool(db)?)
-        .await?;
-    Ok(result.rows_affected() > 0)
+    let result = pool(db)?.execute(&sql, &[&id, &owner]).await?;
+    Ok(result > 0)
 }
 
 const COLUMNS: &str = "id, name, color, created_at";
 
-fn from_row(row: &sqlx::postgres::PgRow) -> Result<Label, DaybookError> {
+fn from_row(row: &quench_pg::Row) -> Result<Label, DaybookError> {
     Ok(Label {
-        id: row.try_get("id")?,
-        name: row.try_get("name")?,
-        color: row.try_get("color")?,
-        created_at: row.try_get("created_at")?,
+        id: row.get("id")?,
+        name: row.get("name")?,
+        color: row.get("color")?,
+        created_at: row.get("created_at")?,
     })
 }

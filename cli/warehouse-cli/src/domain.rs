@@ -1,5 +1,5 @@
-use anyhow::{Result, bail};
-use serde::{Deserialize, Serialize};
+use quench_core::{Result, bail};
+use quench_serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
 // Root config  (one per scope: ~/.config/warehouse/config.toml or .warehouse/config.toml)

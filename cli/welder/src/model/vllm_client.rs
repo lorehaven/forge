@@ -1,6 +1,6 @@
 use crate::llm::{Content, Llm, LlmRequest, LlmResponse, Part};
-use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
+use quench_core::async_trait;
+use quench_serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone)]
 pub struct VllmConfig {
@@ -21,14 +21,14 @@ impl VllmConfig {
 #[derive(Debug)]
 pub struct VllmModel {
     config: VllmConfig,
-    client: reqwest::Client,
+    client: quench_client::transport::Client,
 }
 
 impl VllmModel {
-    pub fn new(config: VllmConfig) -> anyhow::Result<Self> {
+    pub fn new(config: VllmConfig) -> quench_core::Result<Self> {
         Ok(Self {
             config,
-            client: reqwest::Client::new(),
+            client: quench_client::transport::Client::new(),
         })
     }
 }
@@ -70,7 +70,7 @@ impl Llm for VllmModel {
         &self.config.model
     }
 
-    async fn generate_content(&self, request: LlmRequest) -> anyhow::Result<LlmResponse> {
+    async fn generate_content(&self, request: LlmRequest) -> quench_core::Result<LlmResponse> {
         let url = format!("{}/v1/chat/completions", self.config.host);
 
         // Extract text from contents
@@ -108,17 +108,17 @@ impl Llm for VllmModel {
             .json(&chat_request)
             .send()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to call vLLM: {e}"))?;
+            .map_err(|e| quench_core::err!("Failed to call vLLM: {e}"))?;
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
-            return Err(anyhow::anyhow!("vLLM error: {error_text}"));
+            return Err(quench_core::err!("vLLM error: {error_text}"));
         }
 
         let chat_response: ChatCompletionResponse = response
             .json()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to parse vLLM response: {e}"))?;
+            .map_err(|e| quench_core::err!("Failed to parse vLLM response: {e}"))?;
 
         let content = chat_response
             .choices

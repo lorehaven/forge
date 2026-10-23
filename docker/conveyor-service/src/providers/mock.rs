@@ -2,8 +2,8 @@
 
 use crate::domain::{Repo, Trigger};
 use crate::providers::{CommitStatusReport, GitProvider, ProviderError, TriggerEvent};
-use async_trait::async_trait;
-use http::HeaderMap;
+use quench_core::async_trait;
+use quench_http::http::HeaderMap;
 use std::sync::Mutex;
 
 /// One status report, as it was made.

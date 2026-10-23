@@ -1,5 +1,5 @@
 use forge_toolbox::{CrateStatus, content_widths, shrink_widths_to_fit};
-use semver::Version;
+use quench_core::version::Version;
 
 fn status(
     package: &'static str,

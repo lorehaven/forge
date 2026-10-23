@@ -24,13 +24,13 @@
 //! every URL including nonsense - the test would pass against an API that had
 //! no routes at all.
 
-use bytes::Bytes;
 use conveyor_service::config::ConveyorConfig;
 use conveyor_service::providers::Providers;
 use conveyor_service::routers::api;
-use http::{HeaderMap, Method, StatusCode, Uri};
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::bytes::Bytes;
 use quench_http::di::ContainerBuilder;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::request::Request;
 use std::sync::OnceLock;
 use tokio::sync::Mutex;
@@ -44,7 +44,7 @@ fn lock() -> &'static Mutex<()> {
 
 enum Body {
     None,
-    Json(serde_json::Value),
+    Json(quench_serde::Value),
 }
 
 async fn status_with_auth(auth: bool, method: Method, path: &str, body: Body) -> StatusCode {
@@ -56,7 +56,7 @@ async fn status_with_auth(auth: bool, method: Method, path: &str, body: Body) ->
     // to default off. Leaving `true` set here after this function returns
     // would leak into whichever test the binary happens to run next.
     let previous = std::env::var("SERVICE_AUTH_ENABLED").ok();
-    envmnt::set("SERVICE_AUTH_ENABLED", if auth { "true" } else { "false" });
+    quench_core::env::set("SERVICE_AUTH_ENABLED", if auth { "true" } else { "false" });
 
     let db = quench_db::prelude::Db::connect("")
         .await
@@ -82,7 +82,7 @@ async fn status_with_auth(auth: bool, method: Method, path: &str, body: Body) ->
         Body::None => Bytes::new(),
         Body::Json(value) => {
             headers.insert("content-type", "application/json".parse().unwrap());
-            Bytes::from(serde_json::to_vec(value).unwrap())
+            Bytes::from(quench_serde::json::to_vec(value))
         }
     };
     let request = Request::new(
@@ -96,8 +96,8 @@ async fn status_with_auth(auth: bool, method: Method, path: &str, body: Body) ->
     let status = app.call(request).await.status();
 
     match previous {
-        Some(value) => envmnt::set("SERVICE_AUTH_ENABLED", value),
-        None => envmnt::remove("SERVICE_AUTH_ENABLED"),
+        Some(value) => quench_core::env::set("SERVICE_AUTH_ENABLED", value),
+        None => quench_core::env::remove("SERVICE_AUTH_ENABLED"),
     }
 
     status
@@ -112,7 +112,7 @@ fn authenticated_routes() -> Vec<(&'static str, Method, &'static str, Body)> {
             Method::POST,
             "/api/v1/repos",
             Body::Json(
-                serde_json::json!({ "owner": "o", "name": "n", "clone_url": "file:///tmp/x" }),
+                quench_serde::json!({ "owner": "o", "name": "n", "clone_url": "file:///tmp/x" }),
             ),
         ),
         (
@@ -125,13 +125,13 @@ fn authenticated_routes() -> Vec<(&'static str, Method, &'static str, Body)> {
             "PATCH /repos/{id}",
             Method::PATCH,
             "/api/v1/repos/abc",
-            Body::Json(serde_json::json!({ "enabled": true })),
+            Body::Json(quench_serde::json!({ "enabled": true })),
         ),
         (
             "POST /repos/{id}/enabled",
             Method::POST,
             "/api/v1/repos/abc/enabled",
-            Body::Json(serde_json::json!({ "enabled": false })),
+            Body::Json(quench_serde::json!({ "enabled": false })),
         ),
         (
             "DELETE /repos/{id}",
@@ -143,7 +143,7 @@ fn authenticated_routes() -> Vec<(&'static str, Method, &'static str, Body)> {
             "POST /repos/{id}/runs",
             Method::POST,
             "/api/v1/repos/abc/runs",
-            Body::Json(serde_json::json!({})),
+            Body::Json(quench_serde::json!({})),
         ),
         ("GET /runs", Method::GET, "/api/v1/runs", Body::None),
         (
@@ -190,7 +190,7 @@ async fn triggering_a_run_resolves() {
             false,
             Method::POST,
             "/api/v1/repos/some-id/runs",
-            Body::Json(serde_json::json!({}))
+            Body::Json(quench_serde::json!({}))
         )
         .await,
         StatusCode::NOT_FOUND
@@ -213,7 +213,7 @@ async fn an_unknown_provider_is_a_404() {
             false,
             Method::POST,
             "/api/v1/webhooks/gitlab",
-            Body::Json(serde_json::json!({}))
+            Body::Json(quench_serde::json!({}))
         )
         .await,
         StatusCode::NOT_FOUND
@@ -253,7 +253,7 @@ async fn webhooks_are_reachable_without_a_token() {
         true,
         Method::POST,
         "/api/v1/webhooks/github",
-        Body::Json(serde_json::json!({})),
+        Body::Json(quench_serde::json!({})),
     )
     .await;
 

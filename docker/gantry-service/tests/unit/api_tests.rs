@@ -1,7 +1,7 @@
 use crate::support;
-use http::{Method, StatusCode};
 use quench_auth::domain::jwt::Claims;
 use quench_db::{Db, InMemoryDb};
+use quench_http::http::{Method, StatusCode};
 
 async fn app(
     auth_enabled: bool,
@@ -32,7 +32,7 @@ async fn info_names_the_service_and_reports_everything_allowed_when_auth_is_off(
     assert_eq!(body["version"], env!("CARGO_PKG_VERSION"));
     assert_eq!(
         body["can"],
-        serde_json::json!(["read", "deploy", "scale", "activate", "rollback"])
+        quench_serde::json!(["read", "deploy", "scale", "activate", "rollback"])
     );
 }
 
@@ -51,5 +51,5 @@ async fn info_reports_only_what_the_token_grants() {
 
     let body = support::json_body(app.call(request).await).await;
     assert_eq!(body["actor"], "ci");
-    assert_eq!(body["can"], serde_json::json!(["read", "scale"]));
+    assert_eq!(body["can"], quench_serde::json!(["read", "scale"]));
 }

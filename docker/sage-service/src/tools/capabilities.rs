@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use quench_serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

@@ -4,8 +4,8 @@
 
 use assert_cmd::Command;
 use predicates::prelude::*;
+use quench_core::tmp::TempDir;
 use std::fs;
-use tempfile::tempdir;
 use wiremock::matchers::{method, path, path_regex};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -60,21 +60,31 @@ async fn docker_catalog_and_tags_print_repositories_and_tags() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/v2/_catalog"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "repositories": ["a/b", "c/d"]
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!({
+                    "repositories": ["a/b", "c/d"]
+                })),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
     Mock::given(method("GET"))
         .and(path("/v2/a/b/tags/list"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "name": "a/b",
-            "tags": ["latest", "v1"]
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!({
+                    "name": "a/b",
+                    "tags": ["latest", "v1"]
+                })),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
-    let temp = tempdir().unwrap();
+    let temp = TempDir::new().unwrap();
     add_local_registry(temp.path(), &server);
 
     let mut cmd = Command::cargo_bin("warehouse").unwrap();
@@ -95,7 +105,7 @@ async fn docker_catalog_and_tags_print_repositories_and_tags() {
 #[tokio::test]
 async fn docker_login_saves_credentials() {
     let server = MockServer::start().await;
-    let temp = tempdir().unwrap();
+    let temp = TempDir::new().unwrap();
     add_local_registry(temp.path(), &server);
 
     let mut cmd = Command::cargo_bin("warehouse").unwrap();
@@ -122,24 +132,35 @@ async fn crates_login_search_yank_and_unyank() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/crates"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "crates": [{ "name": "foo", "max_version": "1.2.3", "description": "a crate" }],
-            "meta": { "total": 1 }
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!({
+                    "crates": [{ "name": "foo", "max_version": "1.2.3", "description": "a crate" }],
+                    "meta": { "total": 1 }
+                })),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
     Mock::given(method("DELETE"))
         .and(path("/api/v1/crates/foo/1.2.3/yank"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "ok": true })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(quench_serde::json!({ "ok": true }))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
     Mock::given(method("PUT"))
         .and(path("/api/v1/crates/foo/1.2.3/unyank"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "ok": true })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(quench_serde::json!({ "ok": true }))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
-    let temp = tempdir().unwrap();
+    let temp = TempDir::new().unwrap();
     add_local_registry(temp.path(), &server);
 
     let mut cmd = Command::cargo_bin("warehouse").unwrap();
@@ -174,7 +195,7 @@ async fn crates_login_search_yank_and_unyank() {
 #[tokio::test]
 async fn crates_yank_without_a_token_fails_locally() {
     let server = MockServer::start().await;
-    let temp = tempdir().unwrap();
+    let temp = TempDir::new().unwrap();
     add_local_registry(temp.path(), &server);
 
     let mut cmd = Command::cargo_bin("warehouse").unwrap();
@@ -190,14 +211,19 @@ async fn crates_search_reports_when_nothing_is_found() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/crates"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "crates": [],
-            "meta": { "total": 0 }
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!({
+                    "crates": [],
+                    "meta": { "total": 0 }
+                })),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
-    let temp = tempdir().unwrap();
+    let temp = TempDir::new().unwrap();
     add_local_registry(temp.path(), &server);
 
     let mut cmd = Command::cargo_bin("warehouse").unwrap();
@@ -213,11 +239,11 @@ async fn crates_versions_lists_active_by_default_and_all_with_flag() {
     let server = MockServer::start().await;
     let body = format!(
         "{}\n{}\n",
-        serde_json::json!({
+        quench_serde::json!({
             "name": "foo", "vers": "1.0.0", "cksum": "abc", "yanked": false,
             "deps": [], "features": {}
         }),
-        serde_json::json!({
+        quench_serde::json!({
             "name": "foo", "vers": "1.1.0", "cksum": "def", "yanked": true,
             "deps": [], "features": {}
         }),
@@ -228,7 +254,7 @@ async fn crates_versions_lists_active_by_default_and_all_with_flag() {
         .mount(&server)
         .await;
 
-    let temp = tempdir().unwrap();
+    let temp = TempDir::new().unwrap();
     add_local_registry(temp.path(), &server);
 
     let mut cmd = Command::cargo_bin("warehouse").unwrap();
@@ -251,18 +277,28 @@ async fn files_storages_ls_upload_preview_and_download() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/files/storages"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "storages": [{ "name": "default", "root": "/data" }]
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!({
+                    "storages": [{ "name": "default", "root": "/data" }]
+                })),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
     Mock::given(method("GET"))
         .and(path_regex(r"^/api/v1/files/default/entries$"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "storage": "default",
-            "path": "/",
-            "entries": [{ "path": "/a.txt", "is_dir": false, "size_bytes": 5 }]
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!({
+                    "storage": "default",
+                    "path": "/",
+                    "entries": [{ "path": "/a.txt", "is_dir": false, "size_bytes": 5 }]
+                })),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
     Mock::given(method("PUT"))
@@ -272,13 +308,18 @@ async fn files_storages_ls_upload_preview_and_download() {
         .await;
     Mock::given(method("GET"))
         .and(path_regex(r"^/api/v1/files/default/preview$"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "storage": "default",
-            "path": "/a.txt",
-            "kind": "text",
-            "content": "hello",
-            "truncated": false
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!({
+                    "storage": "default",
+                    "path": "/a.txt",
+                    "kind": "text",
+                    "content": "hello",
+                    "truncated": false
+                })),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
     Mock::given(method("GET"))
@@ -291,7 +332,7 @@ async fn files_storages_ls_upload_preview_and_download() {
         .mount(&server)
         .await;
 
-    let temp = tempdir().unwrap();
+    let temp = TempDir::new().unwrap();
     add_local_registry(temp.path(), &server);
 
     let mut cmd = Command::cargo_bin("warehouse").unwrap();
@@ -341,15 +382,20 @@ async fn files_ls_reports_an_empty_directory() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path_regex(r"^/api/v1/files/default/entries$"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "storage": "default",
-            "path": "/",
-            "entries": []
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!({
+                    "storage": "default",
+                    "path": "/",
+                    "entries": []
+                })),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
-    let temp = tempdir().unwrap();
+    let temp = TempDir::new().unwrap();
     add_local_registry(temp.path(), &server);
 
     let mut cmd = Command::cargo_bin("warehouse").unwrap();
@@ -389,7 +435,7 @@ async fn files_mkdir_rmdir_delete_and_bulk_operations() {
         .mount(&server)
         .await;
 
-    let temp = tempdir().unwrap();
+    let temp = TempDir::new().unwrap();
     add_local_registry(temp.path(), &server);
 
     let mut cmd = Command::cargo_bin("warehouse").unwrap();
@@ -443,7 +489,7 @@ async fn files_mkdir_rmdir_delete_and_bulk_operations() {
 #[tokio::test]
 async fn files_bulk_delete_requires_at_least_one_path() {
     let server = MockServer::start().await;
-    let temp = tempdir().unwrap();
+    let temp = TempDir::new().unwrap();
     add_local_registry(temp.path(), &server);
 
     let mut cmd = Command::cargo_bin("warehouse").unwrap();
@@ -458,25 +504,35 @@ async fn admin_gc_runs_both_docker_and_crates_by_default() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/admin/docker/gc"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "deleted": 1,
-            "kept": 2
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!({
+                    "deleted": 1,
+                    "kept": 2
+                })),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
     Mock::given(method("POST"))
         .and(path("/admin/crates/gc"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "deleted_crates": 3,
-            "kept_crates": 4,
-            "removed_index_entries": 0,
-            "deleted_owner_files": 0,
-            "removed_empty_dirs": 0
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!({
+                    "deleted_crates": 3,
+                    "kept_crates": 4,
+                    "removed_index_entries": 0,
+                    "deleted_owner_files": 0,
+                    "removed_empty_dirs": 0
+                })),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
-    let temp = tempdir().unwrap();
+    let temp = TempDir::new().unwrap();
     add_local_registry(temp.path(), &server);
 
     let mut cmd = Command::cargo_bin("warehouse").unwrap();
@@ -492,14 +548,19 @@ async fn admin_gc_docker_only_skips_crates() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/admin/docker/gc"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "deleted": 0,
-            "kept": 0
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!({
+                    "deleted": 0,
+                    "kept": 0
+                })),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
-    let temp = tempdir().unwrap();
+    let temp = TempDir::new().unwrap();
     add_local_registry(temp.path(), &server);
 
     let mut cmd = Command::cargo_bin("warehouse").unwrap();

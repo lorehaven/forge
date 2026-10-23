@@ -1,5 +1,5 @@
 use forge_toolbox::{App, CrateStatus, render};
-use semver::Version;
+use quench_core::version::Version;
 
 fn v(s: &str) -> Version {
     Version::parse(s).unwrap()

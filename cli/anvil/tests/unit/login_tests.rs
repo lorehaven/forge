@@ -17,14 +17,14 @@ fn default_token_name_mentions_the_host() {
 
 #[test]
 fn registry_token_env_is_none_without_a_secret_file() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let result = registry_token_env("ennor", dir.path(), |_| false).unwrap();
     assert!(result.is_none());
 }
 
 #[test]
 fn registry_token_env_defers_to_a_token_already_in_the_environment() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     gatehouse_auth::save(
         "anvil",
         dir.path(),
@@ -44,7 +44,7 @@ fn registry_token_env_defers_to_a_token_already_in_the_environment() {
 
 #[test]
 fn registry_token_env_reports_an_unreachable_gatehouse() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     gatehouse_auth::save(
         "anvil",
         dir.path(),

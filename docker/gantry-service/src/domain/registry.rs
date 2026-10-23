@@ -2,21 +2,22 @@
 //! "what could be installed"; what is *running* comes from the cluster, never from here.
 
 use crate::domain::settings::Settings;
-use async_trait::async_trait;
 use quench_client::{ClientCredentialsClient, HttpClient};
-use serde::{Deserialize, Serialize};
+use quench_core::async_trait;
+use quench_core::version::Version;
+use quench_serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, quench_core::Error)]
 pub enum RegistryError {
     #[error("the package registry: {0}")]
     Unavailable(String),
 }
 
 /// One published version of one package, as Warehouse describes it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PackageVersion {
     pub name: String,
     pub version: String,
@@ -35,7 +36,7 @@ pub struct PackageVersion {
     pub uploaded_by: String,
     /// The package's own `rivet.toml`, parsed.
     #[serde(default)]
-    pub manifest: serde_json::Value,
+    pub manifest: quench_serde::Value,
 }
 
 impl PackageVersion {
@@ -46,7 +47,7 @@ impl PackageVersion {
         self.manifest
             .get("deployment")
             .cloned()
-            .and_then(|value| serde_json::from_value(value).ok())
+            .and_then(|value| quench_serde::from_value(&value).ok())
             .unwrap_or_default()
     }
 }
@@ -63,8 +64,12 @@ pub trait Registry: Send + Sync {
 /// build metadata as text - the same order Warehouse itself uses for "newest".
 #[must_use]
 pub fn compare(a: &str, b: &str) -> Ordering {
-    match (semver::Version::parse(a), semver::Version::parse(b)) {
-        (Ok(x), Ok(y)) => x.cmp_precedence(&y).then_with(|| x.build.cmp(&y.build)),
+    match (Version::parse(a), Version::parse(b)) {
+        (Ok(mut x), Ok(mut y)) => {
+            // `Version`'s order already ranks build metadata; precedence is the order without it.
+            let (build_x, build_y) = (std::mem::take(&mut x.build), std::mem::take(&mut y.build));
+            x.cmp(&y).then_with(|| build_x.cmp(&build_y))
+        }
         (Ok(_), Err(_)) => Ordering::Greater,
         (Err(_), Ok(_)) => Ordering::Less,
         (Err(_), Err(_)) => a.cmp(b),
@@ -80,6 +85,7 @@ pub fn newest(versions: &[PackageVersion]) -> Option<&PackageVersion> {
         .max_by(|a, b| compare(&a.version, &b.version))
 }
 
+#[must_use]
 pub fn build(settings: &Settings) -> Arc<dyn Registry> {
     if let Some(dir) = &settings.packages_dir {
         return Arc::new(DirRegistry { dir: dir.clone() });
@@ -87,10 +93,10 @@ pub fn build(settings: &Settings) -> Arc<dyn Registry> {
     if let Some(url) = &settings.warehouse_url {
         match WarehouseRegistry::connect(settings, url) {
             Ok(registry) => return Arc::new(registry),
-            Err(reason) => tracing::error!("warehouse: {reason}"),
+            Err(reason) => quench_log::error!("warehouse: {reason}"),
         }
     }
-    tracing::warn!(
+    quench_log::warn!(
         "no package source: set WAREHOUSE_URL (with its client credentials) or GANTRY_PACKAGES_DIR; \
          the target list will be empty"
     );
@@ -111,7 +117,7 @@ enum Client {
 }
 
 impl Client {
-    async fn get<T: serde::de::DeserializeOwned>(&self, path: &str) -> anyhow::Result<T> {
+    async fn get<T: quench_serde::DeserializeOwned>(&self, path: &str) -> quench_core::Result<T> {
         match self {
             Self::Authenticated(client) => client.get(path).await,
             Self::Anonymous(client) => client.get(path).await,
@@ -127,7 +133,7 @@ impl WarehouseRegistry {
             settings.gatehouse_url.as_deref(),
             settings.warehouse_client_secret.as_deref(),
         ) else {
-            tracing::warn!(
+            quench_log::warn!(
                 "warehouse: no client credentials (GATEHOUSE_URL, WAREHOUSE_CLIENT_SECRET); \
                  asking without a token, which only a Warehouse with auth off will answer"
             );
@@ -197,7 +203,7 @@ impl DirRegistry {
             ) {
                 Ok(package) => package,
                 Err(error) => {
-                    tracing::warn!("{}: not a valid package: {error}", path.display());
+                    quench_log::warn!("{}: not a valid package: {error}", path.display());
                     continue;
                 }
             };
@@ -210,7 +216,7 @@ impl DirRegistry {
                 sha256: rivet_package::sha256_hex(&bytes),
                 yanked: false,
                 uploaded_by: "local".to_string(),
-                manifest: serde_json::to_value(&package.manifest).unwrap_or_default(),
+                manifest: quench_serde::to_value(&package.manifest),
             });
         }
         Ok(found)
@@ -252,7 +258,7 @@ pub struct MemoryRegistry {
 
 impl MemoryRegistry {
     pub fn publish(&self, name: &str, version: &str, namespace: Option<&str>) {
-        self.publish_with(name, version, namespace, serde_json::Value::Null);
+        self.publish_with(name, version, namespace, quench_serde::Value::Null);
     }
 
     /// With a manifest, e.g. `{"deployment": [{"name": ..., "resources": [...]}]}`.
@@ -261,7 +267,7 @@ impl MemoryRegistry {
         name: &str,
         version: &str,
         namespace: Option<&str>,
-        manifest: serde_json::Value,
+        manifest: quench_serde::Value,
     ) {
         self.packages
             .lock()

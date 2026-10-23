@@ -1,13 +1,12 @@
 //! `launch_instance`/`launch_instance_form` handlers and the private
 //! `parse_optional_{u16,u32,f32}` helpers behind the form's string fields.
 
-use async_trait::async_trait;
-use bytes::Bytes;
-use http::{HeaderMap, Method, StatusCode, Uri};
-use http_body_util::BodyExt;
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::async_trait;
+use quench_core::bytes::Bytes;
 use quench_http::body::InboundBody;
 use quench_http::di::ContainerBuilder;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::prelude::{Form, FromRequest, Inject, Json, Request};
 use std::sync::{Arc, Mutex};
 use switchboard_service::routers::models::mod_impl::OptionalClaims;
@@ -77,7 +76,7 @@ impl VllmEngine for RecordingEngine {
             enable_tool_calling: req.enable_tool_calling,
             task: req.task.clone(),
             device: req.device.clone(),
-            started_at: chrono::Utc::now(),
+            started_at: quench_core::time::Time::now(),
             status: "starting".to_string(),
             log_path: None,
             last_error: None,
@@ -108,8 +107,8 @@ fn config(auth_enabled: bool) -> Inject<JwtConfig> {
     Inject(Arc::new(config))
 }
 
-fn launch_request_json(value: serde_json::Value) -> Json<LaunchRequest> {
-    Json(serde_json::from_value(value).expect("valid LaunchRequest json"))
+fn launch_request_json(value: &quench_serde::Value) -> Json<LaunchRequest> {
+    Json(quench_serde::from_value(value).expect("valid LaunchRequest json"))
 }
 
 /// `LaunchRequestForm` is private to `launch.rs`, so this goes through a
@@ -118,7 +117,7 @@ fn launch_request_json(value: serde_json::Value) -> Json<LaunchRequest> {
 async fn launch_request_form(
     pairs: &[(&str, &str)],
 ) -> Form<switchboard_service::routers::vllm::launch::LaunchRequestForm> {
-    let encoded = serde_urlencoded::to_string(pairs).unwrap();
+    let encoded = quench_serde::urlencoded::to_string(pairs).unwrap();
     let container = Arc::new(ContainerBuilder::new().build().await.unwrap());
     let mut req = Request::new(
         Method::POST,
@@ -132,20 +131,20 @@ async fn launch_request_form(
         .expect("form deserializes")
 }
 
-async fn body_json<T: serde::de::DeserializeOwned>(resp: quench_http::response::Response) -> T {
+async fn body_json<T: quench_serde::DeserializeOwned>(resp: quench_http::response::Response) -> T {
     let collected = resp
-        .into_hyper()
-        .into_body()
-        .collect()
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
         .await
         .expect("body collects");
-    serde_json::from_slice(&collected.to_bytes()).expect("valid json body")
+    quench_serde::json::from_slice(&collected).expect("valid json body")
 }
 
 #[tokio::test]
 async fn launch_instance_is_forbidden_without_the_launch_permission() {
     let (engine, _) = engine(false);
-    let req = launch_request_json(serde_json::json!({
+    let req = launch_request_json(&quench_serde::json!({
         "model": "llama-3-8b", "host": "0.0.0.0", "port": 8000,
         "enable_prefix_caching": false
     }));
@@ -157,7 +156,7 @@ async fn launch_instance_is_forbidden_without_the_launch_permission() {
 #[tokio::test]
 async fn launch_instance_rejects_an_empty_model_name() {
     let (engine, _) = engine(false);
-    let req = launch_request_json(serde_json::json!({
+    let req = launch_request_json(&quench_serde::json!({
         "model": "   ", "host": "0.0.0.0", "port": 8000,
         "enable_prefix_caching": false
     }));
@@ -169,7 +168,7 @@ async fn launch_instance_rejects_an_empty_model_name() {
 #[tokio::test]
 async fn launch_instance_succeeds_and_returns_the_instance_as_json() {
     let (engine, last_request) = engine(false);
-    let req = launch_request_json(serde_json::json!({
+    let req = launch_request_json(&quench_serde::json!({
         "model": "llama-3-8b", "host": "0.0.0.0", "port": 8000,
         "enable_prefix_caching": true
     }));
@@ -185,7 +184,7 @@ async fn launch_instance_succeeds_and_returns_the_instance_as_json() {
 #[tokio::test]
 async fn launch_instance_maps_an_engine_error_to_500() {
     let (engine, _) = engine(true);
-    let req = launch_request_json(serde_json::json!({
+    let req = launch_request_json(&quench_serde::json!({
         "model": "llama-3-8b", "host": "0.0.0.0", "port": 8000,
         "enable_prefix_caching": false
     }));

@@ -1,15 +1,14 @@
-use bytes::Bytes;
 use gatehouse_service::ui::pages::home::render_home_page;
-use http::{HeaderMap, Method, StatusCode, Uri};
-use http_body_util::BodyExt;
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::bytes::Bytes;
 use quench_http::body::InboundBody;
 use quench_http::di::ContainerBuilder;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::request::Request;
 use std::sync::Arc;
 
 fn catalog() -> gatehouse_service::catalog::PermissionCatalog {
-    let dir = std::env::temp_dir().join(format!("home-test-{}", uuid::Uuid::new_v4()));
+    let dir = std::env::temp_dir().join(format!("home-test-{}", quench_core::uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("permissions.toml");
     std::fs::write(&path, "[services.gatehouse]\nactions = [\"read-users\"]\n").unwrap();
@@ -17,8 +16,13 @@ fn catalog() -> gatehouse_service::catalog::PermissionCatalog {
 }
 
 async fn body_text(resp: quench_http::response::Response) -> String {
-    let collected = resp.into_hyper().into_body().collect().await.expect("body");
-    String::from_utf8(collected.to_bytes().to_vec()).expect("utf8")
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .expect("body");
+    String::from_utf8(collected.to_vec()).expect("utf8")
 }
 
 #[tokio::test]

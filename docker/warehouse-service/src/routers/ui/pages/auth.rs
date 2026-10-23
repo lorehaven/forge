@@ -1,11 +1,11 @@
 //! Login/logout belong to gatehouse; this service only hands the browser over.
 
-use async_trait::async_trait;
 use quench_auth::domain::jwt::JwtConfig;
 use quench_auth::http::domain::sso_client::SsoConfig;
 use quench_auth::http::routers::ui::pages::auth::{
     auth_callback, auth_status, login_delegation, logout_delegation, refresh_delegation,
 };
+use quench_core::async_trait;
 use quench_http::prelude::{FromRequest, HttpError, Request, Response, get, post};
 
 pub struct LoginRedirect(Response);
@@ -14,7 +14,10 @@ pub struct LoginRedirect(Response);
 impl FromRequest for LoginRedirect {
     async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
         let sso = req.container().get::<SsoConfig>().map_err(|e| {
-            HttpError::status(http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            HttpError::status(
+                quench_http::http::StatusCode::INTERNAL_SERVER_ERROR,
+                e.to_string(),
+            )
         })?;
         Ok(Self(login_delegation(req, &sso).await))
     }
@@ -36,7 +39,10 @@ pub struct AuthCallback(Response);
 impl FromRequest for AuthCallback {
     async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
         let sso = req.container().get::<SsoConfig>().map_err(|e| {
-            HttpError::status(http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            HttpError::status(
+                quench_http::http::StatusCode::INTERNAL_SERVER_ERROR,
+                e.to_string(),
+            )
         })?;
         Ok(Self(auth_callback(req, &sso).await))
     }
@@ -68,7 +74,10 @@ pub struct AuthStatusResponse(Response);
 impl FromRequest for AuthStatusResponse {
     async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
         let config = req.container().get::<JwtConfig>().map_err(|e| {
-            HttpError::status(http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            HttpError::status(
+                quench_http::http::StatusCode::INTERNAL_SERVER_ERROR,
+                e.to_string(),
+            )
         })?;
         Ok(Self(auth_status(req, &config).await))
     }

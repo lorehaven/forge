@@ -1,4 +1,3 @@
-use http_body_util::BodyExt;
 use quench_http::prelude::http::StatusCode;
 use warehouse_service::routers::ui::pages::home::render_home_page;
 
@@ -12,8 +11,13 @@ use warehouse_service::routers::ui::pages::home::render_home_page;
 async fn render_home_page_always_renders_ok_with_the_home_title() {
     let resp = render_home_page();
     assert_eq!(resp.status(), StatusCode::OK);
-    let collected = resp.into_hyper().into_body().collect().await.expect("body");
-    let html = String::from_utf8_lossy(&collected.to_bytes()).into_owned();
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .expect("body");
+    let html = String::from_utf8_lossy(&collected).into_owned();
     assert!(html.contains("ui_home_title"));
     // Exactly one of "no services" or a service section should show,
     // never both and never neither.

@@ -136,9 +136,8 @@ fn a_hex_key_is_accepted() {
 #[test]
 fn a_base64_key_is_accepted() {
     // Both are things people paste out of a password manager.
-    use base64::Engine;
-    let bytes = hex::decode(HEX_KEY).expect("hex");
-    let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    let bytes = quench_core::hex::decode(HEX_KEY).expect("hex");
+    let encoded = quench_core::base64::STANDARD.encode(&bytes);
     assert!(SecretKey::parse("CONVEYOR_SECRET_KEY", &encoded).is_ok());
 }
 
@@ -161,9 +160,8 @@ fn a_key_that_is_neither_hex_nor_base64_is_refused() {
 
 #[test]
 fn hex_and_base64_of_the_same_bytes_produce_the_same_key() {
-    use base64::Engine;
-    let bytes = hex::decode(HEX_KEY).expect("hex");
-    let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    let bytes = quench_core::hex::decode(HEX_KEY).expect("hex");
+    let encoded = quench_core::base64::STANDARD.encode(&bytes);
 
     let from_hex = SecretKey::parse("CONVEYOR_SECRET_KEY", HEX_KEY).expect("hex key");
     let from_base64 = SecretKey::parse("CONVEYOR_SECRET_KEY", &encoded).expect("base64 key");
@@ -183,10 +181,10 @@ fn from_env_reads_the_secret_key_variable_by_name() {
     // name; this pins that down so the two cannot drift apart.
     // SAFETY: this test does not run concurrently with anything else that
     // reads or writes this variable.
-    envmnt::remove("CONVEYOR_SECRET_KEY");
+    quench_core::env::remove("CONVEYOR_SECRET_KEY");
     assert!(SecretKey::from_env().expect("unset is Ok(None)").is_none());
 
-    envmnt::set("CONVEYOR_SECRET_KEY", HEX_KEY);
+    quench_core::env::set("CONVEYOR_SECRET_KEY", HEX_KEY);
     assert!(SecretKey::from_env().expect("a valid key").is_some());
     assert!(
         SecretKey::from_env_named("CONVEYOR_SECRET_KEY")
@@ -194,5 +192,5 @@ fn from_env_reads_the_secret_key_variable_by_name() {
             .is_some()
     );
 
-    envmnt::remove("CONVEYOR_SECRET_KEY");
+    quench_core::env::remove("CONVEYOR_SECRET_KEY");
 }

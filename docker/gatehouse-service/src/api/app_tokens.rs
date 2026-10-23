@@ -9,13 +9,13 @@ use crate::api::oauth::{TokenRequest, random_code};
 use crate::api::users::SubjectClaims;
 use crate::app_tokens::{AppTokenRow, TOKEN_PREFIX};
 use crate::clients::hash_secret;
-use chrono::{DateTime, Duration, Utc};
-use http::StatusCode;
 use quench_auth::domain::auth::{User, UserDb};
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::time::{Duration, Time};
 use quench_db::prelude::{Crud, Db};
+use quench_http::http::StatusCode;
 use quench_http::prelude::{Inject, Json, Path, Response, delete, get, post};
-use serde::{Deserialize, Serialize};
+use quench_serde::{Deserialize, Serialize};
 
 /// Upper bound on a token's life; a tool that needs longer mints a new one.
 const MAX_LIFETIME_DAYS: i64 = 365;
@@ -36,9 +36,9 @@ pub struct AppTokenView {
     pub id: String,
     pub name: String,
     pub scope: Vec<String>,
-    pub created_at: DateTime<Utc>,
-    pub expires_at: Option<DateTime<Utc>>,
-    pub last_used_at: Option<DateTime<Utc>>,
+    pub created_at: Time,
+    pub expires_at: Option<Time>,
+    pub last_used_at: Option<Time>,
     pub revoked: bool,
 }
 
@@ -70,7 +70,7 @@ fn json(status: StatusCode, value: &impl Serialize) -> Response {
 }
 
 fn problem(status: StatusCode, message: &str) -> Response {
-    json(status, &serde_json::json!({ "error": message }))
+    json(status, &quench_serde::json!({ "error": message }))
 }
 
 fn valid_entry(entry: &str) -> bool {
@@ -98,7 +98,7 @@ pub fn refusal(body: &CreateAppToken, user: &User) -> Option<String> {
 }
 
 #[must_use]
-pub fn new_row(username: &str, body: &CreateAppToken, now: DateTime<Utc>) -> (AppTokenRow, String) {
+pub fn new_row(username: &str, body: &CreateAppToken, now: Time) -> (AppTokenRow, String) {
     let secret = format!("{TOKEN_PREFIX}{}", random_code());
     let days = body
         .expires_in_days
@@ -141,9 +141,9 @@ async fn create_token(
         return problem(StatusCode::UNPROCESSABLE_ENTITY, &reason);
     }
 
-    let (row, secret) = new_row(&user.username, &body, Utc::now());
+    let (row, secret) = new_row(&user.username, &body, Time::now());
     if let Err(err) = db.repository::<AppTokenRow>().create(&row).await {
-        tracing::error!("failed to store an application token: {err}");
+        quench_log::error!("failed to store an application token: {err}");
         return Response::new(StatusCode::INTERNAL_SERVER_ERROR);
     }
     json(
@@ -167,7 +167,7 @@ async fn list_tokens(subject: SubjectClaims, Inject(db): Inject<Db>) -> Response
             &rows.iter().map(AppTokenView::from).collect::<Vec<_>>(),
         ),
         Err(err) => {
-            tracing::error!("failed to list application tokens: {err}");
+            quench_log::error!("failed to list application tokens: {err}");
             Response::new(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -188,7 +188,7 @@ async fn revoke_token(
         return Response::new(StatusCode::NOT_FOUND);
     };
     if row.revoked_at.is_none() {
-        row.revoked_at = Some(Utc::now());
+        row.revoked_at = Some(Time::now());
         if tokens.update(&row).await.is_err() {
             return Response::new(StatusCode::INTERNAL_SERVER_ERROR);
         }
@@ -245,7 +245,7 @@ pub async fn app_token_grant(
     let Ok(Some(mut row)) = tokens.read(&hash_secret(secret)).await else {
         return Response::new(StatusCode::UNAUTHORIZED);
     };
-    let now = Utc::now();
+    let now = Time::now();
     if !row.is_usable(now) {
         return Response::new(StatusCode::UNAUTHORIZED);
     }
@@ -256,7 +256,7 @@ pub async fn app_token_grant(
     let (audiences, scope) = exchange_claims(config, &user, &row);
     row.last_used_at = Some(now);
     if let Err(err) = tokens.update(&row).await {
-        tracing::warn!("could not record application token use: {err}");
+        quench_log::warn!("could not record application token use: {err}");
     }
     match config
         .issue_access_token_for(user.username.clone(), audiences, scope, None)
@@ -272,7 +272,7 @@ pub async fn app_token_grant(
             },
         ),
         Err(err) => {
-            tracing::error!("failed to issue a token for {}: {err}", user.username);
+            quench_log::error!("failed to issue a token for {}: {err}", user.username);
             Response::new(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }

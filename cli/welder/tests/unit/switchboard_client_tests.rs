@@ -38,7 +38,10 @@ async fn list_instances_parses_the_response_body() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/vllm/instances"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(vec![instance("running", None)]))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(vec![instance("running", None)])),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -71,7 +74,10 @@ async fn launch_instance_parses_the_created_instance() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/api/v1/vllm/instances"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(instance("starting", None)))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(instance("starting", None))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 

@@ -6,7 +6,7 @@
 //! the schemas, so they arrive when the service that needs them does rather
 //! than all at once at the first boot.
 
-use anyhow::{Context, Result, bail};
+use quench_core::{Context, Result, bail};
 use std::path::PathBuf;
 
 use crate::config::{Role, SelectionMode, Task};

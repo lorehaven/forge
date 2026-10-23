@@ -1,11 +1,11 @@
 use super::SearchProvider;
-use async_trait::async_trait;
+use quench_core::async_trait;
 
 const MAX_RESULTS: usize = 5;
 
 #[derive(Debug)]
 pub struct SerpapiProvider {
-    client: reqwest::Client,
+    client: quench_client::transport::Client,
     api_key: String,
 }
 
@@ -13,7 +13,7 @@ impl SerpapiProvider {
     #[must_use]
     pub fn new(api_key: String) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: quench_client::transport::Client::new(),
             api_key,
         }
     }
@@ -25,17 +25,17 @@ impl SerpapiProvider {
     }
 }
 
-#[derive(serde::Deserialize, Debug)]
+#[derive(quench_serde::Deserialize, Debug)]
 struct SerpapiResponse {
     #[serde(rename = "answerBox")]
-    answer_box: Option<serde_json::Value>,
+    answer_box: Option<quench_serde::Value>,
     #[serde(rename = "organic_results")]
     organic_results: Option<Vec<SerpapiResult>>,
     #[serde(rename = "knowledgeGraph")]
-    knowledge_graph: Option<serde_json::Value>,
+    knowledge_graph: Option<quench_serde::Value>,
 }
 
-#[derive(serde::Deserialize, Debug)]
+#[derive(quench_serde::Deserialize, Debug)]
 struct SerpapiResult {
     title: String,
     link: String,
@@ -55,11 +55,11 @@ impl SearchProvider for SerpapiProvider {
     async fn search(&self, query: &str) -> Result<String, String> {
         let url = format!(
             "https://serpapi.com/search?q={}&api_key={}&engine=google",
-            urlencoding::encode(query),
+            quench_serde::urlencoded::percent_encode(query),
             self.api_key
         );
 
-        tracing::info!("SerpAPI: searching for '{}'", query);
+        quench_log::info!("SerpAPI: searching for '{}'", query);
 
         let response = self
             .client
@@ -69,26 +69,26 @@ impl SearchProvider for SerpapiProvider {
             .await
             .map_err(|e| {
                 let err_msg = format!("Request failed: {e}");
-                tracing::warn!("SerpAPI request failed: {}", e);
+                quench_log::warn!("SerpAPI request failed: {}", e);
                 err_msg
             })?;
 
         let status = response.status();
-        tracing::info!("SerpAPI response status: {}", status);
+        quench_log::info!("SerpAPI response status: {}", status);
 
         if status == 401 {
             return Err("SerpAPI: Invalid API key".to_string());
         }
 
         let body = response.text().await.map_err(|e| {
-            tracing::warn!("Failed to read response: {}", e);
+            quench_log::warn!("Failed to read response: {}", e);
             format!("Failed to read response: {e}")
         })?;
 
-        tracing::info!("SerpAPI response length: {} bytes", body.len());
+        quench_log::info!("SerpAPI response length: {} bytes", body.len());
 
-        let data: SerpapiResponse = serde_json::from_str(&body).map_err(|e| {
-            tracing::warn!("Failed to parse JSON: {}", e);
+        let data: SerpapiResponse = quench_serde::json::from_str(&body).map_err(|e| {
+            quench_log::warn!("Failed to parse JSON: {}", e);
             format!("Invalid JSON: {e}")
         })?;
 
@@ -123,12 +123,12 @@ impl SearchProvider for SerpapiProvider {
         }
 
         if results.is_empty() {
-            tracing::warn!("SerpAPI: No results found for '{}'", query);
+            quench_log::warn!("SerpAPI: No results found for '{}'", query);
             return Err(format!("Web search for '{query}' found no results."));
         }
 
         let result_count = results.len();
-        tracing::info!("SerpAPI: Found {} results for '{}'", result_count, query);
+        quench_log::info!("SerpAPI: Found {} results for '{}'", result_count, query);
         Ok(format!(
             "Search results for '{}' (via SerpAPI)\n\n{}",
             query,

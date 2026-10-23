@@ -46,7 +46,7 @@ pub fn repl_help(topic: Option<&str>) {
     }
 }
 
-pub fn handle_repl_command(input: &str) -> anyhow::Result<bool> {
+pub fn handle_repl_command(input: &str) -> quench_core::Result<bool> {
     let args = input.split_whitespace().collect::<Vec<_>>();
     if args.is_empty() {
         return Ok(false);
@@ -168,13 +168,13 @@ pub fn handle_repl_command(input: &str) -> anyhow::Result<bool> {
     Ok(false)
 }
 
-fn repl_validate(args: &[&str]) -> anyhow::Result<()> {
+fn repl_validate(args: &[&str]) -> quench_core::Result<()> {
     let env = current_env()?;
     let parsed = parse_args(args, ResourceScope::All, false)?;
     crate::schema_cmd::validate_env(&env, parsed.scope, &parsed.selector)
 }
 
-fn repl_images(args: &[&str]) -> anyhow::Result<()> {
+fn repl_images(args: &[&str]) -> quench_core::Result<()> {
     let update = args.contains(&"--update");
     let registry_auth = args
         .windows(2)
@@ -192,7 +192,7 @@ pub fn error(msg: &str) {
     print_status(Tone::Error, "error", msg);
 }
 
-pub fn repl() -> anyhow::Result<()> {
+pub fn repl() -> quench_core::Result<()> {
     print_box_banner("Riveter REPL", "env-aware manifest commands");
     print_status(Tone::Info, "hint", "type `help` to list commands");
 
@@ -284,7 +284,7 @@ fn namespace_is_absent(rendered: &RenderedManifest, namespace: &str) -> Option<b
 /// Marking `namespace` immutable is the documented pattern, but the default
 /// scope then excludes it, so bootstrapping a fresh environment otherwise dies
 /// one confusing `namespaces "x" not found` at a time — once per resource.
-fn ensure_namespace_exists(env: &str, rendered: &RenderedManifest) -> anyhow::Result<()> {
+fn ensure_namespace_exists(env: &str, rendered: &RenderedManifest) -> quench_core::Result<()> {
     if rendered.creates_namespace {
         return Ok(());
     }
@@ -302,14 +302,14 @@ fn ensure_namespace_exists(env: &str, rendered: &RenderedManifest) -> anyhow::Re
         .iter()
         .any(|r| r.kind.eq_ignore_ascii_case("namespace"));
 
-    anyhow::ensure!(
+    quench_core::ensure!(
         !declares_namespace,
         "namespace `{namespace}` does not exist, and this scope excludes the \
          `namespace` resource {env} declares\n\n\
          re-run with `--scope all` to create it first"
     );
 
-    anyhow::bail!(
+    quench_core::bail!(
         "namespace `{namespace}` does not exist, and {env} declares no `namespace` \
          resource to create it\n\n\
          add one to overlays/{env}/overlay.yaml, or create the namespace yourself"
@@ -323,7 +323,7 @@ fn ensure_namespace_exists(env: &str, rendered: &RenderedManifest) -> anyhow::Re
 /// "re-run with `--scope all`". A cluster that cannot be reached is not mistaken for a missing namespace
 /// (see [`namespace_is_absent`]), and an overlay that declares no namespace is left to the apply to
 /// report on.
-pub fn create_namespace_if_missing(env: &str) -> anyhow::Result<bool> {
+pub fn create_namespace_if_missing(env: &str) -> quench_core::Result<bool> {
     require_binary("kubectl", "riveter shells out to it to touch the cluster")?;
 
     let declares = crate::render::list_resources(env)?
@@ -346,7 +346,7 @@ pub fn create_namespace_if_missing(env: &str) -> anyhow::Result<bool> {
     let status = kubectl(&rendered)
         .args(["apply", "-f", &rendered.path])
         .status()?;
-    anyhow::ensure!(status.success(), "could not create namespace {namespace}");
+    quench_core::ensure!(status.success(), "could not create namespace {namespace}");
     Ok(true)
 }
 
@@ -374,7 +374,7 @@ const ROLLOUT_KINDS: &[&str] = &["deployment", "statefulset", "daemonset"];
 /// kubectl accepting a manifest only means the API server stored it. Without
 /// this, a rollout that never starts a healthy pod still reports success, which
 /// is precisely the case where being told the truth matters.
-fn await_rollouts(rendered: &RenderedManifest, wait: WaitPolicy) -> anyhow::Result<()> {
+fn await_rollouts(rendered: &RenderedManifest, wait: WaitPolicy) -> quench_core::Result<()> {
     let rollouts: Vec<&ResourceRef> = rendered
         .selected
         .iter()
@@ -401,7 +401,7 @@ fn await_rollout(
     rendered: &RenderedManifest,
     res: &ResourceRef,
     timeout_seconds: u64,
-) -> anyhow::Result<()> {
+) -> quench_core::Result<()> {
     print_status(
         Tone::Info,
         "wait",
@@ -418,7 +418,7 @@ fn await_rollout(
         .arg(format!("--timeout={timeout_seconds}s"))
         .status()?;
 
-    anyhow::ensure!(
+    quench_core::ensure!(
         status.success(),
         "{res} did not become ready within {timeout_seconds}s — the manifests were applied, \
          but the rollout has not completed\n\n\
@@ -470,7 +470,7 @@ fn await_job(
     rendered: &RenderedManifest,
     res: &ResourceRef,
     timeout_seconds: u64,
-) -> anyhow::Result<()> {
+) -> quench_core::Result<()> {
     print_status(
         Tone::Info,
         "wait",
@@ -487,7 +487,7 @@ fn await_job(
             cmd.args(["-n", namespace]);
         }
         let out = cmd.args(["-o", JOB_STATE]).output()?;
-        anyhow::ensure!(
+        quench_core::ensure!(
             out.status.success(),
             "could not read {res}: {}",
             String::from_utf8_lossy(&out.stderr).trim()
@@ -495,7 +495,7 @@ fn await_job(
 
         match parse_job_state(&String::from_utf8_lossy(&out.stdout)) {
             JobState::Complete => return Ok(()),
-            JobState::Failed(reason) => anyhow::bail!(
+            JobState::Failed(reason) => quench_core::bail!(
                 "{res} failed{}\n\ninspect it with `kubectl logs job/{}`",
                 if reason.is_empty() {
                     String::new()
@@ -507,7 +507,7 @@ fn await_job(
             JobState::Running => {}
         }
 
-        anyhow::ensure!(
+        quench_core::ensure!(
             std::time::Instant::now() < deadline,
             "{res} did not complete within {timeout_seconds}s\n\n\
              inspect it with `kubectl describe job/{}`, or raise `wait_timeout` on it",
@@ -522,7 +522,7 @@ fn wait_at_gate(
     rendered: &RenderedManifest,
     gate: &Gate,
     default_timeout: u64,
-) -> anyhow::Result<()> {
+) -> quench_core::Result<()> {
     let timeout = gate.timeout.unwrap_or(default_timeout);
     match gate.wait {
         WaitFor::Complete => await_job(rendered, &gate.resource, timeout),
@@ -547,7 +547,7 @@ fn names_in(phases: &[crate::render::Phase]) -> String {
 ///
 /// If anything fails, says what had been applied and what had not, because with several phases "the
 /// apply failed" leaves a cluster in a state the reader has to reconstruct.
-fn apply_in_phases(rendered: &RenderedManifest, wait: WaitPolicy) -> anyhow::Result<()> {
+fn apply_in_phases(rendered: &RenderedManifest, wait: WaitPolicy) -> quench_core::Result<()> {
     let total = rendered.phases.len();
 
     for (index, phase) in rendered.phases.iter().enumerate() {
@@ -567,7 +567,7 @@ fn apply_in_phases(rendered: &RenderedManifest, wait: WaitPolicy) -> anyhow::Res
         if !status.success() {
             // kubectl applies a manifest resource by resource, so this phase may be partly applied:
             // say which phases are known to be complete, which one broke, and which never started.
-            anyhow::bail!(
+            quench_core::bail!(
                 "kubectl apply failed in phase {}/{total}\n\n\
                  applied: {}\nfailed, possibly partly applied: {}\nnot applied: {}",
                 index + 1,
@@ -581,7 +581,7 @@ fn apply_in_phases(rendered: &RenderedManifest, wait: WaitPolicy) -> anyhow::Res
             && let Err(err) = wait_at_gate(rendered, gate, wait.timeout_seconds)
         {
             // What this phase applied *was* applied; only what follows is held back.
-            return Err(anyhow::anyhow!(
+            return Err(quench_core::err!(
                 "{err}\n\napplied: {}\nnot applied: {}",
                 names_in(&rendered.phases[..=index]),
                 names_in(&rendered.phases[index + 1..])
@@ -598,7 +598,7 @@ pub fn kubectl_apply(
     scope: ResourceScope,
     selector: &Selector,
     wait: WaitPolicy,
-) -> anyhow::Result<RenderedManifest> {
+) -> quench_core::Result<RenderedManifest> {
     require_binary("kubectl", "riveter shells out to it to touch the cluster")?;
     let rendered = generate_manifests_selected(env, scope, selector)?;
     if rendered.resource_count == 0 {
@@ -624,7 +624,7 @@ pub fn kubectl_apply(
             cmd.arg("--dry-run=client");
         }
         let status = cmd.arg("-f").arg(&rendered.path).status()?;
-        anyhow::ensure!(status.success(), "kubectl apply failed");
+        quench_core::ensure!(status.success(), "kubectl apply failed");
     }
 
     if !dry && wait.enabled {
@@ -642,7 +642,7 @@ pub fn kubectl_diff(
     env: &str,
     scope: ResourceScope,
     selector: &Selector,
-) -> anyhow::Result<(RenderedManifest, bool)> {
+) -> quench_core::Result<(RenderedManifest, bool)> {
     require_binary("kubectl", "riveter shells out to it to touch the cluster")?;
     let rendered = generate_manifests_selected(env, scope, selector)?;
     if rendered.resource_count == 0 {
@@ -658,7 +658,7 @@ pub fn kubectl_diff(
     match status.code() {
         Some(0) => Ok((rendered, false)),
         Some(1) => Ok((rendered, true)),
-        _ => anyhow::bail!("kubectl diff failed"),
+        _ => quench_core::bail!("kubectl diff failed"),
     }
 }
 
@@ -666,7 +666,7 @@ pub fn kubectl_delete(
     env: &str,
     scope: ResourceScope,
     selector: &Selector,
-) -> anyhow::Result<RenderedManifest> {
+) -> quench_core::Result<RenderedManifest> {
     require_binary("kubectl", "riveter shells out to it to touch the cluster")?;
     let rendered = generate_manifests_selected(env, scope, selector)?;
     if rendered.resource_count == 0 {
@@ -678,7 +678,7 @@ pub fn kubectl_delete(
     let status = kubectl(&rendered)
         .args(["delete", "-f", &rendered.path])
         .status()?;
-    anyhow::ensure!(status.success(), "kubectl delete failed");
+    quench_core::ensure!(status.success(), "kubectl delete failed");
     Ok(rendered)
 }
 
@@ -767,7 +767,10 @@ pub fn parse_live_listing(listing: &str) -> Vec<LiveResource> {
 /// not its to remove - see [`parse_live_listing`] for the objects that merely
 /// look like it. `raw` resources are unreachable this way - they carry
 /// whatever labels the overlay wrote - so they are never pruned.
-fn live_resources(env: &str, rendered: &RenderedManifest) -> anyhow::Result<Vec<LiveResource>> {
+fn live_resources(
+    env: &str,
+    rendered: &RenderedManifest,
+) -> quench_core::Result<Vec<LiveResource>> {
     let kinds = crate::render::prunable_kinds().join(",");
     let selector = format!("{MANAGED_BY},env={env}");
 
@@ -788,7 +791,7 @@ fn live_resources(env: &str, rendered: &RenderedManifest) -> anyhow::Result<Vec<
     cmd.arg("--ignore-not-found");
 
     let out = cmd.output()?;
-    anyhow::ensure!(
+    quench_core::ensure!(
         out.status.success(),
         "could not list live resources for {env}:\n{}",
         String::from_utf8_lossy(&out.stderr).trim()
@@ -798,7 +801,10 @@ fn live_resources(env: &str, rendered: &RenderedManifest) -> anyhow::Result<Vec<
 }
 
 /// Live resources this environment owns that the overlay no longer declares.
-pub fn find_orphans(env: &str, rendered: &RenderedManifest) -> anyhow::Result<Vec<LiveResource>> {
+pub fn find_orphans(
+    env: &str,
+    rendered: &RenderedManifest,
+) -> quench_core::Result<Vec<LiveResource>> {
     let live = live_resources(env, rendered)?;
 
     let mut orphans: Vec<LiveResource> = live
@@ -819,7 +825,7 @@ pub fn find_orphans(env: &str, rendered: &RenderedManifest) -> anyhow::Result<Ve
 /// Without this an entry deleted from an overlay lives on in the cluster
 /// forever: `delete` only ever removes what the overlay still renders, so the
 /// resource becomes invisible to every riveter command.
-pub fn prune(env: &str, dry_run: bool) -> anyhow::Result<Vec<LiveResource>> {
+pub fn prune(env: &str, dry_run: bool) -> quench_core::Result<Vec<LiveResource>> {
     require_binary("kubectl", "riveter shells out to it to touch the cluster")?;
     // The full overlay, so a resource excluded only by scope is not mistaken
     // for one the overlay has dropped.
@@ -839,7 +845,7 @@ pub fn prune(env: &str, dry_run: bool) -> anyhow::Result<Vec<LiveResource>> {
         }
 
         let status = cmd.status()?;
-        anyhow::ensure!(status.success(), "failed to delete {orphan}");
+        quench_core::ensure!(status.success(), "failed to delete {orphan}");
     }
 
     Ok(orphans)
@@ -950,7 +956,7 @@ pub fn parse_args(
     args: &[&str],
     default: ResourceScope,
     allow_dry_run: bool,
-) -> anyhow::Result<ParsedArgs> {
+) -> quench_core::Result<ParsedArgs> {
     let mut scope = default;
     let mut dry_run = false;
     let mut targets = Vec::new();
@@ -970,10 +976,10 @@ pub fn parse_args(
                 idx += 1;
                 next.unwrap_or("")
             } else {
-                anyhow::bail!("unknown option `{arg}` (did you mean `--scope`?)");
+                quench_core::bail!("unknown option `{arg}` (did you mean `--scope`?)");
             };
 
-            anyhow::ensure!(
+            quench_core::ensure!(
                 !raw.is_empty(),
                 "missing value for --scope (expected mutable|immutable|all)"
             );
@@ -981,7 +987,7 @@ pub fn parse_args(
         } else if arg == "--dry-run" && allow_dry_run {
             dry_run = true;
         } else if arg.starts_with('-') {
-            anyhow::bail!("{}", unknown_option(arg, allow_dry_run));
+            quench_core::bail!("{}", unknown_option(arg, allow_dry_run));
         } else {
             targets.push(arg.to_string());
         }
@@ -994,12 +1000,12 @@ pub fn parse_args(
     })
 }
 
-pub fn parse_scope_value(raw: &str) -> anyhow::Result<ResourceScope> {
+pub fn parse_scope_value(raw: &str) -> quench_core::Result<ResourceScope> {
     match raw.to_ascii_lowercase().as_str() {
         "mutable" => Ok(ResourceScope::Mutable),
         "immutable" => Ok(ResourceScope::Immutable),
         "all" => Ok(ResourceScope::All),
-        _ => anyhow::bail!("invalid --scope value `{raw}` (expected mutable|immutable|all)"),
+        _ => quench_core::bail!("invalid --scope value `{raw}` (expected mutable|immutable|all)"),
     }
 }
 

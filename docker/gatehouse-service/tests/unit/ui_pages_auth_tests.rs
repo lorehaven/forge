@@ -1,4 +1,3 @@
-use bytes::Bytes;
 use gatehouse_service::realm;
 use gatehouse_service::ui::locale::{LocaleCookie, default_locale_cookie};
 use gatehouse_service::ui::pages::auth::{
@@ -6,15 +5,15 @@ use gatehouse_service::ui::pages::auth::{
     login_ok_key, login_redirect, login_submit, mfa_challenge_url, render_login_page,
     render_mfa_page,
 };
-use http::{HeaderMap, Method, StatusCode, Uri};
-use http_body_util::BodyExt;
 use quench_auth::domain::auth::{Permissions, Role};
 use quench_auth::domain::jwt::JwtConfig;
 use quench_auth::domain::session::SessionDb;
 use quench_cache::CacheStore;
+use quench_core::bytes::Bytes;
 use quench_db::prelude::Db;
 use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::prelude::{Form, Inject, Query, Request};
 use std::sync::Arc;
 
@@ -27,8 +26,13 @@ fn sessions() -> Arc<SessionDb> {
 }
 
 async fn body_text(resp: quench_http::response::Response) -> String {
-    let collected = resp.into_hyper().into_body().collect().await.expect("body");
-    String::from_utf8(collected.to_bytes().to_vec()).expect("utf8")
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .expect("body");
+    String::from_utf8(collected.to_vec()).expect("utf8")
 }
 
 // -----------------------------------------------------------------
@@ -127,8 +131,8 @@ fn login_redirect_points_at_the_login_page() {
     let resp = login_redirect();
     assert_eq!(resp.status(), StatusCode::FOUND);
     let location = resp
-        .into_hyper()
-        .headers()
+        .into_inner()
+        .headers
         .get("location")
         .unwrap()
         .to_str()
@@ -173,8 +177,8 @@ async fn login_submit_redirects_with_an_error_for_unknown_credentials() {
     .await;
     assert_eq!(resp.status(), StatusCode::FOUND);
     let location = resp
-        .into_hyper()
-        .headers()
+        .into_inner()
+        .headers
         .get("location")
         .unwrap()
         .to_str()
@@ -212,14 +216,7 @@ async fn login_submit_succeeds_and_sets_session_cookies_for_the_right_password()
     )
     .await;
     assert_eq!(resp.status(), StatusCode::FOUND);
-    assert!(
-        resp.into_hyper()
-            .headers()
-            .get_all("set-cookie")
-            .iter()
-            .count()
-            >= 2
-    );
+    assert!(resp.into_inner().headers.get_all("set-cookie").count() >= 2);
 }
 
 #[test]
@@ -252,13 +249,13 @@ async fn locale_cookie_counts_only_with_the_explicit_choice_marker() {
         ("qlocale_chosen=1", false),
         ("qlocale=xx-XX; qlocale_chosen=1", false),
     ] {
-        let mut headers = http::HeaderMap::new();
+        let mut headers = quench_http::http::HeaderMap::new();
         headers.insert("cookie", cookie.parse().unwrap());
         let mut req = Request::new(
-            http::Method::GET,
-            "/ui/login".parse::<http::Uri>().unwrap(),
+            quench_http::http::Method::GET,
+            "/ui/login".parse::<quench_http::http::Uri>().unwrap(),
             headers,
-            quench_http::body::InboundBody::from_bytes(bytes::Bytes::new()),
+            quench_http::body::InboundBody::from_bytes(quench_core::bytes::Bytes::new()),
             container.clone(),
         );
         let found = LocaleCookie::from_request(&mut req).await.unwrap();
@@ -311,10 +308,9 @@ async fn login_sets_the_preferred_locale_cookie_only_without_an_existing_one() {
         )
         .await;
         let has_locale = resp
-            .into_hyper()
-            .headers()
+            .into_inner()
+            .headers
             .get_all("set-cookie")
-            .iter()
             .any(|value| value.to_str().unwrap().starts_with("qlocale=de-DE"));
         assert_eq!(has_locale, expected);
     }
@@ -404,8 +400,8 @@ async fn logout_clears_cookies_and_redirects_to_login() {
     let resp = app.call(get("/ui/logout", &container)).await;
     assert_eq!(resp.status(), StatusCode::FOUND);
     let location = resp
-        .into_hyper()
-        .headers()
+        .into_inner()
+        .headers
         .get("location")
         .unwrap()
         .to_str()
@@ -432,7 +428,7 @@ async fn refresh_without_a_cookie_is_not_a_server_error() {
 /// the shared HTTP client always failed and a lapsed session meant a login form.
 #[tokio::test]
 async fn a_refresh_cookie_alone_renews_the_session_without_gatehouse_url() {
-    envmnt::remove("GATEHOUSE_URL");
+    quench_core::env::remove("GATEHOUSE_URL");
     let db = db().await;
     realm::create(
         &db,
@@ -470,8 +466,8 @@ async fn a_refresh_cookie_alone_renews_the_session_without_gatehouse_url() {
     // The session watcher's renewal.
     let resp = app.call(with_cookie(Method::POST, "/ui/refresh")).await;
     assert_eq!(resp.status(), StatusCode::OK);
-    let hyper = resp.into_hyper();
-    let cookies: Vec<_> = hyper.headers().get_all("set-cookie").iter().collect();
+    let hyper = resp.into_inner();
+    let cookies: Vec<_> = hyper.headers.get_all("set-cookie").collect();
     assert!(cookies.len() >= 2, "expected new session + refresh cookies");
     let rotated = cookies
         .iter()
@@ -500,7 +496,10 @@ async fn a_refresh_cookie_alone_renews_the_session_without_gatehouse_url() {
 }
 
 fn realm_catalog() -> gatehouse_service::catalog::PermissionCatalog {
-    let dir = std::env::temp_dir().join(format!("auth-page-test-{}", uuid::Uuid::new_v4()));
+    let dir = std::env::temp_dir().join(format!(
+        "auth-page-test-{}",
+        quench_core::uuid::Uuid::new_v4()
+    ));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("permissions.toml");
     std::fs::write(&path, "[services.gatehouse]\nactions = [\"read-users\"]\n").unwrap();
@@ -581,15 +580,13 @@ fn a_reset_notice_still_outranks_the_resend_notice() {
 }
 
 async fn login_page_html(notices: LoginNotices) -> String {
-    use http_body_util::BodyExt;
     let resp = render_login_page(None, false, &notices);
     let body = resp
-        .into_hyper()
-        .into_body()
-        .collect()
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
         .await
-        .unwrap()
-        .to_bytes();
+        .unwrap();
     String::from_utf8(body.to_vec()).unwrap()
 }
 

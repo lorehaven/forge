@@ -3,12 +3,12 @@
 
 use crate::domain::{Artifact, Job, Run, Status, Trigger};
 use crate::executors::{LogChunk, StepState};
-use chrono::{DateTime, Utc};
+use quench_core::time::Time;
+use quench_core::uuid::Uuid;
 use quench_db::prelude::Db;
-use sqlx::{Pool, Postgres, Row};
-use uuid::Uuid;
+use quench_pg::Pool;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, quench_core::Error)]
 pub enum QueueError {
     #[error(
         "conveyor's queue needs Postgres; this service is running against an \
@@ -26,23 +26,23 @@ pub enum QueueError {
     BadRow(String),
 
     #[error(transparent)]
-    Sql(#[from] sqlx::Error),
+    Sql(#[from] quench_pg::Error),
 }
 
 impl QueueError {
     /// Whether this is the unique violation raised when a second worker claims
     /// a run for a repository that already has one going.
     fn is_repo_busy(&self) -> bool {
-        let Self::Sql(sqlx::Error::Database(error)) = self else {
+        let Self::Sql(error) = self else {
             return false;
         };
-        error.code().as_deref() == Some("23505")
+        error.code() == Some("23505")
     }
 }
 
 /// The pool, or a clear refusal - an in-memory `Db` would silently lose every
 /// queued run on restart, so this refuses rather than degrading quietly.
-pub const fn pool(db: &Db) -> Result<&Pool<Postgres>, QueueError> {
+pub const fn pool(db: &Db) -> Result<&Pool, QueueError> {
     match db {
         Db::Postgres(postgres) => Ok(postgres.pool()),
         Db::InMemory(_) => Err(QueueError::NotPostgres),
@@ -51,7 +51,7 @@ pub const fn pool(db: &Db) -> Result<&Pool<Postgres>, QueueError> {
 
 #[must_use]
 pub fn schema() -> String {
-    envmnt::get_or("DB_SCHEMA", "conveyor")
+    quench_core::env::get_or("DB_SCHEMA", "conveyor")
 }
 
 // Enqueueing.
@@ -104,16 +104,20 @@ pub async fn enqueue(db: &Db, new: &NewRun) -> Result<Enqueued, QueueError> {
          RETURNING {RUN_COLUMNS}"
     );
 
-    let inserted = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(&id)
-        .bind(&new.repo_id)
-        .bind(new.trigger.as_str())
-        .bind(&new.git_ref)
-        .bind(&new.sha)
-        .bind(&new.message)
-        .bind(&new.delivery_id)
-        .bind(&new.resumed_from)
-        .fetch_optional(pool)
+    let inserted = pool
+        .query_opt(
+            &sql,
+            &[
+                &id as &dyn quench_pg::ToSql,
+                &new.repo_id,
+                &new.trigger.as_str(),
+                &new.git_ref,
+                &new.sha,
+                &new.message,
+                &new.delivery_id,
+                &new.resumed_from,
+            ],
+        )
         .await?;
 
     if let Some(row) = inserted {
@@ -137,9 +141,8 @@ pub async fn find_by_delivery(db: &Db, delivery_id: &str) -> Result<Option<Run>,
     let schema = schema();
     let sql = format!("SELECT {RUN_COLUMNS} FROM {schema}.runs WHERE delivery_id = $1");
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(delivery_id)
-        .fetch_optional(pool)
+    let row = pool
+        .query_opt(&sql, &[&delivery_id as &dyn quench_pg::ToSql])
         .await?;
 
     row.as_ref().map(run_from_row).transpose()
@@ -175,9 +178,8 @@ pub async fn claim_next(db: &Db, worker: &str) -> Result<Option<Run>, QueueError
          RETURNING {RUN_COLUMNS}"
     );
 
-    let claimed = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(worker)
-        .fetch_optional(pool)
+    let claimed = pool
+        .query_opt(&sql, &[&worker as &dyn quench_pg::ToSql])
         .await;
 
     match claimed {
@@ -186,7 +188,7 @@ pub async fn claim_next(db: &Db, worker: &str) -> Result<Option<Run>, QueueError
         Err(error) => {
             let error = QueueError::from(error);
             if error.is_repo_busy() {
-                tracing::debug!("another worker claimed this repository first");
+                quench_log::debug!("another worker claimed this repository first");
                 return Ok(None);
             }
             Err(error)
@@ -203,10 +205,7 @@ pub async fn heartbeat(db: &Db, run_id: &str, worker: &str) -> Result<(), QueueE
          WHERE id = $1 AND claimed_by = $2 AND status = 'running'"
     );
 
-    sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(run_id)
-        .bind(worker)
-        .execute(pool)
+    pool.execute(&sql, &[&run_id as &dyn quench_pg::ToSql, &worker])
         .await?;
     Ok(())
 }
@@ -224,14 +223,17 @@ pub async fn requeue_stale(db: &Db, stale_after_secs: u64) -> Result<u64, QueueE
            AND claimed_at < NOW() - make_interval(secs => $1)"
     );
 
-    let result = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(f64::from(
-            u32::try_from(stale_after_secs).unwrap_or(u32::MAX),
-        ))
-        .execute(pool)
+    let result = pool
+        .execute(
+            &sql,
+            &[
+                &f64::from(u32::try_from(stale_after_secs).unwrap_or(u32::MAX))
+                    as &dyn quench_pg::ToSql,
+            ],
+        )
         .await?;
 
-    Ok(result.rows_affected())
+    Ok(result)
 }
 
 /// Asks a run to stop; the holding replica notices on its next poll (an
@@ -248,12 +250,11 @@ pub async fn request_cancel(db: &Db, run_id: &str) -> Result<bool, QueueError> {
          WHERE id = $1 AND status IN ('queued', 'running')"
     );
 
-    let result = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(run_id)
-        .execute(pool)
+    let result = pool
+        .execute(&sql, &[&run_id as &dyn quench_pg::ToSql])
         .await?;
 
-    Ok(result.rows_affected() > 0)
+    Ok(result > 0)
 }
 
 pub async fn is_cancel_requested(db: &Db, run_id: &str) -> Result<bool, QueueError> {
@@ -261,12 +262,11 @@ pub async fn is_cancel_requested(db: &Db, run_id: &str) -> Result<bool, QueueErr
     let schema = schema();
     let sql = format!("SELECT cancel_requested FROM {schema}.runs WHERE id = $1");
 
-    let requested: Option<(bool,)> = sqlx::query_as(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(run_id)
-        .fetch_optional(pool)
+    let requested = pool
+        .query_opt(&sql, &[&run_id as &dyn quench_pg::ToSql])
         .await?;
 
-    Ok(requested.is_some_and(|(flag,)| flag))
+    Ok(requested.is_some_and(|row| row.get::<bool, _>(&0usize).unwrap_or(false)))
 }
 
 // Finishing.
@@ -284,12 +284,11 @@ pub async fn finish_run(
          WHERE id = $1"
     );
 
-    sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(run_id)
-        .bind(status.as_str())
-        .bind(error)
-        .execute(pool)
-        .await?;
+    pool.execute(
+        &sql,
+        &[&run_id as &dyn quench_pg::ToSql, &status.as_str(), &error],
+    )
+    .await?;
     Ok(())
 }
 
@@ -324,19 +323,22 @@ pub async fn create_jobs(
 
     let mut jobs = Vec::with_capacity(planned.len());
     for job in planned {
-        let needs = serde_json::to_value(&job.needs)
-            .map_err(|error| QueueError::BadRow(format!("needs is not serialisable: {error}")))?;
+        let needs = quench_serde::to_value(&job.needs);
 
-        let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-            .bind(Uuid::new_v4().to_string())
-            .bind(run_id)
-            .bind(&job.stage)
-            .bind(&job.name)
-            .bind(&needs)
-            .bind(job.status.as_str())
-            .bind(&job.error)
-            .bind(&job.reused_from_run)
-            .fetch_one(pool)
+        let row = pool
+            .query_one(
+                &sql,
+                &[
+                    &Uuid::new_v4().to_string() as &dyn quench_pg::ToSql,
+                    &run_id,
+                    &job.stage,
+                    &job.name,
+                    &needs,
+                    &job.status.as_str(),
+                    &job.error,
+                    &job.reused_from_run,
+                ],
+            )
             .await?;
 
         jobs.push(job_from_row(&row)?);
@@ -351,9 +353,7 @@ pub async fn start_job(db: &Db, job_id: &str) -> Result<(), QueueError> {
     let sql =
         format!("UPDATE {schema}.jobs SET status = 'running', started_at = NOW() WHERE id = $1");
 
-    sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(job_id)
-        .execute(pool)
+    pool.execute(&sql, &[&job_id as &dyn quench_pg::ToSql])
         .await?;
     Ok(())
 }
@@ -373,13 +373,16 @@ pub async fn finish_job(
          WHERE id = $1"
     );
 
-    sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(job_id)
-        .bind(status.as_str())
-        .bind(exit_code)
-        .bind(error)
-        .execute(pool)
-        .await?;
+    pool.execute(
+        &sql,
+        &[
+            &job_id as &dyn quench_pg::ToSql,
+            &status.as_str(),
+            &exit_code,
+            &error,
+        ],
+    )
+    .await?;
     Ok(())
 }
 
@@ -390,9 +393,7 @@ pub async fn record_steps(db: &Db, job_id: &str, steps: &[StepState]) -> Result<
 
     // Written once at the end, so a retried job doesn't accumulate duplicate ordinals.
     let clear = format!("DELETE FROM {schema}.steps WHERE job_id = $1");
-    sqlx::query(sqlx::AssertSqlSafe(clear.as_str()))
-        .bind(job_id)
-        .execute(pool)
+    pool.execute(&clear, &[&job_id as &dyn quench_pg::ToSql])
         .await?;
 
     let sql = format!(
@@ -402,18 +403,21 @@ pub async fn record_steps(db: &Db, job_id: &str, steps: &[StepState]) -> Result<
     );
 
     for step in steps {
-        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-            .bind(Uuid::new_v4().to_string())
-            .bind(job_id)
-            .bind(i32::try_from(step.ordinal).unwrap_or(i32::MAX))
-            .bind(&step.kind)
-            .bind(&step.command)
-            .bind(step.status.as_str())
-            .bind(step.exit_code)
-            .bind(step.started_at)
-            .bind(step.finished_at)
-            .execute(pool)
-            .await?;
+        pool.execute(
+            &sql,
+            &[
+                &Uuid::new_v4().to_string() as &dyn quench_pg::ToSql,
+                &job_id,
+                &i32::try_from(step.ordinal).unwrap_or(i32::MAX),
+                &step.kind,
+                &step.command,
+                &step.status.as_str(),
+                &step.exit_code,
+                &step.started_at,
+                &step.finished_at,
+            ],
+        )
+        .await?;
     }
 
     Ok(())
@@ -433,18 +437,24 @@ pub async fn append_logs(db: &Db, job_id: &str, chunks: &[LogChunk]) -> Result<(
          VALUES ($1, $2, $3, $4, $5) ON CONFLICT (job_id, seq) DO NOTHING"
     );
 
-    let mut transaction = pool.begin().await?;
+    let mut conn = pool.get().await?;
+    let mut transaction = conn.begin().await?;
     for chunk in chunks {
-        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-            .bind(job_id)
-            .bind(i64::try_from(chunk.seq).unwrap_or(i64::MAX))
-            .bind(chunk.stream.as_str())
-            .bind(chunk.at)
-            .bind(&chunk.line)
-            .execute(&mut *transaction)
+        transaction
+            .execute(
+                &sql,
+                &[
+                    &job_id as &dyn quench_pg::ToSql,
+                    &i64::try_from(chunk.seq).unwrap_or(i64::MAX),
+                    &chunk.stream.as_str(),
+                    &chunk.at,
+                    &chunk.line,
+                ],
+            )
             .await?;
     }
     transaction.commit().await?;
+    drop(conn);
 
     Ok(())
 }
@@ -459,17 +469,20 @@ pub async fn record_artifact(db: &Db, artifact: &Artifact) -> Result<(), QueueEr
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)"
     );
 
-    sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(&artifact.id)
-        .bind(&artifact.run_id)
-        .bind(&artifact.job_id)
-        .bind(&artifact.kind)
-        .bind(&artifact.name)
-        .bind(&artifact.version)
-        .bind(&artifact.uri)
-        .bind(&artifact.digest)
-        .execute(pool)
-        .await?;
+    pool.execute(
+        &sql,
+        &[
+            &artifact.id as &dyn quench_pg::ToSql,
+            &artifact.run_id,
+            &artifact.job_id,
+            &artifact.kind,
+            &artifact.name,
+            &artifact.version,
+            &artifact.uri,
+            &artifact.digest,
+        ],
+    )
+    .await?;
     Ok(())
 }
 
@@ -481,23 +494,22 @@ pub async fn list_artifacts(db: &Db, run_id: &str) -> Result<Vec<Artifact>, Queu
          FROM {schema}.artifacts WHERE run_id = $1 ORDER BY created_at, name"
     );
 
-    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(run_id)
-        .fetch_all(pool)
+    let rows = pool
+        .query(&sql, &[&run_id as &dyn quench_pg::ToSql])
         .await?;
 
     rows.iter()
         .map(|row| {
             Ok(Artifact {
-                id: row.try_get("id")?,
-                run_id: row.try_get("run_id")?,
-                job_id: row.try_get("job_id")?,
-                kind: row.try_get("kind")?,
-                name: row.try_get("name")?,
-                version: row.try_get("version")?,
-                uri: row.try_get("uri")?,
-                digest: row.try_get("digest")?,
-                created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
+                id: row.get("id")?,
+                run_id: row.get("run_id")?,
+                job_id: row.get("job_id")?,
+                kind: row.get("kind")?,
+                name: row.get("name")?,
+                version: row.get("version")?,
+                uri: row.get("uri")?,
+                digest: row.get("digest")?,
+                created_at: row.get::<Time, _>("created_at")?,
             })
         })
         .collect()
@@ -512,23 +524,22 @@ pub async fn list_artifacts_for_job(db: &Db, job_id: &str) -> Result<Vec<Artifac
          FROM {schema}.artifacts WHERE job_id = $1 ORDER BY created_at, name"
     );
 
-    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(job_id)
-        .fetch_all(pool)
+    let rows = pool
+        .query(&sql, &[&job_id as &dyn quench_pg::ToSql])
         .await?;
 
     rows.iter()
         .map(|row| {
             Ok(Artifact {
-                id: row.try_get("id")?,
-                run_id: row.try_get("run_id")?,
-                job_id: row.try_get("job_id")?,
-                kind: row.try_get("kind")?,
-                name: row.try_get("name")?,
-                version: row.try_get("version")?,
-                uri: row.try_get("uri")?,
-                digest: row.try_get("digest")?,
-                created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
+                id: row.get("id")?,
+                run_id: row.get("run_id")?,
+                job_id: row.get("job_id")?,
+                kind: row.get("kind")?,
+                name: row.get("name")?,
+                version: row.get("version")?,
+                uri: row.get("uri")?,
+                digest: row.get("digest")?,
+                created_at: row.get::<Time, _>("created_at")?,
             })
         })
         .collect()
@@ -540,9 +551,8 @@ pub async fn read_run(db: &Db, run_id: &str) -> Result<Option<Run>, QueueError> 
     let schema = schema();
     let sql = format!("SELECT {RUN_COLUMNS} FROM {schema}.runs WHERE id = $1");
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(run_id)
-        .fetch_optional(pool)
+    let row = pool
+        .query_opt(&sql, &[&run_id as &dyn quench_pg::ToSql])
         .await?;
 
     row.as_ref().map(run_from_row).transpose()
@@ -558,12 +568,11 @@ pub async fn repo_id_for_job(db: &Db, job_id: &str) -> Result<Option<String>, Qu
          WHERE j.id = $1"
     );
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(job_id)
-        .fetch_optional(pool)
+    let row = pool
+        .query_opt(&sql, &[&job_id as &dyn quench_pg::ToSql])
         .await?;
 
-    row.map(|row| row.try_get::<String, _>("repo_id"))
+    row.map(|row| row.get::<String, _>("repo_id"))
         .transpose()
         .map_err(QueueError::from)
 }
@@ -577,10 +586,11 @@ pub async fn list_runs(db: &Db, repo_id: Option<&str>, limit: i64) -> Result<Vec
          ORDER BY queued_at DESC LIMIT $2"
     );
 
-    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(repo_id)
-        .bind(limit.clamp(1, 500))
-        .fetch_all(pool)
+    let rows = pool
+        .query(
+            &sql,
+            &[&repo_id as &dyn quench_pg::ToSql, &limit.clamp(1, 500)],
+        )
         .await?;
 
     rows.iter().map(run_from_row).collect()
@@ -604,21 +614,21 @@ pub async fn list_runs_page(
             "SELECT {RUN_COLUMNS} FROM {schema}.runs \
              WHERE repo_id = ANY($1) ORDER BY queued_at DESC LIMIT $2 OFFSET $3"
         );
-        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-            .bind(ids)
-            .bind(limit)
-            .bind(offset)
-            .fetch_all(pool)
-            .await?
+        pool.query(
+            &sql,
+            &[
+                &quench_pg::PgArray(ids.to_vec()) as &dyn quench_pg::ToSql,
+                &limit,
+                &offset,
+            ],
+        )
+        .await?
     } else {
         let sql = format!(
             "SELECT {RUN_COLUMNS} FROM {schema}.runs \
              ORDER BY queued_at DESC LIMIT $1 OFFSET $2"
         );
-        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-            .bind(limit)
-            .bind(offset)
-            .fetch_all(pool)
+        pool.query(&sql, &[&limit as &dyn quench_pg::ToSql, &offset])
             .await?
     };
 
@@ -632,18 +642,17 @@ pub async fn count_runs(db: &Db, repo_ids: Option<&[String]>) -> Result<i64, Que
 
     let row = if let Some(ids) = repo_ids {
         let sql = format!("SELECT COUNT(*) AS count FROM {schema}.runs WHERE repo_id = ANY($1)");
-        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-            .bind(ids)
-            .fetch_one(pool)
-            .await?
+        pool.query_one(
+            &sql,
+            &[&quench_pg::PgArray(ids.to_vec()) as &dyn quench_pg::ToSql],
+        )
+        .await?
     } else {
         let sql = format!("SELECT COUNT(*) AS count FROM {schema}.runs");
-        sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-            .fetch_one(pool)
-            .await?
+        pool.query_one(&sql, &[]).await?
     };
 
-    row.try_get::<i64, _>("count").map_err(QueueError::from)
+    row.get::<i64, _>("count").map_err(QueueError::from)
 }
 
 pub async fn list_jobs(db: &Db, run_id: &str) -> Result<Vec<Job>, QueueError> {
@@ -654,9 +663,8 @@ pub async fn list_jobs(db: &Db, run_id: &str) -> Result<Vec<Job>, QueueError> {
          ORDER BY started_at NULLS LAST, stage, name"
     );
 
-    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(run_id)
-        .fetch_all(pool)
+    let rows = pool
+        .query(&sql, &[&run_id as &dyn quench_pg::ToSql])
         .await?;
 
     rows.iter().map(job_from_row).collect()
@@ -671,21 +679,19 @@ pub async fn read_logs(db: &Db, job_id: &str, after: i64) -> Result<Vec<LogChunk
          WHERE job_id = $1 AND seq > $2 ORDER BY seq"
     );
 
-    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(job_id)
-        .bind(after)
-        .fetch_all(pool)
+    let rows = pool
+        .query(&sql, &[&job_id as &dyn quench_pg::ToSql, &after])
         .await?;
 
     rows.iter()
         .map(|row| {
-            let stream: String = row.try_get("stream")?;
+            let stream: String = row.get("stream")?;
             Ok(LogChunk {
-                seq: u64::try_from(row.try_get::<i64, _>("seq")?).unwrap_or(0),
+                seq: u64::try_from(row.get::<i64, _>("seq")?).unwrap_or(0),
                 stream: crate::executors::Stream::parse(&stream)
                     .ok_or_else(|| QueueError::BadRow(format!("unknown stream '{stream}'")))?,
-                line: row.try_get("chunk")?,
-                at: row.try_get::<DateTime<Utc>, _>("written_at")?,
+                line: row.get("chunk")?,
+                at: row.get::<Time, _>("written_at")?,
             })
         })
         .collect()
@@ -700,23 +706,22 @@ pub async fn list_steps(db: &Db, job_id: &str) -> Result<Vec<StepState>, QueueEr
          FROM {schema}.steps WHERE job_id = $1 ORDER BY ordinal"
     );
 
-    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(job_id)
-        .fetch_all(pool)
+    let rows = pool
+        .query(&sql, &[&job_id as &dyn quench_pg::ToSql])
         .await?;
 
     rows.iter()
         .map(|row| {
-            let status: String = row.try_get("status")?;
+            let status: String = row.get("status")?;
             Ok(StepState {
-                ordinal: usize::try_from(row.try_get::<i32, _>("ordinal")?).unwrap_or(0),
-                kind: row.try_get("kind")?,
-                command: row.try_get("command")?,
+                ordinal: usize::try_from(row.get::<i32, _>("ordinal")?).unwrap_or(0),
+                kind: row.get("kind")?,
+                command: row.get("command")?,
                 status: Status::parse(&status)
                     .ok_or_else(|| QueueError::BadRow(format!("unknown status '{status}'")))?,
-                exit_code: row.try_get("exit_code")?,
-                started_at: row.try_get("started_at")?,
-                finished_at: row.try_get("finished_at")?,
+                exit_code: row.get("exit_code")?,
+                started_at: row.get("started_at")?,
+                finished_at: row.get("finished_at")?,
             })
         })
         .collect()
@@ -730,49 +735,49 @@ const RUN_COLUMNS: &str = "id, repo_id, trigger, git_ref, sha, message, delivery
 const JOB_COLUMNS: &str = "id, run_id, stage, name, needs, status, exit_code, started_at, \
                            finished_at, error, reused_from_run";
 
-fn run_from_row(row: &sqlx::postgres::PgRow) -> Result<Run, QueueError> {
-    let trigger: String = row.try_get("trigger")?;
-    let status: String = row.try_get("status")?;
+fn run_from_row(row: &quench_pg::Row) -> Result<Run, QueueError> {
+    let trigger: String = row.get("trigger")?;
+    let status: String = row.get("status")?;
 
     Ok(Run {
-        id: row.try_get("id")?,
-        repo_id: row.try_get("repo_id")?,
+        id: row.get("id")?,
+        repo_id: row.get("repo_id")?,
         trigger: Trigger::parse(&trigger)
             .ok_or_else(|| QueueError::BadRow(format!("unknown trigger '{trigger}'")))?,
-        git_ref: row.try_get("git_ref")?,
-        sha: row.try_get("sha")?,
-        message: row.try_get("message")?,
-        delivery_id: row.try_get("delivery_id")?,
+        git_ref: row.get("git_ref")?,
+        sha: row.get("sha")?,
+        message: row.get("message")?,
+        delivery_id: row.get("delivery_id")?,
         status: Status::parse(&status)
             .ok_or_else(|| QueueError::BadRow(format!("unknown status '{status}'")))?,
-        queued_at: row.try_get::<DateTime<Utc>, _>("queued_at")?,
-        started_at: row.try_get("started_at")?,
-        finished_at: row.try_get("finished_at")?,
-        claimed_by: row.try_get("claimed_by")?,
-        claimed_at: row.try_get("claimed_at")?,
-        attempt: row.try_get("attempt")?,
-        error: row.try_get("error")?,
-        resumed_from: row.try_get("resumed_from")?,
+        queued_at: row.get::<Time, _>("queued_at")?,
+        started_at: row.get("started_at")?,
+        finished_at: row.get("finished_at")?,
+        claimed_by: row.get("claimed_by")?,
+        claimed_at: row.get("claimed_at")?,
+        attempt: row.get("attempt")?,
+        error: row.get("error")?,
+        resumed_from: row.get("resumed_from")?,
     })
 }
 
-fn job_from_row(row: &sqlx::postgres::PgRow) -> Result<Job, QueueError> {
-    let status: String = row.try_get("status")?;
-    let needs: serde_json::Value = row.try_get("needs")?;
+fn job_from_row(row: &quench_pg::Row) -> Result<Job, QueueError> {
+    let status: String = row.get("status")?;
+    let needs: quench_serde::Value = row.get("needs")?;
 
     Ok(Job {
-        id: row.try_get("id")?,
-        run_id: row.try_get("run_id")?,
-        stage: row.try_get("stage")?,
-        name: row.try_get("name")?,
-        needs: serde_json::from_value(needs)
+        id: row.get("id")?,
+        run_id: row.get("run_id")?,
+        stage: row.get("stage")?,
+        name: row.get("name")?,
+        needs: quench_serde::from_value(&needs)
             .map_err(|error| QueueError::BadRow(format!("needs is not a string list: {error}")))?,
         status: Status::parse(&status)
             .ok_or_else(|| QueueError::BadRow(format!("unknown status '{status}'")))?,
-        exit_code: row.try_get("exit_code")?,
-        started_at: row.try_get("started_at")?,
-        finished_at: row.try_get("finished_at")?,
-        error: row.try_get("error")?,
-        reused_from_run: row.try_get("reused_from_run")?,
+        exit_code: row.get("exit_code")?,
+        started_at: row.get("started_at")?,
+        finished_at: row.get("finished_at")?,
+        error: row.get("error")?,
+        reused_from_run: row.get("reused_from_run")?,
     })
 }

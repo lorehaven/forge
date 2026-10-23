@@ -11,13 +11,13 @@ use quench_web_components::containers::empty_state;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, quench_serde::Deserialize)]
 pub struct DeleteImageForm {
     pub repository: String,
     pub digest: String,
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, quench_serde::Deserialize)]
 pub struct DeleteImageModalQuery {
     pub repository: String,
     pub tag: Option<String>,
@@ -98,7 +98,7 @@ pub async fn delete_image(
     }
 
     if let Err(err) = tokio::fs::remove_file(&manifest_path).await {
-        tracing::error!("Failed to delete manifest: {}", err);
+        quench_log::error!("Failed to delete manifest: {}", err);
         return Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal");
     }
 

@@ -4,7 +4,7 @@
 //! not defined is an error rather than an empty string: a blank `DATABASE_URL`
 //! fails much further from its cause than a config error does.
 
-use anyhow::{Context, Result, bail};
+use quench_core::{Context, Result, bail};
 use std::collections::BTreeMap;
 use std::path::Path;
 

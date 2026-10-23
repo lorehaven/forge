@@ -22,7 +22,7 @@ struct DummyProvider {
     response: Result<String, String>,
 }
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl SearchProvider for DummyProvider {
     fn name(&self) -> &str {
         self.name
@@ -152,12 +152,12 @@ fn brave_from_env_reads_brave_search_api_key() {
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::remove("BRAVE_SEARCH_API_KEY");
+    quench_core::env::remove("BRAVE_SEARCH_API_KEY");
     assert!(BraveProvider::from_env().is_err());
 
-    envmnt::set("BRAVE_SEARCH_API_KEY", "test-brave-key");
+    quench_core::env::set("BRAVE_SEARCH_API_KEY", "test-brave-key");
     assert!(BraveProvider::from_env().is_ok());
-    envmnt::remove("BRAVE_SEARCH_API_KEY");
+    quench_core::env::remove("BRAVE_SEARCH_API_KEY");
 }
 
 #[test]
@@ -172,12 +172,12 @@ fn serpapi_from_env_reads_serpapi_api_key() {
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::remove("SERPAPI_API_KEY");
+    quench_core::env::remove("SERPAPI_API_KEY");
     assert!(SerpapiProvider::from_env().is_err());
 
-    envmnt::set("SERPAPI_API_KEY", "test-serpapi-key");
+    quench_core::env::set("SERPAPI_API_KEY", "test-serpapi-key");
     assert!(SerpapiProvider::from_env().is_ok());
-    envmnt::remove("SERPAPI_API_KEY");
+    quench_core::env::remove("SERPAPI_API_KEY");
 }
 
 #[test]
@@ -196,7 +196,7 @@ fn searxng_from_env_defaults_when_unset() {
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::remove("SEARXNG_INSTANCE_URL");
+    quench_core::env::remove("SEARXNG_INSTANCE_URL");
     let provider = SearxngProvider::from_env().expect("always Ok");
     assert_eq!(provider.name(), "searxng");
 }
@@ -206,14 +206,17 @@ async fn searxng_search_parses_results_from_a_mocked_instance() {
     let server = wiremock::MockServer::start().await;
     wiremock::Mock::given(wiremock::matchers::method("GET"))
         .and(wiremock::matchers::path("/search"))
-        .respond_with(
-            wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "results": [
-                    { "title": "First", "url": "https://a.example", "content": "About A" },
-                    { "title": "Second", "url": "https://b.example" }
-                ]
-            })),
-        )
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!({
+                    "results": [
+                        { "title": "First", "url": "https://a.example", "content": "About A" },
+                        { "title": "Second", "url": "https://b.example" }
+                    ]
+                })),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -233,10 +236,10 @@ async fn searxng_search_errors_when_the_response_has_no_results() {
     let server = wiremock::MockServer::start().await;
     wiremock::Mock::given(wiremock::matchers::method("GET"))
         .and(wiremock::matchers::path("/search"))
-        .respond_with(
-            wiremock::ResponseTemplate::new(200)
-                .set_body_json(serde_json::json!({ "results": [] })),
-        )
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(quench_serde::json!({ "results": [] }))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 

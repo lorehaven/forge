@@ -1,6 +1,6 @@
 use crate::support;
 
-use http::{Method, StatusCode};
+use quench_http::http::{Method, StatusCode};
 
 fn start_upload(
     storage: &support::WithDockerStorageRoot,

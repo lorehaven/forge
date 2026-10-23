@@ -1,6 +1,6 @@
 use crate::support;
 
-use http::{Method, StatusCode};
+use quench_http::http::{Method, StatusCode};
 use warehouse_service::routers::docker::manifest::get_image::{
     DOCKER_MANIFEST_LIST_V2, DOCKER_MANIFEST_V2, OCI_IMAGE_INDEX_V1, OCI_IMAGE_MANIFEST_V1,
     detect_manifest_media_type, media_match, negotiate_media_type, parse_accept,

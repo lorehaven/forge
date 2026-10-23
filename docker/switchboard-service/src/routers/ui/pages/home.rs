@@ -46,7 +46,7 @@ fn render_home_page() -> Response {
     }
 
     render_page(
-        http::StatusCode::OK,
+        quench_http::http::StatusCode::OK,
         div()
             .class("fui-stack fui-stack-lg")
             .child(

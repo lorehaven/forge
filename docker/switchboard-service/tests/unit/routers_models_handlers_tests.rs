@@ -14,13 +14,12 @@
 //! over a constructed `Request` instead of a struct literal.
 
 use crate::env_support::store_lock;
-use bytes::Bytes;
-use http::{HeaderMap, Method, StatusCode, Uri};
-use http_body_util::BodyExt;
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::bytes::Bytes;
 use quench_db::prelude::Db;
 use quench_http::body::InboundBody;
 use quench_http::di::ContainerBuilder;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::prelude::{Form, FromRequest, Inject, Json, Query, Request};
 use switchboard_service::routers::models::delete::{delete_model, delete_model_form};
 use switchboard_service::routers::models::list::{
@@ -69,7 +68,7 @@ fn engine() -> std::sync::Arc<dyn switchboard_service::routers::vllm::engine::Vl
 /// `list_running_models`'s 500 path - `MockVllmEngine` never errors.
 struct FailingEngine;
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl switchboard_service::routers::vllm::engine::VllmEngine for FailingEngine {
     async fn list_instances(
         &self,
@@ -97,18 +96,18 @@ fn config(auth_enabled: bool) -> Inject<JwtConfig> {
 
 async fn body_text(resp: quench_http::response::Response) -> String {
     let collected = resp
-        .into_hyper()
-        .into_body()
-        .collect()
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
         .await
         .expect("body collects");
-    String::from_utf8(collected.to_bytes().to_vec()).expect("utf8")
+    String::from_utf8(collected.to_vec()).expect("utf8")
 }
 
 /// `EstimatesModalQuery`/`DeleteModalQuery` are private to `list.rs`, so
 /// this builds a real `Request` and lets `Query::from_request` deserialize
 /// through `serde` instead of constructing a struct literal.
-async fn query<T: serde::de::DeserializeOwned + Send>(uri: &str) -> Query<T> {
+async fn query<T: quench_serde::DeserializeOwned + Send>(uri: &str) -> Query<T> {
     let container = std::sync::Arc::new(ContainerBuilder::new().build().await.unwrap());
     let mut req = Request::new(
         Method::GET,
@@ -129,7 +128,7 @@ async fn handle_list_returns_models_matching_the_stored_source() {
     let model = sample_model("/tmp/handlers-test/handle_list");
     get_store().insert_model(&model).await;
 
-    let filters: ModelFilters = serde_json::from_value(serde_json::json!({})).unwrap();
+    let filters: ModelFilters = quench_serde::from_value(&quench_serde::json!({})).unwrap();
     let body = handle_list(Json(filters)).await.0;
     assert!(body.iter().any(|m| m.path == model.path));
 }
@@ -141,7 +140,7 @@ async fn handle_grid_renders_html_containing_the_model_name() {
     let model = sample_model("/tmp/handlers-test/handle_grid");
     get_store().insert_model(&model).await;
 
-    let filters: ModelFilters = serde_json::from_value(serde_json::json!({})).unwrap();
+    let filters: ModelFilters = quench_serde::from_value(&quench_serde::json!({})).unwrap();
     let resp = handle_grid(OptionalClaims(None), config(false), Query(filters)).await;
     assert_eq!(resp.status(), StatusCode::OK);
 

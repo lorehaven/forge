@@ -20,10 +20,9 @@
 //! `~/.config/riveter/age.key`.
 
 use age::secrecy::ExposeSecret;
-use anyhow::{Context as _, Result, bail, ensure};
-use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD;
-use serde::{Deserialize, Serialize};
+use quench_core::base64::STANDARD;
+use quench_core::{Context as _, Result, bail, ensure};
+use quench_serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -73,7 +72,7 @@ pub fn parse_identities(text: &str) -> Result<Vec<age::x25519::Identity>> {
         .filter(|line| !line.is_empty() && !line.starts_with('#'))
         .map(|line| {
             age::x25519::Identity::from_str(line)
-                .map_err(|e| anyhow::anyhow!("not an age secret key: {e}"))
+                .map_err(|e| quench_core::err!("not an age secret key: {e}"))
         })
         .collect::<Result<_>>()?;
     ensure!(!identities.is_empty(), "no age secret key found");
@@ -147,7 +146,7 @@ fn parse_recipients(recipients: &[String]) -> Result<Vec<age::x25519::Recipient>
         .iter()
         .map(|r| {
             age::x25519::Recipient::from_str(r.trim())
-                .map_err(|e| anyhow::anyhow!("`{r}` is not an age recipient: {e}"))
+                .map_err(|e| quench_core::err!("`{r}` is not an age recipient: {e}"))
         })
         .collect()
 }
@@ -158,12 +157,12 @@ pub fn encrypt_value(recipients: &[String], plaintext: &str) -> Result<String> {
 
     let parsed = parse_recipients(recipients)?;
     let refs = parsed.iter().map(|r| r as &dyn age::Recipient);
-    let encryptor = age::Encryptor::with_recipients(refs).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let encryptor = age::Encryptor::with_recipients(refs).map_err(|e| quench_core::err!("{e}"))?;
 
     let mut ciphertext = Vec::new();
     let mut writer = encryptor
         .wrap_output(&mut ciphertext)
-        .map_err(|e| anyhow::anyhow!("{e}"))?;
+        .map_err(|e| quench_core::err!("{e}"))?;
     writer.write_all(plaintext.as_bytes())?;
     writer.finish()?;
     Ok(format!("{PREFIX}{}]", STANDARD.encode(ciphertext)))
@@ -182,11 +181,11 @@ pub fn decrypt_value(identities: &[age::x25519::Identity], value: &str) -> Resul
         .context("the ciphertext is not valid base64")?;
 
     let decryptor =
-        age::Decryptor::new(ciphertext.as_slice()).map_err(|e| anyhow::anyhow!("{e}"))?;
+        age::Decryptor::new(ciphertext.as_slice()).map_err(|e| quench_core::err!("{e}"))?;
     let mut reader = decryptor
         .decrypt(identities.iter().map(|i| i as &dyn age::Identity))
         .map_err(|_| {
-            anyhow::anyhow!(
+            quench_core::err!(
                 "this key does not open the value (it was encrypted to other recipients)"
             )
         })?;
@@ -201,7 +200,8 @@ impl Vault {
     /// Reads and checks a file: right marker, every value of the form `ENC[age,...]` - so a plaintext value
     /// can never be mistaken for a secret that was encrypted.
     pub fn parse(text: &str) -> Result<Self> {
-        let vault: Self = serde_norway::from_str(text).context("secrets.yaml is not valid YAML")?;
+        let vault: Self =
+            quench_serde::yaml::from_str(text).context("secrets.yaml is not valid YAML")?;
         ensure!(
             text.contains(MARKER),
             "this is not a riveter secrets file (no `{MARKER}` marker)"
@@ -213,7 +213,7 @@ impl Vault {
         );
         for recipient in &vault.recipients {
             age::x25519::Recipient::from_str(recipient)
-                .map_err(|e| anyhow::anyhow!("recipient `{recipient}`: {e}"))?;
+                .map_err(|e| quench_core::err!("recipient `{recipient}`: {e}"))?;
         }
         for (name, value) in &vault.data {
             ensure!(
@@ -235,7 +235,7 @@ impl Vault {
         Ok(format!(
             "# Encrypted with age: committed, and opened only with the key named by {KEY_VAR} or {KEY_FILE_VAR}.\n\
              # Change it with `riveter secrets set|import|rekey`, not by hand.\n{}",
-            serde_norway::to_string(self)?
+            quench_serde::yaml::to_string(self)?
         ))
     }
 

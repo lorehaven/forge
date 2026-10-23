@@ -47,7 +47,7 @@ async fn until_done(executor: &LocalExecutor, name: &str) -> JobStatus {
 
 #[tokio::test]
 async fn a_local_runner_is_a_child_process_whose_output_and_exit_code_are_kept() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let executor = executor(
         dir.path(),
         r#"echo "plan=$GANTRY_PLAN"; echo "dry=$GANTRY_DRY_RUN"; echo "GANTRY-RESULT: ok""#,
@@ -71,7 +71,7 @@ async fn a_local_runner_is_a_child_process_whose_output_and_exit_code_are_kept()
 
 #[tokio::test]
 async fn a_failing_runner_is_a_failed_status() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let executor = executor(dir.path(), "echo nope; exit 3", false);
     executor.start(&launch("gantry-op-b")).await.unwrap();
     assert_eq!(
@@ -82,7 +82,7 @@ async fn a_failing_runner_is_a_failed_status() {
 
 #[tokio::test]
 async fn starting_twice_does_not_run_it_twice() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let executor = executor(
         dir.path(),
         r#"echo run >> "$(dirname "$0")/runs"; echo "GANTRY-RESULT: ok""#,
@@ -99,7 +99,7 @@ async fn starting_twice_does_not_run_it_twice() {
 
 #[tokio::test]
 async fn stopping_kills_the_runner_and_what_it_started() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let executor = executor(dir.path(), "sleep 30", false);
     executor.start(&launch("gantry-op-d")).await.unwrap();
     for _ in 0..40 {

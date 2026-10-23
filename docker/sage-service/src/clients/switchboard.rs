@@ -1,9 +1,9 @@
-use anyhow::Result;
-use chrono::{DateTime, Utc};
 use quench_client::ClientCredentialsClient;
+use quench_core::Result;
+use quench_core::time::Time;
+use quench_serde::{Deserialize, Serialize};
 use quench_starter::metrics::{RequestMetrics, TimedBlock};
 use quench_starter::resilience::{CircuitBreaker, RetryConfig, retry_with_backoff};
-use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -24,7 +24,7 @@ pub struct VllmInstance {
     /// Execution device the instance was launched on (e.g. "cpu"); None = GPU.
     #[serde(default)]
     pub device: Option<String>,
-    pub started_at: DateTime<Utc>,
+    pub started_at: Time,
     pub status: String,
 }
 
@@ -50,10 +50,12 @@ impl Default for SwitchboardClient {
 }
 
 impl SwitchboardClient {
+    #[must_use]
     pub fn new() -> Self {
-        let base_url = envmnt::get_or("SWITCHBOARD_URL", "http://switchboard-service:8080");
-        let gatehouse_url = envmnt::get_or("GATEHOUSE_URL", "");
-        let client_secret = envmnt::get_or("CLIENT_SECRET_SAGE_SWITCHBOARD", "");
+        let base_url =
+            quench_core::env::get_or("SWITCHBOARD_URL", "http://switchboard-service:8080");
+        let gatehouse_url = quench_core::env::get_or("GATEHOUSE_URL", "");
+        let client_secret = quench_core::env::get_or("CLIENT_SECRET_SAGE_SWITCHBOARD", "");
 
         assert!(
             !(gatehouse_url.is_empty() || client_secret.is_empty()),
@@ -71,11 +73,11 @@ impl SwitchboardClient {
             },
         );
 
-        let tls_verify = envmnt::get_or("SWITCHBOARD_TLS_VERIFY", "true")
+        let tls_verify = quench_core::env::get_or("SWITCHBOARD_TLS_VERIFY", "true")
             .parse::<bool>()
             .unwrap_or(true);
 
-        tracing::info!(
+        quench_log::info!(
             "Initializing SwitchboardClient with URL: {}, tls_verify: {}",
             base_url,
             tls_verify
@@ -104,8 +106,8 @@ impl SwitchboardClient {
 
     pub async fn get_vllm_instances(&self) -> Result<Vec<VllmInstance>> {
         if !self.circuit_breaker.is_available() {
-            tracing::warn!("Switchboard circuit breaker is open");
-            return Err(anyhow::anyhow!(
+            quench_log::warn!("Switchboard circuit breaker is open");
+            return Err(quench_core::err!(
                 "Circuit breaker open: Switchboard temporarily unavailable"
             ));
         }
@@ -135,24 +137,24 @@ impl SwitchboardClient {
                 let latency_ms = timer.elapsed_ms();
                 metrics.record_success(latency_ms);
                 self.circuit_breaker.call_succeeded();
-                tracing::debug!("get_vllm_instances completed in {}ms", latency_ms);
+                quench_log::debug!("get_vllm_instances completed in {}ms", latency_ms);
             }
             Err(e) => {
                 metrics.record_error(&e.clone());
                 self.circuit_breaker.call_failed();
-                tracing::error!("get_vllm_instances failed: {}", e);
+                quench_log::error!("get_vllm_instances failed: {}", e);
             }
         }
 
-        result.map_err(|e| anyhow::anyhow!("{e}"))
+        result.map_err(|e| quench_core::err!("{e}"))
     }
 
     /// Request a graceful stop of a running vLLM instance (switchboard sends SIGTERM so it can
     /// drain and shut down cleanly). The endpoint returns an HTML fragment, so the body is ignored.
     pub async fn stop_instance(&self, id: &str) -> Result<()> {
         if !self.circuit_breaker.is_available() {
-            tracing::warn!("Switchboard circuit breaker is open");
-            return Err(anyhow::anyhow!(
+            quench_log::warn!("Switchboard circuit breaker is open");
+            return Err(quench_core::err!(
                 "Circuit breaker open: Switchboard temporarily unavailable"
             ));
         }
@@ -187,16 +189,16 @@ impl SwitchboardClient {
                 let latency_ms = timer.elapsed_ms();
                 metrics.record_success(latency_ms);
                 self.circuit_breaker.call_succeeded();
-                tracing::info!("stop_instance({}) completed in {}ms", id, latency_ms);
+                quench_log::info!("stop_instance({}) completed in {}ms", id, latency_ms);
             }
             Err(e) => {
                 metrics.record_error(&e.clone());
                 self.circuit_breaker.call_failed();
-                tracing::error!("stop_instance({}) failed: {}", id, e);
+                quench_log::error!("stop_instance({}) failed: {}", id, e);
             }
         }
 
-        result.map_err(|e| anyhow::anyhow!("{e}"))
+        result.map_err(|e| quench_core::err!("{e}"))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -214,13 +216,13 @@ impl SwitchboardClient {
         device: Option<&str>,
     ) -> Result<VllmInstance> {
         if !self.circuit_breaker.is_available() {
-            tracing::warn!("Switchboard circuit breaker is open");
-            return Err(anyhow::anyhow!(
+            quench_log::warn!("Switchboard circuit breaker is open");
+            return Err(quench_core::err!(
                 "Circuit breaker open: Switchboard temporarily unavailable"
             ));
         }
 
-        let req = serde_json::json!({
+        let req = quench_serde::json!({
             "model": model,
             "host": "0.0.0.0",
             "port": 8000,
@@ -266,16 +268,16 @@ impl SwitchboardClient {
                 let latency_ms = timer.elapsed_ms();
                 metrics.record_success(latency_ms);
                 self.circuit_breaker.call_succeeded();
-                tracing::info!("launch_instance({}) completed in {}ms", model, latency_ms);
+                quench_log::info!("launch_instance({}) completed in {}ms", model, latency_ms);
             }
             Err(e) => {
                 metrics.record_error(&e.clone());
                 self.circuit_breaker.call_failed();
-                tracing::error!("launch_instance({}) failed: {}", model, e);
+                quench_log::error!("launch_instance({}) failed: {}", model, e);
             }
         }
 
-        result.map_err(|e| anyhow::anyhow!("{e}"))
+        result.map_err(|e| quench_core::err!("{e}"))
     }
 }
 

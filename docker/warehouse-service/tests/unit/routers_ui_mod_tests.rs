@@ -1,6 +1,6 @@
 use crate::support;
-use http::{Method, StatusCode};
 use quench_auth::domain::jwt::JwtConfig;
+use quench_http::http::{Method, StatusCode};
 
 fn config(auth_enabled: bool) -> JwtConfig {
     let mut config = JwtConfig::for_tests();

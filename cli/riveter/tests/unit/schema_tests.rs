@@ -1,7 +1,7 @@
+use quench_serde::{Value, json};
 use riveter::schema::{
     CrdSchema, Outcome, SchemaSet, Source, TEMPLATED_CRDS, bundled, display_path, normalize,
 };
-use serde_json::{Value, json};
 use std::sync::{Mutex, OnceLock};
 
 /// A CRD as `kubectl get crd -o json` prints it, with the given per-version schemas.
@@ -137,10 +137,13 @@ fn stripping_keeps_fields_that_are_named_like_annotations() {
     let fields = kept["properties"].as_object().unwrap();
     assert_eq!(fields.len(), 6, "{fields:?}");
     assert!(
-        fields["default"].get("description").is_none(),
+        fields.get("default").unwrap().get("description").is_none(),
         "its documentation goes"
     );
-    assert_eq!(fields["example"]["properties"]["title"]["type"], "integer");
+    assert_eq!(
+        fields.get("example").unwrap()["properties"]["title"]["type"],
+        "integer"
+    );
 
     // And they still validate as the fields they are.
     let mut set = SchemaSet::empty();
@@ -424,7 +427,7 @@ fn a_cached_schema_replaces_a_bundled_one_of_the_same_kind() {
 
 #[test]
 fn load_dir_reads_schemas_ignores_a_missing_directory_and_refuses_junk() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let mut set = SchemaSet::empty();
 
     set.load_dir(&dir.path().join("does-not-exist"), Source::Cache)
@@ -439,7 +442,7 @@ fn load_dir_reads_schemas_ignores_a_missing_directory_and_refuses_junk() {
     .unwrap();
     std::fs::write(
         dir.path().join(schema.file_name()),
-        serde_json::to_string(&schema).unwrap(),
+        quench_serde::json::to_string(&schema),
     )
     .unwrap();
     std::fs::write(dir.path().join("README.txt"), "not a schema, and not .json").unwrap();
@@ -565,33 +568,33 @@ fn the_cache_directory_follows_the_documented_precedence() {
         .map(|k| (*k, std::env::var_os(k)))
         .collect();
 
-    envmnt::set("RIVETER_SCHEMA_DIR", "/explicit");
-    envmnt::set("XDG_CACHE_HOME", "/xdg");
-    envmnt::set("HOME", "/home/u");
+    quench_core::env::set("RIVETER_SCHEMA_DIR", "/explicit");
+    quench_core::env::set("XDG_CACHE_HOME", "/xdg");
+    quench_core::env::set("HOME", "/home/u");
     assert_eq!(
         riveter::schema::cache_dir().unwrap(),
         std::path::Path::new("/explicit")
     );
 
-    envmnt::remove("RIVETER_SCHEMA_DIR");
+    quench_core::env::remove("RIVETER_SCHEMA_DIR");
     assert_eq!(
         riveter::schema::cache_dir().unwrap(),
         std::path::Path::new("/xdg/riveter/schemas")
     );
 
-    envmnt::remove("XDG_CACHE_HOME");
+    quench_core::env::remove("XDG_CACHE_HOME");
     assert_eq!(
         riveter::schema::cache_dir().unwrap(),
         std::path::Path::new("/home/u/.cache/riveter/schemas")
     );
 
-    envmnt::remove("HOME");
+    quench_core::env::remove("HOME");
     assert!(riveter::schema::cache_dir().is_err());
 
     for (key, value) in saved {
         match value {
-            Some(v) => envmnt::set(key, v),
-            None => envmnt::remove(key),
+            Some(v) => quench_core::env::set(key, v),
+            None => quench_core::env::remove(key),
         }
     }
 }

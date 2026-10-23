@@ -45,7 +45,7 @@ pub async fn handle(Path((_repo, digest)): Path<(String, String)>) -> Response {
 #[allow(non_camel_case_types)]
 struct __quench_route_handle_head;
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl Endpoint for __quench_route_handle_head {
     async fn call(&self, mut req: Request) -> Response {
         let arg0 = match <Path<(String, String)> as FromRequest>::from_request(&mut req).await {
@@ -56,13 +56,16 @@ impl Endpoint for __quench_route_handle_head {
     }
 }
 
-quench_http::inventory::submit! {
-    quench_http::prelude::RouteRegistration {
+quench_http::submit!(
+    quench_http::route::ROUTES,
+    quench_http::route::RouteRegistration,
+    quench_http::route::RouteRegistration {
         method: Method::HEAD,
         pattern: "/v2/{name:.+}/blobs/{digest}",
-        endpoint: || std::sync::Arc::new(__quench_route_handle_head) as std::sync::Arc<dyn Endpoint>,
+        endpoint: || std::sync::Arc::new(__quench_route_handle_head)
+            as std::sync::Arc<dyn Endpoint>,
     }
-}
+);
 
 pub fn register_routes() {
     let _ = handle as fn(_) -> _;

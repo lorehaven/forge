@@ -26,9 +26,9 @@ impl OllamaBackend {
     }
 }
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl Backend for OllamaBackend {
-    fn initialize(&self) -> anyhow::Result<()> {
+    fn initialize(&self) -> quench_core::Result<()> {
         if self.is_running() {
             return Ok(());
         }

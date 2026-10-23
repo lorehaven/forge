@@ -1,6 +1,6 @@
 use crate::domain::context::TokenCounter;
 use crate::files::extractor::Segment;
-use serde_json::{Map, Value};
+use quench_serde::Map;
 
 #[derive(Debug)]
 pub struct ChunkerConfig {
@@ -12,10 +12,16 @@ impl ChunkerConfig {
     #[must_use]
     pub fn from_env() -> Self {
         Self {
-            max_tokens: u32::try_from(envmnt::get_u64("SAGE_CHUNK_SIZE_TOKENS", 512))
-                .unwrap_or(u32::MAX),
-            overlap_tokens: u32::try_from(envmnt::get_u64("SAGE_CHUNK_OVERLAP_TOKENS", 50))
-                .unwrap_or(u32::MAX),
+            max_tokens: u32::try_from(quench_core::env::get_parsed::<u64>(
+                "SAGE_CHUNK_SIZE_TOKENS",
+                512,
+            ))
+            .unwrap_or(u32::MAX),
+            overlap_tokens: u32::try_from(quench_core::env::get_parsed::<u64>(
+                "SAGE_CHUNK_OVERLAP_TOKENS",
+                50,
+            ))
+            .unwrap_or(u32::MAX),
         }
     }
 }
@@ -24,7 +30,7 @@ impl ChunkerConfig {
 #[derive(Debug, Clone)]
 pub struct Chunk {
     pub content: String,
-    pub metadata: Map<String, Value>,
+    pub metadata: Map,
 }
 
 /// Chunk each segment independently so a chunk never spans two segments, tagging every chunk with its segment's metadata.

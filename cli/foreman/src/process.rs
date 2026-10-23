@@ -4,7 +4,7 @@
 //! run`, because `stop` needs a real pid: killing a `cargo run` parent leaves
 //! the service running and holding its port.
 
-use anyhow::{Context, Result, bail};
+use quench_core::{Context, Result, bail};
 use std::fs::File;
 use std::os::unix::process::CommandExt;
 use std::path::Path;

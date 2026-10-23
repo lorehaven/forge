@@ -1,8 +1,8 @@
-use async_trait::async_trait;
 use quench_auth::domain::auth::UserDb;
 use quench_auth::domain::jwt::JwtConfig;
 use quench_auth::domain::session::SessionDb;
 use quench_auth::http::domain::sso_client::SsoConfig;
+use quench_core::async_trait;
 use quench_http::prelude::*;
 use quench_starter::common::db::DbWrapper;
 use quench_starter::common::health::HealthState;
@@ -37,10 +37,10 @@ impl Endpoint for RootOrBasePath {
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     quench_starter::logging::init();
-    tracing::info!("Warehouse service starting");
+    quench_log::info!("Warehouse service starting");
 
-    let base_path = normalize_base_path(&envmnt::get_or("BASE_PATH", "/"));
-    tracing::info!("Server initialized with BASE_PATH: {base_path}");
+    let base_path = normalize_base_path(&quench_core::env::get_or("BASE_PATH", "/"));
+    quench_log::info!("Server initialized with BASE_PATH: {base_path}");
 
     let db_wrapper = DbWrapper::init_env().await;
     let jwt_config = JwtConfig::init().await;

@@ -27,7 +27,7 @@ pub async fn build(kind: ExecutorKind) -> Arc<dyn JobExecutor> {
     match kind {
         ExecutorKind::Native => Arc::new(NativeExecutor::new()),
         ExecutorKind::Mock => {
-            tracing::warn!(
+            quench_log::warn!(
                 "CONVEYOR_EXECUTOR=mock: jobs will report success without running anything"
             );
             Arc::new(MockExecutor::new())
@@ -36,7 +36,7 @@ pub async fn build(kind: ExecutorKind) -> Arc<dyn JobExecutor> {
             Ok(executor) => Arc::new(executor),
             // Never silently falls back to native - that would break the isolation this deployment asked for.
             Err(error) => {
-                tracing::error!(
+                quench_log::error!(
                     "CONVEYOR_EXECUTOR=kubernetes but the cluster is unreachable: {error}. \
                      Refusing to run pipelines inside this container instead; every job \
                      will fail until it is fixed."
@@ -52,7 +52,7 @@ struct UnavailableExecutor {
     reason: String,
 }
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl JobExecutor for UnavailableExecutor {
     fn name(&self) -> &'static str {
         "unavailable"

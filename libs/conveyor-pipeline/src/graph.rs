@@ -11,7 +11,7 @@ use crate::spec::{PipelineSpec, Stage};
 use std::collections::HashMap;
 
 /// Why a pipeline's stage graph is invalid.
-#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[derive(Debug, quench_core::Error, PartialEq, Eq)]
 pub enum GraphError {
     /// Two stages share a name.
     #[error("duplicate stage '{name}'")]

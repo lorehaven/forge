@@ -5,10 +5,10 @@
 //! against anything else would be testing a different queue.
 
 use crate::support::{database, register_repo, skipped};
-use chrono::Utc;
 use conveyor_service::domain::{Status, Trigger};
 use conveyor_service::executors::{LogChunk, StepState, Stream};
 use conveyor_service::scheduler::queue::{self, NewRun, PlannedJob};
+use quench_core::time::Time;
 use quench_db::prelude::{Database, Db};
 
 fn new_run(repo_id: &str, sha: &str) -> NewRun {
@@ -496,8 +496,8 @@ async fn recording_steps_twice_replaces_rather_than_duplicates() {
         command: "cargo build".to_string(),
         status: Status::Success,
         exit_code: Some(0),
-        started_at: Some(Utc::now()),
-        finished_at: Some(Utc::now()),
+        started_at: Some(Time::now()),
+        finished_at: Some(Time::now()),
     }];
 
     queue::record_steps(&db, &job_id, &steps)
@@ -524,7 +524,7 @@ async fn logs_round_trip_in_order() {
                 Stream::Stdout
             },
             line: format!("line {seq}"),
-            at: Utc::now(),
+            at: Time::now(),
         })
         .collect();
 
@@ -552,7 +552,7 @@ async fn appending_the_same_logs_twice_is_harmless() {
         seq: 0,
         stream: Stream::Stdout,
         line: "once".to_string(),
-        at: Utc::now(),
+        at: Time::now(),
     }];
 
     queue::append_logs(&db, &job_id, &chunks)
@@ -583,7 +583,7 @@ async fn reading_logs_can_resume_from_a_sequence_number() {
             seq,
             stream: Stream::Stdout,
             line: format!("line {seq}"),
-            at: Utc::now(),
+            at: Time::now(),
         })
         .collect();
     queue::append_logs(&db, &job_id, &chunks)

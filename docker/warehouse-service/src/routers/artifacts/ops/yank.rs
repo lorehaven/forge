@@ -5,7 +5,7 @@ use crate::domain::artifact::{ArtifactVersion, Platform};
 use crate::routers::artifacts::ops::{disabled, error, not_found};
 use quench_db::prelude::{Crud, Db};
 use quench_http::prelude::{Inject, Path, Response, delete, http::StatusCode};
-use serde::Serialize;
+use quench_serde::Serialize;
 
 #[derive(Debug, Serialize)]
 pub struct OkResponse {
@@ -13,7 +13,7 @@ pub struct OkResponse {
 }
 
 #[delete("/api/v1/artifacts/{program}/{platform}/{version_code}/yank")]
-#[tracing::instrument]
+#[quench_log::instrument]
 pub async fn handle(
     Inject(db): Inject<Db>,
     Path((program, platform_raw, version_code)): Path<(String, String, i64)>,

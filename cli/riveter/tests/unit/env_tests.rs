@@ -14,7 +14,7 @@ fn in_temp_cwd_with_overlays<T>(envs: &[&str], body: impl FnOnce() -> T) -> T {
     let _guard = cwd_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     for env in envs {
         let overlay_dir = dir.path().join("overlays").join(env);
         std::fs::create_dir_all(&overlay_dir).unwrap();
@@ -22,11 +22,11 @@ fn in_temp_cwd_with_overlays<T>(envs: &[&str], body: impl FnOnce() -> T) -> T {
     }
     let original = std::env::current_dir().unwrap();
     std::env::set_current_dir(dir.path()).unwrap();
-    envmnt::remove(ENV_VAR);
+    quench_core::env::remove(ENV_VAR);
 
     let result = body();
 
-    envmnt::remove(ENV_VAR);
+    quench_core::env::remove(ENV_VAR);
     std::env::set_current_dir(original).unwrap();
     result
 }
@@ -65,7 +65,7 @@ fn resolve_env_falls_back_to_current_env_when_nothing_explicit_is_given() {
 fn current_env_prefers_the_env_var_over_the_saved_config() {
     in_temp_cwd_with_overlays(&["dev", "prod"], || {
         env_set("dev").unwrap();
-        envmnt::set(ENV_VAR, "prod");
+        quench_core::env::set(ENV_VAR, "prod");
         assert_eq!(current_env().unwrap(), "prod");
     });
 }

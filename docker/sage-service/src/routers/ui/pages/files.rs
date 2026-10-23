@@ -4,7 +4,7 @@ use crate::domain::models::{Conversation, File};
 use crate::files::{STATUS_FAILED, STATUS_PROCESSING, STATUS_READY, STATUS_UPLOADED, pipeline};
 use crate::routers::files::{create_uploaded_file, parse_upload_form};
 use crate::routers::ui::common::RequiredClaims;
-use chrono::Utc;
+use quench_core::time::Time;
 use quench_db::prelude::{Crud, Db};
 use quench_http::prelude::{Inject, Multipart, Path, Response, get, http::StatusCode, post};
 use quench_starter::common::format::human_bytes;
@@ -298,7 +298,7 @@ pub async fn attach(
         Ok(Some(c)) if c.owner != username => return Response::new(StatusCode::FORBIDDEN),
         Ok(Some(_)) => {}
         Ok(None) => {
-            let now = Utc::now().to_rfc3339();
+            let now = Time::now().to_rfc3339();
             let conv = Conversation {
                 id: conversation_id.clone(),
                 // Blank until the first message is sent (see title logic in stream_message), so that text becomes the title.
@@ -309,7 +309,7 @@ pub async fn attach(
                 updated_at: now,
             };
             if let Err(e) = conv_repo.create(&conv).await {
-                tracing::error!("Failed to create conversation for attachment: {}", e);
+                quench_log::error!("Failed to create conversation for attachment: {}", e);
                 return Response::text(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "api_error_conversation_create_failed",
@@ -317,7 +317,7 @@ pub async fn attach(
             }
         }
         Err(e) => {
-            tracing::error!("Internal error: {}", e);
+            quench_log::error!("Internal error: {}", e);
             return Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal");
         }
     }
@@ -349,11 +349,11 @@ pub async fn detach(
         // Only staged files (message_id NULL) may be detached this way.
         Ok(Some(f)) if f.owner == username && f.message_id.is_none() => {
             if let Err(e) = repo.delete(&f.id).await {
-                tracing::error!("Failed to detach file {}: {}", f.id, e);
+                quench_log::error!("Failed to detach file {}: {}", f.id, e);
             }
         }
         Ok(_) => {}
-        Err(e) => tracing::error!("Failed to read file for detach: {}", e),
+        Err(e) => quench_log::error!("Failed to read file for detach: {}", e),
     }
 
     // Empty body: htmx swaps the chip out of the staging area.
@@ -380,7 +380,7 @@ pub async fn chip_status(
         // File no longer exists: empty body swaps the chip out.
         Ok(None) => html(StatusCode::OK, ""),
         Err(e) => {
-            tracing::error!("Internal error: {}", e);
+            quench_log::error!("Internal error: {}", e);
             Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal")
         }
     }
@@ -420,7 +420,7 @@ pub async fn reprocess(
         Ok(Some(_)) => Response::new(StatusCode::FORBIDDEN),
         Ok(None) => Response::text(StatusCode::NOT_FOUND, "api_error_file_not_found"),
         Err(e) => {
-            tracing::error!("Internal error: {}", e);
+            quench_log::error!("Internal error: {}", e);
             Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal")
         }
     }
@@ -443,7 +443,7 @@ pub async fn delete_modal(
         Ok(Some(_)) => return Response::new(StatusCode::FORBIDDEN),
         Ok(None) => return Response::text(StatusCode::NOT_FOUND, "api_error_file_not_found"),
         Err(e) => {
-            tracing::error!("Internal error: {}", e);
+            quench_log::error!("Internal error: {}", e);
             return Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal");
         }
     };
@@ -550,14 +550,14 @@ pub async fn delete_file_ui(
     match repo.read(&file_id).await {
         Ok(Some(f)) if f.owner == username => {
             if let Err(e) = repo.delete(&f.id).await {
-                tracing::error!("Failed to delete file {}: {}", f.id, e);
+                quench_log::error!("Failed to delete file {}: {}", f.id, e);
                 return Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal");
             }
         }
         Ok(Some(_)) => return Response::new(StatusCode::FORBIDDEN),
         Ok(None) => return Response::text(StatusCode::NOT_FOUND, "api_error_file_not_found"),
         Err(e) => {
-            tracing::error!("Internal error: {}", e);
+            quench_log::error!("Internal error: {}", e);
             return Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal");
         }
     }

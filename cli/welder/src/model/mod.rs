@@ -3,8 +3,8 @@ pub mod switchboard_client;
 pub mod vllm_client;
 
 use crate::config::is_verbose;
-use anyhow::Result;
 use quench_cli::require::require_binary;
+use quench_core::Result;
 use std::collections::HashMap;
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
@@ -210,7 +210,7 @@ impl ModelManager {
             sleep(Duration::from_millis(500)).await;
         }
 
-        Err(anyhow::anyhow!(
+        Err(quench_core::err!(
             "vLLM server on {} failed to start after {} seconds",
             addr,
             self.vllm_config.timeout_seconds
@@ -227,7 +227,7 @@ impl Default for ModelManager {
 pub fn extract_host_port(url: &str) -> Result<(String, u16)> {
     let parts: Vec<&str> = url.split(':').collect();
     if parts.len() != 2 {
-        return Err(anyhow::anyhow!(
+        return Err(quench_core::err!(
             "Invalid vLLM URL format: {url}. Expected 'host:port'",
         ));
     }
@@ -378,7 +378,7 @@ impl SwitchboardManager {
                         return Ok(instance.address());
                     }
                     if instance.is_failed() {
-                        return Err(anyhow::anyhow!(
+                        return Err(quench_core::err!(
                             "switchboard instance for '{model}' failed to start"
                         ));
                     }
@@ -410,7 +410,7 @@ impl SwitchboardManager {
             sleep(Duration::from_millis(500)).await;
         }
 
-        Err(anyhow::anyhow!(
+        Err(quench_core::err!(
             "switchboard instance for '{model}' did not become ready after {}s",
             self.timeout_seconds
         ))

@@ -8,7 +8,7 @@ use gantry_service::domain::registry::MemoryRegistry;
 use gantry_service::domain::service::Gantry;
 use gantry_service::domain::settings::{RunnerMode, Settings};
 use gantry_service::domain::simulate::SimulatedExecutor;
-use serde_json::json;
+use quench_serde::json;
 use std::sync::Arc;
 
 fn workload(name: &str, desired: i32) -> Workload {
@@ -225,15 +225,14 @@ fn simulating_is_only_allowed_with_the_fake_cluster() {
 
 #[test]
 fn the_fake_cluster_can_start_from_a_seed_file() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let path = dir.path().join("seed.json");
     std::fs::write(
         &path,
-        serde_json::to_string(&json!([{
+        quench_serde::json::to_string(&json!([{
             "kind": "deployment", "name": "sage", "namespace": "ml", "package": "ml",
             "version": "1.0.0", "desired": 1, "ready": 1
-        }]))
-        .unwrap(),
+        }])),
     )
     .unwrap();
 

@@ -2,13 +2,12 @@
 //! `discover_and_mount` convention the other services' tests use.
 #![allow(dead_code)]
 
-use bytes::Bytes;
-use http::{HeaderMap, Method, Uri};
-use http_body_util::BodyExt;
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::bytes::Bytes;
 use quench_db::prelude::Db;
 use quench_http::di::{Container, ContainerBuilder};
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, Uri};
 use quench_http::request::Request;
 use std::sync::Arc;
 
@@ -54,13 +53,23 @@ pub fn req(method: Method, path: &str, container: &Arc<Container>) -> Request {
 }
 
 pub async fn body_text(resp: quench_http::response::Response) -> String {
-    let collected = resp.into_hyper().into_body().collect().await.expect("body");
-    String::from_utf8_lossy(&collected.to_bytes()).into_owned()
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .expect("body");
+    String::from_utf8_lossy(&collected).into_owned()
 }
 
-pub async fn json_body(resp: quench_http::response::Response) -> serde_json::Value {
-    let collected = resp.into_hyper().into_body().collect().await.expect("body");
-    serde_json::from_slice(&collected.to_bytes()).expect("valid json body")
+pub async fn json_body(resp: quench_http::response::Response) -> quench_serde::Value {
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .expect("body");
+    quench_serde::json::from_slice(&collected).expect("valid json body")
 }
 
 #[must_use]
@@ -93,7 +102,7 @@ pub fn req_form(
         path.parse::<Uri>().unwrap(),
         headers,
         quench_http::body::InboundBody::from_bytes(Bytes::from(
-            serde_urlencoded::to_string(pairs).unwrap(),
+            quench_serde::urlencoded::to_string(pairs).unwrap(),
         )),
         container.clone(),
     )

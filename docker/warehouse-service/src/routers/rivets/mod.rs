@@ -53,7 +53,7 @@ pub fn valid_name(name: &str) -> bool {
 /// Semver; `semver` rejects separators, so a valid version is also a safe path component.
 #[must_use]
 pub fn valid_version(version: &str) -> bool {
-    semver::Version::parse(version).is_ok()
+    quench_core::version::Version::parse(version).is_ok()
 }
 
 /// `Auth` + `RequireWrite` over `/api/v1/rivets`: reads need any valid realm identity, and the

@@ -1,15 +1,15 @@
 use quench_cli::prelude::{Tone, print_status};
-use serde::Deserialize;
+use quench_core::Error;
+use quench_serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
-use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum ConfigError {
     #[error("Failed to read config file: {0}")]
     ReadError(#[from] std::io::Error),
     #[error("Failed to parse TOML: {0}")]
-    ParseError(#[from] toml::de::Error),
+    ParseError(#[from] quench_serde::Error),
     #[error("Config file not found: {0}")]
     NotFound(String),
 }
@@ -45,7 +45,7 @@ impl Config {
             return Err(ConfigError::NotFound(path.display().to_string()));
         }
         let contents = fs::read_to_string(path)?;
-        let config: Config = toml::from_str(&contents)?;
+        let config: Config = quench_serde::toml::from_str(&contents)?;
         Ok(config)
     }
 

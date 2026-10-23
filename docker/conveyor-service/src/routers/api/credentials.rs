@@ -9,7 +9,7 @@ use crate::secrets::crypto::CryptoError;
 use quench_auth::domain::jwt::JwtConfig;
 use quench_db::prelude::Db;
 use quench_http::prelude::{Inject, Json, Path, Response, delete, get, http::StatusCode, put};
-use serde::Deserialize;
+use quench_serde::Deserialize;
 
 /// The only kind `workspace::checkout` knows how to use today; rejected at write time, not silently ignored later.
 const HTTP_TOKEN: &str = "http_token";
@@ -217,7 +217,7 @@ fn credential_error(error: &CredentialError) -> Response {
     };
 
     if status.is_server_error() {
-        tracing::error!("credential store: {error}");
+        quench_log::error!("credential store: {error}");
     }
     json_error(status, &error.to_string())
 }

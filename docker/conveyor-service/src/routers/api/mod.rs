@@ -1,10 +1,10 @@
 //! Conveyor's HTTP API - everything sits behind the realm's `Auth` middleware.
 
 use crate::scheduler::QueueError;
-use async_trait::async_trait;
 use quench_auth::domain::jwt::{Claims, JwtConfig};
 use quench_auth::http::middleware::auth::Auth;
 use quench_auth::http::routers::ui::get_user_from_req;
+use quench_core::async_trait;
 use quench_http::prelude::{
     Endpoint, FromRequest, HttpError, Middleware, OnPathPrefix, Request, Response, wrap,
 };
@@ -104,12 +104,14 @@ pub fn register_routes() {
 
 impl From<QueueError> for ApiError {
     fn from(error: QueueError) -> Self {
-        if let QueueError::Sql(sqlx::Error::Database(database)) = &error
-            && database.code().as_deref() == Some("23503")
+        if let QueueError::Sql(database) = &error
+            && database.code() == Some("23503")
         {
             // `registered_by` means the requesting account isn't in the realm's `users` table at all.
             let message = if matches!(
-                database.constraint(),
+                database
+                    .server()
+                    .and_then(|server| server.constraint.as_deref()),
                 Some("repos_registered_by_fkey" | "subscriptions_username_fkey")
             ) {
                 "the account making this request is not in the realm; \
@@ -118,23 +120,27 @@ impl From<QueueError> for ApiError {
                 "the id given for a related record (project, repository, ...) \
                  does not exist"
             };
-            return Self::new(http::StatusCode::BAD_REQUEST, message);
+            return Self::new(quench_http::http::StatusCode::BAD_REQUEST, message);
         }
 
-        if let QueueError::Sql(sqlx::Error::Database(database)) = &error
-            && database.code().as_deref() == Some("23505")
+        if let QueueError::Sql(database) = &error
+            && database.code() == Some("23505")
         {
             return Self::new(
-                http::StatusCode::CONFLICT,
+                quench_http::http::StatusCode::CONFLICT,
                 "a record with that identity already exists",
             );
         }
 
         let status = match &error {
             // Not the caller's fault - deployment is configured without a real database.
-            QueueError::NotPostgres => http::StatusCode::SERVICE_UNAVAILABLE,
-            QueueError::UnknownRepo(_) | QueueError::UnknownRun(_) => http::StatusCode::NOT_FOUND,
-            QueueError::BadRow(_) | QueueError::Sql(_) => http::StatusCode::INTERNAL_SERVER_ERROR,
+            QueueError::NotPostgres => quench_http::http::StatusCode::SERVICE_UNAVAILABLE,
+            QueueError::UnknownRepo(_) | QueueError::UnknownRun(_) => {
+                quench_http::http::StatusCode::NOT_FOUND
+            }
+            QueueError::BadRow(_) | QueueError::Sql(_) => {
+                quench_http::http::StatusCode::INTERNAL_SERVER_ERROR
+            }
         };
 
         Self::new(status, error.to_string())

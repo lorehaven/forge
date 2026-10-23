@@ -57,19 +57,19 @@ fn infer_hf_quant_maps_known_torch_dtypes() {
 
 #[test]
 fn infer_hf_quant_config_reads_quantization_config_over_torch_dtype() {
-    let cfg = |v: serde_json::Value| infer_hf_quant_config(&v);
+    let cfg = |v: quench_serde::Value| infer_hf_quant_config(&v);
 
-    assert_eq!(cfg(serde_json::json!({})), None);
+    assert_eq!(cfg(quench_serde::json!({})), None);
     assert_eq!(
-        cfg(serde_json::json!({"quantization_config": {"quant_method": "awq"}})),
+        cfg(quench_serde::json!({"quantization_config": {"quant_method": "awq"}})),
         Some(Quant::AWQ)
     );
     assert_eq!(
-        cfg(serde_json::json!({"quantization_config": {"quant_method": "gptq"}})),
+        cfg(quench_serde::json!({"quantization_config": {"quant_method": "gptq"}})),
         Some(Quant::GPTQ)
     );
     assert_eq!(
-        cfg(serde_json::json!({"quantization_config": {"quant_method": "something-new"}})),
+        cfg(quench_serde::json!({"quantization_config": {"quant_method": "something-new"}})),
         None
     );
 }
@@ -77,7 +77,7 @@ fn infer_hf_quant_config_reads_quantization_config_over_torch_dtype() {
 #[test]
 fn infer_hf_quant_config_sizes_compressed_tensors_by_weight_bits() {
     let ct = |bits: u64, ty: &str| {
-        infer_hf_quant_config(&serde_json::json!({"quantization_config": {
+        infer_hf_quant_config(&quench_serde::json!({"quantization_config": {
             "quant_method": "compressed-tensors",
             "config_groups": {"group_0": {"weights": {"num_bits": bits, "type": ty}}}
         }}))

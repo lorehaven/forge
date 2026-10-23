@@ -1,4 +1,3 @@
-use bytes::Bytes;
 use gatehouse_service::PublicBase;
 use gatehouse_service::api::users::*;
 use gatehouse_service::catalog::PermissionCatalog;
@@ -6,20 +5,23 @@ use gatehouse_service::email::{LoggingSender, Sender};
 use gatehouse_service::realm::{self, RealmError};
 use gatehouse_service::test_support::{RecordingSender, service_auth_env_lock};
 use gatehouse_service::tokens::VerificationTokens;
-use http::{HeaderMap, Method, StatusCode, Uri};
-use http_body_util::BodyExt;
 use quench_auth::domain::auth::{Role, UserDb};
 use quench_auth::domain::jwt::{Claims, JwtConfig};
 use quench_auth::domain::session::SessionDb;
+use quench_core::bytes::Bytes;
 use quench_db::prelude::Db;
 use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::request::Request;
 use std::sync::Arc;
 use tokio::sync::MutexGuard;
 
 fn permission_catalog() -> PermissionCatalog {
-    let dir = std::env::temp_dir().join(format!("gatehouse-users-test-{}", uuid::Uuid::new_v4()));
+    let dir = std::env::temp_dir().join(format!(
+        "gatehouse-users-test-{}",
+        quench_core::uuid::Uuid::new_v4()
+    ));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("permissions.toml");
     std::fs::write(
@@ -47,7 +49,7 @@ fn sessions() -> Arc<SessionDb> {
 /// var to "true" for its own tests.
 async fn auth_disabled() -> MutexGuard<'static, ()> {
     let guard = service_auth_env_lock().lock().await;
-    envmnt::set("SERVICE_AUTH_ENABLED", "false");
+    quench_core::env::set("SERVICE_AUTH_ENABLED", "false");
     guard
 }
 
@@ -114,7 +116,7 @@ fn req_with_auth(
 fn json_req(
     method: Method,
     path: &str,
-    body: &serde_json::Value,
+    body: &quench_serde::Value,
     container: &Arc<quench_http::di::Container>,
 ) -> Request {
     let mut headers = HeaderMap::new();
@@ -123,14 +125,19 @@ fn json_req(
         method,
         path.parse::<Uri>().unwrap(),
         headers,
-        quench_http::body::InboundBody::from_bytes(Bytes::from(serde_json::to_vec(body).unwrap())),
+        quench_http::body::InboundBody::from_bytes(Bytes::from(quench_serde::json::to_vec(body))),
         container.clone(),
     )
 }
 
-async fn json_body<T: serde::de::DeserializeOwned>(resp: quench_http::response::Response) -> T {
-    let collected = resp.into_hyper().into_body().collect().await.expect("body");
-    serde_json::from_slice(&collected.to_bytes()).expect("valid json body")
+async fn json_body<T: quench_serde::DeserializeOwned>(resp: quench_http::response::Response) -> T {
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .expect("body");
+    quench_serde::json::from_slice(&collected).expect("valid json body")
 }
 
 #[tokio::test]
@@ -143,7 +150,7 @@ async fn create_then_list_then_get_a_user() {
         .call(json_req(
             Method::POST,
             "/api/v1/users",
-            &serde_json::json!({ "username": "alice", "password": "password123" }),
+            &quench_serde::json!({ "username": "alice", "password": "password123" }),
             &container,
         ))
         .await;
@@ -186,7 +193,7 @@ async fn create_rejects_a_duplicate_username_with_conflict() {
     let db = Db::connect("").await.expect("in-memory db");
     let (app, container) = app(db, permission_catalog(), JwtConfig::for_tests()).await;
 
-    let body = serde_json::json!({ "username": "alice", "password": "password123" });
+    let body = quench_serde::json!({ "username": "alice", "password": "password123" });
     app.call(json_req(Method::POST, "/api/v1/users", &body, &container))
         .await;
 
@@ -205,7 +212,7 @@ async fn update_changes_the_password() {
     app.call(json_req(
         Method::POST,
         "/api/v1/users",
-        &serde_json::json!({ "username": "alice", "password": "old-password" }),
+        &quench_serde::json!({ "username": "alice", "password": "old-password" }),
         &container,
     ))
     .await;
@@ -214,7 +221,7 @@ async fn update_changes_the_password() {
         .call(json_req(
             Method::PATCH,
             "/api/v1/users/alice",
-            &serde_json::json!({ "password": "new-password" }),
+            &quench_serde::json!({ "password": "new-password" }),
             &container,
         ))
         .await;
@@ -233,7 +240,7 @@ async fn replace_permissions_rejects_unknown_grants() {
     app.call(json_req(
         Method::POST,
         "/api/v1/users",
-        &serde_json::json!({ "username": "alice", "password": "password123" }),
+        &quench_serde::json!({ "username": "alice", "password": "password123" }),
         &container,
     ))
     .await;
@@ -242,7 +249,7 @@ async fn replace_permissions_rejects_unknown_grants() {
         .call(json_req(
             Method::PUT,
             "/api/v1/users/alice/permissions",
-            &serde_json::json!({ "permissions": { "not-a-real-service": ["read"] } }),
+            &quench_serde::json!({ "permissions": { "not-a-real-service": ["read"] } }),
             &container,
         ))
         .await;
@@ -258,7 +265,7 @@ async fn delete_removes_the_user() {
     app.call(json_req(
         Method::POST,
         "/api/v1/users",
-        &serde_json::json!({ "username": "alice", "password": "password123" }),
+        &quench_serde::json!({ "username": "alice", "password": "password123" }),
         &container,
     ))
     .await;
@@ -292,7 +299,7 @@ async fn me_reports_wildcard_access_for_the_anonymous_admin_bypass() {
 
 async fn auth_enabled() -> MutexGuard<'static, ()> {
     let guard = service_auth_env_lock().lock().await;
-    envmnt::set("SERVICE_AUTH_ENABLED", "true");
+    quench_core::env::set("SERVICE_AUTH_ENABLED", "true");
     guard
 }
 
@@ -409,7 +416,7 @@ async fn a_password_change_through_the_api_tells_a_confirmed_address_only() {
         app.call(json_req(
             Method::POST,
             "/api/v1/users",
-            &serde_json::json!({ "username": name, "password": "old-password", "email": address }),
+            &quench_serde::json!({ "username": name, "password": "old-password", "email": address }),
             &container,
         ))
         .await;
@@ -423,7 +430,7 @@ async fn a_password_change_through_the_api_tells_a_confirmed_address_only() {
             .call(json_req(
                 Method::PATCH,
                 &format!("/api/v1/users/{name}"),
-                &serde_json::json!({ "password": "new-password" }),
+                &quench_serde::json!({ "password": "new-password" }),
                 &container,
             ))
             .await;
@@ -433,7 +440,7 @@ async fn a_password_change_through_the_api_tells_a_confirmed_address_only() {
     app.call(json_req(
         Method::PATCH,
         "/api/v1/users/confirmed",
-        &serde_json::json!({ "roles": ["user"] }),
+        &quench_serde::json!({ "roles": ["user"] }),
         &container,
     ))
     .await;
@@ -473,12 +480,12 @@ async fn creating_an_invited_user_emails_the_address_and_reports_it() {
         .call(json_req(
             Method::POST,
             "/api/v1/users",
-            &serde_json::json!({ "username": "newbie", "email": "newbie@example.test", "invite": true }),
+            &quench_serde::json!({ "username": "newbie", "email": "newbie@example.test", "invite": true }),
             &container,
         ))
         .await;
     assert_eq!(resp.status(), StatusCode::CREATED);
-    let body: serde_json::Value = json_body(resp).await;
+    let body: quench_serde::Value = json_body(resp).await;
     assert_eq!(body["invite_sent"], true);
     assert_eq!(body["email"], "newbie@example.test");
     assert_eq!(body["email_verified"], false);
@@ -498,9 +505,12 @@ async fn an_invitation_needs_a_valid_address() {
     let _guard = auth_disabled().await;
     let (recorder, app, container, db) = invite_app().await;
     for (body, name) in [
-        (serde_json::json!({ "username": "a", "invite": true }), "a"),
         (
-            serde_json::json!({ "username": "b", "invite": true, "email": "nonsense" }),
+            quench_serde::json!({ "username": "a", "invite": true }),
+            "a",
+        ),
+        (
+            quench_serde::json!({ "username": "b", "invite": true, "email": "nonsense" }),
             "b",
         ),
     ] {
@@ -524,12 +534,12 @@ async fn an_ordinary_create_neither_invites_nor_mentions_it() {
         .call(json_req(
             Method::POST,
             "/api/v1/users",
-            &serde_json::json!({ "username": "plain", "password": "given-password", "email": "p@example.test" }),
+            &quench_serde::json!({ "username": "plain", "password": "given-password", "email": "p@example.test" }),
             &container,
         ))
         .await;
     assert_eq!(resp.status(), StatusCode::CREATED);
-    let body: serde_json::Value = json_body(resp).await;
+    let body: quench_serde::Value = json_body(resp).await;
     assert!(body.get("invite_sent").is_none(), "{body}");
     assert!(recorder.sent().is_empty());
 }
@@ -542,7 +552,7 @@ async fn a_plain_create_still_needs_a_password() {
         .call(json_req(
             Method::POST,
             "/api/v1/users",
-            &serde_json::json!({ "username": "nopw" }),
+            &quench_serde::json!({ "username": "nopw" }),
             &container,
         ))
         .await;
@@ -552,7 +562,7 @@ async fn a_plain_create_still_needs_a_password() {
 #[tokio::test]
 async fn a_failed_invitation_email_still_creates_the_account() {
     struct Failing;
-    #[async_trait::async_trait]
+    #[quench_core::async_trait]
     impl Sender for Failing {
         async fn send(
             &self,
@@ -575,12 +585,12 @@ async fn a_failed_invitation_email_still_creates_the_account() {
         .call(json_req(
             Method::POST,
             "/api/v1/users",
-            &serde_json::json!({ "username": "newbie", "email": "newbie@example.test", "invite": true }),
+            &quench_serde::json!({ "username": "newbie", "email": "newbie@example.test", "invite": true }),
             &container,
         ))
         .await;
     assert_eq!(resp.status(), StatusCode::CREATED);
-    let body: serde_json::Value = json_body(resp).await;
+    let body: quench_serde::Value = json_body(resp).await;
     assert_eq!(body["invite_sent"], false);
     assert!(realm::get(&db, "newbie").await.is_ok());
 }

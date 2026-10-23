@@ -1,6 +1,6 @@
 use crate::routers::docker::registry::storage::list_repositories;
 use quench_http::prelude::{Query, Response, get, http::StatusCode};
-use serde::{Deserialize, Serialize};
+use quench_serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Default)]
 pub struct CatalogQuery {

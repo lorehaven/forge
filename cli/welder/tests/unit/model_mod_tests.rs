@@ -130,13 +130,18 @@ async fn switchboard_manager_reuses_an_already_running_instance() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/vllm/instances"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(vec![VllmInstance {
-            model: "llama".to_string(),
-            host: "10.0.0.5".to_string(),
-            port: 8001,
-            status: "running".to_string(),
-            task: None,
-        }]))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(vec![VllmInstance {
+                    model: "llama".to_string(),
+                    host: "10.0.0.5".to_string(),
+                    port: 8001,
+                    status: "running".to_string(),
+                    task: None,
+                }]),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -155,30 +160,43 @@ async fn switchboard_manager_launches_and_waits_for_a_missing_instance() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/vllm/instances"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(Vec::<VllmInstance>::new()))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(Vec::<VllmInstance>::new())),
+            "application/json",
+        ))
         .up_to_n_times(1)
         .mount(&server)
         .await;
     Mock::given(method("POST"))
         .and(path("/api/v1/vllm/instances"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(VllmInstance {
-            model: "llama".to_string(),
-            host: "10.0.0.6".to_string(),
-            port: 8002,
-            status: "starting".to_string(),
-            task: None,
-        }))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(VllmInstance {
+                    model: "llama".to_string(),
+                    host: "10.0.0.6".to_string(),
+                    port: 8002,
+                    status: "starting".to_string(),
+                    task: None,
+                }),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
     Mock::given(method("GET"))
         .and(path("/api/v1/vllm/instances"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(vec![VllmInstance {
-            model: "llama".to_string(),
-            host: "10.0.0.6".to_string(),
-            port: 8002,
-            status: "running".to_string(),
-            task: None,
-        }]))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(vec![VllmInstance {
+                    model: "llama".to_string(),
+                    host: "10.0.0.6".to_string(),
+                    port: 8002,
+                    status: "running".to_string(),
+                    task: None,
+                }]),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -194,13 +212,18 @@ async fn switchboard_manager_wait_for_running_surfaces_a_failed_instance() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/vllm/instances"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(vec![VllmInstance {
-            model: "llama".to_string(),
-            host: "10.0.0.7".to_string(),
-            port: 8003,
-            status: "failed".to_string(),
-            task: None,
-        }]))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(vec![VllmInstance {
+                    model: "llama".to_string(),
+                    host: "10.0.0.7".to_string(),
+                    port: 8003,
+                    status: "failed".to_string(),
+                    task: None,
+                }]),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -214,7 +237,10 @@ async fn switchboard_manager_wait_for_running_gives_up_after_the_timeout() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/vllm/instances"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(Vec::<VllmInstance>::new()))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(Vec::<VllmInstance>::new())),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -228,13 +254,18 @@ async fn switchboard_manager_find_running_ignores_embedding_only_instances() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/vllm/instances"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(vec![VllmInstance {
-            model: "embed-model".to_string(),
-            host: "10.0.0.8".to_string(),
-            port: 8004,
-            status: "running".to_string(),
-            task: Some("embed".to_string()),
-        }]))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(vec![VllmInstance {
+                    model: "embed-model".to_string(),
+                    host: "10.0.0.8".to_string(),
+                    port: 8004,
+                    status: "running".to_string(),
+                    task: Some("embed".to_string()),
+                }]),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 

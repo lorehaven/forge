@@ -4,11 +4,11 @@ use crate::support::{database, json_body, req, skipped};
 use conveyor_service::config::ConveyorConfig;
 use conveyor_service::providers::Providers;
 use conveyor_service::routers::api;
-use http::{Method, StatusCode};
 use quench_auth::domain::jwt::JwtConfig;
 use quench_db::prelude::{Database, Db};
 use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{Method, StatusCode};
 use std::sync::Arc;
 
 /// With auth off `Actor` is the synthetic `admin`; following writes a foreign key to the realm's

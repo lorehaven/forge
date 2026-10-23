@@ -1,11 +1,10 @@
 //! Comments on an issue.
 
 use crate::domain::db::{WorkbenchError, pool, schema};
-use chrono::{DateTime, Utc};
+use quench_core::time::Time;
+use quench_core::uuid::Uuid;
 use quench_db::prelude::Db;
-use serde::{Deserialize, Serialize};
-use sqlx::Row;
-use uuid::Uuid;
+use quench_serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Comment {
@@ -13,7 +12,7 @@ pub struct Comment {
     pub issue_id: String,
     pub author: String,
     pub body: String,
-    pub created_at: DateTime<Utc>,
+    pub created_at: Time,
 }
 
 #[derive(Clone, Debug)]
@@ -33,12 +32,8 @@ pub async fn create(db: &Db, new: &NewComment) -> Result<Comment, WorkbenchError
          VALUES ($1, $2, $3, $4) RETURNING {COLUMNS}"
     );
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(&id)
-        .bind(&new.issue_id)
-        .bind(&new.author)
-        .bind(&new.body)
-        .fetch_one(pool)
+    let row = pool
+        .query_one(&sql, &[&id, &new.issue_id, &new.author, &new.body])
         .await?;
 
     from_row(&row)
@@ -50,10 +45,7 @@ pub async fn read(db: &Db, id: &str) -> Result<Option<Comment>, WorkbenchError> 
     let schema = schema();
     let sql = format!("SELECT {COLUMNS} FROM {schema}.comments WHERE id = $1");
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(id)
-        .fetch_optional(pool)
-        .await?;
+    let row = pool.query_opt(&sql, &[&id]).await?;
 
     row.as_ref().map(from_row).transpose()
 }
@@ -65,10 +57,7 @@ pub async fn list_by_issue(db: &Db, issue_id: &str) -> Result<Vec<Comment>, Work
     let sql =
         format!("SELECT {COLUMNS} FROM {schema}.comments WHERE issue_id = $1 ORDER BY created_at");
 
-    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(issue_id)
-        .fetch_all(pool)
-        .await?;
+    let rows = pool.query(&sql, &[&issue_id]).await?;
 
     rows.iter().map(from_row).collect()
 }
@@ -78,22 +67,19 @@ pub async fn delete(db: &Db, id: &str) -> Result<bool, WorkbenchError> {
     let schema = schema();
     let sql = format!("DELETE FROM {schema}.comments WHERE id = $1");
 
-    let result = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(id)
-        .execute(pool)
-        .await?;
+    let result = pool.execute(&sql, &[&id]).await?;
 
-    Ok(result.rows_affected() > 0)
+    Ok(result > 0)
 }
 
 const COLUMNS: &str = "id, issue_id, author, body, created_at";
 
-fn from_row(row: &sqlx::postgres::PgRow) -> Result<Comment, WorkbenchError> {
+fn from_row(row: &quench_pg::Row) -> Result<Comment, WorkbenchError> {
     Ok(Comment {
-        id: row.try_get("id")?,
-        issue_id: row.try_get("issue_id")?,
-        author: row.try_get("author")?,
-        body: row.try_get("body")?,
-        created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
+        id: row.get("id")?,
+        issue_id: row.get("issue_id")?,
+        author: row.get("author")?,
+        body: row.get("body")?,
+        created_at: row.get::<Time, _>("created_at")?,
     })
 }

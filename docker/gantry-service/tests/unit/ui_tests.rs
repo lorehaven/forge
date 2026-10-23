@@ -1,11 +1,17 @@
 use crate::support;
 use gantry_service::domain::cluster::Workload;
-use http::{Method, StatusCode};
 use quench_auth::domain::jwt::Claims;
+use quench_http::http::{Method, StatusCode};
 
 fn location(resp: quench_http::response::Response) -> String {
-    let (parts, _) = resp.into_hyper().into_parts();
-    parts.headers["location"].to_str().unwrap().to_string()
+    let parts = resp.into_inner();
+    parts
+        .headers
+        .get("location")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string()
 }
 
 fn running(version: &str) -> Vec<Workload> {

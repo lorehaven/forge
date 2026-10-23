@@ -10,7 +10,7 @@ fn health_check_url_defaults_to_the_in_cluster_switchboard_address() {
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::remove("SWITCHBOARD_URL");
+    quench_core::env::remove("SWITCHBOARD_URL");
 
     assert_eq!(
         health_check_url(),
@@ -23,9 +23,9 @@ fn health_check_url_honors_switchboard_url_and_trims_a_trailing_slash() {
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::set("SWITCHBOARD_URL", "http://custom-host:9000/");
+    quench_core::env::set("SWITCHBOARD_URL", "http://custom-host:9000/");
 
     assert_eq!(health_check_url(), "http://custom-host:9000/health/ready");
 
-    envmnt::remove("SWITCHBOARD_URL");
+    quench_core::env::remove("SWITCHBOARD_URL");
 }

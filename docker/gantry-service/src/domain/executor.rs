@@ -7,7 +7,7 @@
 use crate::domain::cluster::{Cluster, ClusterError, JobSpec, JobStatus};
 use crate::domain::settings::{RunnerMode, Settings};
 use crate::domain::steps::Plan;
-use async_trait::async_trait;
+use quench_core::async_trait;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -68,8 +68,7 @@ impl ClusterExecutor {
             name: launch.name.clone(),
             image: self.settings.runner_image.clone(),
             service_account: self.settings.runner_service_account.clone(),
-            plan_json: serde_json::to_string(&launch.plan)
-                .map_err(|e| ClusterError::Kube(e.to_string()))?,
+            plan_json: quench_serde::json::to_string(&launch.plan),
             allowed_namespaces: self.settings.allowed_namespaces.clone(),
             credentials_secret: self.settings.credentials_secret.clone(),
             age_key_secret: self.settings.age_key_secret.clone(),
@@ -151,8 +150,7 @@ impl Executor for LocalExecutor {
             return Ok(());
         }
 
-        let plan =
-            serde_json::to_string(&launch.plan).map_err(|e| ClusterError::Kube(e.to_string()))?;
+        let plan = quench_serde::json::to_string(&launch.plan);
         let script =
             r#""$GANTRY_RUNNER_BIN" > "$GANTRY_LOG_FILE" 2>&1; echo $? > "$GANTRY_EXIT_FILE""#;
 

@@ -1,10 +1,10 @@
 //! The handlers, and what they all share.
 
 use crate::domain::rivet::RivetPackage;
-use chrono::{DateTime, Utc};
+use quench_core::time::Time;
 use quench_db::prelude::{Crud, Db};
 use quench_http::prelude::{Response, http::StatusCode};
-use serde::Serialize;
+use quench_serde::Serialize;
 
 pub use crate::routers::artifacts::ops::{Actor, error, json_ok, not_found};
 
@@ -26,10 +26,10 @@ pub struct RivetView {
     pub size_bytes: i64,
     pub sha256: String,
     /// The archive's own `rivet.toml`, parsed.
-    pub manifest: serde_json::Value,
+    pub manifest: quench_serde::Value,
     pub uploaded_by: String,
     pub yanked: bool,
-    pub created_at: DateTime<Utc>,
+    pub created_at: Time,
 }
 
 impl From<&RivetPackage> for RivetView {
@@ -42,7 +42,7 @@ impl From<&RivetPackage> for RivetView {
             filename: package.filename.clone(),
             size_bytes: package.size_bytes,
             sha256: package.sha256.clone(),
-            manifest: package.manifest.0.clone(),
+            manifest: package.manifest.clone(),
             uploaded_by: package.uploaded_by.clone(),
             yanked: package.yanked,
             created_at: package.created_at,

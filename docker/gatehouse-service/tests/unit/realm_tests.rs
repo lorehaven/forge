@@ -12,14 +12,17 @@ use std::sync::Arc;
 /// comment for why that's the one convention safe under this crate's
 /// single, parallel `--bin` test binary.
 fn with_key() {
-    envmnt::set(
+    quench_core::env::set(
         "GATEHOUSE_KEY_ENCRYPTION_KEY",
         gatehouse_service::test_support::TEST_KEY_MATERIAL,
     );
 }
 
 fn catalog(toml: &str) -> PermissionCatalog {
-    let dir = std::env::temp_dir().join(format!("realm-test-catalog-{}", uuid::Uuid::new_v4()));
+    let dir = std::env::temp_dir().join(format!(
+        "realm-test-catalog-{}",
+        quench_core::uuid::Uuid::new_v4()
+    ));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("permissions.toml");
     std::fs::write(&path, toml).unwrap();
@@ -51,21 +54,10 @@ fn sessions() -> Arc<SessionDb> {
 /// `mfa::totp` is private to that module, so this rebuilds the same TOTP
 /// object here to get a code `enable_mfa`/`authenticate_mfa` will accept -
 /// same parameters `mfa.rs` uses (SHA1, 6 digits, 30s step, "Forge" issuer).
-fn current_totp_code(secret: &str, username: &str) -> String {
-    use totp_rs::Secret;
-    let parsed = Secret::try_from_base32(secret).expect("valid base32 secret");
-    totp_rs::Builder::new()
-        .with_algorithm(totp_rs::Algorithm::SHA1)
-        .with_digits(6)
-        .with_skew(1)
-        .with_step_duration(30)
-        .with_secret(parsed)
-        .with_account_name(username.to_string())
-        .with_issuer(Some("Forge"))
-        .build()
-        .expect("build totp")
-        .generate_current()
-        .to_string()
+fn current_totp_code(secret: &str) -> String {
+    quench_crypto::totp::Totp::from_base32(secret)
+        .expect("valid base32 secret")
+        .code_now()
 }
 
 async fn seed_user(db: &Db, username: &str, password: &str, roles: Vec<Role>) -> User {
@@ -114,7 +106,7 @@ fn every_realm_error_has_a_status_message_and_i18n_key() {
 fn unknown_grants_message_lists_the_offending_grants() {
     let error = RealmError::UnknownGrants(vec!["sage:oops".to_string()]);
     assert!(error.message().contains("sage:oops"));
-    assert_eq!(error.status(), http::StatusCode::BAD_REQUEST);
+    assert_eq!(error.status(), quench_http::http::StatusCode::BAD_REQUEST);
 }
 
 // -- create ----------------------------------------------------------
@@ -520,7 +512,7 @@ async fn apply_template_replaces_permissions_with_the_named_templates_grants() {
     .await
     .expect("apply template");
     let permissions: Permissions =
-        serde_json::from_value(updated.permissions).expect("permissions");
+        quench_serde::from_value(&updated.permissions).expect("permissions");
     assert!(permissions.contains_key("sage"));
 }
 
@@ -690,7 +682,7 @@ async fn authenticate_requires_mfa_when_enabled() {
     let db = db().await;
     seed_user(&db, "alice", "password", vec![]).await;
     let (secret, _) = begin_mfa_enrollment("alice").expect("begin enrollment");
-    let current = current_totp_code(&secret, "alice");
+    let current = current_totp_code(&secret);
     enable_mfa(&db, "alice", &secret, &current)
         .await
         .expect("enable mfa");
@@ -849,7 +841,7 @@ async fn verification_is_checked_before_asking_for_an_mfa_code() {
     let db = db().await;
     seed_with_email(&db, "alice", vec![], Some("alice@example.com")).await;
     let (secret, _) = begin_mfa_enrollment("alice").expect("begin enrollment");
-    let current = current_totp_code(&secret, "alice");
+    let current = current_totp_code(&secret);
     enable_mfa(&db, "alice", &secret, &current)
         .await
         .expect("enable mfa");

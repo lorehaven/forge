@@ -6,9 +6,9 @@ use super::{
 };
 use crate::domain::storage_file;
 use crate::routers::files::{FileQuery, OptionalClaims, dynamic};
-use async_trait::async_trait;
-use bytes::Bytes;
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::async_trait;
+use quench_core::bytes::Bytes;
 use quench_db::prelude::Db;
 use quench_http::prelude::{
     Endpoint, FromRequest, Inject, Path, Query, Request, Response, get,
@@ -16,7 +16,6 @@ use quench_http::prelude::{
 };
 use std::path::{Path as FsPath, PathBuf};
 use tokio::io::AsyncReadExt;
-use tokio_stream::wrappers::ReceiverStream;
 
 /// How much is read from disk, and handed to the network, at a time.
 const CHUNK_BYTES: usize = 64 * 1024;
@@ -26,7 +25,7 @@ const CHUNK_BYTES: usize = 64 * 1024;
 const CHUNK_BUFFER: usize = 8;
 
 #[get("/api/v1/files/{storage}/file")]
-#[tracing::instrument(skip(claims, config, db))]
+#[quench_log::instrument(skip(claims, config, db))]
 pub async fn handle(
     OptionalClaims(claims): OptionalClaims,
     Inject(config): Inject<JwtConfig>,
@@ -65,7 +64,7 @@ pub async fn handle(
                 Ok(Some((sha256, _size))) => dynamic::blob_path(&root, &sha256),
                 Ok(None) => return not_found("no such file"),
                 Err(problem) => {
-                    tracing::error!("dynamic download lookup failed: {problem}");
+                    quench_log::error!("dynamic download lookup failed: {problem}");
                     return error(StatusCode::INTERNAL_SERVER_ERROR, "lookup failed");
                 }
             }
@@ -115,7 +114,7 @@ pub async fn head(
                 Ok(Some((sha256, _size))) => dynamic::blob_path(&root, &sha256),
                 Ok(None) => return not_found("no such file"),
                 Err(problem) => {
-                    tracing::error!("dynamic download lookup failed: {problem}");
+                    quench_log::error!("dynamic download lookup failed: {problem}");
                     return error(StatusCode::INTERNAL_SERVER_ERROR, "lookup failed");
                 }
             }
@@ -160,13 +159,15 @@ impl Endpoint for __quench_route_head {
     }
 }
 
-quench_http::inventory::submit! {
-    quench_http::prelude::RouteRegistration {
+quench_http::submit!(
+    quench_http::route::ROUTES,
+    quench_http::route::RouteRegistration,
+    quench_http::route::RouteRegistration {
         method: Method::HEAD,
         pattern: "/api/v1/files/{storage}/file",
         endpoint: || std::sync::Arc::new(__quench_route_head) as std::sync::Arc<dyn Endpoint>,
     }
-}
+);
 
 /// Streams `target` back. `display_path` carries the real name/extension a
 /// dynamic storage's blob-digest `target` no longer has; `inline` renders in place instead of saving.
@@ -281,7 +282,10 @@ pub fn download_name(target: &FsPath) -> String {
 
 /// Reads on a task of its own; `ReceiverStream` is `Sync` regardless of what
 /// feeds it, which `Response::streaming` needs and the raw file I/O alone wouldn't satisfy.
-fn read_stream(mut file: tokio::fs::File) -> ReceiverStream<Result<Bytes, std::io::Error>> {
+fn read_stream(
+    mut file: tokio::fs::File,
+) -> impl quench_core::stream::Stream<Item = Result<Bytes, std::io::Error>> + Send + Unpin + 'static
+{
     let (sender, receiver) = tokio::sync::mpsc::channel(CHUNK_BUFFER);
 
     tokio::spawn(async move {
@@ -308,7 +312,7 @@ fn read_stream(mut file: tokio::fs::File) -> ReceiverStream<Result<Bytes, std::i
         }
     });
 
-    ReceiverStream::new(receiver)
+    quench_http::stream::receiver_stream(receiver)
 }
 
 /// Kept for the delete handler, which wants the same "is this a file" answer.

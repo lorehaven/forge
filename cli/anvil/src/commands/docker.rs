@@ -1,7 +1,7 @@
 use crate::cargo_meta;
 use crate::config;
 use crate::util::run_command;
-use anyhow::{Context, Result};
+use quench_core::{Context, Result};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process::Command;
@@ -13,7 +13,7 @@ pub fn find_module_for_package<'a>(config: &'a config::Config, package: &str) ->
         }
     }
 
-    anyhow::bail!("Module not found for package: {package}")
+    quench_core::bail!("Module not found for package: {package}")
 }
 
 pub fn find_module_name_overwrite(config: &config::Config, package: &str) -> Result<String> {
@@ -93,7 +93,7 @@ pub fn get_registries_for_package(config: &config::Config, package: &str) -> Res
     );
 
     if registries.is_empty() {
-        anyhow::bail!(
+        quench_core::bail!(
             "No Docker registry configured for package '{package}'. Set [docker].registry, \
              [docker.modules.<module>.{package}].registries, or \
              [docker.modules.<module>.{package}].registry"
@@ -105,7 +105,7 @@ pub fn get_registries_for_package(config: &config::Config, package: &str) -> Res
         .filter(|reg| !reg.trim().is_empty())
         .collect();
     if filtered.is_empty() {
-        anyhow::bail!("Docker registries for package '{package}' are empty");
+        quench_core::bail!("Docker registries for package '{package}' are empty");
     }
 
     Ok(filtered)
@@ -128,10 +128,10 @@ pub fn cargo_home() -> Option<PathBuf> {
 /// The `[registries.<name>]` table from the host's own `~/.cargo/config.toml`,
 /// if present - the same file real `cargo` commands already resolve
 /// index/token from, so this is a fallback of last resort, not a guess.
-fn private_registry_config(name: &str) -> Option<toml::Value> {
+fn private_registry_config(name: &str) -> Option<quench_serde::Value> {
     let path = cargo_home()?.join("config.toml");
     let content = std::fs::read_to_string(path).ok()?;
-    let parsed: toml::Value = toml::from_str(&content).ok()?;
+    let parsed: quench_serde::Value = quench_serde::toml::from_str(&content).ok()?;
     Some(parsed.get("registries")?.get(name)?.clone())
 }
 
@@ -364,6 +364,6 @@ where
         for failure in &failures {
             eprintln!("  - {failure}");
         }
-        anyhow::bail!("{op_name}-all failed for {} packages", failures.len());
+        quench_core::bail!("{op_name}-all failed for {} packages", failures.len());
     }
 }

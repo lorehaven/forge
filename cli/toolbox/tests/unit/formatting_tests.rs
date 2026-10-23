@@ -2,7 +2,7 @@ use forge_toolbox::{
     CrateStatus, action_label, display_installed, display_latest, display_updatable, fit_cell,
     make_border,
 };
-use semver::Version;
+use quench_core::version::Version;
 
 fn status(
     installed: Option<&str>,

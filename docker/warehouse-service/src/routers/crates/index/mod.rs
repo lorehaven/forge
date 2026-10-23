@@ -1,16 +1,16 @@
 use crate::routers::crates::{index_file_path, index_prefix, validate_crate_name};
 use crate::utils::sha256::sha256_hex;
-use async_trait::async_trait;
-use bytes::Bytes;
+use quench_core::async_trait;
+use quench_core::bytes::Bytes;
 use quench_http::prelude::{
     FromRequest, HttpError, Path, Request, Response, get, http::StatusCode,
 };
+use quench_serde::Serialize;
 use quench_starter::common::routes::with_base_path;
-use serde::Serialize;
 use std::sync::LazyLock;
 
 static REGISTRY_BASE_URL: LazyLock<String> =
-    LazyLock::new(|| envmnt::get_or("REGISTRY_BASE_URL", "https://localhost"));
+    LazyLock::new(|| quench_core::env::get_or("REGISTRY_BASE_URL", "https://localhost"));
 
 #[derive(Serialize)]
 struct IndexConfig {

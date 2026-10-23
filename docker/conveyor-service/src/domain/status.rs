@@ -1,6 +1,6 @@
 //! One status vocabulary for runs, jobs and steps - three parallel enums would drift.
 
-use serde::{Deserialize, Serialize};
+use quench_serde::{Deserialize, Serialize};
 use std::fmt;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

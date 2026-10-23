@@ -1,6 +1,6 @@
 use crate::support;
 
-use http::{Method, StatusCode};
+use quench_http::http::{Method, StatusCode};
 use warehouse_service::utils::sha256::sha256_hex;
 
 fn write_manifest_and_tag(

@@ -2,12 +2,12 @@
 //! and a developer can run the whole service with no cluster at all.
 
 use crate::domain::settings::{ClusterMode, Settings};
-use async_trait::async_trait;
+use quench_core::async_trait;
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 use std::time::Duration;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, quench_core::Error)]
 pub enum ClusterError {
     #[error("kubernetes: {0}")]
     Kube(String),
@@ -33,7 +33,7 @@ pub struct JobSpec {
 }
 
 /// Anything a package put in the cluster, of any kind, as Gantry sees it.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, quench_serde::Serialize, quench_serde::Deserialize)]
 pub struct LiveResource {
     #[serde(rename = "apiVersion", default)]
     pub api_version: Option<String>,
@@ -59,7 +59,7 @@ pub struct LiveResource {
 }
 
 /// A workload (Deployment, `StatefulSet` or `DaemonSet`) a package put in the cluster, as Gantry sees it.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, quench_serde::Serialize, quench_serde::Deserialize)]
 pub struct Workload {
     pub kind: String,
     pub name: String,
@@ -84,16 +84,16 @@ pub enum JobStatus {
 impl JobSpec {
     /// The Job as the API server takes it.
     #[must_use]
-    pub fn manifest(&self) -> serde_json::Value {
-        let mut volumes = vec![serde_json::json!({"name": "work", "emptyDir": {}})];
-        let mut mounts = vec![serde_json::json!({"name": "work", "mountPath": "/work"})];
+    pub fn manifest(&self) -> quench_serde::Value {
+        let mut volumes = vec![quench_serde::json!({"name": "work", "emptyDir": {}})];
+        let mut mounts = vec![quench_serde::json!({"name": "work", "mountPath": "/work"})];
         for secret in &self.values_secrets {
-            volumes.push(serde_json::json!({
+            volumes.push(quench_serde::json!({
                 "name": format!("values-{secret}"),
                 // Optional: a package whose variables all have defaults has no values Secret.
                 "secret": {"secretName": secret, "optional": true},
             }));
-            mounts.push(serde_json::json!({
+            mounts.push(quench_serde::json!({
                 "name": format!("values-{secret}"),
                 "mountPath": format!("/values/{secret}"),
                 "readOnly": true,
@@ -103,11 +103,12 @@ impl JobSpec {
         // The key that opens a package's encrypted values, as a file riveter finds by `RIVETER_AGE_KEY_FILE`.
         // Optional, like the values Secrets: a package with no encrypted values needs no key, and the Job
         // must not fail to start because there is none.
-        volumes.push(serde_json::json!({
+        volumes.push(quench_serde::json!({
             "name": "age-key",
             "secret": {"secretName": self.age_key_secret, "optional": true},
         }));
-        mounts.push(serde_json::json!({"name": "age-key", "mountPath": "/keys", "readOnly": true}));
+        mounts
+            .push(quench_serde::json!({"name": "age-key", "mountPath": "/keys", "readOnly": true}));
 
         let labels = BTreeMap::from([
             ("app.kubernetes.io/managed-by", "gantry".to_string()),
@@ -115,7 +116,7 @@ impl JobSpec {
             ("gantry.forge/operation", self.operation_id.clone()),
         ]);
 
-        serde_json::json!({
+        quench_serde::json!({
             "apiVersion": "batch/v1",
             "kind": "Job",
             "metadata": {
@@ -277,8 +278,9 @@ impl KubeCluster {
 #[async_trait]
 impl Cluster for KubeCluster {
     async fn create_job(&self, spec: &JobSpec) -> Result<(), ClusterError> {
-        let job: k8s_openapi::api::batch::v1::Job = serde_json::from_value(spec.manifest())
-            .map_err(|e| ClusterError::Kube(format!("the Job manifest is invalid: {e}")))?;
+        let job: k8s_openapi::api::batch::v1::Job =
+            serde_json::from_str(&quench_serde::json::to_string(&spec.manifest()))
+                .map_err(|e| ClusterError::Kube(format!("the Job manifest is invalid: {e}")))?;
         match self
             .jobs(&spec.namespace)
             .create(&kube::api::PostParams::default(), &job)
@@ -510,10 +512,12 @@ impl Cluster for KubeCluster {
             .get(name)
             .await
             .map_err(|e| ClusterError::Kube(e.to_string()))?;
-        let mut value =
-            serde_json::to_value(&object).map_err(|e| ClusterError::Kube(e.to_string()))?;
+        // kube's typed objects are serde types, quench's `Value` is not: the JSON text is the bridge.
+        let text = serde_json::to_string(&object).map_err(|e| ClusterError::Kube(e.to_string()))?;
+        let mut value: quench_serde::Value =
+            quench_serde::json::from_str(&text).map_err(|e| ClusterError::Kube(e.to_string()))?;
         clean_for_editing(&mut value);
-        serde_norway::to_string(&value).map_err(|e| ClusterError::Kube(e.to_string()))
+        quench_serde::yaml::to_string(&value).map_err(|e| ClusterError::Kube(e.to_string()))
     }
 }
 
@@ -604,7 +608,7 @@ fn live_resource(
 }
 
 /// Removes what the API server added, so the YAML is what a person edits and applies back.
-fn clean_for_editing(value: &mut serde_json::Value) {
+fn clean_for_editing(value: &mut quench_serde::Value) {
     if let Some(object) = value.as_object_mut() {
         object.remove("status");
         if let Some(meta) = object.get_mut("metadata").and_then(|m| m.as_object_mut()) {
@@ -759,34 +763,36 @@ impl FakeCluster {
         let bad =
             |e: &dyn std::fmt::Display| ClusterError::Kube(format!("{}: {e}", path.display()));
         let text = std::fs::read_to_string(path).map_err(|e| bad(&e))?;
-        let value: serde_json::Value = serde_json::from_str(&text).map_err(|e| bad(&e))?;
+        let value: quench_serde::Value =
+            quench_serde::json::from_str(&text).map_err(|e| bad(&e))?;
         let (workloads, resources, declared) = match value {
-            serde_json::Value::Array(_) => (
+            quench_serde::Value::Array(_) => (
                 value,
-                serde_json::Value::Array(Vec::new()),
-                serde_json::Value::Array(Vec::new()),
+                quench_serde::Value::Array(Vec::new()),
+                quench_serde::Value::Array(Vec::new()),
             ),
-            serde_json::Value::Object(mut object) => (
+            quench_serde::Value::Object(mut object) => (
                 object
                     .remove("workloads")
-                    .unwrap_or_else(|| serde_json::json!([])),
+                    .unwrap_or_else(|| quench_serde::json!([])),
                 object
                     .remove("resources")
-                    .unwrap_or_else(|| serde_json::json!([])),
+                    .unwrap_or_else(|| quench_serde::json!([])),
                 object
                     .remove("declared")
-                    .unwrap_or_else(|| serde_json::json!([])),
+                    .unwrap_or_else(|| quench_serde::json!([])),
             ),
             _ => return Err(bad(&"expected an object or an array")),
         };
         // Declared by a package but not in the cluster: stopped, or never applied.
-        let declared: Vec<LiveResource> = serde_json::from_value(declared).map_err(|e| bad(&e))?;
+        let declared: Vec<LiveResource> =
+            quench_serde::from_value(&declared).map_err(|e| bad(&e))?;
         for resource in &declared {
             self.catalog_add(&resource.package, resource);
         }
-        let workloads: Vec<Workload> = serde_json::from_value(workloads).map_err(|e| bad(&e))?;
+        let workloads: Vec<Workload> = quench_serde::from_value(&workloads).map_err(|e| bad(&e))?;
         let resources: Vec<LiveResource> =
-            serde_json::from_value(resources).map_err(|e| bad(&e))?;
+            quench_serde::from_value(&resources).map_err(|e| bad(&e))?;
 
         for workload in &workloads {
             self.catalog_add(&workload.package, &workload_live(workload, false));
@@ -891,9 +897,10 @@ impl FakeCluster {
 
     /// Applies edited YAML: a workload's replicas follow it, anything else just keeps the text.
     pub fn apply_yaml(&self, yaml: &str) -> Result<(), String> {
-        let doc: serde_norway::Value = serde_norway::from_str(yaml).map_err(|e| e.to_string())?;
-        let text = |v: Option<&serde_norway::Value>| {
-            v.and_then(serde_norway::Value::as_str).map(str::to_string)
+        let doc: quench_serde::Value =
+            quench_serde::yaml::from_str(yaml).map_err(|e| e.to_string())?;
+        let text = |v: Option<&quench_serde::Value>| {
+            v.and_then(quench_serde::Value::as_str).map(str::to_string)
         };
         let kind = text(doc.get("kind")).ok_or("no kind")?;
         let name =
@@ -914,7 +921,7 @@ impl FakeCluster {
             if let Some(replicas) = doc
                 .get("spec")
                 .and_then(|s| s.get("replicas"))
-                .and_then(serde_norway::Value::as_i64)
+                .and_then(quench_serde::Value::as_i64)
             {
                 w.desired = i32::try_from(replicas).unwrap_or(i32::MAX);
                 w.ready = w.desired;

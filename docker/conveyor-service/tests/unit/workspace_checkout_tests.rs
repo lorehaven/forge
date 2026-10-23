@@ -113,7 +113,7 @@ fn a_clone_url_that_looks_like_an_option_is_rejected() {
 
 #[test]
 fn a_path_inside_the_checkout_resolves() {
-    let dir = tempfile::tempdir().expect("temp dir");
+    let dir = quench_core::tmp::TempDir::new().expect("temp dir");
     std::fs::create_dir_all(dir.path().join("target/release")).expect("mkdir");
     std::fs::write(dir.path().join("target/release/thing"), b"x").expect("write");
 
@@ -126,7 +126,7 @@ fn a_resolved_path_can_actually_be_opened() {
     // `is_some()` is not enough. Joining an empty remainder used to append a
     // trailing separator, and `stat("/a/file/")` is ENOTDIR - so every existing
     // file resolved to something that could not be read.
-    let dir = tempfile::tempdir().expect("temp dir");
+    let dir = quench_core::tmp::TempDir::new().expect("temp dir");
     std::fs::write(dir.path().join("built"), b"contents").expect("write");
 
     let workspace = Workspace::new(dir.path().to_path_buf());
@@ -141,7 +141,7 @@ fn a_resolved_path_can_actually_be_opened() {
 fn a_path_that_climbs_out_of_the_checkout_is_refused() {
     // A pipeline can say `artifacts = ["../../etc/passwd"]`, and collecting it
     // would hand a repository author whatever the service account can read.
-    let dir = tempfile::tempdir().expect("temp dir");
+    let dir = quench_core::tmp::TempDir::new().expect("temp dir");
     let workspace = Workspace::new(dir.path().to_path_buf());
 
     assert!(workspace.resolve("../outside").is_none());
@@ -152,8 +152,8 @@ fn a_path_that_climbs_out_of_the_checkout_is_refused() {
 #[test]
 fn a_symlink_pointing_out_of_the_checkout_is_refused() {
     // Planted in the repository, this is how `..` gets past a textual check.
-    let dir = tempfile::tempdir().expect("temp dir");
-    let outside = tempfile::tempdir().expect("temp dir");
+    let dir = quench_core::tmp::TempDir::new().expect("temp dir");
+    let outside = quench_core::tmp::TempDir::new().expect("temp dir");
     std::fs::write(outside.path().join("secret"), b"x").expect("write");
 
     #[cfg(unix)]
@@ -166,7 +166,7 @@ fn a_symlink_pointing_out_of_the_checkout_is_refused() {
 #[test]
 fn a_path_that_does_not_exist_yet_still_resolves() {
     // Artifacts are named before the build produces them.
-    let dir = tempfile::tempdir().expect("temp dir");
+    let dir = quench_core::tmp::TempDir::new().expect("temp dir");
     let workspace = Workspace::new(dir.path().to_path_buf());
     assert!(workspace.resolve("target/release/not-built-yet").is_some());
 }
@@ -197,13 +197,13 @@ fn git(dir: &Path, args: &[&str]) -> String {
 
 /// A repository with one commit, and the sha of that commit.
 struct Origin {
-    dir: tempfile::TempDir,
+    dir: quench_core::tmp::TempDir,
     sha: String,
 }
 
 impl Origin {
     fn create() -> Self {
-        let dir = tempfile::tempdir().expect("temp dir");
+        let dir = quench_core::tmp::TempDir::new().expect("temp dir");
         git(dir.path(), &["init", "--quiet", "-b", "master"]);
         std::fs::write(dir.path().join("README.md"), b"origin content\n").expect("write");
         std::fs::write(dir.path().join(".conveyor.toml"), b"# pipeline\n").expect("write");
@@ -232,7 +232,7 @@ const fn request<'a>(url: &'a str, git_ref: &'a str, sha: &'a str) -> CheckoutRe
 async fn a_commit_is_checked_out_at_the_requested_sha() {
     let origin = Origin::create();
     let url = origin.url();
-    let work = tempfile::tempdir().expect("temp dir");
+    let work = quench_core::tmp::TempDir::new().expect("temp dir");
 
     let req = request(&url, "refs/heads/master", &origin.sha);
 
@@ -255,7 +255,7 @@ async fn the_checkout_is_detached_from_any_branch() {
     // `git describe` would report something other than what is being built.
     let origin = Origin::create();
     let url = origin.url();
-    let work = tempfile::tempdir().expect("temp dir");
+    let work = quench_core::tmp::TempDir::new().expect("temp dir");
 
     let req = request(&url, "refs/heads/master", &origin.sha);
 
@@ -270,7 +270,7 @@ async fn the_checkout_is_detached_from_any_branch() {
 async fn the_checkout_lands_in_a_directory_named_for_the_run() {
     let origin = Origin::create();
     let url = origin.url();
-    let work = tempfile::tempdir().expect("temp dir");
+    let work = quench_core::tmp::TempDir::new().expect("temp dir");
 
     let req = request(&url, "refs/heads/master", &origin.sha);
 
@@ -287,7 +287,7 @@ async fn the_checkout_lands_in_a_directory_named_for_the_run() {
 async fn a_retry_does_not_inherit_the_previous_attempts_directory() {
     let origin = Origin::create();
     let url = origin.url();
-    let work = tempfile::tempdir().expect("temp dir");
+    let work = quench_core::tmp::TempDir::new().expect("temp dir");
 
     let req = request(&url, "refs/heads/master", &origin.sha);
 
@@ -309,7 +309,7 @@ async fn a_retry_does_not_inherit_the_previous_attempts_directory() {
 async fn removing_a_workspace_deletes_it() {
     let origin = Origin::create();
     let url = origin.url();
-    let work = tempfile::tempdir().expect("temp dir");
+    let work = quench_core::tmp::TempDir::new().expect("temp dir");
 
     let req = request(&url, "refs/heads/master", &origin.sha);
 
@@ -325,7 +325,7 @@ async fn removing_a_workspace_deletes_it() {
 async fn an_unknown_sha_fails_the_checkout() {
     let origin = Origin::create();
     let url = origin.url();
-    let work = tempfile::tempdir().expect("temp dir");
+    let work = quench_core::tmp::TempDir::new().expect("temp dir");
 
     let req = request(
         &url,
@@ -341,7 +341,7 @@ async fn an_unknown_sha_fails_the_checkout() {
 
 #[tokio::test]
 async fn a_hostile_ref_never_reaches_git() {
-    let work = tempfile::tempdir().expect("temp dir");
+    let work = quench_core::tmp::TempDir::new().expect("temp dir");
     let req = CheckoutRequest {
         clone_url: "file:///nonexistent",
         git_ref: "--upload-pack=/tmp/pwned",
@@ -367,7 +367,7 @@ async fn a_hostile_ref_never_reaches_git() {
 
 #[tokio::test]
 async fn a_missing_origin_fails_rather_than_hanging() {
-    let work = tempfile::tempdir().expect("temp dir");
+    let work = quench_core::tmp::TempDir::new().expect("temp dir");
     let req = CheckoutRequest {
         clone_url: "file:///definitely/not/a/repository",
         git_ref: "refs/heads/master",
@@ -391,9 +391,8 @@ async fn a_missing_origin_fails_rather_than_hanging() {
 
 #[test]
 fn the_auth_header_base64_encodes_username_and_token() {
-    use base64::Engine;
     let header = basic_auth_header("x-access-token", "s3cr3t");
-    let expected = base64::engine::general_purpose::STANDARD.encode("x-access-token:s3cr3t");
+    let expected = quench_core::base64::STANDARD.encode("x-access-token:s3cr3t");
     assert_eq!(header, format!("Authorization: Basic {expected}"));
 }
 
@@ -423,7 +422,7 @@ async fn a_credential_does_not_break_a_checkout_that_did_not_need_one() {
     // to keep working once this existed.
     let origin = Origin::create();
     let url = origin.url();
-    let work = tempfile::tempdir().expect("temp dir");
+    let work = quench_core::tmp::TempDir::new().expect("temp dir");
 
     let req = CheckoutRequest {
         clone_url: &url,

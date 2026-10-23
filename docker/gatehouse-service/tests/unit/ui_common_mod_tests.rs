@@ -1,5 +1,4 @@
 use gatehouse_service::ui::common::{UiPageKind, ensure_assets, render_page, supported_locales};
-use http_body_util::BodyExt;
 use quench_web::prelude::*;
 
 #[test]
@@ -18,10 +17,19 @@ async fn render_page_wraps_content_in_html_for_every_page_kind() {
         UiPageKind::Admin,
         UiPageKind::Account,
     ] {
-        let resp = render_page(http::StatusCode::OK, div().text("marker-content"), kind);
-        assert_eq!(resp.status(), http::StatusCode::OK);
-        let collected = resp.into_hyper().into_body().collect().await.expect("body");
-        let html = String::from_utf8(collected.to_bytes().to_vec()).expect("utf8");
+        let resp = render_page(
+            quench_http::http::StatusCode::OK,
+            div().text("marker-content"),
+            kind,
+        );
+        assert_eq!(resp.status(), quench_http::http::StatusCode::OK);
+        let collected = resp
+            .into_inner()
+            .body
+            .collect_limited(usize::MAX)
+            .await
+            .expect("body");
+        let html = String::from_utf8(collected.to_vec()).expect("utf8");
         assert!(html.contains("marker-content"));
     }
 }

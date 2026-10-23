@@ -6,7 +6,7 @@
 
 use crate::support;
 
-use serde_json::json;
+use quench_serde::json;
 use welder::engine::tools::{is_command_allowed, run_tool, safe_rel_path, tool_help};
 
 // -----------------------------------------------------------------
@@ -44,8 +44,8 @@ fn allows_paths_that_do_not_exist_yet() {
 fn rejects_symlink_escape() {
     let _guard = support::cwd_lock().lock().unwrap();
 
-    let tmp = tempfile::tempdir().unwrap();
-    let outside = tempfile::tempdir().unwrap();
+    let tmp = quench_core::tmp::TempDir::new().unwrap();
+    let outside = quench_core::tmp::TempDir::new().unwrap();
     std::fs::write(outside.path().join("secret.txt"), "hi").unwrap();
     std::os::unix::fs::symlink(outside.path(), tmp.path().join("escape")).unwrap();
 
@@ -131,12 +131,12 @@ fn tool_help_skips_an_unknown_tool_and_omits_the_allowlist_line_without_run_cmd(
 struct WithTempCwd {
     _guard: std::sync::MutexGuard<'static, ()>,
     original: std::path::PathBuf,
-    dir: tempfile::TempDir,
+    dir: quench_core::tmp::TempDir,
 }
 
 fn with_temp_cwd() -> WithTempCwd {
     let guard = support::cwd_lock().lock().unwrap();
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let original = std::env::current_dir().unwrap();
     std::env::set_current_dir(dir.path()).unwrap();
     WithTempCwd {

@@ -1,8 +1,8 @@
 //! Authenticated, owner-scoped JSON API. No browser routes or local login UI.
 
-use async_trait::async_trait;
 use quench_auth::domain::jwt::{Claims, JwtConfig};
 use quench_auth::http::middleware::auth::Auth;
+use quench_core::async_trait;
 use quench_http::prelude::{Endpoint, FromRequest, HttpError, OnPathPrefix, Request, wrap};
 
 pub mod api_error;

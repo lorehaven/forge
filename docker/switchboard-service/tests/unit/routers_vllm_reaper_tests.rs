@@ -3,8 +3,8 @@
 //! `MockVllmEngine` never produces a `Failed` instance itself, so this uses a
 //! small dedicated test engine that can be told exactly what to report.
 
-use async_trait::async_trait;
-use chrono::Utc;
+use quench_core::async_trait;
+use quench_core::time::Time;
 use std::sync::{Arc, Mutex};
 use switchboard_service::routers::vllm::engine::VllmEngine;
 use switchboard_service::routers::vllm::reaper::reap_failed;
@@ -26,7 +26,7 @@ fn instance(id: &str, status: &str) -> VllmInstance {
         enable_tool_calling: false,
         task: None,
         device: None,
-        started_at: Utc::now(),
+        started_at: Time::now(),
         status: status.to_string(),
         log_path: None,
         last_error: None,

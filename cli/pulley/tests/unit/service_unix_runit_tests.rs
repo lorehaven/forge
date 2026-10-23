@@ -91,12 +91,14 @@ fn scan_dir_returns_one_of_the_documented_candidates_or_none() {
 fn set_executable_sets_the_owner_execute_bit() {
     use std::os::unix::fs::PermissionsExt;
 
-    let file = tempfile::NamedTempFile::new().unwrap();
-    std::fs::set_permissions(file.path(), std::fs::Permissions::from_mode(0o644)).unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
+    let file = dir.path().join("script.sh");
+    std::fs::write(&file, "#!/bin/sh\n").unwrap();
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
 
-    set_executable(file.path()).unwrap();
+    set_executable(&file).unwrap();
 
-    let mode = std::fs::metadata(file.path()).unwrap().permissions().mode();
+    let mode = std::fs::metadata(&file).unwrap().permissions().mode();
     assert_eq!(mode & 0o777, 0o755);
 }
 

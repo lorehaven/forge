@@ -1,5 +1,4 @@
-use chrono::Utc;
-use sqlx::types::Json;
+use quench_core::time::Time;
 use warehouse_service::domain::artifact::{ArtifactMetadata, ArtifactVersion, Platform};
 use warehouse_service::routers::artifacts::ops::{ArtifactView, latest_of};
 
@@ -21,7 +20,7 @@ fn version(program: &str, platform: Platform, version_code: i64, yanked: bool) -
         size_bytes: 1024,
         sha256: "deadbeef".to_string(),
         label: Some("Test App".to_string()),
-        metadata: Json(if platform == Platform::Android {
+        metadata: if platform == Platform::Android {
             ArtifactMetadata {
                 min_sdk_version: Some(21),
                 target_sdk_version: Some(34),
@@ -29,10 +28,10 @@ fn version(program: &str, platform: Platform, version_code: i64, yanked: bool) -
             }
         } else {
             ArtifactMetadata::default()
-        }),
+        },
         uploaded_by: "dev".to_string(),
         yanked,
-        created_at: Utc::now(),
+        created_at: Time::now(),
     }
 }
 
@@ -71,7 +70,7 @@ fn artifact_view_flattens_metadata_and_hides_the_storage_key() {
     assert_eq!(view.min_sdk_version, Some(21));
     assert_eq!(view.permissions, vec!["android.permission.INTERNET"]);
 
-    let json = serde_json::to_value(&view).expect("serializable");
+    let json = quench_serde::to_value(&view);
     assert!(json.get("id").is_none(), "id should not be exposed: {json}");
     assert_eq!(
         json.get("platform").and_then(|v| v.as_str()),

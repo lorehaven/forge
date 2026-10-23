@@ -5,11 +5,9 @@
 //! the overlay repo: the check now ships with riveter itself rather than as
 //! a separate script an overlay repo has to carry around.
 
-use anyhow::{Context as _, Result, bail};
-use base64::Engine as _;
+use quench_client::blocking::Client;
+use quench_core::{Context as _, Result, bail};
 use regex::Regex;
-use reqwest::blocking::Client;
-use reqwest::header::{AUTHORIZATION, HeaderValue};
 use std::collections::BTreeMap;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -205,8 +203,8 @@ pub struct RegistryCredentials {
 impl RegistryCredentials {
     #[must_use]
     pub fn basic_auth_header(&self) -> String {
-        let token = base64::engine::general_purpose::STANDARD
-            .encode(format!("{}:{}", self.username, self.password));
+        let token =
+            quench_core::base64::STANDARD.encode(format!("{}:{}", self.username, self.password));
         format!("Basic {token}")
     }
 }
@@ -321,18 +319,22 @@ pub fn docker_config_credentials() -> BTreeMap<String, RegistryCredentials> {
     let Ok(text) = std::fs::read_to_string(&config_path) else {
         return BTreeMap::new();
     };
-    let Ok(data) = serde_json::from_str::<serde_json::Value>(&text) else {
+    let Ok(data) = quench_serde::json::from_str::<quench_serde::Value>(&text) else {
         return BTreeMap::new();
     };
-    let Some(auths) = data.get("auths").and_then(serde_json::Value::as_object) else {
+    let Some(auths) = data.get("auths").and_then(quench_serde::Value::as_object) else {
         return BTreeMap::new();
     };
 
     let mut credentials = BTreeMap::new();
     for (raw_registry, raw_auth) in auths {
         let registry = normalize_registry_key(raw_registry);
-        let username = raw_auth.get("username").and_then(serde_json::Value::as_str);
-        let password = raw_auth.get("password").and_then(serde_json::Value::as_str);
+        let username = raw_auth
+            .get("username")
+            .and_then(quench_serde::Value::as_str);
+        let password = raw_auth
+            .get("password")
+            .and_then(quench_serde::Value::as_str);
         if let (Some(username), Some(password)) = (username, password) {
             credentials.insert(
                 registry,
@@ -344,10 +346,10 @@ pub fn docker_config_credentials() -> BTreeMap<String, RegistryCredentials> {
             continue;
         }
 
-        let Some(encoded) = raw_auth.get("auth").and_then(serde_json::Value::as_str) else {
+        let Some(encoded) = raw_auth.get("auth").and_then(quench_serde::Value::as_str) else {
             continue;
         };
-        let Ok(decoded) = base64::engine::general_purpose::STANDARD
+        let Ok(decoded) = quench_core::base64::STANDARD
             .decode(encoded)
             .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
         else {
@@ -368,7 +370,7 @@ pub fn docker_config_credentials() -> BTreeMap<String, RegistryCredentials> {
 pub fn encode_repository_path(repository: &str) -> String {
     repository
         .split('/')
-        .map(urlencoding::encode)
+        .map(quench_serde::urlencoded::percent_encode)
         .collect::<Vec<_>>()
         .join("/")
 }
@@ -412,7 +414,7 @@ fn docker_hub_tags(client: &Client, repository: &str) -> Result<Vec<String>, Fet
         .send()
         .map_err(|err| FetchError::Unreachable(format!("failed to reach {url}: {err}")))?;
     let status = response.status();
-    let body: serde_json::Value = response
+    let body: quench_serde::Value = response
         .json()
         .map_err(|err| FetchError::Other(format!("unexpected Docker Hub response: {err}")))?;
     if !status.is_success() {
@@ -421,10 +423,10 @@ fn docker_hub_tags(client: &Client, repository: &str) -> Result<Vec<String>, Fet
 
     Ok(body
         .get("results")
-        .and_then(serde_json::Value::as_array)
+        .and_then(quench_serde::Value::as_array)
         .into_iter()
         .flatten()
-        .filter_map(|item| item.get("name").and_then(serde_json::Value::as_str))
+        .filter_map(|item| item.get("name").and_then(quench_serde::Value::as_str))
         .map(std::string::ToString::to_string)
         .collect())
 }
@@ -459,13 +461,13 @@ pub(crate) fn bearer_token(
         request = request.query(&[("service", service.as_str())]);
     }
     if let Some(header) = basic_auth_header {
-        request = request.header(AUTHORIZATION, HeaderValue::from_str(header).ok()?);
+        request = request.header("authorization", header);
     }
 
-    let data: serde_json::Value = request.send().ok()?.json().ok()?;
+    let data: quench_serde::Value = request.send().ok()?.json().ok()?;
     data.get("token")
         .or_else(|| data.get("access_token"))
-        .and_then(serde_json::Value::as_str)
+        .and_then(quench_serde::Value::as_str)
         .map(std::string::ToString::to_string)
 }
 
@@ -513,22 +515,18 @@ pub fn registry_v2_tags(
 
         let mut request = client.get(&url);
         if let Some(header) = &auth_header {
-            request = request.header(
-                AUTHORIZATION,
-                HeaderValue::from_str(header)
-                    .map_err(|err| FetchError::Other(format!("invalid auth header: {err}")))?,
-            );
+            request = request.header("authorization", header);
         }
         let response = request
             .send()
             .map_err(|err| FetchError::Unreachable(format!("failed to reach {url}: {err}")))?;
 
-        if response.status() == reqwest::StatusCode::UNAUTHORIZED
-            || response.status() == reqwest::StatusCode::FORBIDDEN
+        if response.status() == quench_client::transport::StatusCode::UNAUTHORIZED
+            || response.status() == quench_client::transport::StatusCode::FORBIDDEN
         {
             let challenge = response
                 .headers()
-                .get(reqwest::header::WWW_AUTHENTICATE)
+                .get(&quench_client::transport::header::WWW_AUTHENTICATE)
                 .and_then(|value| value.to_str().ok())
                 .unwrap_or_default()
                 .to_string();
@@ -549,11 +547,7 @@ pub fn registry_v2_tags(
 
             let retried = client
                 .get(&url)
-                .header(
-                    AUTHORIZATION,
-                    HeaderValue::from_str(&candidate)
-                        .map_err(|err| FetchError::Other(format!("invalid auth header: {err}")))?,
-                )
+                .header("authorization", &candidate)
                 .send()
                 .map_err(|err| FetchError::Unreachable(format!("failed to reach {url}: {err}")))?;
             if !retried.status().is_success() {
@@ -565,7 +559,7 @@ pub fn registry_v2_tags(
                 )));
             }
             auth_header = Some(candidate);
-            next_url = extract_next(retried, &mut tags)?;
+            next_url = extract_next(retried, &url, &mut tags)?;
             continue;
         }
 
@@ -575,32 +569,32 @@ pub fn registry_v2_tags(
                 response.status()
             )));
         }
-        next_url = extract_next(response, &mut tags)?;
+        next_url = extract_next(response, &url, &mut tags)?;
     }
 
     Ok(tags)
 }
 
 fn extract_next(
-    response: reqwest::blocking::Response,
+    response: quench_client::blocking::Response,
+    requested_url: &str,
     tags: &mut Vec<String>,
 ) -> Result<Option<String>, FetchError> {
-    let requested_url = response.url().clone();
     let link = response
         .headers()
-        .get(reqwest::header::LINK)
+        .get(&quench_client::transport::header::LINK)
         .and_then(|value| value.to_str().ok())
         .unwrap_or_default()
         .to_string();
-    let body: serde_json::Value = response
+    let body: quench_serde::Value = response
         .json()
         .map_err(|err| FetchError::Other(format!("unexpected registry response: {err}")))?;
 
-    if let Some(values) = body.get("tags").and_then(serde_json::Value::as_array) {
+    if let Some(values) = body.get("tags").and_then(quench_serde::Value::as_array) {
         tags.extend(
             values
                 .iter()
-                .filter_map(serde_json::Value::as_str)
+                .filter_map(quench_serde::Value::as_str)
                 .map(std::string::ToString::to_string),
         );
     }
@@ -609,8 +603,8 @@ fn extract_next(
         .captures(&link)
         .and_then(|c| c.get(1))
         .map(|next| {
-            requested_url
-                .join(next.as_str())
+            quench_client::transport::Uri::parse(requested_url)
+                .and_then(|base| base.resolve(next.as_str()))
                 .map_or_else(|_| next.as_str().to_string(), |joined| joined.to_string())
         }))
 }
@@ -968,18 +962,14 @@ pub fn resolve_digest(
         "{scheme}://{}/v2/{}/manifests/{}",
         image.registry,
         encode_repository_path(&image.repository),
-        urlencoding::encode(&image.tag)
+        quench_serde::urlencoded::percent_encode(&image.tag)
     );
-    let send = |method: reqwest::Method, authorization: Option<&str>| {
+    let send = |method: quench_client::transport::Method, authorization: Option<&str>| {
         let mut request = client
             .request(method, &url)
-            .header(reqwest::header::ACCEPT, MANIFEST_ACCEPT);
+            .header(quench_client::transport::header::ACCEPT, MANIFEST_ACCEPT);
         if let Some(header) = authorization {
-            request = request.header(
-                AUTHORIZATION,
-                HeaderValue::from_str(header)
-                    .map_err(|err| FetchError::Other(format!("invalid auth header: {err}")))?,
-            );
+            request = request.header("authorization", header);
         }
         request
             .send()
@@ -987,15 +977,16 @@ pub fn resolve_digest(
     };
 
     let mut authorization: Option<String> = None;
-    let mut response = send(reqwest::Method::HEAD, None)?;
+    let mut response = send(quench_client::transport::Method::HEAD, None)?;
 
     if matches!(
         response.status(),
-        reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN
+        quench_client::transport::StatusCode::UNAUTHORIZED
+            | quench_client::transport::StatusCode::FORBIDDEN
     ) {
         let challenge = response
             .headers()
-            .get(reqwest::header::WWW_AUTHENTICATE)
+            .get(&quench_client::transport::header::WWW_AUTHENTICATE)
             .and_then(|value| value.to_str().ok())
             .unwrap_or_default()
             .to_string();
@@ -1011,7 +1002,7 @@ pub fn resolve_digest(
                 ))
             })?;
 
-        response = send(reqwest::Method::HEAD, Some(&candidate))?;
+        response = send(quench_client::transport::Method::HEAD, Some(&candidate))?;
         if !response.status().is_success() {
             return Err(FetchError::Denied(format!(
                 "registry {} denied access to {}: HTTP {}",
@@ -1039,9 +1030,12 @@ pub fn resolve_digest(
         return Ok(digest.to_string());
     }
 
-    let body = send(reqwest::Method::GET, authorization.as_deref())?
-        .bytes()
-        .map_err(|err| FetchError::Other(format!("could not read {url}: {err}")))?;
+    let body = send(
+        quench_client::transport::Method::GET,
+        authorization.as_deref(),
+    )?
+    .bytes()
+    .map_err(|err| FetchError::Other(format!("could not read {url}: {err}")))?;
     Ok(format!("sha256:{}", rivet_package::sha256_hex(&body)))
 }
 
@@ -1076,6 +1070,6 @@ impl crate::package::DigestResolver for RegistryDigests {
             }
             other => other,
         };
-        resolved.map_err(|err| anyhow::anyhow!("{}: {err}", image.original))
+        resolved.map_err(|err| quench_core::err!("{}: {err}", image.original))
     }
 }

@@ -13,12 +13,12 @@ use crate::email::Sender;
 use crate::notify::{self, Context, Outcome, Request as NotifyRequest};
 use crate::ratelimit::RateLimiter;
 use crate::tokens::VerificationTokens;
-use async_trait::async_trait;
-use http::StatusCode;
 use quench_auth::domain::jwt::Claims;
+use quench_core::async_trait;
 use quench_db::prelude::Db;
+use quench_http::http::StatusCode;
 use quench_http::prelude::{FromRequest, HttpError, Inject, Json, Response, post};
-use serde::{Deserialize, Serialize};
+use quench_serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -35,7 +35,7 @@ impl FromRequest for NotifyClaims {
     async fn from_request(req: &mut quench_http::prelude::Request) -> Result<Self, HttpError> {
         let SubjectClaims(claims) = SubjectClaims::from_request(req).await?;
         if !claims.can("gatehouse", "notify") {
-            tracing::warn!(
+            quench_log::warn!(
                 "{} lacks gatehouse:notify; refusing to send a notification",
                 claims.sub
             );
@@ -134,7 +134,7 @@ async fn notify_user(
             },
         ),
     };
-    tracing::info!(
+    quench_log::info!(
         "notify {} for {} from {}: {}{}",
         request.template,
         request.username,

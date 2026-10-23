@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use quench_serde::Deserialize;
 use std::collections::HashMap;
 
 #[derive(Debug, Deserialize)]

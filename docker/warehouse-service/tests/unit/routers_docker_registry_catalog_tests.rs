@@ -1,6 +1,6 @@
 use crate::support;
 
-use http::Method;
+use quench_http::http::Method;
 use support::WithDockerStorageRoot as WithStorageRoot;
 use warehouse_service::routers::docker::register_routes;
 
@@ -12,7 +12,7 @@ fn with_repos(repos: &[&str]) -> WithStorageRoot {
     storage
 }
 
-#[derive(serde::Deserialize)]
+#[derive(quench_serde::Deserialize)]
 struct CatalogResponseForTest {
     repositories: Vec<String>,
 }
@@ -32,11 +32,11 @@ async fn handle_lists_every_repository_when_under_the_default_page_size() {
     let (app, container) = app().await;
     let req = support::req(Method::GET, "/v2/_catalog", &container);
     let resp = app.call(req).await;
-    assert_eq!(resp.status(), http::StatusCode::OK);
+    assert_eq!(resp.status(), quench_http::http::StatusCode::OK);
     let (headers, body) = support::parts(resp).await;
     assert!(!headers.contains_key("link"));
 
-    let body: CatalogResponseForTest = serde_json::from_str(&body).unwrap();
+    let body: CatalogResponseForTest = quench_serde::json::from_str(&body).unwrap();
     assert_eq!(
         body.repositories,
         vec!["alpha".to_string(), "beta".to_string()]
@@ -49,12 +49,12 @@ async fn handle_paginates_with_n_and_sets_a_link_header_when_more_remain() {
     let (app, container) = app().await;
     let req = support::req(Method::GET, "/v2/_catalog?n=2", &container);
     let resp = app.call(req).await;
-    assert_eq!(resp.status(), http::StatusCode::OK);
+    assert_eq!(resp.status(), quench_http::http::StatusCode::OK);
     let (headers, body) = support::parts(resp).await;
     let link = headers.get("link").unwrap().to_str().unwrap();
     assert!(link.contains("last=beta"), "{link}");
 
-    let body: CatalogResponseForTest = serde_json::from_str(&body).unwrap();
+    let body: CatalogResponseForTest = quench_serde::json::from_str(&body).unwrap();
     assert_eq!(
         body.repositories,
         vec!["alpha".to_string(), "beta".to_string()]
@@ -68,7 +68,7 @@ async fn handle_resumes_after_the_last_seen_repository() {
     let req = support::req(Method::GET, "/v2/_catalog?last=alpha", &container);
     let resp = app.call(req).await;
     let body = support::json_body(resp).await;
-    let body: CatalogResponseForTest = serde_json::from_value(body).unwrap();
+    let body: CatalogResponseForTest = quench_serde::from_value(&body).unwrap();
     assert_eq!(
         body.repositories,
         vec!["beta".to_string(), "gamma".to_string()]

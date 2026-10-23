@@ -3,9 +3,9 @@
 use crate::catalog::PermissionCatalog;
 use crate::services::{ServiceLink, enabled_services};
 use crate::ui::common::{UiPageKind, render_page};
-use async_trait::async_trait;
 use quench_auth::domain::jwt::JwtConfig;
 use quench_auth::http::routers::ui::{get_user_from_req, is_ui_authenticated};
+use quench_core::async_trait;
 use quench_http::prelude::{FromRequest, HttpError, Inject, Request, Response, get};
 use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
@@ -104,7 +104,7 @@ pub fn render_home_page(admin: bool, services: &[ServiceLink]) -> Response {
     }
 
     render_page(
-        http::StatusCode::OK,
+        quench_http::http::StatusCode::OK,
         content().class("home-content").child(
             div()
                 .class("home-container")

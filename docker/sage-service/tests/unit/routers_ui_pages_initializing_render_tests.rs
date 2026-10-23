@@ -52,7 +52,7 @@ fn state_presentation_covers_every_state() {
 #[test]
 fn render_model_rows_shows_unknown_state_when_switchboard_is_unreachable() {
     let defaults = vec![default_model("llama", None)];
-    let err: anyhow::Result<Vec<VllmInstance>> = Err(anyhow::anyhow!("unreachable"));
+    let err: quench_core::Result<Vec<VllmInstance>> = Err(quench_core::err!("unreachable"));
     let html = render_model_rows(&defaults, &err).render();
     assert!(html.contains("model-row--unknown"));
 }
@@ -72,7 +72,7 @@ fn render_model_rows_reflects_each_models_own_state() {
         enable_prefix_caching: false,
         task: None,
         device: None,
-        started_at: chrono::Utc::now(),
+        started_at: quench_core::time::Time::now(),
         status: "running".to_string(),
     }]);
     let html = render_model_rows(&defaults, &instances).render();
@@ -85,11 +85,11 @@ fn render_model_rows_reflects_each_models_own_state() {
 fn render_initializing_page_shows_a_warning_only_when_switchboard_is_down() {
     let defaults = vec![default_model("llama", None)];
 
-    let ok: anyhow::Result<Vec<VllmInstance>> = Ok(Vec::new());
+    let ok: quench_core::Result<Vec<VllmInstance>> = Ok(Vec::new());
     let up_html = render_initializing_page(&defaults, &ok);
     assert!(up_html.status().is_success());
 
-    let err: anyhow::Result<Vec<VllmInstance>> = Err(anyhow::anyhow!("down"));
+    let err: quench_core::Result<Vec<VllmInstance>> = Err(quench_core::err!("down"));
     let down_html = render_initializing_page(&defaults, &err);
     assert!(down_html.status().is_success());
 }

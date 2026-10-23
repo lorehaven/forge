@@ -23,9 +23,9 @@ async fn list_instances_impl(engine: Arc<Arc<dyn VllmEngine>>) -> Response {
     match engine.list_instances().await {
         Ok(list) => Json(list).into_response(),
         Err(err) => {
-            tracing::error!("Failed to list vLLM instances: {}", err);
+            quench_log::error!("Failed to list vLLM instances: {}", err);
             Response::text(
-                http::StatusCode::INTERNAL_SERVER_ERROR,
+                quench_http::http::StatusCode::INTERNAL_SERVER_ERROR,
                 "api_error_vllm_list_failed",
             )
         }
@@ -42,12 +42,12 @@ pub async fn handle_grid(
     match engine.list_instances().await {
         Ok(instances) => {
             let html = render_instances_grid(&instances, can_stop);
-            Response::html(http::StatusCode::OK, html)
+            Response::html(quench_http::http::StatusCode::OK, html)
         }
         Err(err) => {
-            tracing::error!("Failed to list vLLM instances for grid: {}", err);
+            quench_log::error!("Failed to list vLLM instances for grid: {}", err);
             Response::text(
-                http::StatusCode::INTERNAL_SERVER_ERROR,
+                quench_http::http::StatusCode::INTERNAL_SERVER_ERROR,
                 "api_error_vllm_list_failed",
             )
         }
@@ -166,7 +166,7 @@ fn instance_meta(instance: &VllmInstance) -> Element {
             "Started",
             span()
                 .class("instance-started")
-                .text(instance.started_at.format("%Y-%m-%d %H:%M:%S").to_string()),
+                .text(instance.started_at.format("%Y-%m-%d %H:%M:%S")),
         ))
 }
 

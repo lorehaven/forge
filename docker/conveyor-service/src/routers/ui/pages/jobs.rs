@@ -2,8 +2,8 @@
 //! stream per job on page load, since `sse-connect` fires as soon as it exists.
 
 use crate::routers::ui::common::{is_ui_authenticated, ui_login_redirect_for};
-use async_trait::async_trait;
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::async_trait;
 use quench_http::prelude::{
     FromRequest, HttpError, Path, Request, Response, get, http::StatusCode,
 };

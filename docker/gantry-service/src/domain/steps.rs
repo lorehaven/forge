@@ -5,7 +5,7 @@
 //! because there is no way to say one. Every value that reaches a command line is validated first
 //! (`validate`) and then passed as its own argument, never through a shell.
 
-use serde::{Deserialize, Serialize};
+use quench_serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// The workload kinds a step may scale or wait on.
@@ -279,23 +279,23 @@ fn validate_edit(yaml: &str, namespace: Option<&str>, allowed: &[String]) -> Res
     if yaml.len() > MAX_YAML_BYTES {
         return Err(format!("the YAML is over {} KiB", MAX_YAML_BYTES / 1024));
     }
-    let doc: serde_norway::Value =
-        serde_norway::from_str(yaml).map_err(|e| format!("the YAML does not parse: {e}"))?;
+    let doc: quench_serde::Value =
+        quench_serde::yaml::from_str(yaml).map_err(|e| format!("the YAML does not parse: {e}"))?;
     doc.get("kind")
-        .and_then(serde_norway::Value::as_str)
+        .and_then(quench_serde::Value::as_str)
         .ok_or("the YAML has no kind")?;
     doc.get("metadata")
         .and_then(|m| m.get("name"))
-        .and_then(serde_norway::Value::as_str)
+        .and_then(quench_serde::Value::as_str)
         .ok_or("the YAML has no metadata.name")?;
-    if doc.get("kind").and_then(serde_norway::Value::as_str) == Some("Secret") {
+    if doc.get("kind").and_then(quench_serde::Value::as_str) == Some("Secret") {
         return Err("a Secret is not edited here".to_string());
     }
     // What the YAML says must be what the step says: no editing one namespace through another.
     let declared = doc
         .get("metadata")
         .and_then(|m| m.get("namespace"))
-        .and_then(serde_norway::Value::as_str);
+        .and_then(quench_serde::Value::as_str);
     if declared != namespace {
         return Err(format!(
             "the YAML's namespace ({}) is not the one the step targets ({})",
@@ -490,7 +490,7 @@ fn workload_name(resource: &str) -> Option<&str> {
 /// `Deployment/name` from edited YAML, for a step's description.
 #[must_use]
 pub fn yaml_identity(yaml: &str) -> String {
-    serde_norway::from_str::<serde_norway::Value>(yaml)
+    quench_serde::yaml::from_str::<quench_serde::Value>(yaml)
         .ok()
         .and_then(|doc| {
             let kind = doc.get("kind")?.as_str()?.to_string();

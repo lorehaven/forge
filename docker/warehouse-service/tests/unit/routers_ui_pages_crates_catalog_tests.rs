@@ -1,9 +1,8 @@
 use crate::support;
 
-use http::{Method, StatusCode};
-use http_body_util::BodyExt;
 use quench_auth::domain::jwt::JwtConfig;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{Method, StatusCode};
 use std::collections::HashMap;
 use support::WithCratesStorageRoot as WithStorageRoot;
 use warehouse_service::routers::crates::index_file_path;
@@ -14,7 +13,7 @@ fn write_index_line(name: &str, record: &IndexRecord) {
     let path = index_file_path(name).expect("valid name");
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     let mut content = std::fs::read_to_string(&path).unwrap_or_default();
-    content.push_str(&serde_json::to_string(record).unwrap());
+    content.push_str(&quench_serde::json::to_string(record));
     content.push('\n');
     std::fs::write(&path, content).unwrap();
 }
@@ -35,8 +34,13 @@ fn sample_record(version: &str, yanked: bool) -> IndexRecord {
 }
 
 async fn body_html(resp: quench_http::response::Response) -> String {
-    let collected = resp.into_hyper().into_body().collect().await.unwrap();
-    String::from_utf8(collected.to_bytes().to_vec()).unwrap()
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .unwrap();
+    String::from_utf8(collected.to_vec()).unwrap()
 }
 
 // -----------------------------------------------------------------

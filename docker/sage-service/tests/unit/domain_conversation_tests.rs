@@ -17,7 +17,7 @@ fn test_context_window_management() {
         role: "user".to_string(),
         content: "Hello, how are you?".to_string(),
         parent_id: None,
-        created_at: chrono::Utc::now(),
+        created_at: quench_core::time::Time::now(),
     };
 
     let msg2 = ConversationMessage {
@@ -25,7 +25,7 @@ fn test_context_window_management() {
         role: "assistant".to_string(),
         content: "I'm doing well, thank you for asking!".to_string(),
         parent_id: Some("1".to_string()),
-        created_at: chrono::Utc::now(),
+        created_at: quench_core::time::Time::now(),
     };
 
     ctx.add_message(msg1);
@@ -45,7 +45,7 @@ fn test_conversation_branching() {
         role: "user".to_string(),
         content: "Question".to_string(),
         parent_id: None,
-        created_at: chrono::Utc::now(),
+        created_at: quench_core::time::Time::now(),
     };
 
     let first_answer = ConversationMessage {
@@ -53,7 +53,7 @@ fn test_conversation_branching() {
         role: "assistant".to_string(),
         content: "Answer A".to_string(),
         parent_id: Some("1".to_string()),
-        created_at: chrono::Utc::now(),
+        created_at: quench_core::time::Time::now(),
     };
 
     let second_answer = ConversationMessage {
@@ -61,7 +61,7 @@ fn test_conversation_branching() {
         role: "assistant".to_string(),
         content: "Answer B (different)".to_string(),
         parent_id: Some("1".to_string()),
-        created_at: chrono::Utc::now(),
+        created_at: quench_core::time::Time::now(),
     };
 
     ctx.add_message(msg1);

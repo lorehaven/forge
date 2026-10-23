@@ -1,7 +1,8 @@
 use crate::domain::{RegistryConfig, RegistryCratesConfig, crates_api_url, crates_index_url};
-use anyhow::{Context, Result, bail};
-use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
-use serde::Deserialize;
+use quench_client::transport::header::AUTHORIZATION;
+use quench_client::transport::{HeaderMap, HeaderValue};
+use quench_core::{Context, Result, bail};
+use quench_serde::Deserialize;
 
 // ---------------------------------------------------------------------------
 // Wire types
@@ -60,12 +61,12 @@ struct OkResponse {
 // ---------------------------------------------------------------------------
 
 pub struct CratesApi {
-    client: reqwest::Client,
+    client: quench_client::transport::Client,
 }
 
 impl CratesApi {
     pub fn new(config: &RegistryCratesConfig) -> Result<Self> {
-        let client = reqwest::Client::builder()
+        let client = quench_client::transport::Client::builder()
             .danger_accept_invalid_certs(config.insecure_tls)
             .build()
             .context("failed to build HTTP client")?;
@@ -104,7 +105,7 @@ impl CratesApi {
         let url = crates_index_url(&registry.crates, &registry.base_path, crate_name)?;
         let resp = self.get_authed(&registry.crates, &url).await?;
 
-        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+        if resp.status() == quench_client::transport::StatusCode::NOT_FOUND {
             bail!("crate '{}' not found", crate_name);
         }
         ensure_success(&resp, &url)?;
@@ -117,7 +118,7 @@ impl CratesApi {
         let records: Vec<IndexRecord> = body
             .lines()
             .filter(|l| !l.trim().is_empty())
-            .filter_map(|l| serde_json::from_str(l).ok())
+            .filter_map(|l| quench_serde::json::from_str(l).ok())
             .collect();
 
         if records.is_empty() {
@@ -137,16 +138,11 @@ impl CratesApi {
         let endpoint = format!("/api/v1/crates/{crate_name}/{version}/yank");
         let url = crates_api_url(&registry.crates, &registry.base_path, &endpoint)?;
 
-        let req = self
+        let resp = self
             .client
             .delete(&url)
             .headers(auth_headers(&registry.crates)?)
-            .build()
-            .context("failed to build yank request")?;
-
-        let resp = self
-            .client
-            .execute(req)
+            .send()
             .await
             .with_context(|| format!("request failed: DELETE {url}"))?;
 
@@ -172,17 +168,12 @@ impl CratesApi {
         let endpoint = format!("/api/v1/crates/{crate_name}/{version}/unyank");
         let url = crates_api_url(&registry.crates, &registry.base_path, &endpoint)?;
 
-        let req = self
+        let resp = self
             .client
             .put(&url)
             .headers(auth_headers(&registry.crates)?)
             .header("Content-Length", "0")
-            .build()
-            .context("failed to build unyank request")?;
-
-        let resp = self
-            .client
-            .execute(req)
+            .send()
             .await
             .with_context(|| format!("request failed: PUT {url}"))?;
 
@@ -206,7 +197,7 @@ impl CratesApi {
         &self,
         config: &RegistryCratesConfig,
         url: &str,
-    ) -> Result<reqwest::Response> {
+    ) -> Result<quench_client::transport::Response> {
         self.client
             .get(url)
             .headers(auth_headers(config)?)
@@ -230,7 +221,7 @@ fn auth_headers(config: &RegistryCratesConfig) -> Result<HeaderMap> {
     Ok(headers)
 }
 
-fn ensure_success(resp: &reqwest::Response, url: &str) -> Result<()> {
+fn ensure_success(resp: &quench_client::transport::Response, url: &str) -> Result<()> {
     if resp.status().is_success() {
         return Ok(());
     }

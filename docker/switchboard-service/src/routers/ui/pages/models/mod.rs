@@ -24,7 +24,7 @@ pub(super) async fn models_dashboard_slash(
 
 fn render_models_dashboard_page() -> Response {
     render_page(
-        http::StatusCode::OK,
+        quench_http::http::StatusCode::OK,
         div()
             .class("fui-stack fui-stack-lg models-dashboard-content")
             .child(

@@ -42,10 +42,11 @@ fn find_json_object(s: &str) -> Option<(usize, usize)> {
 
 /// Parses Qwen-format tool calls: takes the first balanced JSON object after
 /// each opening tag, tolerating trailing junk and mismatched closing tags.
+#[must_use]
 pub fn parse_tool_calls(content: &str) -> Vec<ToolCall> {
     let mut calls = Vec::new();
 
-    tracing::debug!(
+    quench_log::debug!(
         "[PARSER] Attempting to parse tool calls from {} chars of content",
         content.len()
     );
@@ -61,35 +62,35 @@ pub fn parse_tool_calls(content: &str) -> Vec<ToolCall> {
             continue;
         };
         let json_str = &rest[s..e];
-        tracing::debug!("[PARSER] Extracted JSON: {}", json_str);
+        quench_log::debug!("[PARSER] Extracted JSON: {}", json_str);
         if let Some(call) = parse_tool_json_format1(json_str) {
-            tracing::debug!("[PARSER] Successfully parsed as format1: {}", call.name);
+            quench_log::debug!("[PARSER] Successfully parsed as format1: {}", call.name);
             calls.push(call);
         } else if let Some(call) = parse_tool_json_format2(json_str) {
-            tracing::debug!("[PARSER] Successfully parsed as format2: {}", call.name);
+            quench_log::debug!("[PARSER] Successfully parsed as format2: {}", call.name);
             calls.push(call);
         } else {
-            tracing::warn!("[PARSER] Failed to parse JSON: {}", json_str);
+            quench_log::warn!("[PARSER] Failed to parse JSON: {}", json_str);
         }
         consumed_until = m.end() + e;
     }
 
-    tracing::info!("[PARSER] Total tool calls parsed: {}", calls.len());
+    quench_log::info!("[PARSER] Total tool calls parsed: {}", calls.len());
     calls
 }
 
 /// Parse `OpenAI` function calling format: {"type": "function", "function": {"name": "...", "arguments": {...}}}
 fn parse_tool_json_format1(json_str: &str) -> Option<ToolCall> {
-    if let Ok(json) = serde_json::from_str::<serde_json::Value>(json_str)
+    if let Ok(json) = quench_serde::json::from_str::<quench_serde::Value>(json_str)
         && let (Some(name), Some(args)) = (
             json["function"]["name"].as_str(),
             json["function"]["arguments"].as_object(),
         )
     {
         return Some(ToolCall {
-            id: uuid::Uuid::new_v4().to_string(),
+            id: quench_core::uuid::Uuid::new_v4().to_string(),
             name: name.to_string(),
-            arguments: serde_json::Value::Object(args.clone()),
+            arguments: quench_serde::Value::Object(args.clone()),
         });
     }
     None
@@ -97,7 +98,7 @@ fn parse_tool_json_format1(json_str: &str) -> Option<ToolCall> {
 
 /// Parse Qwen format: {"type": "search", "name": "websearch", "arguments": {...}}
 fn parse_tool_json_format2(json_str: &str) -> Option<ToolCall> {
-    if let Ok(json) = serde_json::from_str::<serde_json::Value>(json_str) {
+    if let Ok(json) = quench_serde::json::from_str::<quench_serde::Value>(json_str) {
         // Try "name" field first (Qwen format)
         let tool_name = json["name"]
             .as_str()
@@ -111,9 +112,9 @@ fn parse_tool_json_format2(json_str: &str) -> Option<ToolCall> {
             let normalized_name = normalize_tool_name(name);
 
             return Some(ToolCall {
-                id: uuid::Uuid::new_v4().to_string(),
+                id: quench_core::uuid::Uuid::new_v4().to_string(),
                 name: normalized_name,
-                arguments: serde_json::Value::Object(args_obj.clone()),
+                arguments: quench_serde::Value::Object(args_obj.clone()),
             });
         }
     }

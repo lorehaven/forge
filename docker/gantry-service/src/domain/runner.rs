@@ -195,8 +195,8 @@ fn restart_users(
     if code != 0 {
         return Err(format!("`{}` exited with {code}", listing.display()));
     }
-    let document: serde_json::Value =
-        serde_json::from_str(&stdout).map_err(|e| format!("could not read the workloads: {e}"))?;
+    let document: quench_serde::Value = quench_serde::json::from_str(&stdout)
+        .map_err(|e| format!("could not read the workloads: {e}"))?;
 
     let users: Vec<(String, String)> = document["items"]
         .as_array()
@@ -246,13 +246,13 @@ fn restart_users(
 }
 
 /// Whether a pod spec mentions the `ConfigMap` or Secret by name: env, envFrom, or a volume.
-fn uses(pod_spec: &serde_json::Value, kind: &str, name: &str) -> bool {
+fn uses(pod_spec: &quench_serde::Value, kind: &str, name: &str) -> bool {
     let (ref_key, from_key, volume_key, volume_name_key) = if kind == "secret" {
         ("secretKeyRef", "secretRef", "secret", "secretName")
     } else {
         ("configMapKeyRef", "configMapRef", "configMap", "name")
     };
-    let named = |value: &serde_json::Value| value["name"].as_str() == Some(name);
+    let named = |value: &quench_serde::Value| value["name"].as_str() == Some(name);
 
     let in_volumes = pod_spec["volumes"]
         .as_array()

@@ -5,25 +5,25 @@ use quench_db::prelude::{Crud, Db};
 
 /// Creates admin/machine accounts if missing; never overwrites an existing user.
 pub async fn seed_users(db: &Db) {
-    if !envmnt::is_or("AUTH_BOOTSTRAP", false) {
-        tracing::info!("AUTH_BOOTSTRAP is off, leaving the realm's users alone");
+    if !quench_core::env::is_or("AUTH_BOOTSTRAP", false) {
+        quench_log::info!("AUTH_BOOTSTRAP is off, leaving the realm's users alone");
         return;
     }
 
     seed(
         db,
-        &envmnt::get_or_panic("SERVICE_USERNAME"),
-        &envmnt::get_or_panic("SERVICE_PASSWORD"),
+        &std::env::var("SERVICE_USERNAME").expect(concat!("SERVICE_USERNAME", " must be set")),
+        &std::env::var("SERVICE_PASSWORD").expect(concat!("SERVICE_PASSWORD", " must be set")),
         Role::Admin,
         "admin",
     )
     .await;
 
     // Machine-to-machine identity (e.g. sage calling switchboard) - optional.
-    let tech_user = envmnt::get_or("SERVICE_TECH_USERNAME", "");
-    let tech_password = envmnt::get_or("SERVICE_TECH_PASSWORD", "");
+    let tech_user = quench_core::env::get_or("SERVICE_TECH_USERNAME", "");
+    let tech_password = quench_core::env::get_or("SERVICE_TECH_PASSWORD", "");
     if tech_user.is_empty() || tech_password.is_empty() {
-        tracing::warn!(
+        quench_log::warn!(
             "SERVICE_TECH_USERNAME/SERVICE_TECH_PASSWORD not set: service-to-service \
              calls that use Basic auth will be rejected"
         );
@@ -36,7 +36,7 @@ async fn seed(db: &Db, username: &str, password: &str, role: Role, label: &str) 
     let repo = db.repository::<User>();
 
     if repo.read(username).await.unwrap_or(None).is_some() {
-        tracing::info!("{label} user {username} already exists");
+        quench_log::info!("{label} user {username} already exists");
         return;
     }
 
@@ -48,12 +48,12 @@ async fn seed(db: &Db, username: &str, password: &str, role: Role, label: &str) 
         Permissions::new(),
         None,
     ) else {
-        tracing::error!("failed to hash the {label} password; {username} not created");
+        quench_log::error!("failed to hash the {label} password; {username} not created");
         return;
     };
 
     match repo.create(&user).await {
-        Ok(_) => tracing::info!("created {label} user {username}"),
-        Err(err) => tracing::error!("failed to create {label} user {username}: {err}"),
+        Ok(_) => quench_log::info!("created {label} user {username}"),
+        Err(err) => quench_log::error!("failed to create {label} user {username}: {err}"),
     }
 }

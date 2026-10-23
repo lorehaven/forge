@@ -1,7 +1,7 @@
 //! Unit tests for `domain/run.rs`.
 
-use chrono::Utc;
 use conveyor_service::domain::{Run, Status, Trigger};
+use quench_core::time::Time;
 
 fn run_at(git_ref: &str, sha: &str) -> Run {
     Run {
@@ -13,7 +13,7 @@ fn run_at(git_ref: &str, sha: &str) -> Run {
         message: None,
         delivery_id: None,
         status: Status::Queued,
-        queued_at: Utc::now(),
+        queued_at: Time::now(),
         started_at: None,
         finished_at: None,
         claimed_by: None,

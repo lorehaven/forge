@@ -7,9 +7,9 @@
 
 use crate::support::{self, database, register_repo};
 use conveyor_service::scheduler::projects::{self, NewProject};
-use http::{Method, StatusCode};
 use quench_auth::domain::jwt::JwtConfig;
 use quench_db::prelude::Db;
+use quench_http::http::{Method, StatusCode};
 
 async fn app(
     db: Db,

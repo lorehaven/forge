@@ -17,7 +17,7 @@ pub struct ConversationMessage {
     pub role: String,
     pub content: String,
     pub parent_id: Option<String>,
-    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub created_at: quench_core::time::Time,
 }
 
 impl ConversationContext {

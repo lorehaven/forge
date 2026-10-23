@@ -4,9 +4,8 @@ use gatehouse_service::notify::prefs::Preferences;
 use gatehouse_service::notify::unsubscribe::{Unsubscribe, issue_link};
 use gatehouse_service::tokens::{PURPOSE_UNSUBSCRIBE, VerificationTokens};
 use gatehouse_service::ui::pages::unsubscribe::{TokenQuery, unsubscribe_page, unsubscribe_submit};
-use http::StatusCode;
-use http_body_util::BodyExt;
 use quench_db::prelude::Db;
+use quench_http::http::StatusCode;
 use quench_http::prelude::{Form, Inject, Query};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -21,12 +20,11 @@ fn failed() -> &'static catalog::Template {
 
 async fn body(resp: quench_http::response::Response) -> String {
     let bytes = resp
-        .into_hyper()
-        .into_body()
-        .collect()
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
         .await
-        .unwrap()
-        .to_bytes();
+        .unwrap();
     String::from_utf8(bytes.to_vec()).unwrap()
 }
 

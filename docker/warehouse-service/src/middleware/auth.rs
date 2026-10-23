@@ -1,5 +1,5 @@
 use crate::docker_token::DockerTokenConfig;
-use async_trait::async_trait;
+use quench_core::async_trait;
 use quench_http::prelude::http::{Method, StatusCode};
 use quench_http::prelude::{Endpoint, Middleware, Request, Response};
 use quench_starter::http::domain::error;
@@ -20,10 +20,10 @@ pub struct WarehouseAuth {
 impl WarehouseAuth {
     #[must_use]
     pub fn new(config: DockerTokenConfig) -> Self {
-        let max_failures = envmnt::get_or("MAX_AUTH_FAILURES_PER_MINUTE", "30")
+        let max_failures = quench_core::env::get_or("MAX_AUTH_FAILURES_PER_MINUTE", "30")
             .parse()
             .unwrap_or(30);
-        let window_secs = envmnt::get_or("AUTH_FAILURE_WINDOW_SECONDS", "60")
+        let window_secs = quench_core::env::get_or("AUTH_FAILURE_WINDOW_SECONDS", "60")
             .parse()
             .unwrap_or(60);
 
@@ -105,6 +105,7 @@ fn denied() -> Response {
     )
 }
 
+#[must_use]
 pub fn repository_action(req: &Request) -> Option<(String, &'static str)> {
     let action = match *req.method() {
         Method::GET | Method::HEAD => "pull",

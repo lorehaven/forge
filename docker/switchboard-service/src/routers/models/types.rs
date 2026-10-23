@@ -1,4 +1,4 @@
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use quench_serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum ModelType {
@@ -141,18 +141,15 @@ impl std::fmt::Display for Context {
     }
 }
 
-impl<'de> Deserialize<'de> for Context {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = serde_json::Value::deserialize(deserializer)?;
-
+impl Deserialize for Context {
+    fn deserialize(value: &quench_serde::Value) -> quench_serde::Result<Self> {
         let s = match value {
-            serde_json::Value::String(s) => s,
-            serde_json::Value::Number(n) => n.to_string(),
+            quench_serde::Value::String(s) => s.clone(),
+            quench_serde::Value::Int(n) => n.to_string(),
+            quench_serde::Value::UInt(n) => n.to_string(),
+            quench_serde::Value::Float(n) => n.to_string(),
             _ => {
-                return Err(serde::de::Error::custom(format!(
+                return Err(quench_serde::Error::new(format!(
                     "invalid context type: expected string or number, got {value:?}"
                 )));
             }
@@ -171,7 +168,7 @@ impl<'de> Deserialize<'de> for Context {
             "65536" => Ok(Self::Size65536),
             "131072" => Ok(Self::Size131072),
 
-            _ => Err(serde::de::Error::custom(format!(
+            _ => Err(quench_serde::Error::new(format!(
                 "invalid context value: {s}"
             ))),
         }
@@ -179,22 +176,19 @@ impl<'de> Deserialize<'de> for Context {
 }
 
 impl Serialize for Context {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
+    fn serialize(&self) -> quench_serde::Value {
         match self {
-            Self::ALL => serializer.serialize_str("ALL"),
+            Self::ALL => quench_serde::Value::String("ALL".to_string()),
 
-            Self::Size512 => serializer.serialize_u32(512),
-            Self::Size1024 => serializer.serialize_u32(1024),
-            Self::Size2048 => serializer.serialize_u32(2048),
-            Self::Size4096 => serializer.serialize_u32(4096),
-            Self::Size8192 => serializer.serialize_u32(8192),
-            Self::Size16384 => serializer.serialize_u32(16384),
-            Self::Size32768 => serializer.serialize_u32(32768),
-            Self::Size65536 => serializer.serialize_u32(65536),
-            Self::Size131072 => serializer.serialize_u32(131_072),
+            Self::Size512 => quench_serde::Value::UInt(512),
+            Self::Size1024 => quench_serde::Value::UInt(1024),
+            Self::Size2048 => quench_serde::Value::UInt(2048),
+            Self::Size4096 => quench_serde::Value::UInt(4096),
+            Self::Size8192 => quench_serde::Value::UInt(8192),
+            Self::Size16384 => quench_serde::Value::UInt(16384),
+            Self::Size32768 => quench_serde::Value::UInt(32768),
+            Self::Size65536 => quench_serde::Value::UInt(65536),
+            Self::Size131072 => quench_serde::Value::UInt(131_072),
         }
     }
 }
@@ -236,7 +230,7 @@ pub struct ModelFilters {
     pub search: Option<String>,
     pub sort: Option<String>,
     pub quant: Option<String>,
-    pub context: Option<serde_json::Value>,
+    pub context: Option<quench_serde::Value>,
     pub vllm_only: Option<bool>,
 }
 

@@ -6,12 +6,12 @@ use super::reset::render_auth_page;
 use crate::realm;
 use crate::tokens::{PURPOSE_INVITE, VerificationTokens};
 use crate::ui::common::ui_path;
-use http::StatusCode;
 use quench_auth::domain::session::SessionDb;
 use quench_db::prelude::Db;
+use quench_http::http::StatusCode;
 use quench_http::prelude::{Form, Inject, Query, Response, get, post};
+use quench_serde::Deserialize;
 use quench_web::prelude::*;
-use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct AcceptQuery {
@@ -51,7 +51,7 @@ pub async fn accept_invite_submit(
         return redirect(&format!(
             "{}?token={}&err=ui_reset_error_password_empty",
             ui_path("/accept-invite"),
-            urlencoding::encode(&form.token)
+            quench_serde::urlencoded::percent_encode(&form.token)
         ));
     }
 
@@ -64,7 +64,7 @@ pub async fn accept_invite_submit(
     };
 
     if let Err(err) = realm::reset_password(&db, &sessions, &username, &form.password).await {
-        tracing::error!("could not set the password for invited {username}: {err:?}");
+        quench_log::error!("could not set the password for invited {username}: {err:?}");
         return redirect(&ui_path("/login?err=ui_login_invite_invalid"));
     }
     // The link reached the address on file, so it is confirmed.
@@ -73,7 +73,7 @@ pub async fn accept_invite_submit(
         && user.email_verified_at.is_none()
         && let Err(err) = realm::mark_email_verified(&db, &username).await
     {
-        tracing::error!("could not confirm the address of invited {username}: {err:?}");
+        quench_log::error!("could not confirm the address of invited {username}: {err:?}");
     }
     redirect(&ui_path("/login?invited=1"))
 }

@@ -17,7 +17,7 @@ pub fn get_definition() -> ToolDefinition {
         tool_type: "function".to_string(),
         parameters: ToolParameters {
             param_type: "object".to_string(),
-            properties: serde_json::json!({
+            properties: quench_serde::json!({
                 "query": {
                     "type": "string",
                     "description": "What to search for in the uploaded files"
@@ -61,7 +61,7 @@ impl FileSearchExecutor {
     }
 }
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl ToolExecutor for FileSearchExecutor {
     async fn execute(&self, tool_call: &ToolCall) -> ToolResult {
         let Some(conversation_id) = &self.conversation_id else {
@@ -88,7 +88,7 @@ impl ToolExecutor for FileSearchExecutor {
         let top_k = tool_call
             .arguments
             .get("top_k")
-            .and_then(serde_json::Value::as_i64)
+            .and_then(quench_serde::Value::as_i64)
             .unwrap_or_else(|| rag::RagConfig::from_env().top_k)
             .clamp(1, 20);
 

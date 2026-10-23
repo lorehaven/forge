@@ -6,8 +6,8 @@ use crate::executors::engine::{
     ExecError, Handle, JobExecutor, JobSpec, JobState, LogChunk, LogTail, StepState, Stream,
 };
 use crate::workspace::Workspace;
-use async_trait::async_trait;
-use chrono::Utc;
+use quench_core::async_trait;
+use quench_core::time::Time;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tokio::sync::broadcast;
@@ -140,7 +140,7 @@ impl JobExecutor for MockExecutor {
             .push(spec.clone());
 
         let outcome = self.outcome_for(&spec.name);
-        let now = Utc::now();
+        let now = Time::now();
 
         let history: Vec<LogChunk> = outcome
             .lines

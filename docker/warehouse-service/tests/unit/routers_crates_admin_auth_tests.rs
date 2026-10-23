@@ -1,12 +1,12 @@
 //! `wrap_auth` on the crates registry and `/admin`: anonymous callers are refused, a read-only
 //! identity may read crates but never write or run GC, `warehouse:write` may do both.
 
-use bytes::Bytes;
-use http::{HeaderMap, Method, StatusCode, Uri};
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::bytes::Bytes;
 use quench_http::body::InboundBody;
 use quench_http::di::{Container, ContainerBuilder};
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::request::Request;
 use quench_http::response::Response;
 use std::sync::Arc;
@@ -22,7 +22,7 @@ fn config() -> JwtConfig {
 
 struct Ok200;
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl Endpoint for Ok200 {
     async fn call(&self, _req: Request) -> Response {
         Response::new(StatusCode::OK)

@@ -39,8 +39,8 @@ steps = ["echo deploying"]
 
 /// Starts the scheduler with its own work directory, and keeps the directory
 /// alive for the caller.
-fn start_scheduler(db: &Db) -> tempfile::TempDir {
-    let work = tempfile::tempdir().expect("temp dir");
+fn start_scheduler(db: &Db) -> quench_core::tmp::TempDir {
+    let work = quench_core::tmp::TempDir::new().expect("temp dir");
     let config = ConveyorConfig {
         work_dir: work.path().to_path_buf(),
         max_concurrent_runs: 1,
@@ -514,7 +514,7 @@ async fn a_failed_run_queues_a_notification_for_the_people_following_the_repo() 
     let Some((db, _guard)) = database().await else {
         return skipped("a_failed_run_queues_a_notification_for_the_people_following_the_repo");
     };
-    envmnt::set("CONVEYOR_PUBLIC_URL", "https://forge.example.test/conveyor");
+    quench_core::env::set("CONVEYOR_PUBLIC_URL", "https://forge.example.test/conveyor");
 
     let origin =
         Origin::with_pipeline("[[stage]]\nname = \"build\"\n[[stage.job]]\nsteps = [\"exit 1\"]\n");
@@ -523,7 +523,7 @@ async fn a_failed_run_queues_a_notification_for_the_people_following_the_repo() 
         .await
         .expect("follow");
 
-    let work = tempfile::tempdir().expect("temp dir");
+    let work = quench_core::tmp::TempDir::new().expect("temp dir");
     spawn_pool_notifying(
         db.clone(),
         ConveyorConfig {

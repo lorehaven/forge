@@ -212,7 +212,7 @@ impl fmt::Display for Condition {
 // ---------------------------------------------------------------------------
 
 /// Why a `when` expression failed to parse.
-#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[derive(Debug, quench_core::Error, PartialEq, Eq)]
 pub enum ConditionError {
     /// The `when` value was an empty string.
     #[error("condition is empty")]

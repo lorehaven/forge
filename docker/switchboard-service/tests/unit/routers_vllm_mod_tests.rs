@@ -14,7 +14,7 @@ use switchboard_service::routers::vllm::init_engine;
 #[tokio::test]
 async fn init_engine_defaults_to_native_with_no_mode_set() {
     let _guard = env_lock().lock().await;
-    envmnt::remove("VLLM_MANAGEMENT_MODE");
+    quench_core::env::remove("VLLM_MANAGEMENT_MODE");
 
     // Native's `list_instances` shells out to find real vLLM processes; it
     // must not panic even when none exist.
@@ -25,10 +25,10 @@ async fn init_engine_defaults_to_native_with_no_mode_set() {
 #[tokio::test]
 async fn init_engine_selects_mock_mode() {
     let _guard = env_lock().lock().await;
-    envmnt::set("VLLM_MANAGEMENT_MODE", "mock");
+    quench_core::env::set("VLLM_MANAGEMENT_MODE", "mock");
 
     let engine = init_engine().await;
     let _ = engine.list_instances().await.expect("mock never errors");
 
-    envmnt::remove("VLLM_MANAGEMENT_MODE");
+    quench_core::env::remove("VLLM_MANAGEMENT_MODE");
 }

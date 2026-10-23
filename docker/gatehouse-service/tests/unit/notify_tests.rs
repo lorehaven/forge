@@ -1,4 +1,3 @@
-use bytes::Bytes;
 use gatehouse_service::email::{
     Mail, Recipient, SendError, Sender, SmtpConfig, SmtpSender, TlsMode,
 };
@@ -13,14 +12,14 @@ use gatehouse_service::realm;
 use gatehouse_service::test_support::{RecordingSender, service_auth_env_lock};
 use gatehouse_service::tokens::{PURPOSE_UNSUBSCRIBE, VerificationTokens};
 use gatehouse_service::{PublicBase, RateLimiter};
-use http::{HeaderMap, Method, StatusCode, Uri};
-use http_body_util::BodyExt;
 use quench_auth::domain::auth::{Permissions, Role};
 use quench_auth::domain::jwt::{Claims, JwtConfig};
 use quench_auth::domain::session::SessionDb;
+use quench_core::bytes::Bytes;
 use quench_db::prelude::Db;
 use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::request::Request;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -39,7 +38,8 @@ async fn db() -> Db {
 }
 
 fn catalog_for_realm() -> gatehouse_service::catalog::PermissionCatalog {
-    let dir = std::env::temp_dir().join(format!("notify-test-{}", uuid::Uuid::new_v4()));
+    let dir =
+        std::env::temp_dir().join(format!("notify-test-{}", quench_core::uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("permissions.toml");
     std::fs::write(&path, "[services.gatehouse]\nactions = [\"read-users\"]\n").unwrap();
@@ -743,7 +743,7 @@ async fn a_bad_request_is_the_callers_error_and_reveals_nothing_about_accounts()
 #[tokio::test]
 async fn a_failing_mail_server_is_reported_with_whether_to_retry() {
     struct Failing(bool);
-    #[async_trait::async_trait]
+    #[quench_core::async_trait]
     impl Sender for Failing {
         async fn send(&self, _: &Recipient<'_>, _: &Mail<'_>) -> Result<(), SendError> {
             Err(SendError::new("smtp down", self.0))
@@ -920,7 +920,7 @@ async fn app(
 }
 
 fn post(
-    body: &serde_json::Value,
+    body: &quench_serde::Value,
     token: Option<&str>,
     container: &Arc<quench_http::di::Container>,
 ) -> Request {
@@ -938,19 +938,18 @@ fn post(
     )
 }
 
-async fn json(resp: quench_http::response::Response) -> serde_json::Value {
+async fn json(resp: quench_http::response::Response) -> quench_serde::Value {
     let bytes = resp
-        .into_hyper()
-        .into_body()
-        .collect()
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
         .await
-        .unwrap()
-        .to_bytes();
-    serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null)
+        .unwrap();
+    quench_serde::json::from_slice(&bytes).unwrap_or(quench_serde::Value::Null)
 }
 
-fn body(username: &str, template: &str) -> serde_json::Value {
-    serde_json::json!({ "username": username, "template": template, "vars": vars() })
+fn body(username: &str, template: &str) -> quench_serde::Value {
+    quench_serde::json!({ "username": username, "template": template, "vars": vars() })
 }
 
 async fn endpoint_world() -> (
@@ -1021,9 +1020,9 @@ async fn the_endpoint_rejects_a_malformed_request_with_the_reason() {
     let _guard = gatehouse_service::test_support::auth_disabled_guard().await;
     let (recorder, app, container, _db) = endpoint_world().await;
     for bad in [
-        serde_json::json!({ "username": "alice", "template": "no.such.thing", "vars": vars() }),
-        serde_json::json!({ "username": "alice", "template": "conveyor.run.failed", "vars": {} }),
-        serde_json::json!({
+        quench_serde::json!({ "username": "alice", "template": "no.such.thing", "vars": vars() }),
+        quench_serde::json!({ "username": "alice", "template": "conveyor.run.failed", "vars": {} }),
+        quench_serde::json!({
             "username": "alice", "template": "conveyor.run.failed",
             "vars": { "project": "p", "run": "1", "ref": "r", "url": "https://evil.example/x" }
         }),
@@ -1038,7 +1037,7 @@ async fn the_endpoint_rejects_a_malformed_request_with_the_reason() {
     }
     let resp = app
         .call(post(
-            &serde_json::json!({ "nonsense": 1 }),
+            &quench_serde::json!({ "nonsense": 1 }),
             None,
             &container,
         ))
@@ -1050,7 +1049,7 @@ async fn the_endpoint_rejects_a_malformed_request_with_the_reason() {
 #[tokio::test]
 async fn the_endpoint_reports_a_mail_failure_as_a_bad_gateway_with_retryable() {
     struct Failing;
-    #[async_trait::async_trait]
+    #[quench_core::async_trait]
     impl Sender for Failing {
         async fn send(&self, _: &Recipient<'_>, _: &Mail<'_>) -> Result<(), SendError> {
             Err(SendError::transient("smtp down"))
@@ -1090,7 +1089,7 @@ async fn a_retry_with_the_same_dedupe_key_is_not_sent_twice() {
     let _guard = gatehouse_service::test_support::auth_disabled_guard().await;
     let (recorder, app, container, _db) = endpoint_world().await;
     let mut request = body("alice", "conveyor.run.failed");
-    request["dedupe_key"] = serde_json::json!("run-1234");
+    request["dedupe_key"] = quench_serde::json!("run-1234");
     let first = app.call(post(&request, None, &container)).await;
     assert_eq!(first.status(), StatusCode::ACCEPTED);
     let second = app.call(post(&request, None, &container)).await;
@@ -1115,7 +1114,7 @@ async fn token_with_scope(config: &JwtConfig, scope: &str) -> String {
 
 async fn authed(scope: Option<&str>) -> StatusCode {
     let _guard = service_auth_env_lock().lock().await;
-    envmnt::set("SERVICE_AUTH_ENABLED", "true");
+    quench_core::env::set("SERVICE_AUTH_ENABLED", "true");
     let config = JwtConfig::for_tests_with_signing();
     let token = match scope {
         Some(scope) => Some(token_with_scope(&config, scope).await),

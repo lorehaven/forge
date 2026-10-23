@@ -2,8 +2,8 @@ use crate::cargo_meta;
 use crate::commands::{docker, install, login};
 use crate::config::Config;
 use crate::util::run_command;
-use anyhow::{Context, Result};
-use serde_json::Value;
+use quench_core::{Context, Result};
+use quench_serde::Value;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{self, Write as _};
@@ -186,14 +186,14 @@ pub fn resolve_release_targets(
         }
 
         if targets.is_empty() {
-            anyhow::bail!(
+            quench_core::bail!(
                 "No release packages configured. Set [release].packages and/or [docker.modules.*].packages in .anvil.toml"
             );
         }
 
         for pkg in &targets {
             if !members.contains(pkg) {
-                anyhow::bail!("Configured release package '{pkg}' is not a workspace member");
+                quench_core::bail!("Configured release package '{pkg}' is not a workspace member");
             }
         }
 
@@ -202,7 +202,7 @@ pub fn resolve_release_targets(
 
     let package_name = if let Some(pkg) = package {
         if !members.contains(&pkg) {
-            anyhow::bail!("Package '{pkg}' is not a workspace member");
+            quench_core::bail!("Package '{pkg}' is not a workspace member");
         }
         pkg
     } else {
@@ -229,7 +229,7 @@ pub fn resolve_single_package(metadata: &Value) -> Result<String> {
         return Ok(packages[0].name.clone());
     }
 
-    anyhow::bail!("Could not determine release target. Use --package <name> or --all")
+    quench_core::bail!("Could not determine release target. Use --package <name> or --all")
 }
 
 /// A `publish = false` library that is not a docker package: there is nothing
@@ -457,7 +457,7 @@ pub fn latest_package_tag(package: &str) -> Result<Option<String>> {
         .output()
         .with_context(|| format!("Failed to execute git tag --list {pattern}"))?;
     if !output.status.success() {
-        anyhow::bail!("git tag --list {pattern} failed");
+        quench_core::bail!("git tag --list {pattern} failed");
     }
 
     let tag = String::from_utf8(output.stdout)
@@ -493,7 +493,7 @@ pub fn package_changed_since_tag(
         .with_context(|| format!("Failed to execute git diff --name-only {range} -- {pathspec}"))?;
 
     if !output.status.success() {
-        anyhow::bail!("git diff --name-only {range} -- {pathspec} failed");
+        quench_core::bail!("git diff --name-only {range} -- {pathspec} failed");
     }
 
     let has_changes = String::from_utf8(output.stdout)
@@ -525,7 +525,7 @@ pub fn git_show_file_at_tag(
         if stderr.contains("does not exist in") || stderr.contains("exists on disk, but not in") {
             return Ok(None);
         }
-        anyhow::bail!("git show {spec} failed: {}", stderr.trim());
+        quench_core::bail!("git show {spec} failed: {}", stderr.trim());
     }
 
     String::from_utf8(output.stdout)
@@ -533,13 +533,13 @@ pub fn git_show_file_at_tag(
         .map(Some)
 }
 
-pub fn workspace_dependencies_table(content: &str) -> Result<HashMap<String, toml::Value>> {
-    let doc: toml::Value =
-        toml::from_str(content).context("Failed to parse workspace Cargo.toml")?;
+pub fn workspace_dependencies_table(content: &str) -> Result<HashMap<String, quench_serde::Value>> {
+    let doc: quench_serde::Value =
+        quench_serde::toml::from_str(content).context("Failed to parse workspace Cargo.toml")?;
     Ok(doc
         .get("workspace")
         .and_then(|w| w.get("dependencies"))
-        .and_then(toml::Value::as_table)
+        .and_then(quench_serde::Value::as_object)
         .cloned()
         .unwrap_or_default()
         .into_iter()
@@ -593,14 +593,16 @@ pub fn collect_package_dependencies(
     for pkg in &packages {
         let manifest_content = fs::read_to_string(&pkg.manifest)
             .with_context(|| format!("Failed to read manifest at {}", pkg.manifest.display()))?;
-        let manifest_value: toml::Value = toml::from_str(&manifest_content)
-            .with_context(|| format!("Failed to parse manifest at {}", pkg.manifest.display()))?;
+        let manifest_value: quench_serde::Value = quench_serde::toml::from_str(&manifest_content)
+            .with_context(|| {
+            format!("Failed to parse manifest at {}", pkg.manifest.display())
+        })?;
 
         let mut member_deps = Vec::new();
         let mut external_workspace_deps = HashSet::new();
 
         for table_name in ["dependencies", "dev-dependencies", "build-dependencies"] {
-            let Some(table) = manifest_value.get(table_name).and_then(|d| d.as_table()) else {
+            let Some(table) = manifest_value.get(table_name).and_then(|d| d.as_object()) else {
                 continue;
             };
             for (dep_name, dep_value) in table {
@@ -612,7 +614,7 @@ pub fn collect_package_dependencies(
                 }
                 let is_workspace_true = dep_value
                     .get("workspace")
-                    .and_then(toml::Value::as_bool)
+                    .and_then(quench_serde::Value::as_bool)
                     .unwrap_or(false);
                 if is_workspace_true {
                     external_workspace_deps.insert(dep_name.clone());
@@ -714,7 +716,7 @@ pub fn bump_patch(version: &str) -> Result<String> {
         .context("Invalid version patch")?;
 
     if parts.next().is_some() {
-        anyhow::bail!("Invalid version format '{version}', expected MAJOR.MINOR.PATCH");
+        quench_core::bail!("Invalid version format '{version}', expected MAJOR.MINOR.PATCH");
     }
 
     Ok(format!("{major}.{minor}.{}", patch + 1))
@@ -842,7 +844,7 @@ pub fn tag_exists(tag: &str) -> Result<bool> {
         .output()
         .with_context(|| format!("Failed to execute git tag -l {tag}"))?;
     if !output.status.success() {
-        anyhow::bail!("git tag -l {tag} failed");
+        quench_core::bail!("git tag -l {tag} failed");
     }
     let found = String::from_utf8(output.stdout)
         .context("Invalid UTF-8 in git tag output")?
@@ -854,7 +856,7 @@ pub fn tag_exists(tag: &str) -> Result<bool> {
 pub fn ensure_release_tags_absent(plan: &[ReleasePlanItem]) -> Result<()> {
     for item in plan {
         if tag_exists(&item.tag_to_create)? {
-            anyhow::bail!("Tag '{}' already exists", item.tag_to_create);
+            quench_core::bail!("Tag '{}' already exists", item.tag_to_create);
         }
     }
     Ok(())

@@ -1,10 +1,10 @@
-use bytes::Bytes;
 use gatehouse_service::test_support::service_auth_env_lock;
-use http::{HeaderMap, Method, StatusCode, Uri};
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::bytes::Bytes;
 use quench_http::body::InboundBody;
 use quench_http::di::{Container, ContainerBuilder};
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::request::Request;
 use std::sync::Arc;
 
@@ -36,8 +36,8 @@ fn get(path: &str, container: &Arc<Container>) -> Request {
 }
 
 fn location(resp: quench_http::response::Response) -> String {
-    resp.into_hyper()
-        .headers()
+    resp.into_inner()
+        .headers
         .get("location")
         .expect("location header")
         .to_str()

@@ -1,7 +1,7 @@
 //! Something a run produced. Conveyor records the reference, not the bytes - the artifact itself lives in warehouse.
 
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use quench_core::time::Time;
+use quench_serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Artifact {
@@ -18,5 +18,5 @@ pub struct Artifact {
     pub uri: String,
     /// Content digest, when the store gives one.
     pub digest: Option<String>,
-    pub created_at: DateTime<Utc>,
+    pub created_at: Time,
 }

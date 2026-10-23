@@ -1,4 +1,4 @@
-use reqwest::blocking::Client;
+use quench_client::blocking::Client;
 use riveter::image_updates::{
     FetchError, ImageRef, RegistryAuth, RegistryCredentials, RegistryDigests, is_sha256_digest,
     resolve_digest,
@@ -81,9 +81,10 @@ async fn follows_a_bearer_challenge_and_retries_with_the_token() {
 
     Mock::given(method("GET"))
         .and(path("/token"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(serde_json::json!({"token": "pull-token"})),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(quench_serde::json!({"token": "pull-token"}))),
+            "application/json",
+        ))
         .expect(1)
         .mount(&server)
         .await;

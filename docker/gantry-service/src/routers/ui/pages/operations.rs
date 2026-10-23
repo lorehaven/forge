@@ -12,9 +12,15 @@ use quench_auth::domain::jwt::JwtConfig;
 use quench_http::prelude::{Inject, Path, Query, Response, get, http::StatusCode, post};
 use quench_web::prelude::*;
 
-fn when(time: Option<chrono::DateTime<chrono::Utc>>) -> String {
-    time.map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string())
-        .unwrap_or_default()
+fn when(time: Option<quench_core::time::Time>) -> String {
+    time.map(|t| {
+        let at = t.civil();
+        format!(
+            "{:04}-{:02}-{:02} {:02}:{:02}:{:02}",
+            at.year, at.month, at.day, at.hour, at.minute, at.second
+        )
+    })
+    .unwrap_or_default()
 }
 
 #[get("/ui/operations")]

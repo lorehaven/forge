@@ -1,14 +1,13 @@
 use std::time::Duration;
 
-use bytes::Bytes;
-use futures_util::StreamExt;
 use quench_auth::domain::jwt::JwtConfig;
 use quench_auth::http::middleware::auth::Auth;
+use quench_core::bytes::Bytes;
 use quench_http::prelude::{Endpoint, HttpError, Inject, Json, OnPathPrefix, Response, get, wrap};
 use quench_web::prelude::*;
 use std::sync::Arc;
 use tokio::sync::broadcast::Sender;
-use tokio_stream::wrappers::BroadcastStream;
+use tokio::sync::broadcast::error::RecvError;
 
 pub mod monitor;
 
@@ -48,21 +47,28 @@ pub async fn handle_sse(
 ) -> Result<Response, HttpError> {
     let rx = broadcaster.0.subscribe();
 
-    let stream = BroadcastStream::new(rx).filter_map(|msg| async move {
-        msg.map_or_else(
-            |_| None,
-            |html| {
-                Some(Ok::<Bytes, std::io::Error>(Bytes::from(format!(
-                    "event: gpu-status\ndata: {}\n\n",
-                    html.replace('\n', "")
-                ))))
-            },
-        )
+    // A lagging subscriber just misses frames; the stream ends when the publisher goes away.
+    let stream = quench_core::stream::unfold(rx, |mut rx| async move {
+        loop {
+            match rx.recv().await {
+                Ok(html) => {
+                    let frame = Bytes::from(format!(
+                        "event: gpu-status\ndata: {}\n\n",
+                        html.replace('\n', "")
+                    ));
+                    return Some((Ok::<Bytes, std::io::Error>(frame), rx));
+                }
+                Err(RecvError::Lagged(_)) => {}
+                Err(RecvError::Closed) => return None,
+            }
+        }
     });
 
-    Ok(Response::streaming(http::StatusCode::OK, stream)
-        .header("content-type", "text/event-stream")
-        .header("cache-control", "no-cache"))
+    Ok(
+        Response::streaming(quench_http::http::StatusCode::OK, stream)
+            .header("content-type", "text/event-stream")
+            .header("cache-control", "no-cache"),
+    )
 }
 
 pub fn init_gpu_status_publisher(broadcaster: Sender<String>) {

@@ -2,27 +2,26 @@
 //! in memory so sign/verify never round-trips the database.
 
 use crate::crypto::{decrypt, encrypt, realm_cipher};
-use async_trait::async_trait;
-use base64::Engine as _;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use chacha20poly1305::ChaCha20Poly1305;
-use chrono::{DateTime, Utc};
-use jsonwebtoken::{DecodingKey, EncodingKey};
 use quench_auth::domain::jwt::{KeyResolver, KeySigner};
 use quench_auth::domain::signing::{decoding_key, encoding_key, generate_signing_key};
+use quench_core::async_trait;
+use quench_core::base64::URL_SAFE_NO_PAD;
+use quench_core::time::Time;
+use quench_crypto::aead::ChaCha20Poly1305;
+use quench_crypto::jwt::{DecodingKey, EncodingKey};
 use quench_db::prelude::{Crud, Db, Model, Repository};
-use serde::{Deserialize, Serialize};
+use quench_serde::{Deserialize, Serialize};
 use std::sync::RwLock;
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct SigningKeyRow {
     kid: String,
     algorithm: String,
     /// Hex, not raw bytea - `Crud`'s `jsonb_populate_record` round-trip mangles `Vec<u8>`.
     private_key: String,
     public_key: String,
-    created_at: DateTime<Utc>,
-    not_after: Option<DateTime<Utc>>,
+    created_at: Time,
+    not_after: Option<Time>,
 }
 
 impl Model for SigningKeyRow {
@@ -55,7 +54,7 @@ struct LoadedKey {
     kid: String,
     private_key_der: Vec<u8>,
     public_key: Vec<u8>,
-    not_after: Option<DateTime<Utc>>,
+    not_after: Option<Time>,
 }
 
 pub struct SigningKeys {
@@ -67,7 +66,7 @@ pub struct SigningKeys {
 }
 
 impl SigningKeys {
-    pub async fn init(db: Db, retire_after_secs: i64) -> anyhow::Result<std::sync::Arc<Self>> {
+    pub async fn init(db: Db, retire_after_secs: i64) -> quench_core::Result<std::sync::Arc<Self>> {
         let cipher = realm_cipher()?;
         let this = std::sync::Arc::new(Self {
             repo: db.repository::<SigningKeyRow>(),
@@ -88,9 +87,9 @@ impl SigningKeys {
         Ok(this)
     }
 
-    async fn reload(&self) -> anyhow::Result<()> {
+    async fn reload(&self) -> quench_core::Result<()> {
         let rows = self.repo.list().await?;
-        let now = Utc::now();
+        let now = Time::now();
         let loaded = rows
             .into_iter()
             .filter(|row| row.not_after.is_none_or(|expiry| expiry > now))
@@ -98,12 +97,12 @@ impl SigningKeys {
                 kid: row.kid,
                 private_key_der: decrypt(
                     &self.cipher,
-                    &hex::decode(&row.private_key).unwrap_or_default(),
+                    &quench_core::hex::decode(&row.private_key).unwrap_or_default(),
                 )
                 .expect(
                     "signing key decryption failed - is GATEHOUSE_KEY_ENCRYPTION_KEY unchanged?",
                 ),
-                public_key: hex::decode(&row.public_key).unwrap_or_default(),
+                public_key: quench_core::hex::decode(&row.public_key).unwrap_or_default(),
                 not_after: row.not_after,
             })
             .collect();
@@ -112,8 +111,8 @@ impl SigningKeys {
     }
 
     /// Retires the active key and generates a new one to sign with.
-    pub async fn rotate(&self) -> anyhow::Result<()> {
-        let now = Utc::now();
+    pub async fn rotate(&self) -> quench_core::Result<()> {
+        let now = Time::now();
         for mut row in self
             .repo
             .list()
@@ -121,16 +120,20 @@ impl SigningKeys {
             .into_iter()
             .filter(|row| row.not_after.is_none())
         {
-            row.not_after = Some(now + chrono::Duration::seconds(self.retire_after_secs));
+            row.not_after =
+                Some(now + quench_core::time::Duration::seconds(self.retire_after_secs));
             self.repo.update(&row).await?;
         }
 
         let generated = generate_signing_key();
         let row = SigningKeyRow {
-            kid: uuid::Uuid::new_v4().to_string(),
+            kid: quench_core::uuid::Uuid::new_v4().to_string(),
             algorithm: "EdDSA".to_string(),
-            private_key: hex::encode(encrypt(&self.cipher, &generated.private_key_der)),
-            public_key: hex::encode(&generated.public_key),
+            private_key: quench_core::hex::encode(encrypt(
+                &self.cipher,
+                &generated.private_key_der,
+            )),
+            public_key: quench_core::hex::encode(&generated.public_key),
             created_at: now,
             not_after: None,
         };
@@ -139,12 +142,12 @@ impl SigningKeys {
     }
 
     /// Every non-retired key, as an RFC 7517 JWK Set.
-    pub fn jwks(&self) -> serde_json::Value {
+    pub fn jwks(&self) -> quench_serde::Value {
         let keys = self.keys.read().unwrap();
-        let entries: Vec<serde_json::Value> = keys
+        let entries: Vec<quench_serde::Value> = keys
             .iter()
             .map(|key| {
-                serde_json::json!({
+                quench_serde::json!({
                     "kty": "OKP",
                     "crv": "Ed25519",
                     "kid": key.kid,
@@ -153,7 +156,7 @@ impl SigningKeys {
             })
             .collect();
         drop(keys);
-        serde_json::json!({ "keys": entries })
+        quench_serde::json!({ "keys": entries })
     }
 }
 
@@ -177,7 +180,11 @@ impl KeySigner for SigningKeys {
             .unwrap()
             .iter()
             .find(|key| key.not_after.is_none())
-            .map(|key| (key.kid.clone(), encoding_key(&key.private_key_der)))
+            .and_then(|key| {
+                encoding_key(&key.private_key_der)
+                    .ok()
+                    .map(|encoding| (key.kid.clone(), encoding))
+            })
     }
 }
 

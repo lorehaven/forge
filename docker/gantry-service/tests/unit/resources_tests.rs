@@ -709,7 +709,7 @@ impl Exec for Recorder {
 
 #[test]
 fn the_edited_yaml_is_written_to_a_file_named_by_its_content_and_applied() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let yaml = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: c\n  namespace: ml\n";
     let plan = Plan {
         steps: vec![Step::ApplyYaml {
@@ -729,7 +729,7 @@ fn the_edited_yaml_is_written_to_a_file_named_by_its_content_and_applied() {
 
 #[test]
 fn a_dry_run_writes_nothing_to_the_cluster_but_still_shows_the_command() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let yaml = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: c\n";
     let plan = Plan {
         steps: vec![Step::ApplyYaml {
@@ -753,7 +753,7 @@ fn a_dry_run_writes_nothing_to_the_cluster_but_still_shows_the_command() {
 
 #[test]
 fn a_changed_configmap_restarts_exactly_the_workloads_that_use_it() {
-    let listing = serde_json::json!({"items": [
+    let listing = quench_serde::json!({"items": [
         {"kind": "Deployment", "metadata": {"name": "by-env-from"},
          "spec": {"template": {"spec": {"containers": [{"envFrom": [{"configMapRef": {"name": "app-config"}}]}]}}}},
         {"kind": "Deployment", "metadata": {"name": "by-env"},
@@ -779,7 +779,7 @@ fn a_changed_configmap_restarts_exactly_the_workloads_that_use_it() {
         listing,
         ..Recorder::default()
     };
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let outcome = run(&plan, &ctx(dir.path()), &mut exec, &mut Vec::new());
     assert_eq!(outcome, Outcome::Succeeded);
 
@@ -825,7 +825,7 @@ fn nothing_using_it_is_not_an_error() {
         listing: r#"{"items": []}"#.into(),
         ..Recorder::default()
     };
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     assert_eq!(
         run(&plan, &ctx(dir.path()), &mut exec, &mut Vec::new()),
         Outcome::Succeeded

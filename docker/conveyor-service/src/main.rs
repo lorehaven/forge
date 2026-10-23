@@ -11,14 +11,20 @@ use std::sync::Arc;
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     startup::init_tracing();
-    envmnt::set("SERVICE_NAME", envmnt::get_or("SERVICE_NAME", "conveyor"));
-    envmnt::set("DB_SCHEMA", envmnt::get_or("DB_SCHEMA", "conveyor"));
+    quench_core::env::set(
+        "SERVICE_NAME",
+        quench_core::env::get_or("SERVICE_NAME", "conveyor"),
+    );
+    quench_core::env::set(
+        "DB_SCHEMA",
+        quench_core::env::get_or("DB_SCHEMA", "conveyor"),
+    );
 
     // Written up front so an early stylesheet request doesn't hit the last deployment's file.
     routers::ui::common::ensure_assets();
 
-    let base_path = normalize_base_path(&envmnt::get_or("BASE_PATH", "/"));
-    tracing::info!("Server initialized with BASE_PATH: {base_path}");
+    let base_path = normalize_base_path(&quench_core::env::get_or("BASE_PATH", "/"));
+    quench_log::info!("Server initialized with BASE_PATH: {base_path}");
 
     let (state, db_wrapper) = startup::AppState::init().await;
 
@@ -34,7 +40,7 @@ async fn main() -> std::io::Result<()> {
             auth_enabled: state.jwt_config.auth_enabled,
         }))
     } else {
-        tracing::info!(
+        quench_log::info!(
             "CLIENT_SECRET_CONVEYOR_GATEHOUSE is not set: run notifications are switched off"
         );
         None

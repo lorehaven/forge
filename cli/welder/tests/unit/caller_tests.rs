@@ -11,13 +11,13 @@ struct StubLlm {
     last_request: Mutex<Option<LlmRequest>>,
 }
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl Llm for StubLlm {
     fn name(&self) -> &str {
         self.name
     }
 
-    async fn generate_content(&self, request: LlmRequest) -> anyhow::Result<LlmResponse> {
+    async fn generate_content(&self, request: LlmRequest) -> quench_core::Result<LlmResponse> {
         *self.last_request.lock().unwrap() = Some(request);
         Ok(LlmResponse {
             content: Some(Content::new("assistant").with_text(self.reply)),
@@ -28,14 +28,14 @@ impl Llm for StubLlm {
 #[derive(Debug)]
 struct FailingLlm;
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl Llm for FailingLlm {
     fn name(&self) -> &'static str {
         "failing"
     }
 
-    async fn generate_content(&self, _request: LlmRequest) -> anyhow::Result<LlmResponse> {
-        Err(anyhow::anyhow!("model unavailable"))
+    async fn generate_content(&self, _request: LlmRequest) -> quench_core::Result<LlmResponse> {
+        Err(quench_core::err!("model unavailable"))
     }
 }
 
@@ -68,13 +68,13 @@ async fn call_model_returns_the_joined_text_and_forwards_the_prompt() {
 #[derive(Debug)]
 struct NoContentLlm;
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl Llm for NoContentLlm {
     fn name(&self) -> &'static str {
         "no-content"
     }
 
-    async fn generate_content(&self, _request: LlmRequest) -> anyhow::Result<LlmResponse> {
+    async fn generate_content(&self, _request: LlmRequest) -> quench_core::Result<LlmResponse> {
         Ok(LlmResponse { content: None })
     }
 }

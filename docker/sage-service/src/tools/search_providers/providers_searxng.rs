@@ -1,12 +1,12 @@
 use super::SearchProvider;
-use async_trait::async_trait;
-use serde::Deserialize;
+use quench_core::async_trait;
+use quench_serde::Deserialize;
 
 const MAX_RESULTS: usize = 5;
 
 #[derive(Debug)]
 pub struct SearxngProvider {
-    client: reqwest::Client,
+    client: quench_client::transport::Client,
     instance_url: String,
 }
 
@@ -26,7 +26,7 @@ impl SearxngProvider {
     #[must_use]
     pub fn new(instance_url: &str) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: quench_client::transport::Client::new(),
             instance_url: instance_url.trim_end_matches('/').to_string(),
         }
     }
@@ -52,10 +52,10 @@ impl SearchProvider for SearxngProvider {
         let url = format!(
             "{}/search?q={}&format=json&pageno=1",
             self.instance_url,
-            urlencoding::encode(query)
+            quench_serde::urlencoded::percent_encode(query)
         );
 
-        tracing::info!("SearXNG: searching for '{}' at {}", query, url);
+        quench_log::info!("SearXNG: searching for '{}' at {}", query, url);
 
         let response = self
             .client
@@ -65,22 +65,22 @@ impl SearchProvider for SearxngProvider {
             .await
             .map_err(|e| {
                 let err_msg = format!("Request failed: {e}");
-                tracing::warn!("SearXNG request failed: {}", e);
+                quench_log::warn!("SearXNG request failed: {}", e);
                 err_msg
             })?;
 
         let status = response.status();
-        tracing::info!("SearXNG response status: {}", status);
+        quench_log::info!("SearXNG response status: {}", status);
 
         let body = response.text().await.map_err(|e| {
-            tracing::warn!("Failed to read response: {}", e);
+            quench_log::warn!("Failed to read response: {}", e);
             format!("Failed to read response: {e}")
         })?;
 
-        tracing::info!("SearXNG response length: {} bytes", body.len());
+        quench_log::info!("SearXNG response length: {} bytes", body.len());
 
-        let data: SearxngResponse = serde_json::from_str(&body).map_err(|e| {
-            tracing::warn!("Failed to parse JSON: {}", e);
+        let data: SearxngResponse = quench_serde::json::from_str(&body).map_err(|e| {
+            quench_log::warn!("Failed to parse JSON: {}", e);
             format!("Invalid JSON: {e}")
         })?;
 
@@ -95,7 +95,7 @@ impl SearchProvider for SearxngProvider {
         }
 
         if results.is_empty() {
-            tracing::warn!("SearXNG: No results found for '{}'", query);
+            quench_log::warn!("SearXNG: No results found for '{}'", query);
 
             return Err(format!(
                 "Web search for '{query}' could not find results at this time."
@@ -103,7 +103,7 @@ impl SearchProvider for SearxngProvider {
         }
 
         let result_count = results.len();
-        tracing::info!("SearXNG: Found {} results for '{}'", result_count, query);
+        quench_log::info!("SearXNG: Found {} results for '{}'", result_count, query);
         Ok(format!(
             "Search results for '{}' (via SearXNG)\n\n{}",
             query,

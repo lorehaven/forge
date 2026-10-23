@@ -1,7 +1,7 @@
 use crate::support;
-use http::{Method, StatusCode};
 use quench_auth::domain::jwt::JwtConfig;
 use quench_db::{Db, InMemoryDb};
+use quench_http::http::{Method, StatusCode};
 use std::path::Path;
 use warehouse_service::routers::files;
 use warehouse_service::routers::files::ops::upload::staging_path;

@@ -11,9 +11,9 @@ use std::sync::Arc;
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     quench_starter::logging::init();
-    tracing::info!("Daybook service starting");
+    quench_log::info!("Daybook service starting");
 
-    let base_path = normalize_base_path(&envmnt::get_or("BASE_PATH", "/"));
+    let base_path = normalize_base_path(&quench_core::env::get_or("BASE_PATH", "/"));
     let db_wrapper = DbWrapper::init_env().await;
     let jwt_config = JwtConfig::init().await;
     // `Auth` checks every token's session against this store (Redis, via REDIS_URL); without it in the

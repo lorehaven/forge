@@ -41,7 +41,7 @@ fn in_repo<T>(sub: &str, body: impl FnOnce(&Path) -> T) -> T {
     let _guard = cwd_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let repo = tempfile::tempdir().unwrap();
+    let repo = quench_core::tmp::TempDir::new().unwrap();
     let work = repo.path().join(sub);
     fs::create_dir_all(work.join("overlays/prod")).unwrap();
     fs::write(
@@ -59,7 +59,7 @@ fn in_repo<T>(sub: &str, body: impl FnOnce(&Path) -> T) -> T {
     body(&work)
 }
 
-fn compare(git_ref: &str) -> anyhow::Result<riveter::against::Comparison> {
+fn compare(git_ref: &str) -> quench_core::Result<riveter::against::Comparison> {
     diff_against("prod", git_ref, ResourceScope::All, &Selector::default())
 }
 

@@ -14,13 +14,13 @@ fn secret_file_is_named_after_the_tool() {
 
 #[test]
 fn load_is_none_without_a_secret_file() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     assert_eq!(load("anvil", dir.path()).unwrap(), None);
 }
 
 #[test]
 fn save_then_load_round_trips_and_finds_it_from_a_subdirectory() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let path = save("anvil", dir.path(), &credentials()).unwrap();
     assert_eq!(path, dir.path().join(".anvil.secret.toml"));
 
@@ -34,7 +34,7 @@ fn save_then_load_round_trips_and_finds_it_from_a_subdirectory() {
 #[test]
 fn saved_file_is_private() {
     use std::os::unix::fs::PermissionsExt as _;
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let path = save("anvil", dir.path(), &credentials()).unwrap();
     let mode = std::fs::metadata(path).unwrap().permissions().mode();
     assert_eq!(mode & 0o777, 0o600);
@@ -42,7 +42,7 @@ fn saved_file_is_private() {
 
 #[test]
 fn save_adds_the_file_to_gitignore_once() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     std::fs::write(dir.path().join(".gitignore"), "target").unwrap();
     save("anvil", dir.path(), &credentials()).unwrap();
     save("anvil", dir.path(), &credentials()).unwrap();
@@ -52,7 +52,7 @@ fn save_adds_the_file_to_gitignore_once() {
 
 #[test]
 fn save_leaves_gitignore_alone_when_a_wildcard_already_covers_it() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     std::fs::write(dir.path().join(".gitignore"), ".*.secret.toml\n").unwrap();
     save("riveter", dir.path(), &credentials()).unwrap();
     let ignore = std::fs::read_to_string(dir.path().join(".gitignore")).unwrap();
@@ -61,7 +61,7 @@ fn save_leaves_gitignore_alone_when_a_wildcard_already_covers_it() {
 
 #[test]
 fn load_reports_a_malformed_file() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     std::fs::write(dir.path().join(".anvil.secret.toml"), "not = [valid").unwrap();
     assert!(load("anvil", dir.path()).is_err());
 }

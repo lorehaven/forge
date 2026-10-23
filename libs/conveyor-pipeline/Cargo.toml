@@ -16,10 +16,9 @@ name = "conveyor_pipeline"
 path = "src/lib.rs"
 
 [dependencies]
-serde = { workspace = true }
+quench-serde = { workspace = true }
+quench-core = { workspace = true }
 shlex = { workspace = true }
-thiserror = { workspace = true }
-toml = { workspace = true }
 
 [[test]]
 name = "unit"

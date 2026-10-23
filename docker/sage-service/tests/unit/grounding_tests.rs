@@ -210,7 +210,7 @@ struct FakeProvider {
     reply: Result<String, String>,
 }
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl sage_service::tools::SearchProvider for FakeProvider {
     fn name(&self) -> &'static str {
         "fake"

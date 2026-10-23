@@ -6,9 +6,9 @@ use crate::pipeline::Step;
 use crate::secrets::Redactor;
 use crate::steps::StepError;
 use crate::workspace::Workspace;
-use async_trait::async_trait;
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use quench_core::async_trait;
+use quench_core::time::Time;
+use quench_serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::time::Duration;
 use tokio::sync::broadcast;
@@ -77,8 +77,8 @@ pub struct JobState {
     pub exit_code: Option<i32>,
     /// Why it ended, when the exit code doesn't say (timeout, cancellation, spawn failure).
     pub error: Option<String>,
-    pub started_at: Option<DateTime<Utc>>,
-    pub finished_at: Option<DateTime<Utc>>,
+    pub started_at: Option<Time>,
+    pub finished_at: Option<Time>,
     /// One entry per step in the spec, in order, always.
     pub steps: Vec<StepState>,
 }
@@ -98,8 +98,8 @@ pub struct StepState {
     pub command: String,
     pub status: Status,
     pub exit_code: Option<i32>,
-    pub started_at: Option<DateTime<Utc>>,
-    pub finished_at: Option<DateTime<Utc>>,
+    pub started_at: Option<Time>,
+    pub finished_at: Option<Time>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -134,7 +134,7 @@ pub struct LogChunk {
     pub seq: u64,
     pub stream: Stream,
     pub line: String,
-    pub at: DateTime<Utc>,
+    pub at: Time,
 }
 
 /// Both halves needed: live-only misses history, snapshot-only goes stale immediately.
@@ -144,7 +144,7 @@ pub struct LogTail {
     pub live: broadcast::Receiver<LogChunk>,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, quench_core::Error)]
 pub enum ExecError {
     #[error("no such job: {0}")]
     UnknownHandle(Handle),

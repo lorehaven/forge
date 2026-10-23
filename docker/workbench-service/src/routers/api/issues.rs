@@ -10,7 +10,7 @@ use quench_db::prelude::Db;
 use quench_http::prelude::{
     Inject, Json, Path, Query, Response, delete, get, http::StatusCode, post, put,
 };
-use serde::Deserialize;
+use quench_serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct CreateIssue {
@@ -306,12 +306,12 @@ pub async fn detach_label(
     Ok(Response::new(StatusCode::NO_CONTENT))
 }
 
-fn json_ok<T: serde::Serialize>(value: &T) -> Response {
+fn json_ok<T: quench_serde::Serialize>(value: &T) -> Response {
     Response::json(StatusCode::OK, value)
         .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
 }
 
-fn json_created<T: serde::Serialize>(value: &T) -> Response {
+fn json_created<T: quench_serde::Serialize>(value: &T) -> Response {
     Response::json(StatusCode::CREATED, value)
         .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR))
 }

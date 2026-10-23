@@ -4,13 +4,12 @@
 //! transitively - the same approach `routers_models_handlers_tests.rs` uses.
 
 use crate::env_support::store_lock;
-use bytes::Bytes;
-use http::{HeaderMap, Method, StatusCode, Uri};
-use http_body_util::BodyExt;
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::bytes::Bytes;
 use quench_db::prelude::Db;
 use quench_http::body::InboundBody;
 use quench_http::di::ContainerBuilder;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::prelude::{FromRequest, Inject, Query, Request};
 use switchboard_service::routers::gpu::monitor::GpuInfo;
 use switchboard_service::routers::models::list::{apply_filters, estimates_modal, handle_grid};
@@ -27,19 +26,19 @@ fn config() -> Inject<JwtConfig> {
 
 async fn body_text(resp: quench_http::response::Response) -> String {
     let collected = resp
-        .into_hyper()
-        .into_body()
-        .collect()
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
         .await
         .expect("body collects");
-    String::from_utf8(collected.to_bytes().to_vec()).expect("utf8")
+    String::from_utf8(collected.to_vec()).expect("utf8")
 }
 
 /// `ModelFilters`/`EstimatesModalQuery` (the latter private to `list.rs`) go
 /// through a real `Query::from_request` deserialize rather than a struct
 /// literal, so this exercises the exact same query-string parsing a real
 /// request would.
-async fn query<T: serde::de::DeserializeOwned + Send>(uri: &str) -> Query<T> {
+async fn query<T: quench_serde::DeserializeOwned + Send>(uri: &str) -> Query<T> {
     let container = std::sync::Arc::new(ContainerBuilder::new().build().await.unwrap());
     let mut req = Request::new(
         Method::GET,
@@ -181,7 +180,7 @@ fn apply_filters_by_context_as_number_and_string() {
         model("big", "HF", Quant::FP16, Context::Size32768, 7.0),
     ];
     let mut f = filters();
-    f.context = Some(serde_json::json!(8192));
+    f.context = Some(quench_serde::json!(8192));
     apply_filters(&mut models, &f, &gpu());
     assert_eq!(models.len(), 1);
     assert_eq!(models[0].name, "big");
@@ -191,7 +190,7 @@ fn apply_filters_by_context_as_number_and_string() {
         model("big", "HF", Quant::FP16, Context::Size32768, 7.0),
     ];
     let mut f = filters();
-    f.context = Some(serde_json::json!("8192"));
+    f.context = Some(quench_serde::json!("8192"));
     apply_filters(&mut models, &f, &gpu());
     assert_eq!(models.len(), 1);
     assert_eq!(models[0].name, "big");
@@ -201,13 +200,13 @@ fn apply_filters_by_context_as_number_and_string() {
 fn apply_filters_by_context_zero_or_unparseable_keeps_everything() {
     let mut models = vec![model("a", "HF", Quant::FP16, Context::Size4096, 7.0)];
     let mut f = filters();
-    f.context = Some(serde_json::json!(0));
+    f.context = Some(quench_serde::json!(0));
     apply_filters(&mut models, &f, &gpu());
     assert_eq!(models.len(), 1);
 
     let mut models = vec![model("a", "HF", Quant::FP16, Context::Size4096, 7.0)];
     let mut f = filters();
-    f.context = Some(serde_json::json!(true));
+    f.context = Some(quench_serde::json!(true));
     apply_filters(&mut models, &f, &gpu());
     assert_eq!(models.len(), 1);
 }
@@ -323,7 +322,7 @@ async fn handle_grid_shows_a_fit_line_when_an_estimate_fits_with_a_small_margin(
     bare.path = "/tmp/list-test/handle-grid-bare".to_string();
     get_store().insert_model(&bare).await;
 
-    let filters: ModelFilters = serde_json::from_value(serde_json::json!({})).unwrap();
+    let filters: ModelFilters = quench_serde::from_value(&quench_serde::json!({})).unwrap();
     let resp = handle_grid(OptionalClaims(None), config(), Query(filters)).await;
     assert_eq!(resp.status(), StatusCode::OK);
 
@@ -342,7 +341,7 @@ async fn handle_grid_shows_the_delete_button_when_the_caller_can_delete_models()
     deletable.path = "/tmp/list-test/handle-grid-deletable".to_string();
     get_store().insert_model(&deletable).await;
 
-    let filters: ModelFilters = serde_json::from_value(serde_json::json!({})).unwrap();
+    let filters: ModelFilters = quench_serde::from_value(&quench_serde::json!({})).unwrap();
     let resp = handle_grid(OptionalClaims(None), config(), Query(filters)).await;
     let html = body_text(resp).await;
     assert!(html.contains("card-delete"));

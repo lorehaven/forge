@@ -8,7 +8,7 @@
 use crate::domain::cluster::LiveResource;
 use crate::domain::operation::Inventory;
 use crate::domain::targets::{Status, Target};
-use serde::{Deserialize, Serialize};
+use quench_serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// One resource a package declares, as an install reported it.
@@ -345,6 +345,6 @@ pub fn inventory_from_log(log: &str) -> Option<Vec<InventoryItem>> {
         .lines()
         .rev()
         .find_map(|line| line.trim().strip_prefix("riveter-inventory:"))?;
-    let items: Vec<InventoryItem> = serde_json::from_str(line.trim()).ok()?;
+    let items: Vec<InventoryItem> = quench_serde::json::from_str(line.trim()).ok()?;
     (!items.is_empty()).then_some(items)
 }

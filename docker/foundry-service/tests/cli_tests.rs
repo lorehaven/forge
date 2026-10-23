@@ -42,7 +42,7 @@ fn validate_rejects_an_unknown_module() {
 
 #[test]
 fn apply_without_a_database_url_refuses_to_start() {
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     foundry()
         .current_dir(&dir)
         .env_remove("DATABASE_URL")

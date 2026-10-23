@@ -1,13 +1,12 @@
 //! Unit tests for `routers/ui/pages/projects.rs`.
 
-use bytes::Bytes;
-use http::{HeaderMap, Method, StatusCode, Uri};
-use http_body_util::BodyExt;
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::bytes::Bytes;
 use quench_db::InMemoryDb;
 use quench_db::prelude::{Crud, Db};
 use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::request::Request;
 use sage_service::domain::models::Project;
 use sage_service::routers::ui::pages::projects;
@@ -45,7 +44,7 @@ fn form_req(
     pairs: &[(&str, &str)],
     container: &Arc<quench_http::di::Container>,
 ) -> Request {
-    let encoded = serde_urlencoded::to_string(pairs).unwrap();
+    let encoded = quench_serde::urlencoded::to_string(pairs).unwrap();
     let mut headers = HeaderMap::new();
     headers.insert(
         "content-type",
@@ -61,8 +60,13 @@ fn form_req(
 }
 
 async fn body_text(resp: quench_http::response::Response) -> String {
-    let collected = resp.into_hyper().into_body().collect().await.expect("body");
-    String::from_utf8_lossy(&collected.to_bytes()).into_owned()
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .expect("body");
+    String::from_utf8_lossy(&collected).into_owned()
 }
 
 #[tokio::test]
@@ -108,8 +112,8 @@ async fn create_project_stores_the_project_owned_by_the_admin_bypass_user() {
         .await;
     assert_eq!(resp.status(), StatusCode::OK);
     let redirect = resp
-        .into_hyper()
-        .headers()
+        .into_inner()
+        .headers
         .get("hx-redirect")
         .expect("HX-Redirect header")
         .to_str()

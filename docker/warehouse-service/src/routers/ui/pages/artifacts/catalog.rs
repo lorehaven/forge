@@ -10,7 +10,7 @@ use quench_web::prelude::*;
 use quench_web_components::containers::empty_state;
 use std::collections::BTreeMap;
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, quench_serde::Deserialize)]
 pub struct ArtifactActionForm {
     pub program: String,
     pub platform: String,
@@ -373,10 +373,10 @@ fn version_details(
     if let Some(label) = &v.label {
         list = list.child(meta_row("ui_artifact_meta_label", label));
     }
-    if let Some(min_sdk) = v.metadata.0.min_sdk_version {
+    if let Some(min_sdk) = v.metadata.min_sdk_version {
         list = list.child(meta_row("ui_artifact_meta_min_sdk", &min_sdk.to_string()));
     }
-    if let Some(target_sdk) = v.metadata.0.target_sdk_version {
+    if let Some(target_sdk) = v.metadata.target_sdk_version {
         list = list.child(meta_row(
             "ui_artifact_meta_target_sdk",
             &target_sdk.to_string(),
@@ -391,10 +391,10 @@ fn version_details(
         .child(meta_row("ui_meta_checksum", &v.sha256))
         .child(meta_row("ui_artifact_meta_uploaded_by", &v.uploaded_by));
 
-    if !v.metadata.0.permissions.is_empty() {
+    if !v.metadata.permissions.is_empty() {
         list = list.child(meta_row(
             "ui_artifact_meta_permissions",
-            &v.metadata.0.permissions.join(", "),
+            &v.metadata.permissions.join(", "),
         ));
     }
 

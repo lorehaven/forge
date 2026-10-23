@@ -5,7 +5,7 @@ use std::path::Path;
 use std::path::PathBuf;
 
 fn estate(text: &str) -> Estate {
-    let config: Config = toml::from_str(text).unwrap();
+    let config: Config = quench_serde::toml::from_str(text).unwrap();
     let vars = vars::resolve(Path::new("/tmp"), &config.vars).unwrap();
     Estate {
         root: PathBuf::from("/tmp/foreman-estate-test"),

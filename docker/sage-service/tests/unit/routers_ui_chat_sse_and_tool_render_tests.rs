@@ -46,7 +46,7 @@ fn render_tool_result_uses_the_search_icon_and_quoted_query_for_web_search() {
     let call = ToolCall {
         id: "1".to_string(),
         name: "web_search".to_string(),
-        arguments: serde_json::json!({"query": "rust async"}),
+        arguments: quench_serde::json!({"query": "rust async"}),
     };
     let result = ToolResult {
         tool_use_id: "1".to_string(),
@@ -64,7 +64,7 @@ fn render_tool_result_escapes_error_content_and_marks_it_as_an_error() {
     let call = ToolCall {
         id: "1".to_string(),
         name: "calculator".to_string(),
-        arguments: serde_json::json!({}),
+        arguments: quench_serde::json!({}),
     };
     let result = ToolResult {
         tool_use_id: "1".to_string(),
@@ -82,7 +82,7 @@ fn render_tool_result_converts_h1_headings_to_h3_in_markdown_output() {
     let call = ToolCall {
         id: "1".to_string(),
         name: "web_search".to_string(),
-        arguments: serde_json::json!({"query": "x"}),
+        arguments: quench_serde::json!({"query": "x"}),
     };
     let result = ToolResult {
         tool_use_id: "1".to_string(),

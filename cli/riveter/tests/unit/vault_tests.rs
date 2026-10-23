@@ -164,7 +164,7 @@ fn names_must_be_usable_variable_names() {
 #[test]
 fn the_key_is_found_inline_then_in_a_named_file_then_in_the_default_place() {
     let (secret, _) = vault::keygen();
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let file = dir.path().join("age.key");
     std::fs::write(&file, format!("# comment\n{secret}\n")).unwrap();
 
@@ -275,8 +275,8 @@ fn an_overlay_carries_values_yaml_or_values_toml_never_both() {
 
 // ---------------------------------------------------------------- through a package
 
-fn overlay_with(secret_key: Option<&vault::Vault>) -> tempfile::TempDir {
-    let dir = tempfile::tempdir().unwrap();
+fn overlay_with(secret_key: Option<&vault::Vault>) -> quench_core::tmp::TempDir {
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let root = dir.path().join("overlays/app");
     std::fs::create_dir_all(&root).unwrap();
     std::fs::write(root.join("overlay.yaml"), "env: app\nnamespace_name: app-ns\n\nresources:\n{% include \"app/base.yaml.j2\" %}\n{% include \"app/config.yaml.j2\" %}\n").unwrap();
@@ -302,7 +302,7 @@ fn overlay_with(secret_key: Option<&vault::Vault>) -> tempfile::TempDir {
     dir
 }
 
-fn packed(dir: &tempfile::TempDir) -> rivet_package::Package {
+fn packed(dir: &quench_core::tmp::TempDir) -> rivet_package::Package {
     let out = dir.path().join("out");
     let options = riveter::package::PackOptions {
         env: "app",
@@ -486,7 +486,7 @@ fn the_secrets_commands_create_list_import_and_remove_without_printing_a_value()
     use riveter::secrets_cmd::secrets_command;
 
     let (identities, public) = keys();
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let file = dir.path().join("secrets.yaml");
 
     secrets_command(&SecretsCmd::Set {
@@ -560,7 +560,7 @@ fn keygen_writes_a_private_key_once_with_owner_only_permissions() {
     use riveter::cli::SecretsCmd;
     use riveter::secrets_cmd::secrets_command;
     use std::os::unix::fs::PermissionsExt;
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let path = dir.path().join("keys/age.key");
 
     secrets_command(&SecretsCmd::Keygen {
@@ -582,8 +582,8 @@ fn keygen_writes_a_private_key_once_with_owner_only_permissions() {
 
 // ---------------------------------------------------------------- a changed config rolls the workload out
 
-fn config_overlay(level: &str, secret: &str) -> tempfile::TempDir {
-    let dir = tempfile::tempdir().unwrap();
+fn config_overlay(level: &str, secret: &str) -> quench_core::tmp::TempDir {
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let root = dir.path().join("overlays/cfg");
     std::fs::create_dir_all(&root).unwrap();
     std::fs::write(
@@ -607,7 +607,7 @@ fn config_overlay(level: &str, secret: &str) -> tempfile::TempDir {
     dir
 }
 
-fn render_cfg(dir: &tempfile::TempDir) -> Vec<serde_norway::Value> {
+fn render_cfg(dir: &quench_core::tmp::TempDir) -> Vec<quench_serde::Value> {
     let workspace = riveter::env::Workspace {
         overlays_dir: Some(dir.path().join("overlays")),
         output_dir: Some(dir.path().join("manifests")),
@@ -622,12 +622,10 @@ fn render_cfg(dir: &tempfile::TempDir) -> Vec<serde_norway::Value> {
         )
     })
     .unwrap();
-    serde_norway::Deserializer::from_str(&std::fs::read_to_string(&rendered.path).unwrap())
-        .map(|doc| serde::Deserialize::deserialize(doc).unwrap())
-        .collect()
+    quench_serde::yaml::from_str_all(&std::fs::read_to_string(&rendered.path).unwrap()).unwrap()
 }
 
-fn hash_of(docs: &[serde_norway::Value], name: &str) -> Option<String> {
+fn hash_of(docs: &[quench_serde::Value], name: &str) -> Option<String> {
     docs.iter()
         .find(|d| d["kind"] == "Deployment" && d["metadata"]["name"] == name)
         .and_then(|d| {

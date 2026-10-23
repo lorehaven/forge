@@ -1,6 +1,6 @@
 use super::{ToolCall, ToolDefinition, ToolExecutor, ToolParameters, ToolResult};
-use async_trait::async_trait;
-use serde_json::json;
+use quench_core::async_trait;
+use quench_serde::json;
 use std::time::Duration;
 
 #[must_use]

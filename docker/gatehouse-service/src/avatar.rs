@@ -1,9 +1,7 @@
 //! Profile pictures uploaded from the account page. Stored inline in `avatar_url`
 //! as a `data:` URI, so no file store is needed - hence the small size cap.
 
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD;
-
+use quench_core::base64::STANDARD;
 pub const MAX_AVATAR_BYTES: usize = 256 * 1024;
 
 #[derive(Debug, PartialEq, Eq)]

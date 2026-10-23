@@ -1,6 +1,6 @@
-use anyhow::{Context, Result};
 use crossterm::tty::IsTty;
 use quench_cli::prelude::{DIM, RESET, Tone, print_status};
+use quench_core::{Context, Result};
 use std::collections::VecDeque;
 use std::fs::{self, File};
 use std::io::{self, BufRead, BufReader, Write};
@@ -233,12 +233,12 @@ fn run_command_with_logging(mut cmd: Command, operation: &str, log_to_file: bool
             print_tail_lines(&tail.snapshot(), tail_n, &source);
         }
         if log_to_file {
-            anyhow::bail!(
+            quench_core::bail!(
                 "{operation} operation failed with status: {status} (full log: {})",
                 log_path.display()
             );
         }
-        anyhow::bail!("{operation} operation failed with status: {status}");
+        quench_core::bail!("{operation} operation failed with status: {status}");
     }
 
     if matches!(mode, OutputMode::Tail(_)) {
@@ -288,7 +288,7 @@ pub fn run_command_streamed(cmd: Command, operation: &str) -> Result<()> {
 pub fn run_command_json(mut cmd: Command) -> Result<()> {
     let status = cmd.status().context("Failed to execute command")?;
     if !status.success() {
-        anyhow::bail!("command failed with status: {status}");
+        quench_core::bail!("command failed with status: {status}");
     }
     Ok(())
 }

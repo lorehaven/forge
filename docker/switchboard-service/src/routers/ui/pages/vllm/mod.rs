@@ -32,7 +32,7 @@ pub(super) async fn vllm_manage_slash(
 
 fn render_vllm_manage_page(can_launch: bool) -> Response {
     render_page(
-        http::StatusCode::OK,
+        quench_http::http::StatusCode::OK,
         div()
             .class("fui-stack fui-stack-lg vllm-manage-content")
             .child(

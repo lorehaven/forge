@@ -100,7 +100,10 @@ pub fn default_filename(program: &str, version_code: i64, format: &str) -> Strin
 /// Idempotent; a failed rename is logged and skipped, not fatal - the operator can move it by hand.
 pub fn relocate_legacy_apk_storage() {
     let new_root = PathBuf::from(artifact_storage_root());
-    let legacy_root = PathBuf::from(envmnt::get_or("APK_STORAGE_PATH", "./storage/apk"));
+    let legacy_root = PathBuf::from(quench_core::env::get_or(
+        "APK_STORAGE_PATH",
+        "./storage/apk",
+    ));
     if !legacy_root.is_dir() {
         return;
     }
@@ -137,7 +140,7 @@ pub fn relocate_legacy_apk_storage() {
             if let Some(parent) = dest.parent()
                 && std::fs::create_dir_all(parent).is_err()
             {
-                tracing::warn!(
+                quench_log::warn!(
                     ?dest,
                     "artifact storage: could not create relocation target"
                 );
@@ -146,7 +149,7 @@ pub fn relocate_legacy_apk_storage() {
             match std::fs::rename(code_entry.path(), &dest) {
                 Ok(()) => moved += 1,
                 Err(err) => {
-                    tracing::warn!(
+                    quench_log::warn!(
                         from = ?code_entry.path(),
                         to = ?dest,
                         %err,
@@ -158,7 +161,7 @@ pub fn relocate_legacy_apk_storage() {
     }
 
     if moved > 0 {
-        tracing::info!(
+        quench_log::info!(
             moved,
             "artifact storage: relocated legacy APK versions under <program>/android/"
         );

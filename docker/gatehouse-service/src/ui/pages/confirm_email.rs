@@ -11,11 +11,11 @@ use crate::realm;
 use crate::tokens::{PURPOSE_EMAIL_CHANGE, VerificationTokens};
 use crate::ui::common::ui_path;
 use crate::ui::locale::BrowserLocale;
-use http::StatusCode;
 use quench_db::prelude::Db;
+use quench_http::http::StatusCode;
 use quench_http::prelude::{Form, Inject, Query, Response, get, post};
+use quench_serde::Deserialize;
 use quench_web::prelude::*;
-use serde::Deserialize;
 use std::sync::Arc;
 
 #[derive(Debug, Deserialize)]
@@ -66,7 +66,7 @@ pub async fn confirm_email_submit(
     let change = match realm::change_email(&db, &ticket.username, &ticket.new_email).await {
         Ok(change) => change,
         Err(err) => {
-            tracing::warn!("email change for {} failed: {err:?}", ticket.username);
+            quench_log::warn!("email change for {} failed: {err:?}", ticket.username);
             return invalid();
         }
     };
@@ -87,7 +87,7 @@ pub async fn confirm_email_submit(
             new_email: &ticket.new_email,
         };
         if let Err(err) = mailer.send(&recipient, &notice).await {
-            tracing::error!(
+            quench_log::error!(
                 "failed to tell the old address of {} about the change: {err}",
                 change.user.username
             );

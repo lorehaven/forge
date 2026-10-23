@@ -1,5 +1,5 @@
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use quench_core::time::Time;
+use quench_serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct VllmInstance {
@@ -27,7 +27,7 @@ pub struct VllmInstance {
     #[serde(default)]
     pub device: Option<String>,
 
-    pub started_at: DateTime<Utc>,
+    pub started_at: Time,
 
     pub status: String,
     pub log_path: Option<String>,

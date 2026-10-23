@@ -8,11 +8,11 @@ use conveyor_service::config::ConveyorConfig;
 use conveyor_service::domain::Trigger;
 use conveyor_service::scheduler::projects::{self, NewProject};
 use conveyor_service::scheduler::queue::{self, NewRun};
-use http::{Method, StatusCode};
 use quench_auth::domain::jwt::JwtConfig;
 use quench_db::prelude::Db;
 use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{Method, StatusCode};
 use std::sync::Arc;
 
 async fn app(db: Db, config: JwtConfig) -> (Arc<dyn Endpoint>, Arc<quench_http::di::Container>) {

@@ -4,11 +4,11 @@ use quench_auth::domain::jwt::{KeyResolver, KeySigner};
 use quench_db::prelude::Db;
 
 /// `GATEHOUSE_KEY_ENCRYPTION_KEY` is a fixed env var name several modules'
-/// tests in this crate need: every one of them sets it, via `envmnt::set`, to
+/// tests in this crate need: every one of them sets it, via `quench_core::env::set`, to
 /// this same value and never unsets it, so concurrent tests racing to set it
 /// race harmlessly instead of one module's cleanup breaking another's.
 async fn signing_keys(retire_after_secs: i64) -> std::sync::Arc<SigningKeys> {
-    envmnt::set("GATEHOUSE_KEY_ENCRYPTION_KEY", TEST_KEY_MATERIAL);
+    quench_core::env::set("GATEHOUSE_KEY_ENCRYPTION_KEY", TEST_KEY_MATERIAL);
     // Each test gets its own in-memory `Db`, so there's no cross-test
     // table state to race on.
     let db = Db::connect("").await.expect("in-memory db");

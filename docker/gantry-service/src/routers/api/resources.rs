@@ -5,7 +5,7 @@ use crate::domain::service::{Gantry, SubmitError};
 use crate::routers::api::{ApiError, OptionalClaims, actor, authz, json_error};
 use quench_auth::domain::jwt::JwtConfig;
 use quench_http::prelude::{Inject, Json, Query, Response, get, http::StatusCode, post};
-use serde::{Deserialize, Serialize};
+use quench_serde::{Deserialize, Serialize};
 
 fn json_ok<T: Serialize>(value: &T) -> Response {
     Response::json(StatusCode::OK, value)
@@ -77,7 +77,7 @@ pub async fn yaml(
         namespace: query.namespace.filter(|ns| !ns.is_empty()),
     };
     let text = actions::yaml(&gantry, &query.package, &target).await?;
-    Ok(json_ok(&serde_json::json!({ "yaml": text })))
+    Ok(json_ok(&quench_serde::json!({ "yaml": text })))
 }
 
 #[derive(Debug, Deserialize)]

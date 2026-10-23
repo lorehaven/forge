@@ -17,7 +17,7 @@ pub fn get_definition() -> ToolDefinition {
         tool_type: "function".to_string(),
         parameters: ToolParameters {
             param_type: "object".to_string(),
-            properties: serde_json::json!({
+            properties: quench_serde::json!({
                 "ready_only": {
                     "type": "boolean",
                     "description": "When true, only list files that finished processing and \
@@ -49,7 +49,7 @@ impl FileListExecutor {
     }
 }
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl ToolExecutor for FileListExecutor {
     async fn execute(&self, tool_call: &ToolCall) -> ToolResult {
         let Some(conversation_id) = &self.conversation_id else {
@@ -63,7 +63,7 @@ impl ToolExecutor for FileListExecutor {
         let ready_only = tool_call
             .arguments
             .get("ready_only")
-            .and_then(serde_json::Value::as_bool)
+            .and_then(quench_serde::Value::as_bool)
             .unwrap_or(false);
 
         // Prefer the conversation's view (its own files plus its project's); fall back to the

@@ -4,14 +4,13 @@
 use crate::scheduler::queue::{QueueError, pool, schema};
 use crate::secrets::crypto::{CryptoError, SecretKey};
 use crate::secrets::redact::MIN_REDACTABLE;
-use chrono::{DateTime, Utc};
+use quench_core::time::Time;
+use quench_core::uuid::Uuid;
 use quench_db::prelude::Db;
-use serde::Serialize;
-use sqlx::Row;
+use quench_serde::Serialize;
 use std::collections::BTreeMap;
-use uuid::Uuid;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, quench_core::Error)]
 pub enum SecretError {
     #[error(transparent)]
     Crypto(#[from] CryptoError),
@@ -67,8 +66,8 @@ pub struct SecretRef {
     pub repo_id: Option<String>,
     pub name: String,
     pub created_by: String,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: Time,
+    pub updated_at: Time,
 }
 
 /// Names that can become environment variables without surprising anyone.
@@ -118,17 +117,16 @@ pub async fn put(
         ),
     };
 
-    let mut query = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(Uuid::new_v4().to_string())
-        .bind(name)
-        .bind(&nonce)
-        .bind(&ciphertext)
-        .bind(created_by);
-    if let Scope::Repo(id) = scope {
-        query = query.bind(id);
+    let id = Uuid::new_v4().to_string();
+    let mut params: Vec<&dyn quench_pg::ToSql> = vec![&id, &name, &nonce, &ciphertext, &created_by];
+    if let Scope::Repo(repo_id) = scope {
+        params.push(repo_id);
     }
 
-    let row = query.fetch_one(pool).await.map_err(QueueError::from)?;
+    let row = pool
+        .query_one(&sql, &params)
+        .await
+        .map_err(QueueError::from)?;
     Ok(from_row(&row)?)
 }
 
@@ -147,10 +145,8 @@ pub async fn get(
          WHERE name = $1 AND repo_id IS NOT DISTINCT FROM $2"
     );
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(name)
-        .bind(scope.repo_id())
-        .fetch_optional(pool)
+    let row = pool
+        .query_opt(&sql, &[&name as &dyn quench_pg::ToSql, &scope.repo_id()])
         .await
         .map_err(QueueError::from)?;
 
@@ -158,8 +154,8 @@ pub async fn get(
         return Ok(None);
     };
 
-    let nonce: Vec<u8> = row.try_get("nonce").map_err(QueueError::from)?;
-    let ciphertext: Vec<u8> = row.try_get("ciphertext").map_err(QueueError::from)?;
+    let nonce: Vec<u8> = row.get("nonce").map_err(QueueError::from)?;
+    let ciphertext: Vec<u8> = row.get("ciphertext").map_err(QueueError::from)?;
     Ok(Some(key.open(&scope.context(name), &nonce, &ciphertext)?))
 }
 
@@ -216,9 +212,8 @@ pub async fn list(db: &Db, scope: &Scope) -> Result<Vec<SecretRef>, SecretError>
          WHERE repo_id IS NOT DISTINCT FROM $1 ORDER BY name"
     );
 
-    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(scope.repo_id())
-        .fetch_all(pool)
+    let rows = pool
+        .query(&sql, &[&scope.repo_id() as &dyn quench_pg::ToSql])
         .await
         .map_err(QueueError::from)?;
 
@@ -232,25 +227,23 @@ pub async fn delete(db: &Db, scope: &Scope, name: &str) -> Result<bool, SecretEr
     let sql =
         format!("DELETE FROM {schema}.secrets WHERE name = $1 AND repo_id IS NOT DISTINCT FROM $2");
 
-    let result = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(name)
-        .bind(scope.repo_id())
-        .execute(pool)
+    let result = pool
+        .execute(&sql, &[&name as &dyn quench_pg::ToSql, &scope.repo_id()])
         .await
         .map_err(QueueError::from)?;
 
-    Ok(result.rows_affected() > 0)
+    Ok(result > 0)
 }
 
 const COLUMNS: &str = "id, repo_id, name, created_by, created_at, updated_at";
 
-fn from_row(row: &sqlx::postgres::PgRow) -> Result<SecretRef, QueueError> {
+fn from_row(row: &quench_pg::Row) -> Result<SecretRef, QueueError> {
     Ok(SecretRef {
-        id: row.try_get("id")?,
-        repo_id: row.try_get("repo_id")?,
-        name: row.try_get("name")?,
-        created_by: row.try_get("created_by")?,
-        created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
-        updated_at: row.try_get::<DateTime<Utc>, _>("updated_at")?,
+        id: row.get("id")?,
+        repo_id: row.get("repo_id")?,
+        name: row.get("name")?,
+        created_by: row.get("created_by")?,
+        created_at: row.get::<Time, _>("created_at")?,
+        updated_at: row.get::<Time, _>("updated_at")?,
     })
 }

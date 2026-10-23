@@ -2,9 +2,9 @@
 //! the person still wants it. Conveyor only says what happened and to whom.
 
 use super::outbox::Pending;
-use async_trait::async_trait;
 use quench_client::ClientCredentialsClient;
-use serde_json::json;
+use quench_core::async_trait;
+use quench_serde::json;
 
 /// What one delivery attempt came to.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -29,14 +29,15 @@ pub struct GatehouseNotifier {
 
 impl GatehouseNotifier {
     /// `None` when gatehouse's URL or conveyor's secret for it is not set - notifications are then off.
+    #[must_use]
     pub fn from_env() -> Option<Self> {
-        let base = envmnt::get_or("GATEHOUSE_URL", "");
-        let secret = envmnt::get_or("CLIENT_SECRET_CONVEYOR_GATEHOUSE", "");
+        let base = quench_core::env::get_or("GATEHOUSE_URL", "");
+        let secret = quench_core::env::get_or("CLIENT_SECRET_CONVEYOR_GATEHOUSE", "");
         if base.trim().is_empty() || secret.trim().is_empty() {
             return None;
         }
         let base = base.trim().trim_end_matches('/');
-        let tls_verify = envmnt::get_or("GATEHOUSE_TLS_VERIFY", "true")
+        let tls_verify = quench_core::env::get_or("GATEHOUSE_TLS_VERIFY", "true")
             .parse::<bool>()
             .unwrap_or(true);
 
@@ -49,7 +50,7 @@ impl GatehouseNotifier {
         {
             Ok(client) => Some(Self { client }),
             Err(error) => {
-                tracing::error!("could not build the gatehouse client: {error}");
+                quench_log::error!("could not build the gatehouse client: {error}");
                 None
             }
         }
@@ -72,7 +73,7 @@ impl Notifier for GatehouseNotifier {
 
         match self
             .client
-            .post::<_, serde_json::Value>("/api/v1/notify", &body)
+            .post::<_, quench_serde::Value>("/api/v1/notify", &body)
             .await
         {
             Ok(_) => Delivery::Done,

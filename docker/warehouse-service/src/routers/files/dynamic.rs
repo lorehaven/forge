@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 /// The blob store's root, or `None` if no dynamic storages are configured.
 #[must_use]
 pub fn root() -> Option<PathBuf> {
-    let raw = envmnt::get_or("DYNAMIC_STORAGE_ROOT", "");
+    let raw = quench_core::env::get_or("DYNAMIC_STORAGE_ROOT", "");
     if raw.trim().is_empty() {
         None
     } else {

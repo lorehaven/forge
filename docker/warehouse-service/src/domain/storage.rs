@@ -1,10 +1,9 @@
 //! Dynamic, admin-provisioned, quota'd storages - the DB counterpart to `routers::files`'s static ones.
 
 use crate::domain::db::{StorageError, pool, schema};
-use chrono::{DateTime, Utc};
+use quench_core::time::Time;
 use quench_db::prelude::Db;
-use serde::{Deserialize, Serialize};
-use sqlx::Row;
+use quench_serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DynamicStorage {
@@ -15,7 +14,7 @@ pub struct DynamicStorage {
     pub quota_bytes: i64,
     pub used_bytes: i64,
     pub sync_enabled: bool,
-    pub created_at: DateTime<Utc>,
+    pub created_at: Time,
 }
 
 #[derive(Clone, Debug)]
@@ -36,13 +35,17 @@ pub async fn create(db: &Db, new: &NewStorage) -> Result<DynamicStorage, Storage
          VALUES ($1, $2, $3, $4, $5) RETURNING {COLUMNS}"
     );
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(&new.name)
-        .bind(&new.owner)
-        .bind(new.max_file_bytes)
-        .bind(new.quota_bytes)
-        .bind(new.sync_enabled)
-        .fetch_one(pool)
+    let row = pool
+        .query_one(
+            &sql,
+            &[
+                &new.name as &dyn quench_pg::ToSql,
+                &new.owner,
+                &new.max_file_bytes,
+                &new.quota_bytes,
+                &new.sync_enabled,
+            ],
+        )
         .await?;
 
     from_row(&row)
@@ -53,9 +56,8 @@ pub async fn read(db: &Db, name: &str) -> Result<Option<DynamicStorage>, Storage
     let schema = schema();
     let sql = format!("SELECT {COLUMNS} FROM {schema}.storages WHERE name = $1");
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(name)
-        .fetch_optional(pool)
+    let row = pool
+        .query_opt(&sql, &[&name as &dyn quench_pg::ToSql])
         .await?;
 
     row.as_ref().map(from_row).transpose()
@@ -67,9 +69,7 @@ pub async fn list(db: &Db) -> Result<Vec<DynamicStorage>, StorageError> {
     let schema = schema();
     let sql = format!("SELECT {COLUMNS} FROM {schema}.storages ORDER BY name");
 
-    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .fetch_all(pool)
-        .await?;
+    let rows = pool.query(&sql, &[]).await?;
 
     rows.iter().map(from_row).collect()
 }
@@ -103,12 +103,16 @@ pub async fn update(
          WHERE name = $1 RETURNING {COLUMNS}"
     );
 
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(name)
-        .bind(max_file_bytes)
-        .bind(quota_bytes)
-        .bind(sync_enabled)
-        .fetch_optional(pool)
+    let row = pool
+        .query_opt(
+            &sql,
+            &[
+                &name as &dyn quench_pg::ToSql,
+                &max_file_bytes,
+                &quota_bytes,
+                &sync_enabled,
+            ],
+        )
         .await?;
 
     row.as_ref().map(from_row).transpose()
@@ -120,25 +124,24 @@ pub async fn delete(db: &Db, name: &str) -> Result<bool, StorageError> {
     let schema = schema();
     let sql = format!("DELETE FROM {schema}.storages WHERE name = $1");
 
-    let result = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(name)
-        .execute(pool)
+    let result = pool
+        .execute(&sql, &[&name as &dyn quench_pg::ToSql])
         .await?;
 
-    Ok(result.rows_affected() > 0)
+    Ok(result > 0)
 }
 
 const COLUMNS: &str =
     "name, owner, max_file_bytes, quota_bytes, used_bytes, sync_enabled, created_at";
 
-fn from_row(row: &sqlx::postgres::PgRow) -> Result<DynamicStorage, StorageError> {
+fn from_row(row: &quench_pg::Row) -> Result<DynamicStorage, StorageError> {
     Ok(DynamicStorage {
-        name: row.try_get("name")?,
-        owner: row.try_get("owner")?,
-        max_file_bytes: row.try_get("max_file_bytes")?,
-        quota_bytes: row.try_get("quota_bytes")?,
-        used_bytes: row.try_get("used_bytes")?,
-        sync_enabled: row.try_get("sync_enabled")?,
-        created_at: row.try_get::<DateTime<Utc>, _>("created_at")?,
+        name: row.get("name")?,
+        owner: row.get("owner")?,
+        max_file_bytes: row.get("max_file_bytes")?,
+        quota_bytes: row.get("quota_bytes")?,
+        used_bytes: row.get("used_bytes")?,
+        sync_enabled: row.get("sync_enabled")?,
+        created_at: row.get::<Time, _>("created_at")?,
     })
 }

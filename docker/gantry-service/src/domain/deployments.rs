@@ -14,8 +14,8 @@ use crate::domain::planner::{Action, PlanError};
 use crate::domain::registry::PackageVersion;
 use crate::domain::service::Gantry;
 use crate::domain::steps::{Effect, Plan, Step};
+use quench_serde::Serialize;
 use rivet_package::{AlsoStops, DefaultState};
-use serde::Serialize;
 use std::collections::BTreeMap;
 
 const INSTALL_TIMEOUT_SECS: u64 = 600;
@@ -108,7 +108,7 @@ pub fn assemble(
 
         for deployment in declared {
             if views.iter().any(|v| v.name == deployment.name) {
-                tracing::warn!(
+                quench_log::warn!(
                     "deployment '{}' is declared by more than one package; keeping the first",
                     deployment.name
                 );
@@ -338,9 +338,9 @@ pub fn signature(views: &[DeploymentView], names: &[String]) -> String {
             let observed = views.iter().find(|v| &v.name == name).map_or_else(
                 || "unknown".to_string(),
                 |v| {
-                    serde_json::to_value(v.observed)
-                        .ok()
-                        .and_then(|o| o.as_str().map(str::to_string))
+                    quench_serde::to_value(&v.observed)
+                        .as_str()
+                        .map(str::to_string)
                         .unwrap_or_default()
                 },
             );

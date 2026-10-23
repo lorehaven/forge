@@ -13,27 +13,32 @@ pub async fn launch_instance(
     Inject(engine): Inject<Arc<dyn VllmEngine>>,
 ) -> Response {
     if !can(claims.as_ref(), &config, "launch") {
-        return Response::new(http::StatusCode::FORBIDDEN);
+        return Response::new(quench_http::http::StatusCode::FORBIDDEN);
     }
 
     if req.model.trim().is_empty() {
-        return Response::text(http::StatusCode::BAD_REQUEST, "api_error_model_name_empty");
+        return Response::text(
+            quench_http::http::StatusCode::BAD_REQUEST,
+            "api_error_model_name_empty",
+        );
     }
 
     match engine.launch_instance(req).await {
-        Ok(instance) => Response::json(http::StatusCode::ACCEPTED, &instance)
-            .unwrap_or_else(|_| Response::new(http::StatusCode::INTERNAL_SERVER_ERROR)),
+        Ok(instance) => Response::json(quench_http::http::StatusCode::ACCEPTED, &instance)
+            .unwrap_or_else(|_| {
+                Response::new(quench_http::http::StatusCode::INTERNAL_SERVER_ERROR)
+            }),
         Err(err) => {
-            tracing::error!("Failed to launch vLLM instance: {}", err);
+            quench_log::error!("Failed to launch vLLM instance: {}", err);
             Response::text(
-                http::StatusCode::INTERNAL_SERVER_ERROR,
+                quench_http::http::StatusCode::INTERNAL_SERVER_ERROR,
                 "api_error_vllm_launch_failed",
             )
         }
     }
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, quench_serde::Deserialize)]
 pub struct LaunchRequestForm {
     model: String,
     host: Option<String>,
@@ -61,7 +66,7 @@ pub async fn launch_instance_form(
     Inject(engine): Inject<Arc<dyn VllmEngine>>,
 ) -> Response {
     if !can(claims.as_ref(), &config, "launch") {
-        return Response::new(http::StatusCode::FORBIDDEN);
+        return Response::new(quench_http::http::StatusCode::FORBIDDEN);
     }
 
     let device = form.device.as_deref().and_then(|value| {
@@ -113,13 +118,13 @@ pub async fn launch_instance_form(
 
     match engine.launch_instance(req).await {
         Ok(_) => Response::html(
-            http::StatusCode::ACCEPTED,
+            quench_http::http::StatusCode::ACCEPTED,
             r#"<div id="launch-modal" class="modal launch-modal"></div>"#,
         ),
         Err(err) => {
-            tracing::error!("Failed to launch vLLM instance: {}", err);
+            quench_log::error!("Failed to launch vLLM instance: {}", err);
             Response::text(
-                http::StatusCode::INTERNAL_SERVER_ERROR,
+                quench_http::http::StatusCode::INTERNAL_SERVER_ERROR,
                 "api_error_vllm_launch_failed",
             )
         }

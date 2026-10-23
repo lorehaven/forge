@@ -1,11 +1,11 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
+use quench_core::tmp::TempDir;
 use std::fs;
-use tempfile::tempdir;
 
 #[test]
 fn test_registry_management() {
-    let temp = tempdir().unwrap();
+    let temp = TempDir::new().unwrap();
     let config_dir = temp.path().join(".warehouse");
     fs::create_dir_all(&config_dir).unwrap();
 
@@ -122,7 +122,7 @@ fn test_registry_management() {
 
 #[test]
 fn test_global_local_config() {
-    let temp = tempdir().unwrap();
+    let temp = TempDir::new().unwrap();
     let home_dir = temp.path().join("home");
     let project_dir = temp.path().join("project");
     fs::create_dir_all(&home_dir).unwrap();
@@ -195,7 +195,7 @@ fn test_global_local_config() {
 
 #[test]
 fn test_registry_validation() {
-    let temp = tempdir().unwrap();
+    let temp = TempDir::new().unwrap();
     let mut cmd = Command::cargo_bin("warehouse").unwrap();
     cmd.current_dir(temp.path());
 

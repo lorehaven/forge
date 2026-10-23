@@ -124,12 +124,12 @@ fn device_from_args_recovers_the_device_flag_value() {
 #[tokio::test]
 async fn cpu_image_defaults_to_upstream_and_honours_the_env_override() {
     let _guard = env_lock().lock().await;
-    envmnt::remove("VLLM_CPU_IMAGE");
+    quench_core::env::remove("VLLM_CPU_IMAGE");
     assert_eq!(cpu_image(), "vllm/vllm-openai-cpu:latest-x86_64");
-    envmnt::set(
+    quench_core::env::set(
         "VLLM_CPU_IMAGE",
         "reg.local/forge/vllm/vllm-openai-cpu:v0.25.1",
     );
     assert_eq!(cpu_image(), "reg.local/forge/vllm/vllm-openai-cpu:v0.25.1");
-    envmnt::remove("VLLM_CPU_IMAGE");
+    quench_core::env::remove("VLLM_CPU_IMAGE");
 }

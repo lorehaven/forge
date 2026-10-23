@@ -1,6 +1,6 @@
 pub mod ollama;
 
-use async_trait::async_trait;
+use quench_core::async_trait;
 use std::fmt::Debug;
 
 #[derive(Debug, Clone)]
@@ -51,5 +51,5 @@ pub struct LlmResponse {
 #[async_trait]
 pub trait Llm: Send + Sync + Debug {
     fn name(&self) -> &str;
-    async fn generate_content(&self, request: LlmRequest) -> anyhow::Result<LlmResponse>;
+    async fn generate_content(&self, request: LlmRequest) -> quench_core::Result<LlmResponse>;
 }

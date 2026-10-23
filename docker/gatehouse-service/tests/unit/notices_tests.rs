@@ -16,7 +16,7 @@ fn user(email: Option<&str>, confirmed: bool, locale: Option<&str>) -> User {
     )
     .unwrap();
     if confirmed {
-        user.email_verified_at = Some(chrono::Utc::now());
+        user.email_verified_at = Some(quench_core::time::Time::now());
     }
     user.preferred_locale = locale.map(str::to_string);
     user
@@ -94,7 +94,7 @@ async fn nothing_is_sent_without_a_confirmed_address() {
 #[tokio::test]
 async fn a_failing_sender_is_swallowed() {
     struct Failing;
-    #[async_trait::async_trait]
+    #[quench_core::async_trait]
     impl Sender for Failing {
         async fn send(
             &self,
@@ -121,7 +121,10 @@ async fn notify_username_looks_the_account_up_and_ignores_strangers() {
     notify_username(&*sender, &db, "nobody", &Mail::MfaDisabled, None).await;
     assert!(recorder.sent().is_empty());
 
-    let dir = std::env::temp_dir().join(format!("notices-test-{}", uuid::Uuid::new_v4()));
+    let dir = std::env::temp_dir().join(format!(
+        "notices-test-{}",
+        quench_core::uuid::Uuid::new_v4()
+    ));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("permissions.toml");
     std::fs::write(&path, "[services.gatehouse]\nactions = [\"read-users\"]\n").unwrap();

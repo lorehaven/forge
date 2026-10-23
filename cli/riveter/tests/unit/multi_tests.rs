@@ -22,8 +22,8 @@ fn overlay(context: Option<&str>) -> String {
 }
 
 /// A temp dir holding `overlays/<env>/overlay.yaml` for each `(env, kube_context)`.
-fn workspace(envs: &[(&str, Option<&str>)]) -> (tempfile::TempDir, Workspace) {
-    let dir = tempfile::tempdir().unwrap();
+fn workspace(envs: &[(&str, Option<&str>)]) -> (quench_core::tmp::TempDir, Workspace) {
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let overlays = dir.path().join("overlays");
     for (env, context) in envs {
         fs::create_dir_all(overlays.join(env)).unwrap();
@@ -45,7 +45,7 @@ fn in_cwd_with_overlays<T>(envs: &[&str], body: impl FnOnce() -> T) -> T {
     let _guard = cwd_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     for env in envs {
         let path = dir.path().join("overlays").join(env);
         fs::create_dir_all(&path).unwrap();
@@ -53,7 +53,7 @@ fn in_cwd_with_overlays<T>(envs: &[&str], body: impl FnOnce() -> T) -> T {
     }
     let original = std::env::current_dir().unwrap();
     std::env::set_current_dir(dir.path()).unwrap();
-    envmnt::remove(ENV_VAR);
+    quench_core::env::remove(ENV_VAR);
     let result = body();
     std::env::set_current_dir(original).unwrap();
     result
@@ -203,7 +203,7 @@ fn a_failure_stops_the_run_and_the_rest_are_not_attempted() {
         |env| {
             seen.push(env.to_string());
             if env == "b" {
-                anyhow::bail!("kubectl apply failed")
+                quench_core::bail!("kubectl apply failed")
             }
             Ok(applied(1))
         },
@@ -262,7 +262,7 @@ fn with_kubectl<T>(bad_context: &str, body: impl FnOnce(&std::path::Path) -> T) 
     let _guard = cwd_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let log = dir.path().join("calls.log");
     let script = format!(
         "#!/bin/sh\necho \"$@\" >> '{log}'\ncase \"$*\" in *'--context {bad}'*) echo 'cluster unreachable' >&2; exit 1 ;; esac\nexit 0\n",
@@ -274,9 +274,9 @@ fn with_kubectl<T>(bad_context: &str, body: impl FnOnce(&std::path::Path) -> T) 
     fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
 
     let original = std::env::var("PATH").unwrap_or_default();
-    envmnt::set("PATH", format!("{}:{original}", dir.path().display()));
+    quench_core::env::set("PATH", format!("{}:{original}", dir.path().display()));
     let result = body(&log);
-    envmnt::set("PATH", &original);
+    quench_core::env::set("PATH", &original);
     result
 }
 

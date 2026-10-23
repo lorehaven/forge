@@ -20,19 +20,14 @@ name = "conveyor"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = { workspace = true }
+quench-serde = { workspace = true }
+quench-core = { workspace = true }
 clap = { workspace = true }
 conveyor-pipeline = { workspace = true }
 dotenvy = { workspace = true }
-envmnt = { workspace = true }
-futures-util = { workspace = true }
 quench-cli = { workspace = true }
-reqwest = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
+quench-client = { workspace = true }
 tokio = { workspace = true }
-toml = { workspace = true }
 
 [dev-dependencies]
-tempfile = { workspace = true }
 wiremock = { workspace = true }

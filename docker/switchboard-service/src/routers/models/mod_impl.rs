@@ -1,7 +1,7 @@
-use async_trait::async_trait;
 use quench_auth::domain::jwt::{Claims, JwtConfig};
 use quench_auth::domain::realm;
 use quench_auth::http::domain::cookies::cookie_value;
+use quench_core::async_trait;
 use quench_http::prelude::{FromRequest, HttpError, Request};
 use std::sync::LazyLock;
 

@@ -1,8 +1,8 @@
 use crate::support;
 
-use async_trait::async_trait;
-use http::{HeaderMap, Method, StatusCode, Uri};
+use quench_core::async_trait;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::prelude::wrap;
 use quench_http::request::Request;
 use quench_http::response::Response;
@@ -23,7 +23,7 @@ fn plain_req(method: Method, path: &str) -> Request {
         method,
         path.parse::<Uri>().unwrap(),
         HeaderMap::new(),
-        quench_http::body::InboundBody::from_bytes(bytes::Bytes::new()),
+        quench_http::body::InboundBody::from_bytes(quench_core::bytes::Bytes::new()),
         container,
     )
 }
@@ -41,7 +41,7 @@ fn req_from(method: Method, path: &str, peer: &str) -> Request {
         method,
         path.parse::<Uri>().unwrap(),
         headers,
-        quench_http::body::InboundBody::from_bytes(bytes::Bytes::new()),
+        quench_http::body::InboundBody::from_bytes(quench_core::bytes::Bytes::new()),
         container,
     )
 }
@@ -166,7 +166,7 @@ fn config(auth_enabled: bool) -> DockerTokenConfig {
     let _guard = support::secret_env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::set(
+    quench_core::env::set(
         "DOCKER_TOKEN_SECRET",
         "warehouse-auth-middleware-test-secret",
     );
@@ -175,7 +175,7 @@ fn config(auth_enabled: bool) -> DockerTokenConfig {
         "https://warehouse.test/token".to_string(),
         auth_enabled,
     );
-    envmnt::remove("DOCKER_TOKEN_SECRET");
+    quench_core::env::remove("DOCKER_TOKEN_SECRET");
     config
 }
 
@@ -187,13 +187,13 @@ fn bearer(config: &DockerTokenConfig, scope: &str) -> String {
 /// the signing config's own `service_name` - for testing a token that's
 /// validly signed but minted for a different service.
 fn bearer_for_service(config: &DockerTokenConfig, service: &str, scope: &str) -> String {
-    let now = chrono::Utc::now();
+    let now = quench_core::time::Time::now();
     let claims = DockerClaims {
         sub: "alice".to_string(),
         service: service.to_string(),
         scope: scope.to_string(),
         iat: usize::try_from(now.timestamp()).unwrap(),
-        exp: usize::try_from((now + chrono::Duration::minutes(5)).timestamp()).unwrap(),
+        exp: usize::try_from((now + quench_core::time::Duration::minutes(5)).timestamp()).unwrap(),
     };
     format!("Bearer {}", config.encode(&claims).expect("encode"))
 }
@@ -220,7 +220,7 @@ fn req_with_headers(method: Method, path: &str, peer: &str, headers: &[(&str, &s
     header_map.insert("x-forwarded-for", peer.parse().unwrap());
     for (name, value) in headers {
         header_map.insert(
-            http::HeaderName::from_bytes(name.as_bytes()).unwrap(),
+            quench_http::http::HeaderName::from_bytes(name.as_bytes()).unwrap(),
             value.parse().unwrap(),
         );
     }
@@ -228,7 +228,7 @@ fn req_with_headers(method: Method, path: &str, peer: &str, headers: &[(&str, &s
         method,
         path.parse::<Uri>().unwrap(),
         header_map,
-        quench_http::body::InboundBody::from_bytes(bytes::Bytes::new()),
+        quench_http::body::InboundBody::from_bytes(quench_core::bytes::Bytes::new()),
         container,
     )
 }
@@ -340,12 +340,12 @@ async fn repeated_failures_from_the_same_client_eventually_get_throttled() {
     // low for this test. It's a fixed env var name `new()` reads once at
     // construction time, so no cross-test lock is needed here - the value
     // only matters for the instant `test_app` builds this test's own config.
-    envmnt::set("MAX_AUTH_FAILURES_PER_MINUTE", "2");
+    quench_core::env::set("MAX_AUTH_FAILURES_PER_MINUTE", "2");
     let app = test_app(config(true));
     // Safe to clear immediately after: `WarehouseAuth::new` (called inside
     // `test_app`, above) reads the env var once at construction time, not
     // per-request.
-    envmnt::remove("MAX_AUTH_FAILURES_PER_MINUTE");
+    quench_core::env::remove("MAX_AUTH_FAILURES_PER_MINUTE");
 
     let peer = "198.51.100.6";
     for _ in 0..2 {

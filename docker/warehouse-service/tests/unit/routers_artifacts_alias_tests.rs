@@ -2,10 +2,10 @@
 //! `Sunset` once a date is scheduled), and `FEATURE_APK_ALIAS_ENABLED=false` answers `410 Gone`.
 
 use crate::support;
-use bytes::Bytes;
-use http::{HeaderMap, Method, StatusCode, Uri};
+use quench_core::bytes::Bytes;
 use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::prelude::wrap;
 use quench_http::request::Request;
 use quench_http::response::Response;
@@ -14,7 +14,7 @@ use warehouse_service::routers::artifacts::alias::{Deprecation, alias_enabled, a
 
 struct Ok200;
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl Endpoint for Ok200 {
     async fn call(&self, _req: Request) -> Response {
         Response::new(StatusCode::OK)
@@ -36,8 +36,8 @@ impl AliasEnv {
     }
 
     fn reset() {
-        envmnt::remove("FEATURE_APK_ALIAS_ENABLED");
-        envmnt::remove("APK_ALIAS_SUNSET");
+        quench_core::env::remove("FEATURE_APK_ALIAS_ENABLED");
+        quench_core::env::remove("APK_ALIAS_SUNSET");
     }
 }
 
@@ -47,7 +47,7 @@ impl Drop for AliasEnv {
     }
 }
 
-async fn call(path: &str) -> http::Response<quench_http::response::BoxBody> {
+async fn call(path: &str) -> quench_http::response::Response {
     let app = wrap(
         Arc::new(Ok200) as Arc<dyn Endpoint>,
         Deprecation::new("/warehouse/api/v1/artifacts"),
@@ -63,7 +63,6 @@ async fn call(path: &str) -> http::Response<quench_http::response::BoxBody> {
         container,
     ))
     .await
-    .into_hyper()
 }
 
 #[test]
@@ -76,7 +75,7 @@ fn the_alias_is_on_by_default_and_has_no_sunset() {
 #[test]
 fn a_blank_sunset_counts_as_unscheduled() {
     let _env = AliasEnv::new();
-    envmnt::set("APK_ALIAS_SUNSET", "   ");
+    quench_core::env::set("APK_ALIAS_SUNSET", "   ");
     assert_eq!(alias_sunset(), None);
 }
 
@@ -96,7 +95,7 @@ async fn a_call_still_succeeds_but_is_marked_deprecated() {
 #[tokio::test]
 async fn a_scheduled_removal_date_is_advertised_as_sunset() {
     let _env = AliasEnv::new();
-    envmnt::set("APK_ALIAS_SUNSET", "Thu, 31 Dec 2026 00:00:00 GMT");
+    quench_core::env::set("APK_ALIAS_SUNSET", "Thu, 31 Dec 2026 00:00:00 GMT");
     let resp = call("/warehouse/api/v1/apk/com.example.app").await;
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(
@@ -108,7 +107,7 @@ async fn a_scheduled_removal_date_is_advertised_as_sunset() {
 #[tokio::test]
 async fn switching_the_alias_off_answers_gone_and_never_reaches_the_handler() {
     let _env = AliasEnv::new();
-    envmnt::set("FEATURE_APK_ALIAS_ENABLED", "false");
+    quench_core::env::set("FEATURE_APK_ALIAS_ENABLED", "false");
     let resp = call("/warehouse/api/v1/apk").await;
     assert_eq!(resp.status(), StatusCode::GONE);
     assert!(resp.headers().get("deprecation").is_none());

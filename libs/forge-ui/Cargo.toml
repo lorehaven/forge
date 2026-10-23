@@ -14,6 +14,6 @@ name = "forge_ui"
 path = "src/lib.rs"
 
 [dependencies]
-envmnt = { workspace = true }
+quench-core = { workspace = true }
 quench-starter = { workspace = true }
 quench-web = { workspace = true }

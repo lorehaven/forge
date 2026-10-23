@@ -13,11 +13,11 @@ use crate::realm;
 use crate::tokens::{PURPOSE_VERIFY_EMAIL, VerificationTokens};
 use crate::ui::common::ui_path;
 use crate::ui::locale::BrowserLocale;
-use http::StatusCode;
 use quench_db::prelude::Db;
+use quench_http::http::StatusCode;
 use quench_http::prelude::{Form, Inject, Response, get, post};
+use quench_serde::Deserialize;
 use quench_web::prelude::*;
-use serde::Deserialize;
 use std::sync::Arc;
 
 #[derive(Debug, Deserialize)]
@@ -85,13 +85,13 @@ pub async fn resend_submit(
                         .or(browser_locale.0.as_deref()),
                 };
                 if let Err(err) = mailer.send_verification(&recipient, &link).await {
-                    tracing::error!(
+                    quench_log::error!(
                         "failed to resend the verification email for {}: {err}",
                         user.username
                     );
                 }
             }
-            Err(err) => tracing::error!(
+            Err(err) => quench_log::error!(
                 "failed to issue a verification token for {}: {err}",
                 user.username
             ),

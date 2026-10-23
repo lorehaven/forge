@@ -1,4 +1,4 @@
-use async_trait::async_trait;
+use quench_core::async_trait;
 use quench_http::prelude::{FromRequest, HttpError, Request};
 
 pub mod check_exists;

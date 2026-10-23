@@ -1,7 +1,8 @@
 use crate::domain::{RegistryConfig, api_url, derive_service_from_url};
-use anyhow::{Context, Result, anyhow, bail};
-use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue, WWW_AUTHENTICATE};
-use serde::Deserialize;
+use quench_client::transport::header::{AUTHORIZATION, WWW_AUTHENTICATE};
+use quench_client::transport::{HeaderMap, HeaderValue};
+use quench_core::{Context, Result, bail, err};
+use quench_serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 struct CatalogResponse {
@@ -26,12 +27,12 @@ pub struct BearerChallenge {
 }
 
 pub struct DockerApi {
-    client: reqwest::Client,
+    client: quench_client::transport::Client,
 }
 
 impl DockerApi {
     pub fn new(registry: &RegistryConfig) -> Result<Self> {
-        let client = reqwest::Client::builder()
+        let client = quench_client::transport::Client::builder()
             .danger_accept_invalid_certs(registry.docker.insecure_tls)
             .build()
             .context("failed to build HTTP client")?;
@@ -59,7 +60,7 @@ impl DockerApi {
         Ok((response.name, response.tags))
     }
 
-    async fn fetch_json<T: for<'de> Deserialize<'de>>(
+    async fn fetch_json<T: quench_serde::DeserializeOwned>(
         &self,
         registry: &RegistryConfig,
         endpoint: &str,
@@ -72,31 +73,31 @@ impl DockerApi {
             return parse_json_response(initial).await;
         }
 
-        if initial.status() != reqwest::StatusCode::UNAUTHORIZED {
+        if initial.status() != quench_client::transport::StatusCode::UNAUTHORIZED {
             let status = initial.status();
             let body = initial.text().await.unwrap_or_default();
             bail!("request failed: {status} {body}");
         }
 
         let challenge = parse_bearer_challenge(initial.headers())
-            .ok_or_else(|| anyhow!("registry returned 401 without a Bearer challenge"))?;
+            .ok_or_else(|| err!("registry returned 401 without a Bearer challenge"))?;
 
         let username = registry
             .docker
             .username
             .as_deref()
-            .ok_or_else(|| anyhow!("missing username; run `warehouse docker login`"))?;
+            .ok_or_else(|| err!("missing username; run `warehouse docker login`"))?;
         let password = registry
             .docker
             .password
             .as_deref()
-            .ok_or_else(|| anyhow!("missing password; run `warehouse docker login`"))?;
+            .ok_or_else(|| err!("missing password; run `warehouse docker login`"))?;
 
         let service = challenge
             .service
             .or_else(|| registry.docker.service.clone())
             .or_else(|| derive_service_from_url(&registry.docker.url))
-            .ok_or_else(|| anyhow!("unable to determine token service"))?;
+            .ok_or_else(|| err!("unable to determine token service"))?;
 
         let token = self
             .fetch_bearer_token(&challenge.realm, &service, scope, username, password)
@@ -152,7 +153,10 @@ impl DockerApi {
         Ok(token.token)
     }
 
-    async fn get_with_https_fallback(&self, url: &str) -> Result<reqwest::Response> {
+    async fn get_with_https_fallback(
+        &self,
+        url: &str,
+    ) -> Result<quench_client::transport::Response> {
         match self.client.get(url).send().await {
             Ok(response) => Ok(response),
             Err(err) => {
@@ -176,7 +180,7 @@ impl DockerApi {
         &self,
         url: &str,
         headers: HeaderMap,
-    ) -> Result<reqwest::Response> {
+    ) -> Result<quench_client::transport::Response> {
         match self.client.get(url).headers(headers.clone()).send().await {
             Ok(response) => Ok(response),
             Err(err) => {
@@ -202,7 +206,7 @@ impl DockerApi {
         url: &str,
         username: &str,
         password: &str,
-    ) -> Result<reqwest::Response> {
+    ) -> Result<quench_client::transport::Response> {
         match self
             .client
             .get(url)
@@ -231,7 +235,7 @@ impl DockerApi {
 }
 
 pub fn parse_bearer_challenge(headers: &HeaderMap) -> Option<BearerChallenge> {
-    let raw = headers.get(WWW_AUTHENTICATE)?.to_str().ok()?.trim();
+    let raw = headers.get(&WWW_AUTHENTICATE)?.to_str().ok()?.trim();
     let raw = if let Some(rest) = raw.strip_prefix("Bearer ") {
         rest
     } else {
@@ -257,7 +261,7 @@ pub fn parse_bearer_challenge(headers: &HeaderMap) -> Option<BearerChallenge> {
     })
 }
 
-pub fn should_try_https_fallback(url: &str, err: &reqwest::Error) -> bool {
+pub fn should_try_https_fallback(url: &str, err: &quench_client::transport::Error) -> bool {
     url.starts_with("http://") && err.to_string().contains("invalid HTTP version parsed")
 }
 
@@ -266,8 +270,8 @@ pub fn to_https_url(url: &str) -> Option<String> {
         .map(|rest| format!("https://{rest}"))
 }
 
-async fn parse_json_response<T: for<'de> Deserialize<'de>>(
-    response: reqwest::Response,
+async fn parse_json_response<T: quench_serde::DeserializeOwned>(
+    response: quench_client::transport::Response,
 ) -> Result<T> {
     let status = response.status();
     response

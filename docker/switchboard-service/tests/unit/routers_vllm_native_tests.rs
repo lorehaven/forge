@@ -52,8 +52,8 @@ fn create_pid_log_path_appends_when_there_is_no_log_suffix_to_replace() {
 #[tokio::test]
 async fn create_launch_log_path_uses_vllm_log_dir_and_embeds_model_and_port() {
     let _guard = env_lock().lock().await;
-    let dir = tempfile::tempdir().expect("tempdir");
-    envmnt::set("VLLM_LOG_DIR", dir.path().to_str().unwrap());
+    let dir = quench_core::tmp::TempDir::new().expect("tempdir");
+    quench_core::env::set("VLLM_LOG_DIR", dir.path().to_str().unwrap());
 
     let path = create_launch_log_path("meta/llama-3-8b", 8000);
 
@@ -62,12 +62,12 @@ async fn create_launch_log_path_uses_vllm_log_dir_and_embeds_model_and_port() {
     assert!(path.contains("-8000.log"));
     assert!(dir.path().exists()); // create_dir_all ran
 
-    envmnt::remove("VLLM_LOG_DIR");
+    quench_core::env::remove("VLLM_LOG_DIR");
 }
 
 #[test]
 fn log_indicates_started_true_when_the_marker_line_is_present() {
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let path = dir.path().join("run.log");
     std::fs::write(&path, "INFO: booting\nINFO: Started server process [123]\n").unwrap();
 
@@ -82,7 +82,7 @@ fn log_indicates_started_is_false_for_a_missing_file() {
 
 #[test]
 fn read_log_tail_returns_at_most_the_requested_number_of_trailing_lines() {
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let path = dir.path().join("run.log");
     std::fs::write(&path, "line1\nline2\nline3\nline4\n").unwrap();
 
@@ -92,7 +92,7 @@ fn read_log_tail_returns_at_most_the_requested_number_of_trailing_lines() {
 
 #[test]
 fn read_log_tail_returns_the_whole_file_when_it_has_fewer_lines_than_requested() {
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = quench_core::tmp::TempDir::new().expect("tempdir");
     let path = dir.path().join("run.log");
     std::fs::write(&path, "only-line\n").unwrap();
 

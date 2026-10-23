@@ -14,7 +14,7 @@ fn main() {
         eprintln!("GANTRY_PLAN is not set");
         std::process::exit(2);
     };
-    let plan: Plan = match serde_json::from_str(&raw) {
+    let plan: Plan = match quench_serde::json::from_str(&raw) {
         Ok(plan) => plan,
         Err(error) => {
             println!(
@@ -26,16 +26,19 @@ fn main() {
     };
 
     let ctx = Context {
-        values_dir: PathBuf::from(envmnt::get_or("GANTRY_VALUES_DIR", "/values")),
-        packages_dir: PathBuf::from(envmnt::get_or("GANTRY_PACKAGES_DIR", "/work/packages")),
-        allowed_namespaces: envmnt::get_or("GANTRY_NAMESPACES", "")
+        values_dir: PathBuf::from(quench_core::env::get_or("GANTRY_VALUES_DIR", "/values")),
+        packages_dir: PathBuf::from(quench_core::env::get_or(
+            "GANTRY_PACKAGES_DIR",
+            "/work/packages",
+        )),
+        allowed_namespaces: quench_core::env::get_or("GANTRY_NAMESPACES", "")
             .split(',')
             .map(str::trim)
             .filter(|namespace| !namespace.is_empty())
             .map(str::to_string)
             .collect(),
-        dry_run: envmnt::is_or("GANTRY_DRY_RUN", false),
-        source_dir: Some(envmnt::get_or("GANTRY_SOURCE_PACKAGES_DIR", ""))
+        dry_run: quench_core::env::is_or("GANTRY_DRY_RUN", false),
+        source_dir: Some(quench_core::env::get_or("GANTRY_SOURCE_PACKAGES_DIR", ""))
             .filter(|dir| !dir.is_empty())
             .map(PathBuf::from),
     };

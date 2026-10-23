@@ -1,6 +1,6 @@
 use crate::support;
 
-use http::{Method, StatusCode};
+use quench_http::http::{Method, StatusCode};
 
 const DIGEST: &str = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 

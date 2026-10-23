@@ -2,7 +2,7 @@ use conveyor_cli::cli::*;
 use conveyor_cli::client::Client;
 use conveyor_cli::commands::*;
 use quench_cli::prelude::Tone;
-use serde_json::json;
+use quench_serde::json;
 
 #[test]
 fn split_slug_splits_owner_and_name() {
@@ -134,7 +134,7 @@ fn validate_reports_a_missing_file() {
 // `Client::for_tests`-built client - never a real network.
 // ------------------------------------------------------------------
 
-use wiremock::matchers::{body_json, method, path};
+use wiremock::matchers::{body_json_string, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 async fn client_for(server: &MockServer) -> Client {
@@ -156,9 +156,14 @@ async fn resolve_repo_looks_up_an_owner_slash_name_reference() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/repos"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!([
-            { "id": "repo-1", "owner": "lorehaven", "name": "forge" }
-        ])))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(json!([
+                    { "id": "repo-1", "owner": "lorehaven", "name": "forge" }
+                ])),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -174,7 +179,10 @@ async fn resolve_repo_errors_when_the_slug_is_not_registered() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/repos"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(json!([]))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -188,15 +196,20 @@ async fn repo_add_posts_the_split_slug_and_resolved_project() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/api/v1/repos"))
-        .and(body_json(json!({
-            "provider": "github",
-            "owner": "lorehaven",
-            "name": "forge",
-            "clone_url": "https://example.com/forge.git",
-            "default_branch": "master",
-            "project_id": "proj-1",
-        })))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"id": "repo-9"})))
+        .and(body_json_string(quench_serde::json::to_string(
+            &(json!({
+                "provider": "github",
+                "owner": "lorehaven",
+                "name": "forge",
+                "clone_url": "https://example.com/forge.git",
+                "default_branch": "master",
+                "project_id": "proj-1",
+            })),
+        )))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(json!({"id": "repo-9"}))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -239,7 +252,10 @@ async fn repo_list_prints_nothing_special_when_empty() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/repos"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(json!([]))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -252,21 +268,36 @@ async fn repo_enable_and_disable_resolve_then_post_the_flag() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/repos"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!([
-            { "id": "repo-1", "owner": "lorehaven", "name": "forge" }
-        ])))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(json!([
+                    { "id": "repo-1", "owner": "lorehaven", "name": "forge" }
+                ])),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
     Mock::given(method("POST"))
         .and(path("/api/v1/repos/repo-1/enabled"))
-        .and(body_json(json!({"enabled": true})))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .and(body_json_string(quench_serde::json::to_string(
+            &(json!({"enabled": true})),
+        )))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(json!({}))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
     Mock::given(method("POST"))
         .and(path("/api/v1/repos/repo-1/enabled"))
-        .and(body_json(json!({"enabled": false})))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .and(body_json_string(quench_serde::json::to_string(
+            &(json!({"enabled": false})),
+        )))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(json!({}))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -294,14 +325,22 @@ async fn repo_move_and_set_branch_and_remove_resolve_then_act() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/repos"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!([
-            { "id": "repo-1", "owner": "lorehaven", "name": "forge" }
-        ])))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(json!([
+                    { "id": "repo-1", "owner": "lorehaven", "name": "forge" }
+                ])),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
     Mock::given(method("PATCH"))
         .and(path("/api/v1/repos/repo-1"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(json!({}))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
     Mock::given(method("DELETE"))
@@ -344,24 +383,34 @@ async fn project_add_list_show_rename_move_remove() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/api/v1/projects"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"id": "proj-1"})))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(json!({"id": "proj-1"}))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
     Mock::given(method("GET"))
         .and(path("/api/v1/projects"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(json!([]))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
     Mock::given(method("GET"))
         .and(path("/api/v1/projects/proj-1"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(json!({"id": "proj-1", "path": "root/child"})),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(json!({"id": "proj-1", "path": "root/child"}))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
     Mock::given(method("PATCH"))
         .and(path("/api/v1/projects/proj-1"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(json!({}))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
     Mock::given(method("DELETE"))
@@ -463,10 +512,12 @@ async fn run_queues_a_run_and_prints_its_id() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/api/v1/repos/repo-1/runs"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_json(json!({"id": "run-1", "git_ref": "master", "sha": "abc"})),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(json!({"id": "run-1", "git_ref": "master", "sha": "abc"})),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -489,16 +540,18 @@ async fn run_with_wait_polls_until_the_run_succeeds() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/api/v1/repos/repo-1/runs"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(json!({"id": "run-1", "git_ref": "m"})),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(json!({"id": "run-1", "git_ref": "m"}))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
     Mock::given(method("GET"))
         .and(path("/api/v1/runs/run-1"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(json!({"id": "run-1", "status": "success"})),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(json!({"id": "run-1", "status": "success"}))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -521,18 +574,20 @@ async fn run_with_wait_fails_when_the_run_fails() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/api/v1/repos/repo-1/runs"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(json!({"id": "run-1", "git_ref": "m"})),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(json!({"id": "run-1", "git_ref": "m"}))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
     Mock::given(method("GET"))
         .and(path("/api/v1/runs/run-1"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(
-                json!({"id": "run-1", "status": "failed", "error": "step 2 exited 1"}),
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(json!({"id": "run-1", "status": "failed", "error": "step 2 exited 1"})),
             ),
-        )
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -556,14 +611,22 @@ async fn runs_lists_recent_runs_and_can_scope_to_a_repo() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/repos"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!([
-            { "id": "repo-1", "owner": "lorehaven", "name": "forge" }
-        ])))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(json!([
+                    { "id": "repo-1", "owner": "lorehaven", "name": "forge" }
+                ])),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
     Mock::given(method("GET"))
         .and(path("/api/v1/runs"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(json!([]))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -593,7 +656,7 @@ async fn show_prints_the_run_its_jobs_and_its_artifacts() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
             .and(path("/api/v1/runs/run-1"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            .respond_with(ResponseTemplate::new(200).set_body_raw(quench_serde::json::to_string(&(json!({
                 "id": "run-1",
                 "status": "failed",
                 "git_ref": "master",
@@ -601,7 +664,7 @@ async fn show_prints_the_run_its_jobs_and_its_artifacts() {
                 "error": "boom",
                 "jobs": [{"id": "job-1", "stage": "build", "name": "compile", "status": "failed", "error": "boom"}],
                 "artifacts": [{"name": "binary", "uri": "s3://bucket/binary"}],
-            })))
+            }))), "application/json"))
             .mount(&server)
             .await;
 
@@ -641,18 +704,28 @@ async fn logs_prints_stored_lines_for_every_job_in_a_run() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/runs/run-1"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id": "run-1",
-            "jobs": [{"id": "job-1", "stage": "build", "name": "compile"}],
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(json!({
+                    "id": "run-1",
+                    "jobs": [{"id": "job-1", "stage": "build", "name": "compile"}],
+                })),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
     Mock::given(method("GET"))
         .and(path("/api/v1/jobs/job-1/logs"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!([
-            {"stream": "stdout", "line": "hello"},
-            {"stream": "stderr", "line": "warn"},
-        ])))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(json!([
+                    {"stream": "stdout", "line": "hello"},
+                    {"stream": "stderr", "line": "warn"},
+                ])),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -678,7 +751,10 @@ async fn logs_treats_an_id_that_is_not_a_run_as_a_job_id() {
         .await;
     Mock::given(method("GET"))
         .and(path("/api/v1/jobs/job-1/logs"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(json!([]))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -699,10 +775,15 @@ async fn logs_follow_reads_the_sse_stream_until_the_done_event() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/runs/run-1"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id": "run-1",
-            "jobs": [{"id": "job-1", "stage": "build", "name": "compile"}],
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(json!({
+                    "id": "run-1",
+                    "jobs": [{"id": "job-1", "stage": "build", "name": "compile"}],
+                })),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
     Mock::given(method("GET"))
@@ -731,12 +812,18 @@ async fn secret_set_list_and_remove_at_estate_scope() {
     let server = MockServer::start().await;
     Mock::given(method("PUT"))
         .and(path("/api/v1/secrets/db-password"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(json!({}))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
     Mock::given(method("GET"))
         .and(path("/api/v1/secrets"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(json!([]))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
     Mock::given(method("DELETE"))
@@ -778,14 +865,22 @@ async fn secret_set_scoped_to_a_repo_resolves_it_first() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/repos"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!([
-            { "id": "repo-1", "owner": "lorehaven", "name": "forge" }
-        ])))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(json!([
+                    { "id": "repo-1", "owner": "lorehaven", "name": "forge" }
+                ])),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
     Mock::given(method("PUT"))
         .and(path("/api/v1/repos/repo-1/secrets/token"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(json!({}))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -807,14 +902,17 @@ async fn credential_set_show_and_remove_scoped_to_a_project() {
     let server = MockServer::start().await;
     Mock::given(method("PUT"))
         .and(path("/api/v1/projects/proj-1/credentials"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"preview": "ghp_****"})))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(json!({"preview": "ghp_****"}))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
     Mock::given(method("GET"))
             .and(path("/api/v1/projects/proj-1/credentials"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            .respond_with(ResponseTemplate::new(200).set_body_raw(quench_serde::json::to_string(&(json!({
                 "name": "ci-token", "preview": "ghp_****", "username": "x-access-token", "created_by": "alice",
-            })))
+            }))), "application/json"))
             .mount(&server)
             .await;
     Mock::given(method("DELETE"))
@@ -861,7 +959,10 @@ async fn credential_show_reports_none_set_for_a_null_response() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v1/projects/proj-1/credentials"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!(null)))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(json!(null))),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 

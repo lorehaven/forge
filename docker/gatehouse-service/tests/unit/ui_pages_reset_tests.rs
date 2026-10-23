@@ -1,4 +1,3 @@
-use bytes::Bytes;
 use gatehouse_service::PublicBase;
 use gatehouse_service::email::{LoggingSender, Sender};
 use gatehouse_service::realm;
@@ -10,14 +9,14 @@ use gatehouse_service::ui::pages::reset::{
     forgot_password_page_slash, render_forgot_password_page, render_reset_password_page,
     reset_password_page, reset_password_submit,
 };
-use http::{HeaderMap, Method, StatusCode, Uri};
-use http_body_util::BodyExt;
 use quench_auth::domain::auth::{Permissions, Role};
 use quench_auth::domain::session::SessionDb;
 use quench_cache::CacheStore;
+use quench_core::bytes::Bytes;
 use quench_db::prelude::Db;
 use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::prelude::{Form, Inject, Query, Request};
 use std::sync::Arc;
 
@@ -26,7 +25,8 @@ async fn db() -> Db {
 }
 
 fn catalog() -> gatehouse_service::catalog::PermissionCatalog {
-    let dir = std::env::temp_dir().join(format!("reset-test-{}", uuid::Uuid::new_v4()));
+    let dir =
+        std::env::temp_dir().join(format!("reset-test-{}", quench_core::uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("permissions.toml");
     std::fs::write(&path, "[services.gatehouse]\nactions = [\"read-users\"]\n").unwrap();
@@ -45,13 +45,18 @@ fn sessions() -> Arc<SessionDb> {
 }
 
 async fn body_text(resp: quench_http::response::Response) -> String {
-    let collected = resp.into_hyper().into_body().collect().await.expect("body");
-    String::from_utf8(collected.to_bytes().to_vec()).expect("utf8")
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .expect("body");
+    String::from_utf8(collected.to_vec()).expect("utf8")
 }
 
 fn location(resp: quench_http::response::Response) -> String {
-    resp.into_hyper()
-        .headers()
+    resp.into_inner()
+        .headers
         .get("location")
         .expect("location header")
         .to_str()
@@ -144,7 +149,7 @@ fn post_form_with_headers(
     headers: HeaderMap,
     container: &Arc<quench_http::di::Container>,
 ) -> Request {
-    let encoded = serde_urlencoded::to_string(pairs).unwrap();
+    let encoded = quench_serde::urlencoded::to_string(pairs).unwrap();
     Request::new(
         Method::POST,
         path.parse::<Uri>().unwrap(),
@@ -372,7 +377,7 @@ async fn the_reset_email_falls_back_to_the_browsers_language() {
 #[tokio::test]
 async fn a_failing_mail_server_still_gets_the_same_redirect() {
     struct Failing;
-    #[async_trait::async_trait]
+    #[quench_core::async_trait]
     impl Sender for Failing {
         async fn send(
             &self,

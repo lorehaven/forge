@@ -1,10 +1,10 @@
 use crate::domain::db::{DaybookError, pool, schema};
 use crate::domain::recurrence::{Mode, Recurrence, Unit};
-use chrono::{DateTime, Utc};
+use quench_core::time::Time;
+use quench_core::uuid::Uuid;
 use quench_db::prelude::Db;
-use serde::Serialize;
-use sqlx::Row;
-use uuid::Uuid;
+use quench_pg::PgArray;
+use quench_serde::Serialize;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Task {
@@ -14,16 +14,16 @@ pub struct Task {
     pub description: Option<String>,
     pub is_completed: bool,
     pub sort_order: i32,
-    pub due_at: Option<DateTime<Utc>>,
+    pub due_at: Option<Time>,
     /// The due date has no time of day: `due_at` is midnight UTC of the date.
     pub due_all_day: bool,
-    pub remind_at: Option<DateTime<Utc>>,
+    pub remind_at: Option<Time>,
     /// The task's labels, ordered by label name.
     pub label_ids: Vec<String>,
     /// Set for a repeating task: completing it rolls `due_at` to the next occurrence instead of closing it.
     pub recurrence: Option<Recurrence>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: Time,
+    pub updated_at: Time,
 }
 
 #[derive(Clone, Debug)]
@@ -32,9 +32,9 @@ pub struct NewTask {
     pub description: Option<String>,
     pub project_id: Option<String>,
     pub sort_order: i32,
-    pub due_at: Option<DateTime<Utc>>,
+    pub due_at: Option<Time>,
     pub due_all_day: bool,
-    pub remind_at: Option<DateTime<Utc>>,
+    pub remind_at: Option<Time>,
     pub label_ids: Vec<String>,
     pub recurrence: Option<Recurrence>,
 }
@@ -46,9 +46,9 @@ pub struct TaskUpdate {
     pub project_id: Option<String>,
     pub is_completed: bool,
     pub sort_order: i32,
-    pub due_at: Option<DateTime<Utc>>,
+    pub due_at: Option<Time>,
     pub due_all_day: bool,
-    pub remind_at: Option<DateTime<Utc>>,
+    pub remind_at: Option<Time>,
     pub label_ids: Vec<String>,
     pub recurrence: Option<Recurrence>,
 }
@@ -56,13 +56,10 @@ pub struct TaskUpdate {
 /// A due date as it is stored: an all-day one is midnight UTC of its date (so every reader sees the same
 /// date), and "all day" without a date means nothing.
 #[must_use]
-pub fn normalize_due(
-    due_at: Option<DateTime<Utc>>,
-    all_day: bool,
-) -> (Option<DateTime<Utc>>, bool) {
+pub fn normalize_due(due_at: Option<Time>, all_day: bool) -> (Option<Time>, bool) {
     match (due_at, all_day) {
         (Some(due), true) => (
-            Some(due.date_naive().and_time(chrono::NaiveTime::MIN).and_utc()),
+            Some(Time::from_unix(due.timestamp().div_euclid(86_400) * 86_400)),
             true,
         ),
         (due, _) => (due, false),
@@ -91,13 +88,8 @@ pub async fn list(
          ORDER BY sort_order, created_at",
         columns(&schema)
     );
-    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(owner)
-        .bind(project_id)
-        .bind(completed)
-        .bind(label_id)
-        .bind(all)
-        .fetch_all(pool(db)?)
+    let rows = pool(db)?
+        .query(&sql, &[&owner, &project_id, &completed, &label_id, &all])
         .await?;
     rows.iter().map(from_row).collect()
 }
@@ -105,7 +97,9 @@ pub async fn list(
 pub async fn create(db: &Db, owner: &str, new: &NewTask) -> Result<Task, DaybookError> {
     let schema = schema();
     let id = Uuid::new_v4().to_string();
-    let mut tx = pool(db)?.begin().await?;
+    let pool = pool(db)?;
+    let mut conn = pool.get().await?;
+    let mut tx = conn.begin().await?;
     let rule = RuleColumns::from(new.recurrence.as_ref());
     let (due_at, due_all_day) = normalize_due(new.due_at, new.due_all_day);
     let sql = format!(
@@ -113,29 +107,35 @@ pub async fn create(db: &Db, owner: &str, new: &NewTask) -> Result<Task, Daybook
          recurrence_unit, recurrence_interval, recurrence_weekdays, recurrence_mode, recurrence_timezone, recurrence_anchor) \
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)"
     );
-    sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(&id)
-        .bind(owner)
-        .bind(&new.project_id)
-        .bind(&new.content)
-        .bind(&new.description)
-        .bind(new.sort_order)
-        .bind(due_at)
-        .bind(due_all_day)
-        .bind(new.remind_at)
-        .bind(rule.unit)
-        .bind(rule.interval)
-        .bind(&rule.weekdays)
-        .bind(rule.mode)
-        .bind(&rule.timezone)
-        // A new rule is counted from the due date it was created with.
-        .bind(rule.present.then_some(due_at).flatten())
-        .execute(&mut *tx)
-        .await?;
+    tx.execute(
+        &sql,
+        &[
+            &id,
+            &owner,
+            &new.project_id,
+            &new.content,
+            &new.description,
+            &new.sort_order,
+            &due_at,
+            &due_all_day,
+            &new.remind_at,
+            &rule.unit,
+            &rule.interval,
+            &rule.weekdays,
+            &rule.mode,
+            &rule.timezone,
+            &rule.present.then_some(due_at).flatten(),
+        ],
+    )
+    .await?;
     set_labels(&mut tx, &schema, owner, &id, &new.label_ids).await?;
     let task = fetch(&mut tx, &schema, owner, &id).await?;
     tx.commit().await?;
-    task.ok_or(DaybookError::Sql(sqlx::Error::RowNotFound))
+    drop(conn);
+    task.ok_or(DaybookError::Sql(quench_pg::Error::RowCount {
+        expected: "exactly one",
+        got: 0,
+    }))
 }
 
 pub async fn update(
@@ -144,7 +144,7 @@ pub async fn update(
     id: &str,
     changes: &TaskUpdate,
 ) -> Result<Option<Task>, DaybookError> {
-    update_at(db, owner, id, changes, Utc::now()).await
+    update_at(db, owner, id, changes, Time::now()).await
 }
 
 /// [`update`] with the clock passed in, for the roll-forward below.
@@ -158,28 +158,25 @@ pub async fn update_at(
     owner: &str,
     id: &str,
     changes: &TaskUpdate,
-    now: DateTime<Utc>,
+    now: Time,
 ) -> Result<Option<Task>, DaybookError> {
     let schema = schema();
-    let mut tx = pool(db)?.begin().await?;
+    let pool = pool(db)?;
+    let mut conn = pool.get().await?;
+    let mut tx = conn.begin().await?;
 
     // Locked, so a concurrent completion waits and then sees the rolled row rather than racing it.
     let sql = format!(
         "SELECT is_completed, due_at, due_all_day, recurrence_anchor, {RULE_COLUMNS} FROM {schema}.tasks \
          WHERE id = $1 AND owner = $2 FOR UPDATE"
     );
-    let Some(row) = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(id)
-        .bind(owner)
-        .fetch_optional(&mut *tx)
-        .await?
-    else {
+    let Some(row) = tx.query_opt(&sql, &[&id, &owner]).await? else {
         return Ok(None);
     };
-    let was_completed: bool = row.try_get("is_completed")?;
-    let stored_due: Option<DateTime<Utc>> = row.try_get("due_at")?;
-    let stored_all_day: bool = row.try_get("due_all_day")?;
-    let stored_anchor: Option<DateTime<Utc>> = row.try_get("recurrence_anchor")?;
+    let was_completed: bool = row.get("is_completed")?;
+    let stored_due: Option<Time> = row.get("due_at")?;
+    let stored_all_day: bool = row.get("due_all_day")?;
+    let stored_anchor: Option<Time> = row.get("recurrence_anchor")?;
     let stored_rule = rule_from_row(&row)?;
 
     let (requested_due, due_all_day) = normalize_due(changes.due_at, changes.due_all_day);
@@ -223,57 +220,53 @@ pub async fn update_at(
          recurrence_mode = $13, recurrence_timezone = $14, recurrence_anchor = $15, updated_at = NOW() \
          WHERE id = $1 AND owner = $2"
     );
-    sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(id)
-        .bind(owner)
-        .bind(&changes.project_id)
-        .bind(&changes.content)
-        .bind(&changes.description)
-        .bind(is_completed)
-        .bind(changes.sort_order)
-        .bind(due_at)
-        .bind(remind_at)
-        .bind(rule.unit)
-        .bind(rule.interval)
-        .bind(&rule.weekdays)
-        .bind(rule.mode)
-        .bind(&rule.timezone)
-        .bind(anchor)
-        .bind(due_all_day)
-        .execute(&mut *tx)
-        .await?;
+    tx.execute(
+        &sql,
+        &[
+            &id,
+            &owner,
+            &changes.project_id,
+            &changes.content,
+            &changes.description,
+            &is_completed,
+            &changes.sort_order,
+            &due_at,
+            &remind_at,
+            &rule.unit,
+            &rule.interval,
+            &rule.weekdays,
+            &rule.mode,
+            &rule.timezone,
+            &anchor,
+            &due_all_day,
+        ],
+    )
+    .await?;
     set_labels(&mut tx, &schema, owner, id, &changes.label_ids).await?;
     let task = fetch(&mut tx, &schema, owner, id).await?;
     tx.commit().await?;
+    drop(conn);
     Ok(task)
 }
 
 pub async fn delete(db: &Db, owner: &str, id: &str) -> Result<bool, DaybookError> {
     let schema = schema();
     let sql = format!("DELETE FROM {schema}.tasks WHERE id = $1 AND owner = $2");
-    let result = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(id)
-        .bind(owner)
-        .execute(pool(db)?)
-        .await?;
-    Ok(result.rows_affected() > 0)
+    let result = pool(db)?.execute(&sql, &[&id, &owner]).await?;
+    Ok(result > 0)
 }
 
 /// Replaces the task's label set. A label that is not the caller's fails the composite foreign key
 /// (`23503`), which the router reports as a bad request.
 async fn set_labels(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tx: &mut quench_pg::Transaction<'_>,
     schema: &str,
     owner: &str,
     task_id: &str,
     label_ids: &[String],
 ) -> Result<(), DaybookError> {
     let sql = format!("DELETE FROM {schema}.task_labels WHERE task_id = $1 AND owner = $2");
-    sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(task_id)
-        .bind(owner)
-        .execute(&mut **tx)
-        .await?;
+    tx.execute(&sql, &[&task_id, &owner]).await?;
     if label_ids.is_empty() {
         return Ok(());
     }
@@ -286,17 +279,13 @@ async fn set_labels(
     let sql = format!(
         "INSERT INTO {schema}.task_labels (task_id, label_id, owner) SELECT $1, label_id, $2 FROM unnest($3::text[]) AS label_id"
     );
-    sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(task_id)
-        .bind(owner)
-        .bind(&unique)
-        .execute(&mut **tx)
+    tx.execute(&sql, &[&task_id, &owner, &PgArray(unique)])
         .await?;
     Ok(())
 }
 
 async fn fetch(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    tx: &mut quench_pg::Transaction<'_>,
     schema: &str,
     owner: &str,
     id: &str,
@@ -305,11 +294,7 @@ async fn fetch(
         "SELECT {} FROM {schema}.tasks WHERE id = $1 AND owner = $2",
         columns(schema)
     );
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(id)
-        .bind(owner)
-        .fetch_optional(&mut **tx)
-        .await?;
+    let row = tx.query_opt(&sql, &[&id, &owner]).await?;
     row.as_ref().map(from_row).transpose()
 }
 
@@ -331,7 +316,7 @@ struct RuleColumns {
     present: bool,
     unit: Option<&'static str>,
     interval: Option<i32>,
-    weekdays: Vec<i16>,
+    weekdays: PgArray<i16>,
     mode: Option<&'static str>,
     timezone: Option<String>,
 }
@@ -342,21 +327,21 @@ impl From<Option<&Recurrence>> for RuleColumns {
             present: rule.is_some(),
             unit: rule.map(|rule| rule.unit.as_str()),
             interval: rule.and_then(|rule| i32::try_from(rule.interval).ok()),
-            weekdays: rule.map_or_else(Vec::new, |rule| {
+            weekdays: PgArray(rule.map_or_else(Vec::new, |rule| {
                 rule.weekdays.iter().map(|day| i16::from(*day)).collect()
-            }),
+            })),
             mode: rule.map(|rule| rule.mode.as_str()),
             timezone: rule.map(|rule| rule.timezone.clone()),
         }
     }
 }
 
-fn rule_from_row(row: &sqlx::postgres::PgRow) -> Result<Option<Recurrence>, DaybookError> {
-    let unit: Option<String> = row.try_get("recurrence_unit")?;
-    let interval: Option<i32> = row.try_get("recurrence_interval")?;
-    let weekdays: Vec<i16> = row.try_get("recurrence_weekdays")?;
-    let mode: Option<String> = row.try_get("recurrence_mode")?;
-    let timezone: Option<String> = row.try_get("recurrence_timezone")?;
+fn rule_from_row(row: &quench_pg::Row) -> Result<Option<Recurrence>, DaybookError> {
+    let unit: Option<String> = row.get("recurrence_unit")?;
+    let interval: Option<i32> = row.get("recurrence_interval")?;
+    let weekdays: Vec<i16> = array(row, "recurrence_weekdays")?;
+    let mode: Option<String> = row.get("recurrence_mode")?;
+    let timezone: Option<String> = row.get("recurrence_timezone")?;
     let (Some(unit), Some(interval), Some(mode), Some(timezone)) = (unit, interval, mode, timezone)
     else {
         return Ok(None);
@@ -381,20 +366,29 @@ fn rule_from_row(row: &sqlx::postgres::PgRow) -> Result<Option<Recurrence>, Dayb
     }))
 }
 
-fn from_row(row: &sqlx::postgres::PgRow) -> Result<Task, DaybookError> {
+fn from_row(row: &quench_pg::Row) -> Result<Task, DaybookError> {
     Ok(Task {
-        id: row.try_get("id")?,
-        project_id: row.try_get("project_id")?,
-        content: row.try_get("content")?,
-        description: row.try_get("description")?,
-        is_completed: row.try_get("is_completed")?,
-        sort_order: row.try_get("sort_order")?,
-        due_at: row.try_get("due_at")?,
-        due_all_day: row.try_get("due_all_day")?,
-        remind_at: row.try_get("remind_at")?,
-        label_ids: row.try_get("label_ids")?,
+        id: row.get("id")?,
+        project_id: row.get("project_id")?,
+        content: row.get("content")?,
+        description: row.get("description")?,
+        is_completed: row.get("is_completed")?,
+        sort_order: row.get("sort_order")?,
+        due_at: row.get("due_at")?,
+        due_all_day: row.get("due_all_day")?,
+        remind_at: row.get("remind_at")?,
+        label_ids: array(row, "label_ids")?,
         recurrence: rule_from_row(row)?,
-        created_at: row.try_get("created_at")?,
-        updated_at: row.try_get("updated_at")?,
+        created_at: row.get("created_at")?,
+        updated_at: row.get("updated_at")?,
     })
+}
+
+/// A one-dimensional array column, read through its JSON form (`quench-pg` converts arrays to `Value`).
+fn array<T: quench_serde::Deserialize>(
+    row: &quench_pg::Row,
+    column: &str,
+) -> Result<Vec<T>, DaybookError> {
+    let value: quench_serde::Value = row.get(column)?;
+    quench_serde::from_value(&value).map_err(|e| quench_pg::Error::Decode(e.to_string()).into())
 }

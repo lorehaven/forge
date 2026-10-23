@@ -8,12 +8,11 @@ use gatehouse_service::ui::pages::invite::{
     AcceptForm, AcceptNotice, AcceptQuery, accept_invite_page, accept_invite_submit,
     render_accept_invite_page,
 };
-use http::StatusCode;
-use http_body_util::BodyExt;
 use quench_auth::domain::auth::{Permissions, Role};
 use quench_auth::domain::session::SessionDb;
 use quench_cache::CacheStore;
 use quench_db::prelude::Db;
+use quench_http::http::StatusCode;
 use quench_http::prelude::{Form, Inject, Query};
 use std::sync::Arc;
 
@@ -22,7 +21,8 @@ async fn db() -> Db {
 }
 
 fn catalog() -> gatehouse_service::catalog::PermissionCatalog {
-    let dir = std::env::temp_dir().join(format!("invite-test-{}", uuid::Uuid::new_v4()));
+    let dir =
+        std::env::temp_dir().join(format!("invite-test-{}", quench_core::uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("permissions.toml");
     std::fs::write(&path, "[services.gatehouse]\nactions = [\"read-users\"]\n").unwrap();
@@ -41,8 +41,8 @@ fn base() -> PublicBase {
 }
 
 fn location(resp: quench_http::response::Response) -> String {
-    resp.into_hyper()
-        .headers()
+    resp.into_inner()
+        .headers
         .get("location")
         .expect("location header")
         .to_str()
@@ -224,7 +224,7 @@ async fn the_invitation_follows_the_saved_language_then_the_fallback() {
 #[tokio::test]
 async fn an_invitation_needs_an_address_and_reports_a_send_failure() {
     struct Failing;
-    #[async_trait::async_trait]
+    #[quench_core::async_trait]
     impl Sender for Failing {
         async fn send(&self, _: &Recipient<'_>, _: &Mail<'_>) -> Result<(), SendError> {
             Err(SendError::transient("smtp down"))
@@ -379,12 +379,11 @@ async fn the_page_renders_a_form_carrying_the_token() {
     .await;
     assert_eq!(resp.status(), StatusCode::OK);
     let body = resp
-        .into_hyper()
-        .into_body()
-        .collect()
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
         .await
-        .unwrap()
-        .to_bytes();
+        .unwrap();
     let html = String::from_utf8(body.to_vec()).unwrap();
     assert!(html.contains("accept-invite"), "{html}");
     assert!(html.contains("value=\"abc-123\""));
@@ -406,12 +405,11 @@ async fn the_page_shows_the_blank_password_error_and_only_that_one() {
             },
         );
         let body = resp
-            .into_hyper()
-            .into_body()
-            .collect()
+            .into_inner()
+            .body
+            .collect_limited(usize::MAX)
             .await
-            .unwrap()
-            .to_bytes();
+            .unwrap();
         let html = String::from_utf8(body.to_vec()).unwrap();
         assert_eq!(
             html.contains("ui_reset_error_password_empty"),

@@ -1,7 +1,6 @@
 //! Run-result subscriptions and the outbox that carries them to gatehouse, against a real Postgres.
 
 use crate::support::{database, register_repo, skipped};
-use async_trait::async_trait;
 use conveyor_service::domain::{Run, Status, Trigger};
 use conveyor_service::notifications::gatehouse::{Delivery, Notifier};
 use conveyor_service::notifications::outbox::{self, MAX_ATTEMPTS, Pending};
@@ -12,6 +11,7 @@ use conveyor_service::notifications::{
 use conveyor_service::scheduler::projects::{self, NewProject};
 use conveyor_service::scheduler::queue::{self, NewRun};
 use quench_auth::prelude::UserDb;
+use quench_core::async_trait;
 use quench_db::prelude::{Database, Db};
 use std::collections::BTreeMap;
 use std::sync::Mutex;
@@ -254,7 +254,7 @@ async fn a_finished_run_is_queued_for_each_follower_who_can_still_read_it() {
     let Some((db, _guard)) = database().await else {
         return skipped("a_finished_run_is_queued_for_each_follower_who_can_still_read_it");
     };
-    envmnt::set("CONVEYOR_PUBLIC_URL", "https://forge.example.test/conveyor");
+    quench_core::env::set("CONVEYOR_PUBLIC_URL", "https://forge.example.test/conveyor");
     let repo = register_repo(&db, "watched", "file:///nowhere").await;
 
     let project_read = format!("{{\"conveyor\": [\"project:{}:read\"]}}", repo.project_id);
@@ -316,7 +316,7 @@ async fn finishing_twice_queues_once() {
     let Some((db, _guard)) = database().await else {
         return skipped("finishing_twice_queues_once");
     };
-    envmnt::set("CONVEYOR_PUBLIC_URL", "https://forge.example.test/conveyor");
+    quench_core::env::set("CONVEYOR_PUBLIC_URL", "https://forge.example.test/conveyor");
     let repo = register_repo(&db, "twice", "file:///nowhere").await;
     subscriptions::subscribe(&db, "conveyor-tests", Scope::Repo(&repo.id))
         .await
@@ -346,7 +346,7 @@ async fn nothing_is_queued_for_a_run_nobody_needs_to_hear_about() {
     let Some((db, _guard)) = database().await else {
         return skipped("nothing_is_queued_for_a_run_nobody_needs_to_hear_about");
     };
-    envmnt::set("CONVEYOR_PUBLIC_URL", "https://forge.example.test/conveyor");
+    quench_core::env::set("CONVEYOR_PUBLIC_URL", "https://forge.example.test/conveyor");
     let repo = register_repo(&db, "quiet", "file:///nowhere").await;
     subscriptions::subscribe(&db, "conveyor-tests", Scope::Repo(&repo.id))
         .await
@@ -413,14 +413,20 @@ async fn one_queued(db: &Db, name: &str) -> String {
 
 async fn row(db: &Db, run_id: &str) -> Option<(i32, Option<String>, bool)> {
     let pool = queue::pool(db).unwrap();
-    sqlx::query_as::<_, (i32, Option<String>, bool)>(
+    pool.query_opt(
         "SELECT attempts, last_error, failed_at IS NOT NULL \
          FROM conveyor.notification_outbox WHERE run_id = $1",
+        &[&run_id as &dyn quench_pg::ToSql],
     )
-    .bind(run_id)
-    .fetch_optional(pool)
     .await
     .unwrap()
+    .map(|row| {
+        (
+            row.get("attempts").unwrap(),
+            row.get("last_error").unwrap(),
+            row.get(&2usize).unwrap(),
+        )
+    })
 }
 
 #[tokio::test]

@@ -119,15 +119,14 @@ async fn the_token_is_not_readable_from_the_table() {
 
     let schema = queue::schema();
     let pool = queue::pool(&db).expect("pool");
-    let rows: Vec<(Vec<u8>,)> = sqlx::query_as(sqlx::AssertSqlSafe(
-        format!("SELECT ciphertext FROM {schema}.credentials").as_str(),
-    ))
-    .fetch_all(pool)
-    .await
-    .expect("read the raw column");
+    let rows = pool
+        .query(&format!("SELECT ciphertext FROM {schema}.credentials"), &[])
+        .await
+        .expect("read the raw column");
 
     assert_eq!(rows.len(), 1);
-    let stored = String::from_utf8_lossy(&rows[0].0);
+    let stored =
+        String::from_utf8_lossy(&rows[0].get::<Vec<u8>, _>("ciphertext").unwrap()).into_owned();
     assert!(
         !stored.contains("a-recognisable-token"),
         "the plaintext is in the table"
@@ -356,7 +355,7 @@ async fn showing_never_carries_the_token() {
         .expect("one row");
 
     assert!(!shown.preview.contains("a-secret-token-value"));
-    let rendered = serde_json::to_string(&shown).expect("serialise");
+    let rendered = quench_serde::json::to_string(&shown);
     assert!(!rendered.contains("a-secret-token-value"), "{rendered}");
 }
 

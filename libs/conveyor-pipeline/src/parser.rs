@@ -13,15 +13,15 @@
 use crate::condition::{Condition, ConditionError};
 use crate::graph::{self, GraphError};
 use crate::spec::{Job, PipelineSpec, Stage, Step, Triggers};
-use serde::Deserialize;
+use quench_serde::Deserialize;
 use std::collections::BTreeMap;
 
 /// Why a `.conveyor.toml` failed to parse or validate.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, quench_core::Error)]
 pub enum SpecError {
     /// The document isn't valid TOML, or doesn't match the expected shape.
     #[error("{0}")]
-    Toml(#[from] toml::de::Error),
+    Toml(#[from] quench_serde::Error),
 
     /// There isn't a single `[[stage]]`.
     #[error("pipeline has no stages: add a [[stage]]")]
@@ -146,7 +146,7 @@ pub enum SpecError {
 
 /// Parses and fully validates a `.conveyor.toml`.
 pub fn parse(source: &str) -> Result<PipelineSpec, SpecError> {
-    let raw: RawPipeline = toml::from_str(source)?;
+    let raw: RawPipeline = quench_serde::toml::from_str(source)?;
 
     if raw.stages.is_empty() {
         return Err(SpecError::NoStages);
@@ -315,16 +315,16 @@ fn parse_job(stage: &str, index: usize, only_job: bool, raw: RawJob) -> Result<J
 }
 
 /// Converts one entry of a `steps` array, returning the reason it could not be.
-fn parse_step(value: toml::Value) -> Result<Step, String> {
+fn parse_step(value: quench_serde::Value) -> Result<Step, String> {
     let table = match value {
         // The shorthand: a bare string is a shell command, because that is what
         // it would have been in any case.
-        toml::Value::String(command) => return parse_command_step("run", command),
-        toml::Value::Table(table) => table,
+        quench_serde::Value::String(command) => return parse_command_step("run", command),
+        quench_serde::Value::Object(table) => table,
         other => {
             return Err(format!(
                 "expected a command string or a table like {{ run = \"...\" }}, found {}",
-                other.type_str()
+                other.type_name()
             ));
         }
     };
@@ -344,7 +344,7 @@ fn parse_step(value: toml::Value) -> Result<Step, String> {
         ));
     }
 
-    let toml::Value::String(command) = command else {
+    let quench_serde::Value::String(command) = command else {
         return Err(format!("`{kind}` expects a command string"));
     };
 
@@ -428,7 +428,7 @@ struct RawJob {
     #[serde(default)]
     artifacts: Vec<String>,
     #[serde(default)]
-    steps: Vec<toml::Value>,
+    steps: Vec<quench_serde::Value>,
 
     /// Accepted only so it can be rejected with an explanation. Left to
     /// `deny_unknown_fields`, a `needs` on a job reads as a typo rather than as

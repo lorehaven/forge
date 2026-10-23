@@ -28,13 +28,12 @@ name = "gantry-runner"
 path = "src/bin/gantry_runner.rs"
 
 [dependencies]
-anyhow = { workspace = true }
-async-trait = { workspace = true }
-chrono = { workspace = true }
-envmnt = { workspace = true }
+quench-pg = { workspace = true }
+quench-log = { workspace = true }
+quench-serde = { workspace = true, features = ["yaml"] }
+quench-core = { workspace = true }
 forge-ui = { workspace = true }
 futures-util = { workspace = true }
-http = { workspace = true }
 k8s-openapi = { workspace = true }
 kube = { workspace = true }
 quench-auth = { workspace = true }
@@ -45,18 +44,7 @@ quench-starter = { workspace = true }
 quench-web = { workspace = true }
 rivet-package = { workspace = true }
 rustls = { workspace = true }
-semver = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
-serde_norway = { workspace = true }
-sqlx = { workspace = true }
-thiserror = { workspace = true }
 tokio = { workspace = true }
-tracing = { workspace = true }
-uuid = { workspace = true }
 
 [dev-dependencies]
-bytes = { workspace = true }
-http-body-util = { workspace = true }
-serde_urlencoded = { workspace = true }
-tempfile = { workspace = true }

@@ -1,5 +1,5 @@
-use anyhow::Result;
 use clap::Parser;
+use quench_core::Result;
 use warehouse_cli::{application, cli, ui};
 
 #[tokio::main]

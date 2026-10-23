@@ -1,7 +1,7 @@
 use quench_db::prelude::Model;
-use serde::{Deserialize, Serialize};
+use quench_serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Project {
     pub id: String,
     pub name: String,
@@ -12,7 +12,7 @@ pub struct Project {
 
 impl Model for Project {
     fn table_name() -> String {
-        let schema = envmnt::get_or("DB_SCHEMA", "sage");
+        let schema = quench_core::env::get_or("DB_SCHEMA", "sage");
         format!("{schema}.projects")
     }
 
@@ -25,7 +25,7 @@ impl Model for Project {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Conversation {
     pub id: String,
     pub title: String,
@@ -37,7 +37,7 @@ pub struct Conversation {
 
 impl Model for Conversation {
     fn table_name() -> String {
-        let schema = envmnt::get_or("DB_SCHEMA", "sage");
+        let schema = quench_core::env::get_or("DB_SCHEMA", "sage");
         format!("{schema}.conversations")
     }
 
@@ -58,7 +58,7 @@ impl Model for Conversation {
 }
 
 /// File statuses: "uploaded" (stored, not yet processed), "processing", "ready" (chunks + embeddings available), "failed".
-#[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct File {
     pub id: String,
     pub owner: String,
@@ -77,7 +77,7 @@ pub struct File {
 
 impl Model for File {
     fn table_name() -> String {
-        let schema = envmnt::get_or("DB_SCHEMA", "sage");
+        let schema = quench_core::env::get_or("DB_SCHEMA", "sage");
         format!("{schema}.files")
     }
 
@@ -104,20 +104,20 @@ impl Model for File {
 }
 
 /// The `embedding` vector column is intentionally not part of this model; it's written and queried through raw SQL against pgvector.
-#[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FileChunk {
     pub id: String,
     pub file_id: String,
     pub chunk_index: i32,
     pub content: String,
     pub embedding_model: Option<String>,
-    pub metadata: Option<serde_json::Value>,
+    pub metadata: Option<quench_serde::Value>,
     pub created_at: String, // ISO 8601 string
 }
 
 impl Model for FileChunk {
     fn table_name() -> String {
-        let schema = envmnt::get_or("DB_SCHEMA", "sage");
+        let schema = quench_core::env::get_or("DB_SCHEMA", "sage");
         format!("{schema}.file_chunks")
     }
 
@@ -138,7 +138,7 @@ impl Model for FileChunk {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, sqlx::FromRow)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Message {
     pub id: String,
     pub conversation_id: String,
@@ -150,7 +150,7 @@ pub struct Message {
 
 impl Model for Message {
     fn table_name() -> String {
-        let schema = envmnt::get_or("DB_SCHEMA", "sage");
+        let schema = quench_core::env::get_or("DB_SCHEMA", "sage");
         format!("{schema}.messages")
     }
 

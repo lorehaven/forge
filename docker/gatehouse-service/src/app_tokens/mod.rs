@@ -2,14 +2,14 @@
 //! own tools and exchanges at `POST /token` (`grant_type=app_token`) for a
 //! short-lived access token. See `api/app_tokens.rs`.
 
-use chrono::{DateTime, Utc};
+use quench_core::time::Time;
 use quench_db::prelude::Model;
-use serde::{Deserialize, Serialize};
+use quench_serde::{Deserialize, Serialize};
 
 /// Prefix on every minted token, so a leaked one is recognisable in a scan.
 pub const TOKEN_PREFIX: &str = "lht_";
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppTokenRow {
     pub token_hash: String,
     pub id: String,
@@ -17,10 +17,10 @@ pub struct AppTokenRow {
     pub name: String,
     /// Space separated `service:action` entries; empty means the owner's full access.
     pub scope: String,
-    pub created_at: DateTime<Utc>,
-    pub expires_at: Option<DateTime<Utc>>,
-    pub last_used_at: Option<DateTime<Utc>>,
-    pub revoked_at: Option<DateTime<Utc>>,
+    pub created_at: Time,
+    pub expires_at: Option<Time>,
+    pub last_used_at: Option<Time>,
+    pub revoked_at: Option<Time>,
 }
 
 impl Model for AppTokenRow {
@@ -49,7 +49,7 @@ impl Model for AppTokenRow {
 
 impl AppTokenRow {
     #[must_use]
-    pub fn is_usable(&self, now: DateTime<Utc>) -> bool {
+    pub fn is_usable(&self, now: Time) -> bool {
         self.revoked_at.is_none() && self.expires_at.is_none_or(|expires| expires > now)
     }
 

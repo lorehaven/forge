@@ -423,12 +423,12 @@ pub fn menu_item(href: &str, icon_name: &str, key: &str) -> Element {
 /// Where "edit profile" leads from a service other than gatehouse: gatehouse owns
 /// the account page, so the link is absolute, built from `GATEHOUSE_URL`.
 pub fn gatehouse_profile_url() -> String {
-    let base = envmnt::get_or("GATEHOUSE_URL", "");
+    let base = quench_core::env::get_or("GATEHOUSE_URL", "");
     format!("{}/ui/account", base.trim_end_matches('/'))
 }
 
 /// The services dashboard: gatehouse's home page, absolute, built from `GATEHOUSE_URL`.
 pub fn gatehouse_dashboard_url() -> String {
-    let base = envmnt::get_or("GATEHOUSE_URL", "");
+    let base = quench_core::env::get_or("GATEHOUSE_URL", "");
     format!("{}/ui/home", base.trim_end_matches('/'))
 }

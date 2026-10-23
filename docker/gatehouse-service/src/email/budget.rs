@@ -7,7 +7,7 @@
 
 use super::{Mail, Recipient, SendError, Sender};
 use crate::ratelimit::{Limit, RateLimiter, Verdict};
-use async_trait::async_trait;
+use quench_core::async_trait;
 use std::sync::Arc;
 
 pub struct BudgetedSender {
@@ -34,7 +34,7 @@ impl BudgetedSender {
         {
             Verdict::Allowed => Ok(()),
             Verdict::Limited { retry_after_secs } => {
-                tracing::warn!(
+                quench_log::warn!(
                     "mail: daily budget of {} emails used up, not sending (resets in {retry_after_secs}s)",
                     self.per_day
                 );

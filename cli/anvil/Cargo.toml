@@ -23,21 +23,16 @@ path = "src/lib.rs"
 workspace = true
 
 [dependencies]
-anyhow = { workspace = true }
+quench-serde = { workspace = true }
+quench-core = { workspace = true }
 clap = { workspace = true }
 crossterm = { workspace = true }
 gatehouse-auth = { workspace = true }
 quench-cli = { workspace = true }
-semver = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-tempfile = { workspace = true }
-toml = { workspace = true }
 toml_edit = { workspace = true }
 walkdir = { workspace = true }
 which = { workspace = true }
 
 [dev-dependencies]
 assert_cmd = { workspace = true }
-envmnt = { workspace = true }
 predicates = { workspace = true }

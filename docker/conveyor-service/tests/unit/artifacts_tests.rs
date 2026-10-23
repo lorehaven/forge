@@ -18,8 +18,8 @@ fn env_lock() -> &'static Mutex<()> {
 }
 
 /// A checkout with the given files in it.
-fn workspace(files: &[(&str, &[u8])]) -> (tempfile::TempDir, Workspace) {
-    let dir = tempfile::tempdir().expect("temp dir");
+fn workspace(files: &[(&str, &[u8])]) -> (quench_core::tmp::TempDir, Workspace) {
+    let dir = quench_core::tmp::TempDir::new().expect("temp dir");
     for (path, contents) in files {
         let full = dir.path().join(path);
         if let Some(parent) = full.parent() {
@@ -80,8 +80,8 @@ async fn a_path_that_climbs_out_of_the_checkout_is_refused() {
 #[tokio::test]
 async fn a_symlink_pointing_out_of_the_checkout_is_refused() {
     // Planted in the repository, this is how `..` gets past a textual check.
-    let dir = tempfile::tempdir().expect("temp dir");
-    let outside = tempfile::tempdir().expect("temp dir");
+    let dir = quench_core::tmp::TempDir::new().expect("temp dir");
+    let outside = quench_core::tmp::TempDir::new().expect("temp dir");
     std::fs::write(outside.path().join("secret"), b"x").expect("write");
 
     #[cfg(unix)]
@@ -161,7 +161,7 @@ async fn declaring_nothing_does_nothing() {
 #[test]
 fn no_store_is_built_without_a_warehouse_url() {
     let _guard = env_lock().lock().expect("env lock");
-    envmnt::remove("WAREHOUSE_URL");
+    quench_core::env::remove("WAREHOUSE_URL");
     assert!(
         WarehouseStore::from_env().is_none(),
         "a deployment with no warehouse should keep nothing rather than guess"
@@ -171,12 +171,12 @@ fn no_store_is_built_without_a_warehouse_url() {
 #[test]
 fn a_store_is_built_when_a_warehouse_is_configured() {
     let _guard = env_lock().lock().expect("env lock");
-    envmnt::set(
+    quench_core::env::set(
         "WAREHOUSE_URL",
         "https://warehouse.example.invalid/warehouse",
     );
     assert!(WarehouseStore::from_env().is_some());
-    envmnt::remove("WAREHOUSE_URL");
+    quench_core::env::remove("WAREHOUSE_URL");
 }
 
 #[test]

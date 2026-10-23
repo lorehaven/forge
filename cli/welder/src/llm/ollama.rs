@@ -1,11 +1,11 @@
 use super::{Content, Llm, LlmRequest, LlmResponse, Part};
-use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
+use quench_core::async_trait;
+use quench_serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
 #[derive(Debug)]
 pub struct OllamaModel {
-    client: reqwest::Client,
+    client: quench_client::transport::Client,
     model: String,
     host: String,
 }
@@ -42,9 +42,9 @@ struct ResponseMessage {
 }
 
 impl OllamaModel {
-    pub fn new(model: impl Into<String>, host: impl Into<String>) -> anyhow::Result<Self> {
+    pub fn new(model: impl Into<String>, host: impl Into<String>) -> quench_core::Result<Self> {
         Ok(Self {
-            client: reqwest::Client::new(),
+            client: quench_client::transport::Client::new(),
             model: model.into(),
             host: host.into(),
         })
@@ -57,7 +57,7 @@ impl Llm for OllamaModel {
         &self.model
     }
 
-    async fn generate_content(&self, request: LlmRequest) -> anyhow::Result<LlmResponse> {
+    async fn generate_content(&self, request: LlmRequest) -> quench_core::Result<LlmResponse> {
         // Extract text from request contents
         let mut prompt = String::new();
         for content in &request.contents {
@@ -87,17 +87,17 @@ impl Llm for OllamaModel {
             .json(&chat_request)
             .send()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to call Ollama: {e}"))?;
+            .map_err(|e| quench_core::err!("Failed to call Ollama: {e}"))?;
 
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
-            return Err(anyhow::anyhow!("Ollama error: {error_text}"));
+            return Err(quench_core::err!("Ollama error: {error_text}"));
         }
 
         let chat_response: ChatResponse = response
             .json()
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to parse Ollama response: {e}"))?;
+            .map_err(|e| quench_core::err!("Failed to parse Ollama response: {e}"))?;
 
         let content = Content::new("assistant").with_text(chat_response.message.content);
 

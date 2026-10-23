@@ -1,10 +1,9 @@
-use chacha20poly1305::{ChaCha20Poly1305, Key, KeyInit};
 use gatehouse_service::crypto::{decrypt, encrypt, realm_cipher};
 use gatehouse_service::test_support::TEST_KEY_MATERIAL;
-use sha2::{Digest, Sha256};
+use quench_crypto::aead::ChaCha20Poly1305;
 
 fn test_cipher() -> ChaCha20Poly1305 {
-    envmnt::set("GATEHOUSE_KEY_ENCRYPTION_KEY", TEST_KEY_MATERIAL);
+    quench_core::env::set("GATEHOUSE_KEY_ENCRYPTION_KEY", TEST_KEY_MATERIAL);
     realm_cipher().expect("cipher")
 }
 
@@ -13,8 +12,8 @@ fn test_cipher() -> ChaCha20Poly1305 {
 /// key fails" can be tested without racing every other module's tests
 /// that depend on `GATEHOUSE_KEY_ENCRYPTION_KEY` staying `TEST_KEY_MATERIAL`.
 fn other_cipher() -> ChaCha20Poly1305 {
-    let derived: [u8; 32] = Sha256::digest(b"a-completely-different-key-material").into();
-    ChaCha20Poly1305::new(&Key::from(derived))
+    let derived: [u8; 32] = quench_crypto::hash::sha256(b"a-completely-different-key-material");
+    ChaCha20Poly1305::new(derived)
 }
 
 #[test]

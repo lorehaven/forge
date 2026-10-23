@@ -3,11 +3,11 @@ use crate::env::{
 };
 pub use crate::order::{Gate, Phase, WaitFor};
 use crate::order::{gates_of, order_by_dependencies};
-use anyhow::Context;
 use minijinja::value::ValueKind;
 use minijinja::{Environment, Output, State, Value, context, escape_formatter};
+use quench_core::Context;
+use quench_serde::Value as YamlValue;
 use regex::Regex;
-use serde_norway::Value as YamlValue;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::fs;
@@ -80,17 +80,17 @@ pub struct Selector {
 impl Selector {
     /// Parses `kind`, `kind/name` or `*/name` patterns. `kind` alone is
     /// equivalent to `kind/*`.
-    pub fn parse<S: AsRef<str>>(targets: &[S]) -> anyhow::Result<Self> {
+    pub fn parse<S: AsRef<str>>(targets: &[S]) -> quench_core::Result<Self> {
         let mut parsed = Vec::with_capacity(targets.len());
 
         for raw in targets {
             let raw = raw.as_ref().trim();
-            anyhow::ensure!(!raw.is_empty(), "empty target (expected kind[/name])");
+            quench_core::ensure!(!raw.is_empty(), "empty target (expected kind[/name])");
 
             let mut parts = raw.split('/');
             let kind = parts.next().unwrap_or("");
             let name = parts.next();
-            anyhow::ensure!(
+            quench_core::ensure!(
                 parts.next().is_none(),
                 "invalid target `{raw}` (expected kind[/name])"
             );
@@ -108,7 +108,7 @@ impl Selector {
     }
 
     /// The same selection, without the resources `except` names (`kind/name` patterns, as for targets).
-    pub fn except<S: AsRef<str>>(mut self, except: &[S]) -> anyhow::Result<Self> {
+    pub fn except<S: AsRef<str>>(mut self, except: &[S]) -> quench_core::Result<Self> {
         self.excluded = Self::parse(except)?.targets;
         Ok(self)
     }
@@ -195,19 +195,19 @@ pub struct RenderedManifest {
     pub phases: Vec<Phase>,
 }
 
-pub fn generate_manifests(env_name: &str) -> anyhow::Result<String> {
+pub fn generate_manifests(env_name: &str) -> quench_core::Result<String> {
     Ok(generate_manifests_with_scope(env_name, ResourceScope::All)?.path)
 }
 
 pub fn generate_manifests_with_scope(
     env_name: &str,
     scope: ResourceScope,
-) -> anyhow::Result<RenderedManifest> {
+) -> quench_core::Result<RenderedManifest> {
     generate_manifests_selected(env_name, scope, &Selector::default())
 }
 
 /// Lists every resource declared by an overlay, without rendering templates.
-pub fn list_resources(env_name: &str) -> anyhow::Result<Vec<ResourceRef>> {
+pub fn list_resources(env_name: &str) -> quench_core::Result<Vec<ResourceRef>> {
     let data = render_overlay(env_name)?;
 
     resource_refs(&data)
@@ -219,7 +219,7 @@ pub fn render_in_memory(
     env_name: &str,
     scope: ResourceScope,
     selector: &Selector,
-) -> anyhow::Result<Vec<(ResourceRef, String)>> {
+) -> quench_core::Result<Vec<(ResourceRef, String)>> {
     let data = render_overlay(env_name)?;
 
     if !selector.is_empty() {
@@ -234,7 +234,7 @@ pub fn generate_manifests_selected(
     env_name: &str,
     scope: ResourceScope,
     selector: &Selector,
-) -> anyhow::Result<RenderedManifest> {
+) -> quench_core::Result<RenderedManifest> {
     let data = render_overlay(env_name)?;
 
     if !selector.is_empty() {
@@ -294,7 +294,7 @@ fn write_phases(
     path: &str,
     rendered: &[(ResourceRef, String)],
     gates: &[(ResourceRef, WaitFor, Option<u64>)],
-) -> anyhow::Result<Vec<Phase>> {
+) -> quench_core::Result<Vec<Phase>> {
     let gate_for = |resource: &ResourceRef| {
         gates.iter().find(|(r, _, _)| {
             kinds_match(&r.kind, &resource.kind) && r.name.eq_ignore_ascii_case(&resource.name)
@@ -308,22 +308,23 @@ fn write_phases(
     let mut phases = Vec::new();
     let mut current: Vec<&(ResourceRef, String)> = Vec::new();
 
-    let mut close =
-        |current: &mut Vec<&(ResourceRef, String)>, gate: Option<Gate>| -> anyhow::Result<()> {
-            let path = format!("{stem}.phase-{}.yaml", phases.len() + 1);
-            let owned: Vec<(ResourceRef, String)> = current.iter().map(|e| (*e).clone()).collect();
-            let sensitive = owned
-                .iter()
-                .any(|(r, yaml)| is_secret_resource(&r.kind, yaml));
-            write_manifest(&path, &join_manifests(&owned), sensitive)?;
-            phases.push(Phase {
-                path,
-                resources: owned.into_iter().map(|(r, _)| r).collect(),
-                gate,
-            });
-            current.clear();
-            Ok(())
-        };
+    let mut close = |current: &mut Vec<&(ResourceRef, String)>,
+                     gate: Option<Gate>|
+     -> quench_core::Result<()> {
+        let path = format!("{stem}.phase-{}.yaml", phases.len() + 1);
+        let owned: Vec<(ResourceRef, String)> = current.iter().map(|e| (*e).clone()).collect();
+        let sensitive = owned
+            .iter()
+            .any(|(r, yaml)| is_secret_resource(&r.kind, yaml));
+        write_manifest(&path, &join_manifests(&owned), sensitive)?;
+        phases.push(Phase {
+            path,
+            resources: owned.into_iter().map(|(r, _)| r).collect(),
+            gate,
+        });
+        current.clear();
+        Ok(())
+    };
 
     for entry in rendered {
         current.push(entry);
@@ -348,7 +349,7 @@ fn write_phases(
 /// users on the machine and does nothing at all against `git add -A`; these
 /// files are build output, so the safe default is for git never to see them.
 /// An existing `.gitignore` is left alone.
-fn ignore_output_dir() -> anyhow::Result<()> {
+fn ignore_output_dir() -> quench_core::Result<()> {
     let path = format!("{}/.gitignore", output_dir().display());
     if Path::new(&path).exists() {
         return Ok(());
@@ -375,7 +376,7 @@ pub fn is_secret_resource(kind: &str, yaml: &str) -> bool {
 ///
 /// A rendered Secret sits on disk in plaintext; at the default mode every other
 /// user on the machine can read it.
-fn write_manifest(path: &str, contents: &str, sensitive: bool) -> anyhow::Result<()> {
+fn write_manifest(path: &str, contents: &str, sensitive: bool) -> quench_core::Result<()> {
     if sensitive {
         return write_owner_only(path, contents);
     }
@@ -384,7 +385,7 @@ fn write_manifest(path: &str, contents: &str, sensitive: bool) -> anyhow::Result
 }
 
 #[cfg(unix)]
-fn write_owner_only(path: &str, contents: &str) -> anyhow::Result<()> {
+fn write_owner_only(path: &str, contents: &str) -> quench_core::Result<()> {
     use std::io::Write;
     use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
@@ -409,7 +410,7 @@ fn write_owner_only(path: &str, contents: &str) -> anyhow::Result<()> {
 }
 
 #[cfg(not(unix))]
-fn write_owner_only(path: &str, contents: &str) -> anyhow::Result<()> {
+fn write_owner_only(path: &str, contents: &str) -> quench_core::Result<()> {
     fs::write(path, contents).with_context(|| format!("failed to write {path}"))
 }
 
@@ -417,24 +418,24 @@ fn write_owner_only(path: &str, contents: &str) -> anyhow::Result<()> {
 /// `kube_context:`, so that `apply` cannot land on whichever cluster kubectl
 /// happens to be pointing at.
 #[doc(hidden)]
-pub fn kube_context(data: &YamlValue) -> anyhow::Result<Option<String>> {
+pub fn kube_context(data: &YamlValue) -> quench_core::Result<Option<String>> {
     match &data["kube_context"] {
         YamlValue::Null => Ok(None),
         YamlValue::String(raw) => {
             let context = raw.trim();
-            anyhow::ensure!(
+            quench_core::ensure!(
                 !context.is_empty(),
                 "kube_context is empty — name a context, or remove the key to use kubectl's current one"
             );
             Ok(Some(context.to_string()))
         }
-        _ => anyhow::bail!("kube_context must be a string naming a kubectl context"),
+        _ => quench_core::bail!("kube_context must be a string naming a kubectl context"),
     }
 }
 
-pub(crate) fn resource_refs(data: &YamlValue) -> anyhow::Result<Vec<ResourceRef>> {
+pub(crate) fn resource_refs(data: &YamlValue) -> quench_core::Result<Vec<ResourceRef>> {
     let resources = data["resources"]
-        .as_sequence()
+        .as_array()
         .context("resources must be a list")?;
 
     resources
@@ -466,20 +467,20 @@ fn ensure_targets_match(
     selector: &Selector,
     all: &[ResourceRef],
     scope: ResourceScope,
-) -> anyhow::Result<()> {
+) -> quench_core::Result<()> {
     for target in &selector.targets {
         let matched: Vec<&ResourceRef> = all
             .iter()
             .filter(|r| target.matches(&r.kind, &r.name))
             .collect();
 
-        anyhow::ensure!(
+        quench_core::ensure!(
             !matched.is_empty(),
             "no resource matches `{target}`\n\navailable resources:\n{}",
             format_refs(all.iter())
         );
 
-        anyhow::ensure!(
+        quench_core::ensure!(
             matched.iter().any(|r| r.in_scope(scope)),
             "`{target}` matches only resources outside --scope {scope}:\n{}\n\n\
              pass `--scope all` to include them",
@@ -496,7 +497,7 @@ fn format_refs<'a>(refs: impl Iterator<Item = &'a ResourceRef>) -> String {
         .join("\n")
 }
 
-fn render_overlay(env_name: &str) -> anyhow::Result<YamlValue> {
+fn render_overlay(env_name: &str) -> quench_core::Result<YamlValue> {
     let (env_vars, env_source) = load_env(env_name)?;
     let overlay_src = fs::read_to_string(overlay_dir().join(env_name).join("overlay.yaml"))?;
 
@@ -511,7 +512,7 @@ pub fn render_to_string<S: std::hash::BuildHasher>(
     env_name: &str,
     overlay_src: &str,
     env_vars: &HashMap<String, String, S>,
-) -> anyhow::Result<String> {
+) -> quench_core::Result<String> {
     let data = overlay_data(env_name, overlay_src, env_vars, None)?;
     let rendered = render_resources(env_name, &data, ResourceScope::All, &Selector::default())?;
 
@@ -525,14 +526,14 @@ fn overlay_data<S: std::hash::BuildHasher>(
     overlay_src: &str,
     env_vars: &HashMap<String, String, S>,
     env_source: Option<&str>,
-) -> anyhow::Result<YamlValue> {
+) -> quench_core::Result<YamlValue> {
     let mut overlay_jinja = Environment::new();
     overlay_jinja.set_loader(minijinja::path_loader(overlay_dir()));
     overlay_jinja.add_global("env", env_name);
     overlay_jinja.set_formatter(yaml_bool_formatter);
 
     let rendered_overlay = overlay_jinja.render_str(overlay_src, Value::UNDEFINED)?;
-    let mut data: YamlValue = serde_norway::from_str(&rendered_overlay).map_err(|e| {
+    let mut data: YamlValue = quench_serde::yaml::from_str(&rendered_overlay).map_err(|e| {
         let msg = format!("Failed to parse overlay.yaml after rendering: {e}");
         // Print with line numbers for easier debugging
         let with_lines = rendered_overlay
@@ -542,7 +543,7 @@ fn overlay_data<S: std::hash::BuildHasher>(
             .collect::<Vec<_>>()
             .join("\n");
 
-        anyhow::anyhow!("{msg}\n\nRendered source:\n{with_lines}")
+        quench_core::err!("{msg}\n\nRendered source:\n{with_lines}")
     })?;
 
     substitute_vars(&mut data, env_vars, env_source)?;
@@ -560,7 +561,7 @@ fn overlay_data<S: std::hash::BuildHasher>(
 /// obvious message, and two entries sharing a `kind/name` both render, so the
 /// second quietly overwrites the first on apply and no target can ever select
 /// just one of them.
-fn ensure_resources_are_addressable(data: &YamlValue) -> anyhow::Result<()> {
+fn ensure_resources_are_addressable(data: &YamlValue) -> quench_core::Result<()> {
     let refs = resource_refs(data)?;
 
     let unnamed: Vec<String> = refs
@@ -570,7 +571,7 @@ fn ensure_resources_are_addressable(data: &YamlValue) -> anyhow::Result<()> {
         .map(|(i, r)| format!("  resources[{i}] (kind: {})", r.kind))
         .collect();
 
-    anyhow::ensure!(
+    quench_core::ensure!(
         unnamed.is_empty(),
         "resource(s) with no name:\n{}\n\ngive each a `name:`{}",
         unnamed.join("\n"),
@@ -603,7 +604,7 @@ fn ensure_resources_are_addressable(data: &YamlValue) -> anyhow::Result<()> {
         }
     }
 
-    anyhow::ensure!(
+    quench_core::ensure!(
         duplicates.is_empty(),
         "resource(s) declared more than once:\n{}\n\n\
          each `kind/name` must be unique — the last one would win on apply",
@@ -631,9 +632,9 @@ fn join_manifests(rendered: &[(ResourceRef, String)]) -> String {
 /// The overlay's `defaults:` block feeds the pod-based templates by attribute
 /// lookup, which quietly yields nothing for a non-mapping — so a mistyped block
 /// would silently drop every default it was meant to set.
-fn ensure_defaults_is_a_mapping(data: &YamlValue) -> anyhow::Result<()> {
-    anyhow::ensure!(
-        matches!(&data["defaults"], YamlValue::Null | YamlValue::Mapping(_)),
+fn ensure_defaults_is_a_mapping(data: &YamlValue) -> quench_core::Result<()> {
+    quench_core::ensure!(
+        matches!(&data["defaults"], YamlValue::Null | YamlValue::Object(_)),
         "defaults must be a mapping of fallback values, e.g.\n  \
          defaults:\n    service_account: my-app-sa"
     );
@@ -646,9 +647,9 @@ fn render_resources(
     data: &YamlValue,
     scope: ResourceScope,
     selector: &Selector,
-) -> anyhow::Result<Vec<(ResourceRef, String)>> {
+) -> quench_core::Result<Vec<(ResourceRef, String)>> {
     let resources = data["resources"]
-        .as_sequence()
+        .as_array()
         .context("resources must be a list")?;
     let refs = resource_refs(data)?;
 
@@ -667,7 +668,7 @@ fn render_resources(
         let declared = refs.iter().any(|r| {
             format!("{}/{}", r.kind.to_ascii_lowercase(), r.name).eq_ignore_ascii_case(key)
         });
-        anyhow::ensure!(
+        quench_core::ensure!(
             declared,
             "--replicas names `{key}`, which this overlay does not declare"
         );
@@ -683,7 +684,7 @@ fn render_resources(
             .to_ascii_lowercase();
         if matches!(kind.as_str(), "configmap" | "secret") {
             let tpl = tpl_env.get_template(&template_name_for_kind(&kind))?;
-            let y = tpl.render(context! { data => minijinja::value::Serde(data), res => minijinja::value::Serde(res), env => env_name })?;
+            let y = tpl.render(context! { data => crate::bridge::to_jinja(data), res => crate::bridge::to_jinja(res), env => env_name })?;
             config_docs.insert((kind, res_ref.name.clone()), y);
         }
     }
@@ -702,8 +703,8 @@ fn render_resources(
             .with_context(|| format!("template for kind `{kind}` not found or invalid. ensure `{tpl_name}` exists in embedded templates."))?;
 
         let y = tpl.render(context! {
-            data => minijinja::value::Serde(data),
-            res => minijinja::value::Serde(res),
+            data => crate::bridge::to_jinja(data),
+            res => crate::bridge::to_jinja(res),
             env => env_name,
         })?;
         let y = if labels.is_empty() && annotations.is_empty() {
@@ -737,7 +738,7 @@ fn with_config_hash(
     name: &str,
     yaml: &str,
     config_docs: &BTreeMap<(String, String), String>,
-) -> anyhow::Result<String> {
+) -> quench_core::Result<String> {
     if !matches!(
         kind.to_ascii_lowercase().as_str(),
         "deployment" | "statefulset" | "daemonset"
@@ -745,7 +746,7 @@ fn with_config_hash(
     {
         return Ok(yaml.to_string());
     }
-    let mut doc: YamlValue = serde_norway::from_str(yaml)
+    let mut doc: YamlValue = quench_serde::yaml::from_str(yaml)
         .with_context(|| format!("could not read the rendered {kind}/{name}"))?;
 
     let mut read: std::collections::BTreeSet<(&str, String)> = std::collections::BTreeSet::new();
@@ -756,18 +757,18 @@ fn with_config_hash(
         }
     };
     for field in ["containers", "initContainers"] {
-        for container in pod[field].as_sequence().into_iter().flatten() {
-            for from in container["envFrom"].as_sequence().into_iter().flatten() {
+        for container in pod[field].as_array().into_iter().flatten() {
+            for from in container["envFrom"].as_array().into_iter().flatten() {
                 note("configmap", &from["configMapRef"]["name"]);
                 note("secret", &from["secretRef"]["name"]);
             }
-            for var in container["env"].as_sequence().into_iter().flatten() {
+            for var in container["env"].as_array().into_iter().flatten() {
                 note("configmap", &var["valueFrom"]["configMapKeyRef"]["name"]);
                 note("secret", &var["valueFrom"]["secretKeyRef"]["name"]);
             }
         }
     }
-    for volume in pod["volumes"].as_sequence().into_iter().flatten() {
+    for volume in pod["volumes"].as_array().into_iter().flatten() {
         note("configmap", &volume["configMap"]["name"]);
         note("secret", &volume["secret"]["secretName"]);
     }
@@ -786,20 +787,24 @@ fn with_config_hash(
     let template = doc
         .get_mut("spec")
         .and_then(|s| s.get_mut("template"))
-        .and_then(YamlValue::as_mapping_mut)
+        .and_then(YamlValue::as_object_mut)
         .with_context(|| format!("{kind}/{name} has no pod template"))?;
+    if template.get("metadata").is_none() {
+        template.insert("metadata", YamlValue::Object(quench_serde::Map::new()));
+    }
     let metadata = template
-        .entry(YamlValue::String("metadata".to_string()))
-        .or_insert_with(|| YamlValue::Mapping(serde_norway::Mapping::new()))
-        .as_mapping_mut()
+        .get_mut("metadata")
+        .and_then(YamlValue::as_object_mut)
         .context("the pod template's metadata is not a mapping")?;
+    if metadata.get("annotations").is_none() {
+        metadata.insert("annotations", YamlValue::Object(quench_serde::Map::new()));
+    }
     let annotations = metadata
-        .entry(YamlValue::String("annotations".to_string()))
-        .or_insert_with(|| YamlValue::Mapping(serde_norway::Mapping::new()))
-        .as_mapping_mut()
+        .get_mut("annotations")
+        .and_then(YamlValue::as_object_mut)
         .context("the pod template's annotations are not a mapping")?;
     annotations.insert(
-        YamlValue::String(CONFIG_HASH_ANNOTATION.to_string()),
+        CONFIG_HASH_ANNOTATION,
         YamlValue::String(rivet_package::sha256_hex(combined.as_bytes())[..16].to_string()),
     );
     emit_manifest(&doc)
@@ -812,21 +817,20 @@ fn with_config_hash(
 /// `"yes"` reached the API as `true`. A document holding any such string (or a digit string 1.1 reads as an
 /// octal or sexagesimal number, such as `0755` or `1:30`) is written as JSON instead, which is YAML to every
 /// reader and keeps each string a string.
-pub fn emit_manifest(doc: &YamlValue) -> anyhow::Result<String> {
+pub fn emit_manifest(doc: &YamlValue) -> quench_core::Result<String> {
     if holds_yaml11_ambiguity(doc) {
-        return Ok(serde_json::to_string_pretty(doc)?);
+        return Ok(quench_serde::json::to_string_pretty(doc));
     }
-    Ok(serde_norway::to_string(doc)?.trim().to_string())
+    Ok(quench_serde::yaml::to_string(doc)?.trim().to_string())
 }
 
 fn holds_yaml11_ambiguity(value: &YamlValue) -> bool {
     match value {
         YamlValue::String(text) => is_yaml11_ambiguous(text),
-        YamlValue::Sequence(items) => items.iter().any(holds_yaml11_ambiguity),
-        YamlValue::Mapping(map) => map
+        YamlValue::Array(items) => items.iter().any(holds_yaml11_ambiguity),
+        YamlValue::Object(map) => map
             .iter()
-            .any(|(k, v)| holds_yaml11_ambiguity(k) || holds_yaml11_ambiguity(v)),
-        YamlValue::Tagged(tagged) => holds_yaml11_ambiguity(&tagged.value),
+            .any(|(k, v)| is_yaml11_ambiguous(k) || holds_yaml11_ambiguity(v)),
         _ => false,
     }
 }
@@ -851,24 +855,21 @@ fn is_yaml11_ambiguous(text: &str) -> bool {
 }
 
 /// Sets `spec.replicas` on a rendered `Deployment` or `StatefulSet`.
-fn with_replicas(kind: &str, name: &str, yaml: &str, count: u32) -> anyhow::Result<String> {
-    anyhow::ensure!(
+fn with_replicas(kind: &str, name: &str, yaml: &str, count: u32) -> quench_core::Result<String> {
+    quench_core::ensure!(
         matches!(
             kind.to_ascii_lowercase().as_str(),
             "deployment" | "statefulset"
         ),
         "--replicas applies to a deployment or statefulset, not {kind}/{name}"
     );
-    let mut doc: YamlValue = serde_norway::from_str(yaml)
+    let mut doc: YamlValue = quench_serde::yaml::from_str(yaml)
         .with_context(|| format!("could not read the rendered {kind}/{name} to scale it"))?;
     let spec = doc
         .get_mut("spec")
-        .and_then(YamlValue::as_mapping_mut)
+        .and_then(YamlValue::as_object_mut)
         .with_context(|| format!("{kind}/{name} renders without a spec"))?;
-    spec.insert(
-        YamlValue::String("replicas".to_string()),
-        YamlValue::Number(count.into()),
-    );
+    spec.insert("replicas", YamlValue::from(count));
     emit_manifest(&doc)
 }
 
@@ -888,12 +889,12 @@ fn stamp_rendered(
     yaml: &str,
     labels: &BTreeMap<String, String>,
     annotations: &BTreeMap<String, String>,
-) -> anyhow::Result<String> {
-    let mut doc: YamlValue = serde_norway::from_str(yaml)
+) -> quench_core::Result<String> {
+    let mut doc: YamlValue = quench_serde::yaml::from_str(yaml)
         .with_context(|| format!("could not read the rendered {kind}/{name} to mark it"))?;
     let metadata = doc
         .get_mut("metadata")
-        .and_then(YamlValue::as_mapping_mut)
+        .and_then(YamlValue::as_object_mut)
         .with_context(|| {
             format!("{kind}/{name} renders without a metadata block, so it cannot be marked")
         })?;
@@ -903,19 +904,13 @@ fn stamp_rendered(
             continue;
         }
         let mut merged = match metadata.get(key) {
-            Some(YamlValue::Mapping(existing)) => existing.clone(),
-            _ => serde_norway::Mapping::new(),
+            Some(YamlValue::Object(existing)) => existing.clone(),
+            _ => quench_serde::Map::new(),
         };
         for (name, value) in additions {
-            merged.insert(
-                YamlValue::String(name.clone()),
-                YamlValue::String(value.clone()),
-            );
+            merged.insert(name.clone(), YamlValue::String(value.clone()));
         }
-        metadata.insert(
-            YamlValue::String(key.to_string()),
-            YamlValue::Mapping(merged),
-        );
+        metadata.insert(key.to_string(), YamlValue::Object(merged));
     }
 
     emit_manifest(&doc)
@@ -936,7 +931,7 @@ pub struct OverlayScan {
 }
 
 /// Renders `<overlays_dir>/<env>/overlay.yaml` far enough to see what it needs.
-pub fn scan_overlay(env_name: &str, overlays_dir: &Path) -> anyhow::Result<OverlayScan> {
+pub fn scan_overlay(env_name: &str, overlays_dir: &Path) -> quench_core::Result<OverlayScan> {
     use std::sync::{Arc, Mutex};
 
     let overlay_path = overlays_dir.join(env_name).join("overlay.yaml");
@@ -1014,13 +1009,13 @@ pub fn overlay_vars(rendered: &str) -> Vec<String> {
     fn collect(value: &YamlValue, names: &mut Vec<String>) {
         match value {
             YamlValue::String(text) => names.extend(referenced_vars(text)),
-            YamlValue::Mapping(map) => map.values().for_each(|v| collect(v, names)),
-            YamlValue::Sequence(items) => items.iter().for_each(|v| collect(v, names)),
+            YamlValue::Object(map) => map.values().for_each(|v| collect(v, names)),
+            YamlValue::Array(items) => items.iter().for_each(|v| collect(v, names)),
             _ => {}
         }
     }
 
-    let Ok(parsed) = serde_norway::from_str::<YamlValue>(rendered) else {
+    let Ok(parsed) = quench_serde::yaml::from_str::<YamlValue>(rendered) else {
         return referenced_vars(rendered);
     };
     let mut names = Vec::new();
@@ -1105,7 +1100,7 @@ pub fn parse_dotenv(content: &str) -> HashMap<String, String> {
     env_vars
 }
 
-fn load_env(env: &str) -> anyhow::Result<(HashMap<String, String>, Option<String>)> {
+fn load_env(env: &str) -> quench_core::Result<(HashMap<String, String>, Option<String>)> {
     if let Some(vars) = env_override() {
         return Ok((vars, Some("the values given at install".to_string())));
     }
@@ -1115,7 +1110,7 @@ fn load_env(env: &str) -> anyhow::Result<(HashMap<String, String>, Option<String
 
     // Lowest first: the overlay's own values file, its encrypted values (if a key is configured), then
     // `.env` - which, being not committed, is where a local override belongs.
-    let read = |name: &str| -> anyhow::Result<Option<Vec<u8>>> {
+    let read = |name: &str| -> quench_core::Result<Option<Vec<u8>>> {
         let file = dir.join(name);
         file.is_file()
             .then(|| fs::read(&file).with_context(|| format!("failed to read {}", file.display())))
@@ -1298,7 +1293,7 @@ pub fn template_name_for_kind(kind: &str) -> String {
     format!("{}.yaml.j2", canonical_kind(&kind.to_lowercase()))
 }
 
-fn load_embedded_templates(env: &mut Environment<'_>) -> anyhow::Result<()> {
+fn load_embedded_templates(env: &mut Environment<'_>) -> quench_core::Result<()> {
     for (name, source) in TEMPLATES {
         env.add_template(name, source)
             .with_context(|| format!("failed to load embedded template: {name}"))?;
@@ -1309,7 +1304,7 @@ fn load_embedded_templates(env: &mut Environment<'_>) -> anyhow::Result<()> {
 /// Parses every embedded template, so a syntax error is caught by the test
 /// suite rather than by the first overlay that happens to use the kind.
 #[doc(hidden)]
-pub fn check_embedded_templates() -> anyhow::Result<Vec<&'static str>> {
+pub fn check_embedded_templates() -> quench_core::Result<Vec<&'static str>> {
     let mut env = Environment::new();
     env.add_filter("to_yaml", to_yaml);
     load_embedded_templates(&mut env)?;
@@ -1338,7 +1333,8 @@ fn yaml_bool_formatter(
 /// straight through to Kubernetes (tolerations, affinity, webhooks, ...).
 /// Nest the result with minijinja's `indent` filter.
 fn to_yaml(value: &Value) -> Result<String, minijinja::Error> {
-    serde_norway::to_string(value)
+    crate::bridge::from_jinja(value)
+        .and_then(|value| quench_serde::yaml::to_string(&value).map_err(|e| e.to_string()))
         .map(|s| s.trim_end().to_string())
         .map_err(|e| {
             minijinja::Error::new(
@@ -1363,12 +1359,12 @@ pub fn substitute_vars<S: std::hash::BuildHasher>(
     data: &mut YamlValue,
     env: &HashMap<String, String, S>,
     source: Option<&str>,
-) -> anyhow::Result<()> {
+) -> quench_core::Result<()> {
     let re = Regex::new(VAR_PATTERN)?;
     let mut missing = BTreeMap::new();
     substitute(data, env, &re, "", &mut missing);
 
-    anyhow::ensure!(
+    quench_core::ensure!(
         missing.is_empty(),
         "overlay references undefined variable(s):\n{}\n\ndefine them in {}, or write \
          `$${{NAME}}` to keep a literal `${{NAME}}` in the manifest",
@@ -1410,18 +1406,19 @@ fn substitute<S: std::hash::BuildHasher>(
                 })
                 .into_owned();
         }
-        YamlValue::Mapping(m) => {
-            for (k, v) in m {
-                let key = k.as_str().unwrap_or("?");
+        YamlValue::Object(m) => {
+            for (key, v) in std::mem::take(m) {
                 let child = if path.is_empty() {
-                    key.to_string()
+                    key.clone()
                 } else {
                     format!("{path}.{key}")
                 };
-                substitute(v, env, re, &child, missing);
+                let mut v = v;
+                substitute(&mut v, env, re, &child, missing);
+                m.insert(key, v);
             }
         }
-        YamlValue::Sequence(s) => {
+        YamlValue::Array(s) => {
             for (i, v) in s.iter_mut().enumerate() {
                 substitute(v, env, re, &format!("{path}[{i}]"), missing);
             }

@@ -7,7 +7,7 @@ use welder::run::{
 };
 
 fn parse(toml_src: &str) -> Workflow {
-    toml::from_str(toml_src).expect("valid workflow toml")
+    quench_serde::toml::from_str(toml_src).expect("valid workflow toml")
 }
 
 const SIMPLE_WORKFLOW_TOML: &str = r#"
@@ -22,7 +22,7 @@ instruction = "do things"
 
 #[test]
 fn load_workflow_reads_and_parses_a_toml_file() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let path = dir.path().join("workflow.toml");
     std::fs::write(&path, SIMPLE_WORKFLOW_TOML).unwrap();
 
@@ -39,7 +39,7 @@ fn load_workflow_errors_for_a_missing_file() {
 
 #[test]
 fn load_workflow_errors_for_invalid_toml() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = quench_core::tmp::TempDir::new().unwrap();
     let path = dir.path().join("workflow.toml");
     std::fs::write(&path, "not = [valid").unwrap();
 
@@ -299,7 +299,7 @@ fn extract_vllm_instances_keeps_separate_urls_for_the_same_model_name() {
 #[derive(Debug)]
 struct NoopLlm;
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl llm::Llm for NoopLlm {
     fn name(&self) -> &'static str {
         "noop"
@@ -308,7 +308,7 @@ impl llm::Llm for NoopLlm {
     async fn generate_content(
         &self,
         _request: llm::LlmRequest,
-    ) -> anyhow::Result<llm::LlmResponse> {
+    ) -> quench_core::Result<llm::LlmResponse> {
         unreachable!("not exercised by these tests")
     }
 }
@@ -379,7 +379,7 @@ fn build_agents_propagates_a_model_construction_error() {
         "#,
     );
 
-    let err = build_agents(&workflow, |_cfg| Err(anyhow::anyhow!("boom"))).unwrap_err();
+    let err = build_agents(&workflow, |_cfg| Err(quench_core::err!("boom"))).unwrap_err();
     assert!(err.to_string().contains("boom"));
 }
 

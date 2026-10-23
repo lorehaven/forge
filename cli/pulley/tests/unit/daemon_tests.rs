@@ -75,8 +75,8 @@ fn job_with_dirs(id: &str, src: &std::path::Path, dest: &std::path::Path) -> Job
 
 #[test]
 fn run_job_with_no_changes_succeeds_without_syncing() {
-    let src = tempfile::tempdir().unwrap();
-    let dest = tempfile::tempdir().unwrap();
+    let src = quench_core::tmp::TempDir::new().unwrap();
+    let dest = quench_core::tmp::TempDir::new().unwrap();
     let job = job_with_dirs("no-op", src.path(), dest.path());
 
     run_job(&job).expect("run_job");
@@ -84,8 +84,8 @@ fn run_job_with_no_changes_succeeds_without_syncing() {
 
 #[test]
 fn run_job_with_changes_actually_syncs() {
-    let src = tempfile::tempdir().unwrap();
-    let dest = tempfile::tempdir().unwrap();
+    let src = quench_core::tmp::TempDir::new().unwrap();
+    let dest = quench_core::tmp::TempDir::new().unwrap();
     std::fs::write(src.path().join("a.txt"), "hello").unwrap();
     let job = job_with_dirs("has-changes", src.path(), dest.path());
 
@@ -99,8 +99,8 @@ fn run_job_with_changes_actually_syncs() {
 
 #[test]
 fn poll_once_runs_a_due_job_and_records_when_it_ran() {
-    let src = tempfile::tempdir().unwrap();
-    let dest = tempfile::tempdir().unwrap();
+    let src = quench_core::tmp::TempDir::new().unwrap();
+    let dest = quench_core::tmp::TempDir::new().unwrap();
     std::fs::write(src.path().join("a.txt"), "hello").unwrap();
     let job = job_with_dirs("due", src.path(), dest.path());
 
@@ -119,8 +119,8 @@ fn poll_once_runs_a_due_job_and_records_when_it_ran() {
 
 #[test]
 fn poll_once_skips_a_job_that_is_not_due_yet() {
-    let src = tempfile::tempdir().unwrap();
-    let dest = tempfile::tempdir().unwrap();
+    let src = quench_core::tmp::TempDir::new().unwrap();
+    let dest = quench_core::tmp::TempDir::new().unwrap();
     let job = job_with_dirs("not-due", src.path(), dest.path());
 
     let jobs = vec![(&job, Duration::from_secs(3600))];
@@ -140,7 +140,7 @@ fn poll_once_records_the_run_even_when_the_job_fails() {
         "pulley-daemon-poll-once-missing-src-{}",
         std::process::id()
     ));
-    let dest = tempfile::tempdir().unwrap();
+    let dest = quench_core::tmp::TempDir::new().unwrap();
     let job = job_with_dirs("failing", &missing_src, dest.path());
 
     let jobs = vec![(&job, Duration::from_secs(10))];
@@ -160,7 +160,7 @@ fn run_job_errors_when_the_source_directory_does_not_exist() {
         "pulley-daemon-test-missing-src-{}",
         std::process::id()
     ));
-    let dest = tempfile::tempdir().unwrap();
+    let dest = quench_core::tmp::TempDir::new().unwrap();
     let job = job_with_dirs("bad-src", &missing_src, dest.path());
 
     assert!(run_job(&job).is_err());

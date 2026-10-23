@@ -9,7 +9,7 @@ fn table_names_default_to_the_sage_schema() {
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::remove("DB_SCHEMA");
+    quench_core::env::remove("DB_SCHEMA");
 
     assert_eq!(Project::table_name(), "sage.projects");
     assert_eq!(Conversation::table_name(), "sage.conversations");
@@ -23,12 +23,12 @@ fn table_names_honor_a_db_schema_override() {
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::set("DB_SCHEMA", "custom_schema");
+    quench_core::env::set("DB_SCHEMA", "custom_schema");
 
     assert_eq!(Project::table_name(), "custom_schema.projects");
     assert_eq!(Conversation::table_name(), "custom_schema.conversations");
 
-    envmnt::remove("DB_SCHEMA");
+    quench_core::env::remove("DB_SCHEMA");
 }
 
 #[test]

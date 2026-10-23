@@ -15,8 +15,8 @@ use crate::routers::ui::common::{
 };
 use quench_auth::domain::jwt::JwtConfig;
 use quench_http::prelude::{Inject, Path, Query, Response, get, http::StatusCode};
+use quench_serde::Deserialize;
 use quench_web::prelude::*;
-use serde::Deserialize;
 
 #[derive(Deserialize, Default)]
 pub(super) struct Filter {
@@ -29,9 +29,9 @@ pub(super) struct Filter {
 }
 
 pub(super) fn observed_name(observed: Observed) -> String {
-    serde_json::to_value(observed)
-        .ok()
-        .and_then(|v| v.as_str().map(str::to_string))
+    quench_serde::to_value(&observed)
+        .as_str()
+        .map(str::to_string)
         .unwrap_or_default()
 }
 

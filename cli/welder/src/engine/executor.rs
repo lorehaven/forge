@@ -1,7 +1,7 @@
 use crate::llm::Llm;
-use anyhow::Result;
-use serde::Deserialize;
-use serde_json::{Value, json};
+use quench_core::Result;
+use quench_serde::Deserialize;
+use quench_serde::{Value, json};
 use std::fmt::{Debug, Formatter};
 use std::path::Path;
 use std::{
@@ -61,7 +61,7 @@ pub fn execute<'a, S: std::hash::BuildHasher + Sync>(
 
         let node = agents
             .get(name)
-            .ok_or_else(|| anyhow::anyhow!("Agent not found: {name}"))?;
+            .ok_or_else(|| quench_core::err!("Agent not found: {name}"))?;
 
         if !node.children.is_empty() {
             println!("{DIM}{indent}  routing…{RESET}");
@@ -286,7 +286,8 @@ Step {step}/{max_steps}. Output your JSON now:",
             node.max_tokens,
         )
         .await?;
-        let parsed = extract_json(&raw).and_then(|s| serde_json::from_str::<ToolResponse>(&s).ok());
+        let parsed =
+            extract_json(&raw).and_then(|s| quench_serde::json::from_str::<ToolResponse>(&s).ok());
 
         let Some(response) = parsed else {
             return Ok(raw);

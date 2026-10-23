@@ -1,12 +1,10 @@
 use crate::support::{self, WithRivets};
-use chrono::Utc;
-use http::{Method, StatusCode};
-use http_body_util::BodyExt;
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::time::Time;
 use quench_db::InMemoryDb;
 use quench_db::prelude::{Crud, Db};
 use quench_http::endpoint::Endpoint;
-use sqlx::types::Json;
+use quench_http::http::{Method, StatusCode};
 use std::sync::Arc;
 use warehouse_service::domain::rivet::RivetPackage;
 use warehouse_service::routers::ui::pages::home::render_home_page;
@@ -22,20 +20,25 @@ fn package(name: &str, version: &str, yanked: bool) -> RivetPackage {
         filename: format!("{name}-{version}.rivet"),
         size_bytes: 2048,
         sha256: "deadbeef".to_string(),
-        manifest: Json(serde_json::json!({
+        manifest: quench_serde::json!({
             "package": {"name": name, "version": version},
             "requires": {"riveter": ">=0.3", "packages": ["postgres >=1", "redis"]},
             "meta": {"gpu": true, "owner": "ml-team"},
-        })),
+        }),
         uploaded_by: "ci".to_string(),
         yanked,
-        created_at: Utc::now(),
+        created_at: Time::now(),
     }
 }
 
 async fn body_html(resp: quench_http::response::Response) -> String {
-    let collected = resp.into_hyper().into_body().collect().await.unwrap();
-    String::from_utf8(collected.to_bytes().to_vec()).unwrap()
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .unwrap();
+    String::from_utf8(collected.to_vec()).unwrap()
 }
 
 fn jwt_config(auth_enabled: bool) -> JwtConfig {
@@ -142,9 +145,9 @@ async fn render_shows_what_the_manifest_declares() {
 async fn render_escapes_what_a_publisher_controls() {
     let mut hostile = package("forge", "1.0.0", false);
     hostile.description = Some("<script>alert(1)</script>".to_string());
-    hostile.manifest = Json(serde_json::json!({
+    hostile.manifest = quench_serde::json!({
         "meta": {"<img src=x onerror=alert(1)>": "<b>bold</b>"}
-    }));
+    });
 
     let html = body_html(render_rivets_page(&[hostile], Some("forge"), None, false)).await;
     assert!(!html.contains("<script>alert(1)"), "{html}");
@@ -280,9 +283,12 @@ async fn the_root_redirects_to_the_catalog() {
     for path in ["/ui/rivets", "/ui/rivets/"] {
         let resp = app.call(support::req(Method::GET, path, &container)).await;
         assert_eq!(resp.status(), StatusCode::PERMANENT_REDIRECT, "{path}");
-        let (parts, _) = resp.into_hyper().into_parts();
+        let parts = resp.into_inner();
         assert!(
-            parts.headers["location"]
+            parts
+                .headers
+                .get("location")
+                .unwrap()
                 .to_str()
                 .unwrap()
                 .ends_with("/ui/rivets/catalog"),
@@ -306,8 +312,14 @@ async fn yank_and_unyank_flip_the_flag_and_send_the_page_back_to_the_version() {
         ))
         .await;
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
-    let (parts, _) = resp.into_hyper().into_parts();
-    let redirect = parts.headers["hx-redirect"].to_str().unwrap().to_string();
+    let parts = resp.into_inner();
+    let redirect = parts
+        .headers
+        .get("hx-redirect")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
     // `+` must not travel raw in a query string, where it means a space.
     assert!(
         redirect.ends_with("/ui/rivets/catalog?repo=forge&tag=0.4.0%2Bb1"),

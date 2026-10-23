@@ -8,12 +8,12 @@ use crate::realm;
 use crate::tokens::{PURPOSE_RESET_PASSWORD, VerificationTokens};
 use crate::ui::common::{UiPageKind, render_page, ui_path};
 use crate::ui::locale::BrowserLocale;
-use http::StatusCode;
 use quench_auth::domain::session::SessionDb;
 use quench_db::prelude::Db;
+use quench_http::http::StatusCode;
 use quench_http::prelude::{Form, Inject, Query, Response, get, post};
+use quench_serde::Deserialize;
 use quench_web::prelude::*;
-use serde::Deserialize;
 use std::sync::Arc;
 
 /// Shorter than a verification link - a reset link changes the password outright.
@@ -85,14 +85,14 @@ pub async fn forgot_password_submit(
                 if let Err(err) = mailer.send_password_reset(&recipient, &link).await {
                     // Same redirect either way - the caller must not learn whether
                     // the account exists, or whether mail is working.
-                    tracing::error!(
+                    quench_log::error!(
                         "failed to send the password reset email for {}: {err}",
                         user.username
                     );
                 }
             }
             Err(err) => {
-                tracing::error!(
+                quench_log::error!(
                     "failed to issue a password reset token for {}: {err}",
                     user.username
                 );
@@ -154,7 +154,7 @@ pub async fn reset_password_submit(
                 && user.email_verified_at.is_none()
                 && let Err(err) = realm::mark_email_verified(&db, &username).await
             {
-                tracing::error!(
+                quench_log::error!(
                     "could not confirm the address of {username} after a reset: {err:?}"
                 );
             }
@@ -171,7 +171,7 @@ pub async fn reset_password_submit(
         Err(_) => redirect(&format!(
             "{}?token={}&err=ui_reset_error_password_empty",
             ui_path("/reset-password"),
-            urlencoding::encode(&form.token)
+            quench_serde::urlencoded::percent_encode(&form.token)
         )),
     }
 }

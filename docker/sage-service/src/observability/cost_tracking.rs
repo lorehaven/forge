@@ -1,6 +1,6 @@
-use dashmap::DashMap;
-use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use quench_serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolCost {
@@ -26,7 +26,7 @@ impl RequestCost {
     #[must_use]
     pub fn new(user_id: Option<String>, conversation_id: Option<String>, profile: String) -> Self {
         Self {
-            timestamp: chrono::Utc::now().to_rfc3339(),
+            timestamp: quench_core::time::Time::now().to_rfc3339(),
             user_id,
             conversation_id,
             profile,
@@ -131,34 +131,38 @@ impl UserCosts {
     }
 }
 
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
 #[derive(Debug)]
 pub struct CostTracker {
     // User ID -> Vec of RequestCosts
-    user_costs: Arc<DashMap<String, Vec<RequestCost>>>,
+    user_costs: Mutex<HashMap<String, Vec<RequestCost>>>,
     // Profile -> Vec of RequestCosts
-    profile_costs: Arc<DashMap<String, Vec<RequestCost>>>,
+    profile_costs: Mutex<HashMap<String, Vec<RequestCost>>>,
 }
 
 impl CostTracker {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            user_costs: Arc::new(DashMap::new()),
-            profile_costs: Arc::new(DashMap::new()),
+            user_costs: Mutex::new(HashMap::new()),
+            profile_costs: Mutex::new(HashMap::new()),
         }
     }
 
     pub fn record_request_cost(&self, cost: RequestCost) {
         // Record by user
         if let Some(user_id) = &cost.user_id {
-            self.user_costs
+            lock(&self.user_costs)
                 .entry(user_id.clone())
                 .or_default()
                 .push(cost.clone());
         }
 
         // Record by profile
-        self.profile_costs
+        lock(&self.profile_costs)
             .entry(cost.profile.clone())
             .or_default()
             .push(cost);
@@ -166,52 +170,50 @@ impl CostTracker {
 
     #[must_use]
     pub fn get_user_costs(&self, user_id: &str) -> Option<UserCosts> {
-        self.user_costs
+        lock(&self.user_costs)
             .get(user_id)
-            .map(|requests| UserCosts::from_requests(user_id.to_string(), &requests))
+            .map(|requests| UserCosts::from_requests(user_id.to_string(), requests))
     }
 
     #[must_use]
     pub fn get_profile_costs(&self, profile: &str) -> Option<ProfileCosts> {
-        self.profile_costs
+        lock(&self.profile_costs)
             .get(profile)
-            .map(|requests| ProfileCosts::from_requests(profile.to_string(), &requests))
+            .map(|requests| ProfileCosts::from_requests(profile.to_string(), requests))
     }
 
     #[must_use]
     pub fn get_all_user_costs(&self) -> Vec<UserCosts> {
-        self.user_costs
+        lock(&self.user_costs)
             .iter()
-            .map(|entry| UserCosts::from_requests(entry.key().clone(), entry.value()))
+            .map(|(user_id, requests)| UserCosts::from_requests(user_id.clone(), requests))
             .collect()
     }
 
     #[must_use]
     pub fn get_all_profile_costs(&self) -> Vec<ProfileCosts> {
-        self.profile_costs
+        lock(&self.profile_costs)
             .iter()
-            .map(|entry| ProfileCosts::from_requests(entry.key().clone(), entry.value()))
+            .map(|(profile, requests)| ProfileCosts::from_requests(profile.clone(), requests))
             .collect()
     }
 
     #[must_use]
     pub fn get_user_request_costs(&self, user_id: &str) -> Option<Vec<RequestCost>> {
-        self.user_costs
-            .get(user_id)
-            .map(|requests| requests.clone())
+        lock(&self.user_costs).get(user_id).cloned()
     }
 
     pub fn reset(&self) {
-        self.user_costs.clear();
-        self.profile_costs.clear();
+        lock(&self.user_costs).clear();
+        lock(&self.profile_costs).clear();
     }
 
     pub fn reset_user(&self, user_id: &str) {
-        self.user_costs.remove(user_id);
+        lock(&self.user_costs).remove(user_id);
     }
 
     pub fn reset_profile(&self, profile: &str) {
-        self.profile_costs.remove(profile);
+        lock(&self.profile_costs).remove(profile);
     }
 }
 

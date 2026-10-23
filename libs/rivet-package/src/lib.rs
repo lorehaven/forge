@@ -33,8 +33,7 @@ pub const VALUES_FILE: &str = "values.toml";
 /// Hex SHA-256 of `data`.
 #[must_use]
 pub fn sha256_hex(data: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    hex::encode(Sha256::digest(data))
+    quench_core::hex::encode(quench_crypto::hash::sha256(data))
 }
 
 /// The file name a package is stored and downloaded as: `<name>-<version>.rivet`.

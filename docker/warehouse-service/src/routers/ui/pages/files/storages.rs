@@ -15,12 +15,12 @@ const MIB: f64 = 1024.0 * 1024.0;
 
 // --- Query / form shapes ---
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, quench_serde::Deserialize)]
 pub struct FilesQuery {
     pub storage: Option<String>,
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, quench_serde::Deserialize)]
 pub struct CreateStorageForm {
     pub name: String,
     pub owner: String,
@@ -32,7 +32,7 @@ pub struct CreateStorageForm {
     pub sync_enabled: Option<String>,
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, quench_serde::Deserialize)]
 pub struct EditStorageForm {
     #[serde(default)]
     pub quota_gib: String,
@@ -44,18 +44,18 @@ pub struct EditStorageForm {
     pub sync_enabled: Option<String>,
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, quench_serde::Deserialize)]
 pub struct DeleteStorageForm {
     pub name: String,
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, quench_serde::Deserialize)]
 pub struct DeleteFileForm {
     pub storage: String,
     pub path: String,
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, quench_serde::Deserialize)]
 pub struct DeleteStorageModalQuery {
     pub storage: String,
 }
@@ -221,7 +221,7 @@ pub async fn create_storage(
             Response::text(StatusCode::BAD_REQUEST, "api_error_storage_owner_unknown")
         }
         Err(problem) => {
-            tracing::error!("UI create dynamic storage failed: {problem}");
+            quench_log::error!("UI create dynamic storage failed: {problem}");
             Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal")
         }
     }
@@ -269,7 +269,7 @@ pub async fn edit_storage(
         Ok(Some(updated)) => redirect_to_storage(&updated.name),
         Ok(None) => Response::text(StatusCode::NOT_FOUND, "api_error_storage_not_found"),
         Err(problem) => {
-            tracing::error!("UI edit dynamic storage failed: {problem}");
+            quench_log::error!("UI edit dynamic storage failed: {problem}");
             Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal")
         }
     }
@@ -334,7 +334,7 @@ pub async fn delete_storage(
         Ok(_) => Response::new(StatusCode::NO_CONTENT)
             .header("HX-Redirect", with_base_path("/ui/files/storages")),
         Err(problem) => {
-            tracing::error!("UI delete dynamic storage failed: {problem}");
+            quench_log::error!("UI delete dynamic storage failed: {problem}");
             Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal")
         }
     }
@@ -383,7 +383,7 @@ pub async fn delete_file(
             Ok(true) => redirect_to_browse(&storage_name, &parent_dir(&path)),
             Ok(false) => Response::text(StatusCode::NOT_FOUND, "api_error_file_not_found"),
             Err(problem) => {
-                tracing::error!("UI delete dynamic file failed: {problem}");
+                quench_log::error!("UI delete dynamic file failed: {problem}");
                 Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal")
             }
         };
@@ -405,7 +405,7 @@ pub async fn delete_file(
             Response::text(StatusCode::NOT_FOUND, "api_error_file_not_found")
         }
         Err(err) => {
-            tracing::error!("UI delete static file failed: {err}");
+            quench_log::error!("UI delete static file failed: {err}");
             Response::text(StatusCode::INTERNAL_SERVER_ERROR, "api_error_internal")
         }
     }
@@ -680,7 +680,7 @@ fn render_dynamic_meta(storage: &DynamicStorage) -> Element {
         ))
         .child(meta_row(
             "ui_storage_created",
-            &storage.created_at.format("%Y-%m-%d %H:%M UTC").to_string(),
+            &storage.created_at.format("%Y-%m-%d %H:%M UTC"),
         ))
 }
 

@@ -12,19 +12,25 @@ use std::sync::Arc;
 async fn main() -> std::io::Result<()> {
     quench_starter::logging::init();
 
-    envmnt::set("SERVICE_NAME", envmnt::get_or("SERVICE_NAME", "gatehouse"));
+    quench_core::env::set(
+        "SERVICE_NAME",
+        quench_core::env::get_or("SERVICE_NAME", "gatehouse"),
+    );
     // Gatehouse owns the realm - the one service that creates users.
-    envmnt::set("AUTH_BOOTSTRAP", envmnt::get_or("AUTH_BOOTSTRAP", "true"));
+    quench_core::env::set(
+        "AUTH_BOOTSTRAP",
+        quench_core::env::get_or("AUTH_BOOTSTRAP", "true"),
+    );
 
     let catalog = Arc::new(gatehouse_service::PermissionCatalog::load().expect("permission catalog failed to load - see PERMISSIONS_CONFIG (default config/permissions.toml)"));
 
     gatehouse_service::ui::common::ensure_assets();
 
-    let base_path = normalize_base_path(&envmnt::get_or("BASE_PATH", "/"));
+    let base_path = normalize_base_path(&quench_core::env::get_or("BASE_PATH", "/"));
     let db_wrapper = DbWrapper::init_env().await;
 
     // Retiring a rotated-out key after one access-token TTL keeps outstanding tokens verifying.
-    let access_token_ttl_secs = envmnt::get_or("ACCESS_TOKEN_TTL_SECS", "900")
+    let access_token_ttl_secs = quench_core::env::get_or("ACCESS_TOKEN_TTL_SECS", "900")
         .parse()
         .unwrap_or(900);
     let signing_keys = keys::SigningKeys::init(db_wrapper.db.clone(), access_token_ttl_secs)
@@ -39,7 +45,7 @@ async fn main() -> std::io::Result<()> {
         jwt_config.audiences.push(jwt_config.service_name.clone());
     }
 
-    tracing::info!(
+    quench_log::info!(
         "Gatehouse starting: realm schema {}, audiences {:?}",
         quench_auth::domain::realm::auth_schema(),
         jwt_config.audiences
@@ -47,7 +53,7 @@ async fn main() -> std::io::Result<()> {
 
     gatehouse_service::bootstrap::seed_users(&db_wrapper.db).await;
     if let Err(err) = clients::seed_clients(&db_wrapper.db).await {
-        tracing::error!(
+        quench_log::error!(
             "failed to seed OAuth clients from CLIENTS_CONFIG: {err} - the authorization-code and client_credentials grants will reject every client"
         );
     }
@@ -77,8 +83,8 @@ async fn main() -> std::io::Result<()> {
     // `serve_app` re-detects TLS itself; this is only for `ExternalScheme`,
     // which a request can't otherwise tell which listener it arrived on.
     let has_tls = load_tls(
-        envmnt::get_or("SERVER_CERT_PATH", "cert.pem"),
-        envmnt::get_or("SERVER_KEY_PATH", "key.pem"),
+        quench_core::env::get_or("SERVER_CERT_PATH", "cert.pem"),
+        quench_core::env::get_or("SERVER_KEY_PATH", "key.pem"),
     )
     .is_some();
     let external_scheme =

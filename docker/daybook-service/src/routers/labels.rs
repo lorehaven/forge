@@ -7,8 +7,8 @@ use quench_db::prelude::Db;
 use quench_http::prelude::{
     Inject, Json, Path, Response, delete, get, http::StatusCode, post, put,
 };
+use quench_serde::Deserialize;
 use quench_starter::http::domain::api_error::{ApiError, json_error};
-use serde::Deserialize;
 
 /// Used when a client creates a label without choosing a colour.
 const DEFAULT_COLOR: &str = "#888888";

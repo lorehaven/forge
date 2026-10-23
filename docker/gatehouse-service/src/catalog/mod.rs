@@ -2,7 +2,7 @@
 //! read from `config/permissions.toml` rather than hardcoded in Rust.
 
 use quench_auth::prelude::{Actions, Permissions};
-use serde::Deserialize;
+use quench_serde::Deserialize;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -58,17 +58,17 @@ pub struct PermissionCatalog {
 impl PermissionCatalog {
     /// Reads `PERMISSIONS_CONFIG` (default `config/permissions.toml`). Fails
     /// loudly rather than starting with an empty, broken catalog.
-    pub fn load() -> anyhow::Result<Self> {
-        Self::load_from(&envmnt::get_or(
+    pub fn load() -> quench_core::Result<Self> {
+        Self::load_from(&quench_core::env::get_or(
             "PERMISSIONS_CONFIG",
             "config/permissions.toml",
         ))
     }
 
     /// Path-explicit half of `load`, so tests don't race over the env var.
-    pub fn load_from(path: &str) -> anyhow::Result<Self> {
+    pub fn load_from(path: &str) -> quench_core::Result<Self> {
         let file: PermissionsFile = quench_config::ConfigLoader::from_toml_file(path)
-            .map_err(|err| anyhow::anyhow!("failed to load permission catalog {path}: {err}"))?;
+            .map_err(|err| quench_core::err!("failed to load permission catalog {path}: {err}"))?;
 
         let templates = file
             .templates
@@ -206,15 +206,15 @@ impl PermissionCatalog {
     }
 
     /// Catalog-wide checks so a typo fails startup, not a request.
-    fn validate(&self) -> anyhow::Result<()> {
+    fn validate(&self) -> quench_core::Result<()> {
         if self.services.is_empty() {
-            anyhow::bail!("permission catalog has no [services.*] entries");
+            quench_core::bail!("permission catalog has no [services.*] entries");
         }
 
         for (name, grants) in &self.templates {
             let unknown = self.unknown_grants(grants);
             if !unknown.is_empty() {
-                anyhow::bail!(
+                quench_core::bail!(
                     "template '{name}' grants unknown service/action(s): {}",
                     unknown.join(", ")
                 );
@@ -224,7 +224,7 @@ impl PermissionCatalog {
         if let Some(default) = &self.default_registration_template
             && !self.templates.contains_key(default)
         {
-            anyhow::bail!("registration.default_template '{default}' is not a known template");
+            quench_core::bail!("registration.default_template '{default}' is not a known template");
         }
 
         Ok(())

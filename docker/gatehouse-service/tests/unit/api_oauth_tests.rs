@@ -1,19 +1,17 @@
-use base64::Engine as _;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use bytes::Bytes;
-use chrono::Utc;
 use gatehouse_service::api::oauth::*;
 use gatehouse_service::clients::{ClientRow, hash_secret};
 use gatehouse_service::codes::AuthorizationCodeRow;
-use http::{HeaderMap, Method, StatusCode, Uri};
 use quench_auth::domain::auth::{Permissions, Role, User, UserDb};
 use quench_auth::domain::jwt::JwtConfig;
 use quench_auth::domain::session::SessionDb;
 use quench_cache::CacheStore;
+use quench_core::base64::URL_SAFE_NO_PAD;
+use quench_core::bytes::Bytes;
+use quench_core::time::Time;
 use quench_db::prelude::{Crud, Db};
 use quench_http::di::ContainerBuilder;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::prelude::{Form, Inject, Request};
-use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
 fn empty_token_request(grant_type: &str) -> TokenRequest {
@@ -35,7 +33,7 @@ async fn seed_client(db: &Db, client_id: &str, secret: &str, redirect_uri: &str)
         secret_hash: hash_secret(secret),
         redirect_uris: vec![redirect_uri.to_string()],
         allowed_scopes: vec!["openid".to_string()],
-        created_at: Utc::now(),
+        created_at: Time::now(),
     };
     db.repository::<ClientRow>()
         .create(&row)
@@ -62,7 +60,7 @@ async fn seed_user(db: &Db, username: &str) -> User {
 
 fn pkce_pair() -> (String, String) {
     let verifier = "a-fixed-code-verifier-for-tests-1234567890";
-    let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
+    let challenge = URL_SAFE_NO_PAD.encode(quench_crypto::hash::sha256(verifier.as_bytes()));
     (verifier.to_string(), challenge)
 }
 
@@ -75,7 +73,7 @@ async fn seed_code(
     usable: bool,
 ) -> String {
     let code = "a-fixed-authorization-code-for-tests";
-    let now = Utc::now();
+    let now = Time::now();
     let row = AuthorizationCodeRow {
         code_hash: hash_secret(code),
         client_id: client_id.to_string(),
@@ -85,9 +83,9 @@ async fn seed_code(
         pkce_challenge: challenge.to_string(),
         created_at: now,
         expires_at: if usable {
-            now + chrono::Duration::seconds(60)
+            now + quench_core::time::Duration::seconds(60)
         } else {
-            now - chrono::Duration::seconds(1)
+            now - quench_core::time::Duration::seconds(1)
         },
         consumed_at: None,
     };

@@ -93,14 +93,14 @@ async fn launch_honors_an_explicit_namespace() {
 
 #[test]
 fn launch_request_reads_max_num_seqs_and_defaults_to_none() {
-    let with: LaunchRequest = serde_json::from_str(
+    let with: LaunchRequest = quench_serde::json::from_str(
         r#"{"model":"m","host":"0.0.0.0","port":8000,"quantization":null,
             "max_model_len":null,"gpu_memory_utilization":0.7,
             "enable_prefix_caching":false,"max_num_seqs":64}"#,
     )
     .unwrap();
     assert_eq!(with.max_num_seqs, Some(64));
-    let without: LaunchRequest = serde_json::from_str(
+    let without: LaunchRequest = quench_serde::json::from_str(
         r#"{"model":"m","host":"0.0.0.0","port":8000,"quantization":null,
             "max_model_len":null,"gpu_memory_utilization":null,
             "enable_prefix_caching":false}"#,

@@ -2,8 +2,8 @@
 //! is what the author wrote, not what happened.
 
 use crate::domain::Status;
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use quench_core::time::Time;
+use quench_serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StepRecord {
@@ -17,8 +17,8 @@ pub struct StepRecord {
     pub command: String,
     pub status: Status,
     pub exit_code: Option<i32>,
-    pub started_at: Option<DateTime<Utc>>,
-    pub finished_at: Option<DateTime<Utc>>,
+    pub started_at: Option<Time>,
+    pub finished_at: Option<Time>,
 }
 
 impl StepRecord {

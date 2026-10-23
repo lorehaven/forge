@@ -1,9 +1,9 @@
 use crate::support;
 
-use base64::{Engine as _, engine::general_purpose::STANDARD};
-use http::{Method, StatusCode};
 use quench_auth::domain::auth::{Permissions, Role, User, UserDb};
+use quench_core::base64::STANDARD;
 use quench_db::prelude::{Crud, Db};
+use quench_http::http::{Method, StatusCode};
 use warehouse_service::docker_token::DockerTokenConfig;
 use warehouse_service::routers::docker::token::{register_routes, validate_basic_encoded};
 
@@ -26,7 +26,7 @@ fn config(auth_enabled: bool) -> DockerTokenConfig {
     let _guard = support::secret_env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::set("DOCKER_TOKEN_SECRET", "token-handler-test-secret");
+    quench_core::env::set("DOCKER_TOKEN_SECRET", "token-handler-test-secret");
     DockerTokenConfig::init(
         "warehouse".to_string(),
         "https://warehouse.test/token".to_string(),
@@ -58,7 +58,7 @@ async fn app(
     support::app(container)
 }
 
-#[derive(serde::Deserialize)]
+#[derive(quench_serde::Deserialize)]
 struct TokenResponseForTest {
     token: String,
     expires_in: usize,
@@ -80,7 +80,7 @@ async fn handle_issues_a_token_for_a_valid_basic_auth_credential() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let body = support::json_body(resp).await;
-    let body: TokenResponseForTest = serde_json::from_value(body).unwrap();
+    let body: TokenResponseForTest = quench_serde::from_value(&body).unwrap();
     assert_eq!(body.expires_in, 600);
     assert!(!body.token.is_empty());
 }

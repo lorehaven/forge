@@ -1,4 +1,3 @@
-use base64::{Engine as _, engine::general_purpose::STANDARD};
 use warehouse_cli::api::admin_api::{AdminApi, admin_base_url};
 use warehouse_cli::domain::{
     RegistryConfig, RegistryCratesConfig, RegistryDockerConfig, service_url,
@@ -98,6 +97,7 @@ fn the_docker_registry_root_stays_unprefixed() {
     );
 }
 
+use quench_core::base64::STANDARD;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -107,13 +107,18 @@ async fn run_crates_gc_parses_the_report_and_sends_a_bearer_token() {
     Mock::given(method("POST"))
         .and(path("/admin/crates/gc"))
         .and(header("authorization", "Bearer secret-token"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "deleted_crates": 3,
-            "kept_crates": 10,
-            "removed_index_entries": 1,
-            "deleted_owner_files": 0,
-            "removed_empty_dirs": 2
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!({
+                    "deleted_crates": 3,
+                    "kept_crates": 10,
+                    "removed_index_entries": 1,
+                    "deleted_owner_files": 0,
+                    "removed_empty_dirs": 2
+                })),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -132,13 +137,18 @@ async fn run_crates_gc_omits_the_auth_header_without_a_token() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/admin/crates/gc"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "deleted_crates": 0,
-            "kept_crates": 0,
-            "removed_index_entries": 0,
-            "deleted_owner_files": 0,
-            "removed_empty_dirs": 0
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!({
+                    "deleted_crates": 0,
+                    "kept_crates": 0,
+                    "removed_index_entries": 0,
+                    "deleted_owner_files": 0,
+                    "removed_empty_dirs": 0
+                })),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
@@ -172,10 +182,15 @@ async fn run_docker_gc_parses_the_report_and_sends_basic_auth() {
     Mock::given(method("POST"))
         .and(path("/admin/docker/gc"))
         .and(header("authorization", expected.as_str()))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-            "deleted": 5,
-            "kept": 7
-        })))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!({
+                    "deleted": 5,
+                    "kept": 7
+                })),
+            ),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 

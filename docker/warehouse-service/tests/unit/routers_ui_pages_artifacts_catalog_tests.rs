@@ -1,13 +1,11 @@
 use crate::support;
 
-use chrono::Utc;
-use http::{Method, StatusCode};
-use http_body_util::BodyExt;
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::time::Time;
 use quench_db::InMemoryDb;
 use quench_db::prelude::Db;
 use quench_http::endpoint::Endpoint;
-use sqlx::types::Json;
+use quench_http::http::{Method, StatusCode};
 use warehouse_service::domain::artifact::{ArtifactMetadata, ArtifactVersion, Platform};
 use warehouse_service::routers::ui::pages::artifacts::catalog::render_artifacts_page;
 
@@ -29,16 +27,21 @@ fn version(program: &str, platform: Platform, code: i64, yanked: bool) -> Artifa
         size_bytes: 4096,
         sha256: "deadbeef".to_string(),
         label: Some("Test App".to_string()),
-        metadata: Json(ArtifactMetadata::default()),
+        metadata: ArtifactMetadata::default(),
         uploaded_by: "dev".to_string(),
         yanked,
-        created_at: Utc::now(),
+        created_at: Time::now(),
     }
 }
 
 async fn body_html(resp: quench_http::response::Response) -> String {
-    let collected = resp.into_hyper().into_body().collect().await.unwrap();
-    String::from_utf8(collected.to_bytes().to_vec()).unwrap()
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .unwrap();
+    String::from_utf8(collected.to_vec()).unwrap()
 }
 
 fn jwt_config(auth_enabled: bool) -> JwtConfig {

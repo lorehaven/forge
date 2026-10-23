@@ -9,7 +9,7 @@ use crate::secrets::{CryptoError, SecretKey};
 use quench_auth::domain::jwt::JwtConfig;
 use quench_db::prelude::Db;
 use quench_http::prelude::{Inject, Json, Path, Response, delete, get, http::StatusCode, put};
-use serde::Deserialize;
+use quench_serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct SetSecret {
@@ -187,7 +187,7 @@ fn secret_error(error: &SecretError) -> Response {
     };
 
     if status.is_server_error() {
-        tracing::error!("secret store: {error}");
+        quench_log::error!("secret store: {error}");
     }
     json_error(status, &error.to_string())
 }

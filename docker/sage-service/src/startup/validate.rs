@@ -1,10 +1,10 @@
 use crate::clients::switchboard::SwitchboardClient;
 use crate::config::SageConfig;
-use anyhow::Result;
+use quench_core::Result;
 
 /// Validate critical service dependencies at startup
 pub async fn validate_startup(switchboard: &SwitchboardClient, config: &SageConfig) -> Result<()> {
-    tracing::info!("Validating startup configuration...");
+    quench_log::info!("Validating startup configuration...");
 
     // Check if validation is disabled (for testing)
     let skip_switchboard_check =
@@ -12,7 +12,9 @@ pub async fn validate_startup(switchboard: &SwitchboardClient, config: &SageConf
 
     // Validate Switchboard connectivity (unless disabled)
     if skip_switchboard_check {
-        tracing::warn!("Switchboard connectivity validation skipped (SKIP_SWITCHBOARD_CHECK=true)");
+        quench_log::warn!(
+            "Switchboard connectivity validation skipped (SKIP_SWITCHBOARD_CHECK=true)"
+        );
     } else {
         validate_switchboard(switchboard).await?;
     }
@@ -22,17 +24,17 @@ pub async fn validate_startup(switchboard: &SwitchboardClient, config: &SageConf
         validate_search_providers(config);
     }
 
-    tracing::info!("All startup validations passed");
+    quench_log::info!("All startup validations passed");
     Ok(())
 }
 
 /// Validate Switchboard service is reachable and healthy
 async fn validate_switchboard(switchboard: &SwitchboardClient) -> Result<()> {
-    tracing::info!("Checking Switchboard connectivity...");
+    quench_log::info!("Checking Switchboard connectivity...");
 
     match switchboard.get_vllm_instances().await {
         Ok(instances) => {
-            tracing::info!(
+            quench_log::info!(
                 "Switchboard is reachable. {} vLLM instances currently running",
                 instances.len()
             );
@@ -43,15 +45,15 @@ async fn validate_switchboard(switchboard: &SwitchboardClient) -> Result<()> {
                 "Failed to connect to Switchboard service: {e}. \
                  Make sure SWITCHBOARD_URL is correct and the service is running."
             );
-            tracing::error!("{}", error_msg);
-            Err(anyhow::anyhow!(error_msg))
+            quench_log::error!("{}", error_msg);
+            Err(quench_core::err!(error_msg))
         }
     }
 }
 
 /// Validate configured search providers are accessible
 fn validate_search_providers(config: &SageConfig) {
-    tracing::info!(
+    quench_log::info!(
         "Validating search providers: {}",
         config.available_search_providers.join(", ")
     );
@@ -61,27 +63,29 @@ fn validate_search_providers(config: &SageConfig) {
         match provider.as_str() {
             "brave" => {
                 if std::env::var("BRAVE_API_KEY").is_err() {
-                    tracing::warn!("Brave Search provider configured but BRAVE_API_KEY is not set");
+                    quench_log::warn!(
+                        "Brave Search provider configured but BRAVE_API_KEY is not set"
+                    );
                 } else {
-                    tracing::debug!("Brave Search provider is configured");
+                    quench_log::debug!("Brave Search provider is configured");
                 }
             }
             "searxng" => {
-                let url = envmnt::get_or("SEARXNG_INSTANCE_URL", "https://searxng.be");
-                tracing::debug!("SearXNG provider configured with URL: {}", url);
+                let url = quench_core::env::get_or("SEARXNG_INSTANCE_URL", "https://searxng.be");
+                quench_log::debug!("SearXNG provider configured with URL: {}", url);
             }
             "serpapi" => {
                 if std::env::var("SERPAPI_API_KEY").is_err() {
-                    tracing::warn!("SerpAPI provider configured but SERPAPI_API_KEY is not set");
+                    quench_log::warn!("SerpAPI provider configured but SERPAPI_API_KEY is not set");
                 } else {
-                    tracing::debug!("SerpAPI provider is configured");
+                    quench_log::debug!("SerpAPI provider is configured");
                 }
             }
             "duckduckgo" => {
-                tracing::debug!("DuckDuckGo provider is available (no API key required)");
+                quench_log::debug!("DuckDuckGo provider is available (no API key required)");
             }
             _ => {
-                tracing::warn!("Unknown search provider: {}", provider);
+                quench_log::warn!("Unknown search provider: {}", provider);
             }
         }
     }

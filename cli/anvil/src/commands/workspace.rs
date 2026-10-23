@@ -1,5 +1,5 @@
-use anyhow::{Context, Result};
 use quench_cli::prelude::{Tone, print_status};
+use quench_core::{Context, Result};
 use std::fs;
 use std::io::Write;
 use std::process::Command;
@@ -18,9 +18,9 @@ pub fn ensure_tool_installed(binary: &str, install_hint: &str) -> Result<()> {
         .with_context(|| format!("{binary} not found. Install with: {install_hint}"))
 }
 
-pub fn format_metadata(format: &str, metadata: &serde_json::Value) -> Result<String> {
+pub fn format_metadata(format: &str, metadata: &quench_serde::Value) -> Result<String> {
     match format {
-        "json" => Ok(serde_json::to_string_pretty(metadata)?),
+        "json" => Ok(quench_serde::json::to_string_pretty(metadata)),
         "names" => {
             let names = metadata["packages"]
                 .as_array()
@@ -32,7 +32,7 @@ pub fn format_metadata(format: &str, metadata: &serde_json::Value) -> Result<Str
                 .unwrap_or_default();
             Ok(names.join("\n"))
         }
-        _ => anyhow::bail!("Unknown format: {format}"),
+        _ => quench_core::bail!("Unknown format: {format}"),
     }
 }
 
@@ -45,11 +45,11 @@ pub fn list(format: &str) -> Result<()> {
     let output = cmd.output().context("Failed to execute cargo metadata")?;
 
     if !output.status.success() {
-        anyhow::bail!("cargo metadata failed");
+        quench_core::bail!("cargo metadata failed");
     }
 
-    let metadata: serde_json::Value =
-        serde_json::from_slice(&output.stdout).context("Failed to parse cargo metadata")?;
+    let metadata: quench_serde::Value =
+        quench_serde::json::from_slice(&output.stdout).context("Failed to parse cargo metadata")?;
 
     let rendered = format_metadata(format, &metadata)?;
     if !rendered.is_empty() {
@@ -95,7 +95,7 @@ pub fn audit(json: bool) -> Result<()> {
 /// cargo-machete has no `--json` of its own (checked against its 0.9.2
 /// `--help`), so `machete`'s `--json` mode parses this out of its stdout
 /// instead of asking it for structured output directly.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, quench_serde::Serialize)]
 pub struct MacheteFinding {
     pub package: String,
     pub manifest: String,
@@ -156,7 +156,7 @@ pub fn parse_machete_output(stdout: &str) -> Vec<MacheteFinding> {
 /// recognised at all" (a consumer's own JSON parse failing outright) stay
 /// distinguishable, the same way cargo-audit's own single-object `--json`
 /// report already is.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, quench_serde::Serialize)]
 pub struct MacheteReport {
     pub findings: Vec<MacheteFinding>,
 }
@@ -174,10 +174,13 @@ pub fn machete(json: bool) -> Result<()> {
             .context("Failed to write machete's progress output")?;
 
         let findings = parse_machete_output(&String::from_utf8_lossy(&output.stdout));
-        println!("{}", serde_json::to_string(&MacheteReport { findings })?);
+        println!(
+            "{}",
+            quench_serde::json::to_string(&MacheteReport { findings })
+        );
 
         if !output.status.success() {
-            anyhow::bail!("machete operation failed with status: {}", output.status);
+            quench_core::bail!("machete operation failed with status: {}", output.status);
         }
         return Ok(());
     }
@@ -212,7 +215,7 @@ pub fn deny(json: bool) -> Result<()> {
             .context("Failed to write deny's stdout")?;
 
         if !output.status.success() {
-            anyhow::bail!("deny operation failed with status: {}", output.status);
+            quench_core::bail!("deny operation failed with status: {}", output.status);
         }
         return Ok(());
     }
@@ -230,11 +233,12 @@ pub fn deny(json: bool) -> Result<()> {
 /// Tags that are not `{package}-v<semver>` are ignored.
 #[must_use]
 pub fn pick_baseline_tag(tags: &[String], package: &str, current_version: &str) -> Option<String> {
-    let current = semver::Version::parse(current_version).ok()?;
+    let current = quench_core::version::Version::parse(current_version).ok()?;
     let prefix = format!("{package}-v");
     tags.iter()
         .filter_map(|tag| {
-            let version = semver::Version::parse(tag.trim().strip_prefix(&prefix)?).ok()?;
+            let version =
+                quench_core::version::Version::parse(tag.trim().strip_prefix(&prefix)?).ok()?;
             (version <= current).then(|| (version, tag.trim().to_string()))
         })
         .max_by(|a, b| a.0.cmp(&b.0))
@@ -252,7 +256,7 @@ pub fn released_baseline_tag(package: &str, current_version: &str) -> Result<Opt
         .output()
         .context("Failed to run git tag --list")?;
     if !output.status.success() {
-        anyhow::bail!("git tag --list {pattern} failed");
+        quench_core::bail!("git tag --list {pattern} failed");
     }
     let tags: Vec<String> = String::from_utf8_lossy(&output.stdout)
         .lines()
@@ -281,7 +285,7 @@ pub fn previous_version_rev(manifest: &std::path::Path) -> Result<Option<String>
         .context("Failed to run git log")?;
 
     if !output.status.success() {
-        anyhow::bail!("git log failed for {}", manifest.display());
+        quench_core::bail!("git log failed for {}", manifest.display());
     }
 
     let rev = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -297,8 +301,9 @@ pub fn previous_version_rev(manifest: &std::path::Path) -> Result<Option<String>
 /// release. Only `name` needs to match the real crate - semver-checks diffs
 /// public API shapes, not versions, and an empty `src/lib.rs` has none to
 /// begin with.
-pub fn empty_api_baseline(package: &str) -> Result<tempfile::TempDir> {
-    let dir = tempfile::tempdir().context("Failed to create a temporary baseline crate")?;
+pub fn empty_api_baseline(package: &str) -> Result<quench_core::tmp::TempDir> {
+    let dir =
+        quench_core::tmp::TempDir::new().context("Failed to create a temporary baseline crate")?;
     fs::create_dir_all(dir.path().join("src"))
         .context("Failed to create the temporary baseline crate's src directory")?;
     fs::write(

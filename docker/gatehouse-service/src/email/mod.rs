@@ -15,7 +15,7 @@ pub use templates::{
 };
 
 use crate::ratelimit::{RateLimiter, policy};
-use async_trait::async_trait;
+use quench_core::async_trait;
 use std::fmt;
 use std::sync::Arc;
 
@@ -185,30 +185,30 @@ impl Sender for LoggingSender {
         let kind = mail.kind().label();
         let (address, user) = (to.address, to.username);
         match mail {
-            Mail::Verification { link } => tracing::info!(
+            Mail::Verification { link } => quench_log::info!(
                 "email({kind}) to={address} user={user}: visit {link} to verify this address"
             ),
-            Mail::PasswordReset { link } => tracing::info!(
+            Mail::PasswordReset { link } => quench_log::info!(
                 "email({kind}) to={address} user={user}: visit {link} to choose a new password"
             ),
-            Mail::Invite { link } => tracing::info!(
+            Mail::Invite { link } => quench_log::info!(
                 "email({kind}) to={address} user={user}: visit {link} to accept the invitation"
             ),
-            Mail::EmailChange { link } => tracing::info!(
+            Mail::EmailChange { link } => quench_log::info!(
                 "email({kind}) to={address} user={user}: visit {link} to confirm the new address"
             ),
-            Mail::EmailChanged { new_email } => tracing::info!(
+            Mail::EmailChanged { new_email } => quench_log::info!(
                 "email({kind}) to={address} user={user}: the address was changed to {new_email}"
             ),
             Mail::Notification {
                 template,
                 unsubscribe,
                 ..
-            } => tracing::info!(
+            } => quench_log::info!(
                 "email({kind}) to={address} user={user}: {template} (unsubscribe: {unsubscribe})"
             ),
             Mail::PasswordChanged | Mail::MfaEnabled | Mail::MfaDisabled => {
-                tracing::info!("email({kind}) to={address} user={user}");
+                quench_log::info!("email({kind}) to={address} user={user}");
             }
         }
         Ok(())
@@ -232,13 +232,14 @@ pub fn daily_mail_limit(get: &dyn Fn(&str) -> Option<String>) -> Result<usize, S
 /// The sender the environment asks for. An invalid mail configuration is a
 /// startup failure, like the other required settings - better than a service
 /// that comes up and silently cannot send a reset link.
+#[must_use]
 pub fn sender_from_env(limiter: &RateLimiter) -> Arc<dyn Sender> {
     match SmtpConfig::from_env() {
         Ok(Some(config)) => {
-            tracing::info!("mail: sending through {config:?}");
+            quench_log::info!("mail: sending through {config:?}");
             let per_day = daily_mail_limit(&|key| std::env::var(key).ok())
                 .unwrap_or_else(|err| panic!("invalid mail configuration: {err}"));
-            tracing::info!("mail: at most {per_day} emails per day");
+            quench_log::info!("mail: at most {per_day} emails per day");
             let sender = SmtpSender::new(config).expect("invalid mail configuration");
             sender.spawn_startup_check();
             Arc::new(BudgetedSender::new(
@@ -248,7 +249,7 @@ pub fn sender_from_env(limiter: &RateLimiter) -> Arc<dyn Sender> {
             ))
         }
         Ok(None) => {
-            tracing::warn!(
+            quench_log::warn!(
                 "mail: SMTP_HOST is not set - verification and reset links are written to the log, not emailed"
             );
             Arc::new(LoggingSender)

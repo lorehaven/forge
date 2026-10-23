@@ -15,16 +15,16 @@ use sage_service::startup::validate_startup;
 /// elsewhere in this workspace) since every test in this file needs them and
 /// nothing here reads their actual value.
 fn with_switchboard_credentials() {
-    envmnt::set("GATEHOUSE_URL", "https://gatehouse.test");
-    envmnt::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
+    quench_core::env::set("GATEHOUSE_URL", "https://gatehouse.test");
+    quench_core::env::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
 }
 
 fn config_with_providers(providers: &[&str]) -> SageConfig {
     // `SageConfig` has no small test constructor, and `load()` reads a
     // pile of env vars and a system-prompt file - assembling one field at a
-    // time via `serde_json` round-trips through its `Serialize`/
+    // time via `quench_serde` round-trips through its `Serialize`/
     // `Deserialize` derive is cheaper than fighting `load()`'s environment.
-    let base = serde_json::json!({
+    let base = quench_serde::json!({
         "system_prompt": "test prompt",
         "default_models": [],
         "supported_models": [],
@@ -39,7 +39,7 @@ fn config_with_providers(providers: &[&str]) -> SageConfig {
         },
         "stop_models_on_shutdown": false
     });
-    serde_json::from_value(base).expect("valid SageConfig shape")
+    quench_serde::from_value(&base).expect("valid SageConfig shape")
 }
 
 #[tokio::test]
@@ -49,7 +49,7 @@ async fn validate_startup_skips_the_switchboard_check_when_asked() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     with_switchboard_credentials();
-    envmnt::set("SKIP_SWITCHBOARD_CHECK", "true");
+    quench_core::env::set("SKIP_SWITCHBOARD_CHECK", "true");
 
     let switchboard = SwitchboardClient::new();
     let config = config_with_providers(&[]);
@@ -57,7 +57,7 @@ async fn validate_startup_skips_the_switchboard_check_when_asked() {
     let result = validate_startup(&switchboard, &config).await;
     assert!(result.is_ok());
 
-    envmnt::remove("SKIP_SWITCHBOARD_CHECK");
+    quench_core::env::remove("SKIP_SWITCHBOARD_CHECK");
 }
 
 #[tokio::test]
@@ -67,9 +67,9 @@ async fn validate_startup_validates_every_known_search_provider_without_network(
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     with_switchboard_credentials();
-    envmnt::set("SKIP_SWITCHBOARD_CHECK", "true");
-    envmnt::remove("BRAVE_API_KEY");
-    envmnt::remove("SERPAPI_API_KEY");
+    quench_core::env::set("SKIP_SWITCHBOARD_CHECK", "true");
+    quench_core::env::remove("BRAVE_API_KEY");
+    quench_core::env::remove("SERPAPI_API_KEY");
 
     let switchboard = SwitchboardClient::new();
     let config = config_with_providers(&[
@@ -83,7 +83,7 @@ async fn validate_startup_validates_every_known_search_provider_without_network(
     let result = validate_startup(&switchboard, &config).await;
     assert!(result.is_ok());
 
-    envmnt::remove("SKIP_SWITCHBOARD_CHECK");
+    quench_core::env::remove("SKIP_SWITCHBOARD_CHECK");
 }
 
 #[tokio::test]
@@ -93,10 +93,10 @@ async fn validate_startup_still_succeeds_when_provider_api_keys_are_configured()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     with_switchboard_credentials();
-    envmnt::set("SKIP_SWITCHBOARD_CHECK", "true");
-    envmnt::set("BRAVE_API_KEY", "key");
-    envmnt::set("SERPAPI_API_KEY", "key");
-    envmnt::set("SEARXNG_INSTANCE_URL", "https://searx.example");
+    quench_core::env::set("SKIP_SWITCHBOARD_CHECK", "true");
+    quench_core::env::set("BRAVE_API_KEY", "key");
+    quench_core::env::set("SERPAPI_API_KEY", "key");
+    quench_core::env::set("SEARXNG_INSTANCE_URL", "https://searx.example");
 
     let switchboard = SwitchboardClient::new();
     let config = config_with_providers(&["brave", "searxng", "serpapi"]);
@@ -104,10 +104,10 @@ async fn validate_startup_still_succeeds_when_provider_api_keys_are_configured()
     let result = validate_startup(&switchboard, &config).await;
     assert!(result.is_ok());
 
-    envmnt::remove("SKIP_SWITCHBOARD_CHECK");
-    envmnt::remove("BRAVE_API_KEY");
-    envmnt::remove("SERPAPI_API_KEY");
-    envmnt::remove("SEARXNG_INSTANCE_URL");
+    quench_core::env::remove("SKIP_SWITCHBOARD_CHECK");
+    quench_core::env::remove("BRAVE_API_KEY");
+    quench_core::env::remove("SERPAPI_API_KEY");
+    quench_core::env::remove("SEARXNG_INSTANCE_URL");
 }
 
 #[tokio::test]
@@ -117,8 +117,8 @@ async fn validate_startup_fails_when_the_switchboard_check_runs_and_switchboard_
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     with_switchboard_credentials();
-    envmnt::remove("SKIP_SWITCHBOARD_CHECK");
-    envmnt::set("SWITCHBOARD_URL", "http://127.0.0.1:1");
+    quench_core::env::remove("SKIP_SWITCHBOARD_CHECK");
+    quench_core::env::set("SWITCHBOARD_URL", "http://127.0.0.1:1");
 
     let switchboard = SwitchboardClient::new();
     let config = config_with_providers(&[]);
@@ -132,5 +132,5 @@ async fn validate_startup_fails_when_the_switchboard_check_runs_and_switchboard_
             .contains("Failed to connect to Switchboard")
     );
 
-    envmnt::remove("SWITCHBOARD_URL");
+    quench_core::env::remove("SWITCHBOARD_URL");
 }

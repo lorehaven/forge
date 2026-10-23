@@ -6,7 +6,7 @@ use crate::routers::files::authz;
 use quench_auth::domain::jwt::{Claims, JwtConfig};
 use quench_db::prelude::Db;
 use quench_http::prelude::{Response, http::StatusCode};
-use serde_json::json;
+use quench_serde::json;
 use std::path::PathBuf;
 
 pub mod delete;
@@ -93,7 +93,7 @@ pub async fn static_target_or_error(
     })?;
 
     if !super::confined(&storage.root, &target).await {
-        tracing::warn!(
+        quench_log::warn!(
             "refused `{path}` in storage `{}`: resolves outside the storage root",
             storage.name
         );

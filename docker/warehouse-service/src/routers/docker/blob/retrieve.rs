@@ -1,14 +1,14 @@
 use crate::domain::docker_error;
 use crate::routers::docker::{blob_path, validate_digest};
-use async_trait::async_trait;
+use quench_core::async_trait;
 use quench_http::prelude::{
     FromRequest, HttpError, Path, Request, Response, get, http::StatusCode,
 };
+use quench_http::stream::reader_stream;
 use quench_starter::http::domain::error;
 use std::{io::SeekFrom, path::PathBuf};
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
-use tokio_util::io::ReaderStream;
 
 /// The raw `Range` header, if any.
 #[derive(Debug)]
@@ -58,7 +58,7 @@ pub async fn handle(
 
 #[must_use]
 pub fn maybe_redirect(digest: &str) -> Option<Response> {
-    if !envmnt::get_or("ENABLE_REDIRECT", "false")
+    if !quench_core::env::get_or("ENABLE_REDIRECT", "false")
         .parse::<bool>()
         .unwrap_or(false)
     {
@@ -67,7 +67,8 @@ pub fn maybe_redirect(digest: &str) -> Option<Response> {
 
     let hex = digest.strip_prefix("sha256:")?;
 
-    let backend_base = envmnt::get_or("BLOB_REDIRECT_BASE", "https://storage.example.com");
+    let backend_base =
+        quench_core::env::get_or("BLOB_REDIRECT_BASE", "https://storage.example.com");
     let backend_url = format!("{backend_base}/blobs/sha256/{hex}");
 
     Some(Response::new(StatusCode::TEMPORARY_REDIRECT).header("location", backend_url))
@@ -123,7 +124,7 @@ async fn serve_partial(
         );
     }
 
-    let stream = ReaderStream::new(file.take(length));
+    let stream = reader_stream(file.take(length));
 
     Response::streaming(StatusCode::PARTIAL_CONTENT, stream)
         .header("content-type", "application/octet-stream")
@@ -134,7 +135,7 @@ async fn serve_partial(
 }
 
 fn serve_full(file: File, total_size: u64, digest: &str) -> Response {
-    let stream = ReaderStream::new(file);
+    let stream = reader_stream(file);
 
     Response::streaming(StatusCode::OK, stream)
         .header("content-type", "application/octet-stream")

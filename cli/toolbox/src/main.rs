@@ -1,4 +1,3 @@
-use anyhow::{Context, Result};
 use clap::Parser;
 use crossterm::cursor::MoveTo;
 use crossterm::event::{self, Event, KeyEventKind};
@@ -11,6 +10,7 @@ use forge_toolbox::{
     refresh_app_state, render, run_selected_action,
 };
 use quench_cli::prelude::{Tone, print_status, require_binary};
+use quench_core::{Context, Result};
 use std::io::{Write, stdout};
 use std::sync::mpsc;
 use std::thread;

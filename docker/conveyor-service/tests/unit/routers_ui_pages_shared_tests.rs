@@ -1,8 +1,8 @@
-use chrono::Utc;
 use conveyor_service::domain::{Project, Provider, Repo, Run, Status, Trigger};
 use conveyor_service::routers::ui::pages::shared::{
     ancestor_chain, breadcrumb, cap_per_repo, descendant_project_ids, repo_ids_under,
 };
+use quench_core::time::Time;
 use std::collections::HashSet;
 
 fn project(id: &str, name: &str, parent_id: Option<&str>) -> Project {
@@ -10,8 +10,8 @@ fn project(id: &str, name: &str, parent_id: Option<&str>) -> Project {
         id: id.to_string(),
         name: name.to_string(),
         parent_id: parent_id.map(str::to_string),
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
+        created_at: Time::now(),
+        updated_at: Time::now(),
     }
 }
 
@@ -26,8 +26,8 @@ fn repo(id: &str, project_id: &str) -> Repo {
         registered_by: "admin".to_string(),
         project_id: project_id.to_string(),
         enabled: true,
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
+        created_at: Time::now(),
+        updated_at: Time::now(),
     }
 }
 
@@ -41,7 +41,7 @@ fn run(id: &str, repo_id: &str) -> Run {
         message: None,
         delivery_id: None,
         status: Status::Success,
-        queued_at: Utc::now(),
+        queued_at: Time::now(),
         started_at: None,
         finished_at: None,
         claimed_by: None,

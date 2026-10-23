@@ -1,7 +1,7 @@
 //! The loaded project: its config, its resolved variables, and the questions
 //! everything else asks of them.
 
-use anyhow::{Context, Result, bail};
+use quench_core::{Context, Result, bail};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 

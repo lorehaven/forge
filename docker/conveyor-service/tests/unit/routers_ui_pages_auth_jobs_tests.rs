@@ -8,12 +8,11 @@
 //! (no shared `support` module), so this file builds its own minimal
 //! `discover_and_mount` + hand-built `Request` helpers.
 
-use bytes::Bytes;
-use http::{HeaderMap, Method, StatusCode, Uri};
-use http_body_util::BodyExt;
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::bytes::Bytes;
 use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::request::Request;
 use std::sync::Arc;
 
@@ -40,19 +39,31 @@ fn req(path: &str, container: &Arc<quench_http::di::Container>) -> Request {
     )
 }
 
-async fn json_body(resp: quench_http::response::Response) -> serde_json::Value {
-    let collected = resp.into_hyper().into_body().collect().await.expect("body");
-    serde_json::from_slice(&collected.to_bytes()).expect("valid json body")
+async fn json_body(resp: quench_http::response::Response) -> quench_serde::Value {
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .expect("body");
+    quench_serde::json::from_slice(&collected).expect("valid json body")
 }
 
 async fn body_text(resp: quench_http::response::Response) -> String {
-    let collected = resp.into_hyper().into_body().collect().await.expect("body");
-    String::from_utf8_lossy(&collected.to_bytes()).into_owned()
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .expect("body");
+    String::from_utf8_lossy(&collected).into_owned()
 }
 
 #[tokio::test]
 async fn auth_status_reports_the_dev_admin_bypass_when_auth_is_disabled() {
-    let config = JwtConfig::for_tests();
+    let mut config = JwtConfig::for_tests();
+    // `for_tests()` reads SERVICE_AUTH_ENABLED, which routing tests toggle concurrently: pin it.
+    config.auth_enabled = false;
     assert!(!config.auth_enabled);
     let (app, container) = app(config).await;
 
@@ -82,7 +93,9 @@ async fn auth_status_is_anonymous_when_auth_is_enabled_and_there_is_no_session()
 
 #[tokio::test]
 async fn job_log_viewer_connects_to_the_streams_own_sse_endpoint() {
-    let config = JwtConfig::for_tests();
+    let mut config = JwtConfig::for_tests();
+    // `for_tests()` reads SERVICE_AUTH_ENABLED, which routing tests toggle concurrently: pin it.
+    config.auth_enabled = false;
     let (app, container) = app(config).await;
 
     let resp = app.call(req("/ui/jobs/job-42/log", &container)).await;
@@ -96,7 +109,9 @@ async fn job_log_viewer_connects_to_the_streams_own_sse_endpoint() {
 
 #[tokio::test]
 async fn job_log_viewer_offers_a_raw_view_and_a_copy_button() {
-    let config = JwtConfig::for_tests();
+    let mut config = JwtConfig::for_tests();
+    // `for_tests()` reads SERVICE_AUTH_ENABLED, which routing tests toggle concurrently: pin it.
+    config.auth_enabled = false;
     let (app, container) = app(config).await;
 
     let resp = app.call(req("/ui/jobs/job-42/log", &container)).await;

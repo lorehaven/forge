@@ -6,11 +6,11 @@ use crate::support::{self, TEST_USER, database, json_body, json_req, req, skippe
 use conveyor_service::config::ConveyorConfig;
 use conveyor_service::providers::Providers;
 use conveyor_service::routers::api;
-use http::{Method, StatusCode};
 use quench_auth::domain::jwt::JwtConfig;
 use quench_db::prelude::{Database, Db};
 use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{Method, StatusCode};
 use std::sync::Arc;
 
 const SECRET_KEY: &str = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
@@ -20,8 +20,8 @@ const CREDENTIAL_KEY: &str = "202122232425262728292a2b2c2d2e2f303132333435363738
 /// these do not race any other integration test in this crate over the same
 /// env vars.
 fn configure_keys() {
-    envmnt::set("CONVEYOR_SECRET_KEY", SECRET_KEY);
-    envmnt::set("CONVEYOR_CREDENTIAL_KEY", CREDENTIAL_KEY);
+    quench_core::env::set("CONVEYOR_SECRET_KEY", SECRET_KEY);
+    quench_core::env::set("CONVEYOR_CREDENTIAL_KEY", CREDENTIAL_KEY);
 }
 
 /// `routers::api::Actor` resolves to the synthetic `"admin"` identity
@@ -71,7 +71,7 @@ async fn create_rejects_an_empty_name() {
         .call(json_req(
             Method::POST,
             "/api/v1/projects",
-            &serde_json::json!({ "name": "   " }),
+            &quench_serde::json!({ "name": "   " }),
             &container,
         ))
         .await;
@@ -89,7 +89,7 @@ async fn create_then_read_round_trips_with_its_full_path() {
         .call(json_req(
             Method::POST,
             "/api/v1/projects",
-            &serde_json::json!({ "name": "api-project-root" }),
+            &quench_serde::json!({ "name": "api-project-root" }),
             &container,
         ))
         .await;
@@ -138,7 +138,7 @@ async fn update_renames_and_rejects_an_empty_name() {
         .call(json_req(
             Method::POST,
             "/api/v1/projects",
-            &serde_json::json!({ "name": "rename-me" }),
+            &quench_serde::json!({ "name": "rename-me" }),
             &container,
         ))
         .await;
@@ -149,7 +149,7 @@ async fn update_renames_and_rejects_an_empty_name() {
         .call(json_req(
             Method::PATCH,
             &format!("/api/v1/projects/{id}"),
-            &serde_json::json!({ "name": "renamed" }),
+            &quench_serde::json!({ "name": "renamed" }),
             &container,
         ))
         .await;
@@ -161,7 +161,7 @@ async fn update_renames_and_rejects_an_empty_name() {
         .call(json_req(
             Method::PATCH,
             &format!("/api/v1/projects/{id}"),
-            &serde_json::json!({ "name": "  " }),
+            &quench_serde::json!({ "name": "  " }),
             &container,
         ))
         .await;
@@ -179,7 +179,7 @@ async fn update_move_rejects_a_cycle() {
         .call(json_req(
             Method::POST,
             "/api/v1/projects",
-            &serde_json::json!({ "name": "cycle-root" }),
+            &quench_serde::json!({ "name": "cycle-root" }),
             &container,
         ))
         .await;
@@ -190,7 +190,7 @@ async fn update_move_rejects_a_cycle() {
         .call(json_req(
             Method::POST,
             "/api/v1/projects",
-            &serde_json::json!({ "name": "cycle-child", "parent_id": root_id }),
+            &quench_serde::json!({ "name": "cycle-child", "parent_id": root_id }),
             &container,
         ))
         .await;
@@ -201,7 +201,7 @@ async fn update_move_rejects_a_cycle() {
         .call(json_req(
             Method::PATCH,
             &format!("/api/v1/projects/{root_id}"),
-            &serde_json::json!({ "parent_id": child_id }),
+            &quench_serde::json!({ "parent_id": child_id }),
             &container,
         ))
         .await;
@@ -219,7 +219,7 @@ async fn delete_conflicts_when_children_exist_then_succeeds_once_they_are_gone()
         .call(json_req(
             Method::POST,
             "/api/v1/projects",
-            &serde_json::json!({ "name": "delete-root" }),
+            &quench_serde::json!({ "name": "delete-root" }),
             &container,
         ))
         .await;
@@ -230,7 +230,7 @@ async fn delete_conflicts_when_children_exist_then_succeeds_once_they_are_gone()
         .call(json_req(
             Method::POST,
             "/api/v1/projects",
-            &serde_json::json!({ "name": "delete-child", "parent_id": root_id }),
+            &quench_serde::json!({ "name": "delete-child", "parent_id": root_id }),
             &container,
         ))
         .await;
@@ -275,7 +275,7 @@ async fn list_defaults_to_root_level_projects() {
     app.call(json_req(
         Method::POST,
         "/api/v1/projects",
-        &serde_json::json!({ "name": "list-visible-root" }),
+        &quench_serde::json!({ "name": "list-visible-root" }),
         &container,
     ))
     .await;
@@ -309,7 +309,7 @@ async fn estate_secret_round_trips_and_is_removable() {
         .call(json_req(
             Method::PUT,
             "/api/v1/secrets/api_token",
-            &serde_json::json!({ "value": "s3cr3t" }),
+            &quench_serde::json!({ "value": "s3cr3t" }),
             &container,
         ))
         .await;
@@ -340,14 +340,14 @@ async fn writing_a_secret_without_the_encryption_key_configured_is_service_unava
             "writing_a_secret_without_the_encryption_key_configured_is_service_unavailable",
         );
     };
-    envmnt::remove("CONVEYOR_SECRET_KEY");
+    quench_core::env::remove("CONVEYOR_SECRET_KEY");
     let (app, container) = app(db).await;
 
     let resp = app
         .call(json_req(
             Method::PUT,
             "/api/v1/secrets/no_key",
-            &serde_json::json!({ "value": "x" }),
+            &quench_serde::json!({ "value": "x" }),
             &container,
         ))
         .await;
@@ -403,7 +403,7 @@ async fn repo_secret_round_trips_and_is_scoped_to_that_repo() {
         .call(json_req(
             Method::PUT,
             &format!("/api/v1/repos/{repo_id}/secrets/deploy_key"),
-            &serde_json::json!({ "value": "deploy-value" }),
+            &quench_serde::json!({ "value": "deploy-value" }),
             &container,
         ))
         .await;
@@ -462,7 +462,7 @@ async fn repo_credential_round_trips_and_shows_null_when_unset() {
         .call(json_req(
             Method::PUT,
             &format!("/api/v1/repos/{repo_id}/credentials"),
-            &serde_json::json!({ "name": "deploy", "username": "git", "token": "ghp_abcdefgh" }),
+            &quench_serde::json!({ "name": "deploy", "username": "git", "token": "ghp_abcdefgh" }),
             &container,
         ))
         .await;
@@ -497,6 +497,6 @@ async fn credential_rejects_an_unsupported_kind() {
     .expect("create project");
     let (app, container) = app(db).await;
 
-    let resp = app.call(json_req(Method::PUT, &format!("/api/v1/projects/{}/credentials", project.id), &serde_json::json!({ "name": "bad-kind", "kind": "ssh_key", "username": "git", "token": "x" }), &container)).await;
+    let resp = app.call(json_req(Method::PUT, &format!("/api/v1/projects/{}/credentials", project.id), &quench_serde::json!({ "name": "bad-kind", "kind": "ssh_key", "username": "git", "token": "x" }), &container)).await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 }

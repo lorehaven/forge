@@ -1,9 +1,9 @@
 //! Who may *change* things from the management UI: viewing needs only a
 //! session; mutating needs the blanket `warehouse:write` grant or a wildcard role.
 
-use async_trait::async_trait;
 use quench_auth::domain::jwt::{Claims, JwtConfig};
 use quench_auth::http::routers::ui::get_user_from_req;
+use quench_core::async_trait;
 use quench_http::prelude::{FromRequest, HttpError, Request, Response, http::StatusCode};
 use quench_starter::http::routers::ui::ui_login_redirect_for;
 

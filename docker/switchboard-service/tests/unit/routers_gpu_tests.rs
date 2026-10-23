@@ -1,12 +1,12 @@
 //! `get_status` (REST) and `handle_sse` (SSE) under `routers/gpu`.
 
-use async_trait::async_trait;
-use bytes::Bytes;
-use http::{HeaderMap, Method, StatusCode, Uri};
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::async_trait;
+use quench_core::bytes::Bytes;
 use quench_http::body::InboundBody;
 use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::prelude::Inject;
 use quench_http::request::Request;
 use quench_http::response::Response;
@@ -19,23 +19,21 @@ async fn get_status_returns_gpu_info_as_json() {
     // `GpuInfo` only derives `Serialize` (it's a broadcast payload, never
     // deserialized elsewhere in this crate), so round-trip through JSON
     // rather than asserting on struct fields directly.
-    let body: serde_json::Value = serde_json::to_value(&info).unwrap();
+    let body: quench_serde::Value = quench_serde::to_value(&info);
     assert!(
         body.get("total_gb")
-            .and_then(serde_json::Value::as_f64)
+            .and_then(quench_serde::Value::as_f64)
             .is_some()
     );
     assert!(
         body.get("free_gb")
-            .and_then(serde_json::Value::as_f64)
+            .and_then(quench_serde::Value::as_f64)
             .is_some()
     );
 }
 
 #[tokio::test]
 async fn gpu_sse_route_streams_a_broadcast_message() {
-    use http_body_util::BodyExt;
-
     let (tx, _rx) = tokio::sync::broadcast::channel(16);
     let broadcaster = Inject(Arc::new(GpuBroadcaster(tx.clone())));
 
@@ -47,17 +45,17 @@ async fn gpu_sse_route_streams_a_broadcast_message() {
     // closes before collecting the body waits for end-of-stream.
     drop(tx);
 
-    let hyper_resp = resp.into_hyper();
+    let hyper_resp = resp.into_inner();
     assert_eq!(
-        hyper_resp.headers().get("content-type").unwrap(),
+        hyper_resp.headers.get("content-type").unwrap(),
         "text/event-stream"
     );
     let collected = hyper_resp
-        .into_body()
-        .collect()
+        .body
+        .collect_limited(usize::MAX)
         .await
         .expect("stream collects cleanly");
-    let text = String::from_utf8(collected.to_bytes().to_vec()).unwrap();
+    let text = String::from_utf8(collected.to_vec()).unwrap();
     assert!(text.contains("event: gpu-status"));
     assert!(text.contains("<div>gpu</div>"));
 }

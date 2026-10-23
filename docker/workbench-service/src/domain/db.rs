@@ -2,9 +2,9 @@
 //! needs a locked read-then-insert `Crud` can't express.
 
 use quench_db::prelude::Db;
-use sqlx::{Pool, Postgres};
+use quench_pg::Pool;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, quench_core::Error)]
 pub enum WorkbenchError {
     #[error(
         "workbench needs Postgres; this service is running against an \
@@ -13,25 +13,25 @@ pub enum WorkbenchError {
     NotPostgres,
 
     #[error(transparent)]
-    Sql(#[from] sqlx::Error),
+    Sql(#[from] quench_pg::Error),
 }
 
 impl WorkbenchError {
     /// Postgres's foreign-key violation, e.g. an `assignee` not in the realm.
     #[must_use]
     pub fn is_foreign_key_violation(&self) -> bool {
-        matches!(self, Self::Sql(sqlx::Error::Database(database)) if database.code().as_deref() == Some("23503"))
+        matches!(self, Self::Sql(error) if error.code() == Some("23503"))
     }
 
     /// Postgres's unique-constraint violation, e.g. a `key` already taken.
     #[must_use]
     pub fn is_unique_violation(&self) -> bool {
-        matches!(self, Self::Sql(sqlx::Error::Database(database)) if database.code().as_deref() == Some("23505"))
+        matches!(self, Self::Sql(error) if error.code() == Some("23505"))
     }
 }
 
 /// The pool, or a clear refusal - an in-memory `Db` would silently lose data.
-pub const fn pool(db: &Db) -> Result<&Pool<Postgres>, WorkbenchError> {
+pub const fn pool(db: &Db) -> Result<&Pool, WorkbenchError> {
     match db {
         Db::Postgres(postgres) => Ok(postgres.pool()),
         Db::InMemory(_) => Err(WorkbenchError::NotPostgres),
@@ -40,5 +40,5 @@ pub const fn pool(db: &Db) -> Result<&Pool<Postgres>, WorkbenchError> {
 
 #[must_use]
 pub fn schema() -> String {
-    envmnt::get_or("DB_SCHEMA", "workbench")
+    quench_core::env::get_or("DB_SCHEMA", "workbench")
 }

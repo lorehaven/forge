@@ -1,7 +1,7 @@
 use crate::routers::docker_storage_root;
 use quench_http::prelude::{Response, http::StatusCode, post};
-use serde::Serialize;
-use serde_json::Value;
+use quench_serde::Serialize;
+use quench_serde::Value;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 
@@ -129,7 +129,7 @@ pub fn mark_manifest_references<S: std::hash::BuildHasher>(
     referenced_blobs: &mut HashSet<String, S>,
     manifests_to_visit: &mut VecDeque<String>,
 ) {
-    let Ok(v) = serde_json::from_slice::<Value>(manifest_data) else {
+    let Ok(v) = quench_serde::json::from_slice::<Value>(manifest_data) else {
         return;
     };
 

@@ -30,9 +30,8 @@ pub async fn build_conversation_context(
     // Add to context
     for msg in conv_messages {
         // Parse created_at from ISO 8601 string
-        let created_at = chrono::DateTime::parse_from_rfc3339(&msg.created_at)
-            .ok()
-            .map_or_else(chrono::Utc::now, |dt| dt.with_timezone(&chrono::Utc));
+        let created_at = quench_core::time::Time::parse_rfc3339(&msg.created_at)
+            .unwrap_or_else(|_| quench_core::time::Time::now());
 
         let conv_msg = ConversationMessage {
             id: msg.id,
@@ -105,8 +104,8 @@ impl TokenUsageInfo {
     }
 
     #[must_use]
-    pub fn to_json(&self) -> serde_json::Value {
-        serde_json::json!({
+    pub fn to_json(&self) -> quench_serde::Value {
+        quench_serde::json!({
             "total_messages": self.total_messages,
             "total_tokens": self.total_tokens,
             "max_tokens": self.max_tokens,

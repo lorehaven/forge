@@ -1,6 +1,6 @@
-use async_trait::async_trait;
-use http::{HeaderMap, Method, StatusCode, Uri};
+use quench_core::async_trait;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::prelude::wrap;
 use quench_http::request::Request;
 use quench_http::response::Response;
@@ -13,7 +13,7 @@ fn plain_req(method: Method, path: &str) -> Request {
         method,
         path.parse::<Uri>().unwrap(),
         HeaderMap::new(),
-        quench_http::body::InboundBody::from_bytes(bytes::Bytes::new()),
+        quench_http::body::InboundBody::from_bytes(quench_core::bytes::Bytes::new()),
         container,
     )
 }

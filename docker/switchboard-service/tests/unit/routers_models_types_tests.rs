@@ -1,6 +1,6 @@
 //! Unit tests for `routers/models/types.rs`.
 
-use serde_json::json;
+use quench_serde::json;
 use switchboard_service::routers::models::types::*;
 
 #[test]
@@ -13,11 +13,11 @@ fn test_context_serialization_roundtrip() {
 
     for (ctx, expected_json) in contexts {
         // Test serialization
-        let serialized = serde_json::to_value(ctx).unwrap();
+        let serialized = quench_serde::to_value(&ctx);
         assert_eq!(serialized, expected_json);
 
         // Test deserialization from the serialized value
-        let deserialized: Context = serde_json::from_value(serialized).unwrap();
+        let deserialized: Context = quench_serde::from_value(&serialized).unwrap();
         assert_eq!(deserialized, ctx);
     }
 }
@@ -25,7 +25,7 @@ fn test_context_serialization_roundtrip() {
 #[test]
 fn test_context_deserialization_from_string() {
     let json_str = json!("4096");
-    let deserialized: Context = serde_json::from_value(json_str).unwrap();
+    let deserialized: Context = quench_serde::from_value(&json_str).unwrap();
     assert_eq!(deserialized, Context::Size4096);
 }
 
@@ -45,20 +45,20 @@ fn test_model_deserialization_with_numeric_context() {
         "estimates": []
     });
 
-    let model: Model = serde_json::from_value(model_json).unwrap();
+    let model: Model = quench_serde::from_value(&model_json).unwrap();
     assert_eq!(model.context, Context::Size4096);
     assert_eq!(model.name, "test-model");
 }
 
 #[test]
 fn context_invalid_type_is_rejected() {
-    let err = serde_json::from_value::<Context>(json!(true)).unwrap_err();
+    let err = quench_serde::from_value::<Context>(&json!(true)).unwrap_err();
     assert!(err.to_string().contains("invalid context type"));
 }
 
 #[test]
 fn context_invalid_value_is_rejected() {
-    let err = serde_json::from_value::<Context>(json!("999")).unwrap_err();
+    let err = quench_serde::from_value::<Context>(&json!("999")).unwrap_err();
     assert!(err.to_string().contains("invalid context value"));
 }
 
@@ -79,12 +79,12 @@ fn context_display_matches_serialization() {
 
 #[test]
 fn quant_aliases_deserialize_to_the_same_variant() {
-    let dashed: Quant = serde_json::from_value(json!("Q8_0")).unwrap();
-    let compact: Quant = serde_json::from_value(json!("Q80")).unwrap();
+    let dashed: Quant = quench_serde::from_value(&json!("Q8_0")).unwrap();
+    let compact: Quant = quench_serde::from_value(&json!("Q80")).unwrap();
     assert_eq!(dashed, compact);
     assert_eq!(dashed, Quant::Q80);
 
-    let lower: Quant = serde_json::from_value(json!("fp16")).unwrap();
+    let lower: Quant = quench_serde::from_value(&json!("fp16")).unwrap();
     assert_eq!(lower, Quant::FP16);
 }
 
@@ -110,21 +110,21 @@ fn quant_display_uses_debug_formatting() {
 
 #[test]
 fn model_filters_accept_type_alias_for_source() {
-    let filters: ModelFilters = serde_json::from_value(json!({ "type": "GGUF" })).unwrap();
+    let filters: ModelFilters = quench_serde::from_value(&json!({ "type": "GGUF" })).unwrap();
     assert_eq!(filters.source.as_deref(), Some("GGUF"));
     assert!(filters.search.is_none());
 }
 
 #[test]
 fn model_filters_accept_numeric_context() {
-    let filters: ModelFilters = serde_json::from_value(json!({ "context": 4096 })).unwrap();
+    let filters: ModelFilters = quench_serde::from_value(&json!({ "context": 4096 })).unwrap();
     assert_eq!(filters.context, Some(json!(4096)));
 }
 
 #[test]
 fn delete_model_request_round_trips() {
     let request: DeleteModelRequest =
-        serde_json::from_value(json!({ "path": "/mnt/dev/quantized/model.gguf" })).unwrap();
+        quench_serde::from_value(&json!({ "path": "/mnt/dev/quantized/model.gguf" })).unwrap();
     assert_eq!(request.path, "/mnt/dev/quantized/model.gguf");
 }
 
@@ -137,7 +137,7 @@ fn running_model_serializes_every_field() {
         status: "running".to_string(),
     };
 
-    let value = serde_json::to_value(&running).unwrap();
+    let value = quench_serde::to_value(&running);
     assert_eq!(value["id"], "id-1");
     assert_eq!(value["endpoint"], "http://localhost:8000");
 }
@@ -152,8 +152,8 @@ fn model_estimate_round_trips_through_json() {
         total_gb: 5.7,
     };
 
-    let value = serde_json::to_value(&estimate).unwrap();
-    let back: ModelEstimate = serde_json::from_value(value).unwrap();
+    let value = quench_serde::to_value(&estimate);
+    let back: ModelEstimate = quench_serde::from_value(&value).unwrap();
     assert_eq!(back.quant, Quant::Q4KM);
     assert_eq!(back.context, Context::Size8192);
     assert!((back.total_gb - 5.7).abs() < 1e-6);

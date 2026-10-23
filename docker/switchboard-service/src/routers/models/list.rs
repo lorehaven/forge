@@ -33,10 +33,10 @@ pub async fn handle_grid(
 
     let html = render_model_grid(&models, &gpu, can_delete);
 
-    Response::html(http::StatusCode::OK, html)
+    Response::html(quench_http::http::StatusCode::OK, html)
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, quench_serde::Deserialize)]
 pub struct EstimatesModalQuery {
     path: Option<String>,
     fit: Option<String>,
@@ -57,12 +57,12 @@ pub async fn estimates_modal(Query(query): Query<EstimatesModalQuery>) -> Respon
         render_estimates_modal(&model, &gpu, &query)
     });
 
-    Response::html(http::StatusCode::OK, html)
+    Response::html(quench_http::http::StatusCode::OK, html)
 }
 
 #[get("/api/v1/models/estimates-modal/empty")]
 pub async fn empty_estimates_modal_endpoint() -> Response {
-    Response::html(http::StatusCode::OK, empty_estimates_modal())
+    Response::html(quench_http::http::StatusCode::OK, empty_estimates_modal())
 }
 
 pub fn apply_filters(models: &mut Vec<Model>, filters: &ModelFilters, gpu: &GpuInfo) {
@@ -106,10 +106,12 @@ pub fn apply_filters(models: &mut Vec<Model>, filters: &ModelFilters, gpu: &GpuI
 
     if let Some(context_val) = &filters.context {
         let context_num = match context_val {
-            serde_json::Value::Number(n) => {
-                usize::try_from(n.as_u64().unwrap_or(0)).unwrap_or_default()
+            quench_serde::Value::UInt(_)
+            | quench_serde::Value::Int(_)
+            | quench_serde::Value::Float(_) => {
+                usize::try_from(context_val.as_u64().unwrap_or(0)).unwrap_or_default()
             }
-            serde_json::Value::String(s) => s.parse::<usize>().unwrap_or(0),
+            quench_serde::Value::String(s) => s.parse::<usize>().unwrap_or(0),
             _ => 0,
         };
 
@@ -401,7 +403,7 @@ fn render_model_grid(models: &[Model], gpu: &GpuInfo, can_delete: bool) -> Strin
     grid.render()
 }
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, quench_serde::Deserialize)]
 pub struct DeleteModalQuery {
     path: String,
     name: Option<String>,
@@ -410,14 +412,14 @@ pub struct DeleteModalQuery {
 #[get("/api/v1/models/delete-modal")]
 pub async fn delete_modal(Query(query): Query<DeleteModalQuery>) -> Response {
     Response::html(
-        http::StatusCode::OK,
+        quench_http::http::StatusCode::OK,
         render_delete_modal(&query.path, query.name.as_deref()),
     )
 }
 
 #[get("/api/v1/models/delete-modal/empty")]
 pub async fn empty_delete_modal_endpoint() -> Response {
-    Response::html(http::StatusCode::OK, empty_delete_modal())
+    Response::html(quench_http::http::StatusCode::OK, empty_delete_modal())
 }
 
 /// The estimates the filters leave, each as a line showing whether (and by how much) it fits.

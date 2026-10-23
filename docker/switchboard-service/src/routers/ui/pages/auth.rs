@@ -6,15 +6,18 @@ use quench_auth::http::routers::ui::pages::auth::{
     auth_callback, login_delegation, logout_delegation, refresh_delegation,
 };
 use quench_http::prelude::{FromRequest, HttpError, Request, Response, get, post};
-use serde::Serialize;
+use quench_serde::Serialize;
 
 pub(super) struct LoginRedirect(Response);
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl FromRequest for LoginRedirect {
     async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
         let sso = req.container().get::<SsoConfig>().map_err(|e| {
-            HttpError::status(http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            HttpError::status(
+                quench_http::http::StatusCode::INTERNAL_SERVER_ERROR,
+                e.to_string(),
+            )
         })?;
         Ok(Self(login_delegation(req, &sso).await))
     }
@@ -32,11 +35,14 @@ pub(super) async fn login_slash(LoginRedirect(resp): LoginRedirect) -> Response 
 
 pub(super) struct AuthCallback(Response);
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl FromRequest for AuthCallback {
     async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
         let sso = req.container().get::<SsoConfig>().map_err(|e| {
-            HttpError::status(http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+            HttpError::status(
+                quench_http::http::StatusCode::INTERNAL_SERVER_ERROR,
+                e.to_string(),
+            )
         })?;
         Ok(Self(auth_callback(req, &sso).await))
     }
@@ -49,7 +55,7 @@ pub(super) async fn callback(AuthCallback(resp): AuthCallback) -> Response {
 
 pub(super) struct Logout(Response);
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl FromRequest for Logout {
     async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
         Ok(Self(logout_delegation(req)))
@@ -63,7 +69,7 @@ pub(super) async fn logout(Logout(resp): Logout) -> Response {
 
 pub(super) struct Refresh(Response);
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl FromRequest for Refresh {
     async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
         Ok(Self(refresh_delegation(req).await))
@@ -84,7 +90,7 @@ struct AuthStatus {
 
 pub(super) struct SessionCookie(Option<String>);
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl FromRequest for SessionCookie {
     async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
         Ok(Self(quench_auth::http::domain::cookies::cookie_value(
@@ -100,8 +106,8 @@ pub(super) async fn auth_status(
     SessionCookie(cookie): SessionCookie,
 ) -> Response {
     fn respond(status: &AuthStatus) -> Response {
-        Response::json(http::StatusCode::OK, &status)
-            .unwrap_or_else(|_| Response::new(http::StatusCode::INTERNAL_SERVER_ERROR))
+        Response::json(quench_http::http::StatusCode::OK, &status)
+            .unwrap_or_else(|_| Response::new(quench_http::http::StatusCode::INTERNAL_SERVER_ERROR))
     }
 
     if !config.auth_enabled {

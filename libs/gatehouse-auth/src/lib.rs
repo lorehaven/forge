@@ -4,8 +4,8 @@
 //! `.<tool>.secret.toml`. [`access_token`] exchanges it for a short-lived
 //! bearer token on every run; [`login`] mints the app token in the first place.
 
-use anyhow::{Context, Result, bail};
-use serde::{Deserialize, Serialize};
+use quench_core::{Context, Result, bail};
+use quench_serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -41,8 +41,8 @@ pub fn load(tool: &str, start: &Path) -> Result<Option<Credentials>> {
         return Ok(None);
     };
     let text = fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
-    let credentials =
-        toml::from_str(&text).with_context(|| format!("parsing {}", path.display()))?;
+    let credentials = quench_serde::toml::from_str(&text)
+        .with_context(|| format!("parsing {}", path.display()))?;
     Ok(Some(credentials))
 }
 
@@ -50,7 +50,7 @@ pub fn load(tool: &str, start: &Path) -> Result<Option<Credentials>> {
 /// makes sure git ignores it. Returns the file's path.
 pub fn save(tool: &str, dir: &Path, credentials: &Credentials) -> Result<PathBuf> {
     let path = dir.join(secret_file_name(tool));
-    let text = toml::to_string(credentials).context("serialising credentials")?;
+    let text = quench_serde::toml::to_string(credentials).context("serialising credentials")?;
     write_private(&path, &text)?;
     ensure_ignored(dir, &secret_file_name(tool))?;
     Ok(path)
@@ -94,8 +94,8 @@ fn ensure_ignored(dir: &Path, pattern: &str) -> Result<()> {
         .with_context(|| format!("updating {}", path.display()))
 }
 
-fn client() -> Result<reqwest::blocking::Client> {
-    reqwest::blocking::Client::builder()
+fn client() -> Result<quench_client::blocking::Client> {
+    quench_client::blocking::Client::builder()
         .timeout(Duration::from_secs(30))
         .build()
         .context("building the HTTP client")
@@ -112,7 +112,8 @@ pub fn access_token(credentials: &Credentials) -> Result<String> {
         "{}/api/v1/token",
         credentials.gatehouse_url.trim_end_matches('/')
     );
-    let response = client()?
+    let client = client()?;
+    let response = client
         .post(&url)
         .form(&[
             ("grant_type", "app_token"),
@@ -160,7 +161,7 @@ pub fn login(
 
     let session = http
         .post(format!("{base}/api/v1/auth/login"))
-        .json(&serde_json::json!({ "username": username, "password": password }))
+        .json(&quench_serde::json!({ "username": username, "password": password }))
         .send()
         .with_context(|| format!("reaching Gatehouse at {base}"))?;
     if !session.status().is_success() {
@@ -173,7 +174,7 @@ pub fn login(
     let created = http
         .post(format!("{base}/api/v1/me/tokens"))
         .bearer_auth(&session.access_token)
-        .json(&serde_json::json!({
+        .json(&quench_serde::json!({
             "name": new.name,
             "scope": new.scope,
             "expires_in_days": new.expires_in_days,

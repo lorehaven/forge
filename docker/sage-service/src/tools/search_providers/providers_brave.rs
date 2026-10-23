@@ -1,12 +1,12 @@
 use super::SearchProvider;
-use async_trait::async_trait;
-use serde::Deserialize;
+use quench_core::async_trait;
+use quench_serde::Deserialize;
 
 const MAX_RESULTS: usize = 5;
 
 #[derive(Debug)]
 pub struct BraveProvider {
-    client: reqwest::Client,
+    client: quench_client::transport::Client,
     api_key: String,
 }
 
@@ -31,7 +31,7 @@ impl BraveProvider {
     #[must_use]
     pub fn new(api_key: String) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: quench_client::transport::Client::new(),
             api_key,
         }
     }
@@ -56,10 +56,10 @@ impl SearchProvider for BraveProvider {
     async fn search(&self, query: &str) -> Result<String, String> {
         let url = format!(
             "https://api.search.brave.com/res/v1/web/search?q={}",
-            urlencoding::encode(query)
+            quench_serde::urlencoded::percent_encode(query)
         );
 
-        tracing::info!("Brave Search: searching for '{}' at {}", query, url);
+        quench_log::info!("Brave Search: searching for '{}' at {}", query, url);
 
         let response = self
             .client
@@ -71,26 +71,26 @@ impl SearchProvider for BraveProvider {
             .await
             .map_err(|e| {
                 let err_msg = format!("Request failed: {e}");
-                tracing::warn!("Brave Search request failed: {}", e);
+                quench_log::warn!("Brave Search request failed: {}", e);
                 err_msg
             })?;
 
         let status = response.status();
-        tracing::info!("Brave Search response status: {}", status);
+        quench_log::info!("Brave Search response status: {}", status);
 
         if status == 401 {
             return Err("Brave Search: Invalid API key".to_string());
         }
 
         let body = response.text().await.map_err(|e| {
-            tracing::warn!("Failed to read response: {}", e);
+            quench_log::warn!("Failed to read response: {}", e);
             format!("Failed to read response: {e}")
         })?;
 
-        tracing::info!("Brave Search response length: {} bytes", body.len());
+        quench_log::info!("Brave Search response length: {} bytes", body.len());
 
-        let data: BraveResponse = serde_json::from_str(&body).map_err(|e| {
-            tracing::warn!("Failed to parse JSON: {}", e);
+        let data: BraveResponse = quench_serde::json::from_str(&body).map_err(|e| {
+            quench_log::warn!("Failed to parse JSON: {}", e);
             format!("Invalid JSON: {e}")
         })?;
 
@@ -111,7 +111,7 @@ impl SearchProvider for BraveProvider {
         }
 
         if results.is_empty() {
-            tracing::warn!("Brave Search: No results found for '{}'", query);
+            quench_log::warn!("Brave Search: No results found for '{}'", query);
 
             return Err(format!(
                 "Web search for '{query}' could not find results at this time."
@@ -119,7 +119,7 @@ impl SearchProvider for BraveProvider {
         }
 
         let result_count = results.len();
-        tracing::info!(
+        quench_log::info!(
             "Brave Search: Found {} results for '{}'",
             result_count,
             query

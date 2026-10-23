@@ -5,9 +5,9 @@ use gantry_service::domain::operation::MemoryStore;
 use gantry_service::domain::registry::MemoryRegistry;
 use gantry_service::domain::service::Gantry;
 use gantry_service::domain::settings::Settings;
-use http::{Method, StatusCode};
 use quench_auth::domain::jwt::Claims;
 use quench_db::{Db, InMemoryDb};
+use quench_http::http::{Method, StatusCode};
 use std::sync::Arc;
 
 async fn app(

@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use quench_serde::Deserialize;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::fs;
@@ -22,7 +22,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed={}", config_path.display());
 
     let raw = fs::read_to_string(&config_path)?;
-    let parsed: AllowlistsFile = toml::from_str(&raw)?;
+    let parsed: AllowlistsFile = quench_serde::toml::from_str(&raw)?;
 
     if parsed.run_cmd.common.is_empty() {
         return Err("run_cmd.common must not be empty".into());

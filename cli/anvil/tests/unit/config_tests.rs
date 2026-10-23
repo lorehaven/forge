@@ -34,7 +34,7 @@ packages = ["cli", "service"]
 registry = "forge-registry"
 packages = ["service"]
     "#;
-    let config: Config = toml::from_str(toml_str).unwrap();
+    let config: Config = quench_serde::toml::from_str(toml_str).unwrap();
     assert_eq!(config.docker.modules.len(), 1);
     assert!(config.docker.modules.contains_key("core"));
     assert_eq!(
@@ -79,7 +79,7 @@ dockerfile = "docker/Dockerfile.alpine"
 image_name = "warehouse"
 registries = ["ossiriand.arda:8080/forge"]
     "#;
-    let config: Config = toml::from_str(toml_str).unwrap();
+    let config: Config = quench_serde::toml::from_str(toml_str).unwrap();
     assert_eq!(config.docker.registry, "");
     let warehouse_module = config.docker.modules.get("warehouse").unwrap();
     assert_eq!(warehouse_module.packages, vec!["warehouse-service"]);
@@ -110,7 +110,7 @@ dockerfile = "Dockerfile.core"
 [docker.modules.core.service]
 image_name = "svc"
     "#;
-    let config: Config = toml::from_str(toml_str).unwrap();
+    let config: Config = quench_serde::toml::from_str(toml_str).unwrap();
     let package_override = config
         .docker
         .modules
@@ -136,7 +136,7 @@ dockerfile = "docker/Dockerfile.alpine"
 image_name = "foundry"
 build_args = { RESOURCE_DIR = "migrations", RUN_AS = "999:999" }
     "#;
-    let config: Config = toml::from_str(toml_str).unwrap();
+    let config: Config = quench_serde::toml::from_str(toml_str).unwrap();
     let package_override = config
         .docker
         .modules
@@ -168,7 +168,7 @@ dockerfile = "Dockerfile.core"
 [docker.modules.core.service]
 build_args = { ZED = "3", ALPHA = "1", MID = "2" }
     "#;
-    let config: Config = toml::from_str(toml_str).unwrap();
+    let config: Config = quench_serde::toml::from_str(toml_str).unwrap();
     let names: Vec<&str> = config.docker.modules["core"].package_overrides["service"]
         .build_args
         .keys()
@@ -186,7 +186,7 @@ fn test_the_estates_own_config_needs_only_one_dockerfile() {
     // a deliberate act, not a drift.
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../.anvil.toml");
     let content = std::fs::read_to_string(path).expect("the estate's .anvil.toml");
-    let config: Config = toml::from_str(&content).expect("it parses");
+    let config: Config = quench_serde::toml::from_str(&content).expect("it parses");
 
     let module = config.docker.modules.get("docker").expect("docker module");
     assert_eq!(module.dockerfile, "docker/Dockerfile.alpine");

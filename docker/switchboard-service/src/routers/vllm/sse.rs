@@ -1,12 +1,11 @@
 use super::list::render_instances_grid;
 use crate::routers::vllm::engine::VllmEngine;
-use bytes::Bytes;
-use futures_util::StreamExt;
+use quench_core::bytes::Bytes;
 use quench_http::prelude::{HttpError, Inject, Response, get};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::broadcast::Sender;
-use tokio_stream::wrappers::BroadcastStream;
+use tokio::sync::broadcast::error::RecvError;
 
 #[derive(Debug)]
 pub struct VllmBroadcaster(pub Sender<String>);
@@ -40,17 +39,18 @@ pub async fn handle_sse_alias(
 
 fn handle_sse_impl(broadcaster: &VllmBroadcaster) -> Response {
     let receiver = broadcaster.0.subscribe();
-    let stream = BroadcastStream::new(receiver).map(|msg| {
-        msg.map_or_else(
-            |_| Ok::<_, std::io::Error>(Bytes::from("event: error\ndata: stream closed\n\n")),
-            |html| {
-                Ok(Bytes::from(format!(
-                    "event: vllm-instances\ndata: {}\n\n",
-                    html.replace('\n', "")
-                )))
-            },
-        )
+    let stream = quench_core::stream::unfold(receiver, |mut receiver| async move {
+        let frame = match receiver.recv().await {
+            Ok(html) => Bytes::from(format!(
+                "event: vllm-instances\ndata: {}\n\n",
+                html.replace('\n', "")
+            )),
+            Err(RecvError::Lagged(_)) => Bytes::from("event: error\ndata: stream closed\n\n"),
+            Err(RecvError::Closed) => return None,
+        };
+        Some((Ok::<_, std::io::Error>(frame), receiver))
     });
 
-    Response::streaming(http::StatusCode::OK, stream).header("content-type", "text/event-stream")
+    Response::streaming(quench_http::http::StatusCode::OK, stream)
+        .header("content-type", "text/event-stream")
 }

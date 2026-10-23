@@ -23,13 +23,11 @@ name = "switchboard-service"
 path = "src/main.rs"
 
 [dependencies]
-bytes = { workspace = true }
-chrono = { workspace = true }
-envmnt = { workspace = true }
-futures-util = { workspace = true }
+quench-log = { workspace = true }
+quench-serde = { workspace = true }
+quench-core = { workspace = true }
 gguf = { workspace = true }
 forge-ui = { workspace = true }
-http = { workspace = true }
 kube = { workspace = true }
 k8s-openapi = { workspace = true }
 quench-auth = { workspace = true }
@@ -39,16 +37,8 @@ quench-starter = { workspace = true }
 quench-web = { workspace = true }
 quench-web-components = { workspace = true }
 regex = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
-sqlx = { workspace = true }
 tokio = { workspace = true }
-tokio-stream = { workspace = true }
-tracing = { workspace = true }
 walkdir = { workspace = true }
-async-trait = { workspace = true }
 
 [dev-dependencies]
-http-body-util = { workspace = true }
-serde_urlencoded = { workspace = true }
-tempfile = { workspace = true }

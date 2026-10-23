@@ -7,7 +7,7 @@
 use crate::PublicBase;
 use crate::tokens::{PURPOSE_EMAIL_CHANGE, VerificationTokens};
 use crate::ui::common::ui_path;
-use serde::{Deserialize, Serialize};
+use quench_serde::{Deserialize, Serialize};
 
 /// A day: the person is at their keyboard, waiting for the mail.
 pub const EMAIL_CHANGE_TTL_SECS: u64 = 24 * 60 * 60;
@@ -22,13 +22,13 @@ pub struct Ticket {
 impl Ticket {
     #[must_use]
     pub fn encode(&self) -> String {
-        serde_json::to_string(self).expect("a ticket always serialises")
+        quench_serde::json::to_string(self)
     }
 
     /// `None` for anything that is not a ticket this module wrote.
     #[must_use]
     pub fn decode(raw: &str) -> Option<Self> {
-        serde_json::from_str(raw).ok()
+        quench_serde::json::from_str(raw).ok()
     }
 }
 
@@ -37,7 +37,7 @@ pub async fn issue_link(
     tokens: &VerificationTokens,
     base: &PublicBase,
     ticket: &Ticket,
-) -> anyhow::Result<String> {
+) -> quench_core::Result<String> {
     let token = tokens
         .issue(
             PURPOSE_EMAIL_CHANGE,

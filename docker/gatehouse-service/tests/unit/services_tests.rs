@@ -4,7 +4,10 @@ use std::fmt::Write as _;
 
 /// A catalog with a card for each named service, plus gatehouse itself (no card).
 fn catalog(home_services: &[&str]) -> PermissionCatalog {
-    let dir = std::env::temp_dir().join(format!("services-test-{}", uuid::Uuid::new_v4()));
+    let dir = std::env::temp_dir().join(format!(
+        "services-test-{}",
+        quench_core::uuid::Uuid::new_v4()
+    ));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("permissions.toml");
     let mut toml = String::from("[services.gatehouse]\nactions = [\"read-users\"]\n");
@@ -30,20 +33,20 @@ fn feature_enabled_recognizes_every_truthy_and_falsy_spelling() {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     for value in ["1", "true", "TRUE", "yes", "on"] {
-        envmnt::set("GATEHOUSE_TEST_FEATURE_FLAG", value);
+        quench_core::env::set("GATEHOUSE_TEST_FEATURE_FLAG", value);
         assert!(
             feature_enabled("GATEHOUSE_TEST_FEATURE_FLAG", false),
             "{value} should be truthy"
         );
     }
     for value in ["0", "false", "FALSE", "no", "off"] {
-        envmnt::set("GATEHOUSE_TEST_FEATURE_FLAG", value);
+        quench_core::env::set("GATEHOUSE_TEST_FEATURE_FLAG", value);
         assert!(
             !feature_enabled("GATEHOUSE_TEST_FEATURE_FLAG", true),
             "{value} should be falsy"
         );
     }
-    envmnt::remove("GATEHOUSE_TEST_FEATURE_FLAG");
+    quench_core::env::remove("GATEHOUSE_TEST_FEATURE_FLAG");
 }
 
 #[test]
@@ -51,13 +54,13 @@ fn feature_enabled_falls_back_to_the_default_when_unset_or_unrecognized() {
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::remove("GATEHOUSE_TEST_FEATURE_FLAG_2");
+    quench_core::env::remove("GATEHOUSE_TEST_FEATURE_FLAG_2");
     assert!(feature_enabled("GATEHOUSE_TEST_FEATURE_FLAG_2", true));
     assert!(!feature_enabled("GATEHOUSE_TEST_FEATURE_FLAG_2", false));
 
-    envmnt::set("GATEHOUSE_TEST_FEATURE_FLAG_2", "not-a-boolean");
+    quench_core::env::set("GATEHOUSE_TEST_FEATURE_FLAG_2", "not-a-boolean");
     assert!(feature_enabled("GATEHOUSE_TEST_FEATURE_FLAG_2", true));
-    envmnt::remove("GATEHOUSE_TEST_FEATURE_FLAG_2");
+    quench_core::env::remove("GATEHOUSE_TEST_FEATURE_FLAG_2");
 }
 
 #[test]
@@ -65,14 +68,14 @@ fn service_url_prefers_ui_url_over_the_plain_url_and_trims_trailing_slash() {
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::set("SAGE_UI_URL", "https://sage.example.test/");
-    envmnt::set("SAGE_URL", "https://sage-internal.example.test");
+    quench_core::env::set("SAGE_UI_URL", "https://sage.example.test/");
+    quench_core::env::set("SAGE_URL", "https://sage-internal.example.test");
     assert_eq!(
         service_url("SAGE"),
         Some("https://sage.example.test".to_string())
     );
-    envmnt::remove("SAGE_UI_URL");
-    envmnt::remove("SAGE_URL");
+    quench_core::env::remove("SAGE_UI_URL");
+    quench_core::env::remove("SAGE_URL");
 }
 
 #[test]
@@ -80,8 +83,8 @@ fn service_url_is_none_when_neither_var_is_set() {
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::remove("SWITCHBOARD_UI_URL");
-    envmnt::remove("SWITCHBOARD_URL");
+    quench_core::env::remove("SWITCHBOARD_UI_URL");
+    quench_core::env::remove("SWITCHBOARD_URL");
     assert_eq!(service_url("SWITCHBOARD"), None);
 }
 
@@ -90,14 +93,14 @@ fn enabled_services_excludes_a_service_disabled_by_its_feature_flag() {
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::set("WAREHOUSE_UI_URL", "https://warehouse.example.test");
-    envmnt::set("FEATURE_WAREHOUSE_ENABLED", "false");
-    envmnt::remove("CONVEYOR_UI_URL");
-    envmnt::remove("CONVEYOR_URL");
-    envmnt::remove("SAGE_UI_URL");
-    envmnt::remove("SAGE_URL");
-    envmnt::remove("SWITCHBOARD_UI_URL");
-    envmnt::remove("SWITCHBOARD_URL");
+    quench_core::env::set("WAREHOUSE_UI_URL", "https://warehouse.example.test");
+    quench_core::env::set("FEATURE_WAREHOUSE_ENABLED", "false");
+    quench_core::env::remove("CONVEYOR_UI_URL");
+    quench_core::env::remove("CONVEYOR_URL");
+    quench_core::env::remove("SAGE_UI_URL");
+    quench_core::env::remove("SAGE_URL");
+    quench_core::env::remove("SWITCHBOARD_UI_URL");
+    quench_core::env::remove("SWITCHBOARD_URL");
 
     let services = enabled_services(&catalog(&[
         "conveyor",
@@ -112,8 +115,8 @@ fn enabled_services_excludes_a_service_disabled_by_its_feature_flag() {
             .all(|s| s.card_class != "home-card-warehouse")
     );
 
-    envmnt::remove("WAREHOUSE_UI_URL");
-    envmnt::remove("FEATURE_WAREHOUSE_ENABLED");
+    quench_core::env::remove("WAREHOUSE_UI_URL");
+    quench_core::env::remove("FEATURE_WAREHOUSE_ENABLED");
 }
 
 #[test]
@@ -121,16 +124,16 @@ fn enabled_services_includes_a_configured_and_enabled_service() {
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::set("CONVEYOR_UI_URL", "https://conveyor.example.test");
-    envmnt::remove("FEATURE_CONVEYOR_ENABLED");
-    envmnt::remove("SAGE_UI_URL");
-    envmnt::remove("SAGE_URL");
-    envmnt::remove("SWITCHBOARD_UI_URL");
-    envmnt::remove("SWITCHBOARD_URL");
-    envmnt::remove("WAREHOUSE_UI_URL");
-    envmnt::remove("WAREHOUSE_URL");
-    envmnt::remove("WORKBENCH_UI_URL");
-    envmnt::remove("WORKBENCH_URL");
+    quench_core::env::set("CONVEYOR_UI_URL", "https://conveyor.example.test");
+    quench_core::env::remove("FEATURE_CONVEYOR_ENABLED");
+    quench_core::env::remove("SAGE_UI_URL");
+    quench_core::env::remove("SAGE_URL");
+    quench_core::env::remove("SWITCHBOARD_UI_URL");
+    quench_core::env::remove("SWITCHBOARD_URL");
+    quench_core::env::remove("WAREHOUSE_UI_URL");
+    quench_core::env::remove("WAREHOUSE_URL");
+    quench_core::env::remove("WORKBENCH_UI_URL");
+    quench_core::env::remove("WORKBENCH_URL");
 
     let services = enabled_services(&catalog(&[
         "conveyor",
@@ -143,7 +146,7 @@ fn enabled_services_includes_a_configured_and_enabled_service() {
     assert_eq!(services[0].url, "https://conveyor.example.test");
     assert_eq!(services[0].title_key, "ui_service_conveyor_title");
 
-    envmnt::remove("CONVEYOR_UI_URL");
+    quench_core::env::remove("CONVEYOR_UI_URL");
 }
 
 #[test]
@@ -151,8 +154,8 @@ fn a_service_added_only_to_the_catalog_gets_a_card_with_derived_keys() {
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::set("ARCHIVE_VAULT_UI_URL", "https://vault.example.test/");
-    envmnt::remove("FEATURE_ARCHIVE_VAULT_ENABLED");
+    quench_core::env::set("ARCHIVE_VAULT_UI_URL", "https://vault.example.test/");
+    quench_core::env::remove("FEATURE_ARCHIVE_VAULT_ENABLED");
 
     let services = enabled_services(&catalog(&["archive-vault", "not-deployed"]));
     assert_eq!(services.len(), 1, "only the one with a URL");
@@ -167,7 +170,7 @@ fn a_service_added_only_to_the_catalog_gets_a_card_with_derived_keys() {
     );
     assert_eq!(card.card_class, "home-card-archive-vault");
 
-    envmnt::remove("ARCHIVE_VAULT_UI_URL");
+    quench_core::env::remove("ARCHIVE_VAULT_UI_URL");
 }
 
 #[test]

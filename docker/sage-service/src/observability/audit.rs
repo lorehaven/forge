@@ -1,5 +1,5 @@
-use chrono::Utc;
-use serde::{Deserialize, Serialize};
+use quench_core::time::Time;
+use quench_serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditLogEntry {
@@ -27,7 +27,7 @@ impl AuditLogger {
         execution_ms: u128,
     ) {
         let entry = AuditLogEntry {
-            timestamp: Utc::now().to_rfc3339(),
+            timestamp: Time::now().to_rfc3339(),
             tool_name: tool_name.to_string(),
             capability_profile: profile_name.to_string(),
             user_id,
@@ -38,7 +38,7 @@ impl AuditLogger {
         };
 
         if success {
-            tracing::info!(
+            quench_log::info!(
                 target: "audit",
                 tool = %entry.tool_name,
                 profile = %entry.capability_profile,
@@ -48,7 +48,7 @@ impl AuditLogger {
                 "Tool executed successfully"
             );
         } else {
-            tracing::warn!(
+            quench_log::warn!(
                 target: "audit",
                 tool = %entry.tool_name,
                 profile = %entry.capability_profile,
@@ -67,7 +67,7 @@ impl AuditLogger {
         user_id: Option<&str>,
         conversation_id: Option<&str>,
     ) {
-        tracing::warn!(
+        quench_log::warn!(
             target: "audit",
             tool = %tool_name,
             profile = %profile_name,
@@ -83,7 +83,7 @@ impl AuditLogger {
         user_id: Option<&str>,
         conversation_id: Option<&str>,
     ) {
-        tracing::info!(
+        quench_log::info!(
             target: "audit",
             tool = %tool_name,
             profile = %profile_name,

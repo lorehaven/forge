@@ -70,18 +70,18 @@ fn test_all_content_preserved() {
 
 #[test]
 fn test_chunk_segments_carry_metadata() {
+    use quench_serde::json;
     use sage_service::files::extractor::Segment;
-    use serde_json::json;
 
     let big = "word ".repeat(200);
     let segments = vec![
         Segment {
             text: format!("# Intro\n\n{}", big.trim()),
-            metadata: serde_json::Map::from_iter([("heading".to_string(), json!("Intro"))]),
+            metadata: quench_serde::Map::from_iter([("heading".to_string(), json!("Intro"))]),
         },
         Segment {
             text: "short second section".to_string(),
-            metadata: serde_json::Map::from_iter([("page".to_string(), json!(2))]),
+            metadata: quench_serde::Map::from_iter([("page".to_string(), json!(2))]),
         },
     ];
     let chunks = chunk_segments(&segments, &config(50, 10));

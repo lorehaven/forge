@@ -150,7 +150,7 @@ async fn perform_run(origin: &Origin, git_ref: &str, work: &Path) -> (Workspace,
 #[tokio::test]
 async fn a_commit_on_master_runs_every_stage_in_order() {
     let origin = Origin::with_pipeline(PIPELINE);
-    let work = tempfile::tempdir().expect("temp dir");
+    let work = quench_core::tmp::TempDir::new().expect("temp dir");
 
     let (workspace, outcome) = perform_run(&origin, "refs/heads/master", work.path()).await;
 
@@ -174,7 +174,7 @@ async fn a_commit_on_master_runs_every_stage_in_order() {
 #[tokio::test]
 async fn a_commit_on_a_topic_branch_skips_the_deploy() {
     let origin = Origin::with_pipeline(PIPELINE);
-    let work = tempfile::tempdir().expect("temp dir");
+    let work = quench_core::tmp::TempDir::new().expect("temp dir");
 
     // The pipeline's `on` covers `release/*`, so this triggers - and the
     // deploy stage's `when` is what excludes it, not the trigger.
@@ -191,7 +191,7 @@ async fn a_commit_on_a_topic_branch_skips_the_deploy() {
 #[tokio::test]
 async fn a_ref_the_pipeline_does_not_want_is_not_triggered() {
     let origin = Origin::with_pipeline(PIPELINE);
-    let work = tempfile::tempdir().expect("temp dir");
+    let work = quench_core::tmp::TempDir::new().expect("temp dir");
     let url = origin.url();
 
     let workspace = checkout(
@@ -219,7 +219,7 @@ async fn a_ref_the_pipeline_does_not_want_is_not_triggered() {
 #[tokio::test]
 async fn a_failing_stage_stops_the_run() {
     let origin = Origin::with_pipeline(PIPELINE);
-    let work = tempfile::tempdir().expect("temp dir");
+    let work = quench_core::tmp::TempDir::new().expect("temp dir");
     let url = origin.url();
 
     let workspace = checkout(
@@ -266,7 +266,7 @@ async fn a_failing_stage_stops_the_run() {
 #[tokio::test]
 async fn the_workspace_is_removable_once_the_run_is_over() {
     let origin = Origin::with_pipeline(PIPELINE);
-    let work = tempfile::tempdir().expect("temp dir");
+    let work = quench_core::tmp::TempDir::new().expect("temp dir");
 
     let (workspace, _) = perform_run(&origin, "refs/heads/master", work.path()).await;
     let root = workspace.root().to_path_buf();

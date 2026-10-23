@@ -2,10 +2,9 @@
 //! gatehouse or the mail server being down for a while delays a notification rather than losing it.
 
 use crate::scheduler::queue::{QueueError, pool, schema};
+use quench_core::uuid::Uuid;
 use quench_db::prelude::Db;
-use sqlx::Row;
 use std::collections::BTreeMap;
-use uuid::Uuid;
 
 /// Attempts before a message is set aside for a human to look at.
 pub const MAX_ATTEMPTS: i32 = 10;
@@ -38,17 +37,21 @@ pub async fn enqueue(
         "INSERT INTO {schema}.notification_outbox (id, run_id, username, template, vars) \
          VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING"
     );
-    let vars = serde_json::to_string(vars).map_err(|e| QueueError::BadRow(e.to_string()))?;
+    let vars = quench_serde::json::to_string(vars);
 
-    let done = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(Uuid::new_v4().to_string())
-        .bind(run_id)
-        .bind(username)
-        .bind(template)
-        .bind(vars)
-        .execute(pool)
+    let done = pool
+        .execute(
+            &sql,
+            &[
+                &Uuid::new_v4().to_string() as &dyn quench_pg::ToSql,
+                &run_id,
+                &username,
+                &template,
+                &vars,
+            ],
+        )
         .await?;
-    Ok(done.rows_affected() > 0)
+    Ok(done > 0)
 }
 
 /// Takes up to `limit` due messages, leasing each so a second sender skips it meanwhile.
@@ -66,22 +69,21 @@ pub async fn claim_due(db: &Db, limit: i64) -> Result<Vec<Pending>, QueueError> 
          ) RETURNING id, run_id, username, template, vars, attempts"
     );
 
-    let rows = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(limit)
-        .bind(LEASE_SECS)
-        .fetch_all(pool)
+    let rows = pool
+        .query(&sql, &[&limit as &dyn quench_pg::ToSql, &LEASE_SECS])
         .await?;
 
     rows.iter()
         .map(|row| {
-            let raw: String = row.try_get("vars")?;
+            let raw: String = row.get("vars")?;
             Ok(Pending {
-                id: row.try_get("id")?,
-                run_id: row.try_get("run_id")?,
-                username: row.try_get("username")?,
-                template: row.try_get("template")?,
-                vars: serde_json::from_str(&raw).map_err(|e| QueueError::BadRow(e.to_string()))?,
-                attempts: row.try_get("attempts")?,
+                id: row.get("id")?,
+                run_id: row.get("run_id")?,
+                username: row.get("username")?,
+                template: row.get("template")?,
+                vars: quench_serde::json::from_str(&raw)
+                    .map_err(|e| QueueError::BadRow(e.to_string()))?,
+                attempts: row.get("attempts")?,
             })
         })
         .collect()
@@ -92,10 +94,7 @@ pub async fn complete(db: &Db, id: &str) -> Result<(), QueueError> {
     let pool = pool(db)?;
     let schema = schema();
     let sql = format!("DELETE FROM {schema}.notification_outbox WHERE id = $1");
-    sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(id)
-        .execute(pool)
-        .await?;
+    pool.execute(&sql, &[&id as &dyn quench_pg::ToSql]).await?;
     Ok(())
 }
 
@@ -113,11 +112,7 @@ pub async fn retry_later(
              next_attempt_at = NOW() + make_interval(secs => $2), last_error = $3 \
          WHERE id = $1"
     );
-    sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(id)
-        .bind(delay_secs)
-        .bind(error)
-        .execute(pool)
+    pool.execute(&sql, &[&id as &dyn quench_pg::ToSql, &delay_secs, &error])
         .await?;
     Ok(())
 }
@@ -129,10 +124,7 @@ pub async fn give_up(db: &Db, id: &str, error: &str) -> Result<(), QueueError> {
     let sql = format!(
         "UPDATE {schema}.notification_outbox SET failed_at = NOW(), last_error = $2 WHERE id = $1"
     );
-    sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(id)
-        .bind(error)
-        .execute(pool)
+    pool.execute(&sql, &[&id as &dyn quench_pg::ToSql, &error])
         .await?;
     Ok(())
 }

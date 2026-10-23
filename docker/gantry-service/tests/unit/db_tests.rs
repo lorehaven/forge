@@ -23,6 +23,6 @@ fn a_missing_database_is_the_services_problem_not_the_callers() {
     let error: ApiError = GantryError::NotPostgres.into();
     assert_eq!(
         error.into_response().status(),
-        http::StatusCode::SERVICE_UNAVAILABLE
+        quench_http::http::StatusCode::SERVICE_UNAVAILABLE
     );
 }

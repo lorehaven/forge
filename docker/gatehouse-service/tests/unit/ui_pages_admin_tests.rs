@@ -1,4 +1,3 @@
-use bytes::Bytes;
 use gatehouse_service::PublicBase;
 use gatehouse_service::api::auth::user_scope;
 use gatehouse_service::catalog::PermissionCatalog;
@@ -7,14 +6,14 @@ use gatehouse_service::realm::{self, RealmError};
 use gatehouse_service::test_support::{RecordingSender, auth_disabled_guard};
 use gatehouse_service::tokens::VerificationTokens;
 use gatehouse_service::ui::pages::admin::*;
-use http::{HeaderMap, Method, StatusCode, Uri};
-use http_body_util::BodyExt;
 use quench_auth::domain::auth::{Permissions, Role, User};
 use quench_auth::domain::jwt::{Claims, JwtConfig};
 use quench_auth::domain::session::SessionDb;
+use quench_core::bytes::Bytes;
 use quench_db::prelude::Db;
 use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::request::Request;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -65,13 +64,18 @@ fn claims_for(user: &User) -> Claims {
 }
 
 async fn body_text(resp: quench_http::response::Response) -> String {
-    let collected = resp.into_hyper().into_body().collect().await.expect("body");
-    String::from_utf8(collected.to_bytes().to_vec()).expect("utf8")
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .expect("body");
+    String::from_utf8(collected.to_vec()).expect("utf8")
 }
 
 fn location(resp: quench_http::response::Response) -> String {
-    resp.into_hyper()
-        .headers()
+    resp.into_inner()
+        .headers
         .get("location")
         .expect("location header")
         .to_str()
@@ -80,7 +84,8 @@ fn location(resp: quench_http::response::Response) -> String {
 }
 
 fn catalog() -> PermissionCatalog {
-    let dir = std::env::temp_dir().join(format!("admin-test-{}", uuid::Uuid::new_v4()));
+    let dir =
+        std::env::temp_dir().join(format!("admin-test-{}", quench_core::uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("permissions.toml");
     std::fs::write(
@@ -488,7 +493,7 @@ fn post_form(
     pairs: &[(&str, &str)],
     container: &Arc<quench_http::di::Container>,
 ) -> Request {
-    let encoded = serde_urlencoded::to_string(pairs).unwrap();
+    let encoded = quench_serde::urlencoded::to_string(pairs).unwrap();
     Request::new(
         Method::POST,
         path.parse::<Uri>().unwrap(),
@@ -827,7 +832,7 @@ async fn no_admin_notice_for_an_unconfirmed_or_missing_address() {
 #[tokio::test]
 async fn an_administrator_turning_off_mfa_tells_the_account_holder_only_if_it_was_on() {
     let _guard = auth_disabled_guard().await;
-    envmnt::set(
+    quench_core::env::set(
         "GATEHOUSE_KEY_ENCRYPTION_KEY",
         gatehouse_service::test_support::TEST_KEY_MATERIAL,
     );
@@ -844,21 +849,9 @@ async fn an_administrator_turning_off_mfa_tells_the_account_holder_only_if_it_wa
 
     // Turn it on, then have the administrator turn it off.
     let (secret, _) = realm::begin_mfa_enrollment("target").expect("enrollment");
-    let code = {
-        use totp_rs::Secret;
-        totp_rs::Builder::new()
-            .with_algorithm(totp_rs::Algorithm::SHA1)
-            .with_digits(6)
-            .with_skew(1)
-            .with_step_duration(30)
-            .with_secret(Secret::try_from_base32(&secret).expect("base32"))
-            .with_account_name("target".to_string())
-            .with_issuer(Some("Forge"))
-            .build()
-            .expect("totp")
-            .generate_current()
-            .to_string()
-    };
+    let code = quench_crypto::totp::Totp::from_base32(&secret)
+        .expect("base32")
+        .code_now();
     realm::enable_mfa(&db, "target", &secret, &code)
         .await
         .expect("enable mfa");
@@ -984,7 +977,7 @@ async fn an_unusable_address_is_refused_and_creates_nothing() {
 #[tokio::test]
 async fn a_mail_failure_still_creates_the_account_and_says_so() {
     struct Failing;
-    #[async_trait::async_trait]
+    #[quench_core::async_trait]
     impl Sender for Failing {
         async fn send(
             &self,

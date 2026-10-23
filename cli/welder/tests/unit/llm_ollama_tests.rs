@@ -23,9 +23,9 @@ async fn generate_content_parses_the_message_content() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/api/chat"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+        .respond_with(ResponseTemplate::new(200).set_body_raw(quench_serde::json::to_string(&(quench_serde::json!({
             "message": { "content": "hi there" }
-        })))
+        }))), "application/json"))
         .mount(&server)
         .await;
 

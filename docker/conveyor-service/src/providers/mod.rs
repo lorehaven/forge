@@ -2,8 +2,8 @@
 //! provider (the shapes differ too much for a single parameterised client).
 
 use crate::domain::{Provider, Repo, Status, Trigger};
-use async_trait::async_trait;
-use http::HeaderMap;
+use quench_core::async_trait;
+use quench_http::http::HeaderMap;
 use std::sync::Arc;
 
 pub mod generic;
@@ -80,7 +80,7 @@ impl CommitStatusReport {
             state: CommitState::from_status(status),
             description: description.into(),
             target_url: None,
-            context: envmnt::get_or("CONVEYOR_STATUS_CONTEXT", "conveyor"),
+            context: quench_core::env::get_or("CONVEYOR_STATUS_CONTEXT", "conveyor"),
         }
     }
 
@@ -91,7 +91,7 @@ impl CommitStatusReport {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, quench_core::Error)]
 pub enum ProviderError {
     #[error("missing {header}")]
     MissingHeader { header: &'static str },
@@ -116,7 +116,7 @@ pub enum ProviderError {
     Unreachable {
         provider: &'static str,
         #[source]
-        source: reqwest::Error,
+        source: quench_client::transport::Error,
     },
 }
 
@@ -184,7 +184,7 @@ impl Default for Providers {
 /// Estate-wide fallback for a repository with no secret of its own; `None` means the webhook endpoint refuses to serve.
 #[must_use]
 pub fn webhook_secret() -> Option<String> {
-    let secret = envmnt::get_or("CONVEYOR_WEBHOOK_SECRET", "");
+    let secret = quench_core::env::get_or("CONVEYOR_WEBHOOK_SECRET", "");
     (!secret.trim().is_empty()).then(|| secret.trim().to_string())
 }
 
@@ -202,7 +202,7 @@ pub async fn webhook_secret_for(
             Ok(None) => {}
             // Must not silently fall back to the estate's secret on a read error.
             Err(error) => {
-                tracing::error!(
+                quench_log::error!(
                     "could not read the webhook secret for {}: {error}",
                     repo.slug()
                 );
@@ -216,32 +216,27 @@ pub async fn webhook_secret_for(
 
 /// Constant-time via `hmac`'s own verify, not string comparison, so a wrong signature always takes the same time to reject.
 pub(crate) fn verify_sha256_signature(signature: &str, body: &[u8], secret: &[u8]) -> bool {
-    use hmac::{KeyInit, Mac, SimpleHmac};
-
     let Some(hex_digest) = signature.trim().strip_prefix("sha256=") else {
         return false;
     };
-    let Ok(expected) = hex::decode(hex_digest) else {
+    let Ok(expected) = quench_core::hex::decode(hex_digest) else {
         return false;
     };
 
-    let Ok(mut mac) = SimpleHmac::<sha2::Sha256>::new_from_slice(secret) else {
-        return false;
-    };
-    mac.update(body);
-    mac.verify_slice(&expected).is_ok()
+    quench_crypto::hmac::verify(
+        quench_crypto::hmac::Algorithm::Sha256,
+        secret,
+        body,
+        &expected,
+    )
 }
 
 /// The signature conveyor would send for this body, for tests and for
 /// documenting what a sender has to produce.
 #[must_use]
 pub fn sign_sha256(body: &[u8], secret: &[u8]) -> String {
-    use hmac::{KeyInit, Mac, SimpleHmac};
-
-    let mut mac = SimpleHmac::<sha2::Sha256>::new_from_slice(secret)
-        .expect("HMAC accepts a key of any length");
-    mac.update(body);
-    format!("sha256={}", hex::encode(mac.finalize().into_bytes()))
+    let tag = quench_crypto::hmac::sign(quench_crypto::hmac::Algorithm::Sha256, secret, body);
+    format!("sha256={}", quench_core::hex::encode(tag))
 }
 
 /// Reads a header as a string, or says which one was missing.

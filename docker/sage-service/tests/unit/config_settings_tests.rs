@@ -102,7 +102,7 @@ fn is_model_supported_is_false_with_no_configured_patterns() {
 }
 
 fn sample_config(supported_models: &[&str]) -> SageConfig {
-    let value = serde_json::json!({
+    let value = quench_serde::json!({
         "system_prompt": "test",
         "default_models": [],
         "supported_models": supported_models,
@@ -117,7 +117,7 @@ fn sample_config(supported_models: &[&str]) -> SageConfig {
         },
         "stop_models_on_shutdown": false
     });
-    serde_json::from_value(value).expect("valid SageConfig shape")
+    quench_serde::from_value(&value).expect("valid SageConfig shape")
 }
 
 #[test]
@@ -135,7 +135,7 @@ fn load_uses_defaults_when_nothing_is_configured() {
         "BRAVE_SEARCH_API_KEY",
         "SERPAPI_API_KEY",
     ] {
-        envmnt::remove(key);
+        quench_core::env::remove(key);
     }
 
     let config = SageConfig::load();
@@ -156,12 +156,12 @@ fn load_falls_back_to_web_assistant_for_an_unknown_capability_profile() {
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::set("SAGE_CAPABILITY_PROFILE", "not-a-real-profile");
+    quench_core::env::set("SAGE_CAPABILITY_PROFILE", "not-a-real-profile");
 
     let config = SageConfig::load();
     assert_eq!(config.capability_profile.name, "web_assistant");
 
-    envmnt::remove("SAGE_CAPABILITY_PROFILE");
+    quench_core::env::remove("SAGE_CAPABILITY_PROFILE");
 }
 
 #[test]
@@ -169,8 +169,8 @@ fn load_picks_up_search_provider_api_keys() {
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::set("BRAVE_SEARCH_API_KEY", "key");
-    envmnt::set("SERPAPI_API_KEY", "key");
+    quench_core::env::set("BRAVE_SEARCH_API_KEY", "key");
+    quench_core::env::set("SERPAPI_API_KEY", "key");
 
     let config = SageConfig::load();
     assert_eq!(
@@ -183,8 +183,8 @@ fn load_picks_up_search_provider_api_keys() {
         ]
     );
 
-    envmnt::remove("BRAVE_SEARCH_API_KEY");
-    envmnt::remove("SERPAPI_API_KEY");
+    quench_core::env::remove("BRAVE_SEARCH_API_KEY");
+    quench_core::env::remove("SERPAPI_API_KEY");
 }
 
 #[test]
@@ -192,8 +192,8 @@ fn load_stop_models_on_shutdown_and_supported_models_read_their_env_vars() {
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::set("SAGE_STOP_MODELS_ON_SHUTDOWN", "true");
-    envmnt::set("SAGE_SUPPORTED_MODELS", "foo, bar , ,baz");
+    quench_core::env::set("SAGE_STOP_MODELS_ON_SHUTDOWN", "true");
+    quench_core::env::set("SAGE_SUPPORTED_MODELS", "foo, bar , ,baz");
 
     let config = SageConfig::load();
     assert!(config.stop_models_on_shutdown);
@@ -202,6 +202,6 @@ fn load_stop_models_on_shutdown_and_supported_models_read_their_env_vars() {
         vec!["foo".to_string(), "bar".to_string(), "baz".to_string()]
     );
 
-    envmnt::remove("SAGE_STOP_MODELS_ON_SHUTDOWN");
-    envmnt::remove("SAGE_SUPPORTED_MODELS");
+    quench_core::env::remove("SAGE_STOP_MODELS_ON_SHUTDOWN");
+    quench_core::env::remove("SAGE_SUPPORTED_MODELS");
 }

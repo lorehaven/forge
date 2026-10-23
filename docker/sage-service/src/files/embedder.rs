@@ -15,11 +15,17 @@ impl EmbedderConfig {
     #[must_use]
     pub fn from_env() -> Self {
         Self {
-            model: envmnt::get_or("SAGE_EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-0.6B"),
-            batch_size: usize::try_from(envmnt::get_u64("SAGE_EMBEDDING_BATCH_SIZE", 32))
-                .unwrap_or(32),
-            dimension: usize::try_from(envmnt::get_u64("SAGE_EMBEDDING_DIMENSION", 1024))
-                .unwrap_or(1024),
+            model: quench_core::env::get_or("SAGE_EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-0.6B"),
+            batch_size: usize::try_from(quench_core::env::get_parsed::<u64>(
+                "SAGE_EMBEDDING_BATCH_SIZE",
+                32,
+            ))
+            .unwrap_or(32),
+            dimension: usize::try_from(quench_core::env::get_parsed::<u64>(
+                "SAGE_EMBEDDING_DIMENSION",
+                1024,
+            ))
+            .unwrap_or(1024),
         }
     }
 }
@@ -32,7 +38,7 @@ pub enum EmbedOutcome {
 }
 
 fn db_schema() -> String {
-    envmnt::get_or("DB_SCHEMA", "sage")
+    quench_core::env::get_or("DB_SCHEMA", "sage")
 }
 
 async fn find_running_instance(
@@ -94,11 +100,10 @@ pub async fn embed_file_chunks(
     let select = format!(
         "SELECT id, content FROM {schema}.file_chunks WHERE file_id = $1 ORDER BY chunk_index"
     );
-    let chunks: Vec<(String, String)> = sqlx::query_as(sqlx::AssertSqlSafe(select.as_str()))
-        .bind(file_id)
-        .fetch_all(pg_db.pool())
-        .await
-        .map_err(|e| e.to_string())?;
+    let chunks: Vec<(String, String)> =
+        crate::domain::rows::fetch_all_tuples(pg_db.pool(), &select, &[&file_id])
+            .await
+            .map_err(|e| e.to_string())?;
 
     let update = format!(
         "UPDATE {schema}.file_chunks SET embedding = $1::vector, embedding_model = $2 WHERE id = $3"
@@ -121,11 +126,16 @@ pub async fn embed_file_chunks(
                     config.dimension
                 ));
             }
-            sqlx::query(sqlx::AssertSqlSafe(update.as_str()))
-                .bind(vector_literal(&vector))
-                .bind(&config.model)
-                .bind(chunk_id)
-                .execute(pg_db.pool())
+            pg_db
+                .pool()
+                .execute(
+                    &update,
+                    &[
+                        &vector_literal(&vector) as &dyn quench_pg::ToSql,
+                        &config.model,
+                        &chunk_id,
+                    ],
+                )
                 .await
                 .map_err(|e| e.to_string())?;
             embedded += 1;

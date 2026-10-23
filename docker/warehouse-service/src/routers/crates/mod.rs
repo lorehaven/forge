@@ -1,8 +1,8 @@
 use crate::routers::crates_storage_root;
-use async_trait::async_trait;
 use quench_auth::domain::jwt::JwtConfig;
 use quench_auth::http::middleware::auth::Auth;
 use quench_auth::http::middleware::require_write::RequireWrite;
+use quench_core::async_trait;
 use quench_http::prelude::http::Method;
 use quench_http::prelude::{Endpoint, Middleware, Request, Response, wrap};
 use std::path::PathBuf;
@@ -83,7 +83,7 @@ pub fn validate_version(version: &str) -> bool {
 /// resolving dependencies; every write is authenticated either way.
 #[must_use]
 pub fn reads_require_auth() -> bool {
-    envmnt::get_or("CRATES_REQUIRE_AUTH_FOR_READS", "false")
+    quench_core::env::get_or("CRATES_REQUIRE_AUTH_FOR_READS", "false")
         .parse()
         .unwrap_or(false)
 }

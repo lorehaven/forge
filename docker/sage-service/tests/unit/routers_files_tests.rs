@@ -1,13 +1,12 @@
 //! Unit tests for `routers/files.rs`.
 
-use bytes::Bytes;
-use http::{HeaderMap, Method, StatusCode, Uri};
-use http_body_util::BodyExt;
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::bytes::Bytes;
 use quench_db::InMemoryDb;
 use quench_db::prelude::{Crud, Db};
 use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::request::Request;
 use sage_service::clients::switchboard::SwitchboardClient;
 use sage_service::clients::vllm::VllmClient;
@@ -43,7 +42,7 @@ fn accept_attribute_covers_every_supported_extension() {
 
 #[test]
 fn images_disabled_excludes_images_from_accept_and_validation() {
-    envmnt::set("SAGE_IMAGES_ENABLED", "false");
+    quench_core::env::set("SAGE_IMAGES_ENABLED", "false");
 
     assert_eq!(allowed_mime_type("photo.png"), None);
     assert_eq!(allowed_mime_type("notes.md"), Some("text/markdown"));
@@ -54,7 +53,7 @@ fn images_disabled_excludes_images_from_accept_and_validation() {
     }
     assert!(accept.contains(".pdf"));
 
-    envmnt::remove("SAGE_IMAGES_ENABLED");
+    quench_core::env::remove("SAGE_IMAGES_ENABLED");
 }
 
 #[test]
@@ -94,9 +93,9 @@ fn db() -> Db {
 }
 
 fn ensure_switchboard_env() {
-    envmnt::set("GATEHOUSE_URL", "http://127.0.0.1:1");
-    envmnt::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
-    envmnt::set("SWITCHBOARD_URL", "http://127.0.0.1:1");
+    quench_core::env::set("GATEHOUSE_URL", "http://127.0.0.1:1");
+    quench_core::env::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret");
+    quench_core::env::set("SWITCHBOARD_URL", "http://127.0.0.1:1");
 }
 
 async fn app(
@@ -129,9 +128,14 @@ fn req(method: Method, path: &str, container: &Arc<quench_http::di::Container>) 
     )
 }
 
-async fn json_body<T: serde::de::DeserializeOwned>(resp: quench_http::response::Response) -> T {
-    let collected = resp.into_hyper().into_body().collect().await.expect("body");
-    serde_json::from_slice(&collected.to_bytes()).expect("valid json body")
+async fn json_body<T: quench_serde::DeserializeOwned>(resp: quench_http::response::Response) -> T {
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .expect("body");
+    quench_serde::json::from_slice(&collected).expect("valid json body")
 }
 
 async fn seed_conversation(db: &Db, id: &str, owner: &str, project_id: Option<&str>) {
@@ -360,7 +364,7 @@ async fn list_chunks_returns_an_empty_list_for_a_file_with_none() {
         .await;
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let chunks: Vec<serde_json::Value> = json_body(resp).await;
+    let chunks: Vec<quench_serde::Value> = json_body(resp).await;
     assert!(chunks.is_empty());
 }
 

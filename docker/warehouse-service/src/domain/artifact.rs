@@ -1,13 +1,12 @@
 //! The artifact catalog: one row per published build, keyed by `<program>/<platform>@<version_code>`.
 //! Immutable once published (yanking just flips a flag), so plain `Crud` suffices.
 
-use chrono::{DateTime, Utc};
+use quench_core::time::Time;
 use quench_db::prelude::Model;
-use sqlx::types::Json;
 
 /// A platform an artifact can target. Serialises to the lowercase tag stored
 /// in the `platform` column and accepted in the `{platform}` path segment.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, quench_serde::Serialize, quench_serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Platform {
     Android,
@@ -50,7 +49,9 @@ impl Platform {
 }
 
 /// Platform-specific extras, kept out of the top-level columns. Absent keys default empty.
-#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, Default, quench_serde::Serialize, quench_serde::Deserialize,
+)]
 pub struct ArtifactMetadata {
     #[serde(default)]
     pub min_sdk_version: Option<i32>,
@@ -60,7 +61,7 @@ pub struct ArtifactMetadata {
     pub permissions: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, PartialEq, Eq, quench_serde::Serialize, quench_serde::Deserialize)]
 pub struct ArtifactVersion {
     pub id: String,
     pub program: String,
@@ -77,10 +78,10 @@ pub struct ArtifactVersion {
     pub size_bytes: i64,
     pub sha256: String,
     pub label: Option<String>,
-    pub metadata: Json<ArtifactMetadata>,
+    pub metadata: ArtifactMetadata,
     pub uploaded_by: String,
     pub yanked: bool,
-    pub created_at: DateTime<Utc>,
+    pub created_at: Time,
 }
 
 impl ArtifactVersion {

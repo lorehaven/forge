@@ -2,7 +2,6 @@
 //! stream over a broadcast channel; this proves the framing and that a
 //! subscriber sees what's sent after it subscribes.
 
-use http_body_util::BodyExt;
 use quench_http::prelude::Inject;
 use std::sync::Arc;
 use switchboard_service::routers::vllm::sse::{
@@ -30,17 +29,17 @@ async fn canonical_sse_route_streams_a_broadcast_message_as_an_sse_event() {
     // closes before collecting the body waits for end-of-stream.
     drop(tx);
 
-    let hyper_resp = resp.into_hyper();
+    let hyper_resp = resp.into_inner();
     assert_eq!(
-        hyper_resp.headers().get("content-type").unwrap(),
+        hyper_resp.headers.get("content-type").unwrap(),
         "text/event-stream"
     );
     let collected = hyper_resp
-        .into_body()
-        .collect()
+        .body
+        .collect_limited(usize::MAX)
         .await
         .expect("stream collects cleanly");
-    let text = String::from_utf8(collected.to_bytes().to_vec()).unwrap();
+    let text = String::from_utf8(collected.to_vec()).unwrap();
     assert!(text.contains("event: vllm-instances"));
     assert!(text.contains("<div>hello</div>"));
 }
@@ -57,12 +56,12 @@ async fn sse_event_strips_newlines_from_the_html_payload() {
     drop(tx);
 
     let collected = resp
-        .into_hyper()
-        .into_body()
-        .collect()
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
         .await
         .expect("stream collects cleanly");
-    let text = String::from_utf8(collected.to_bytes().to_vec()).unwrap();
+    let text = String::from_utf8(collected.to_vec()).unwrap();
     assert!(text.contains("line oneline two"));
     assert!(!text.contains("line one\nline two"));
 }
@@ -77,11 +76,11 @@ async fn alias_sse_route_behaves_the_same_as_canonical() {
     drop(tx);
 
     let collected = resp
-        .into_hyper()
-        .into_body()
-        .collect()
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
         .await
         .expect("stream collects cleanly");
-    let text = String::from_utf8(collected.to_bytes().to_vec()).unwrap();
+    let text = String::from_utf8(collected.to_vec()).unwrap();
     assert!(text.contains("alias-payload"));
 }

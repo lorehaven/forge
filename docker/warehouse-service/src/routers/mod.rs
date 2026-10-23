@@ -21,20 +21,20 @@ pub fn register_routes() {
 /// Read fresh every call, not `LazyLock`-cached - a process-global cache would make this untestable.
 #[must_use]
 pub fn crates_storage_root() -> String {
-    envmnt::get_or("CRATES_STORAGE_PATH", "./storage/crates")
+    quench_core::env::get_or("CRATES_STORAGE_PATH", "./storage/crates")
 }
 
 #[must_use]
 pub fn docker_storage_root() -> String {
-    envmnt::get_or("STORAGE_PATH", "./storage/docker")
+    quench_core::env::get_or("STORAGE_PATH", "./storage/docker")
 }
 
 /// Root of the artifact store. `APK_STORAGE_PATH` is an honored fallback for the old var name.
 #[must_use]
 pub fn artifact_storage_root() -> String {
     for key in ["ARTIFACT_STORAGE_PATH", "APK_STORAGE_PATH"] {
-        if envmnt::exists(key) {
-            return envmnt::get_or(key, "");
+        if std::env::var_os(key).is_some() {
+            return quench_core::env::get_or(key, "");
         }
     }
     "./storage/artifacts".to_string()
@@ -43,7 +43,7 @@ pub fn artifact_storage_root() -> String {
 /// Root of the rivet package store.
 #[must_use]
 pub fn rivet_storage_root() -> String {
-    envmnt::get_or("RIVET_STORAGE_PATH", "./storage/rivets")
+    quench_core::env::get_or("RIVET_STORAGE_PATH", "./storage/rivets")
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -84,7 +84,7 @@ static FEATURE_FLAGS: std::sync::LazyLock<std::collections::BTreeSet<Feature>> =
 
 #[must_use]
 pub fn feature_enabled(name: &str, default: bool) -> bool {
-    match envmnt::get_or(name, if default { "true" } else { "false" })
+    match quench_core::env::get_or(name, if default { "true" } else { "false" })
         .trim()
         .to_ascii_lowercase()
         .as_str()

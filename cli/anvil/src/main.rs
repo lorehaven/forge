@@ -2,10 +2,10 @@ use anvil::cli::{Cli, Commands, ConfigCommands, DockerCommands};
 use anvil::commands;
 use anvil::config;
 use anvil::util::{OutputMode, set_output_mode};
-use anyhow::Result;
 use clap::Parser;
 use quench_cli::require::require_binary;
 use quench_cli::terminal::print_box_banner;
+use quench_core::Result;
 
 /// Cheap, parse-free check for a `--json` flag anywhere in argv.
 ///

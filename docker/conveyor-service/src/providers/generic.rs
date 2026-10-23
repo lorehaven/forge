@@ -4,9 +4,9 @@ use crate::domain::{Repo, Trigger};
 use crate::providers::{
     CommitStatusReport, GitProvider, ProviderError, TriggerEvent, header, verify_sha256_signature,
 };
-use async_trait::async_trait;
-use http::HeaderMap;
-use serde::Deserialize;
+use quench_core::async_trait;
+use quench_http::http::HeaderMap;
+use quench_serde::Deserialize;
 
 const SIGNATURE_HEADER: &str = "x-conveyor-signature-256";
 
@@ -39,7 +39,7 @@ impl GitProvider for GenericProvider {
         body: &[u8],
     ) -> Result<Option<TriggerEvent>, ProviderError> {
         let payload: GenericEvent =
-            serde_json::from_slice(body).map_err(|error| ProviderError::Malformed {
+            quench_serde::json::from_slice(body).map_err(|error| ProviderError::Malformed {
                 provider: "generic",
                 reason: error.to_string(),
             })?;
@@ -75,7 +75,7 @@ impl GitProvider for GenericProvider {
         report: &CommitStatusReport,
     ) -> Result<(), ProviderError> {
         // Not an error - a `generic` repo has no API conveyor can report to.
-        tracing::debug!(
+        quench_log::debug!(
             "generic provider has nowhere to report {} for {}@{sha}",
             report.state.as_str(),
             repo.slug()

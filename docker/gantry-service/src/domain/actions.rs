@@ -14,7 +14,7 @@ use crate::domain::steps::{Plan, Step};
 const INSTALL_TIMEOUT_SECS: u64 = 600;
 const ROLLOUT_TIMEOUT_SECS: u64 = 300;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, quench_core::Error)]
 pub enum ActionError {
     #[error("{0}")]
     NotFound(String),
@@ -31,7 +31,7 @@ pub enum ActionError {
 }
 
 /// Which resource: how the lists name it, so a button can carry it.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, quench_serde::Serialize, quench_serde::Deserialize)]
 pub struct Target {
     #[serde(rename = "apiVersion", default)]
     pub api_version: Option<String>,
@@ -285,11 +285,11 @@ pub async fn edit(
         ));
     }
 
-    let mut doc: serde_norway::Value = serde_norway::from_str(yaml)
+    let mut doc: quench_serde::Value = quench_serde::yaml::from_str(yaml)
         .map_err(|e| ActionError::Refused(format!("the YAML does not parse: {e}")))?;
-    let text = |value: Option<&serde_norway::Value>| {
+    let text = |value: Option<&quench_serde::Value>| {
         value
-            .and_then(serde_norway::Value::as_str)
+            .and_then(quench_serde::Value::as_str)
             .map(str::to_string)
     };
     let kind = text(doc.get("kind")).unwrap_or_default();
@@ -303,24 +303,29 @@ pub async fn edit(
     }
 
     // Say, on the object itself, that it was changed from here.
+    let at = quench_core::time::Time::now().civil();
     let marker = format!(
-        "{by} at {}",
-        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")
+        "{by} at {:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC",
+        at.year, at.month, at.day, at.hour, at.minute, at.second
     );
     let metadata = doc
         .get_mut("metadata")
-        .and_then(serde_norway::Value::as_mapping_mut)
+        .and_then(quench_serde::Value::as_object_mut)
         .ok_or_else(|| ActionError::Refused("the YAML has no metadata".to_string()))?;
-    let annotations = metadata
-        .entry(serde_norway::Value::String("annotations".to_string()))
-        .or_insert_with(|| serde_norway::Value::Mapping(serde_norway::Mapping::new()));
-    if let Some(annotations) = annotations.as_mapping_mut() {
-        annotations.insert(
-            serde_norway::Value::String(EDITED_ANNOTATION.to_string()),
-            serde_norway::Value::String(marker),
+    if metadata.get("annotations").is_none() {
+        metadata.insert(
+            "annotations",
+            quench_serde::Value::Object(quench_serde::Map::new()),
         );
     }
-    let yaml = serde_norway::to_string(&doc).map_err(|e| ActionError::Refused(e.to_string()))?;
+    if let Some(annotations) = metadata
+        .get_mut("annotations")
+        .and_then(quench_serde::Value::as_object_mut)
+    {
+        annotations.insert(EDITED_ANNOTATION, quench_serde::Value::String(marker));
+    }
+    let yaml =
+        quench_serde::yaml::to_string(&doc).map_err(|e| ActionError::Refused(e.to_string()))?;
 
     let title = format!("Edit {}", label(&row));
     let mut steps = vec![Step::ApplyYaml {

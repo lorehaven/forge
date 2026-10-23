@@ -1,8 +1,8 @@
-use chrono::{DateTime, Duration, Utc};
 use gatehouse_service::codes::AuthorizationCodeRow;
+use quench_core::time::{Duration, Time};
 use quench_db::prelude::Model;
 
-fn row(consumed_at: Option<DateTime<Utc>>, expires_at: DateTime<Utc>) -> AuthorizationCodeRow {
+fn row(consumed_at: Option<Time>, expires_at: Time) -> AuthorizationCodeRow {
     AuthorizationCodeRow {
         code_hash: "hash".to_string(),
         client_id: "client".to_string(),
@@ -10,7 +10,7 @@ fn row(consumed_at: Option<DateTime<Utc>>, expires_at: DateTime<Utc>) -> Authori
         redirect_uri: "https://example.test/callback".to_string(),
         scope: "openid".to_string(),
         pkce_challenge: "challenge".to_string(),
-        created_at: Utc::now(),
+        created_at: Time::now(),
         expires_at,
         consumed_at,
     }
@@ -18,25 +18,25 @@ fn row(consumed_at: Option<DateTime<Utc>>, expires_at: DateTime<Utc>) -> Authori
 
 #[test]
 fn is_usable_when_unconsumed_and_not_yet_expired() {
-    let now = Utc::now();
+    let now = Time::now();
     assert!(row(None, now + Duration::minutes(5)).is_usable(now));
 }
 
 #[test]
 fn is_not_usable_once_consumed() {
-    let now = Utc::now();
+    let now = Time::now();
     assert!(!row(Some(now), now + Duration::minutes(5)).is_usable(now));
 }
 
 #[test]
 fn is_not_usable_once_expired() {
-    let now = Utc::now();
+    let now = Time::now();
     assert!(!row(None, now - Duration::seconds(1)).is_usable(now));
 }
 
 #[test]
 fn is_not_usable_exactly_at_the_expiry_instant() {
-    let now = Utc::now();
+    let now = Time::now();
     assert!(!row(None, now).is_usable(now));
 }
 

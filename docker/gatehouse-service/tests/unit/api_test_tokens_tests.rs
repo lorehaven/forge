@@ -1,10 +1,9 @@
-use bytes::Bytes;
-use http::{HeaderMap, Method, StatusCode, Uri};
-use http_body_util::BodyExt;
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::bytes::Bytes;
 use quench_http::body::InboundBody;
 use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::request::Request;
 use std::sync::Arc;
 
@@ -27,7 +26,7 @@ async fn app() -> (Arc<dyn Endpoint>, Arc<quench_http::di::Container>) {
 
 fn post_json(
     path: &str,
-    body: &serde_json::Value,
+    body: &quench_serde::Value,
     container: &Arc<quench_http::di::Container>,
 ) -> Request {
     let mut headers = HeaderMap::new();
@@ -36,7 +35,7 @@ fn post_json(
         Method::POST,
         path.parse::<Uri>().unwrap(),
         headers,
-        InboundBody::from_bytes(Bytes::from(serde_json::to_vec(body).unwrap())),
+        InboundBody::from_bytes(Bytes::from(quench_serde::json::to_vec(body))),
         container.clone(),
     )
 }
@@ -44,13 +43,13 @@ fn post_json(
 #[tokio::test]
 async fn mint_is_not_found_when_test_mode_is_off() {
     let _guard = env_lock().lock().await;
-    envmnt::remove("GATEHOUSE_TEST_MODE");
+    quench_core::env::remove("GATEHOUSE_TEST_MODE");
 
     let (app, container) = app().await;
     let resp = app
         .call(post_json(
             "/api/v1/test/token",
-            &serde_json::json!({ "sub": "alice", "scope": "gatehouse:read" }),
+            &quench_serde::json!({ "sub": "alice", "scope": "gatehouse:read" }),
             &container,
         ))
         .await;
@@ -60,39 +59,44 @@ async fn mint_is_not_found_when_test_mode_is_off() {
 #[tokio::test]
 async fn mint_issues_a_token_with_the_requested_claims_when_test_mode_is_on() {
     let _guard = env_lock().lock().await;
-    envmnt::set("GATEHOUSE_TEST_MODE", "true");
+    quench_core::env::set("GATEHOUSE_TEST_MODE", "true");
 
     let (app, container) = app().await;
     let resp = app
         .call(post_json(
             "/api/v1/test/token",
-            &serde_json::json!({ "sub": "alice", "aud": ["sage"], "scope": "sage:read" }),
+            &quench_serde::json!({ "sub": "alice", "aud": ["sage"], "scope": "sage:read" }),
             &container,
         ))
         .await;
     assert_eq!(resp.status(), StatusCode::OK);
 
-    let collected = resp.into_hyper().into_body().collect().await.expect("body");
-    let body: serde_json::Value = serde_json::from_slice(&collected.to_bytes()).unwrap();
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .expect("body");
+    let body: quench_serde::Value = quench_serde::json::from_slice(&collected).unwrap();
     assert!(body["access_token"].as_str().is_some_and(|t| !t.is_empty()));
 
-    envmnt::remove("GATEHOUSE_TEST_MODE");
+    quench_core::env::remove("GATEHOUSE_TEST_MODE");
 }
 
 #[tokio::test]
 async fn mint_honors_explicit_iat_and_exp_overrides() {
     let _guard = env_lock().lock().await;
-    envmnt::set("GATEHOUSE_TEST_MODE", "true");
+    quench_core::env::set("GATEHOUSE_TEST_MODE", "true");
 
     let (app, container) = app().await;
     let resp = app
         .call(post_json(
             "/api/v1/test/token",
-            &serde_json::json!({ "sub": "alice", "scope": "sage:read", "iat": 1, "exp": 2 }),
+            &quench_serde::json!({ "sub": "alice", "scope": "sage:read", "iat": 1, "exp": 2 }),
             &container,
         ))
         .await;
     assert_eq!(resp.status(), StatusCode::OK);
 
-    envmnt::remove("GATEHOUSE_TEST_MODE");
+    quench_core::env::remove("GATEHOUSE_TEST_MODE");
 }

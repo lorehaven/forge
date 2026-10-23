@@ -50,7 +50,11 @@ pub async fn assets(Path(path): Path<String>) -> Response {
     quench_starter::http::routers::ui::serve_assets(&path, "dist/assets").await
 }
 
-pub fn render_page(status: http::StatusCode, content: Element, page_kind: UiPageKind) -> Response {
+pub fn render_page(
+    status: quench_http::http::StatusCode,
+    content: Element,
+    page_kind: UiPageKind,
+) -> Response {
     let html = match page_kind {
         UiPageKind::Auth => UI_SHELL_AUTH.page(content),
         UiPageKind::Home | UiPageKind::Admin | UiPageKind::Account => UI_SHELL.page(content),

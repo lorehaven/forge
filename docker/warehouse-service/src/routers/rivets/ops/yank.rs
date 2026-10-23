@@ -6,7 +6,7 @@ use crate::routers::rivets::ops::{disabled, error, not_found};
 use crate::routers::rivets::{valid_name, valid_version};
 use quench_db::prelude::{Crud, Db};
 use quench_http::prelude::{Inject, Path, Response, delete, http::StatusCode};
-use serde::Serialize;
+use quench_serde::Serialize;
 
 #[derive(Debug, Serialize)]
 pub struct OkResponse {
@@ -14,7 +14,7 @@ pub struct OkResponse {
 }
 
 #[delete("/api/v1/rivets/{name}/{version}/yank")]
-#[tracing::instrument]
+#[quench_log::instrument]
 pub async fn handle(
     Inject(db): Inject<Db>,
     Path((name, version)): Path<(String, String)>,

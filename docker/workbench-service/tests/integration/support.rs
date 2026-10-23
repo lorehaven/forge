@@ -70,6 +70,15 @@ pub async fn database() -> Option<(Db, MutexGuard<'static, ()>)> {
     .await
     .expect("seed the admin user");
 
+    // The API handlers fall back to "dev" as the actor when no claims are on the request (the tests
+    // mount the routes without `Auth`), so that name needs a row for the same foreign keys.
+    db.execute(
+        "INSERT INTO auth.users (username, password, roles) \
+         VALUES ('dev', 'x', '[]'::jsonb) ON CONFLICT DO NOTHING",
+    )
+    .await
+    .expect("seed the dev user");
+
     Some((db, guard))
 }
 

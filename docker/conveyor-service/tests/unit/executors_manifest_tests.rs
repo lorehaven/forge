@@ -310,7 +310,7 @@ fn secrets_go_in_a_secret_rather_than_the_pod_spec() {
         Some("s3cret-value")
     );
 
-    let rendered = serde_json::to_string(&built.job).expect("serialise");
+    let rendered = serde_json::to_string(&built.job).unwrap();
     assert!(
         !rendered.contains("s3cret-value"),
         "the value is in the pod spec: {rendered}"

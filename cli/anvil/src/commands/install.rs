@@ -1,8 +1,8 @@
 use crate::cargo_meta;
 use crate::config::Config;
 use crate::util::run_command;
-use anyhow::{Context, Result};
-use serde_json::Value;
+use quench_core::{Context, Result};
+use quench_serde::Value;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -57,7 +57,7 @@ pub fn resolve_workspace_install_targets(
     }
 
     if out.is_empty() {
-        anyhow::bail!("No workspace packages found to install (after filtering by config)");
+        quench_core::bail!("No workspace packages found to install (after filtering by config)");
     }
 
     Ok(out)

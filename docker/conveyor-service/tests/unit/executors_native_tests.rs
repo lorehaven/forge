@@ -53,8 +53,8 @@ async fn output(executor: &NativeExecutor, handle: &Handle) -> Vec<String> {
         .collect()
 }
 
-fn workspace() -> (tempfile::TempDir, Workspace) {
-    let dir = tempfile::tempdir().expect("temp dir");
+fn workspace() -> (quench_core::tmp::TempDir, Workspace) {
+    let dir = quench_core::tmp::TempDir::new().expect("temp dir");
     let workspace = Workspace::new(dir.path().to_path_buf());
     (dir, workspace)
 }
@@ -163,7 +163,7 @@ async fn log_sequence_numbers_are_contiguous_and_ordered() {
 #[tokio::test]
 async fn steps_run_in_the_checkout() {
     let executor = NativeExecutor::new();
-    let dir = tempfile::tempdir().expect("temp dir");
+    let dir = quench_core::tmp::TempDir::new().expect("temp dir");
     std::fs::write(dir.path().join("marker"), b"x").expect("write");
     let ws = Workspace::new(dir.path().to_path_buf());
 
@@ -199,7 +199,7 @@ async fn job_environment_reaches_the_step() {
 #[tokio::test]
 async fn steps_run_in_order() {
     let executor = NativeExecutor::new();
-    let dir = tempfile::tempdir().expect("temp dir");
+    let dir = quench_core::tmp::TempDir::new().expect("temp dir");
     let ws = Workspace::new(dir.path().to_path_buf());
 
     let handle = executor
@@ -244,7 +244,7 @@ async fn a_failing_step_fails_the_job_with_its_exit_code() {
 #[tokio::test]
 async fn a_failing_step_skips_the_ones_after_it() {
     let executor = NativeExecutor::new();
-    let dir = tempfile::tempdir().expect("temp dir");
+    let dir = quench_core::tmp::TempDir::new().expect("temp dir");
     let ws = Workspace::new(dir.path().to_path_buf());
 
     let handle = executor
@@ -316,7 +316,7 @@ async fn a_quoting_mistake_is_caught_before_anything_runs() {
     // Step two cannot be resolved; step one must not have run by the time the
     // caller learns about it.
     let executor = NativeExecutor::new();
-    let dir = tempfile::tempdir().expect("temp dir");
+    let dir = quench_core::tmp::TempDir::new().expect("temp dir");
     let ws = Workspace::new(dir.path().to_path_buf());
 
     let result = executor
@@ -343,7 +343,7 @@ async fn a_quoting_mistake_is_caught_before_anything_runs() {
 #[tokio::test]
 async fn cancelling_stops_a_running_job() {
     let executor = NativeExecutor::new();
-    let dir = tempfile::tempdir().expect("temp dir");
+    let dir = quench_core::tmp::TempDir::new().expect("temp dir");
     let ws = Workspace::new(dir.path().to_path_buf());
 
     let handle = executor

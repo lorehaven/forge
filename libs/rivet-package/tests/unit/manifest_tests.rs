@@ -54,7 +54,7 @@ fn validates_requirements() {
 fn package_requirement_without_a_constraint_matches_any_version() {
     let (name, req) = parse_package_requirement("redis").unwrap();
     assert_eq!(name, "redis");
-    assert!(req.matches(&semver::Version::new(9, 9, 9)));
+    assert!(req.matches(&quench_core::version::Version::new(9, 9, 9)));
 }
 
 #[test]
@@ -69,7 +69,8 @@ fn round_trips_through_toml() {
     let mut m = Manifest::new("forge", "0.4.0+b1");
     m.package.namespace = Some("forge".to_string());
     m.requires.riveter = Some(">=0.3".to_string());
-    m.meta.insert("gpu".to_string(), toml::Value::Boolean(true));
+    m.meta
+        .insert("gpu".to_string(), quench_serde::Value::Bool(true));
     let text = m.to_toml().unwrap();
     assert_eq!(Manifest::parse(&text).unwrap(), m);
 }

@@ -14,7 +14,7 @@ use quench_http::prelude::{
     Bytes, FromRequest, HttpError, Inject, Path, Query, Request, Response, get, http::StatusCode,
     post,
 };
-use serde::{Deserialize, Serialize};
+use quench_serde::{Deserialize, Serialize};
 
 /// `None` when there's no such repository, so "forbidden" can be told from "not found".
 async fn repo_access(
@@ -46,21 +46,21 @@ pub struct TriggerRun {
 #[derive(Debug)]
 pub struct MaybeTriggerRun(pub TriggerRun);
 
-#[async_trait::async_trait]
+#[quench_core::async_trait]
 impl FromRequest for MaybeTriggerRun {
     async fn from_request(req: &mut Request) -> Result<Self, HttpError> {
         let Bytes(bytes) = Bytes::from_request(req).await?;
         if bytes.is_empty() {
             return Ok(Self(TriggerRun::default()));
         }
-        serde_json::from_slice(&bytes)
+        quench_serde::json::from_slice(&bytes)
             .map(Self)
             .map_err(|e| quench_http::prelude::ExtractError::InvalidJson(e.to_string()).into())
     }
 }
 
 /// Why [`trigger_manual`] could not start a run - shared between the JSON API and the UI's "run now" button.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, quench_core::Error)]
 pub enum TriggerError {
     #[error("no such repository")]
     NotFound,
@@ -365,7 +365,7 @@ pub async fn cancel(
 }
 
 /// Why [`restart_run`] could not start a new run.
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, quench_core::Error)]
 pub enum RestartError {
     #[error("no such run")]
     NotFound,
@@ -453,14 +453,14 @@ async fn resolve_credential(db: &Db, repo: &Repo) -> Option<ResolvedCredential> 
     let key = match SecretKey::from_env_named(credential_store::KEY_VAR) {
         Ok(key) => key,
         Err(error) => {
-            tracing::warn!("git credentials are unavailable: {error}");
+            quench_log::warn!("git credentials are unavailable: {error}");
             None
         }
     };
     credential_store::resolve(db, key.as_ref(), repo)
         .await
         .unwrap_or_else(|error| {
-            tracing::warn!("could not resolve a credential for {}: {error}", repo.id);
+            quench_log::warn!("could not resolve a credential for {}: {error}", repo.id);
             None
         })
 }

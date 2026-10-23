@@ -1,11 +1,11 @@
 //! Rendering the small things: times, durations, sizes.
 
-use chrono::{DateTime, Utc};
+use quench_core::time::Time;
 
 /// Coarsest still-informative unit - exact times live in the title attribute instead.
 #[must_use]
-pub fn relative(when: DateTime<Utc>) -> String {
-    let seconds = (Utc::now() - when).num_seconds();
+pub fn relative(when: Time) -> String {
+    let seconds = (Time::now() - when).num_seconds();
 
     // A clock skew between replicas can put a timestamp slightly in the future;
     // "in -2s" would be worse than rounding it to now.
@@ -41,11 +41,11 @@ pub fn duration(seconds: i64) -> String {
 
 /// The gap between two instants, when both are known.
 #[must_use]
-pub fn elapsed(from: Option<DateTime<Utc>>, to: Option<DateTime<Utc>>) -> String {
+pub fn elapsed(from: Option<Time>, to: Option<Time>) -> String {
     match (from, to) {
         (Some(from), Some(to)) => duration((to - from).num_seconds()),
         // Started but not finished: how long it has been going.
-        (Some(from), None) => format!("{} so far", duration((Utc::now() - from).num_seconds())),
+        (Some(from), None) => format!("{} so far", duration((Time::now() - from).num_seconds())),
         _ => "-".to_string(),
     }
 }

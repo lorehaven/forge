@@ -14,7 +14,7 @@
 use crate::env::Workspace;
 use crate::image_updates::{ImageRef, match_image_line, parse_image_ref};
 use crate::render::{overlay_vars, parse_dotenv, referenced_vars, scan_overlay};
-use anyhow::{Context as _, Result, bail, ensure};
+use quench_core::{Context as _, Result, bail, ensure};
 use rivet_package::{Limits, Manifest, Package, PackageBuilder, PackageError};
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
@@ -195,11 +195,11 @@ pub fn pack(opts: &PackOptions<'_>, resolver: Option<&dyn DigestResolver>) -> Re
 /// version of every package each time.
 pub fn fingerprint(package: &Package) -> Result<String> {
     let mut manifest = package.manifest.clone();
-    if let Ok(mut version) = semver::Version::parse(&manifest.package.version) {
-        version.build = semver::BuildMetadata::EMPTY;
+    if let Ok(mut version) = quench_core::version::Version::parse(&manifest.package.version) {
+        version.build = String::new();
         manifest.package.version = version.to_string();
     }
-    let mut text = serde_json::to_string(&manifest).context("could not read the manifest")?;
+    let mut text = quench_serde::json::to_string(&manifest);
     for (path, bytes) in &package.files {
         if path == "SHA256SUMS" || path == rivet_package::MANIFEST_FILE {
             continue;
@@ -213,12 +213,12 @@ pub fn fingerprint(package: &Package) -> Result<String> {
 }
 
 /// A package error with the likely fix attached where there is one.
-fn explain(err: PackageError) -> anyhow::Error {
+fn explain(err: PackageError) -> quench_core::error::Error {
     match err {
         PackageError::Missing(file) if file == rivet_package::OVERLAY_FILE => {
-            anyhow::anyhow!("the overlay has no `overlay.yaml`")
+            quench_core::err!("the overlay has no `overlay.yaml`")
         }
-        other => anyhow::Error::new(other),
+        other => quench_core::error::Error::new(other),
     }
 }
 
@@ -249,7 +249,7 @@ const SHA_LEN: usize = 7;
 /// seven characters of `sha`. A suffix with no tokens passes through untouched.
 pub fn expand_suffix(
     template: &str,
-    now: chrono::DateTime<chrono::Utc>,
+    now: quench_core::time::Time,
     sha: Option<&str>,
 ) -> Result<String> {
     let mut out = String::new();
@@ -263,7 +263,7 @@ pub fn expand_suffix(
             .with_context(|| format!("unclosed `{{` in --version-suffix `{template}`"))?;
 
         match &after[..close] {
-            "timestamp" => out.push_str(&now.format("%Y%m%d%H%M%S").to_string()),
+            "timestamp" => out.push_str(&now.format("%Y%m%d%H%M%S").clone()),
             "sha" => {
                 let sha = sha.filter(|s| !s.is_empty()).context(
                     "--version-suffix asks for the commit, but none is known: set CONVEYOR_SHA \
@@ -283,7 +283,7 @@ pub fn expand_suffix(
 
 /// `version` with `+<suffix>` appended, refusing a version that already has build metadata.
 pub fn with_build_suffix(version: &str, suffix: &str) -> Result<String> {
-    let parsed = semver::Version::parse(version)
+    let parsed = quench_core::version::Version::parse(version)
         .with_context(|| format!("version `{version}` is not semver"))?;
     ensure!(
         parsed.build.is_empty(),
@@ -291,9 +291,12 @@ pub fn with_build_suffix(version: &str, suffix: &str) -> Result<String> {
          --version-suffix add it"
     );
     ensure!(!suffix.is_empty(), "--version-suffix cannot be empty");
-    semver::BuildMetadata::new(suffix).with_context(|| {
-        format!("`{suffix}` is not valid build metadata (dot-separated [0-9A-Za-z-])")
-    })?;
+    ensure!(
+        suffix.split('.').all(|part| {
+            !part.is_empty() && part.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+        }),
+        "`{suffix}` is not valid build metadata (dot-separated [0-9A-Za-z-])"
+    );
     Ok(format!("{version}+{suffix}"))
 }
 
@@ -407,12 +410,12 @@ fn check_includes(env: &str, includes: &[String], files: &BTreeMap<String, Vec<u
 /// a placeholder would be indistinguishable from a literal.
 #[must_use]
 pub fn literal_secret_values(rendered: &str) -> Vec<String> {
-    let Ok(overlay) = serde_norway::from_str::<serde_norway::Value>(rendered) else {
+    let Ok(overlay) = quench_serde::yaml::from_str::<quench_serde::Value>(rendered) else {
         return Vec::new();
     };
     let Some(resources) = overlay
         .get("resources")
-        .and_then(serde_norway::Value::as_sequence)
+        .and_then(quench_serde::Value::as_array)
     else {
         return Vec::new();
     };
@@ -421,15 +424,15 @@ pub fn literal_secret_values(rendered: &str) -> Vec<String> {
     for resource in resources {
         let kind = resource
             .get("kind")
-            .and_then(serde_norway::Value::as_str)
+            .and_then(quench_serde::Value::as_str)
             .unwrap_or_default();
         let name = resource
             .get("name")
-            .and_then(serde_norway::Value::as_str)
+            .and_then(quench_serde::Value::as_str)
             .unwrap_or("?");
 
         if kind.eq_ignore_ascii_case("raw") {
-            let text = serde_norway::to_string(resource).unwrap_or_default();
+            let text = quench_serde::yaml::to_string(resource).unwrap_or_default();
             if text
                 .lines()
                 .any(|line| line.trim().trim_start_matches("- ") == "kind: Secret")
@@ -445,10 +448,7 @@ pub fn literal_secret_values(rendered: &str) -> Vec<String> {
         }
 
         for field in ["data", "string_data", "stringData"] {
-            let Some(values) = resource
-                .get(field)
-                .and_then(serde_norway::Value::as_mapping)
-            else {
+            let Some(values) = resource.get(field).and_then(quench_serde::Value::as_object) else {
                 continue;
             };
             for (key, value) in values {
@@ -456,7 +456,7 @@ pub fn literal_secret_values(rendered: &str) -> Vec<String> {
                     .as_str()
                     .is_some_and(|text| !referenced_vars(text).is_empty());
                 if !placeholder {
-                    let key = key.as_str().unwrap_or("?");
+                    let key = key.as_str();
                     found.push(format!("secret/{name}: {key}"));
                 }
             }
@@ -471,11 +471,11 @@ fn check_deployments(manifest: &Manifest, rendered: &str) -> Result<()> {
     if manifest.deployments.is_empty() {
         return Ok(());
     }
-    let value: serde_norway::Value =
-        serde_norway::from_str(rendered).context("could not read the rendered overlay")?;
+    let value: quench_serde::Value =
+        quench_serde::yaml::from_str(rendered).context("could not read the rendered overlay")?;
     let declared: Vec<String> = value
         .get("resources")
-        .and_then(serde_norway::Value::as_sequence)
+        .and_then(quench_serde::Value::as_array)
         .into_iter()
         .flatten()
         .filter_map(|res| {
@@ -499,7 +499,7 @@ fn check_deployments(manifest: &Manifest, rendered: &str) -> Result<()> {
 
 /// The overlay's `namespace_name`, unless it is itself a `${VAR}` that only an install can resolve.
 fn declared_namespace(rendered: &str) -> Option<String> {
-    let value: serde_norway::Value = serde_norway::from_str(rendered).ok()?;
+    let value: quench_serde::Value = quench_serde::yaml::from_str(rendered).ok()?;
     let namespace = value.get("namespace_name")?.as_str()?.trim();
     (rivet_package::manifest::is_valid_name(namespace)).then(|| namespace.to_string())
 }
@@ -509,19 +509,17 @@ fn declared_namespace(rendered: &str) -> Option<String> {
 /// The same as `values.toml`, in the shape the rest of an estate's config is written in. Nested values are
 /// an error: a variable is one value.
 pub fn parse_values_yaml(text: &str) -> Result<BTreeMap<String, String>> {
-    let value: serde_norway::Value = serde_norway::from_str(text).context("not valid YAML")?;
+    let value: quench_serde::Value =
+        quench_serde::yaml::from_str(text).context("not valid YAML")?;
     let mapping = match value {
-        serde_norway::Value::Null => return Ok(BTreeMap::new()),
-        serde_norway::Value::Mapping(mapping) => mapping,
+        quench_serde::Value::Null => return Ok(BTreeMap::new()),
+        quench_serde::Value::Object(mapping) => mapping,
         _ => bail!("must be a mapping of NAME: value"),
     };
 
     let mut values = BTreeMap::new();
     for (key, value) in mapping {
-        let key = key
-            .as_str()
-            .with_context(|| "a variable name must be a string".to_string())?
-            .to_string();
+        let key = key.clone();
         ensure!(
             !key.is_empty()
                 && key
@@ -530,10 +528,12 @@ pub fn parse_values_yaml(text: &str) -> Result<BTreeMap<String, String>> {
             "`{key}` is not a usable variable name"
         );
         let text = match value {
-            serde_norway::Value::String(s) => s,
-            serde_norway::Value::Number(n) => n.to_string(),
-            serde_norway::Value::Bool(b) => b.to_string(),
-            serde_norway::Value::Null => String::new(),
+            quench_serde::Value::String(s) => s,
+            quench_serde::Value::Int(n) => n.to_string(),
+            quench_serde::Value::UInt(n) => n.to_string(),
+            quench_serde::Value::Float(n) => n.to_string(),
+            quench_serde::Value::Bool(b) => b.to_string(),
+            quench_serde::Value::Null => String::new(),
             _ => bail!("`{key}` must be a string, number or boolean, not a list or a mapping"),
         };
         values.insert(key, text);
@@ -572,7 +572,7 @@ pub fn secret_variables(
 
 /// `values.toml`: a flat table of defaults for the overlay's `${VAR}`s.
 pub fn parse_values(text: &str) -> Result<BTreeMap<String, String>> {
-    let table: toml::Table = toml::from_str(text)?;
+    let table: quench_serde::Map = quench_serde::toml::from_str(text)?;
     let mut values = BTreeMap::new();
 
     for (key, value) in table {
@@ -584,10 +584,11 @@ pub fn parse_values(text: &str) -> Result<BTreeMap<String, String>> {
             "`{key}` is not a usable variable name"
         );
         let text = match value {
-            toml::Value::String(s) => s,
-            toml::Value::Integer(i) => i.to_string(),
-            toml::Value::Float(f) => f.to_string(),
-            toml::Value::Boolean(b) => b.to_string(),
+            quench_serde::Value::String(s) => s,
+            quench_serde::Value::Int(i) => i.to_string(),
+            quench_serde::Value::UInt(i) => i.to_string(),
+            quench_serde::Value::Float(f) => f.to_string(),
+            quench_serde::Value::Bool(b) => b.to_string(),
             _ => bail!("`{key}` must be a string, number or boolean"),
         };
         values.insert(key, text);
@@ -707,7 +708,7 @@ fn ignore_output_dir(dir: &Path) -> Result<()> {
 /// it deletes the tree.
 #[derive(Debug)]
 pub struct Installation {
-    _scratch: tempfile::TempDir,
+    _scratch: quench_core::tmp::TempDir,
     /// The overlay name, which is the package name.
     pub env: String,
     /// What to hand to [`crate::env::with_workspace`] around the render and apply.
@@ -783,8 +784,8 @@ pub fn check_requirements(manifest: &Manifest, riveter_version: &str) -> Result<
     let mut notes = Vec::new();
 
     if let Some(requirement) = &manifest.requires.riveter {
-        let required = semver::VersionReq::parse(requirement)?;
-        let running = semver::Version::parse(riveter_version)?;
+        let required = quench_core::version::VersionReq::parse(requirement)?;
+        let running = quench_core::version::Version::parse(riveter_version)?;
         ensure!(
             required.matches(&running),
             "{} {} requires riveter {requirement}, but this is riveter {riveter_version}",
@@ -809,7 +810,8 @@ pub fn prepare_install<S: std::hash::BuildHasher>(
     vars: HashMap<String, String, S>,
     replicas: BTreeMap<String, u32>,
 ) -> Result<Installation> {
-    let scratch = tempfile::tempdir().context("failed to create a scratch directory")?;
+    let scratch =
+        quench_core::tmp::TempDir::new().context("failed to create a scratch directory")?;
     let env = package.manifest.package.name.clone();
 
     let overlays_root = scratch.path().join("overlays");

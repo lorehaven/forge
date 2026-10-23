@@ -15,7 +15,6 @@ use gatehouse::{Delivery, Notifier};
 use quench_auth::domain::auth::User;
 use quench_auth::prelude::UserDb;
 use quench_db::prelude::Db;
-use sqlx::Row;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -62,16 +61,20 @@ async fn previous_status(db: &Db, run: &Run) -> Result<Option<Status>, QueueErro
            AND status IN ('success', 'failed') \
          ORDER BY queued_at DESC LIMIT 1"
     );
-    let row = sqlx::query(sqlx::AssertSqlSafe(sql.as_str()))
-        .bind(&run.repo_id)
-        .bind(&run.git_ref)
-        .bind(&run.id)
-        .bind(run.queued_at)
-        .fetch_optional(pool)
+    let row = pool
+        .query_opt(
+            &sql,
+            &[
+                &run.repo_id as &dyn quench_pg::ToSql,
+                &run.git_ref,
+                &run.id,
+                &run.queued_at,
+            ],
+        )
         .await?;
 
     Ok(row
-        .map(|row| row.try_get::<String, _>("status"))
+        .map(|row| row.get::<String, _>("status"))
         .transpose()?
         .and_then(|raw| Status::parse(&raw)))
 }
@@ -117,7 +120,7 @@ pub async fn on_run_finished(
         return Ok(0);
     };
     let Some(url) = crate::scheduler::worker::run_url(&run.id) else {
-        tracing::warn!("CONVEYOR_PUBLIC_URL is not set: run notifications need a link to send");
+        quench_log::warn!("CONVEYOR_PUBLIC_URL is not set: run notifications need a link to send");
         return Ok(0);
     };
 
@@ -173,7 +176,7 @@ pub async fn deliver_due(db: &Db, notifier: &dyn Notifier) -> Result<usize, Queu
         match notifier.deliver(&message).await {
             Delivery::Done => outbox::complete(db, &message.id).await?,
             Delivery::Rejected(error) => {
-                tracing::error!(
+                quench_log::error!(
                     "gatehouse refused the {} notification for {}: {error}",
                     message.template,
                     message.username
@@ -181,7 +184,7 @@ pub async fn deliver_due(db: &Db, notifier: &dyn Notifier) -> Result<usize, Queu
                 outbox::give_up(db, &message.id, &error).await?;
             }
             Delivery::Retry(error) if message.attempts >= outbox::MAX_ATTEMPTS => {
-                tracing::error!(
+                quench_log::error!(
                     "giving up on the {} notification for {} after {} attempts: {error}",
                     message.template,
                     message.username,
@@ -190,7 +193,7 @@ pub async fn deliver_due(db: &Db, notifier: &dyn Notifier) -> Result<usize, Queu
                 outbox::give_up(db, &message.id, &error).await?;
             }
             Delivery::Retry(error) => {
-                tracing::warn!(
+                quench_log::warn!(
                     "the {} notification for {} will be retried: {error}",
                     message.template,
                     message.username
@@ -216,7 +219,7 @@ pub fn spawn_delivery(db: Db, notifier: Arc<dyn Notifier>) {
                 Ok(0) => tokio::time::sleep(IDLE_POLL).await,
                 Ok(_) => {}
                 Err(error) => {
-                    tracing::error!("could not deliver notifications: {error}");
+                    quench_log::error!("could not deliver notifications: {error}");
                     tokio::time::sleep(IDLE_POLL).await;
                 }
             }

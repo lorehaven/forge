@@ -4,7 +4,7 @@
 use crate::routers::crates::{crate_file_path, validate_crate_name, validate_version};
 use crate::routers::crates_storage_root;
 use quench_http::prelude::{Response, http::StatusCode, post};
-use serde::Serialize;
+use quench_serde::Serialize;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
@@ -23,7 +23,7 @@ pub async fn handle() -> Response {
         Ok(report) => Response::json(StatusCode::OK, &report)
             .unwrap_or_else(|_| Response::new(StatusCode::INTERNAL_SERVER_ERROR)),
         Err(e) => {
-            tracing::error!("crates GC failed: {e}");
+            quench_log::error!("crates GC failed: {e}");
             Response::new(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -88,7 +88,7 @@ pub async fn garbage_collect() -> std::io::Result<CratesGcReport> {
             if should_delete {
                 if tokio::fs::remove_file(&tarball).await.is_ok() {
                     report.deleted_crates += 1;
-                    tracing::debug!(
+                    quench_log::debug!(
                         "GC: deleted {crate_name}-{version}.crate (yanked={})",
                         yanked_versions.contains(&version)
                     );
@@ -109,7 +109,7 @@ pub async fn garbage_collect() -> std::io::Result<CratesGcReport> {
                 && tokio::fs::remove_file(&owners_file).await.is_ok()
             {
                 report.deleted_owner_files += 1;
-                tracing::debug!("GC: deleted orphaned owners.json for {crate_name}");
+                quench_log::debug!("GC: deleted orphaned owners.json for {crate_name}");
             }
             try_remove_empty_dir(&crate_dir, &mut report).await;
         }
@@ -146,12 +146,12 @@ async fn read_index_state(
         }
         lines.push(trimmed.to_string());
 
-        if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed)
+        if let Ok(v) = quench_serde::json::from_str::<quench_serde::Value>(trimmed)
             && let Some(vers) = v.get("vers").and_then(|x| x.as_str())
         {
             indexed.insert(vers.to_string());
             if v.get("yanked")
-                .and_then(serde_json::Value::as_bool)
+                .and_then(quench_serde::Value::as_bool)
                 .unwrap_or(false)
             {
                 yanked.insert(vers.to_string());
@@ -168,7 +168,7 @@ async fn repair_index(index_path: &Path, lines: &[String], crate_name: &str) -> 
     let mut kept_lines: Vec<&str> = Vec::new();
 
     for line in lines {
-        let keep = serde_json::from_str::<serde_json::Value>(line).map_or(true, |v| {
+        let keep = quench_serde::json::from_str::<quench_serde::Value>(line).map_or(true, |v| {
             v.get("vers").and_then(|x| x.as_str()).is_none_or(|vers| {
                 crate_file_path(crate_name, vers).is_some_and(|p| std::path::Path::new(&p).exists())
             })
@@ -178,14 +178,14 @@ async fn repair_index(index_path: &Path, lines: &[String], crate_name: &str) -> 
             kept_lines.push(line.as_str());
         } else {
             removed += 1;
-            tracing::debug!("GC: removing index entry for {crate_name} from {index_path:?}");
+            quench_log::debug!("GC: removing index entry for {crate_name} from {index_path:?}");
         }
     }
 
     if removed > 0 {
         let new_content = kept_lines.join("\n") + if kept_lines.is_empty() { "" } else { "\n" };
         if let Err(e) = tokio::fs::write(index_path, new_content.as_bytes()).await {
-            tracing::error!("GC: failed to rewrite index {index_path:?}: {e}");
+            quench_log::error!("GC: failed to rewrite index {index_path:?}: {e}");
         }
     }
 
@@ -201,7 +201,7 @@ async fn try_remove_empty_dir(dir: &Path, report: &mut CratesGcReport) {
         && tokio::fs::remove_dir(dir).await.is_ok()
     {
         report.removed_empty_dirs += 1;
-        tracing::debug!("GC: removed empty dir {dir:?}");
+        quench_log::debug!("GC: removed empty dir {dir:?}");
     }
 }
 

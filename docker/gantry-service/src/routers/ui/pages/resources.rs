@@ -9,8 +9,8 @@ use crate::routers::ui::common::{
 };
 use quench_auth::domain::jwt::JwtConfig;
 use quench_http::prelude::{Form, Inject, Path, Query, Response, get, http::StatusCode, post};
+use quench_serde::Deserialize;
 use quench_web::prelude::*;
-use serde::Deserialize;
 
 /// What a button posts to name a resource.
 #[derive(Deserialize)]

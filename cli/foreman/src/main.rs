@@ -1,9 +1,9 @@
-use anyhow::Result;
 use clap::Parser;
 use foreman::cli::{Cli, Command};
 use foreman::estate::Estate;
 use foreman::repl::Picker;
 use foreman::{commands, ui};
+use quench_core::Result;
 
 fn main() -> std::process::ExitCode {
     match run() {
@@ -11,7 +11,7 @@ fn main() -> std::process::ExitCode {
         Err(error) => {
             ui::error("error", error.to_string());
             // The cause chain is where the useful half of a config error lives.
-            for cause in error.chain().skip(1) {
+            for cause in error.chain().iter().skip(1) {
                 ui::error("", format!("  {cause}"));
             }
             std::process::ExitCode::FAILURE

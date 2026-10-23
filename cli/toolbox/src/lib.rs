@@ -1,12 +1,12 @@
-use anyhow::{Context, Result};
 use crossterm::event::KeyCode;
 use crossterm::style::Stylize;
+use quench_core::{Context, Result};
 use std::collections::HashMap;
 use std::process::Command;
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
-use semver::Version;
+use quench_core::version::Version;
 
 pub const REGISTRY_NAME: &str = "ennor";
 pub const REGISTRY_INDEX: &str = "sparse+https://ennor.ddns.net/index/";
@@ -305,7 +305,7 @@ pub fn finish_action(req: &ActionRequest, output: std::process::Output) -> Resul
         .find(|line| !line.trim().is_empty())
         .unwrap_or("cargo install failed");
 
-    anyhow::bail!("{}: {}", req.package, detail)
+    quench_core::bail!("{}: {}", req.package, detail)
 }
 
 pub fn spinner_frames() -> &'static [&'static str] {
@@ -406,7 +406,7 @@ pub fn fetch_latest_registry_version(package: &str) -> Result<Option<Version>> {
 pub fn parse_search_output(package: &str, output: std::process::Output) -> Result<Option<Version>> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        anyhow::bail!(
+        quench_core::bail!(
             "cargo search failed for package {package} (registry {REGISTRY_NAME}): {stderr}"
         );
     }
@@ -457,7 +457,7 @@ pub fn installed_versions() -> Result<HashMap<String, Version>> {
 pub fn parse_installed_output(output: std::process::Output) -> Result<HashMap<String, Version>> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        anyhow::bail!("cargo install --list failed: {stderr}");
+        quench_core::bail!("cargo install --list failed: {stderr}");
     }
 
     let stdout =

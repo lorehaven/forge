@@ -1,6 +1,6 @@
 use crate::support;
 
-use http::{Method, StatusCode};
+use quench_http::http::{Method, StatusCode};
 
 async fn app() -> (
     std::sync::Arc<dyn quench_http::endpoint::Endpoint>,

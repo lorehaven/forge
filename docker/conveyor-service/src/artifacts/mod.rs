@@ -3,15 +3,14 @@
 
 use crate::domain::Artifact;
 use crate::workspace::Workspace;
-use chrono::Utc;
-use sha2::{Digest, Sha256};
+use quench_core::time::Time;
+use quench_core::uuid::Uuid;
 use std::path::Path;
-use uuid::Uuid;
 
 /// Above this, a build wants a registry, not a file store held open by a worker.
 const MAX_BYTES: u64 = 512 * 1024 * 1024;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, quench_core::Error)]
 pub enum ArtifactError {
     #[error("`{path}` is outside the checkout")]
     Outside { path: String },
@@ -33,7 +32,7 @@ pub enum ArtifactError {
     Rejected { path: String, status: u16 },
 
     #[error("could not reach warehouse: {0}")]
-    Unreachable(#[from] reqwest::Error),
+    Unreachable(#[from] quench_client::transport::Error),
 }
 
 /// Where artifacts go.
@@ -42,32 +41,32 @@ pub struct WarehouseStore {
     base_url: String,
     storage: String,
     credentials: Option<(String, String)>,
-    http: reqwest::Client,
+    http: quench_client::transport::Client,
 }
 
 impl WarehouseStore {
     /// `None` when this deployment keeps no artifacts.
     #[must_use]
     pub fn from_env() -> Option<Self> {
-        let base_url = envmnt::get_or("WAREHOUSE_URL", "");
+        let base_url = quench_core::env::get_or("WAREHOUSE_URL", "");
         let base_url = base_url.trim().trim_end_matches('/');
         if base_url.is_empty() {
             return None;
         }
 
-        let username = envmnt::get_or("WAREHOUSE_TECH_USERNAME", "");
-        let password = envmnt::get_or("WAREHOUSE_TECH_PASSWORD", "");
+        let username = quench_core::env::get_or("WAREHOUSE_TECH_USERNAME", "");
+        let password = quench_core::env::get_or("WAREHOUSE_TECH_PASSWORD", "");
         let credentials =
             (!username.trim().is_empty()).then(|| (username.trim().to_string(), password));
 
         Some(Self {
             base_url: base_url.to_string(),
-            storage: envmnt::get_or("CONVEYOR_ARTIFACT_STORAGE", "artifacts"),
+            storage: quench_core::env::get_or("CONVEYOR_ARTIFACT_STORAGE", "artifacts"),
             credentials,
-            http: reqwest::Client::builder()
+            http: quench_client::transport::Client::builder()
                 .timeout(std::time::Duration::from_secs(120))
                 // Same allowance sage makes for switchboard's internal certs.
-                .danger_accept_invalid_certs(!envmnt::is_or("WAREHOUSE_TLS_VERIFY", true))
+                .danger_accept_invalid_certs(!quench_core::env::is_or("WAREHOUSE_TLS_VERIFY", true))
                 .build()
                 .unwrap_or_default(),
         })
@@ -83,7 +82,7 @@ impl WarehouseStore {
             "{}/api/v1/files/{}/file?path={}",
             self.base_url,
             self.storage,
-            urlencoding::encode(remote_path)
+            quench_serde::urlencoded::percent_encode(remote_path)
         );
 
         let mut request = self
@@ -182,13 +181,16 @@ async fn collect_one(
             source,
         })?;
 
-    let digest = format!("sha256:{}", hex::encode(Sha256::digest(&bytes)));
+    let digest = format!(
+        "sha256:{}",
+        quench_core::hex::encode(quench_crypto::hash::sha256(&bytes))
+    );
     let size = bytes.len();
     let name = file_name(&resolved, declared);
     let remote = WarehouseStore::remote_path(run_id, &name);
     let uri = store.upload(&remote, bytes).await?;
 
-    tracing::info!("kept {declared} ({size} bytes) as {remote}");
+    quench_log::info!("kept {declared} ({size} bytes) as {remote}");
 
     Ok(Some(Collected {
         artifact: Artifact {
@@ -200,7 +202,7 @@ async fn collect_one(
             version: None,
             uri,
             digest: Some(digest),
-            created_at: Utc::now(),
+            created_at: Time::now(),
         },
     }))
 }

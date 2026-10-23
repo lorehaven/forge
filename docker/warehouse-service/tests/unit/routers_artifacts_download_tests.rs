@@ -1,6 +1,6 @@
 use crate::support;
-use http::{Method, StatusCode};
 use quench_db::{Db, InMemoryDb};
+use quench_http::http::{Method, StatusCode};
 use warehouse_service::routers::artifacts;
 
 #[tokio::test]
@@ -25,9 +25,8 @@ async fn handle_reports_not_found_when_artifact_storage_is_disabled() {
 
 mod macos {
     use crate::support::WithArtifactStorageRoot;
-    use chrono::Utc;
-    use http::StatusCode;
-    use sqlx::types::Json;
+    use quench_core::time::Time;
+    use quench_http::http::StatusCode;
     use warehouse_service::domain::artifact::{ArtifactMetadata, ArtifactVersion, Platform};
     use warehouse_service::routers::artifacts::artifact_file_path;
     use warehouse_service::routers::artifacts::ops::download::{content_type_for, serve};
@@ -45,10 +44,10 @@ mod macos {
             size_bytes: 9,
             sha256: "deadbeef".to_string(),
             label: None,
-            metadata: Json(ArtifactMetadata::default()),
+            metadata: ArtifactMetadata::default(),
             uploaded_by: "dev".to_string(),
             yanked: false,
-            created_at: Utc::now(),
+            created_at: Time::now(),
         }
     }
 
@@ -75,7 +74,7 @@ mod macos {
             .unwrap();
         tokio::fs::write(&path, b"dmg-bytes").await.unwrap();
 
-        let resp = serve(&version).await.into_hyper();
+        let resp = serve(&version).await;
 
         assert_eq!(resp.status(), StatusCode::OK);
         assert_eq!(

@@ -3,14 +3,14 @@ use crate::domain::task::{self, NewTask, TaskUpdate};
 use crate::routers::api_error::{from_domain, json};
 use crate::routers::authz::can;
 use crate::routers::{OptionalClaims, actor};
-use chrono::{DateTime, Utc};
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::time::Time;
 use quench_db::prelude::Db;
 use quench_http::prelude::{
     Inject, Json, Path, Query, Response, delete, get, http::StatusCode, post, put,
 };
+use quench_serde::Deserialize;
 use quench_starter::http::domain::api_error::{ApiError, json_error};
-use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct TaskInput {
@@ -22,11 +22,11 @@ pub struct TaskInput {
     #[serde(default)]
     sort_order: i32,
     #[serde(default)]
-    due_at: Option<DateTime<Utc>>,
+    due_at: Option<Time>,
     #[serde(default)]
     due_all_day: bool,
     #[serde(default)]
-    remind_at: Option<DateTime<Utc>>,
+    remind_at: Option<Time>,
     #[serde(default)]
     label_ids: Vec<String>,
     #[serde(default)]
@@ -57,11 +57,11 @@ pub struct TaskUpdateInput {
     #[serde(default)]
     sort_order: i32,
     #[serde(default)]
-    due_at: Option<DateTime<Utc>>,
+    due_at: Option<Time>,
     #[serde(default)]
     due_all_day: bool,
     #[serde(default)]
-    remind_at: Option<DateTime<Utc>>,
+    remind_at: Option<Time>,
     #[serde(default)]
     label_ids: Vec<String>,
     #[serde(default)]
@@ -72,7 +72,7 @@ pub struct TaskUpdateInput {
 /// date because completing the task rolls that date forward - without one there is nothing to count from.
 fn check_recurrence(
     recurrence: Option<Recurrence>,
-    due_at: Option<DateTime<Utc>>,
+    due_at: Option<Time>,
 ) -> Result<Option<Recurrence>, &'static str> {
     let Some(recurrence) = recurrence else {
         return Ok(None);

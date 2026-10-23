@@ -80,7 +80,7 @@ async fn load_repo(db: &Db, owner: &str, name: &str) -> Result<Option<Repo>, Res
     repos::find_by_owner_name(db, owner, name)
         .await
         .map_err(|error| {
-            tracing::error!("could not read repository {owner}/{name}: {error}");
+            quench_log::error!("could not read repository {owner}/{name}: {error}");
             Response::text(StatusCode::SERVICE_UNAVAILABLE, error.to_string())
         })
 }
@@ -92,7 +92,7 @@ async fn load_summary(
     name: &str,
 ) -> Result<ScanSummary, Response> {
     crate::scan::latest(db, &repo.id).await.map_err(|error| {
-        tracing::error!("could not read scan summary for {owner}/{name}: {error}");
+        quench_log::error!("could not read scan summary for {owner}/{name}: {error}");
         Response::text(StatusCode::SERVICE_UNAVAILABLE, error.to_string())
     })
 }

@@ -7,11 +7,11 @@
 //! does, not just the parsers in isolation.
 
 use crate::support::{database, register_repo, skipped};
-use chrono::{Duration, Utc};
 use conveyor_service::domain::{Status, Trigger};
 use conveyor_service::executors::{LogChunk, StepState, Stream};
 use conveyor_service::scan;
 use conveyor_service::scheduler::queue::{self, NewRun};
+use quench_core::time::{Duration, Time};
 
 fn new_run(repo_id: &str, sha: &str) -> NewRun {
     NewRun {
@@ -28,7 +28,7 @@ fn new_run(repo_id: &str, sha: &str) -> NewRun {
 const SHA: &str = "cccccccccccccccccccccccccccccccccccccccc";
 
 /// The steps of one job that ran `anvil` lint, machete and audit, one after another from `t0`.
-fn anvil_steps(t0: chrono::DateTime<Utc>) -> Vec<StepState> {
+fn anvil_steps(t0: quench_core::time::Time) -> Vec<StepState> {
     vec![
         StepState {
             ordinal: 0,
@@ -65,7 +65,7 @@ fn anvil_steps(t0: chrono::DateTime<Utc>) -> Vec<StepState> {
 // now filters out (see `collect_job_checks`) - included here as
 // `Stream::Stderr` chunks to prove that filtering actually happens
 // rather than merely being untested.
-fn anvil_logs(t0: chrono::DateTime<Utc>) -> Vec<LogChunk> {
+fn anvil_logs(t0: quench_core::time::Time) -> Vec<LogChunk> {
     vec![
         chunk(
             0,
@@ -127,7 +127,7 @@ async fn summarises_lint_machete_and_audit_from_one_job() {
     .expect("create job");
     let job = &jobs[0];
 
-    let t0 = Utc::now();
+    let t0 = Time::now();
     let steps = anvil_steps(t0);
     queue::record_steps(&db, &job.id, &steps)
         .await
@@ -201,7 +201,7 @@ async fn a_run_with_no_quality_steps_has_an_empty_summary() {
     .await
     .expect("create job");
 
-    let t0 = Utc::now();
+    let t0 = Time::now();
     queue::record_steps(
         &db,
         &jobs[0].id,
@@ -224,7 +224,7 @@ async fn a_run_with_no_quality_steps_has_an_empty_summary() {
     assert!(summary.is_empty());
 }
 
-fn chunk(seq: u64, at: chrono::DateTime<Utc>, stream: Stream, line: &str) -> LogChunk {
+fn chunk(seq: u64, at: quench_core::time::Time, stream: Stream, line: &str) -> LogChunk {
     LogChunk {
         seq,
         stream,

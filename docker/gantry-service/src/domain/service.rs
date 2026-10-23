@@ -19,7 +19,7 @@ pub struct Gantry {
     wake: Notify,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, quench_core::Error)]
 pub enum SubmitError {
     #[error("{0}")]
     Invalid(String),

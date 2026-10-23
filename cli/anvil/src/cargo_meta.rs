@@ -13,8 +13,8 @@
 //! happens to double as a real path prefix, as it does for forge's own
 //! `docker/<service>/` layout but not every workspace's).
 
-use anyhow::{Context, Result};
-use serde_json::Value;
+use quench_core::{Context, Result};
+use quench_serde::Value;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -71,13 +71,13 @@ pub fn cargo_metadata() -> Result<Value> {
         .context("Failed to execute cargo metadata")?;
 
     if !output.status.success() {
-        anyhow::bail!(
+        quench_core::bail!(
             "cargo metadata failed: {}",
             String::from_utf8_lossy(&output.stderr).trim()
         );
     }
 
-    serde_json::from_slice(&output.stdout).context("Failed to parse cargo metadata")
+    quench_serde::json::from_slice(&output.stdout).context("Failed to parse cargo metadata")
 }
 
 pub fn workspace_root(metadata: &Value) -> Result<PathBuf> {

@@ -10,7 +10,7 @@ use quench_db::prelude::Db;
 use quench_http::prelude::{
     Inject, Json, Path, Response, delete, get, http::StatusCode, patch, post,
 };
-use serde::Deserialize;
+use quench_serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct RegisterRepo {

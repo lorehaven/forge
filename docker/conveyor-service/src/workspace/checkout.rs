@@ -7,7 +7,7 @@ use std::process::Stdio;
 use std::time::Duration;
 use tokio::process::Command;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, quench_core::Error)]
 pub enum CheckoutError {
     #[error("git is not on PATH: conveyor cannot check anything out without it")]
     GitMissing,
@@ -150,7 +150,7 @@ async fn fetch(root: &Path, request: &CheckoutRequest<'_>) -> Result<(), Checkou
         Ok(()) => Ok(()),
         Err(error @ (CheckoutError::Timeout { .. } | CheckoutError::Spawn(_))) => Err(error),
         Err(_) => {
-            tracing::debug!(
+            quench_log::debug!(
                 "server would not serve {} directly; fetching {} in full",
                 request.sha,
                 request.git_ref
@@ -170,8 +170,7 @@ async fn fetch(root: &Path, request: &CheckoutRequest<'_>) -> Result<(), Checkou
 /// `pub` so a test can check this without driving a real git server.
 #[must_use]
 pub fn basic_auth_header(username: &str, token: &str) -> String {
-    use base64::Engine;
-    let encoded = base64::engine::general_purpose::STANDARD.encode(format!("{username}:{token}"));
+    let encoded = quench_core::base64::STANDARD.encode(format!("{username}:{token}"));
     format!("Authorization: Basic {encoded}")
 }
 

@@ -344,13 +344,13 @@ async fn get_vllm_namespace_reflects_mock_and_native_management_modes() {
     // this deterministic under the default parallel test runner.
     use crate::env_support::env_lock;
     let _guard = env_lock().lock().await;
-    envmnt::set("VLLM_MANAGEMENT_MODE", "mock");
+    quench_core::env::set("VLLM_MANAGEMENT_MODE", "mock");
     assert_eq!(get_vllm_namespace(), "mock");
 
-    envmnt::set("VLLM_MANAGEMENT_MODE", "native");
+    quench_core::env::set("VLLM_MANAGEMENT_MODE", "native");
     assert_eq!(get_vllm_namespace(), "native");
 
-    envmnt::remove("VLLM_MANAGEMENT_MODE");
+    quench_core::env::remove("VLLM_MANAGEMENT_MODE");
 }
 
 // ---------------------------------------------------------------------------
@@ -418,14 +418,13 @@ async fn ensure_store() {
 }
 
 async fn body_text(resp: quench_http::response::Response) -> String {
-    use http_body_util::BodyExt;
     let collected = resp
-        .into_hyper()
-        .into_body()
-        .collect()
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
         .await
         .expect("body collects");
-    String::from_utf8(collected.to_bytes().to_vec()).expect("utf8")
+    String::from_utf8(collected.to_vec()).expect("utf8")
 }
 
 #[tokio::test]

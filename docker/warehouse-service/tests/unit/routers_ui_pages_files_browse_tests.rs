@@ -1,19 +1,23 @@
 use crate::support;
 
-use http::{Method, StatusCode};
-use http_body_util::BodyExt;
 use quench_auth::domain::jwt::JwtConfig;
 use quench_db::InMemoryDb;
 use quench_db::prelude::Db;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{Method, StatusCode};
 use warehouse_service::routers::ui::pages::files::browse::{
     Access, BrowseFile, BrowseView, PreviewKind, Selection, TreeNode, build_tree, preview_kind,
     render_browse_page,
 };
 
 async fn body_html(resp: quench_http::response::Response) -> String {
-    let collected = resp.into_hyper().into_body().collect().await.unwrap();
-    String::from_utf8(collected.to_bytes().to_vec()).unwrap()
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .unwrap();
+    String::from_utf8(collected.to_vec()).unwrap()
 }
 
 fn jwt_config(auth_enabled: bool) -> JwtConfig {

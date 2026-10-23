@@ -1,6 +1,6 @@
 use crate::support;
 
-use http::{Method, StatusCode};
+use quench_http::http::{Method, StatusCode};
 use warehouse_service::routers::docker::blob::retrieve::{maybe_redirect, parse_range};
 
 const DIGEST: &str = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
@@ -57,7 +57,7 @@ fn maybe_redirect_is_none_when_the_flag_is_unset_or_false() {
     let _guard = support::redirect_env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::remove("ENABLE_REDIRECT");
+    quench_core::env::remove("ENABLE_REDIRECT");
     assert!(maybe_redirect(DIGEST).is_none());
 }
 
@@ -66,13 +66,13 @@ fn maybe_redirect_points_at_the_configured_backend_when_enabled() {
     let _guard = support::redirect_env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    envmnt::set("ENABLE_REDIRECT", "true");
-    envmnt::set("BLOB_REDIRECT_BASE", "https://cdn.example.com");
+    quench_core::env::set("ENABLE_REDIRECT", "true");
+    quench_core::env::set("BLOB_REDIRECT_BASE", "https://cdn.example.com");
     let resp = maybe_redirect(DIGEST).expect("redirect");
     assert_eq!(resp.status(), StatusCode::TEMPORARY_REDIRECT);
     let location = resp
-        .into_hyper()
-        .headers()
+        .into_inner()
+        .headers
         .get("location")
         .unwrap()
         .to_str()
@@ -82,8 +82,8 @@ fn maybe_redirect_points_at_the_configured_backend_when_enabled() {
         location,
         "https://cdn.example.com/blobs/sha256/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     );
-    envmnt::remove("ENABLE_REDIRECT");
-    envmnt::remove("BLOB_REDIRECT_BASE");
+    quench_core::env::remove("ENABLE_REDIRECT");
+    quench_core::env::remove("BLOB_REDIRECT_BASE");
 }
 
 // -----------------------------------------------------------------
@@ -192,7 +192,6 @@ async fn handle_reports_range_not_satisfiable_for_a_bogus_range() {
 
 #[tokio::test]
 async fn handle_streams_a_large_full_blob_across_many_frames() {
-    use http_body_util::BodyExt;
     let storage = support::WithDockerStorageRoot::new();
     // Well past ReaderStream's frame size, so the body is delivered in pieces.
     let blob: Vec<u8> = (0..(512 * 1024 + 3))
@@ -211,12 +210,12 @@ async fn handle_streams_a_large_full_blob_across_many_frames() {
     assert_eq!(resp.status(), StatusCode::OK);
     // Binary content, so read headers+body from one `into_hyper()` call rather
     // than `support::parts` (which lossily re-decodes the body as UTF-8 text).
-    let (parts, body) = resp.into_hyper().into_parts();
+    let parts = resp.into_inner();
     assert_eq!(
         parts.headers.get("content-length").unwrap(),
         blob.len().to_string().as_str()
     );
-    let body = body.collect().await.expect("body").to_bytes();
+    let body = parts.body.collect_limited(usize::MAX).await.expect("body");
     assert_eq!(&body[..], &blob[..]);
 }
 

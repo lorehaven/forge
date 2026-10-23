@@ -8,14 +8,13 @@
 //! its body (loading projects/conversations/messages and rendering).
 
 use crate::env_support::env_lock;
-use bytes::Bytes;
-use http::{HeaderMap, Method, StatusCode, Uri};
-use http_body_util::BodyExt;
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::bytes::Bytes;
 use quench_db::InMemoryDb;
 use quench_db::prelude::{Crud, Db};
 use quench_http::di::ContainerBuilder;
 use quench_http::endpoint::Endpoint;
+use quench_http::http::{HeaderMap, Method, StatusCode, Uri};
 use quench_http::request::Request;
 use sage_service::clients::switchboard::SwitchboardClient;
 use sage_service::domain::models::{Conversation, Message, Project};
@@ -43,33 +42,37 @@ fn sage_config() -> sage_service::config::SageConfig {
 
 fn chat_state() -> ChatState {
     ChatState {
-        pending_messages: dashmap::DashMap::new(),
+        pending_messages: quench_core::map::ShardedMap::new(),
     }
 }
 
 /// A `SwitchboardClient` whose `get_vllm_instances()` succeeds against a
 /// mocked token + API endpoint, and nothing else registered - only
 /// `/api/v1/vllm/instances` is called by `home`'s happy path.
-async fn switchboard_returning(instances: serde_json::Value) -> SwitchboardClient {
+async fn switchboard_returning(instances: quench_serde::Value) -> SwitchboardClient {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/api/v1/token"))
-        .respond_with(
-            ResponseTemplate::new(200).set_body_json(
-                serde_json::json!({"access_token": "test-token", "expires_in": 3600}),
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(
+                &(quench_serde::json!({"access_token": "test-token", "expires_in": 3600})),
             ),
-        )
+            "application/json",
+        ))
         .mount(&server)
         .await;
     Mock::given(method("GET"))
         .and(path("/api/v1/vllm/instances"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(instances))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            quench_serde::json::to_string(&(instances)),
+            "application/json",
+        ))
         .mount(&server)
         .await;
 
-    envmnt::set("SWITCHBOARD_URL", server.uri());
-    envmnt::set("GATEHOUSE_URL", server.uri());
-    envmnt::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret"); // Leaked deliberately: the client only holds the URL it read at
+    quench_core::env::set("SWITCHBOARD_URL", server.uri());
+    quench_core::env::set("GATEHOUSE_URL", server.uri());
+    quench_core::env::set("CLIENT_SECRET_SAGE_SWITCHBOARD", "test-secret"); // Leaked deliberately: the client only holds the URL it read at
     // construction time, and the mock server must outlive every request
     // the handler makes against it during the test.
     Box::leak(Box::new(server));
@@ -108,8 +111,13 @@ fn req(path: &str, container: &Arc<quench_http::di::Container>) -> Request {
 }
 
 async fn body_text(resp: quench_http::response::Response) -> String {
-    let collected = resp.into_hyper().into_body().collect().await.expect("body");
-    String::from_utf8_lossy(&collected.to_bytes()).into_owned()
+    let collected = resp
+        .into_inner()
+        .body
+        .collect_limited(usize::MAX)
+        .await
+        .expect("body");
+    String::from_utf8_lossy(&collected).into_owned()
 }
 
 #[allow(clippy::await_holding_lock)] // single-threaded test, held deliberately for env-var safety across the whole call
@@ -118,7 +126,7 @@ async fn home_redirects_to_login_when_unauthenticated() {
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let switchboard = switchboard_returning(serde_json::json!([])).await;
+    let switchboard = switchboard_returning(quench_serde::json!([])).await;
     let mut config = JwtConfig::for_tests();
     config.auth_enabled = true;
     let (app, container) = app(config, db(), switchboard).await;
@@ -133,7 +141,7 @@ async fn home_renders_the_page_with_no_conversations() {
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let switchboard = switchboard_returning(serde_json::json!([])).await;
+    let switchboard = switchboard_returning(quench_serde::json!([])).await;
     let (app, container) = app(JwtConfig::for_tests(), db(), switchboard).await;
 
     let resp = app.call(req("/ui/home", &container)).await;
@@ -146,7 +154,7 @@ async fn home_slash_renders_the_page_too() {
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let switchboard = switchboard_returning(serde_json::json!([])).await;
+    let switchboard = switchboard_returning(quench_serde::json!([])).await;
     let (app, container) = app(JwtConfig::for_tests(), db(), switchboard).await;
 
     let resp = app.call(req("/ui/home/", &container)).await;
@@ -159,7 +167,7 @@ async fn home_lists_only_the_callers_own_projects_and_conversations() {
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let switchboard = switchboard_returning(serde_json::json!([])).await;
+    let switchboard = switchboard_returning(quench_serde::json!([])).await;
     let db = db();
     db.repository::<Project>()
         .create(&Project {
@@ -211,7 +219,7 @@ async fn home_loads_the_active_conversations_message_history() {
     let _guard = env_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let switchboard = switchboard_returning(serde_json::json!([])).await;
+    let switchboard = switchboard_returning(quench_serde::json!([])).await;
     let db = db();
     db.repository::<Conversation>()
         .create(&Conversation {

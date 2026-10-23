@@ -8,8 +8,8 @@
 //! resolved by hand the same way every other path in this crate comes from
 //! `envmnt`/`std::env`.
 
-use anyhow::{Context, Result};
-use serde::Deserialize;
+use quench_core::{Context, Result};
+use quench_serde::Deserialize;
 use std::path::PathBuf;
 
 #[derive(Debug, Default, Deserialize)]
@@ -40,7 +40,7 @@ impl FileConfig {
             }
         };
 
-        toml::from_str(&contents)
+        quench_serde::toml::from_str(&contents)
             .with_context(|| format!("failed to parse {} as TOML", path.display()))
     }
 }

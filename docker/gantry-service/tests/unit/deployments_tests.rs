@@ -8,7 +8,7 @@ use gantry_service::domain::registry::MemoryRegistry;
 use gantry_service::domain::service::{Gantry, SubmitError};
 use gantry_service::domain::settings::Settings;
 use gantry_service::domain::steps::{Effect, Plan, Step};
-use serde_json::json;
+use quench_serde::json;
 use std::sync::Arc;
 
 struct Rig {

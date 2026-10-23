@@ -1,8 +1,8 @@
 //! A repository conveyor is willing to build. Registration is explicit - a repo must be added
 //! here before a webhook delivery for it is worth verifying.
 
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use quench_core::time::Time;
+use quench_serde::{Deserialize, Serialize};
 use std::fmt;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -55,8 +55,8 @@ pub struct Repo {
     pub project_id: String,
     /// A disabled repo keeps its history and stops accepting triggers.
     pub enabled: bool,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: Time,
+    pub updated_at: Time,
 }
 
 impl Repo {

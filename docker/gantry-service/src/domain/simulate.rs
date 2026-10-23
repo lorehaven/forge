@@ -12,7 +12,7 @@ use crate::domain::registry::Registry;
 use crate::domain::resources::InventoryItem;
 use crate::domain::runner::RESULT_MARKER;
 use crate::domain::steps::Step;
-use async_trait::async_trait;
+use quench_core::async_trait;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::sync::{Arc, Mutex};
@@ -203,7 +203,7 @@ impl SimulatedExecutor {
                 let _ = writeln!(
                     log,
                     "riveter-inventory: {}",
-                    serde_json::to_string(&items).unwrap_or_default()
+                    quench_serde::json::to_string(&items)
                 );
             }
             Step::Scale {
@@ -271,7 +271,7 @@ impl SimulatedExecutor {
                 let _ = writeln!(
                     log,
                     "riveter-inventory: {}",
-                    serde_json::to_string(&items).unwrap_or_default()
+                    quench_serde::json::to_string(&items)
                 );
             }
         }

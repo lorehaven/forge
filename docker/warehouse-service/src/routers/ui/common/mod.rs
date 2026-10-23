@@ -1,6 +1,6 @@
-use async_trait::async_trait;
 use forge_ui::{NavItem, NavSection, ShellConfig, UiShell};
 use quench_auth::domain::jwt::JwtConfig;
+use quench_core::async_trait;
 use quench_http::prelude::{
     FromRequest, HttpError, Path, Request, Response, get, http::StatusCode,
 };

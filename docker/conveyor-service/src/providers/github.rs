@@ -4,10 +4,10 @@ use crate::domain::{Repo, Trigger};
 use crate::providers::{
     CommitStatusReport, GitProvider, ProviderError, TriggerEvent, header, verify_sha256_signature,
 };
-use async_trait::async_trait;
-use http::HeaderMap;
-use serde::Deserialize;
-use serde_json::json;
+use quench_core::async_trait;
+use quench_http::http::HeaderMap;
+use quench_serde::Deserialize;
+use quench_serde::json;
 
 const SIGNATURE_HEADER: &str = "x-hub-signature-256";
 const EVENT_HEADER: &str = "x-github-event";
@@ -21,16 +21,17 @@ pub struct GitHubProvider {
     api_base: String,
     /// A token with `repo:status`; without it conveyor still builds, just can't report.
     token: Option<String>,
-    http: reqwest::Client,
+    http: quench_client::transport::Client,
 }
 
 impl GitHubProvider {
+    #[must_use]
     pub fn from_env() -> Self {
-        let token = envmnt::get_or("CONVEYOR_GITHUB_TOKEN", "");
+        let token = quench_core::env::get_or("CONVEYOR_GITHUB_TOKEN", "");
         let token = (!token.trim().is_empty()).then(|| token.trim().to_string());
 
         if token.is_none() {
-            tracing::info!(
+            quench_log::info!(
                 "CONVEYOR_GITHUB_TOKEN is not set: conveyor will build GitHub \
                  repositories but will not report statuses back"
             );
@@ -38,11 +39,11 @@ impl GitHubProvider {
 
         Self {
             // Overridable for GitHub Enterprise's own host.
-            api_base: envmnt::get_or("CONVEYOR_GITHUB_API", "https://api.github.com")
+            api_base: quench_core::env::get_or("CONVEYOR_GITHUB_API", "https://api.github.com")
                 .trim_end_matches('/')
                 .to_string(),
             token,
-            http: reqwest::Client::builder()
+            http: quench_client::transport::Client::builder()
                 .timeout(std::time::Duration::from_secs(15))
                 .user_agent("conveyor")
                 .build()
@@ -77,7 +78,7 @@ impl GitProvider for GitHubProvider {
             "pull_request" => parse_pull_request(body, delivery),
             // `ping` (hook creation) and everything else conveyor has no use for; not an error.
             other => {
-                tracing::debug!("ignoring GitHub event {other}");
+                quench_log::debug!("ignoring GitHub event {other}");
                 Ok(None)
             }
         }
@@ -141,7 +142,7 @@ fn parse_push(body: &[u8], delivery: String) -> Result<Option<TriggerEvent>, Pro
 
     // A deleted branch has nothing to build; its `after` is all zeros.
     if push.deleted || push.after == ZERO_SHA {
-        tracing::debug!("ignoring the deletion of {}", push.git_ref);
+        quench_log::debug!("ignoring the deletion of {}", push.git_ref);
         return Ok(None);
     }
 
@@ -171,7 +172,7 @@ fn parse_pull_request(
         event.action.as_str(),
         "opened" | "reopened" | "synchronize" | "ready_for_review"
     ) {
-        tracing::debug!("ignoring pull_request action {}", event.action);
+        quench_log::debug!("ignoring pull_request action {}", event.action);
         return Ok(None);
     }
 
@@ -204,8 +205,8 @@ fn parse_pull_request(
     }))
 }
 
-fn decode<T: for<'de> Deserialize<'de>>(body: &[u8]) -> Result<T, ProviderError> {
-    serde_json::from_slice(body).map_err(|error| ProviderError::Malformed {
+fn decode<T: quench_serde::DeserializeOwned>(body: &[u8]) -> Result<T, ProviderError> {
+    quench_serde::json::from_slice(body).map_err(|error| ProviderError::Malformed {
         provider: "github",
         reason: error.to_string(),
     })

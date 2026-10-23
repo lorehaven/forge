@@ -1,10 +1,9 @@
 use crate::routers::docker_storage_root;
-use async_trait::async_trait;
-use futures_util::StreamExt;
-use http_body_util::BodyExt;
+use quench_core::async_trait;
+use quench_core::stream::StreamExt;
 use quench_http::body::InboundBody;
 use quench_http::prelude::{FromRequest, HttpError, Request};
-use serde::Deserialize;
+use quench_serde::Deserialize;
 use std::path::{Component, Path, PathBuf};
 use tokio::io::AsyncWriteExt;
 
@@ -57,7 +56,7 @@ pub async fn append_body_to_upload(
         .map_err(|_| AppendError::Write)?;
 
     let mut written: u64 = 0;
-    let mut stream = body.into_data_stream();
+    let mut stream = body.into_body();
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|_| AppendError::Read)?;
 

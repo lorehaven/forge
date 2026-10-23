@@ -1376,16 +1376,9 @@ async fn body_reports_error(world: &mut ForgeWorld, expected: String) {
 /// the same RFC 6238 parameters `docker/gatehouse-service/src/mfa.rs` builds
 /// its own `Totp` with, so a code computed here is one gatehouse will accept.
 fn totp_code(secret: &str) -> String {
-    let secret = totp_rs::Secret::try_from_base32(secret).expect("valid base32 MFA secret");
-    let totp = totp_rs::Builder::new()
-        .with_algorithm(totp_rs::Algorithm::SHA1)
-        .with_digits(6)
-        .with_skew(1)
-        .with_step_duration(30)
-        .with_secret(secret)
-        .build()
-        .expect("build TOTP from secret");
-    totp.generate_current().to_string()
+    quench_crypto::totp::Totp::from_base32(secret)
+        .expect("valid base32 MFA secret")
+        .code_now()
 }
 
 /// Pulls a form field's `value="..."` out of rendered HTML - good enough for

@@ -19,14 +19,10 @@ readme = "README.md"
 
 [workspace.dependencies]
 age = { version = "0.12", default-features = false }
-anyhow = { version = "1.0" }
-async-stream = { version = "0.3" }
 assert_cmd = { version = "2.2" }
-async-trait = { version = "0.1" }
 axmldecoder = { version = "0.5" }
 base64 = { version = "0.23" }
 bytes = { version = "1.12" }
-chacha20poly1305 = { version = "0.11" }
 chrono-tz = { version = "0.10" }
 chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.6", features = ["derive"] }
@@ -36,9 +32,7 @@ cucumber = { version = "0.23" }
 csv = { version = "1.4" }
 gatehouse-auth = { path = "libs/gatehouse-auth", registry = "ennor", version = "0.1.0" }
 forge-ui = { path = "libs/forge-ui", version = "0.1.0" }
-dashmap = { version = "6.2" }
 dotenvy = { version = "0.15" }
-envmnt = { version = "0.10" }
 futures-util = { version = "0.3" }
 gguf = { version = "0.1" }
 grep = { version = "0.4" }
@@ -56,19 +50,24 @@ minijinja = { version = "3.0", features = ["serde"] }
 pdf-extract = { version = "0.12" }
 predicates = { version = "3.1" }
 pulldown-cmark = { version = "0.13" }
-qrcode = { version = "0.14", default-features = false, features = ["svg"] }
-quench-auth = { registry = "ennor", version = "0.4.5" }
-quench-cache = { registry = "ennor", version = "0.1.11" }
-quench-cli = { registry = "ennor", version = "0.1.6" }
-quench-client = { registry = "ennor", version = "0.2.6" }
-quench-config = { registry = "ennor", version = "0.1.5" }
-quench-db = { registry = "ennor", version = "0.2.4" }
-quench-http = { registry = "ennor", version = "0.1.4" }
-quench-log = { registry = "ennor", version = "0.1.1" }
-quench-mail = { registry = "ennor", version = "0.1.2" }
-quench-starter = { registry = "ennor", version = "0.4.6" }
-quench-web = { registry = "ennor", version = "0.1.15" }
-quench-web-components = { registry = "ennor", version = "0.1.10" }
+quench-auth = { registry = "ennor", version = "0.4.8" }
+quench-cache = { registry = "ennor", version = "0.1.14" }
+quench-cli = { registry = "ennor", version = "0.1.9" }
+quench-client = { registry = "ennor", version = "0.2.9" }
+quench-config = { registry = "ennor", version = "0.1.8" }
+quench-core = { registry = "ennor", version = "0.1.2" }
+quench-crypto = { registry = "ennor", version = "0.1.2" }
+quench-db = { registry = "ennor", version = "0.2.7" }
+quench-http = { registry = "ennor", version = "0.1.7" }
+quench-log = { registry = "ennor", version = "0.1.4" }
+quench-mail = { registry = "ennor", version = "0.1.5" }
+quench-pg = { registry = "ennor", version = "0.1.2" }
+quench-proto = { registry = "ennor", version = "0.1.2" }
+quench-qr = { registry = "ennor", version = "0.1.0" }
+quench-serde = { registry = "ennor", version = "0.1.2" }
+quench-starter = { registry = "ennor", version = "0.4.9" }
+quench-web = { registry = "ennor", version = "0.1.18" }
+quench-web-components = { registry = "ennor", version = "0.1.13" }
 rpassword = { version = "7" }
 regex = { version = "1.13" }
 reqwest = { version = "0.13", default-features = false, features = [
@@ -81,24 +80,13 @@ reqwest = { version = "0.13", default-features = false, features = [
 rivet-package = { path = "libs/rivet-package", registry = "ennor", version = "0.1.0" }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 scraper = { version = "0.27" }
-semver = { version = "1.0" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0" }
-serde_urlencoded = { version = "0.7" }
-serde_norway = { version = "0.9" }
 shlex = { version = "2.0" }
 sha2 = { version = "0.11" }
-sqlx = { version = "0.9", features = ["runtime-tokio", "tls-rustls-ring", "postgres", "macros", "json", "chrono", "uuid"] }
 tar = { version = "0.4", default-features = false }
-tempfile = { version = "3.27" }
-thiserror = { version = "2.0" }
 tokio = { version = "1.54", features = ["full"] }
-tokio-stream = { version = "0.1", features = ["sync"] }
-tokio-util = { version = "0.7", features = ["io"] }
-toml = { version = "1.1" }
 toml_edit = { version = "0.25" }
-totp-rs = { version = "6.0", default-features = false, features = ["otpauth", "gen_secret", "std"] }
-tracing = { version = "0.1" }
 uuid = { version = "1.28", features = ["v4"] }
 urlencoding = { version = "2.1" }
 walkdir = { version = "2.5" }
