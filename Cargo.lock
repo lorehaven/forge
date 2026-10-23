@@ -744,7 +744,7 @@ dependencies = [
 
 [[package]]
 name = "conveyor-service"
-version = "0.6.21"
+version = "0.6.22"
 dependencies = [
  "conveyor-pipeline",
  "forge-ui",
@@ -763,6 +763,7 @@ dependencies = [
  "quench-starter",
  "quench-web",
  "quench-web-components",
+ "rustls",
  "serde_json",
  "tokio",
  "which",
@@ -5347,7 +5348,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "switchboard-service"
-version = "0.5.22"
+version = "0.5.23"
 dependencies = [
  "forge-ui",
  "gguf",
@@ -5363,6 +5364,7 @@ dependencies = [
  "quench-web",
  "quench-web-components",
  "regex",
+ "rustls",
  "serde_json",
  "tokio",
  "walkdir",

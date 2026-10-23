@@ -1,6 +1,6 @@
 [package]
 name = "switchboard-service"
-version = "0.5.22"
+version = "0.5.23"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Switchboard - dashboard/management service"
@@ -37,6 +37,7 @@ quench-starter = { workspace = true }
 quench-web = { workspace = true }
 quench-web-components = { workspace = true }
 regex = { workspace = true }
+rustls = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 walkdir = { workspace = true }

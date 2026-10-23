@@ -197,6 +197,9 @@ pub struct KubernetesVllmEngine {
 
 impl KubernetesVllmEngine {
     pub async fn new() -> Result<Self, String> {
+        // kube builds its TLS stack on rustls, which wants a crypto provider chosen once per process;
+        // nothing else in the service installs one.
+        let _ = rustls::crypto::ring::default_provider().install_default();
         let client = Client::try_default()
             .await
             .map_err(|e| format!("Failed to create kube client: {e}"))?;

@@ -45,6 +45,9 @@ pub struct KubernetesExecutor {
 impl KubernetesExecutor {
     /// Uses the in-cluster service account, or a kubeconfig outside one.
     pub async fn connect() -> Result<Self, String> {
+        // kube builds its TLS stack on rustls, which wants a crypto provider chosen once per process;
+        // nothing else in the service installs one.
+        let _ = rustls::crypto::ring::default_provider().install_default();
         let client = Client::try_default()
             .await
             .map_err(|error| format!("could not reach the cluster: {error}"))?;

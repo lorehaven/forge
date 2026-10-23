@@ -1,6 +1,6 @@
 [package]
 name = "conveyor-service"
-version = "0.6.21"
+version = "0.6.22"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Conveyor - the Forge CI/CD service: webhooks, pipelines and runs"
@@ -40,6 +40,7 @@ quench-http = { workspace = true }
 quench-starter = { workspace = true }
 quench-web = { workspace = true }
 quench-web-components = { workspace = true }
+rustls = { workspace = true }
 tokio = { workspace = true }
 which = { workspace = true }
 
