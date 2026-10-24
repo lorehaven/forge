@@ -22,6 +22,18 @@ const DEFAULT_IMAGE: &str = "alpine:3.22";
 /// Printed to stderr (not stdout, or a step piping its own stdout would swallow it) before each step.
 pub const STEP_MARKER: &str = "##conveyor-step:";
 
+/// Starts a line of a file the job hands back.
+///
+/// The line is `<marker><path>\t<base64>`, as many lines as the file needs. Stdout, since stderr is where the
+/// step markers are; consumed by the executor, never shown in the log.
+pub const FILE_MARKER: &str = "##conveyor-file:";
+
+/// Bigger files are not handed back: they travel through the log stream, which is not a file transfer.
+pub const MAX_EXPORT_BYTES: usize = 24 * 1024 * 1024;
+
+/// Characters of base64 per line, so no log line is unreasonably long.
+const EXPORT_LINE: usize = 4096;
+
 /// Everything a job needs in the cluster.
 #[derive(Debug)]
 pub struct Manifest {
@@ -71,7 +83,37 @@ pub fn labels(spec: &JobSpec, name: &str) -> BTreeMap<String, String> {
 /// `set -e` is deliberately absent - each step's failure is handled explicitly so its own exit code comes back.
 #[must_use]
 pub fn script(commands: &[Vec<String>]) -> String {
+    script_with_exports(commands, &[])
+}
+
+/// [`script`] that also prints the `exports` that exist as [`FILE_MARKER`] lines, however it ends.
+///
+/// A failed step included. The pod's checkout is not conveyor's, so this is how a report or an artifact leaves it.
+#[must_use]
+pub fn script_with_exports(commands: &[Vec<String>], exports: &[String]) -> String {
     let mut script = String::new();
+
+    if !exports.is_empty() {
+        let files = exports
+            .iter()
+            .map(|path| shell_quote(path))
+            .collect::<Vec<_>>()
+            .join(" ");
+        // `trap ... EXIT` leaves the exit status as it was.
+        let _ = write!(
+            script,
+            "__conveyor_export() {{\n\
+             for __f in {files}; do\n\
+             if [ -f \"$__f\" ] && [ \"$(wc -c < \"$__f\")\" -le {MAX_EXPORT_BYTES} ]; then\n\
+             base64 \"$__f\" | tr -d '\\n' | fold -w {EXPORT_LINE} | while IFS= read -r __c || [ -n \"$__c\" ]; do\n\
+             printf '%s%s\\t%s\\n' '{FILE_MARKER}' \"$__f\" \"$__c\"\n\
+             done\n\
+             fi\n\
+             done\n\
+             }}\n\
+             trap __conveyor_export EXIT\n"
+        );
+    }
 
     for (ordinal, argv) in commands.iter().enumerate() {
         let rendered = argv
@@ -123,7 +165,7 @@ pub fn build(
             "name": "steps",
             "image": spec.image.as_deref().unwrap_or(&settings.default_image),
             "command": ["sh", "-c"],
-            "args": [script(commands)],
+            "args": [script_with_exports(commands, &spec.exports)],
             "workingDir": WORKSPACE_PATH,
             "volumeMounts": [volume_mount],
             "securityContext": hardened(),

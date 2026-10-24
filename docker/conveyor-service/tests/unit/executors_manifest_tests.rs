@@ -28,6 +28,7 @@ fn spec() -> JobSpec {
             credential: None,
         }),
         redactor: Redactor::none(),
+        exports: Vec::new(),
     }
 }
 
@@ -389,4 +390,56 @@ fn an_argument_with_a_quote_cannot_break_out_of_the_script() {
         script.contains(r"'\''"),
         "expected the quote to be escaped: {script}"
     );
+}
+
+#[quench_test::test]
+fn the_script_hands_exports_back_as_marker_lines_even_after_a_failed_step() {
+    let dir = quench_core::tmp::TempDir::new().expect("temp dir");
+    std::fs::create_dir_all(dir.path().join("out")).expect("mkdir");
+    // Long enough to span several lines.
+    let body = "x".repeat(10_000);
+    std::fs::write(dir.path().join("out/report.txt"), &body).expect("write");
+
+    let script = manifest::script_with_exports(
+        &[
+            vec!["echo".to_string(), "building".to_string()],
+            vec!["false".to_string()],
+            vec!["echo".to_string(), "never".to_string()],
+        ],
+        &["out/report.txt".to_string(), "out/missing.txt".to_string()],
+    );
+    let output = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(&script)
+        .current_dir(dir.path())
+        .output()
+        .expect("sh runs");
+
+    // The failed step's status survives the export.
+    assert_eq!(output.status.code(), Some(1));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("building") && !stdout.contains("never"));
+
+    let mut encoded = String::new();
+    let mut lines = 0;
+    for line in stdout.lines() {
+        if let Some(rest) = line.strip_prefix(manifest::FILE_MARKER) {
+            let (path, chunk) = rest.split_once('\t').expect("path and chunk");
+            assert_eq!(path, "out/report.txt");
+            assert!(chunk.len() <= 4096);
+            encoded.push_str(chunk);
+            lines += 1;
+        }
+    }
+    assert!(lines >= 3, "{lines} lines");
+    let decoded = quench_core::base64::STANDARD
+        .decode(&encoded)
+        .expect("base64");
+    assert_eq!(decoded, body.as_bytes());
+    assert!(!stdout.contains("missing.txt"));
+}
+
+#[quench_test::test]
+fn a_script_without_exports_has_no_trap() {
+    assert!(!manifest::script(&[vec!["true".to_string()]]).contains("trap"));
 }

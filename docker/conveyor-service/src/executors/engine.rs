@@ -46,6 +46,10 @@ pub struct JobSpec {
     pub source: Option<SourceSpec>,
     /// Applied by the executor, not the caller, so it covers the live stream too.
     pub redactor: Redactor,
+    /// Checkout-relative files to bring back into conveyor's workspace once the job ends, whatever its outcome:
+    /// the declared artifacts and the test reports. An executor whose jobs run elsewhere carries them over;
+    /// native has them already.
+    pub exports: Vec<String>,
 }
 
 /// What the executor calls the job it started.

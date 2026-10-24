@@ -23,6 +23,7 @@ fn spec(name: &str, steps: Vec<Step>) -> JobSpec {
         image: None,
         source: None,
         redactor: Redactor::none(),
+        exports: Vec::new(),
     }
 }
 

@@ -5,7 +5,8 @@ use crate::domain::Status;
 use crate::executors::engine::{
     ExecError, Handle, JobExecutor, JobSpec, JobState, LogChunk, LogTail, StepState, Stream,
 };
-use crate::executors::manifest::{self, STEP_MARKER, Settings};
+use crate::executors::export::Exports;
+use crate::executors::manifest::{self, FILE_MARKER, STEP_MARKER, Settings};
 use crate::secrets::Redactor;
 use crate::steps;
 use crate::workspace::Workspace;
@@ -99,7 +100,7 @@ impl JobExecutor for KubernetesExecutor {
         "kubernetes"
     }
 
-    async fn start(&self, spec: &JobSpec, _workspace: &Workspace) -> Result<Handle, ExecError> {
+    async fn start(&self, spec: &JobSpec, workspace: &Workspace) -> Result<Handle, ExecError> {
         if spec.steps.is_empty() {
             return Err(ExecError::NoSteps {
                 job: spec.name.clone(),
@@ -184,6 +185,7 @@ impl JobExecutor for KubernetesExecutor {
             spec.name.clone(),
             spec.redactor.clone(),
             running,
+            (Exports::new(&spec.exports), workspace.root().to_path_buf()),
         ));
 
         Ok(Handle::new(spec.id.clone()))
@@ -280,6 +282,7 @@ async fn watch(
     job_name: String,
     redactor: Redactor,
     running: Running,
+    exports: (Exports, std::path::PathBuf),
 ) {
     let Some(pod_name) = await_pod(&pods, &object_name).await else {
         finish(
@@ -291,7 +294,8 @@ async fn watch(
         return;
     };
 
-    follow_logs(&pods, &pod_name, &redactor, &running).await;
+    // Before the verdict: the worker collects from the workspace as soon as the job reads as finished.
+    follow_logs(&pods, &pod_name, &redactor, &running, exports).await;
 
     // Log ending doesn't settle the verdict; the Job's own status decides pass/fail.
     let outcome = await_completion(&jobs, &object_name).await;
@@ -336,7 +340,13 @@ async fn await_pod(pods: &Api, object_name: &str) -> Option<String> {
 }
 
 /// Streams the work container's output into the shared history and channel.
-async fn follow_logs(pods: &Api, pod_name: &str, redactor: &Redactor, running: &Running) {
+async fn follow_logs(
+    pods: &Api,
+    pod_name: &str,
+    redactor: &Redactor,
+    running: &Running,
+    (mut exports, root): (Exports, std::path::PathBuf),
+) {
     let params = LogParams {
         container: Some("steps".to_string()),
         follow: true,
@@ -354,6 +364,12 @@ async fn follow_logs(pods: &Api, pod_name: &str, redactor: &Redactor, running: &
     let mut seq: u64 = 0;
 
     while let Some(Ok(line)) = lines.next().await {
+        // A file the job hands back: reassembled below, never shown in the log.
+        if let Some(rest) = line.strip_prefix(FILE_MARKER) {
+            exports.accept(rest);
+            continue;
+        }
+
         // Conveyor's own bookkeeping marker, not build output - consumed, not recorded.
         if let Some(ordinal) = line.trim().strip_prefix(STEP_MARKER) {
             if let Ok(ordinal) = ordinal.trim().parse::<usize>() {
@@ -376,6 +392,12 @@ async fn follow_logs(pods: &Api, pod_name: &str, redactor: &Redactor, running: &
             .expect("log history poisoned")
             .push(chunk.clone());
         let _ = running.publisher.send(chunk);
+    }
+
+    if !exports.is_empty() {
+        for problem in exports.write(&root) {
+            quench_log::warn!("job output from {pod_name}: {problem}");
+        }
     }
 }
 

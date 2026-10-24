@@ -123,6 +123,7 @@ async fn perform_run(origin: &Origin, git_ref: &str, work: &Path) -> (Workspace,
                         image: job.image.clone(),
                         source: None,
                         redactor: Redactor::none(),
+                        exports: Vec::new(),
                     },
                     &workspace,
                 )
@@ -251,6 +252,7 @@ async fn a_failing_stage_stops_the_run() {
                 image: None,
                 source: None,
                 redactor: Redactor::none(),
+                exports: Vec::new(),
             },
             &workspace,
         )

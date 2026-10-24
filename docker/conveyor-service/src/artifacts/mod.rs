@@ -169,6 +169,19 @@ const TEST_REPORT_DIRS: [&str; 2] = ["target/debug/quench-test", "target/release
 /// The files of those directories worth keeping: the merged results, and the page that shows them.
 const TEST_REPORT_FILES: [&str; 2] = ["summary.json", "index.html"];
 
+/// What a job's runner must hand back to conveyor's workspace for [`collect`] and [`collect_test_reports`] to
+/// find it: the declared artifacts, and the test reports a `quench-test` run leaves.
+#[must_use]
+pub fn exports(declared: &[String]) -> Vec<String> {
+    let mut paths = declared.to_vec();
+    for directory in TEST_REPORT_DIRS {
+        for file in TEST_REPORT_FILES {
+            paths.push(format!("{directory}/{file}"));
+        }
+    }
+    paths
+}
+
 /// Keeps the results a `quench-test` run left in the checkout, whatever the job's outcome.
 ///
 /// They matter most when the job failed. Nothing is declared for this: a job that ran quench-test tests has the

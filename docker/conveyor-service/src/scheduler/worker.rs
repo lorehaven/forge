@@ -731,6 +731,7 @@ impl Worker {
                 }),
             }),
             redactor,
+            exports: artifacts::exports(&job.artifacts),
         };
 
         let handle = match self.executor.start(&spec, workspace).await {

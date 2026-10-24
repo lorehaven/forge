@@ -22,6 +22,7 @@ fn spec(name: &str) -> JobSpec {
         image: None,
         source: None,
         redactor: Redactor::none(),
+        exports: Vec::new(),
     }
 }
 

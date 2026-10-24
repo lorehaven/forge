@@ -9,6 +9,8 @@ mod config_settings_tests;
 mod domain_run_tests;
 #[path = "unit/domain_status_tests.rs"]
 mod domain_status_tests;
+#[path = "unit/executors_export_tests.rs"]
+mod executors_export_tests;
 #[path = "unit/executors_manifest_tests.rs"]
 mod executors_manifest_tests;
 #[path = "unit/executors_mock_tests.rs"]
