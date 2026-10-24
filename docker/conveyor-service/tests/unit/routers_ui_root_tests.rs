@@ -63,8 +63,9 @@ async fn root_redirects_to_login_when_there_is_no_session_and_auth_is_enabled() 
 
 #[quench_test::test]
 async fn root_slash_redirects_home_when_auth_is_disabled() {
-    let config = JwtConfig::for_tests();
-    assert!(!config.auth_enabled, "for_tests should default auth off");
+    let mut config = JwtConfig::for_tests();
+    // `for_tests()` reads SERVICE_AUTH_ENABLED, which routing tests toggle concurrently: pin it.
+    config.auth_enabled = false;
 
     let (app, container) = app(config).await;
 

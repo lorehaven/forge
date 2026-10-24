@@ -265,7 +265,18 @@ fn start_spawns_a_real_process_and_times_out_when_it_never_answers_health_checks
     // this exercises the `Wait::Timeout` branch - the process is left
     // running (matching production behaviour: still up, just not answering
     // yet), so it's found and killed via the pid file afterwards.
-    let started = start(&estate, "web").expect("start");
+    // Executing a script just written can fail with "Text file busy" when another test forks in the instant the
+    // file was still open for writing (the child holds a copy of the handle until it execs). It clears at once.
+    let mut attempts = 0;
+    let started = loop {
+        match start(&estate, "web") {
+            Err(error) if format!("{error:#}").contains("Text file busy") && attempts < 20 => {
+                attempts += 1;
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            other => break other.expect("start"),
+        }
+    };
     assert!(started);
     assert!(estate.pid_file("web").exists());
 
