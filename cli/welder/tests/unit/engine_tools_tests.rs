@@ -26,14 +26,18 @@ fn rejects_parent_dir_traversal() {
 
 #[quench_test::test]
 fn allows_plain_relative_paths() {
-    let _guard = support::cwd_lock().lock().unwrap();
+    let _guard = support::cwd_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     assert!(safe_rel_path("src/main.rs").is_ok());
     assert!(safe_rel_path(".").is_ok());
 }
 
 #[quench_test::test]
 fn allows_paths_that_do_not_exist_yet() {
-    let _guard = support::cwd_lock().lock().unwrap();
+    let _guard = support::cwd_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     // A brand-new file under a directory that doesn't exist yet either
     // (write_file creates parents) must still be allowed.
     assert!(safe_rel_path("brand/new/file.txt").is_ok());
@@ -42,7 +46,9 @@ fn allows_paths_that_do_not_exist_yet() {
 #[quench_test::test]
 #[cfg(unix)]
 fn rejects_symlink_escape() {
-    let _guard = support::cwd_lock().lock().unwrap();
+    let _guard = support::cwd_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
 
     let tmp = quench_core::tmp::TempDir::new().unwrap();
     let outside = quench_core::tmp::TempDir::new().unwrap();
@@ -135,7 +141,9 @@ struct WithTempCwd {
 }
 
 fn with_temp_cwd() -> WithTempCwd {
-    let guard = support::cwd_lock().lock().unwrap();
+    let guard = support::cwd_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let original = std::env::current_dir().unwrap();
     std::env::set_current_dir(dir.path()).unwrap();

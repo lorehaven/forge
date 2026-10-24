@@ -13,5 +13,11 @@ use std::sync::{Mutex, OnceLock};
 
 pub fn cwd_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
+    LOCK.get_or_init(|| {
+        // Every test that changes the cwd takes this lock first, so this runs before the cwd has ever been
+        // changed: `CONFIG` is read from the crate directory here, whichever test (locked or not) would have
+        // forced it first - one that did it while another had the cwd in a temp dir got the defaults.
+        std::sync::LazyLock::force(&welder::config::CONFIG);
+        Mutex::new(())
+    })
 }

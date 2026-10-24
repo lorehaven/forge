@@ -318,7 +318,9 @@ fn with_temp_cwd() -> (
     std::path::PathBuf,
     quench_core::tmp::TempDir,
 ) {
-    let guard = support::cwd_lock().lock().unwrap();
+    let guard = support::cwd_lock()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let dir = quench_core::tmp::TempDir::new().unwrap();
     let original = std::env::current_dir().unwrap();
     std::env::set_current_dir(dir.path()).unwrap();
